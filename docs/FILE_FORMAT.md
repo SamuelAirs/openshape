@@ -76,7 +76,11 @@ Rules:
 - `surface` / `curve` are enum ordinals (`geom::SurfaceKind`, `geom::CurveKind`).
   They must never be renumbered; new kinds are appended.
 - `Shell` params: `{ "faces": [faceRef…], "thickness" }`. `Move` params:
-  `{ "translation": [x, y, z] }`. `Combine` params: `{ "tool": body uuid,
+  `{ "translation": [x, y, z] }`, plus an optional `"rotation": { "center":
+  [x, y, z], "axis": [x, y, z], "angle": radians }` applied before the
+  translation (Rotate and Align steps; Align steps are named "Align"). A
+  rotation without a valid axis or finite angle makes the file unreadable.
+  `Combine` params: `{ "tool": body uuid,
   "mode": "Union" | "Subtract" | "Intersect" }` — the tool body is usually
   hidden (consumed) but stays in the document.
 - `Revolve` params: like `Extrude` (sketch, profiles, mode) plus `"axis": "X" |

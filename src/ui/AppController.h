@@ -36,6 +36,7 @@ class AppController : public QObject {
     Q_PROPERTY(QString operationError READ operationError NOTIFY stateChanged)
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
+    Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
     Q_PROPERTY(QString documentTitle READ documentTitle NOTIFY documentChanged)
@@ -76,6 +77,7 @@ public:
     QString operationError() const;
     bool operationCanCommit() const;
     bool operationHasValue() const;
+    QString operationPrompt() const;
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QString documentTitle() const;

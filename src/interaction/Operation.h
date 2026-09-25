@@ -4,6 +4,7 @@
 #include "core/Uuid.h"
 #include "document/Feature.h"
 #include "geometry/Mesh.h"
+#include "geometry/Modeling.h"
 #include "interaction/Manipulator.h"
 
 #include <memory>
@@ -48,6 +49,8 @@ public:
     std::uint64_t previewKey() const { return previewKey_; }
     const std::string& error() const { return error_; }
     virtual bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
+    // Instruction while the operation needs another pick (e.g. Align's target); "" otherwise.
+    virtual std::string prompt() const { return {}; }
 
     // Operations with several handles (Move: one arrow per axis). The active
     // handle receives drags and typed values; value() is its value.
@@ -71,6 +74,14 @@ protected:
     virtual std::unique_ptr<doc::Feature> makeFeature(double value) const = 0;
     // Changes the stored value without recomputing the preview.
     void setStoredValue(double value) { value_ = value; }
+    // Drops the preview and error (e.g. when a needed pick is undone).
+    void clearPreview()
+    {
+        previewMesh_.reset();
+        error_.clear();
+    }
+    // Whether value 0 means "no change" (no preview). Align previews at 0.
+    virtual bool zeroIsIdentity() const { return true; }
     // Automatic choices (e.g. join vs. new body) start over for every value...
     virtual void resetAutomaticChoices() {}
     // ...and may be revised once the preview result is known; returning true
@@ -85,6 +96,59 @@ private:
     std::shared_ptr<const geom::Mesh> previewMesh_;
     std::uint64_t previewKey_ = 0;
     std::string error_;
+};
+
+// Align: moves a body so one of its faces or edges (the source) meets a face
+// or edge of another body (the target) — flat faces touching, edges collinear,
+// circles/holes/shafts concentric. Waits for the target after creation; then
+// value() is an offset along the target (the arrow) and Flip reverses it.
+// Commits as a Move step with a rotation, named "Align".
+class AlignOperation final : public Operation {
+public:
+    static std::unique_ptr<AlignOperation> create(const doc::Document& document, const Uuid& bodyId,
+                                                  geom::SubShapeKind kind, int index);
+
+    std::string title() const override { return "Align"; }
+    std::string valueLabel() const override { return "Offset"; }
+    bool allowsNegative() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Move; }
+    std::string prompt() const override;
+    bool canCommit() const override { return target_.has_value() && error().empty() && hasPreview(); }
+
+    bool hasTarget() const { return target_.has_value(); }
+    // Picks the target on another body; recomputes the preview.
+    Status setTarget(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
+    // The ground (XY plane): lays a flat source face down on it where it is.
+    Status setGroundTarget(const doc::Document& document);
+    void clearTarget();
+    bool flipped() const { return flip_; }
+    void setFlipped(bool flip, const doc::Document& document);
+    // A flat source face can be laid onto the ground plane.
+    bool canUseGround() const { return source_.sided; }
+    bool targetIsGround() const { return target_.has_value() && targetBody_.isNil(); }
+    // Target body and sub-shape, for highlighting (nil body for the ground).
+    const Uuid& targetBody() const { return targetBody_; }
+    geom::SubShapeKind targetKind() const { return targetKind_; }
+    int targetIndex() const { return targetIndex_; }
+
+    int handleCount() const override { return target_ ? 1 : 0; }
+    LinearManipulator handle(int index) const override;
+    double handleOffset(int index) const override { return index == 0 ? value() : 0.0; }
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    bool zeroIsIdentity() const override { return false; }
+
+private:
+    AlignOperation(Uuid bodyId, geom::AlignFrame source)
+        : Operation(bodyId, LinearManipulator(source.point, source.direction)), source_(source) {}
+    geom::AlignFrame source_;
+    std::optional<geom::AlignFrame> target_;
+    Uuid targetBody_;
+    geom::SubShapeKind targetKind_ = geom::SubShapeKind::Whole;
+    int targetIndex_ = -1;
+    bool flip_ = false;
 };
 
 // Push/pull of one planar face along its normal.

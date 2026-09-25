@@ -102,6 +102,11 @@ bool AppController::operationHasValue() const
     return interaction_->operation() && interaction_->operation()->value() != 0.0;
 }
 
+QString AppController::operationPrompt() const
+{
+    return interaction_->operation() ? q(interaction_->operation()->prompt()) : QString();
+}
+
 QPointF AppController::valueLabelPosition() const
 {
     const auto p = interaction_->valueLabelPosition();

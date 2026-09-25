@@ -42,6 +42,17 @@ struct BoundingBox {
     Vec3 center() const { return (min + max) * 0.5; }
 };
 
+// A rigid motion: rotation about the axis through `center` along `axis` by
+// `angle` radians, followed by `translation`.
+struct RigidMotion {
+    Vec3 center;
+    Vec3 axis{0, 0, 1};
+    double angle = 0;
+    Vec3 translation;
+    Vec3 apply(const Vec3& p) const;
+    bool isIdentity() const { return std::abs(angle) < 1e-12 && translation.length() < 1e-12; }
+};
+
 enum class SurfaceKind { Plane, Cylinder, Cone, Sphere, Torus, BSpline, Other };
 enum class CurveKind { Line, Circle, Ellipse, BSpline, Other };
 
@@ -52,7 +63,12 @@ struct FaceInfo {
     double area = 0;
     // Plane axis origin for planar faces (a point on the plane).
     Vec3 planeOrigin;
+    // Cylinders and cones: the axis (origin nearest the face centroid) and radius.
+    Vec3 axisOrigin;
+    Vec3 axisDirection;
+    double radius = 0;
     bool isPlanar() const { return kind == SurfaceKind::Plane; }
+    bool hasAxis() const { return kind == SurfaceKind::Cylinder || kind == SurfaceKind::Cone; }
 };
 
 struct EdgeInfo {

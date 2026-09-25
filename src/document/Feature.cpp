@@ -302,27 +302,49 @@ Status CombineFeature::readParams(const json& in)
 
 // ---- Move -----------------------------------------------------------------------
 
+geom::RigidMotion MoveFeature::motion() const
+{
+    geom::RigidMotion m;
+    m.translation = translation;
+    if (rotates) {
+        m.center = rotationCenter;
+        m.axis = rotationAxis;
+        m.angle = rotationAngle;
+    }
+    return m;
+}
+
 Result<geom::Shape> MoveFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
-    if (translation.length() < 1e-12)
+    const geom::RigidMotion m = motion();
+    if (m.isIdentity())
         return Result<geom::Shape>::success(input);
-    return geom::translated(input, translation);
+    if (std::abs(m.angle) < 1e-12)
+        return geom::translated(input, translation);
+    return geom::transformed(input, m);
 }
 
 std::vector<ParameterInfo> MoveFeature::parameters() const
 {
-    return {{"x", "X", ParameterKind::Length, translation.x},
-            {"y", "Y", ParameterKind::Length, translation.y},
-            {"z", "Z", ParameterKind::Length, translation.z}};
+    std::vector<ParameterInfo> out{{"x", "X", ParameterKind::Length, translation.x},
+                                   {"y", "Y", ParameterKind::Length, translation.y},
+                                   {"z", "Z", ParameterKind::Length, translation.z}};
+    if (rotates)
+        out.push_back({"angle", "Angle", ParameterKind::Angle, rotationAngle});
+    return out;
 }
 
 Status MoveFeature::setParameter(std::string_view key, double value)
 {
+    if (!std::isfinite(value))
+        return Status::failure(ErrorCode::InvalidArgument, "Enter a valid value.", "non-finite move parameter");
+    if (key == "angle" && rotates) {
+        rotationAngle = value;
+        return okStatus();
+    }
     double* target = key == "x" ? &translation.x : key == "y" ? &translation.y : key == "z" ? &translation.z : nullptr;
     if (!target)
         return unknownParameter(key);
-    if (!std::isfinite(value))
-        return Status::failure(ErrorCode::InvalidArgument, "Enter a valid distance.", "non-finite translation");
     *target = value;
     return okStatus();
 }
@@ -330,6 +352,10 @@ Status MoveFeature::setParameter(std::string_view key, double value)
 void MoveFeature::writeParams(json& out) const
 {
     out["translation"] = vecToJson(translation);
+    if (rotates)
+        out["rotation"] = json{{"center", vecToJson(rotationCenter)},
+                               {"axis", vecToJson(rotationAxis)},
+                               {"angle", rotationAngle}};
 }
 
 Status MoveFeature::readParams(const json& in)
@@ -338,6 +364,20 @@ Status MoveFeature::readParams(const json& in)
     if (!t)
         return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid move.", "Move: bad translation");
     translation = *t;
+    rotates = false;
+    if (in.contains("rotation")) {
+        const json& r = in["rotation"];
+        const auto center = r.is_object() ? vecFromJson(r, "center") : std::nullopt;
+        const auto axis = r.is_object() ? vecFromJson(r, "axis") : std::nullopt;
+        if (!center || !axis || axis->length() < 1e-9 || !r.contains("angle") || !r["angle"].is_number()
+            || !std::isfinite(r["angle"].get<double>()))
+            return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid rotation.",
+                                   "Move: bad rotation");
+        rotates = true;
+        rotationCenter = *center;
+        rotationAxis = *axis;
+        rotationAngle = r["angle"].get<double>();
+    }
     return okStatus();
 }
 

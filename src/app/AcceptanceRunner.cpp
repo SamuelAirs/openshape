@@ -466,6 +466,37 @@ void AcceptanceRunner::start()
             check(std::abs(bodyVolume() - plate) < 1e-3 && app_->document().bodies()[1]->isVisible(),
                   "undo restores both bodies", num(bodyVolume()));
         },
+        // Align through the real UI: the box's front face onto the plate's top.
+        [=, this] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            click(screenPoint(50, 0, 10)); // front face of the box
+            check(app_->interaction().selection().size() == 1
+                      && app_->interaction().selection().items()[0].kind == sel::SelectionKind::Face,
+                  "the box's front face is selected");
+            check(clickItem(QStringLiteral("tool_align")), "Align tool button");
+            check(app_->operationTitle() == QStringLiteral("Align") && !app_->operationPrompt().isEmpty(),
+                  "Align asks for its target", app_->operationPrompt());
+        },
+        [=, this] {
+            click(screenPoint(20, 15, 5)); // top face of the plate
+            const auto* align = dynamic_cast<const interact::AlignOperation*>(app_->interaction().operation());
+            check(align && align->hasTarget() && align->canCommit(), "clicking the plate's top face sets the target");
+            screenshot(QStringLiteral("16_align_preview"));
+            key(Qt::Key_Return);
+        },
+        [] {},
+        [=, this] {
+            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            check(std::abs(bb.min.z - 5.0) < 1e-6, "Enter: the box rests on the plate", num(bb.min.z));
+            check(std::abs(bb.center().x - 30.0) < 1e-6 && std::abs(bb.center().y - 15.0) < 1e-6,
+                  "centered on the plate's top face", num(bb.center().x) + "," + num(bb.center().y));
+            screenshot(QStringLiteral("17_aligned"));
+            key(Qt::Key_Z, Qt::ControlModifier);
+            check(std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).min.z) < 1e-6,
+                  "undo puts the box back");
+        },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);
 }

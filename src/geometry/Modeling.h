@@ -34,6 +34,9 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind);
 
 Result<Shape> translated(const Shape& shape, const Vec3& offset);
 Result<Shape> rotated(const Shape& shape, const Vec3& axisOrigin, const Vec3& axisDirection, double angleRadians);
+// Applies a rigid motion (see RigidMotion in Shape.h).
+Result<Shape> transformed(const Shape& shape, const RigidMotion& motion);
+
 
 // ---- Queries ----------------------------------------------------------------
 double volume(const Shape& shape);
@@ -71,6 +74,22 @@ struct SubShapeRef {
     SubShapeKind kind = SubShapeKind::Whole;
     int index = -1;
 };
+
+// Where a face or edge sits and which way it points, for aligning bodies:
+// flat faces give centroid + outward normal and are "sided" (two flat faces
+// align touching, facing each other); straight edges give midpoint +
+// direction; circles, cylinders and cones give center + axis.
+struct AlignFrame {
+    Vec3 point;
+    Vec3 direction;
+    bool sided = false;
+};
+std::optional<AlignFrame> alignFrame(const Shape& shape, SubShapeKind kind, int index);
+// The motion that brings `source` onto `target`: directions opposite for two
+// sided frames (flush with `flip`), otherwise parallel with the smaller
+// rotation (reversed with `flip`); points coincide, then `offset` along the
+// target direction.
+RigidMotion alignMotion(const AlignFrame& source, const AlignFrame& target, bool flip, double offset);
 
 struct Measurement {
     double distance = 0;             // exact minimum distance (0 when touching)

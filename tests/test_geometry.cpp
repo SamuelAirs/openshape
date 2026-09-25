@@ -222,6 +222,69 @@ TEST(Geometry, FacesChangedByAStep)
     EXPECT_TRUE(createdByMove.empty() || createdByMove.size() == std::size_t(moved.faceCount()));
 }
 
+// Align a box's +X side face onto the top face of a bigger box: the side
+// ends up facing down, touching, centered on the target face.
+TEST(Geometry, AlignFaceToFaceRotatesAndTouches)
+{
+    const Shape small = box(10, 10, 10);
+    const Shape big = makeBox({40, 0, 0}, {20, 20, 20}).value();
+    const auto source = alignFrame(small, SubShapeKind::Face, faceWithNormal(small, {1, 0, 0}));
+    const auto target = alignFrame(big, SubShapeKind::Face, faceWithNormal(big, {0, 0, 1}));
+    ASSERT_TRUE(source && target);
+    EXPECT_TRUE(source->sided && target->sided);
+
+    const RigidMotion motion = alignMotion(*source, *target, false, 0.0);
+    EXPECT_NEAR(motion.angle, kPi / 2, 1e-9);
+    const Vec3 landed = motion.apply(source->point);
+    EXPECT_NEAR((landed - target->point).length(), 0.0, 1e-9);
+    const Shape moved = transformed(small, motion).value();
+    const auto bb = boundingBox(moved);
+    EXPECT_NEAR(bb.min.z, 20.0, 1e-6); // resting on the top face
+    EXPECT_NEAR(bb.size().z, 10.0, 1e-6);
+    EXPECT_NEAR(bb.center().x, 50.0, 1e-6);
+    EXPECT_NEAR(bb.center().y, 10.0, 1e-6);
+    EXPECT_NEAR(volume(moved), 1000.0, 1e-6);
+
+    // Flip: flush instead of touching (same direction), and an offset lifts it.
+    const auto flush = boundingBox(transformed(small, alignMotion(*source, *target, true, 0.0)).value());
+    EXPECT_NEAR(flush.max.z, 20.0, 1e-6);
+    const auto gap = boundingBox(transformed(small, alignMotion(*source, *target, false, 2.5)).value());
+    EXPECT_NEAR(gap.min.z, 22.5, 1e-6);
+}
+
+// Circles align concentric: a peg's rim onto a rim whose axis is X.
+TEST(Geometry, AlignCirclesConcentric)
+{
+    const Shape peg = makeCylinder({0, 0, 0}, {0, 0, 1}, 3.0, 10.0).value();
+    const Shape tube = makeCylinder({20, 5, 5}, {1, 0, 0}, 3.0, 8.0).value();
+    auto circleEdge = [](const Shape& s) {
+        for (int i = 0; i < s.edgeCount(); ++i)
+            if (const auto e = edgeInfo(s, i); e && e->kind == CurveKind::Circle)
+                return i;
+        return -1;
+    };
+    const auto source = alignFrame(peg, SubShapeKind::Edge, circleEdge(peg));
+    const auto target = alignFrame(tube, SubShapeKind::Edge, circleEdge(tube));
+    ASSERT_TRUE(source && target);
+    EXPECT_FALSE(source->sided);
+    const RigidMotion motion = alignMotion(*source, *target, false, 0.0);
+    const Shape moved = transformed(peg, motion).value();
+    const auto bb = boundingBox(moved);
+    EXPECT_NEAR(bb.size().x, 10.0, 1e-6); // the peg's axis now runs along X
+    EXPECT_NEAR(bb.center().y, 5.0, 1e-6);
+    EXPECT_NEAR(bb.center().z, 5.0, 1e-6);
+    // A cylinder face gives its axis too (holes and shafts).
+    int side = -1;
+    for (int i = 0; i < peg.faceCount(); ++i)
+        if (faceInfo(peg, i)->kind == SurfaceKind::Cylinder)
+            side = i;
+    const auto axis = alignFrame(peg, SubShapeKind::Face, side);
+    ASSERT_TRUE(axis);
+    EXPECT_NEAR(std::abs(axis->direction.z), 1.0, 1e-9);
+    EXPECT_NEAR(axis->point.x, 0.0, 1e-9);
+    EXPECT_NEAR(axis->point.y, 0.0, 1e-9);
+}
+
 TEST(Geometry, FilletTooLargeFailsGracefully)
 {
     const Shape s = box(10, 10, 10);

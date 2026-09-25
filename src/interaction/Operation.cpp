@@ -26,7 +26,7 @@ void Operation::setValue(double value, const doc::Document& document)
         value = 0;
     value_ = value;
     error_.clear();
-    if (value == 0.0 && handleCount() == 1) {
+    if (value == 0.0 && handleCount() == 1 && zeroIsIdentity()) {
         previewMesh_.reset();
         return;
     }
@@ -73,6 +73,102 @@ std::unique_ptr<doc::Feature> PushPullOperation::makeFeature(double value) const
     feature->face = face_;
     feature->distance = value;
     return feature;
+}
+
+// ---- Align -----------------------------------------------------------------------
+
+std::unique_ptr<AlignOperation> AlignOperation::create(const doc::Document& document, const Uuid& bodyId,
+                                                       geom::SubShapeKind kind, int index)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const auto frame = geom::alignFrame(body->shape(), kind, index);
+    if (!frame)
+        return nullptr;
+    return std::unique_ptr<AlignOperation>(new AlignOperation(bodyId, *frame));
+}
+
+std::string AlignOperation::prompt() const
+{
+    return target_ ? std::string() : std::string("Click the face or edge to align to, on another body \xC2\xB7 Esc cancels");
+}
+
+Status AlignOperation::setTarget(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index)
+{
+    if (bodyId == this->bodyId())
+        return Status::failure(ErrorCode::InvalidArgument, "Pick a face or edge on another body.",
+                               "align: target on the moving body");
+    const doc::Body* body = document.body(bodyId);
+    const auto frame = body ? geom::alignFrame(body->shape(), kind, index) : std::nullopt;
+    if (!frame)
+        return Status::failure(ErrorCode::InvalidArgument, "Align to a flat or round face, a straight edge or a circle.",
+                               "align: unsupported target");
+    target_ = *frame;
+    targetBody_ = bodyId;
+    targetKind_ = kind;
+    targetIndex_ = index;
+    setValue(value(), document);
+    return okStatus();
+}
+
+Status AlignOperation::setGroundTarget(const doc::Document& document)
+{
+    if (!source_.sided)
+        return Status::failure(ErrorCode::InvalidArgument, "Only a flat face can be laid on the ground.",
+                               "align: ground needs a flat source face");
+    // Lay the face down where it is: straight below its centroid, facing down.
+    target_ = geom::AlignFrame{{source_.point.x, source_.point.y, 0.0}, {0, 0, 1}, true};
+    targetBody_ = Uuid();
+    targetKind_ = geom::SubShapeKind::Whole;
+    targetIndex_ = -1;
+    setValue(value(), document);
+    return okStatus();
+}
+
+void AlignOperation::clearTarget()
+{
+    target_.reset();
+    targetBody_ = Uuid();
+    targetKind_ = geom::SubShapeKind::Whole;
+    targetIndex_ = -1;
+    clearPreview();
+}
+
+void AlignOperation::setFlipped(bool flip, const doc::Document& document)
+{
+    flip_ = flip;
+    if (target_)
+        setValue(value(), document);
+}
+
+LinearManipulator AlignOperation::handle(int index) const
+{
+    if (index != 0 || !target_)
+        return {};
+    return LinearManipulator(target_->point, target_->direction);
+}
+
+std::unique_ptr<doc::Feature> AlignOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::MoveFeature>();
+    feature->setName("Align");
+    if (!target_)
+        return feature;
+    const geom::RigidMotion m = geom::alignMotion(source_, *target_, flip_, value);
+    feature->translation = m.translation;
+    if (std::abs(m.angle) > 1e-12) {
+        feature->rotates = true;
+        feature->rotationCenter = m.center;
+        feature->rotationAxis = m.axis;
+        feature->rotationAngle = m.angle;
+    }
+    return feature;
+}
+
+std::unique_ptr<cmd::Command> AlignOperation::makeCommand(const doc::Document&) const
+{
+    return std::make_unique<cmd::AddFeatureCommand>(bodyId(), makeFeature(value()));
 }
 
 // ---- Move ------------------------------------------------------------------------

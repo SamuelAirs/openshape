@@ -97,6 +97,41 @@ TEST(ProjectFile, JsonRoundTripIsStable)
     EXPECT_EQ(first["lengthUnit"], "mm");
 }
 
+// A Move with a rotation (Rotate / Align steps) survives save and reopen.
+TEST(ProjectFile, RotatedMoveRoundTrips)
+{
+    Uuid bodyId;
+    auto d = mvpDocument(&bodyId);
+    auto move = std::make_unique<doc::MoveFeature>();
+    move->setName("Align");
+    move->translation = {5, -3, 12};
+    move->rotates = true;
+    move->rotationCenter = {30, 20, 10};
+    move->rotationAxis = {1, 1, 0};
+    move->rotationAngle = 0.7;
+    d->insertFeature(bodyId, std::move(move));
+    ASSERT_FALSE(d->body(bodyId)->hasFailures());
+    const auto before = geom::boundingBox(d->body(bodyId)->shape());
+
+    const auto json = io::documentToJson(*d);
+    auto again = io::documentFromJson(json);
+    ASSERT_TRUE(again.ok()) << again.developerMessage();
+    const doc::Body& body = *again.value()->body(bodyId);
+    EXPECT_EQ(body.features().back()->name(), "Align");
+    const auto after = geom::boundingBox(body.shape());
+    EXPECT_NEAR((after.min - before.min).length(), 0.0, 1e-6);
+    EXPECT_NEAR((after.max - before.max).length(), 0.0, 1e-6);
+    EXPECT_NEAR(*body.features().back()->parameter("angle"), 0.7, 1e-12);
+
+    // A rotation without an axis is rejected, not silently dropped.
+    auto broken = json;
+    for (auto& b : broken["bodies"])
+        for (auto& f : b["features"])
+            if (f["type"] == "Move")
+                f["params"]["rotation"].erase("axis");
+    EXPECT_FALSE(io::documentFromJson(broken).ok());
+}
+
 TEST(ProjectFile, RejectsNewerVersion)
 {
     auto j = io::documentToJson(*mvpDocument());

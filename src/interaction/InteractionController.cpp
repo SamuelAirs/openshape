@@ -452,6 +452,23 @@ void InteractionController::click(const PointerEvent& event)
     bool additive = profile.additiveSelection || event.modifiers.shift || event.modifiers.control;
     sel::PickResult hit = pickAt(event.position, profile);
 
+    // Align: clicks pick (or re-pick) the target; clicking empty space applies.
+    if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
+        if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge) {
+            const Status status = align->setTarget(*document_, hit.bodyId,
+                                                   hit.kind == sel::PickKind::Face ? geom::SubShapeKind::Face
+                                                                                   : geom::SubShapeKind::Edge,
+                                                   hit.index);
+            if (!status)
+                message(status.userMessage());
+        } else if (!hit.hit() && align->canCommit()) {
+            (void)commitOperation();
+        }
+        notifyState();
+        notifyView();
+        return;
+    }
+
     if (operation_ && operation_->canCommit()) {
         // Clicking anywhere else accepts the pending operation (direct-manipulation
         // convention); then the click selects against the updated geometry.
@@ -505,6 +522,18 @@ void InteractionController::rebuildOperation()
         if (edgeOperationKind_ == doc::FeatureKind::Hole)
             edgeOperationKind_ = doc::FeatureKind::Fillet;
         profileOperationKind_ = doc::FeatureKind::Extrude;
+        alignRequested_ = false;
+    }
+    if (alignRequested_) {
+        const auto& items = selection_.items();
+        if (items.size() == 1 && (items[0].kind == sel::SelectionKind::Face || items[0].kind == sel::SelectionKind::Edge))
+            operation_ = AlignOperation::create(*document_, items[0].bodyId,
+                                                items[0].kind == sel::SelectionKind::Face ? geom::SubShapeKind::Face
+                                                                                          : geom::SubShapeKind::Edge,
+                                                items[0].index);
+        if (operation_)
+            return;
+        alignRequested_ = false;
     }
     if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
         const auto& first = selection_.items().front();
@@ -578,8 +607,8 @@ std::string InteractionController::operationValueText() const
 
 std::optional<Vec2> InteractionController::valueLabelPosition() const
 {
-    if (!operation_)
-        return std::nullopt;
+    if (!operation_ || operation_->handleCount() == 0)
+        return std::nullopt; // e.g. Align still waiting for its target
     const ArrowStyle style;
     const int active = operation_->activeHandle();
     const LinearManipulator handle = operation_->handle(active);
@@ -600,6 +629,8 @@ Status InteractionController::commitOperation()
     // selections. A pushed face still exists and stays selected.
     const bool clearSelection = operation_->featureKind() != doc::FeatureKind::PushPull
                              && operation_->featureKind() != doc::FeatureKind::Move;
+    if (dynamic_cast<const AlignOperation*>(operation_.get()))
+        alignRequested_ = false; // done: the source face/edge offers its usual tools again
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
@@ -616,6 +647,20 @@ Status InteractionController::commitOperation()
 
 void InteractionController::cancelOperation()
 {
+    // Align steps back one pick at a time: offset, then target, then Align itself.
+    if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
+        if (align->hasTarget() && align->value() != 0.0) {
+            align->setValue(0.0, *document_);
+        } else if (align->hasTarget()) {
+            align->clearTarget();
+        } else {
+            alignRequested_ = false;
+            rebuildOperation();
+        }
+        notifyState();
+        notifyView();
+        return;
+    }
     if (operation_ && operation_->value() != 0.0) {
         operation_->setValue(0.0, *document_);
     } else {
@@ -702,6 +747,12 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (session_)
         return session_->contextActions();
     std::vector<ContextAction> actions;
+    if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get())) {
+        actions.push_back({"flip", "Flip", align->flipped()});
+        if (align->canUseGround())
+            actions.push_back({"ground", "Onto ground", align->targetIsGround()});
+        return actions;
+    }
     if (const auto* revolve = dynamic_cast<const RevolveOperation*>(operation_.get())) {
         actions.push_back({"extrude", "Extrude", false});
         actions.push_back({"revolve", "Revolve", true});
@@ -744,6 +795,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
         if (single && planar)
             actions.push_back({"sketch", "Sketch", false});
+        if (single)
+            actions.push_back({"align", "Align", false});
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && operation_) {
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
@@ -754,6 +807,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
                 rim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
         if (rim)
             actions.push_back({"insert", "Heat-set insert", edgeOperationKind_ == doc::FeatureKind::Hole});
+        if (selection_.size() == 1)
+            actions.push_back({"align", "Align", false});
         if (const auto* insert = dynamic_cast<const InsertOperation*>(operation_.get())) {
             const auto& presets = doc::heatSetInsertPresets();
             for (std::size_t i = 0; i < presets.size(); ++i)
@@ -842,6 +897,32 @@ Status InteractionController::triggerAction(const std::string& id)
                                                         : doc::CombineMode::Intersect);
     if (id == "move")
         return okStatus(); // already active: the arrows are the tool
+    if (id == "align") {
+        alignRequested_ = true;
+        rebuildOperation();
+        if (!dynamic_cast<AlignOperation*>(operation_.get())) {
+            const std::string text = "Align works with a flat or round face, a straight edge or a circle.";
+            message(text);
+            notifyState();
+            notifyView();
+            return Status::failure(ErrorCode::InvalidArgument, text, "align: unsupported source");
+        }
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* align = dynamic_cast<AlignOperation*>(operation_.get()); align && (id == "flip" || id == "ground")) {
+        Status status = okStatus();
+        if (id == "flip")
+            align->setFlipped(!align->flipped(), *document_);
+        else
+            status = align->setGroundTarget(*document_);
+        if (!status)
+            message(status.userMessage());
+        notifyState();
+        notifyView();
+        return status;
+    }
     if (id == "swap") {
         // Subtract keeps the first body: swapping changes which one is cut.
         if (selection_.size() != 2 || !selection_.allOfKind(sel::SelectionKind::Body))
@@ -1028,6 +1109,14 @@ RenderScene InteractionController::renderScene() const
             }
             if (highlightBody_ == body->id())
                 rb.highlightFaces = highlightFaces_;
+            // Align's target is shown like a selection on its body.
+            if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get());
+                align && align->hasTarget() && align->targetBody() == body->id()) {
+                if (align->targetKind() == geom::SubShapeKind::Face)
+                    rb.selectedFaces.push_back(align->targetIndex());
+                else if (align->targetKind() == geom::SubShapeKind::Edge)
+                    rb.selectedEdges.push_back(align->targetIndex());
+            }
         }
         if (rb.mesh)
             scene.bodies.push_back(std::move(rb));
@@ -1689,6 +1778,12 @@ Status InteractionController::runTool(const std::string& id)
         return explain(id == "subtract" ? std::string("Select the body to keep first, then the body to cut away with "
                                                       "Shift+double-click (or Shift-click in the Model panel).")
                                         : std::string(kSelectTwoBodies));
+    }
+    if (id == "align") {
+        if ((faces || edges) && selection_.size() == 1)
+            return triggerAction("align");
+        return explain("Click the face or edge of the body to move (a flat or round face, a straight edge or a circle), "
+                       "then Align, then the face or edge to align it to.");
     }
     if (id == "measure")
         return explain("Select two faces or edges (Shift-click the second); the distance and angle appear at the bottom left.");

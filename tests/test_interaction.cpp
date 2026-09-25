@@ -294,6 +294,64 @@ TEST(Interaction, HistoryHighlightShowsWhatAStepTouched)
     EXPECT_TRUE(highlighted().empty());
 }
 
+// Align through the interaction layer: a small box's front face onto the top
+// of a bigger box; Esc steps back; the step is an editable "Align" move.
+TEST(Interaction, AlignFaceOntoAnotherBody)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {0, 0, 0}, {10, 10, 10});
+    const Uuid b = addBox(h, "Body 2", {40, 0, 0}, {20, 20, 20});
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({5, 0, 5})); // front (-Y) face of the small box
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Face);
+    ASSERT_TRUE(h.controller.runTool("align").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Align");
+    EXPECT_FALSE(h.controller.operation()->prompt().empty());
+    EXPECT_FALSE(h.controller.valueLabelPosition().has_value()); // no arrow until there is a target
+
+    h.clickAt(h.screen({50, 10, 20})); // top face of the big box
+    const auto* align = dynamic_cast<const AlignOperation*>(h.controller.operation());
+    ASSERT_NE(align, nullptr);
+    ASSERT_TRUE(align->hasTarget());
+    EXPECT_TRUE(align->canCommit());
+    EXPECT_EQ(h.document.body(a)->shape().faceCount(), 6); // preview only
+    EXPECT_TRUE(h.controller.keyPress(Key::Escape));        // back to picking the target
+    EXPECT_FALSE(dynamic_cast<const AlignOperation*>(h.controller.operation())->hasTarget());
+    h.clickAt(h.screen({50, 10, 20}));
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+
+    const auto bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.min.z, 20.0, 1e-6);
+    EXPECT_NEAR(bb.size().z, 10.0, 1e-6);
+    EXPECT_NEAR(bb.center().x, 50.0, 1e-6);
+    EXPECT_NEAR(bb.center().y, 10.0, 1e-6);
+    const auto& step = *h.document.body(a)->features().back();
+    EXPECT_EQ(step.name(), "Align");
+    EXPECT_TRUE(step.parameter("angle").has_value());
+    EXPECT_EQ(dynamic_cast<const AlignOperation*>(h.controller.operation()), nullptr); // Align is done
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(geom::boundingBox(h.document.body(a)->shape()).min.z, 0.0, 1e-6);
+    (void)b;
+}
+
+// "Onto ground" lays a flat face on the XY plane where the body is.
+TEST(Interaction, AlignOntoGround)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {0, 0, 5}, {10, 10, 20}); // floating, standing up
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({5, 0, 15})); // front (-Y) face
+    ASSERT_TRUE(h.controller.triggerAction("align").ok());
+    ASSERT_TRUE(h.controller.triggerAction("ground").ok());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.min.z, 0.0, 1e-6);  // lying on the ground
+    EXPECT_NEAR(bb.size().z, 10.0, 1e-6); // the 10 mm depth is now its height
+    EXPECT_NEAR(bb.size().y, 20.0, 1e-6);
+}
+
 TEST(Interaction, UnitAwareInput)
 {
     Harness h;

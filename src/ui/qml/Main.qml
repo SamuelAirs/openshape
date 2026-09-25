@@ -207,7 +207,8 @@ ApplicationWindow {
                     { id: "fillet", label: "Fillet", tip: "Round edges: select them, drag or type the radius." },
                     { id: "chamfer", label: "Chamfer", tip: "Bevel edges: select them, drag or type the size." },
                     { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
-                    { id: "move", label: "Move", tip: "Move a body along X, Y or Z." }
+                    { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
+                    { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another (or lay a face on the ground)." }
                 ]
                 delegate: ActionButton {
                     required property var modelData
@@ -293,7 +294,8 @@ ApplicationWindow {
         // the same actions sit in the value chip instead.
         Panel {
             objectName: "selectionActions"
-            visible: !window.app.sketchMode && !window.app.operationActive && window.app.contextActions.length > 0
+            visible: !window.app.sketchMode && window.app.contextActions.length > 0
+                     && (!window.app.operationActive || !window.app.valueLabelVisible)
             width: selectionActionRow.implicitWidth + 2 * Theme.panelPadding
             height: Theme.controlHeight + 2 * Theme.panelPadding
             Row {
@@ -343,6 +345,10 @@ ApplicationWindow {
     function hintText() {
         if (app.sketchMode)
             return app.sketchHint
+        if (app.operationPrompt.length > 0)
+            return app.operationPrompt
+        if (app.operationActive && app.operationTitle === "Align")
+            return "Drag the arrow or type an offset · Flip turns it around · click another face to re-aim · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
             return "Drag the arrow or type a distance \u00b7 Shift-click to add more profiles"
         if (app.bodyCount === 0 && app.sketchCount > 0)

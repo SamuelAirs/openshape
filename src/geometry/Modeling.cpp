@@ -398,6 +398,93 @@ Result<Shape> rotated(const Shape& shape, const Vec3& axisOrigin, const Vec3& ax
     });
 }
 
+namespace {
+// Rodrigues rotation of v about unit axis k by angle a.
+Vec3 rotateVector(const Vec3& v, const Vec3& k, double a)
+{
+    return v * std::cos(a) + k.cross(v) * std::sin(a) + k * (k.dot(v) * (1 - std::cos(a)));
+}
+} // namespace
+
+Vec3 RigidMotion::apply(const Vec3& p) const
+{
+    const Vec3 k = axis.length() > 1e-12 ? axis.normalized() : Vec3{0, 0, 1};
+    return center + rotateVector(p - center, k, angle) + translation;
+}
+
+Result<Shape> transformed(const Shape& shape, const RigidMotion& motion)
+{
+    if (shape.isNull())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Nothing to move.", "transformed: null shape");
+    if (motion.isIdentity())
+        return Result<Shape>::success(shape);
+    if (std::abs(motion.angle) > 1e-12 && motion.axis.length() < 1e-12)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Unable to rotate the body.", "transformed: zero axis");
+    return guarded("transform", "Unable to move the body.", [&] {
+        gp_Trsf rotation;
+        if (std::abs(motion.angle) > 1e-12) {
+            const Vec3 d = motion.axis.normalized();
+            rotation.SetRotation(gp_Ax1(toPnt(motion.center), gp_Dir(d.x, d.y, d.z)), motion.angle);
+        }
+        gp_Trsf translation;
+        translation.SetTranslation(toVec(motion.translation));
+        BRepBuilderAPI_Transform op(occ(shape), translation * rotation, true);
+        return Result<Shape>::success(makeShape(op.Shape()));
+    });
+}
+
+std::optional<AlignFrame> alignFrame(const Shape& shape, SubShapeKind kind, int index)
+{
+    if (kind == SubShapeKind::Face) {
+        const auto info = faceInfo(shape, index);
+        if (!info)
+            return std::nullopt;
+        if (info->isPlanar())
+            return AlignFrame{info->centroid, info->normal.normalized(), true};
+        if (info->hasAxis() && info->axisDirection.length() > 0.5)
+            return AlignFrame{info->axisOrigin, info->axisDirection.normalized(), false};
+        return std::nullopt;
+    }
+    if (kind == SubShapeKind::Edge) {
+        const auto info = edgeInfo(shape, index);
+        if (!info)
+            return std::nullopt;
+        if (info->kind == CurveKind::Line)
+            return AlignFrame{info->midpoint, info->tangent.normalized(), false};
+        if (info->kind == CurveKind::Circle && info->axis.length() > 0.5)
+            return AlignFrame{info->center, info->axis.normalized(), false};
+    }
+    return std::nullopt;
+}
+
+RigidMotion alignMotion(const AlignFrame& source, const AlignFrame& target, bool flip, double offset)
+{
+    const Vec3 s = source.direction.normalized();
+    Vec3 t = target.direction.normalized();
+    if (source.sided && target.sided)
+        t = t * -1.0; // flat faces meet face to face
+    else if (s.dot(t) < 0)
+        t = t * -1.0; // unsided: the smaller turn
+    if (flip)
+        t = t * -1.0;
+
+    RigidMotion motion;
+    motion.center = source.point;
+    const Vec3 cross = s.cross(t);
+    const double sine = cross.length(), cosine = std::clamp(s.dot(t), -1.0, 1.0);
+    if (sine > 1e-9) {
+        motion.axis = cross * (1.0 / sine);
+        motion.angle = std::atan2(sine, cosine);
+    } else if (cosine < 0) {
+        // Opposite directions: half a turn about any axis perpendicular to s.
+        const Vec3 helper = std::abs(s.x) < 0.9 ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
+        motion.axis = s.cross(helper).normalized();
+        motion.angle = kPi;
+    }
+    motion.translation = target.point + target.direction.normalized() * offset - source.point;
+    return motion;
+}
+
 double volume(const Shape& shape)
 {
     if (shape.isNull())
@@ -536,6 +623,14 @@ std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex)
             info.normal = fromDir(*n);
         if (info.kind == SurfaceKind::Plane)
             info.planeOrigin = fromPnt(surface.Plane().Location());
+        if (info.hasAxis()) {
+            const gp_Ax1 axis = info.kind == SurfaceKind::Cylinder ? surface.Cylinder().Axis() : surface.Cone().Axis();
+            const Vec3 origin = fromPnt(axis.Location());
+            const Vec3 direction = fromDir(axis.Direction());
+            info.axisDirection = direction;
+            info.axisOrigin = origin + direction * (info.centroid - origin).dot(direction);
+            info.radius = info.kind == SurfaceKind::Cylinder ? surface.Cylinder().Radius() : surface.Cone().RefRadius();
+        }
         return info;
     } catch (const Standard_Failure& failure) {
         OS_LOG(Warning, Kernel) << "faceInfo(" << faceIndex << ") failed: " << describeFailure(failure);

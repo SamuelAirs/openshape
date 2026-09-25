@@ -201,6 +201,14 @@ class MoveFeature final : public Feature {
 public:
     using Feature::Feature;
     Vec3 translation;
+    // Optional rotation, applied before the translation (Rotate and Align
+    // steps): about the axis through `rotationCenter` along `rotationAxis`.
+    bool rotates = false;
+    Vec3 rotationCenter;
+    Vec3 rotationAxis{0, 0, 1};
+    double rotationAngle = 0; // radians
+
+    geom::RigidMotion motion() const;
 
     FeatureKind kind() const override { return FeatureKind::Move; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MoveFeature(*this)); }

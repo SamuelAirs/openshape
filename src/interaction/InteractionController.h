@@ -192,6 +192,7 @@ private:
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
+    bool alignRequested_ = false; // the selected face/edge is the source of an Align
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
