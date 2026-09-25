@@ -78,7 +78,9 @@ splines, text, constraint icons, sketch patterns.
 - ✅ Mirror (across a flat face or an origin plane, joined), linear and
   circular patterns (X/Y/Z, a picked edge, or a hole/shaft axis; editable
   count, spacing, angle)
-- ⬜ Offset face (push/pull of non-planar faces)
+- ✅ Offset face (holes and shafts by diameter, other faces by distance;
+  verified against area x distance) and delete faces (defeaturing: holes,
+  fillets, chamfers, bosses)
 
 ## Milestone 3 — interaction quality 🟡
 

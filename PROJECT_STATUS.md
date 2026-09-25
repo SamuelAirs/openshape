@@ -48,6 +48,10 @@ toolkit, transform & repeat, direct face edits, and the iPad/Pencil workflow —
 - Sketches on faces follow their faces; through-all cuts.
 - Shell, Move (X/Y/Z arrows), Rotate (X/Y/Z rings, 15° snaps), Revolve —
   editable history steps.
+- **Direct face edits**: select holes, fillets, chamfers or bosses and press
+  Delete to remove them (the neighbours heal the gap); click a hole or shaft
+  wall and type its new diameter (print tolerance); offset other faces with
+  their neighbours following (refused when they cannot follow).
 - **Mirror** a body across a flat face or an origin plane (joined), and
   **Pattern** it in a row (X/Y/Z or along an edge) or around an axis (X/Y/Z
   or a hole/shaft), count/spacing/angle editable later.
@@ -116,8 +120,8 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 1. Sketch toolkit, part 2: slot, center rectangle, polygon, offset, trim,
    sketch fillet, constraint icons, sketch patterns.
-2. Direct face edits: move/offset face with neighbours following, delete face;
-   extrude symmetric / to face / with draft.
+2. Direct face edits, part 2: extrude symmetric / to a face / with draft;
+   move a face together with tangent fillets (TD-21).
 3. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
    models (TD-18), cache sketch/grid geometry (TD-19), BVH picking (TD-2, TD-20).
 4. Touch & Pencil: pen draws/selects, fingers navigate, two-/three-finger taps
@@ -129,11 +133,11 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Tests currently passing
 
-200/200 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+204/204 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, document, commands, project files, sketch features, face
 attachment, camera, picking, interaction (headless M0 script, sketch
 workflows, history editing, highlight, booleans, right-click, align,
-rotate, mirror, pattern, sketch constraints, arcs), plus `acceptance_gui`:
+rotate, mirror, pattern, sketch constraints, arcs, face edits), plus `acceptance_gui`:
 100 end-to-end checks through the real UI.
 
 ## Platforms verified

@@ -92,8 +92,12 @@ Rules:
   "spacing" }` or `{ "layout": "Circular", "count", "axisOrigin": [x, y, z],
   "axis": [x, y, z], "angle" }` (radians; 2π spaces copies evenly). `count`
   includes the original (1–500); copies are joined.
+- `DeleteFaces` params: `{ "faces": [faceRef…] }` — removed and healed.
+  `OffsetFace` params: `{ "face": faceRef, "distance" }` (positive: the body
+  grows along the face's outward normal).
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
-  `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`. Unknown
+  `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
+  `OffsetFace`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 
