@@ -24,7 +24,21 @@ Start here, in this order:
   The owner launches the app from a desktop shortcut to `dist/OpenShape/OpenShape.exe`,
   so re-run the package script after changes they should see.
 
+## Repository and CI
+- Remote: https://github.com/SamuelAirs/openshape (private). `gh` is not installed;
+  git over HTTPS works with the owner's stored credentials.
+- CI (`.github/workflows/ci.yml`) runs on every push on a Windows runner and builds with
+  warnings as errors; private-repo Windows minutes bill 2x, so batch pushes.
+- Commit identity for this repo is set locally (GitHub noreply address).
+
+## Debugging with the owner
+- `OPENSHAPE_LOG=debug` logs per-operation timings; the owner likes to model while
+  Claude watches the log (and pings the window for GUI stalls) and reports findings.
+- Measure before optimizing: the 2026-09-25 slowdown was the bounding box, not meshing.
+
 ## Pitfalls
 - Python on Windows defaults to CRLF/cp1252: open files with `encoding='utf-8', newline=''`.
-- Backslash escapes inside Bash heredocs get mangled: write scripts with the Write tool.
+- Backslash escapes inside Bash heredocs get mangled (a `\n` inside a Python string
+  literal passed via heredoc becomes a real newline): write such files with the
+  Write/Edit tools.
 - Only `src/geometry` may include OpenCASCADE; only `src/render`, `src/ui`, `src/app` may use Qt.

@@ -152,3 +152,47 @@ scheduled for M3 rather than being rushed.
 Also: OCCT keeps cylinder **seam** edges; a test clicking a hole rim hit the
 seam instead. Seams are now skipped in display and picking (standard CAD
 behaviour), which also removes the stray vertical line in every hole.
+
+## 2026-09-25 — First hands-on session with the owner (live log monitoring)
+
+The owner modeled freely while the app ran with `OPENSHAPE_LOG=debug` and a
+watcher tailed the log and pinged the window's GUI thread (WM_NULL with a
+timeout) every 0.5 s. Cheap, and it turned "feels sluggish" into numbers.
+
+**The bounding box was the hot spot, not meshing.** Tessellating ~3,800
+triangles took 140-200 ms and the GUI froze 300-580 ms per drag step on a
+small filleted part. An isolated benchmark showed why: `BRepBndLib::AddOptimal`
+(used by `geom::boundingBox`) took 42 ms on a 19-face filleted cube versus
+0.03 ms for `BRepBndLib::Add`; the mesh itself took 4.7 ms. It ran inside every
+tessellation, once per face/edge reference during recompute (topological
+signature scale), after every edit and on UI refreshes. Now the tight box is
+cached per Shape and display paths use a conservative fast box. Drag preview
+130 -> 43 ms, tessellation 43 -> 0.85 ms, recompute 57 -> 14.5 ms (21-face part).
+Lesson: time each stage before guessing; the obvious suspect (meshing) was
+innocent.
+
+**What remains is the boolean, and it depends on geometry.** Pushing a face
+whose boundary is tangent to fillets costs ~38 ms in `BRepAlgoAPI_Fuse`; a
+nearby face without tangent contact costs 6 ms. Parallel booleans were slower
+at this size. Next steps: asynchronous previews (TD-1) and true "move face"
+semantics for push/pull (fillets should follow the face, as in Shapr3D).
+
+**A whole feature was unreachable.** Union/Subtract/Intersect only rendered in
+the value chip, which exists only while a manipulator is active; two selected
+bodies have none. Headless tests called `triggerAction("union")` directly and
+never noticed. The acceptance run now does it through the real UI (Model panel
+rows, then the selection action bar). Lesson: every user-facing action needs
+one test that reaches it by clicking.
+
+**Owner feedback, all acted on:** right-click should end a line chain (it
+also selected and even committed in 3D: fixed); history rows gave no hint of
+what they are (now highlighted in the view: a step's *new* geometry, found by
+comparing kernel identity and surface objects of its input and output); an
+extrusion from a sketch on a body that missed the body silently "joined" a
+separate piece (now a new body; any step that leaves a body in several pieces
+is flagged); booleans were not discoverable (tool palette plus action bar).
+Still open from the session: curves of different sketches on one plane do not
+split each other, and drawing on a plane with a sketch does not continue it.
+
+**Tooling pitfall, again.** Python heredocs in the Bash tool turn `\n` inside
+string literals into real newlines. Write such files with the Write/Edit tools.

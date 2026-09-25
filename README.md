@@ -28,6 +28,10 @@ a Qt Quick interface designed for mouse, touch and stylus.
 - Orbit, pan, zoom, standard views, orthographic/perspective
 - Hover highlighting, face/edge/body selection, touch-friendly tolerances
 - `.openshape` project files that reopen with their full history (sketches stay editable)
+- Combine bodies: union, subtract, intersect (select bodies by double-click
+  or in the Model panel; Shift adds)
+- Model panel: hover a step to see what it made; click a step to change its
+  values later
 - Measure wall thickness, distances and angles between faces/edges
 - STEP export (and import in the kernel), STL and 3MF export for slicers
 
@@ -48,6 +52,7 @@ Or sketch: press `K` (Sketch), click the origin, type `60`, `Tab`, `30`,
 | Select | click (Shift/Ctrl adds) | tap (taps add; tap empty space to clear) |
 | Select body | double-click | double-tap |
 | Apply / cancel | Enter / Esc | ✓ / ✕ |
+| Stop drawing lines | right-click or Esc | ✕ |
 
 ## Documentation
 

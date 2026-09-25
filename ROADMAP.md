@@ -52,7 +52,9 @@ Since M1: sketches on the Front (XZ) and Right (YZ) origin planes; horizontal
 and vertical distances between any two points (position holes precisely).
 
 Not yet: arcs, polylines as a distinct tool, construction-line toggle,
-parallel/perpendicular/tangent/equal constraints.
+parallel/perpendicular/tangent/equal constraints; curves of different
+sketches on one plane splitting each other, and continuing a sketch by
+drawing on its plane (both Shapr3D behaviours the owner expected).
 
 ## Milestone 2 — common modeling tools 🟡
 
@@ -62,7 +64,11 @@ parallel/perpendicular/tangent/equal constraints.
   walls is detected and reported)
 - ✅ Move body (X/Y/Z arrows, typed per-axis values) as an editable history step
 - ✅ Combine bodies: union, subtract, intersect (tool body consumed and hidden;
-  editing the tool updates the result; cycles refused)
+  editing the tool updates the result; cycles refused); two or more bodies,
+  reachable from the selection action bar and the Combine palette, Swap
+  flips which body is cut (the actions were unreachable before 2026-09-25)
+- ⬜ **Align** (owner request): move a body so a face/edge/circle meets a
+  face/edge/circle of another (coplanar, collinear, concentric; flip)
 - ✅ Revolve sketch profiles around the sketch's vertical/horizontal axis
   (typed degrees, arrow rides the arc, new body/join/cut; profiles crossing
   the axis are refused with an explanation)
@@ -75,7 +81,11 @@ parallel/perpendicular/tangent/equal constraints.
 Done so far: help overlay (? / F1), seam edges hidden from display and
 picking, arrow handles placed where the geometry is (value chip beside the
 tip, revolve handle on the arc), consumed sketches recede, view returns to 3D
-after sketching, QML delegate lifetime bugs fixed.
+after sketching, QML delegate lifetime bugs fixed. Since the first hands-on
+session: right-click ends a line chain (and no longer selects/commits in 3D),
+Modify/Combine tool palette that explains what to select, selection action
+bar, Model panel hover highlighting, automatic new body for joins that miss,
+3x faster drag previews (cached bounding boxes).
 
 
 Contextual tools, manipulator feel, snapping, box/touch selection, selection
@@ -93,6 +103,8 @@ error messages, discoverability. Also: BVH picking, off-thread tessellation.
 - ✅ Sketches attached to faces follow them when upstream steps change;
   through-all cuts keep through-holes through (verified: 5 → 8 mm plate
   edit through the real UI)
+- ✅ Model panel ↔ view: hovering a row highlights its geometry (a step's new
+  faces), body rows select bodies, steps leaving several pieces are flagged
 - ⬜ Provenance-based topological naming (docs/TOPOLOGICAL_NAMING.md)
 - ⬜ Reordering steps; rolling back to a step
 

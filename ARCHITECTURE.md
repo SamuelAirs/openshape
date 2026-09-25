@@ -94,8 +94,15 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   BRep (de)serialization. Every call is wrapped in `guarded()` (catches
   `Standard_Failure`) and results pass `finishSolid()` (unwraps single solids,
   rejects empty results, runs `BRepCheck_Analyzer`).
-- `Tessellation.h`: `BRepMesh_IncrementalMesh` → `Mesh` with per-triangle face
-  ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
+- Bounding boxes: `boundingBox()` is the tight (optimal) box, computed once
+  per Shape and cached in `ShapeData` (it costs tens of ms on curved parts);
+  `approximateBoundingBox()` is a conservative microsecond box for camera
+  fitting, mesh resolution and scale normalization.
+- `facesChangedBy` / `facesCreatedBy(before, after, current)`: which faces of
+  the current shape a step created or changed, by kernel identity (and, for
+  "created", new surface objects). Drives the Model panel highlight.
+- `Tessellation.h`: `BRepMesh_IncrementalMesh` (faces meshed in parallel) →
+  `Mesh` with per-triangle face ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
   polylines taken from the triangulation (so edges sit exactly on mesh vertices).
 - `TopoSignature.h`: interim topological naming (see below).
 - `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export.
@@ -211,7 +218,17 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Profiles in model mode:** sketch regions are pickable (a region lying on a
   face wins over the face); selecting profiles arms `ExtrudeOperation`, whose
   arrow follows the plane normal. For sketches on a body, pulling out joins
-  and pushing in cuts, unless overridden (New body / Join / Cut).
+  and pushing in cuts, unless overridden (New body / Join / Cut). An
+  automatic join whose preview would add separate pieces becomes a new body
+  (`Operation::reconsider` revises automatic choices after a preview).
+- **Buttons:** only a left click (or tap) selects and applies a pending value;
+  right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
+  mode a right click acts like Esc (ends the line chain, then leaves the tool).
+- **Tools and actions:** `contextActions()` lists what the selection offers;
+  the UI shows them in the value chip while a manipulator is active and in the
+  selection action bar otherwise. `runTool(id)` backs the Modify/Combine
+  palette: it runs the tool when the selection fits and otherwise explains
+  what to select.
 
 ## Rendering (`render/`, `ui/ViewportItem`)
 
@@ -239,8 +256,12 @@ All draws share one dynamic uniform buffer with per-draw offsets.
 ## History panel
 
 `InteractionController::historyRows()` flattens sketches, bodies and each
-body's features into rows (name, detail, status, explanation, editable
-length parameters). The QML `HistoryPanel` edits values through
+body's features into rows (name, detail, status — ok, warning, failed,
+blocked, suppressed — explanation, editable length parameters). Hovering a row
+calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
+body, other steps their new faces (`facesCreatedBy`, falling back to
+`facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
+body row calls `selectBody(id, additive)`. The QML `HistoryPanel` edits values through
 `setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
 mode: an edit that breaks a later step is kept, the step is marked failed
 with its user message, and undo restores the value. Base features cannot be

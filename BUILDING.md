@@ -71,7 +71,14 @@ Developer switches:
 ```bash
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
+OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ```
+
+Demo scenes: `empty`, `hover`, `pushpull`, `committed`, `fillet`, `move`,
+`sketch`, `sketchdone`, `extrude`, `bracket`, `revolve`, `combine` (two bodies
+selected), `history` (a fillet step highlighted from the Model panel).
+`OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
+tessellation, recompute, kernel operations) to the log.
 
 Logs are written to stderr and to
 `%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log`.
