@@ -67,12 +67,13 @@ drawing on its plane (both Shapr3D behaviours the owner expected).
   editing the tool updates the result; cycles refused); two or more bodies,
   reachable from the selection action bar and the Combine palette, Swap
   flips which body is cut (the actions were unreachable before 2026-09-25)
-- ⬜ **Align** (owner request): move a body so a face/edge/circle meets a
-  face/edge/circle of another (coplanar, collinear, concentric; flip)
+- ✅ **Align** (owner request): move a body so a face/edge/circle meets a
+  face/edge/circle of another (touching, collinear, concentric; flip, offset,
+  onto the ground)
 - ✅ Revolve sketch profiles around the sketch's vertical/horizontal axis
   (typed degrees, arrow rides the arc, new body/join/cut; profiles crossing
   the axis are refused with an explanation)
-- ⬜ Rotate body (kernel ready; needs a rotation manipulator)
+- ✅ Rotate body: X/Y/Z rings (15° snaps, typed angles), editable step
 - ⬜ Mirror, linear pattern, circular pattern
 - ⬜ Offset face (push/pull of non-planar faces)
 

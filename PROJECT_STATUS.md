@@ -42,7 +42,11 @@ toolkit, transform & repeat, direct face edits, and the iPad/Pencil workflow —
   step's new geometry, e.g. the fillet surface); clicking a body row selects
   the body, Shift adds. Steps that leave a body in several pieces are flagged.
 - Sketches on faces follow their faces; through-all cuts.
-- Shell, Move (X/Y/Z arrows), Revolve — editable history steps.
+- Shell, Move (X/Y/Z arrows), Rotate (X/Y/Z rings, 15° snaps), Revolve —
+  editable history steps.
+- **Align**: a face/edge/circle of one body onto a face/edge/circle of another
+  (touching faces, collinear edges, concentric holes/shafts), Flip, offset
+  arrow, or "Onto ground" to lay a flat face on the build plate.
 - **Booleans reachable in the UI**: Union / Subtract / Intersect for two or
   more bodies from the selection action bar or the Combine palette; Swap
   flips which body is cut; one undo step.
@@ -64,7 +68,6 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Partially implemented
 
-- Rotate: kernel function and tests; no UI.
 - STEP import: kernel function and tests; not exposed in the UI.
 - Touch/pen: input mapping implemented; not tested on real touch hardware.
 - Disconnected pieces: flagged in the Model panel, not yet split into bodies (TD-22).
@@ -103,10 +106,9 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Next concrete tasks (owner priorities)
 
-1. **Align** (face/edge/circle of a body to a face/edge/circle of another:
-   coplanar, collinear, concentric; flip) and a rigid **Transform** step with
-   **Rotate** rings — owner request.
-2. Mirror, linear and circular patterns.
+1. Mirror (across a flat face or an origin plane) and linear/circular patterns.
+2. Align follow-ups: align a whole body by picking faces on both bodies in
+   one gesture, snap alignment while moving (Shapr3D-style).
 3. Sketch toolkit: arc, center rectangle, polygon, slot, offset, trim, sketch
    fillet, construction toggle; parallel/perpendicular/tangent/equal; curves on
    one plane interact; continue a sketch by drawing on its plane.
@@ -121,11 +123,11 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Tests currently passing
 
-174/174 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+181/181 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, document, commands, project files, sketch features, face
 attachment, camera, picking, interaction (headless M0 script, sketch
-workflows, history editing, highlight, booleans, right-click), plus
-`acceptance_gui`: 78 end-to-end checks through the real UI.
+workflows, history editing, highlight, booleans, right-click, align,
+rotate), plus `acceptance_gui`: 91 end-to-end checks through the real UI.
 
 ## Platforms verified
 
