@@ -75,7 +75,12 @@ Rules:
 - UUIDs must be unique across the document.
 - `surface` / `curve` are enum ordinals (`geom::SurfaceKind`, `geom::CurveKind`).
   They must never be renumbered; new kinds are appended.
-- Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`. Unknown
+- `Shell` params: `{ "faces": [faceRef…], "thickness" }`. `Move` params:
+  `{ "translation": [x, y, z] }`. `Combine` params: `{ "tool": body uuid,
+  "mode": "Union" | "Subtract" | "Intersect" }` — the tool body is usually
+  hidden (consumed) but stays in the document.
+- Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
+  `Move`, `Combine`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

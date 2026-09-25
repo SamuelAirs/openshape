@@ -55,10 +55,13 @@ parallel/perpendicular/tangent/equal constraints, sketching on XZ/YZ planes.
 
 - ✅ Fillet (edges, manipulator + typed radius)
 - ✅ Chamfer (equal distance)
-- 🟡 Boolean union/subtract/intersect (kernel + tests done; no UI yet)
-- 🟡 Move / rotate body (kernel done; no UI yet)
+- ✅ Shell (open faces, typed wall thickness; OCCT's silent no-op on too-thick
+  walls is detected and reported)
+- ✅ Move body (X/Y/Z arrows, typed per-axis values) as an editable history step
+- ✅ Combine bodies: union, subtract, intersect (tool body consumed and hidden;
+  editing the tool updates the result; cycles refused)
+- ⬜ Rotate body (kernel ready; needs a rotation manipulator)
 - ⬜ Mirror, linear pattern, circular pattern
-- ⬜ Shell
 - ⬜ Offset face (push/pull of non-planar faces)
 
 ## Milestone 3 — interaction quality ⬜
@@ -90,7 +93,10 @@ measure, section view, 3MF export.
 ## Platform & infrastructure
 
 - ✅ Windows 11 / MSYS2 UCRT64 / GCC 16 / Qt 6.11 / OCCT 7.9.3 (Direct3D 11)
-- ⬜ CI: Windows (MSYS2) + Linux builds and unit tests
+- 🟡 CI: `.github/workflows/ci.yml` (Windows/MSYS2, mirrors the verified local
+  build) written but **never run** — the repository has no remote yet.
+  Linux not configured: no Linux environment was available to verify it
+  (WSL is not installed and needs admin rights)
 - ⬜ Windows packaging (windeployqt, installer, license bundle)
 - ⬜ MSVC + vcpkg build
 - ⬜ macOS, Linux runtime verification

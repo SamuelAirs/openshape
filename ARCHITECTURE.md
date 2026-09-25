@@ -201,6 +201,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the shape and become dimension constraints. Every completed action commits
   one `EditSketchCommand` (full before/after snapshots). Dragging a point runs
   the solver live. Undo that removes the sketch exits sketch mode.
+- **Operations with several handles:** an `Operation` may expose several
+  arrows (`handleCount()`); the grabbed one becomes active and receives drags
+  and typed values. `MoveOperation` uses this for X/Y/Z (axis-colored).
+- **Face/body actions:** a single flat face arms Push/Pull and offers Shell
+  and Sketch; several faces arm Shell. A body (double-click) arms Move; two
+  bodies (Shift+double-click) offer Union/Subtract/Intersect, applied as one
+  `CompositeCommand` (add `Combine` step + hide the tool body).
 - **Profiles in model mode:** sketch regions are pickable (a region lying on a
   face wins over the face); selecting profiles arms `ExtrudeOperation`, whose
   arrow follows the plane normal. For sketches on a body, pulling out joins
@@ -264,6 +271,7 @@ disk. Saves are atomic (temp file + rename). See
 
 - Tessellation and previews run synchronously on the GUI thread.
 - Picking is brute force (no BVH).
-- Only linear per-body history; features may depend on sketches, not on
-  other bodies.
+- Only linear per-body history. Features may depend on sketches and (Combine)
+  on other bodies; `Document::recomputeDependents` propagates changes and
+  `dependsOn` prevents cycles.
 - QRhi comes from `Qt6::GuiPrivate`: binaries are tied to the Qt version.

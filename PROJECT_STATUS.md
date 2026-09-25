@@ -4,8 +4,9 @@ _Last updated: 2026-09-25_
 
 ## Current milestone
 
-**Milestones 0 and 1 complete; Milestone 4 core (editable history) done.**
-Next: Milestone 2 tools (booleans, move/rotate UI), CI, packaging.
+**Milestones 0 and 1 complete; Milestone 4 core (editable history) done;
+Milestone 2 mostly done** (shell, move, booleans). Next: rotate/mirror/patterns,
+packaging, interaction polish (M3).
 
 ## What works (verified)
 
@@ -34,17 +35,20 @@ Next: Milestone 2 tools (booleans, move/rotate UI), CI, packaging.
 - History panel: edit any step's values after reopening; failures explained
   in place; suppress/delete/hide.
 - Sketches on faces follow their faces; through-all cuts.
+- Shell (enclosures), Move (X/Y/Z arrows), Union/Subtract/Intersect between
+  bodies — all as editable history steps.
 
 ## Partially implemented
 
-- Booleans, move/rotate: kernel functions and tests exist; no UI.
+- Rotate: kernel function and tests; no UI.
 - STEP import: kernel function and tests; not exposed in the UI.
 - Touch/pen: input mapping implemented; not tested on real touch hardware.
 
 ## Broken / missing
 
 - No packaging: the exe runs only with MSYS2 DLLs on PATH.
-- No thumbnails in project files. No CI.
+- No thumbnails in project files.
+- CI workflow written but never run (no remote); Linux unverified.
 - Sketch: no arcs, construction toggle, parallel/perpendicular/tangent/equal.
 
 ## Recent architectural decisions
@@ -65,17 +69,17 @@ Next: Milestone 2 tools (booleans, move/rotate UI), CI, packaging.
 
 ## Next concrete tasks
 
-1. Boolean and move/rotate UI (Milestone 2).
-2. CI (Windows MSYS2 + Linux) and Windows packaging.
+1. Windows packaging (windeployqt + DLLs + license bundle).
+2. Rotate (ring manipulator), mirror, linear/circular pattern.
 3. Arc tool and parallel/perpendicular/equal constraints.
 4. Off-GUI-thread tessellation and previews (TD-1).
 
 ## Tests currently passing
 
-144/144 (`ctest`): 143 GTest cases (core, geometry, profiles, sketch model and
+150/150 (`ctest`): 149 GTest cases (core, geometry, profiles, sketch model and
 solver, document, commands, project files, sketch features, face attachment,
-camera, picking, interaction incl. headless M0 script, sketch workflows and
-history editing) plus `acceptance_gui` (60 end-to-end checks through the
+camera, picking, interaction incl. headless M0 script, sketch workflows,
+history editing, shell, move and combine) plus `acceptance_gui` (60 end-to-end checks through the
 real UI).
 
 ## Platforms verified

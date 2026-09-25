@@ -1,0 +1,39 @@
+# Mirrors the build verified locally in BUILDING.md (MSYS2 UCRT64).
+# NOTE: not yet executed on GitHub (the repository has no remote yet).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-msys2:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-opencascade
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-declarative
+            mingw-w64-ucrt-x86_64-qt6-shadertools
+            mingw-w64-ucrt-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-gtest
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-libzip
+            mingw-w64-ucrt-x86_64-eigen3
+      - name: Configure
+        run: cmake --preset msys2-ucrt64 -DOPENSHAPE_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build/msys2-ucrt64
+      - name: Test (headless; the GUI acceptance run needs a desktop session)
+        run: ctest --test-dir build/msys2-ucrt64 -LE gui --output-on-failure
