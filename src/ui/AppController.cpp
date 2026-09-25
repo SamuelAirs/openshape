@@ -12,6 +12,8 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QVariantMap>
 
+#include <cmath>
+
 namespace os::ui {
 
 namespace {
@@ -103,7 +105,8 @@ bool AppController::operationCanCommit() const
 }
 bool AppController::operationHasValue() const
 {
-    return interaction_->operation() && interaction_->operation()->value() != 0.0;
+    const auto* op = interaction_->operation();
+    return op && std::abs(op->value() - op->neutralValue()) > 1e-9;
 }
 
 QString AppController::operationPrompt() const
@@ -118,6 +121,21 @@ QPointF AppController::valueLabelPosition() const
 }
 
 bool AppController::valueLabelVisible() const { return interaction_->valueLabelPosition().has_value(); }
+
+QVariantList AppController::axisTriad() const
+{
+    QVariantList list;
+    for (const auto& mark : interaction_->axisTriad()) {
+        QVariantMap map;
+        map.insert(QStringLiteral("axis"), mark.axis);
+        map.insert(QStringLiteral("label"), QString(QChar("XYZ"[mark.axis])));
+        map.insert(QStringLiteral("dx"), mark.direction.x);
+        map.insert(QStringLiteral("dy"), mark.direction.y);
+        map.insert(QStringLiteral("depth"), mark.depth);
+        list.append(map);
+    }
+    return list;
+}
 
 QString AppController::documentTitle() const
 {

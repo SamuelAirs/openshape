@@ -58,7 +58,7 @@ void installLogging()
 }
 
 // Scripted demo used for screenshots and smoke tests: builds the Milestone 0
-// state (cube, top face selected, push/pull preview at +15 mm).
+// state (cube, top face selected, push/pull preview to a 35 mm height).
 void runDemo(os::ui::AppController& app, const QString& demo)
 {
     auto& interaction = app.interaction();
@@ -232,7 +232,7 @@ void runDemo(os::ui::AppController& app, const QString& demo)
     if (demo == QLatin1String("pushpull") || demo == QLatin1String("committed")) {
         interaction.pointerPress(click);
         interaction.pointerRelease(click);
-        interaction.setValueText("15");
+        interaction.setValueText("35"); // the new height (the chip shows 20 before)
         if (demo == QLatin1String("committed"))
             (void)interaction.commitOperation();
     } else if (demo == QLatin1String("fillet")) {

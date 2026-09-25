@@ -272,3 +272,36 @@ passed (#9 was still running), at 6–11 minutes each (billed at 2x for
 Windows on a private repository). Pushes that only change documentation now skip CI, a newer
 push cancels a run still in progress, and CI also builds the developer
 tools so the benchmark keeps compiling.
+
+## 2026-09-25 — Owner requests: X/Y/Z axes; resize by the size, not the difference
+
+The owner wanted a Z axis next to X and Y, and, when clicking a face, to see
+the distance to the other side and drag or type that size directly
+("without doing addition and subtraction").
+
+**Size instead of offset.** Push/pull now measures the part behind the face:
+a line from a point on the face straight into the material must leave
+through a parallel flat face (`IntCurvesFace_ShapeIntersector`). The value
+chip then reads "Height 20 mm" (Width/Depth for side faces along X/Y), a blue
+line shows what is measured, and typing 35 makes it 35. The stored step is
+unchanged (the distance moved), so files and history editing did not change.
+A leading `+` or `-` keeps the old relative meaning, which also kept most
+existing tests' intent (`-5` still takes 5 mm off). The hole-diameter edit
+was the model: value = what the user sees, feature = the difference.
+
+**Measure on the face, not at the centroid.** A washer's centroid lies in its
+hole, so the line from there never touches material. `pointOnFace` keeps the
+centroid when it is on the face and otherwise takes the most interior point
+of a sample grid. First version picked a point at the outer edge: samples only
+cover the face's bounding box, so the box edges have to count as boundary.
+
+**Pitfalls.** `near` is an empty macro in the Windows headers: a parameter
+named `near` compiled into `toPnt()`. In QML, children with a negative `z`
+are drawn behind their parent's fill — the axis pointing away from the
+viewer vanished inside the marker's panel. A gtest `EXPECT_*` inside an
+unbraced `if` trips `-Werror=dangling-else`.
+
+**Packaging incident.** Re-packaging while the owner had the packaged app
+open deleted its files from under it (MSYS2's `rm` can remove files that are
+in use on Windows). The folder was restored within minutes, and the package
+script now refuses to run while OpenShape runs from the output folder.

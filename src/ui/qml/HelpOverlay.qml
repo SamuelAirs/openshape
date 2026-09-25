@@ -76,7 +76,8 @@ Rectangle {
                             ["Pan", "Shift+drag or middle-drag · two fingers"],
                             ["Zoom", "Wheel · pinch (toward the pointer)"],
                             ["Fit everything", "F"],
-                            ["Standard views", "Iso / Top / Front / Right buttons"]
+                            ["Standard views", "Iso / Top / Front / Right buttons"],
+                            ["Axes", "X red, Y green, Z blue (the marker shows which way they point)"]
                         ]
                     }
                     HelpSection {
@@ -95,6 +96,7 @@ Rectangle {
                         rows: [
                             ["New box / sketch", "B / K"],
                             ["Push or pull a flat face", "Select it, drag or type"],
+                            ["Resize to an exact size", "Click a face: it shows the size to the opposite face; type the new one (+5 / -5 adds or removes)"],
                             ["Round or bevel edges", "Select edges → Fillet / Chamfer"],
                             ["Hollow out", "Face → Shell"],
                             ["Resize a hole", "Click its wall, type the new diameter"],

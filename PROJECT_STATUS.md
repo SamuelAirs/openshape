@@ -21,7 +21,7 @@ first, tested version. Their follow-ups are the next tasks below.
   after this note.
 - **Verify first:** build, `ctest --test-dir build/msys2-ucrt64 -LE gui`
   (211 pass), then — only when nobody is using the mouse —
-  `ctest --test-dir build/msys2-ucrt64 -L gui` (103 real-UI checks, ~20 s).
+  `ctest --test-dir build/msys2-ucrt64 -L gui` (105 real-UI checks, ~20 s).
 - **Last session (2026-09-25):** the owner modeled hands-on while the debug
   log was watched; everything they reported was fixed (right-click ends a
   line, sketching on a sketch continues it, separate pieces are flagged and
@@ -49,7 +49,8 @@ first, tested version. Their follow-ups are the next tasks below.
 - Build: Windows 11, MSYS2 UCRT64, GCC 16.2, Qt 6.11.2, OCCT 7.9.3, Direct3D 11
   (RX 7800 XT). Clean configure+build verified in a fresh directory, also with
   `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (as CI uses).
-- App launches; QRhi viewport with MSAA, lighting, thick edges, adaptive grid, axes.
+- App launches; QRhi viewport with MSAA, lighting, thick edges, adaptive grid,
+  X/Y/Z axes (red/green/blue) and an orientation marker above the view buttons.
 - Box creation; orbit (about the point under the cursor), pan, zoom-to-cursor,
   animated standard views, fit, ortho/perspective.
 - Face and edge hover highlighting and selection; double-click body selection;
@@ -57,7 +58,11 @@ first, tested version. Their follow-ups are the next tasks below.
   selects; right/middle buttons orbit/pan.
 - Push/pull of planar faces, fillet and chamfer of edges: arrow manipulator,
   drag with zoom-aware snapping, live preview, typed unit-aware values,
-  Enter/click-away commit, Esc cancel.
+  Enter/click-away commit, Esc cancel. **A clicked flat face shows the part's
+  size to the parallel face behind it** (Height/Width/Depth/Thickness, with a
+  blue measurement line); dragging or typing sets that size directly, and
+  `+5` / `-5` change it by that much (owner request). Without a parallel
+  face behind, the value is the distance moved.
 - Sketching on the XY/XZ/YZ planes or a flat face: line, rectangle, circle
   and 3-point **arc** tools; endpoint/origin/midpoint snaps; horizontal/
   vertical inference; typed dimensions (incl. arc radius); click-to-edit
@@ -193,12 +198,13 @@ end-of-session run gave 45 / 0.93 / 14.9 ms.
 
 ## Tests currently passing
 
-211/211 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+218/218 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, document, commands, project files, sketch features, face
 attachment, camera, picking, interaction (headless M0 script, sketch
 workflows, history editing, highlight, booleans, right-click, align,
 rotate, mirror, pattern, sketch constraints, arcs, face edits, touch
-gestures, pen mode), plus `acceptance_gui`: 103 end-to-end checks through the
+gestures, pen mode, push/pull thickness, axis marker), plus `acceptance_gui`:
+105 end-to-end checks through the
 real UI (including multi-finger taps). Build with
 `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (as CI does): 0 warnings.
 

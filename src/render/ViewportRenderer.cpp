@@ -43,6 +43,7 @@ constexpr Color kGridMinor{0.0f, 0.0f, 0.0f, 0.05f};
 constexpr Color kGridMajor{0.0f, 0.0f, 0.0f, 0.11f};
 constexpr Color kAxisX{0.86f, 0.27f, 0.27f, 0.6f};
 constexpr Color kAxisY{0.27f, 0.66f, 0.33f, 0.6f};
+constexpr Color kAxisZ{0.25f, 0.45f, 0.88f, 0.6f};
 constexpr Color kSketchSelected{0.96f, 0.52f, 0.13f, 1.0f};
 constexpr Color kHistoryHighlight{0.96f, 0.52f, 0.13f, 0.42f}; // model panel hover: what a step touched
 constexpr Color kSketchDefined{0.12f, 0.14f, 0.18f, 1.0f};
@@ -76,6 +77,7 @@ SketchLook lookOf(interact::SketchStyle style)
     case S::Preview: return {withAlpha(kAccent, 0.85f), 1.75f, 8.0f};
     case S::Guide: return {withAlpha(kAccent, 0.45f), 1.0f, 5.0f};
     case S::Dimension: return {kSketchDimension, 1.0f, 4.0f};
+    case S::Measure: return {withAlpha(kAccent, 0.9f), 1.75f, 7.0f};
     case S::Conflict: return {kError, 2.0f, 7.0f};
     }
     return {kAccent, 2.0f, 7.0f};
@@ -397,7 +399,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     // ---- 2. Grid (depth-tested so bodies hide it) ------------------------------------
     {
         const auto& g = scene_.grid;
-        std::vector<float> minor, major, axisX, axisY;
+        std::vector<float> minor, major, axisX, axisY, axisZ;
         const double extent = g.halfLines * g.minorStep;
         for (int i = -g.halfLines; i <= g.halfLines; ++i) {
             const double x = g.center.x + i * g.minorStep;
@@ -413,9 +415,12 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             appendSegment(axisX, {g.center.x - extent, 0, 0}, {g.center.x + extent, 0, 0});
         if (std::abs(g.center.x) <= extent)
             appendSegment(axisY, {0, g.center.y - extent, 0}, {0, g.center.y + extent, 0});
+        // Z through the origin, as tall as the grid is wide (bodies hide it).
+        if (std::abs(g.center.x) <= extent && std::abs(g.center.y) <= extent)
+            appendSegment(axisZ, {0, 0, -extent}, {0, 0, extent});
 
         std::vector<float> all;
-        all.reserve(minor.size() + major.size() + axisX.size() + axisY.size());
+        all.reserve(minor.size() + major.size() + axisX.size() + axisY.size() + axisZ.size());
         const quint32 minorFirst = 0, minorCount = quint32(minor.size() / kLineVertexFloats);
         all.insert(all.end(), minor.begin(), minor.end());
         const quint32 majorFirst = quint32(all.size() / kLineVertexFloats), majorCount = quint32(major.size() / kLineVertexFloats);
@@ -424,6 +429,8 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         all.insert(all.end(), axisX.begin(), axisX.end());
         const quint32 axisYFirst = quint32(all.size() / kLineVertexFloats), axisYCount = quint32(axisY.size() / kLineVertexFloats);
         all.insert(all.end(), axisY.begin(), axisY.end());
+        const quint32 axisZFirst = quint32(all.size() / kLineVertexFloats), axisZCount = quint32(axisZ.size() / kLineVertexFloats);
+        all.insert(all.end(), axisZ.begin(), axisZ.end());
 
         if (g.visible && !all.empty()) {
             const quint32 bytes = quint32(all.size() * sizeof(float));
@@ -433,6 +440,8 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             lineDraw(linePipeline_.get(), gridVertices_.get(), majorFirst, majorCount, kGridMajor, 1.0f, 0);
             lineDraw(linePipeline_.get(), gridVertices_.get(), axisXFirst, axisXCount, kAxisX, 1.5f, 0);
             lineDraw(linePipeline_.get(), gridVertices_.get(), axisYFirst, axisYCount, kAxisY, 1.5f, 0);
+            if (axisZCount)
+                lineDraw(linePipeline_.get(), gridVertices_.get(), axisZFirst, axisZCount, kAxisZ, 1.5f, 0);
         }
     }
 

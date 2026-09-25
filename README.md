@@ -17,8 +17,9 @@ a Qt Quick interface designed for mouse, touch and stylus.
 
 ## What works today
 
-- Create boxes; push/pull any flat face with a draggable arrow or an exact
-  typed value (units and arithmetic: `25`, `1in`, `20+5`)
+- Create boxes; click any flat face to see the part's size to the opposite
+  side, then drag the arrow or type the new size (units and arithmetic:
+  `25`, `1in`, `20+5`; `+5` / `-5` change it by that much)
 - Fillet and chamfer edges (drag or type the size); shell a body
 - Sketch on the ground, an origin plane or any flat face: lines, rectangles,
   circles and arcs with snapping, horizontal/vertical inference and typed
@@ -49,7 +50,8 @@ a Qt Quick interface designed for mouse, touch and stylus.
 ## Quick start
 
 See [BUILDING.md](BUILDING.md). In the app: **Add a box** (or press `B`),
-click the top face, drag the arrow or type a number, press **Enter**.
+click the top face (it shows the height, 20 mm), drag the arrow or type the
+new height, e.g. `35`, press **Enter**.
 
 Or sketch: press `K` (Sketch), click the origin, type `60`, `Tab`, `30`,
 `Enter`, click **Finish sketch**, click inside the rectangle, type `5`,

@@ -19,7 +19,9 @@ Acceptance script (automated twice: headless in `tests/test_interaction.cpp`
 4. ✅ Hover top face → 5. ✅ it highlights
 6. ✅ Click top face → 7. ✅ selected → 8. ✅ arrow manipulator appears
 9. ✅ Drag upward → 10. ✅ preview updates, document unchanged
-11. ✅ Type 15 → 12. ✅ Enter: height is exactly 35 mm (volume 14 000 mm³)
+11. ✅ Type 35 (the chip shows the height, 20) → 12. ✅ Enter: height is
+    exactly 35 mm (volume 14 000 mm³). Until 2026-09-25 the typed value was
+    the distance moved (+15).
 13. ✅ Undo → 14. ✅ 20 mm
 15. ✅ Redo → 16. ✅ 35 mm
 
@@ -88,7 +90,9 @@ separate bodies, rotation about a picked edge or point.
 
 ## Milestone 3 — interaction quality 🟡
 
-Done so far: help overlay (? / F1), seam edges hidden from display and
+Done so far: push/pull shows and sets the part's size to the opposite face
+(no arithmetic; +5 / -5 relative), X/Y/Z axes with an orientation marker,
+help overlay (? / F1), seam edges hidden from display and
 picking, arrow handles placed where the geometry is (value chip beside the
 tip, revolve handle on the arc), consumed sketches recede, view returns to 3D
 after sketching, QML delegate lifetime bugs fixed. Since the first hands-on

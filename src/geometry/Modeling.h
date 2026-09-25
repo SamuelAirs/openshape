@@ -87,6 +87,23 @@ std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex);
 // Indices of the faces adjacent to an edge (1 for seam/boundary, usually 2).
 std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex);
 
+// A point inside a flat face (not in a hole, not beside an L-shaped outline),
+// preferring `preferred` (e.g. the centroid, which can lie off the face), else the
+// most interior point of a sample grid. nullopt for curved faces.
+std::optional<Vec3> pointOnFace(const Shape& shape, int faceIndex, const Vec3& preferred);
+
+// How thick the part is behind a flat face: from `point` (on the face)
+// straight into the material to where it leaves again, when it leaves
+// through a parallel flat face (then the distance is the gap between the two
+// planes). nullopt when the other side is slanted, curved or missing.
+struct FaceThickness {
+    double distance = 0; // mm
+    Vec3 from;           // the measuring point on the face
+    Vec3 to;             // where the line leaves, on the opposite face
+    int oppositeFace = -1;
+};
+std::optional<FaceThickness> faceThickness(const Shape& shape, int faceIndex, const Vec3& point);
+
 // ---- Measurement -------------------------------------------------------------
 enum class SubShapeKind { Face, Edge, Vertex, Whole };
 struct SubShapeRef {

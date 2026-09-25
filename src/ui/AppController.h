@@ -43,6 +43,7 @@ class AppController : public QObject {
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
+    Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     Q_PROPERTY(QString documentTitle READ documentTitle NOTIFY documentChanged)
     Q_PROPERTY(bool dirty READ dirty NOTIFY stateChanged)
     Q_PROPERTY(int bodyCount READ bodyCount NOTIFY stateChanged)
@@ -84,6 +85,7 @@ public:
     QString operationPrompt() const;
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
+    QVariantList axisTriad() const;
     QString documentTitle() const;
     bool dirty() const;
     int bodyCount() const;

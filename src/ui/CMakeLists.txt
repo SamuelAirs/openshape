@@ -20,6 +20,7 @@ qt_add_qml_module(openshape_ui
         qml/Separator.qml
         qml/SectionLabel.qml
         qml/Theme.qml
+        qml/AxisTriad.qml
     SOURCES
         AppController.cpp AppController.h
         ViewportItem.cpp ViewportItem.h

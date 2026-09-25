@@ -64,6 +64,7 @@ enum class SketchStyle {
     Preview,      // rubber band of the active drawing tool
     Guide,        // inference / alignment guide
     Dimension,    // dimension and extension lines
+    Measure,      // a size measured in 3D (push/pull thickness), drawn with the arrow
     Conflict,     // over-constrained
 };
 

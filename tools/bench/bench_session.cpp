@@ -97,13 +97,14 @@ int main()
     }
     std::printf("part: %d faces, %d edges\n", shape().faceCount(), shape().edgeCount());
 
-    // 1. A drag: eight preview updates of a push/pull on the top face.
+    // 1. A drag: eight preview updates of a push/pull on the top face, 1-8 mm
+    //    out (the operation's value is the part's height there).
     const int top = faceWhere(shape(), [](const geom::FaceInfo& f) { return f.isPlanar() && f.normal.z > 0.999; });
     auto op = interact::PushPullOperation::create(document, bodyId, top);
     double total = 0, worst = 0;
     const int steps = 8;
     for (int i = 1; i <= steps; ++i) {
-        const double t = timeMs([&] { op->setValue(i * 1.0, document); });
+        const double t = timeMs([&] { op->setValue(op->neutralValue() + i, document); });
         total += t;
         worst = std::max(worst, t);
     }

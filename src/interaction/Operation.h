@@ -56,8 +56,13 @@ public:
     // Instruction while the operation needs another pick (e.g. Align's target); "" otherwise.
     virtual std::string prompt() const { return {}; }
     // The value that means "no change" (Esc returns to it): 0 for most, the
-    // current diameter when a hole is resized.
+    // current diameter when a hole is resized, the current thickness when a
+    // push/pull measures it.
     virtual double neutralValue() const { return 0.0; }
+    // Typed text starting with + or - changes the value relative to this
+    // (push/pull showing the thickness: "+5" = 5 mm thicker); nullopt: typed
+    // values are taken as they are.
+    virtual std::optional<double> relativeBase() const { return std::nullopt; }
     // Where the value editor goes when there is no arrow or ring (e.g. a
     // circular pattern's angle); nullopt = no value editor.
     virtual std::optional<Vec3> labelAnchor() const { return std::nullopt; }
@@ -94,8 +99,10 @@ protected:
         previewMesh_.reset();
         error_.clear();
     }
-    // Whether value 0 means "no change" (no preview). Align previews at 0.
-    virtual bool zeroIsIdentity() const { return true; }
+    // Whether the neutral value means "no change" (no preview). Align previews at 0.
+    virtual bool neutralIsIdentity() const { return true; }
+    // Why `value` cannot be previewed at all (e.g. a thickness of zero); "" = fine.
+    virtual std::string checkValue(double /*value*/) const { return {}; }
     // Automatic choices (e.g. join vs. new body) start over for every value...
     virtual void resetAutomaticChoices() {}
     // ...and may be revised once the preview result is known; returning true
@@ -152,7 +159,7 @@ public:
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
-    bool zeroIsIdentity() const override { return false; }
+    bool neutralIsIdentity() const override { return false; }
 
 private:
     AlignOperation(Uuid bodyId, geom::AlignFrame source)
@@ -165,24 +172,44 @@ private:
     bool flip_ = false;
 };
 
-// Push/pull of one planar face along its normal.
+// Push/pull of one planar face along its normal. When a parallel flat face
+// lies straight behind it, the value is the part's thickness between the two
+// (a cube's top face shows its height: type 35 to make it 35 mm tall);
+// otherwise it is the distance the face moves.
 class PushPullOperation final : public Operation {
 public:
     static std::unique_ptr<PushPullOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex);
 
     std::string title() const override { return "Push/Pull"; }
-    std::string valueLabel() const override { return "Distance"; }
-    bool allowsNegative() const override { return true; }
+    std::string valueLabel() const override { return thickness_ ? thicknessLabel_ : "Distance"; }
+    bool allowsNegative() const override { return !thickness_; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::PushPull; }
     int faceIndex() const { return face_.indexHint; }
 
+    // The measured thickness (at the arrow), if the face has a parallel opposite.
+    const std::optional<geom::FaceThickness>& thickness() const { return thickness_; }
+    double neutralValue() const override { return thickness_ ? thickness_->distance : 0.0; }
+    std::optional<double> relativeBase() const override
+    {
+        return thickness_ ? std::optional<double>(thickness_->distance) : std::nullopt;
+    }
+    bool canCommit() const override
+    {
+        return std::abs(value() - neutralValue()) > 1e-9 && error().empty() && hasPreview();
+    }
+    double displayOffset(double value) const override { return value - neutralValue(); }
+    double valueFromOffset(double offset) const override { return neutralValue() + offset; }
+
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    std::string checkValue(double value) const override;
 
 private:
     PushPullOperation(Uuid bodyId, LinearManipulator m, doc::FaceRef face)
         : Operation(bodyId, std::move(m)), face_(std::move(face)) {}
     doc::FaceRef face_;
+    std::optional<geom::FaceThickness> thickness_;
+    std::string thicknessLabel_; // "Height", "Width", "Depth" or "Thickness"
 };
 
 // Fillet or chamfer on a set of edges of one body. The handle starts at the
@@ -268,7 +295,7 @@ public:
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
-    bool zeroIsIdentity() const override { return false; }
+    bool neutralIsIdentity() const override { return false; }
 
 private:
     MirrorOperation(Uuid bodyId, const Vec3& center) : Operation(bodyId, LinearManipulator(center, {0, 0, 1})) {}

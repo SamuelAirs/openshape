@@ -262,7 +262,14 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- view controls
+    AxisTriad {
+        objectName: "axisTriad"
+        app: window.app
+        anchors { left: viewPanel.left; bottom: viewPanel.top; bottomMargin: 8 }
+    }
+
     Panel {
+        id: viewPanel
         anchors { right: parent.right; bottom: parent.bottom; margins: Theme.margin }
         width: viewRow.implicitWidth + 2 * Theme.panelPadding
         height: Theme.controlHeight + 2 * Theme.panelPadding
@@ -370,6 +377,9 @@ ApplicationWindow {
             return "Drag an arrow or type a distance · Shift+double-click another body to combine them"
         if (app.operationActive && app.operationTitle === "Rotate")
             return "Drag a ring (15° steps, Alt for 1°) or type an angle · Enter applies"
+        if (app.operationActive && app.operationTitle === "Push/Pull" && app.operationValueLabel !== "Distance")
+            return "Drag the arrow or type the new " + app.operationValueLabel.toLowerCase()
+                 + " · +5 or -5 changes it by that much · Enter applies"
         if (app.operationActive && app.operationTitle === "Offset")
             return "Drag the arrow or type the new value · Enter applies · Delete removes the face instead"
         if (app.operationActive && app.operationTitle === "Mirror")

@@ -11,6 +11,7 @@
 #include "geometry/Tessellation.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace os::interact {
 
@@ -30,7 +31,12 @@ void Operation::setValue(double value, const doc::Document& document)
         value = 0;
     value_ = value;
     error_.clear();
-    if (value == 0.0 && handleCount() == 1 && zeroIsIdentity()) {
+    if (std::string why = checkValue(value); !why.empty()) {
+        previewMesh_.reset();
+        error_ = std::move(why);
+        return;
+    }
+    if (std::abs(value - neutralValue()) < 1e-12 && handleCount() == 1 && neutralIsIdentity()) {
         previewMesh_.reset();
         return;
     }
@@ -67,16 +73,35 @@ std::unique_ptr<PushPullOperation> PushPullOperation::create(const doc::Document
     const auto signature = geom::captureFaceSignature(body->shape(), faceIndex);
     if (!info || !signature || !info->isPlanar())
         return nullptr;
-    return std::unique_ptr<PushPullOperation>(
-        new PushPullOperation(bodyId, LinearManipulator(info->centroid, info->normal), doc::FaceRef{faceIndex, *signature}));
+    // The arrow sits on the face (a washer's centroid is in its hole) and
+    // measures the thickness from there.
+    const Vec3 anchor = geom::pointOnFace(body->shape(), faceIndex, info->centroid).value_or(info->centroid);
+    auto op = std::unique_ptr<PushPullOperation>(
+        new PushPullOperation(bodyId, LinearManipulator(anchor, info->normal), doc::FaceRef{faceIndex, *signature}));
+    op->thickness_ = geom::faceThickness(body->shape(), faceIndex, anchor);
+    if (op->thickness_) {
+        const Vec3 n = info->normal.normalized();
+        op->thicknessLabel_ = std::abs(n.z) > 0.9999 ? "Height"
+                            : std::abs(n.x) > 0.9999 ? "Width"
+                            : std::abs(n.y) > 0.9999 ? "Depth"
+                                                     : "Thickness";
+        op->setStoredValue(op->thickness_->distance);
+    }
+    return op;
 }
 
 std::unique_ptr<doc::Feature> PushPullOperation::makeFeature(double value) const
 {
     auto feature = std::make_unique<doc::PushPullFeature>();
     feature->face = face_;
-    feature->distance = value;
+    feature->distance = value - neutralValue();
     return feature;
+}
+
+std::string PushPullOperation::checkValue(double value) const
+{
+    // Same wording as a typed value that is refused.
+    return thickness_ && value <= 1e-6 ? thicknessLabel_ + " must be greater than zero." : std::string();
 }
 
 // ---- Align -----------------------------------------------------------------------

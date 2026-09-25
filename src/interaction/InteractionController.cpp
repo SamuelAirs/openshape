@@ -688,7 +688,11 @@ std::string InteractionController::setValueText(const std::string& text)
     if (!parsed.millimeters)
         return parsed.error;
     // Angle operations keep their value in degrees.
-    const double value = operation_->isAngle() ? *parsed.millimeters * 180.0 / kPi : *parsed.millimeters;
+    double value = operation_->isAngle() ? *parsed.millimeters * 180.0 / kPi : *parsed.millimeters;
+    // "+5" / "-5" change a measured value (e.g. a push/pull's thickness) by that much.
+    const auto first = text.find_first_not_of(" \t");
+    if (const auto base = operation_->relativeBase(); base && first != std::string::npos && (text[first] == '+' || text[first] == '-'))
+        value += *base;
     if (operation_->isAngle() && value > 360.0 + 1e-9)
         return "The angle must be between 0° and 360°.";
     if (!operation_->allowsNegative() && value <= 0)
@@ -730,6 +734,17 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
     const Vec3 anchor = handle.anchor(operation_->handleOffset(active));
     const double px = camera_.pixelSize(anchor);
     return camera_.project(anchor + handle.direction() * (style.totalPx() * px));
+}
+
+std::vector<InteractionController::AxisMark> InteractionController::axisTriad() const
+{
+    const Vec3 right = camera_.right(), up = camera_.up(), back = camera_.backward();
+    std::vector<AxisMark> marks;
+    for (int i = 0; i < 3; ++i) {
+        const Vec3 axis{i == 0 ? 1.0 : 0.0, i == 1 ? 1.0 : 0.0, i == 2 ? 1.0 : 0.0};
+        marks.push_back({i, Vec2{axis.dot(right), -axis.dot(up)}, axis.dot(back)});
+    }
+    return marks;
 }
 
 Status InteractionController::commitOperation()
@@ -1437,6 +1452,15 @@ RenderScene InteractionController::renderScene() const
             else if (hoveredRing_ == i)
                 rr.state = HandleState::Hovered;
             scene.rings.push_back(std::move(rr));
+        }
+        // A push/pull that measures the thickness shows it as a dimension line
+        // through the part, from the opposite face to the face (as dragged).
+        if (const auto* push = dynamic_cast<const PushPullOperation*>(operation_.get()); push && push->thickness()) {
+            RenderSketch guide;
+            guide.editing = true; // on top of the bodies, like a sketch dimension
+            guide.lines.push_back({push->thickness()->to, push->anchor(), SketchStyle::Measure});
+            guide.points.push_back({push->thickness()->to, SketchStyle::Measure});
+            scene.sketches.push_back(std::move(guide));
         }
     }
 

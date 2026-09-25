@@ -77,7 +77,8 @@ Developer switches:
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ```
 
-Demo scenes: `empty`, `hover`, `pushpull`, `committed`, `fillet`, `move`,
+Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
+35 mm height), `committed`, `fillet`, `move`,
 `sketch`, `sketchdone`, `extrude`, `bracket`, `revolve`, `combine` (two bodies
 selected), `history` (a fillet step highlighted from the Model panel),
 `rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews) and

@@ -98,11 +98,22 @@ public:
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
     // Parses unit-aware text ("25", "1in", "20+5") and previews it. Returns an
-    // error message, or empty on success.
+    // error message, or empty on success. For a measured value (a push/pull
+    // showing the thickness) a leading + or - changes it by that much.
     std::string setValueText(const std::string& text);
     std::string operationValueText() const;
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
+
+    // Where the world axes point on screen, for the orientation marker:
+    // X, Y, Z in that order; `direction` is foreshortened (y down), `depth`
+    // is toward the viewer (1 = pointing straight out of the screen).
+    struct AxisMark {
+        int axis = 0;
+        Vec2 direction;
+        double depth = 0;
+    };
+    std::vector<AxisMark> axisTriad() const;
     Status commitOperation();
     void cancelOperation();
 

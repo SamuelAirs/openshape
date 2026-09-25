@@ -107,22 +107,31 @@ TEST(Milestone0, AcceptanceScript)
     ASSERT_EQ(scene.arrows.size(), 1u);
     EXPECT_NEAR(scene.arrows[0].direction.z, 1.0, 1e-9);
     EXPECT_FALSE(h.controller.contextActions().empty());
+    // The value is the cube's height (the distance to the bottom face), shown
+    // as a dimension line through the part.
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Height");
+    EXPECT_NEAR(h.controller.operation()->value(), 20.0, 1e-9);
+    EXPECT_EQ(h.controller.operationValueText(), "20.00 mm");
+    ASSERT_EQ(scene.sketches.size(), 1u);
+    ASSERT_EQ(scene.sketches[0].lines.size(), 1u);
+    EXPECT_NEAR(scene.sketches[0].lines[0].a.z, 0.0, 1e-9);
+    EXPECT_NEAR(scene.sketches[0].lines[0].b.z, 20.0, 1e-9);
 
     // 9-10. Drag the arrow upward: preview updates, document does not change yet.
     const double px = h.controller.camera().pixelSize({0, 0, 20});
     const Vec2 grab = h.screen({0, 0, 20 + 40 * px});
     h.drag(grab, grab + Vec2{0, -80});
     ASSERT_NE(h.controller.operation(), nullptr);
-    EXPECT_GT(h.controller.operation()->value(), 1.0);
+    EXPECT_GT(h.controller.operation()->value(), 21.0);
     EXPECT_TRUE(h.controller.operation()->hasPreview());
     EXPECT_TRUE(h.controller.renderScene().bodies[0].isPreview);
     EXPECT_NEAR(h.height(), 20.0, 1e-6) << "preview must not modify the document";
     EXPECT_EQ(h.stack.size(), 1u);
 
-    // 11. Type an exact value.
-    EXPECT_EQ(h.controller.setValueText("15"), "");
-    EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 15.0);
-    EXPECT_EQ(h.controller.operationValueText(), "15.00 mm");
+    // 11. Type the exact new height: no arithmetic needed.
+    EXPECT_EQ(h.controller.setValueText("35"), "");
+    EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 35.0);
+    EXPECT_EQ(h.controller.operationValueText(), "35.00 mm");
 
     // 12. Enter commits: body height becomes exactly 35 mm.
     EXPECT_TRUE(h.controller.keyPress(Key::Enter));
@@ -132,7 +141,7 @@ TEST(Milestone0, AcceptanceScript)
     ASSERT_EQ(h.controller.selection().size(), 1u);
     EXPECT_EQ(h.controller.selection().items()[0].index, h.topFace());
     ASSERT_NE(h.controller.operation(), nullptr);
-    EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 0.0);
+    EXPECT_NEAR(h.controller.operation()->value(), 35.0, 1e-9);
     EXPECT_NEAR(h.controller.operation()->anchor().z, 35.0, 1e-6);
 
     // 13-14. Undo restores 20 mm.
@@ -183,7 +192,7 @@ TEST(Interaction, RightClickDoesNotSelectOrCommit)
     ASSERT_TRUE(h.controller.createBox(20).ok());
     h.controller.fitAll(false);
     h.clickAt(h.screen({0, 0, 20}));
-    h.controller.setValueText("5");
+    h.controller.setValueText("+5"); // 5 mm taller than the 20 mm it shows
     const std::size_t steps = h.stack.size();
     h.controller.pointerPress(Harness::at({30, 30}, PointerButton::Right));
     h.controller.pointerRelease(Harness::at({30, 30}, PointerButton::Right));
@@ -513,12 +522,12 @@ TEST(Interaction, UnitAwareInput)
     ASSERT_TRUE(h.controller.createBox(20).ok());
     h.controller.fitAll(false);
     h.clickAt(h.screen({0, 0, 20}));
-    EXPECT_EQ(h.controller.setValueText("1in"), "");
+    EXPECT_EQ(h.controller.setValueText("1in"), ""); // the new height
     EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 25.4);
     EXPECT_NE(h.controller.setValueText("banana"), "");
     EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 25.4) << "bad input keeps the previous value";
     ASSERT_TRUE(h.controller.commitOperation().ok());
-    EXPECT_NEAR(h.height(), 45.4, 1e-6);
+    EXPECT_NEAR(h.height(), 25.4, 1e-6);
 }
 
 TEST(Interaction, TooDeepPushShowsErrorAndCannotCommit)
@@ -527,7 +536,14 @@ TEST(Interaction, TooDeepPushShowsErrorAndCannotCommit)
     ASSERT_TRUE(h.controller.createBox(20).ok());
     h.controller.fitAll(false);
     h.clickAt(h.screen({0, 0, 20}));
-    EXPECT_NE(h.controller.setValueText("-30"), "");
+    // Typed: 30 mm less than the 20 mm height is refused.
+    EXPECT_EQ(h.controller.setValueText("-30"), "Height must be greater than zero.");
+    EXPECT_FALSE(h.controller.operation()->canCommit());
+    // Dragged through the bottom face: the arrow shows the error.
+    const double px = h.controller.camera().pixelSize({0, 0, 20});
+    const Vec2 grab = h.screen({0, 0, 20 + 40 * px});
+    h.drag(grab, grab + Vec2{0, 600});
+    EXPECT_EQ(h.controller.operation()->error(), "Height must be greater than zero.");
     EXPECT_FALSE(h.controller.operation()->canCommit());
     EXPECT_FALSE(h.controller.commitOperation().ok());
     EXPECT_NEAR(h.height(), 20.0, 1e-6);
@@ -868,4 +884,126 @@ TEST(Interaction, HeatSetInsertFromHoleRim)
     for (const auto& row : h.controller.historyRows())
         listed = listed || (row.name == "Hole" && row.detail.find("M4 heat-set insert") != std::string::npos);
     EXPECT_TRUE(listed);
+}
+
+// Clicking a flat face shows the part's size to the parallel face behind it;
+// typing sets that size directly (a leading + or - changes it by that much).
+TEST(Interaction, PushPullShowsAndSetsTheThickness)
+{
+    Harness h;
+    addBox(h, "Block", {0, 0, 0}, {30, 20, 10}); // X 30 wide, Y 20 deep, Z 10 high
+    h.controller.fitAll(false);
+
+    h.clickAt(h.screen({15, 10, 10})); // top
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Height");
+    EXPECT_NEAR(h.controller.operation()->value(), 10.0, 1e-9);
+    EXPECT_FALSE(h.controller.operation()->canCommit()) << "nothing changed yet";
+    EXPECT_EQ(h.controller.setValueText("+5"), "");
+    EXPECT_NEAR(h.controller.operation()->value(), 15.0, 1e-9);
+    EXPECT_EQ(h.controller.setValueText("-2"), "") << "relative to the size shown, not the last value";
+    EXPECT_NEAR(h.controller.operation()->value(), 8.0, 1e-9);
+    EXPECT_EQ(h.controller.setValueText("12"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.height(), 12.0, 1e-6);
+    ASSERT_NE(h.controller.operation(), nullptr) << "the face stays selected";
+    EXPECT_NEAR(h.controller.operation()->value(), 12.0, 1e-9) << "and shows the new height";
+
+    h.controller.keyPress(Key::Escape);
+    h.clickAt(h.screen({30, 10, 5})); // +X side
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Width");
+    EXPECT_NEAR(h.controller.operation()->value(), 30.0, 1e-9);
+
+    h.controller.keyPress(Key::Escape);
+    h.clickAt(h.screen({15, 0, 5})); // -Y side (front)
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Depth");
+    EXPECT_NEAR(h.controller.operation()->value(), 20.0, 1e-9);
+    EXPECT_EQ(h.controller.setValueText("0"), "Depth must be greater than zero.");
+    EXPECT_EQ(h.controller.setValueText("25"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(geom::boundingBox(h.body().shape()).size().y, 25.0, 1e-6);
+}
+
+// A washer's centroid is in its hole: the arrow and the measurement move onto
+// the face itself.
+TEST(Interaction, PushPullOnAFaceWithAHoleMeasuresOnTheFace)
+{
+    Harness h;
+    const Uuid id = addBox(h, "Plate", {-20, -20, 0}, {40, 40, 5});
+    auto cut = std::make_unique<doc::CombineFeature>();
+    const Uuid pin = addBox(h, "Pin", {-10, -10, -1}, {20, 20, 7});
+    cut->toolBody = pin;
+    cut->mode = doc::CombineMode::Subtract;
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(cut)), h.document).ok());
+    h.controller.documentChanged();
+    const doc::Body* plate = h.document.body(id);
+    int top = -1;
+    for (int i = 0; i < plate->shape().faceCount(); ++i)
+        if (const auto info = geom::faceInfo(plate->shape(), i); info && info->normal.z > 0.999)
+            top = i;
+    ASSERT_GE(top, 0);
+    auto op = PushPullOperation::create(h.document, id, top);
+    ASSERT_NE(op, nullptr);
+    const Vec3 anchor = op->anchor();
+    EXPECT_GT(std::max(std::abs(anchor.x), std::abs(anchor.y)), 10.0) << "not in the square hole";
+    EXPECT_NEAR(anchor.z, 5.0, 1e-9);
+    ASSERT_TRUE(op->thickness().has_value());
+    EXPECT_NEAR(op->value(), 5.0, 1e-9);
+}
+
+// Without a parallel face behind (here a deep chamfer), push/pull falls back
+// to the distance the face moves.
+TEST(Interaction, PushPullWithoutParallelOppositeMovesByDistance)
+{
+    Harness h;
+    const Uuid id = addBox(h, "Block", {0, 0, 0}, {20, 20, 20});
+    const geom::Shape box = h.document.body(id)->shape();
+    int edge = -1;
+    for (int i = 0; i < box.edgeCount(); ++i)
+        if (const auto e = geom::edgeInfo(box, i); e && std::abs(e->midpoint.x - 20) < 1e-9 && std::abs(e->midpoint.z) < 1e-9)
+            edge = i;
+    ASSERT_GE(edge, 0);
+    auto chamfer = std::make_unique<doc::ChamferFeature>();
+    chamfer->size = 15;
+    chamfer->edges = {{edge, *geom::captureEdgeSignature(box, edge)}};
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(chamfer)), h.document).ok());
+    h.controller.documentChanged();
+
+    const geom::Shape shape = h.document.body(id)->shape();
+    int top = -1;
+    for (int i = 0; i < shape.faceCount(); ++i)
+        if (const auto info = geom::faceInfo(shape, i); info && info->normal.z > 0.999)
+            top = i;
+    auto op = PushPullOperation::create(h.document, id, top);
+    ASSERT_NE(op, nullptr);
+    EXPECT_FALSE(op->thickness().has_value());
+    EXPECT_EQ(op->valueLabel(), "Distance");
+    EXPECT_DOUBLE_EQ(op->value(), 0.0);
+    op->setValue(5.0, h.document);
+    EXPECT_TRUE(op->canCommit());
+    ASSERT_TRUE(h.stack.push(op->makeCommand(h.document), h.document).ok());
+    EXPECT_NEAR(geom::boundingBox(h.document.body(id)->shape()).size().z, 25.0, 1e-6);
+}
+
+TEST(Interaction, AxisTriadFollowsTheView)
+{
+    Harness h;
+    h.controller.setStandardView(StandardView::Top, false);
+    auto marks = h.controller.axisTriad();
+    ASSERT_EQ(marks.size(), 3u);
+    EXPECT_NEAR(marks[0].direction.x, 1.0, 1e-9); // X to the right
+    EXPECT_NEAR(marks[0].direction.y, 0.0, 1e-9);
+    EXPECT_NEAR(marks[1].direction.x, 0.0, 1e-9); // Y up the screen
+    EXPECT_NEAR(marks[1].direction.y, -1.0, 1e-9);
+    EXPECT_NEAR(marks[2].depth, 1.0, 1e-9); // Z straight at the viewer
+    EXPECT_NEAR(marks[2].direction.length(), 0.0, 1e-9);
+
+    h.controller.setStandardView(StandardView::Isometric, false);
+    marks = h.controller.axisTriad();
+    EXPECT_NEAR(marks[2].direction.x, 0.0, 1e-9);
+    EXPECT_LT(marks[2].direction.y, -0.8) << "Z points up the screen";
+    EXPECT_GT(marks[0].direction.x, 0.5) << "X to the lower right";
+    EXPECT_GT(marks[0].direction.y, 0.0);
 }

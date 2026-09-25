@@ -601,3 +601,77 @@ TEST(Geometry, MeasureWallAndAngles)
     EXPECT_NEAR(square->distance, 0.0, 1e-7);
     EXPECT_NEAR(*square->angle, kPi / 2, 1e-9);
 }
+
+TEST(Geometry, FaceThicknessBetweenParallelFaces)
+{
+    const Shape s = box(10, 20, 30);
+    const struct {
+        Vec3 normal;
+        double expected;
+    } cases[] = {{{0, 0, 1}, 30}, {{0, 0, -1}, 30}, {{1, 0, 0}, 10}, {{-1, 0, 0}, 10}, {{0, 1, 0}, 20}, {{0, -1, 0}, 20}};
+    for (const auto& c : cases) {
+        const int face = faceWithNormal(s, c.normal);
+        ASSERT_GE(face, 0);
+        const auto info = faceInfo(s, face);
+        const auto t = faceThickness(s, face, info->centroid);
+        ASSERT_TRUE(t.has_value());
+        EXPECT_NEAR(t->distance, c.expected, kTol);
+        EXPECT_EQ(t->oppositeFace, faceWithNormal(s, -c.normal));
+        EXPECT_NEAR((t->to - t->from).length(), c.expected, kTol);
+        EXPECT_NEAR((t->to - (info->centroid - c.normal * c.expected)).length(), 0.0, kTol);
+    }
+}
+
+TEST(Geometry, FaceThicknessNeedsAParallelOppositeFace)
+{
+    // A deep chamfer on the bottom edge at x = 20: a line down from the middle
+    // of the top face leaves through the slanted chamfer.
+    const Shape s = box(20, 20, 20);
+    int edge = -1;
+    for (int i = 0; i < s.edgeCount(); ++i)
+        if (const auto e = edgeInfo(s, i); e && std::abs(e->midpoint.x - 20) < kTol && std::abs(e->midpoint.z) < kTol)
+            edge = i;
+    ASSERT_GE(edge, 0);
+    const auto chamfered = chamferEdges(s, {edge}, 15.0);
+    ASSERT_TRUE(chamfered.ok()) << chamfered.developerMessage();
+    const int top = faceWithNormal(chamfered.value(), {0, 0, 1});
+    ASSERT_GE(top, 0);
+    EXPECT_FALSE(faceThickness(chamfered.value(), top, {10, 10, 20}).has_value());
+    // Beside the chamfer the line still reaches the flat bottom.
+    const auto t = faceThickness(chamfered.value(), top, {2, 10, 20});
+    ASSERT_TRUE(t.has_value());
+    EXPECT_NEAR(t->distance, 20.0, kTol);
+}
+
+TEST(Geometry, PointOnFaceAvoidsHoles)
+{
+    // 40 x 40 x 5 plate with a round hole in the middle: the top face's
+    // centroid lies in the hole.
+    const Shape plate = makeBox({-20, -20, 0}, {40, 40, 5}).value();
+    const Shape pin = makeCylinder({0, 0, -1}, {0, 0, 1}, 10.0, 7.0).value();
+    const Shape washer = booleanOp(plate, pin, BooleanKind::Subtract).value();
+    const int top = faceWithNormal(washer, {0, 0, 1});
+    ASSERT_GE(top, 0);
+    const auto info = faceInfo(washer, top);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_LT(std::hypot(info->centroid.x, info->centroid.y), 10.0) << "the centroid is in the hole";
+
+    const auto p = pointOnFace(washer, top, info->centroid);
+    ASSERT_TRUE(p.has_value());
+    EXPECT_GT(std::hypot(p->x, p->y), 11.0) << "clear of the hole";
+    EXPECT_LT(std::max(std::abs(p->x), std::abs(p->y)), 19.0) << "inside the outline";
+    EXPECT_NEAR(p->z, 5.0, kTol);
+    const auto t = faceThickness(washer, top, *p);
+    ASSERT_TRUE(t.has_value());
+    EXPECT_NEAR(t->distance, 5.0, kTol);
+
+    // A preferred point already on the face is kept; curved faces are not handled.
+    const auto kept = pointOnFace(washer, top, {15, 0, 5});
+    ASSERT_TRUE(kept.has_value());
+    EXPECT_NEAR((*kept - Vec3{15, 0, 5}).length(), 0.0, kTol);
+    for (int i = 0; i < washer.faceCount(); ++i) {
+        if (!faceInfo(washer, i)->isPlanar()) {
+            EXPECT_FALSE(pointOnFace(washer, i, {0, 0, 0}).has_value());
+        }
+    }
+}

@@ -216,6 +216,8 @@ void AcceptanceRunner::start()
             screenshot(QStringLiteral("00_help"));
             key(Qt::Key_Escape);
             check(help && !help->isVisible(), "Esc closes the help card");
+            auto* triad = findVisualItem(window_->contentItem(), QStringLiteral("axisTriad"));
+            check(triad && triad->isVisible() && triad->width() > 0, "the X/Y/Z axis marker is shown");
         },
         [=, this] {
             key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
@@ -254,6 +256,8 @@ void AcceptanceRunner::start()
             check(app_->operationActive() && app_->operationTitle() == QStringLiteral("Push/Pull"),
                   "selected planar face shows the push/pull manipulator", app_->operationTitle());
             check(in.renderScene().arrows.size() == 1, "one arrow is drawn");
+            check(app_->operationValueLabel() == QStringLiteral("Height") && app_->operationValueText() == QStringLiteral("20.00 mm"),
+                  "the value chip shows the cube's height", app_->operationValueLabel() + QStringLiteral(" ") + app_->operationValueText());
             screenshot(QStringLiteral("03_face_selected"));
         },
         // 9-10. Drag the arrow upward: live preview, document unchanged.
@@ -265,18 +269,18 @@ void AcceptanceRunner::start()
             const Vec3 grab = anchor + op->manipulator().direction() * ((style.gapPx + style.shaftPx * 0.6) * px);
             const QPointF from = screenPoint(grab.x, grab.y, grab.z);
             drag(from, from + QPointF(0, -90));
-            check(in.operation() && in.operation()->value() > 1.0, "dragging the arrow changes the value",
+            check(in.operation() && in.operation()->value() > 21.0, "dragging the arrow makes it taller",
                   in.operation() ? num(in.operation()->value()) : QStringLiteral("no operation"));
             check(in.operation() && in.operation()->hasPreview(), "the preview updates while dragging");
             check(std::abs(bodyHeight() - 20.0) < 1e-9, "preview does not modify the document", num(bodyHeight()));
             screenshot(QStringLiteral("04_drag_preview"));
         },
-        // 11. Type an exact value (typing goes straight to the value field).
+        // 11. Type the exact new height (typing goes straight to the value field).
         [=, this, &in] {
-            type(QStringLiteral("15"));
-            check(in.operation() && std::abs(in.operation()->value() - 15.0) < 1e-12, "typing 15 sets the value to 15 mm",
+            type(QStringLiteral("35"));
+            check(in.operation() && std::abs(in.operation()->value() - 35.0) < 1e-12, "typing 35 sets the height to 35 mm",
                   in.operation() ? num(in.operation()->value()) : QString());
-            screenshot(QStringLiteral("05_typed_15"));
+            screenshot(QStringLiteral("05_typed_35"));
         },
         // 12. Enter commits: exactly 35 mm.
         [=, this] {

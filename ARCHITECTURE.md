@@ -131,6 +131,9 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Tessellation.h`: `BRepMesh_IncrementalMesh` (faces meshed in parallel) →
   `Mesh` with per-triangle face ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
   polylines taken from the triangulation (so edges sit exactly on mesh vertices).
+- `pointOnFace` (a point inside a flat face, away from holes) and
+  `faceThickness` (distance to the parallel face straight behind, by a line
+  intersection with `IntCurvesFace_ShapeIntersector`) back push/pull's size.
 - `Profiles.h`: planar curves (lines, circles, counter-clockwise arcs) →
   regions (see Sketches).
 - `TopoSignature.h`: interim topological naming (see below).
@@ -233,6 +236,14 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Shift/Ctrl adds; touch and pen taps are additive by default (no modifier
   keys on tablets); tapping empty space clears. Double-click selects the body.
   `InputProfile` gives touch 3× larger pick/grab tolerances.
+- **Push/pull shows the size:** `PushPullOperation` places its arrow on the
+  face (`geom::pointOnFace`: a washer's centroid is in its hole) and measures
+  the part behind it (`geom::faceThickness`: a line into the material must
+  leave through a parallel flat face). Then its value is that thickness
+  (label Height/Width/Depth by the face's axis, else Thickness): typed and
+  dragged values set it, `makeFeature` stores the difference as the PushPull
+  distance, and the render scene gets a `Measure`-style line from the
+  opposite face to the face. Otherwise the value is the distance moved.
 - **Operations:** selecting one planar face arms `PushPullOperation`; selecting
   edges of one body arms `EdgeOperation` (fillet, switchable to chamfer). An
   operation owns a `LinearManipulator` (arrow), a value, a live preview mesh
@@ -267,7 +278,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Operation hooks** (`Operation.h`): `prompt()` while a further pick is
   needed (Align's target, Mirror's plane); `labelAnchor()` for a value editor
   without an arrow; `neutralValue()` (what Esc returns to, e.g. a hole's
-  current diameter); `zeroIsIdentity()` (Align previews at 0);
+  current diameter, a push/pull's thickness); `neutralIsIdentity()` (the
+  neutral value means no preview; Align previews at 0); `relativeBase()`
+  (typed `+5` / `-5` are relative to it); `checkValue()` (refuse a value
+  before any kernel call, e.g. a thickness of 0);
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
   the preview is known); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
@@ -325,7 +339,9 @@ blocked) and draws with 4× MSAA:
 
 1. bodies (lit, two-sided shading), keyed by mesh key so unchanged bodies are
    never re-uploaded;
-2. adaptive grid + X/Y axes (depth-tested, no depth write);
+2. adaptive grid + X/Y/Z axes through the origin (depth-tested, no depth
+   write; the orientation marker is QML: `AxisTriad` from
+   `InteractionController::axisTriad()`);
 3. face highlights (hover, selection, and the orange Model-panel highlight
    with adjacent ranges merged) as **index sub-ranges of the body mesh** (no
    extra buffers);
@@ -373,7 +389,7 @@ disk. Saves are atomic (temp file + rename). See
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
   the real application through Qt's platform input path — including clicking
   QML buttons found by `objectName` — and checks geometry after each step,
-  saving screenshots. 103 checks, ~20 s (it moves the real mouse cursor):
+  saving screenshots. 105 checks, ~20 s (it moves the real mouse cursor):
   help card, the Milestone 0 script, save/open, exports, the Milestone 1
   bracket, a history edit, booleans through the Model panel and the action
   bar, Align, Rotate rings, Pattern, Mirror, and two-/three-finger taps

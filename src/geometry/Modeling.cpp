@@ -19,6 +19,7 @@
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -35,8 +36,11 @@
 #include <Bnd_Box.hxx>
 #include <GCPnts_AbscissaPoint.hxx>
 #include <GProp_GProps.hxx>
+#include <ElSLib.hxx>
 #include <GeomLProp_SLProps.hxx>
 #include <Geom_Surface.hxx>
+#include <IntCurvesFace_ShapeIntersector.hxx>
+#include <Precision.hxx>
 #include <Message_Report.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
@@ -49,8 +53,13 @@
 #include <TopoDS_Solid.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Lin.hxx>
+#include <gp_Pnt2d.hxx>
 #include <gp_Trsf.hxx>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <set>
 #include <sstream>
 
@@ -845,6 +854,98 @@ std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex)
             result.push_back(index - 1);
     }
     return result;
+}
+
+std::optional<Vec3> pointOnFace(const Shape& shape, int faceIndex, const Vec3& preferred)
+{
+    if (!validIndex(shape, faceIndex, shape.faceCount()))
+        return std::nullopt;
+    try {
+        const TopoDS_Face face = faceAt(shape, faceIndex);
+        BRepAdaptor_Surface surface(face);
+        if (surface.GetType() != GeomAbs_Plane)
+            return std::nullopt;
+        const double tolerance = BRep_Tool::Tolerance(face);
+        auto inside = [&](double u, double v) {
+            BRepClass_FaceClassifier classifier(face, gp_Pnt2d(u, v), tolerance);
+            return classifier.State() == TopAbs_IN;
+        };
+        double un = 0, vn = 0;
+        ElSLib::Parameters(surface.Plane(), toPnt(preferred), un, vn);
+        if (inside(un, vn))
+            return fromPnt(surface.Value(un, vn));
+
+        // Sample the face's parameter box (plane parameters are lengths) and
+        // take the sample farthest from any outside sample (the middle of a
+        // washer's ring, not its rim), nearest to `preferred` among equals.
+        double u0, u1, v0, v1;
+        BRepTools::UVBounds(face, u0, u1, v0, v1);
+        constexpr int n = 24;
+        std::vector<std::pair<double, double>> in, out;
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j) {
+                const double u = u0 + (u1 - u0) * (i + 0.5) / n, v = v0 + (v1 - v0) * (j + 0.5) / n;
+                (inside(u, v) ? in : out).emplace_back(u, v);
+            }
+        if (in.empty())
+            return std::nullopt;
+        double bestClearance = -1, bestDistance = 0;
+        std::pair<double, double> best = in.front();
+        for (const auto& [u, v] : in) {
+            // The parameter box bounds the face too (a plain rectangle has no
+            // outside samples at all).
+            double clearance = std::min({u - u0, u1 - u, v - v0, v1 - v});
+            for (const auto& [ou, ov] : out)
+                clearance = std::min(clearance, std::hypot(u - ou, v - ov));
+            const double distance = std::hypot(u - un, v - vn);
+            if (clearance > bestClearance + 1e-9 || (clearance > bestClearance - 1e-9 && distance < bestDistance)) {
+                bestClearance = clearance;
+                bestDistance = distance;
+                best = {u, v};
+            }
+        }
+        return fromPnt(surface.Value(best.first, best.second));
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "pointOnFace(" << faceIndex << ") failed: " << describeFailure(failure);
+        return std::nullopt;
+    }
+}
+
+std::optional<FaceThickness> faceThickness(const Shape& shape, int faceIndex, const Vec3& point)
+{
+    const auto info = faceInfo(shape, faceIndex);
+    if (!info || !info->isPlanar())
+        return std::nullopt;
+    try {
+        const Vec3 normal = info->normal.normalized();
+        IntCurvesFace_ShapeIntersector intersector;
+        intersector.Load(occ(shape), Precision::Confusion());
+        intersector.Perform(gp_Lin(toPnt(point), toDir(-normal)), -Precision::Confusion(), Precision::Infinite());
+        if (!intersector.IsDone())
+            return std::nullopt;
+        intersector.SortResult();
+        for (int i = 1; i <= intersector.NbPnt(); ++i) {
+            const int hit = shape.data()->faces.FindIndex(intersector.Face(i)) - 1;
+            if (hit == faceIndex || intersector.WParameter(i) < Precision::Confusion())
+                continue; // the face itself
+            // The first other face the line reaches is where it leaves the material.
+            const auto opposite = faceInfo(shape, hit);
+            if (!opposite || !opposite->isPlanar() || opposite->normal.normalized().dot(normal) > -1 + 1e-9)
+                return std::nullopt;
+            FaceThickness result;
+            result.distance = (point - opposite->planeOrigin).dot(normal);
+            result.from = point;
+            result.to = point - normal * result.distance;
+            result.oppositeFace = hit;
+            if (result.distance <= Precision::Confusion())
+                return std::nullopt;
+            return result;
+        }
+        return std::nullopt;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "faceThickness(" << faceIndex << ") failed: " << describeFailure(failure);
+        return std::nullopt;
+    }
 }
 
 std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b)
