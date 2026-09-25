@@ -511,6 +511,20 @@ void AppController::createBox(double size)
 void AppController::undo() { interaction_->undo(); }
 void AppController::redo() { interaction_->redo(); }
 
+void AppController::undoWithFeedback()
+{
+    const QString label = undoText();
+    if (interaction_->undo())
+        notifyMessage(QStringLiteral("Undo ") + label);
+}
+
+void AppController::redoWithFeedback()
+{
+    const QString label = redoText();
+    if (interaction_->redo())
+        notifyMessage(QStringLiteral("Redo ") + label);
+}
+
 void AppController::commitOperation()
 {
     const Status status = interaction_->commitOperation();

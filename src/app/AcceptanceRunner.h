@@ -40,6 +40,8 @@ private:
     void drag(QPointF from, QPointF to, int steps = 10);
     void key(int key, Qt::KeyboardModifiers mods = Qt::NoModifier, const QString& text = {});
     void type(const QString& text);
+    // A quick multi-finger tap through Qt's touch path (fingers at `points`).
+    void touchTap(const QList<QPointF>& points);
     // Clicks the center of a QML item found by objectName; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
 

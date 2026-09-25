@@ -12,6 +12,7 @@
 #include <QtCore/QUrl>
 #include <QtGui/QCursor>
 #include <QtGui/QImage>
+#include <QtGui/QPointingDevice>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <qpa/qwindowsysteminterface.h>
@@ -84,6 +85,34 @@ void AcceptanceRunner::type(const QString& text)
             k = Qt::Key_Period;
         key(k, Qt::NoModifier, QString(c));
     }
+}
+
+void AcceptanceRunner::touchTap(const QList<QPointF>& points)
+{
+    static QPointingDevice* device = [] {
+        auto* d = new QPointingDevice(QStringLiteral("OpenShape acceptance touch"), 4242, QInputDevice::DeviceType::TouchScreen,
+                                      QPointingDevice::PointerType::Finger,
+                                      QInputDevice::Capability::Position | QInputDevice::Capability::Area, 10, 0);
+        QWindowSystemInterface::registerInputDevice(d);
+        return d;
+    }();
+    auto frame = [&](QEventPoint::State state) {
+        QList<QWindowSystemInterface::TouchPoint> list;
+        int id = 1;
+        for (const QPointF& p : points) {
+            QWindowSystemInterface::TouchPoint tp;
+            tp.id = id++;
+            tp.state = state;
+            tp.area = QRectF(window_->mapToGlobal(p) - QPointF(3, 3), QSizeF(6, 6));
+            tp.pressure = state == QEventPoint::State::Released ? 0 : 1;
+            list.append(tp);
+        }
+        return list;
+    };
+    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, device,
+                                                                                         frame(QEventPoint::State::Pressed));
+    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, device,
+                                                                                         frame(QEventPoint::State::Released));
 }
 
 namespace {
@@ -569,6 +598,21 @@ void AcceptanceRunner::start()
                   "mirrored across its face: one 40 mm block", num(bb.size().x));
             screenshot(QStringLiteral("19_mirrored"));
             key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        // Touch gestures through Qt's touch path: two fingers undo, three redo.
+        [=, this] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            key(Qt::Key_B);
+            check(app_->bodyCount() == 3, "B adds a third body", QString::number(app_->bodyCount()));
+        },
+        [=, this] {
+            touchTap({QPointF(500, 300), QPointF(620, 320)});
+            check(app_->bodyCount() == 2, "a two-finger tap undoes", QString::number(app_->bodyCount()));
+        },
+        [=, this] {
+            touchTap({QPointF(500, 300), QPointF(600, 300), QPointF(700, 300)});
+            check(app_->bodyCount() == 3, "a three-finger tap redoes", QString::number(app_->bodyCount()));
         },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);

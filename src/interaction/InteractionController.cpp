@@ -192,6 +192,15 @@ void InteractionController::pointerPress(const PointerEvent& event)
     drag_.last = event.position;
     drag_.mode = DragMode::Pending;
 
+    if (event.device == PointerDevice::Pen && !penMode_) {
+        penMode_ = true;
+        message("Pen detected: use it to select and draw. Fingers now only move the view.");
+    }
+    // With a pen around, a finger press can only orbit or pan (resting a hand
+    // on the screen must not select or draw).
+    if (event.device == PointerDevice::Touch && penMode_)
+        return;
+
     if (session_) {
         if (session_->pointerPress(event, camera_)) {
             drag_.mode = DragMode::Sketch;
@@ -335,6 +344,10 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
     drag_.mode = DragMode::None;
+    if (press.device == PointerDevice::Touch && penMode_) {
+        notifyView(); // a finger only navigated (or merely tapped)
+        return;
+    }
     if (session_) {
         if (mode == DragMode::Sketch)
             session_->pointerRelease(event, camera_);
@@ -359,7 +372,7 @@ void InteractionController::pointerRelease(const PointerEvent& event)
 
 void InteractionController::pointerDoubleClick(const PointerEvent& event)
 {
-    if (session_)
+    if (session_ || (event.device == PointerDevice::Touch && penMode_))
         return;
     const auto hit = pickAt(event.position, InputProfile::forDevice(event.device));
     if (hit.kind == sel::PickKind::Profile) {

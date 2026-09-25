@@ -118,7 +118,8 @@ Rectangle {
                         rows: [
                             ["Change any step", "Model panel → click the step → edit"],
                             ["Failed step", "Shown in red with the reason; undo restores"],
-                            ["Undo / redo", "Ctrl+Z / Ctrl+Y"]
+                            ["Undo / redo", "Ctrl+Z / Ctrl+Y · two-finger / three-finger tap"],
+                            ["Pen", "Selects and draws; fingers then only move the view"]
                         ]
                     }
                     HelpSection {

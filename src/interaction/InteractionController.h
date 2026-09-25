@@ -86,6 +86,10 @@ public:
     void twoFingerRotate(double dxPixels, double dyPixels);
     // Returns true if the key was handled.
     bool keyPress(Key key);
+    // Pen mode (Shapr3D style): once a pen is used, it selects and draws and
+    // fingers only move the view. Turned on by the first pen press.
+    bool penMode() const { return penMode_; }
+    void setPenMode(bool on) { penMode_ = on; }
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -199,6 +203,7 @@ private:
     enum class BodyTool { Move, Rotate, Mirror, Pattern };
     BodyTool bodyTool_ = BodyTool::Move;
     int hoveredRing_ = -1;
+    bool penMode_ = false;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;

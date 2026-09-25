@@ -109,6 +109,9 @@ public:
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
+    // Gesture undo/redo (two/three-finger taps) say what they did.
+    void undoWithFeedback();
+    void redoWithFeedback();
     Q_INVOKABLE void commitOperation();
     Q_INVOKABLE void cancelOperation();
     // Returns an error message ("" on success). Previews live as the user types.

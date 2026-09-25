@@ -163,66 +163,44 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         return;
     }
     auto& interaction = controller_->interaction();
-    const auto& points = event->points();
-
-    if (points.size() >= 2) {
-        const QPointF a = points[0].position(), b = points[1].position();
-        const QPointF centroid = (a + b) / 2;
-        const double span = std::hypot(a.x() - b.x(), a.y() - b.y());
-        if (!twoFinger_) {
-            // A second finger turns the touch into a view gesture: drop the
-            // pending one-finger press so it never becomes a tap.
-            interaction.cancelPointer();
-            twoFinger_ = true;
-        } else {
-            interaction.twoFingerPan({lastCentroid_.x(), lastCentroid_.y()}, {centroid.x(), centroid.y()});
-            if (lastSpan_ > 1 && span > 1)
-                interaction.pinch({centroid.x(), centroid.y()}, span / lastSpan_);
+    if (event->type() == QEvent::TouchCancel) {
+        interaction.cancelPointer();
+        gestures_ = {};
+        event->accept();
+        return;
+    }
+    std::vector<interact::TouchPoint> points;
+    for (const QEventPoint& p : event->points()) {
+        interact::TouchPoint tp;
+        tp.id = p.id();
+        tp.position = {p.position().x(), p.position().y()};
+        switch (p.state()) {
+        case QEventPoint::Pressed: tp.state = interact::TouchPoint::State::Pressed; break;
+        case QEventPoint::Released: tp.state = interact::TouchPoint::State::Released; break;
+        case QEventPoint::Stationary: tp.state = interact::TouchPoint::State::Stationary; break;
+        default: tp.state = interact::TouchPoint::State::Moved; break;
         }
-        lastCentroid_ = centroid;
-        lastSpan_ = span;
-        event->accept();
-        return;
+        points.push_back(tp);
     }
-
-    if (twoFinger_) {
-        // Wait until all fingers lift before accepting new one-finger input.
-        if (event->type() == QEvent::TouchEnd || points.isEmpty())
-            twoFinger_ = false;
-        event->accept();
-        return;
-    }
-
-    if (points.size() == 1) {
-        const QEventPoint& p = points.front();
+    using Kind = interact::TouchIntent::Kind;
+    for (const auto& intent : gestures_.update(points, double(event->timestamp()) / 1000.0)) {
         interact::PointerEvent e;
         e.device = interact::PointerDevice::Touch;
         e.button = interact::PointerButton::Left;
-        e.position = {p.position().x(), p.position().y()};
-        switch (p.state()) {
-        case QEventPoint::Pressed:
+        e.position = intent.position;
+        switch (intent.kind) {
+        case Kind::PointerPress:
             forceActiveFocus(Qt::MouseFocusReason);
             interaction.pointerPress(e);
             break;
-        case QEventPoint::Updated:
-            interaction.pointerMove(e);
-            break;
-        case QEventPoint::Released: {
-            interaction.pointerRelease(e);
-            const qint64 now = qint64(event->timestamp());
-            const QPointF delta = p.position() - lastTapPosition_;
-            const bool isTap = (p.position() - p.pressPosition()).manhattanLength() < 12;
-            if (isTap && now - lastTapTime_ < 350 && delta.manhattanLength() < 24) {
-                interaction.pointerDoubleClick(e);
-                lastTapTime_ = 0;
-            } else if (isTap) {
-                lastTapTime_ = now;
-                lastTapPosition_ = p.position();
-            }
-            break;
-        }
-        default:
-            break;
+        case Kind::PointerMove: interaction.pointerMove(e); break;
+        case Kind::PointerRelease: interaction.pointerRelease(e); break;
+        case Kind::PointerCancel: interaction.cancelPointer(); break;
+        case Kind::DoubleTap: interaction.pointerDoubleClick(e); break;
+        case Kind::Pan: interaction.twoFingerPan(intent.from, intent.to); break;
+        case Kind::Pinch: interaction.pinch(intent.position, intent.scale); break;
+        case Kind::Undo: controller_->undoWithFeedback(); break;
+        case Kind::Redo: controller_->redoWithFeedback(); break;
         }
     }
     event->accept();

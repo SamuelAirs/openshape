@@ -1,5 +1,7 @@
 #pragma once
 
+#include "interaction/TouchGestures.h"
+
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
 #include <QtQml/qqmlregistration.h>
@@ -45,14 +47,8 @@ private:
     QPointer<AppController> controller_;
     QTimer animationTimer_;
 
-    // Double-tap detection (touch has no native double-click here).
-    qint64 lastTapTime_ = 0;
-    QPointF lastTapPosition_;
-
-    // Two-finger gesture tracking.
-    bool twoFinger_ = false;
-    QPointF lastCentroid_;
-    double lastSpan_ = 0;
+    // Taps, drags, two-finger pan/pinch, two/three-finger undo/redo.
+    interact::TouchGestureRecognizer gestures_;
 };
 
 } // namespace os::ui
