@@ -14,6 +14,7 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepLib.hxx>
@@ -512,6 +513,59 @@ std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex)
             result.push_back(index - 1);
     }
     return result;
+}
+
+std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b)
+{
+    auto resolve = [](const SubShapeRef& r) -> TopoDS_Shape {
+        if (!r.shape || r.shape->isNull())
+            return {};
+        const ShapeData* data = r.shape->data();
+        switch (r.kind) {
+        case SubShapeKind::Face:
+            return r.index >= 0 && r.index < data->faces.Extent() ? data->faces.FindKey(r.index + 1) : TopoDS_Shape();
+        case SubShapeKind::Edge:
+            return r.index >= 0 && r.index < data->edges.Extent() ? data->edges.FindKey(r.index + 1) : TopoDS_Shape();
+        case SubShapeKind::Vertex:
+            return r.index >= 0 && r.index < data->vertices.Extent() ? data->vertices.FindKey(r.index + 1) : TopoDS_Shape();
+        case SubShapeKind::Whole:
+            return data->shape;
+        }
+        return {};
+    };
+    const TopoDS_Shape sa = resolve(a), sb = resolve(b);
+    if (sa.IsNull() || sb.IsNull())
+        return std::nullopt;
+    try {
+        BRepExtrema_DistShapeShape extrema(sa, sb);
+        if (!extrema.IsDone() || extrema.NbSolution() < 1)
+            return std::nullopt;
+        Measurement m;
+        m.distance = extrema.Value();
+        m.pointA = fromPnt(extrema.PointOnShape1(1));
+        m.pointB = fromPnt(extrema.PointOnShape2(1));
+        // Angles and gaps for the common maker questions: wall thickness
+        // (parallel faces) and whether two faces/edges are square.
+        if (a.kind == SubShapeKind::Face && b.kind == SubShapeKind::Face) {
+            const auto fa = faceInfo(*a.shape, a.index);
+            const auto fb = faceInfo(*b.shape, b.index);
+            if (fa && fb && fa->isPlanar() && fb->isPlanar()) {
+                const double c = std::clamp(std::abs(fa->normal.dot(fb->normal)), 0.0, 1.0);
+                m.angle = std::acos(c);
+                if (c > 1.0 - 1e-9)
+                    m.parallelGap = std::abs((fb->centroid - fa->centroid).dot(fa->normal));
+            }
+        } else if (a.kind == SubShapeKind::Edge && b.kind == SubShapeKind::Edge) {
+            const auto ea = edgeInfo(*a.shape, a.index);
+            const auto eb = edgeInfo(*b.shape, b.index);
+            if (ea && eb && ea->kind == CurveKind::Line && eb->kind == CurveKind::Line)
+                m.angle = std::acos(std::clamp(std::abs(ea->tangent.dot(eb->tangent)), 0.0, 1.0));
+        }
+        return m;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "measure failed: " << describeFailure(failure);
+        return std::nullopt;
+    }
 }
 
 std::string toBrepString(const Shape& shape)

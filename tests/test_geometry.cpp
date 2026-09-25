@@ -343,3 +343,36 @@ TEST(Geometry, ShellTooThickFails)
     EXPECT_FALSE(r.ok());
     EXPECT_FALSE(r.userMessage().empty());
 }
+
+TEST(Geometry, MeasureWallAndAngles)
+{
+    const Shape s = box(60, 40, 30);
+    auto sh = shell(s, {faceWithNormal(s, {0, 0, 1})}, 2.0);
+    ASSERT_TRUE(sh.ok());
+    const Shape& e = sh.value();
+    // Outer and inner +X walls: parallel, 2 mm apart.
+    int outer = -1, inner = -1;
+    for (int i = 0; i < e.faceCount(); ++i) {
+        const auto info = faceInfo(e, i);
+        if (!info->isPlanar())
+            continue;
+        if (info->normal.x > 0.999 && info->centroid.x > 59)
+            outer = i;
+        if (info->normal.x < -0.999 && info->centroid.x > 50)
+            inner = i;
+    }
+    ASSERT_GE(outer, 0);
+    ASSERT_GE(inner, 0);
+    const auto m = measure({&e, SubShapeKind::Face, outer}, {&e, SubShapeKind::Face, inner});
+    ASSERT_TRUE(m.has_value());
+    EXPECT_NEAR(m->distance, 2.0, 1e-7);
+    ASSERT_TRUE(m->parallelGap.has_value());
+    EXPECT_NEAR(*m->parallelGap, 2.0, 1e-7);
+    EXPECT_NEAR(*m->angle, 0.0, 1e-9);
+
+    // Top rim face vs outer wall: perpendicular, touching.
+    const auto square = measure({&e, SubShapeKind::Face, outer}, {&e, SubShapeKind::Face, faceWithNormal(e, {0, 0, 1})});
+    ASSERT_TRUE(square.has_value());
+    EXPECT_NEAR(square->distance, 0.0, 1e-7);
+    EXPECT_NEAR(*square->angle, kPi / 2, 1e-9);
+}

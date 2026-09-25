@@ -448,3 +448,32 @@ TEST(Interaction, CombineFollowsToolEdits)
     ASSERT_EQ(h.controller.selection().size(), 2u);
     EXPECT_FALSE(h.controller.triggerAction("subtract").ok());
 }
+
+TEST(Interaction, MeasureBetweenTwoFaces)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0) .. (10,10,20)
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({0, 0, 20}));             // top
+    auto e = Harness::at(h.screen({10, 0, 10})); // +X side
+    e.modifiers.shift = true;
+    h.controller.pointerPress(e);
+    h.controller.pointerRelease(e);
+    ASSERT_EQ(h.controller.selection().size(), 2u);
+    EXPECT_EQ(h.controller.selectionSummary(), "Distance 0.00 mm \xC2\xB7 Angle 90.0\xC2\xB0");
+
+    // Top and bottom are parallel: 20 mm apart. Pick the bottom through a
+    // view from below.
+    h.controller.keyPress(Key::Escape); // clear (the armed shell arrow would catch the next click)
+    h.controller.setStandardView(StandardView::Bottom, false);
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({0, 0, 0}));
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+    auto top = Harness::at(h.screen({0, 0, 20}));
+    top.modifiers.shift = true;
+    h.controller.pointerPress(top);
+    h.controller.pointerRelease(top);
+    ASSERT_EQ(h.controller.selection().size(), 2u);
+    EXPECT_EQ(h.controller.selectionSummary(), "Gap 20.00 mm \xC2\xB7 parallel");
+}

@@ -545,7 +545,7 @@ std::string InteractionController::setValueText(const std::string& text)
     // Angle operations keep their value in degrees.
     const double value = operation_->isAngle() ? *parsed.millimeters * 180.0 / kPi : *parsed.millimeters;
     if (operation_->isAngle() && value > 360.0 + 1e-9)
-        return "The angle must be between 0Â° and 360Â°.";
+        return "The angle must be between 0° and 360°.";
     if (!operation_->allowsNegative() && value <= 0)
         return operation_->valueLabel() + " must be greater than zero.";
     operation_->setValue(value, *document_);
@@ -869,6 +869,29 @@ std::string InteractionController::selectionSummary() const
     const doc::Body* body = document_->body(first.bodyId);
     if (!body)
         return {};
+    // Two faces/edges (on any bodies): measure between them.
+    if (selection_.size() == 2) {
+        auto refOf = [&](const sel::SelectionItem& item) -> std::optional<geom::SubShapeRef> {
+            const doc::Body* b = document_->body(item.bodyId);
+            if (!b || (item.kind != sel::SelectionKind::Face && item.kind != sel::SelectionKind::Edge))
+                return std::nullopt;
+            return geom::SubShapeRef{&b->shape(),
+                                     item.kind == sel::SelectionKind::Face ? geom::SubShapeKind::Face : geom::SubShapeKind::Edge,
+                                     item.index};
+        };
+        const auto a = refOf(selection_.items()[0]);
+        const auto b = refOf(selection_.items()[1]);
+        if (a && b) {
+            if (const auto m = geom::measure(*a, *b)) {
+                if (m->parallelGap)
+                    return "Gap " + formatLength(*m->parallelGap, unit) + " · parallel";
+                std::string text = "Distance " + formatLength(m->distance, unit);
+                if (m->angle)
+                    text += " · Angle " + formatAngle(*m->angle);
+                return text;
+            }
+        }
+    }
     if (selection_.size() > 1) {
         const char* noun = first.kind == sel::SelectionKind::Edge ? " edges" : first.kind == sel::SelectionKind::Face ? " faces" : " bodies";
         return std::to_string(selection_.size()) + noun;

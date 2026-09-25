@@ -47,6 +47,23 @@ std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex);
 // Indices of the faces adjacent to an edge (1 for seam/boundary, usually 2).
 std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex);
 
+// ---- Measurement -------------------------------------------------------------
+enum class SubShapeKind { Face, Edge, Vertex, Whole };
+struct SubShapeRef {
+    const Shape* shape = nullptr;
+    SubShapeKind kind = SubShapeKind::Whole;
+    int index = -1;
+};
+
+struct Measurement {
+    double distance = 0;             // exact minimum distance (0 when touching)
+    Vec3 pointA, pointB;             // closest points
+    std::optional<double> angle;     // radians, between planar faces or straight edges
+    std::optional<double> parallelGap; // distance between parallel planar faces
+};
+
+std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b);
+
 // ---- Serialization ----------------------------------------------------------
 // Native OCCT BRep text. Used only as a geometry *cache* inside project files;
 // the parametric document is the source of truth.
