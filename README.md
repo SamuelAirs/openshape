@@ -1,5 +1,8 @@
 # OpenShape
 
+*Open source CAD based 3D design software specialized for touch operation and
+3D printing.*
+
 **Precise solid CAD that feels direct.** Select a face, pull the arrow, type
 `15`, press Enter — the part is now exactly 15 mm taller. Undo it. Round an
 edge by typing its radius. Save, reopen, export STEP and STL for your slicer.
