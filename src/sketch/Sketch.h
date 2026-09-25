@@ -66,6 +66,13 @@ enum class ConstraintKind {
     HorizontalDistance, // points a, b; value = b.x - a.x (signed)
     VerticalDistance,   // points a, b; value = b.y - a.y (signed)
     Diameter,           // circle a; value > 0
+    Parallel,           // lines a, b
+    Perpendicular,      // lines a, b
+    Equal,              // lines a, b (same length) or circles a, b (same radius)
+    Tangent,            // line or circle a, circle b
+    Concentric,         // circles a, b
+    PointOnLine,        // point a on the (infinite) line b
+    Midpoint,           // point a at the middle of line b
 };
 
 struct SketchConstraint {
@@ -125,6 +132,8 @@ public:
     EntityId addLine(EntityId start, EntityId end, bool construction = false);
     EntityId addCircle(EntityId center, double radius, bool construction = false);
     EntityId addConstraint(const SketchConstraint& constraint);
+    // Marks a line or circle as construction (never part of a profile).
+    bool setConstruction(EntityId id, bool construction);
     // True if the constraint references suitable existing entities and has a valid value.
     bool isValid(const SketchConstraint& constraint) const;
     // Removes an entity and everything that depends on it (lines using a

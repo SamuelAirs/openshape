@@ -657,6 +657,33 @@ std::vector<ContextAction> SketchSession::contextActions() const
         actions.push_back({"hdistance", "Horizontal distance", false});
         actions.push_back({"vdistance", "Vertical distance", false});
     }
+    if (selected_.size() == 2) {
+        if (lines == 2) {
+            actions.push_back({"parallel", "Parallel", false});
+            actions.push_back({"perpendicular", "Perpendicular", false});
+            actions.push_back({"equal", "Equal", false});
+        } else if (circles == 2) {
+            actions.push_back({"equal", "Equal", false});
+            actions.push_back({"concentric", "Concentric", false});
+            actions.push_back({"tangent", "Tangent", false});
+        } else if (lines == 1 && circles == 1) {
+            actions.push_back({"tangent", "Tangent", false});
+        } else if (lines == 1 && points == 1) {
+            actions.push_back({"online", "On line", false});
+            actions.push_back({"midpoint", "Midpoint", false});
+        }
+    }
+    if (lines + circles > 0) {
+        // Construction curves guide the drawing but never become profiles.
+        bool allConstruction = true;
+        for (auto id : selected_) {
+            if (const auto* l = working_.line(id))
+                allConstruction = allConstruction && l->construction;
+            if (const auto* c = working_.circle(id))
+                allConstruction = allConstruction && c->construction;
+        }
+        actions.push_back({"construction", "Construction", allConstruction});
+    }
     const bool onlyOrigin = selected_.size() == 1 && selected_.front() == sketch::kOriginId;
     if (!onlyOrigin)
         actions.push_back({"delete", "Delete", false});
@@ -692,6 +719,36 @@ Status SketchSession::triggerAction(const std::string& id)
     } else if (id == "coincident" && selected_.size() == 2) {
         next.addConstraint({sketch::ConstraintKind::Coincident, selected_[0], selected_[1]});
         label = "Coincident";
+    } else if ((id == "parallel" || id == "perpendicular" || id == "equal" || id == "concentric" || id == "tangent"
+                || id == "online" || id == "midpoint")
+               && selected_.size() == 2) {
+        // Order the pair the way the constraint expects: line before circle,
+        // point before line.
+        sketch::EntityId a = selected_[0], b = selected_[1];
+        if ((working_.circle(a) && working_.line(b)) || (working_.line(a) && working_.point(b)))
+            std::swap(a, b);
+        using K = sketch::ConstraintKind;
+        const K kind = id == "parallel" ? K::Parallel : id == "perpendicular" ? K::Perpendicular : id == "equal" ? K::Equal
+                     : id == "concentric" ? K::Concentric : id == "tangent" ? K::Tangent : id == "online" ? K::PointOnLine
+                                                                                          : K::Midpoint;
+        if (next.addConstraint({kind, a, b}) == sketch::kNoEntity)
+            return Status::failure(ErrorCode::InvalidArgument, "That constraint does not apply to this selection.",
+                                   "sketch constraint rejected: " + id);
+        static const std::map<std::string, std::string> labels{
+            {"parallel", "Parallel"}, {"perpendicular", "Perpendicular"}, {"equal", "Equal"}, {"concentric", "Concentric"},
+            {"tangent", "Tangent"},   {"online", "On line"},             {"midpoint", "Midpoint"}};
+        label = labels.at(id);
+    } else if (id == "construction") {
+        bool allConstruction = true;
+        for (auto e : selected_) {
+            if (const auto* l = working_.line(e))
+                allConstruction = allConstruction && l->construction;
+            if (const auto* c = working_.circle(e))
+                allConstruction = allConstruction && c->construction;
+        }
+        for (auto e : selected_)
+            next.setConstruction(e, !allConstruction);
+        label = allConstruction ? "Normal geometry" : "Construction";
     } else if (id == "delete") {
         for (auto e : selected_)
             next.remove(e);

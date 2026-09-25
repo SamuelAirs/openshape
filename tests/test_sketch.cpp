@@ -217,3 +217,94 @@ TEST(Plane, FrameIsOrthonormalAndRoundTrips)
     const Plane top = Plane::fromNormal({0, 0, 0}, {0, 0, 1});
     EXPECT_NEAR(top.xAxis.x, 1.0, 1e-12); // XY sketches keep world X to the right
 }
+
+namespace {
+EntityId line(Sketch& s, Vec2 a, Vec2 b)
+{
+    return s.addLine(s.addPoint(a), s.addPoint(b));
+}
+Vec2 dir(const Sketch& s, EntityId l)
+{
+    return pos(s, s.line(l)->end) - pos(s, s.line(l)->start);
+}
+double cross(Vec2 a, Vec2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+} // namespace
+
+TEST(Sketch, ParallelPerpendicularEqual)
+{
+    Sketch s;
+    const EntityId a = line(s, {0, 0}, {20, 1});
+    const EntityId b = line(s, {0, 10}, {15, 14});
+    const EntityId c = line(s, {30, 0}, {33, 12});
+    ASSERT_NE(s.addConstraint({ConstraintKind::Parallel, a, b}), kNoEntity);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Perpendicular, a, c}), kNoEntity);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Equal, a, b}), kNoEntity);
+    EXPECT_EQ(s.addConstraint({ConstraintKind::Parallel, a, a}), kNoEntity); // a line with itself
+    const auto report = solve(s);
+    ASSERT_TRUE(report.ok) << report.message;
+    EXPECT_NEAR(cross(dir(s, a), dir(s, b)), 0.0, 1e-7);
+    EXPECT_NEAR(dir(s, a).x * dir(s, c).x + dir(s, a).y * dir(s, c).y, 0.0, 1e-7);
+    EXPECT_NEAR(dir(s, a).length(), dir(s, b).length(), 1e-7);
+}
+
+TEST(Sketch, TangentConcentricEqualCircles)
+{
+    Sketch s;
+    const EntityId l = line(s, {0, 0}, {40, 0});
+    const EntityId c1 = s.addCircle(s.addPoint({10, 7}), 5);
+    const EntityId c2 = s.addCircle(s.addPoint({11, 6}), 2);
+    const EntityId c3 = s.addCircle(s.addPoint({30, 9}), 3);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Tangent, l, c1}), kNoEntity);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Concentric, c1, c2}), kNoEntity);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Equal, c1, c3}), kNoEntity);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Tangent, c1, c3}), kNoEntity);
+    const auto report = solve(s);
+    ASSERT_TRUE(report.ok) << report.message;
+    const Vec2 o1 = pos(s, s.circle(c1)->center), o3 = pos(s, s.circle(c3)->center);
+    const double r1 = s.circle(c1)->radius, r3 = s.circle(c3)->radius;
+    // Tangent to the line y = 0 (the line stays put: it was already horizontal
+    // but free, so check the distance to the solved line instead).
+    const Vec2 p = pos(s, s.line(l)->start), d = dir(s, l);
+    EXPECT_NEAR(std::abs(cross(d, o1 - p)) / d.length(), r1, 1e-7);
+    EXPECT_NEAR((pos(s, s.circle(c2)->center) - o1).length(), 0.0, 1e-7);
+    EXPECT_NEAR(r1, r3, 1e-7);
+    EXPECT_NEAR((o3 - o1).length(), r1 + r3, 1e-7); // externally tangent
+}
+
+TEST(Sketch, PointOnLineAndMidpoint)
+{
+    Sketch s;
+    const EntityId l = line(s, {0, 0}, {20, 0});
+    const EntityId p = s.addPoint({7, 3});
+    const EntityId m = s.addPoint({9, -2});
+    ASSERT_NE(s.addConstraint({ConstraintKind::PointOnLine, p, l}), kNoEntity);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Midpoint, m, l}), kNoEntity);
+    EXPECT_EQ(s.addConstraint({ConstraintKind::Midpoint, s.line(l)->start, l}), kNoEntity); // an endpoint
+    const auto report = solve(s);
+    ASSERT_TRUE(report.ok) << report.message;
+    const Vec2 a = pos(s, s.line(l)->start), b = pos(s, s.line(l)->end);
+    EXPECT_NEAR(cross(b - a, pos(s, p) - a), 0.0, 1e-7);
+    EXPECT_NEAR((pos(s, m) - (a + b) * 0.5).length(), 0.0, 1e-7);
+}
+
+TEST(Sketch, NewConstraintKindsAndConstructionRoundTrip)
+{
+    Sketch s;
+    const EntityId a = line(s, {0, 0}, {20, 0});
+    const EntityId b = line(s, {0, 5}, {20, 6});
+    const EntityId c = s.addCircle(s.addPoint({5, 20}), 3);
+    s.addConstraint({ConstraintKind::Parallel, a, b});
+    s.addConstraint({ConstraintKind::Tangent, b, c});
+    ASSERT_TRUE(s.setConstruction(a, true));
+    ASSERT_TRUE(s.setConstruction(c, true));
+    EXPECT_FALSE(s.setConstruction(kOriginId, true)); // points have no construction flag
+    auto back = Sketch::fromJson(s.toJson());
+    ASSERT_TRUE(back.ok()) << back.developerMessage();
+    EXPECT_EQ(back.value().constraints().size(), 2u);
+    EXPECT_TRUE(back.value().line(a)->construction);
+    EXPECT_FALSE(back.value().line(b)->construction);
+    EXPECT_TRUE(back.value().circle(c)->construction);
+}

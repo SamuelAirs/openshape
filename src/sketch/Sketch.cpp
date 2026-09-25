@@ -68,6 +68,19 @@ EntityId Sketch::addCircle(EntityId center, double radius, bool construction)
     return id;
 }
 
+bool Sketch::setConstruction(EntityId id, bool construction)
+{
+    if (auto it = lines_.find(id); it != lines_.end()) {
+        it->second.construction = construction;
+        return true;
+    }
+    if (auto it = circles_.find(id); it != circles_.end()) {
+        it->second.construction = construction;
+        return true;
+    }
+    return false;
+}
+
 bool Sketch::isValid(const SketchConstraint& c) const
 {
     auto isPoint = [&](EntityId e) { return points_.contains(e); };
@@ -85,6 +98,25 @@ bool Sketch::isValid(const SketchConstraint& c) const
         break;
     case ConstraintKind::Diameter:
         valid = circles_.contains(c.a);
+        break;
+    case ConstraintKind::Parallel:
+    case ConstraintKind::Perpendicular:
+        valid = lines_.contains(c.a) && lines_.contains(c.b) && c.a != c.b;
+        break;
+    case ConstraintKind::Equal:
+        valid = c.a != c.b
+             && ((lines_.contains(c.a) && lines_.contains(c.b)) || (circles_.contains(c.a) && circles_.contains(c.b)));
+        break;
+    case ConstraintKind::Tangent:
+        valid = c.a != c.b && (lines_.contains(c.a) || circles_.contains(c.a)) && circles_.contains(c.b);
+        break;
+    case ConstraintKind::Concentric:
+        valid = c.a != c.b && circles_.contains(c.a) && circles_.contains(c.b);
+        break;
+    case ConstraintKind::PointOnLine:
+    case ConstraintKind::Midpoint:
+        // An endpoint is on its line already: that would only be redundant.
+        valid = isPoint(c.a) && lines_.contains(c.b) && lines_.at(c.b).start != c.a && lines_.at(c.b).end != c.a;
         break;
     }
     if (!valid || !std::isfinite(c.value))
@@ -221,6 +253,13 @@ const char* kindName(ConstraintKind k)
     case ConstraintKind::HorizontalDistance: return "HorizontalDistance";
     case ConstraintKind::VerticalDistance: return "VerticalDistance";
     case ConstraintKind::Diameter: return "Diameter";
+    case ConstraintKind::Parallel: return "Parallel";
+    case ConstraintKind::Perpendicular: return "Perpendicular";
+    case ConstraintKind::Equal: return "Equal";
+    case ConstraintKind::Tangent: return "Tangent";
+    case ConstraintKind::Concentric: return "Concentric";
+    case ConstraintKind::PointOnLine: return "PointOnLine";
+    case ConstraintKind::Midpoint: return "Midpoint";
     }
     return "?";
 }
@@ -228,7 +267,9 @@ const char* kindName(ConstraintKind k)
 std::optional<ConstraintKind> kindFromName(const std::string& s)
 {
     for (auto k : {ConstraintKind::Coincident, ConstraintKind::Horizontal, ConstraintKind::Vertical, ConstraintKind::Distance,
-                   ConstraintKind::HorizontalDistance, ConstraintKind::VerticalDistance, ConstraintKind::Diameter})
+                   ConstraintKind::HorizontalDistance, ConstraintKind::VerticalDistance, ConstraintKind::Diameter,
+                   ConstraintKind::Parallel, ConstraintKind::Perpendicular, ConstraintKind::Equal, ConstraintKind::Tangent,
+                   ConstraintKind::Concentric, ConstraintKind::PointOnLine, ConstraintKind::Midpoint})
         if (s == kindName(k))
             return k;
     return std::nullopt;

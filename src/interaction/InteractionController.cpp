@@ -1405,6 +1405,14 @@ Status InteractionController::startSketch(SketchPlane originPlane)
 {
     if (session_)
         finishSketch();
+    // Drawing on a sketch continues it: new curves split its regions.
+    if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::SketchProfile) {
+        const Uuid sketchId = selection_.items().front().bodyId;
+        if (document_->sketch(sketchId)) {
+            enterSketch(sketchId, SketchTool::Rectangle);
+            return okStatus();
+        }
+    }
     sketch::Plane plane = sketch::Plane::xy();
     // Front (XZ) faces a viewer at -Y; Right (YZ) faces a viewer at +X. Both
     // keep sketch "up" along world Z.
@@ -1433,6 +1441,19 @@ Status InteractionController::startSketch(SketchPlane originPlane)
             const auto status = body->state(i).status;
             if (status == doc::FeatureStatus::Ok || status == doc::FeatureStatus::Suppressed)
                 attachment = doc::makeAttachment(*body, body->features()[std::size_t(i)]->id(), item.index);
+        }
+    }
+    // A visible sketch already lying on this plane is continued rather than
+    // starting an independent one, so everything drawn on a plane interacts
+    // (as in Shapr3D). The newest such sketch wins.
+    const Vec3 n = plane.normal().normalized();
+    for (auto it = document_->sketches().rbegin(); it != document_->sketches().rend(); ++it) {
+        const sketch::Sketch& existing = **it;
+        const Vec3 m = existing.plane().normal().normalized();
+        if (existing.isVisible() && std::abs(m.dot(n)) > 0.9999 && std::abs((existing.plane().origin - plane.origin).dot(n)) < 1e-4) {
+            message("Continuing " + existing.name() + " on this plane.");
+            enterSketch(existing.id(), SketchTool::Rectangle);
+            return okStatus();
         }
     }
     operation_.reset();

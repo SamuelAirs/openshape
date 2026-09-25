@@ -203,14 +203,21 @@ bool AppController::canStartSketch() const
     if (interaction_->sketchSession())
         return false;
     const auto& sel = interaction_->selection();
-    // Nothing selected: sketch on the ground plane. One flat face: sketch on it.
-    return sel.empty() || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::Face);
+    // Nothing selected: sketch on the ground plane. One flat face: sketch on
+    // it. One profile: continue its sketch.
+    return sel.empty()
+        || (sel.size() == 1
+            && (sel.items().front().kind == sel::SelectionKind::Face
+                || sel.items().front().kind == sel::SelectionKind::SketchProfile));
 }
 
 bool AppController::faceSelected() const
 {
+    // A face (sketch on it) or a profile (continue its sketch): no plane menu.
     const auto& sel = interaction_->selection();
-    return sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::Face;
+    return sel.size() == 1
+        && (sel.items().front().kind == sel::SelectionKind::Face
+            || sel.items().front().kind == sel::SelectionKind::SketchProfile);
 }
 
 void AppController::startSketch(const QString& plane)

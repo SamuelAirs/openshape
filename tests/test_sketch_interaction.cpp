@@ -2,6 +2,7 @@
 // same code paths the UI uses.
 #include "commands/Command.h"
 #include "document/Document.h"
+#include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
 
@@ -356,6 +357,86 @@ TEST(SketchInteraction, CutThatSplitsTheBodyIsFlagged)
     }
     EXPECT_TRUE(bodyWarned);
     EXPECT_TRUE(stepWarned);
+}
+
+// Sketching on a sketch continues it: with a profile selected, Sketch enters
+// the same sketch, and a line across the rectangle splits it in two.
+TEST(SketchInteraction, SketchOnASketchContinuesIt)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    typedRectangle(h, {0, 0}, 40, 20);
+    const Uuid first = h.session().sketchId();
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({10, 10, 0}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::SketchProfile);
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    EXPECT_EQ(h.session().sketchId(), first);
+    EXPECT_EQ(h.document.sketches().size(), 1u);
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({20, -6}));
+    h.click(h.sketchScreen({20, 26}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.finishSketch();
+    const auto regions = doc::sketchRegions(*h.document.sketch(first));
+    ASSERT_TRUE(regions.ok());
+    EXPECT_EQ(regions.value().size(), 2u);
+}
+
+// Starting a sketch on a plane that already has one continues it.
+TEST(SketchInteraction, SamePlaneContinuesTheSketch)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    typedRectangle(h, {0, 0}, 40, 20);
+    const Uuid first = h.session().sketchId();
+    h.controller.finishSketch();
+    ASSERT_TRUE(h.controller.startSketch().ok()); // nothing selected: the ground plane again
+    EXPECT_EQ(h.session().sketchId(), first);
+    EXPECT_EQ(h.document.sketches().size(), 1u);
+    ASSERT_FALSE(h.messages.empty());
+    EXPECT_NE(h.messages.back().find("Continuing"), std::string::npos);
+    h.controller.finishSketch();
+    // Another plane still gets its own sketch.
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Front).ok());
+    EXPECT_NE(h.session().sketchId(), first);
+}
+
+// Constraint actions offered for a selection, applied through the session.
+TEST(SketchInteraction, ParallelAndConstructionFromSelection)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({30, 8}));
+    h.controller.keyPress(Key::Escape);
+    h.click(h.sketchScreen({0, 15}));
+    h.click(h.sketchScreen({25, 30}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.keyPress(Key::Escape); // back to Select
+    h.click(h.sketchScreen({15, 4}));
+    h.click(h.sketchScreen({12.5, 22.5}), true);
+    ASSERT_EQ(h.session().selection().size(), 2u);
+    bool parallel = false, construction = false;
+    for (const auto& a : h.session().contextActions()) {
+        parallel = parallel || a.id == "parallel";
+        construction = construction || a.id == "construction";
+    }
+    ASSERT_TRUE(parallel && construction);
+    ASSERT_TRUE(h.controller.triggerAction("parallel").ok());
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Parallel), 1u);
+    ASSERT_TRUE(h.controller.triggerAction("construction").ok());
+    for (const auto& [id, l] : h.session().sketch().lines())
+        EXPECT_TRUE(l.construction);
+    EXPECT_TRUE(h.controller.undo()); // normal geometry again
+    for (const auto& [id, l] : h.session().sketch().lines())
+        EXPECT_FALSE(l.construction);
 }
 
 TEST(SketchInteraction, UndoPastSketchCreationLeavesSketchMode)

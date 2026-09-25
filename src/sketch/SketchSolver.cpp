@@ -68,6 +68,40 @@ public:
             case ConstraintKind::Diameter:
                 system_.addConstraintCircleDiameter(circles_.at(c.a), param(c.value), tag);
                 break;
+            case ConstraintKind::Parallel:
+                system_.addConstraintParallel(lines_.at(c.a), lines_.at(c.b), tag);
+                break;
+            case ConstraintKind::Perpendicular:
+                system_.addConstraintPerpendicular(lines_.at(c.a), lines_.at(c.b), tag);
+                break;
+            case ConstraintKind::Equal:
+                if (lines_.contains(c.a))
+                    system_.addConstraintEqualLength(lines_.at(c.a), lines_.at(c.b), tag);
+                else
+                    system_.addConstraintEqualRadius(circles_.at(c.a), circles_.at(c.b), tag);
+                break;
+            case ConstraintKind::Tangent:
+                if (lines_.contains(c.a)) {
+                    // Keep the circle on the side of the line it is on now.
+                    const SketchLine& l = sketch_.lines().at(c.a);
+                    const Vec2 p = sketch_.point(l.start)->position;
+                    const Vec2 d = sketch_.point(l.end)->position - p;
+                    const Vec2 q = sketch_.point(sketch_.circles().at(c.b).center)->position - p;
+                    system_.addConstraintTangent(lines_.at(c.a), circles_.at(c.b), d.x * q.y - d.y * q.x > 0, tag);
+                } else {
+                    system_.addConstraintTangent(circles_.at(c.a), circles_.at(c.b), tag);
+                }
+                break;
+            case ConstraintKind::Concentric:
+                system_.addConstraintP2PCoincident(circles_.at(c.a).center, circles_.at(c.b).center, tag);
+                break;
+            case ConstraintKind::PointOnLine:
+                system_.addConstraintPointOnLine(points_.at(c.a), lines_.at(c.b), tag);
+                break;
+            case ConstraintKind::Midpoint:
+                // The line's endpoints are symmetric about the point.
+                system_.addConstraintP2PSymmetric(lines_.at(c.b).p1, lines_.at(c.b).p2, points_.at(c.a), tag);
+                break;
             }
         }
     }

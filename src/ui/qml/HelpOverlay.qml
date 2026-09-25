@@ -104,7 +104,9 @@ Rectangle {
                             ["Exact size while drawing", "Type, Tab to the next value, Enter"],
                             ["Stop drawing lines", "Right-click or Esc (again: leave the tool)"],
                             ["Change a dimension", "Click its label"],
-                            ["Constrain", "Select lines or points → actions below"],
+                            ["Constrain", "Select 1–2 items → Parallel, Perpendicular, Equal, Tangent, Concentric, …"],
+                            ["Construction curves", "Select curves → Construction (never become shapes)"],
+                            ["Add to a sketch", "Select one of its shapes → Sketch, or sketch on its plane"],
                             ["Extrude / revolve", "Finish, then click inside a closed shape"]
                         ]
                     }
