@@ -508,6 +508,34 @@ void InteractionController::click(const PointerEvent& event)
         notifyView();
         return;
     }
+    // Mirror: a flat face sets the plane; clicking empty space applies.
+    if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get())) {
+        if (hit.kind == sel::PickKind::Face) {
+            if (const Status status = mirror->setPlaneFromFace(*document_, hit.bodyId, hit.index); !status)
+                message(status.userMessage());
+        } else if (!hit.hit() && mirror->canCommit()) {
+            (void)commitOperation();
+        }
+        notifyState();
+        notifyView();
+        return;
+    }
+    // Pattern: an edge or round face sets the direction/axis; a click that
+    // cannot be used for that applies the pattern (like clicking elsewhere).
+    if (auto* pattern = dynamic_cast<PatternOperation*>(operation_.get())) {
+        bool used = false;
+        if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge)
+            used = pattern
+                       ->setAxisFrom(*document_, hit.bodyId,
+                                     hit.kind == sel::PickKind::Face ? geom::SubShapeKind::Face : geom::SubShapeKind::Edge,
+                                     hit.index)
+                       .ok();
+        if (!used && pattern->canCommit())
+            (void)commitOperation();
+        notifyState();
+        notifyView();
+        return;
+    }
 
     if (operation_ && operation_->canCommit()) {
         // Clicking anywhere else accepts the pending operation (direct-manipulation
@@ -563,7 +591,7 @@ void InteractionController::rebuildOperation()
             edgeOperationKind_ = doc::FeatureKind::Fillet;
         profileOperationKind_ = doc::FeatureKind::Extrude;
         alignRequested_ = false;
-        rotateRequested_ = false;
+        bodyTool_ = BodyTool::Move;
     }
     if (alignRequested_) {
         const auto& items = selection_.items();
@@ -600,10 +628,12 @@ void InteractionController::rebuildOperation()
         }
     } else if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Body) {
         const Uuid body = selection_.items().front().bodyId;
-        if (rotateRequested_)
-            operation_ = RotateOperation::create(*document_, body);
-        else
-            operation_ = MoveOperation::create(*document_, body);
+        switch (bodyTool_) {
+        case BodyTool::Move: operation_ = MoveOperation::create(*document_, body); break;
+        case BodyTool::Rotate: operation_ = RotateOperation::create(*document_, body); break;
+        case BodyTool::Mirror: operation_ = MirrorOperation::create(*document_, body); break;
+        case BodyTool::Pattern: operation_ = PatternOperation::create(*document_, body); break;
+        }
     } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody()) {
         const Uuid sketchId = *selection_.singleBody();
         const auto* entry = scene_.sketch(sketchId);
@@ -657,8 +687,15 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
         const Vec2 c = camera_.project(operation_->ring(0).center());
         return Vec2{c.x + RingStyle{}.radiusPx, c.y - RingStyle{}.radiusPx * 0.5};
     }
-    if (!operation_ || operation_->handleCount() == 0)
-        return std::nullopt; // e.g. Align still waiting for its target
+    if (operation_ && operation_->handleCount() == 0) {
+        if (const auto anchor = operation_->labelAnchor()) {
+            const Vec2 c = camera_.project(*anchor);
+            return Vec2{c.x + 40, c.y - 20};
+        }
+        return std::nullopt; // e.g. Align still waiting for its target, Mirror
+    }
+    if (!operation_)
+        return std::nullopt;
     const ArrowStyle style;
     const int active = operation_->activeHandle();
     const LinearManipulator handle = operation_->handle(active);
@@ -677,10 +714,13 @@ Status InteractionController::commitOperation()
     }
     // Fillets consume their edges and extrusions their profiles: clear those
     // selections. A pushed face still exists and stays selected.
-    const bool clearSelection = operation_->featureKind() != doc::FeatureKind::PushPull
-                             && operation_->featureKind() != doc::FeatureKind::Move;
+    const doc::FeatureKind kind = operation_->featureKind();
+    const bool clearSelection = kind != doc::FeatureKind::PushPull && kind != doc::FeatureKind::Move
+                             && kind != doc::FeatureKind::Mirror && kind != doc::FeatureKind::Pattern;
     if (dynamic_cast<const AlignOperation*>(operation_.get()))
         alignRequested_ = false; // done: the source face/edge offers its usual tools again
+    if (kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern)
+        bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
@@ -797,6 +837,28 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (session_)
         return session_->contextActions();
     std::vector<ContextAction> actions;
+    if (const auto* mirror = dynamic_cast<const MirrorOperation*>(operation_.get())) {
+        actions.push_back({"plane:0", "Across YZ", mirror->originPlane() == 0});
+        actions.push_back({"plane:1", "Across XZ", mirror->originPlane() == 1});
+        actions.push_back({"plane:2", "Across XY", mirror->originPlane() == 2});
+        if (mirror->canCommit())
+            actions.push_back({"apply", "Apply", false});
+        actions.push_back({"move", "Move", false});
+        actions.push_back({"rotate", "Rotate", false});
+        actions.push_back({"pattern", "Pattern", false});
+        return actions;
+    }
+    if (const auto* pattern = dynamic_cast<const PatternOperation*>(operation_.get())) {
+        actions.push_back({"layout:linear", "Linear", !pattern->circular()});
+        actions.push_back({"layout:circular", "Circular", pattern->circular()});
+        for (int axis = 0; axis < 3; ++axis)
+            actions.push_back({"axis:" + std::to_string(axis),
+                               std::string(pattern->circular() ? "Around " : "Along ") + "XYZ"[axis],
+                               pattern->axisIndex() == axis});
+        actions.push_back({"fewer", "\xE2\x88\x92 copy", false});
+        actions.push_back({"more", "+ copy", false});
+        return actions;
+    }
     if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get())) {
         actions.push_back({"flip", "Flip", align->flipped()});
         if (align->canUseGround())
@@ -869,6 +931,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
         if (selection_.size() == 1) {
             actions.push_back({"move", "Move", dynamic_cast<const MoveOperation*>(operation_.get()) != nullptr});
             actions.push_back({"rotate", "Rotate", dynamic_cast<const RotateOperation*>(operation_.get()) != nullptr});
+            actions.push_back({"mirror", "Mirror", dynamic_cast<const MirrorOperation*>(operation_.get()) != nullptr});
+            actions.push_back({"pattern", "Pattern", dynamic_cast<const PatternOperation*>(operation_.get()) != nullptr});
         }
         if (selection_.size() >= 2) {
             // The first body is kept; the others are the tools.
@@ -947,8 +1011,9 @@ Status InteractionController::triggerAction(const std::string& id)
         return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
                                      : id == "subtract" ? doc::CombineMode::Subtract
                                                         : doc::CombineMode::Intersect);
-    if (id == "move" || id == "rotate") {
-        rotateRequested_ = id == "rotate";
+    if (id == "move" || id == "rotate" || id == "mirror" || id == "pattern") {
+        bodyTool_ = id == "rotate" ? BodyTool::Rotate : id == "mirror" ? BodyTool::Mirror
+                  : id == "pattern" ? BodyTool::Pattern : BodyTool::Move;
         if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Body)
             rebuildOperation();
         notifyState();
@@ -968,6 +1033,30 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyState();
         notifyView();
         return okStatus();
+    }
+    if (id == "apply")
+        return commitOperation();
+    if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get()); mirror && id.rfind("plane:", 0) == 0) {
+        mirror->setOriginPlane(std::stoi(id.substr(6)), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* pattern = dynamic_cast<PatternOperation*>(operation_.get())) {
+        bool handled = true;
+        if (id == "layout:linear" || id == "layout:circular")
+            pattern->setCircular(id == "layout:circular", *document_);
+        else if (id.rfind("axis:", 0) == 0)
+            pattern->setAxisIndex(std::stoi(id.substr(5)), *document_);
+        else if (id == "fewer" || id == "more")
+            pattern->setCount(pattern->count() + (id == "more" ? 1 : -1), *document_);
+        else
+            handled = false;
+        if (handled) {
+            notifyState();
+            notifyView();
+            return okStatus();
+        }
     }
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get()); align && (id == "flip" || id == "ground")) {
         Status status = okStatus();
@@ -1498,6 +1587,8 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Combine: return "Combine";
     case doc::FeatureKind::Revolve: return "Revolve";
     case doc::FeatureKind::Hole: return "Hole";
+    case doc::FeatureKind::Mirror: return "Mirror";
+    case doc::FeatureKind::Pattern: return "Pattern";
     }
     return "Step";
 }
@@ -1561,6 +1652,28 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
             text += (text.empty() ? std::string() : dot) + buf;
         }
         return text;
+    }
+    case doc::FeatureKind::Mirror: {
+        const auto& m = static_cast<const doc::MirrorFeature&>(f);
+        const Vec3 n = m.planeNormal.normalized();
+        static const char* planes[] = {"YZ", "XZ", "XY"};
+        const double c[3] = {n.x, n.y, n.z};
+        for (int k = 0; k < 3; ++k)
+            if (std::abs(c[k]) > 0.9999 && m.planeOrigin.length() < 1e-9)
+                return std::string("Across ") + planes[k];
+        return "Across a face";
+    }
+    case doc::FeatureKind::Pattern: {
+        const auto& pt = static_cast<const doc::PatternFeature&>(f);
+        const bool linear = pt.layout == doc::PatternFeature::Layout::Linear;
+        const Vec3 d = (linear ? pt.direction : pt.axis).normalized();
+        const double c[3] = {d.x, d.y, d.z};
+        std::string axis = linear ? " along an edge" : " around an axis";
+        for (int k = 0; k < 3; ++k)
+            if (std::abs(c[k]) > 0.9999)
+                axis = std::string(linear ? " along " : " around ") + "XYZ"[k];
+        const std::string count = std::to_string(pt.count) + "\xC3\x97";
+        return linear ? count + dot + formatLength(pt.spacing, unit) + axis : count + axis + dot + formatAngle(pt.angle);
     }
     case doc::FeatureKind::Shell: {
         const auto& s = static_cast<const doc::ShellFeature&>(f);
@@ -1643,6 +1756,8 @@ std::vector<HistoryRow> InteractionController::historyRows() const
                     row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
                 else if (p.kind == doc::ParameterKind::Angle)
                     row.parameters.push_back({p.key, p.label, formatAngle(p.value)});
+                else if (p.kind == doc::ParameterKind::Count)
+                    row.parameters.push_back({p.key, p.label, std::to_string(std::lround(p.value))});
             }
             rows.push_back(std::move(row));
         }
@@ -1652,16 +1767,30 @@ std::vector<HistoryRow> InteractionController::historyRows() const
 
 Status InteractionController::setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text)
 {
-    bool isAngle = false;
+    bool isAngle = false, isCount = false;
     if (const doc::Body* body = document_->bodyOfFeature(featureId))
-        for (const auto& p : body->feature(featureId)->parameters())
+        for (const auto& p : body->feature(featureId)->parameters()) {
             isAngle = isAngle || (p.key == key && p.kind == doc::ParameterKind::Angle);
-    const auto parsed = isAngle ? parseAngle(text) : parseLength(text, document_->displayUnit());
-    if (!parsed.millimeters)
-        return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
+            isCount = isCount || (p.key == key && p.kind == doc::ParameterKind::Count);
+        }
+    double value = 0;
+    if (isCount) {
+        // Whole numbers only: "5", not "5mm" or "2.5".
+        char* end = nullptr;
+        const long n = std::strtol(text.c_str(), &end, 10);
+        while (end && *end == ' ')
+            ++end;
+        if (text.empty() || !end || *end != '\0')
+            return Status::failure(ErrorCode::InvalidArgument, "Enter a whole number.", "setFeatureParameter: bad count");
+        value = double(n);
+    } else {
+        const auto parsed = isAngle ? parseAngle(text) : parseLength(text, document_->displayUnit());
+        if (!parsed.millimeters)
+            return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
+        value = *parsed.millimeters;
+    }
     Status status = undoStack_->push(
-        std::make_unique<cmd::SetParameterCommand>(featureId, key, *parsed.millimeters, /*rejectIfFeatureFails=*/false),
-        *document_);
+        std::make_unique<cmd::SetParameterCommand>(featureId, key, value, /*rejectIfFeatureFails=*/false), *document_);
     if (!status)
         return status;
     operation_.reset();
@@ -1854,12 +1983,14 @@ Status InteractionController::runTool(const std::string& id)
             return triggerAction("shell");
         return explain("Click the face to leave open (Shift-click adds more), then type the wall thickness.");
     }
-    if (id == "rotate") {
+    if (id == "rotate" || id == "mirror" || id == "pattern") {
         if (!bodies && !selection_.empty() && selection_.singleBody())
             (void)triggerAction("selectBody");
         if (selection_.allOfKind(sel::SelectionKind::Body) && selection_.size() == 1)
-            return triggerAction("rotate");
-        return explain("Double-click a body (or click it in the Model panel), then drag a ring or type an angle.");
+            return triggerAction(id);
+        return explain(id == "rotate"   ? "Double-click a body (or click it in the Model panel), then drag a ring or type an angle."
+                       : id == "mirror" ? "Double-click a body (or click it in the Model panel), then click the flat face to mirror across."
+                                        : "Double-click a body (or click it in the Model panel) to repeat it in a row or around an axis.");
     }
     if (id == "move") {
         if (bodies && selection_.size() == 1)

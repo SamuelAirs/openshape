@@ -538,6 +538,38 @@ void AcceptanceRunner::start()
             check(std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).size().x - 20.0) < 1e-6,
                   "undo turns it back");
         },
+        // Pattern and Mirror through the real UI (box still selected).
+        [=, this] {
+            check(clickItem(QStringLiteral("tool_pattern")), "Pattern tool button");
+            check(app_->operationTitle() == QStringLiteral("Pattern") && app_->operationCanCommit(),
+                  "Pattern previews three copies right away", app_->operationTitle());
+            key(Qt::Key_Return);
+        },
+        [] {},
+        [=, this] {
+            check(std::abs(geom::volume(app_->document().bodies()[1]->shape()) - 3 * 8000.0) < 1e-3,
+                  "Enter: three copies of the box", num(geom::volume(app_->document().bodies()[1]->shape())));
+            key(Qt::Key_Z, Qt::ControlModifier);
+            check(std::abs(geom::volume(app_->document().bodies()[1]->shape()) - 8000.0) < 1e-3, "undo: one box again");
+            check(clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
+            check(app_->operationTitle() == QStringLiteral("Mirror") && !app_->operationPrompt().isEmpty(),
+                  "Mirror asks for a plane", app_->operationPrompt());
+        },
+        [=, this] {
+            click(screenPoint(60, 10, 10)); // the box's +X face
+            check(app_->operationCanCommit(), "clicking a flat face sets the mirror plane");
+        },
+        [=, this] {
+            check(clickItem(QStringLiteral("barAction_apply")), "Apply button");
+        },
+        [] {},
+        [=, this] {
+            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            check(std::abs(bb.size().x - 40.0) < 1e-6 && app_->document().bodies()[1]->shape().solidCount() == 1,
+                  "mirrored across its face: one 40 mm block", num(bb.size().x));
+            screenshot(QStringLiteral("19_mirrored"));
+            key(Qt::Key_Z, Qt::ControlModifier);
+        },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);
 }

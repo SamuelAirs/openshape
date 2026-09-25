@@ -433,6 +433,74 @@ Result<Shape> transformed(const Shape& shape, const RigidMotion& motion)
     });
 }
 
+Result<Shape> mirrored(const Shape& shape, const Vec3& planeOrigin, const Vec3& planeNormal)
+{
+    if (shape.isNull() || planeNormal.length() < 1e-12)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Nothing to mirror.", "mirrored: invalid input");
+    return guarded("mirror", "Unable to mirror the body.", [&] {
+        const Vec3 n = planeNormal.normalized();
+        gp_Trsf mirror;
+        mirror.SetMirror(gp_Ax2(toPnt(planeOrigin), gp_Dir(n.x, n.y, n.z)));
+        // BRepBuilderAPI_Transform keeps solids valid under a reflection.
+        BRepBuilderAPI_Transform op(occ(shape), mirror, true);
+        return Result<Shape>::success(makeShape(op.Shape()));
+    });
+}
+
+namespace {
+// Fuses `shapes` (at least one) in one General Fuse run, then merges faces
+// that ended up on the same surface and validates the result.
+Result<Shape> fuseInOnePass(const std::vector<TopoDS_Shape>& shapes, const char* operation, const char* userMessage)
+{
+    if (shapes.size() == 1)
+        return finishSolid(shapes.front(), operation, userMessage);
+    TopTools_ListOfShape arguments, tools;
+    arguments.Append(shapes.front());
+    for (std::size_t i = 1; i < shapes.size(); ++i)
+        tools.Append(shapes[i]);
+    BRepAlgoAPI_Fuse fuse;
+    fuse.SetArguments(arguments);
+    fuse.SetTools(tools);
+    fuse.Build();
+    if (fuse.HasErrors())
+        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                      std::string(operation) + ": fuse failed: " + describeAlgoErrors(fuse));
+    ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), true, true, true);
+    unify.Build();
+    return finishSolid(unify.Shape(), operation, userMessage);
+}
+} // namespace
+
+Result<Shape> mirrorJoined(const Shape& shape, const Vec3& planeOrigin, const Vec3& planeNormal)
+{
+    auto image = mirrored(shape, planeOrigin, planeNormal);
+    if (!image)
+        return image;
+    const char* userMessage = "Unable to mirror the body across this plane.";
+    return guarded("mirrorJoined", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("mirrorJoined");
+        return fuseInOnePass({occ(shape), occ(image.value())}, "mirrorJoined", userMessage);
+    });
+}
+
+Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& copies)
+{
+    if (shape.isNull())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Nothing to repeat.", "repeatJoined: null shape");
+    std::vector<TopoDS_Shape> parts{occ(shape)};
+    for (const RigidMotion& motion : copies) {
+        auto copy = transformed(shape, motion);
+        if (!copy)
+            return copy;
+        parts.push_back(occ(copy.value()));
+    }
+    const char* userMessage = "Unable to repeat the body this way.";
+    return guarded("repeatJoined", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("repeatJoined");
+        return fuseInOnePass(parts, "repeatJoined", userMessage);
+    });
+}
+
 std::optional<AlignFrame> alignFrame(const Shape& shape, SubShapeKind kind, int index)
 {
     if (kind == SubShapeKind::Face) {

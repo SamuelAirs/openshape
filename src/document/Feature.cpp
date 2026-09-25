@@ -27,6 +27,8 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Combine: return "Combine";
     case FeatureKind::Revolve: return "Revolve";
     case FeatureKind::Hole: return "Hole";
+    case FeatureKind::Mirror: return "Mirror";
+    case FeatureKind::Pattern: return "Pattern";
     }
     return "Unknown";
 }
@@ -35,7 +37,7 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
-                          FeatureKind::Revolve, FeatureKind::Hole})
+                          FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -54,6 +56,8 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Combine: return std::make_unique<CombineFeature>(id);
     case FeatureKind::Revolve: return std::make_unique<RevolveFeature>(id);
     case FeatureKind::Hole: return std::make_unique<HoleFeature>(id);
+    case FeatureKind::Mirror: return std::make_unique<MirrorFeature>(id);
+    case FeatureKind::Pattern: return std::make_unique<PatternFeature>(id);
     }
     return nullptr;
 }
@@ -377,6 +381,150 @@ Status MoveFeature::readParams(const json& in)
         rotationCenter = *center;
         rotationAxis = *axis;
         rotationAngle = r["angle"].get<double>();
+    }
+    return okStatus();
+}
+
+// ---- Mirror ---------------------------------------------------------------------
+
+Result<geom::Shape> MirrorFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    return geom::mirrorJoined(input, planeOrigin, planeNormal);
+}
+
+Status MirrorFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void MirrorFeature::writeParams(json& out) const
+{
+    out["origin"] = vecToJson(planeOrigin);
+    out["normal"] = vecToJson(planeNormal);
+}
+
+Status MirrorFeature::readParams(const json& in)
+{
+    const auto origin = vecFromJson(in, "origin");
+    const auto normal = vecFromJson(in, "normal");
+    if (!origin || !normal || normal->length() < 1e-9)
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid mirror.", "Mirror: bad plane");
+    planeOrigin = *origin;
+    planeNormal = *normal;
+    return okStatus();
+}
+
+// ---- Pattern --------------------------------------------------------------------
+
+std::vector<geom::RigidMotion> PatternFeature::copies() const
+{
+    std::vector<geom::RigidMotion> out;
+    for (int k = 1; k < count; ++k) {
+        geom::RigidMotion m;
+        if (layout == Layout::Linear) {
+            m.translation = direction.normalized() * (spacing * k);
+        } else {
+            // A full turn spaces copies evenly without doubling the original;
+            // a partial sweep puts the last copy at its end.
+            const bool fullTurn = std::abs(angle - 2 * kPi) < 1e-9;
+            const double step = fullTurn ? angle / count : angle / std::max(count - 1, 1);
+            m.center = axisOrigin;
+            m.axis = axis;
+            m.angle = step * k;
+        }
+        out.push_back(m);
+    }
+    return out;
+}
+
+Result<geom::Shape> PatternFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    if (count < 1)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidArgument, "A pattern needs at least one copy.",
+                                            "Pattern: count < 1");
+    if (count == 1)
+        return Result<geom::Shape>::success(input);
+    return geom::repeatJoined(input, copies());
+}
+
+std::vector<ParameterInfo> PatternFeature::parameters() const
+{
+    std::vector<ParameterInfo> out{{"count", "Count", ParameterKind::Count, double(count)}};
+    if (layout == Layout::Linear)
+        out.push_back({"spacing", "Spacing", ParameterKind::Length, spacing});
+    else
+        out.push_back({"angle", "Angle", ParameterKind::Angle, angle});
+    return out;
+}
+
+Status PatternFeature::setParameter(std::string_view key, double value)
+{
+    if (!std::isfinite(value))
+        return Status::failure(ErrorCode::InvalidArgument, "Enter a valid value.", "non-finite pattern parameter");
+    if (key == "count") {
+        const long n = std::lround(value);
+        if (n < 1 || n > 500)
+            return Status::failure(ErrorCode::InvalidArgument, "Use between 1 and 500 copies.", "pattern count out of range");
+        count = int(n);
+        return okStatus();
+    }
+    if (key == "spacing" && layout == Layout::Linear) {
+        spacing = value;
+        return okStatus();
+    }
+    if (key == "angle" && layout == Layout::Circular) {
+        if (std::abs(value) < 1e-9 || std::abs(value) > 2 * kPi + 1e-9)
+            return Status::failure(ErrorCode::InvalidArgument, "The angle must be between 0\xC2\xB0 and 360\xC2\xB0.",
+                                   "pattern angle out of range");
+        angle = value;
+        return okStatus();
+    }
+    return unknownParameter(key);
+}
+
+void PatternFeature::writeParams(json& out) const
+{
+    out["layout"] = layout == Layout::Linear ? "Linear" : "Circular";
+    out["count"] = count;
+    if (layout == Layout::Linear) {
+        out["direction"] = vecToJson(direction);
+        out["spacing"] = spacing;
+    } else {
+        out["axisOrigin"] = vecToJson(axisOrigin);
+        out["axis"] = vecToJson(axis);
+        out["angle"] = angle;
+    }
+}
+
+Status PatternFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid pattern.", std::string("Pattern: ") + why);
+    };
+    if (!in.contains("layout") || !in["layout"].is_string() || !in.contains("count") || !in["count"].is_number_integer())
+        return bad("layout/count");
+    const std::string kind = in["layout"].get<std::string>();
+    count = in["count"].get<int>();
+    if (count < 1 || count > 500)
+        return bad("count out of range");
+    if (kind == "Linear") {
+        layout = Layout::Linear;
+        const auto d = vecFromJson(in, "direction");
+        if (!d || d->length() < 1e-9 || !in.contains("spacing") || !in["spacing"].is_number())
+            return bad("direction/spacing");
+        direction = *d;
+        spacing = in["spacing"].get<double>();
+    } else if (kind == "Circular") {
+        layout = Layout::Circular;
+        const auto o = vecFromJson(in, "axisOrigin");
+        const auto a = vecFromJson(in, "axis");
+        if (!o || !a || a->length() < 1e-9 || !in.contains("angle") || !in["angle"].is_number())
+            return bad("axis/angle");
+        axisOrigin = *o;
+        axis = *a;
+        angle = in["angle"].get<double>();
+    } else {
+        return bad("unknown layout");
     }
     return okStatus();
 }

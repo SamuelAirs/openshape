@@ -285,6 +285,41 @@ TEST(Geometry, AlignCirclesConcentric)
     EXPECT_NEAR(axis->point.y, 0.0, 1e-9);
 }
 
+TEST(Geometry, MirrorJoinedMergesAcrossAFace)
+{
+    const Shape b = box(10, 10, 10);
+    auto joined = mirrorJoined(b, {10, 0, 0}, {1, 0, 0});
+    ASSERT_TRUE(joined.ok()) << joined.developerMessage();
+    EXPECT_EQ(joined.value().solidCount(), 1);
+    EXPECT_EQ(joined.value().faceCount(), 6); // one clean 20 x 10 x 10 block
+    EXPECT_NEAR(volume(joined.value()), 2000.0, 1e-6);
+    EXPECT_NEAR(boundingBox(joined.value()).size().x, 20.0, 1e-6);
+    // A plane away from the body leaves two pieces (reported, not an error).
+    auto apart = mirrorJoined(b, {-5, 0, 0}, {1, 0, 0});
+    ASSERT_TRUE(apart.ok());
+    EXPECT_EQ(apart.value().solidCount(), 2);
+    EXPECT_FALSE(apart.warnings().empty());
+    EXPECT_NEAR(boundingBox(apart.value()).min.x, -20.0, 1e-6);
+}
+
+TEST(Geometry, RepeatJoinedLinearAndCircular)
+{
+    const Shape b = box(10, 10, 10);
+    auto apart = repeatJoined(b, {{{}, {0, 0, 1}, 0, {15, 0, 0}}, {{}, {0, 0, 1}, 0, {30, 0, 0}}});
+    ASSERT_TRUE(apart.ok()) << apart.developerMessage();
+    EXPECT_EQ(apart.value().solidCount(), 3);
+    EXPECT_NEAR(volume(apart.value()), 3000.0, 1e-6);
+    auto overlapping = repeatJoined(b, {{{}, {0, 0, 1}, 0, {5, 0, 0}}, {{}, {0, 0, 1}, 0, {10, 0, 0}}});
+    ASSERT_TRUE(overlapping.ok());
+    EXPECT_EQ(overlapping.value().solidCount(), 1);
+    EXPECT_NEAR(volume(overlapping.value()), 2000.0, 1e-6);
+    // A centered bar turned by 90 degrees: a plus sign.
+    const Shape bar = makeBox({-10, -2, 0}, {20, 4, 4}).value();
+    auto plus = repeatJoined(bar, {{{0, 0, 0}, {0, 0, 1}, kPi / 2, {}}});
+    ASSERT_TRUE(plus.ok());
+    EXPECT_NEAR(volume(plus.value()), 2 * 320.0 - 64.0, 1e-6);
+}
+
 TEST(Geometry, FilletTooLargeFailsGracefully)
 {
     const Shape s = box(10, 10, 10);

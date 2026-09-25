@@ -21,7 +21,7 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole };
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -212,6 +212,50 @@ public:
 
     FeatureKind kind() const override { return FeatureKind::Move; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MoveFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// Keeps the body and adds its mirror image across a plane, joined into one.
+// The plane is stored as geometry (from a picked face or an origin plane).
+class MirrorFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Vec3 planeOrigin;
+    Vec3 planeNormal{1, 0, 0};
+
+    FeatureKind kind() const override { return FeatureKind::Mirror; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MirrorFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// Repeats the body, copies joined: in a row (`count` in total, `spacing`
+// apart along `direction`) or around the axis through `axisOrigin` along
+// `axis` (`count` in total over `angle`; a full turn spaces them evenly).
+class PatternFeature final : public Feature {
+public:
+    using Feature::Feature;
+    enum class Layout { Linear, Circular };
+    Layout layout = Layout::Linear;
+    int count = 3; // including the original
+    Vec3 direction{1, 0, 0};
+    double spacing = 10; // mm, linear
+    Vec3 axisOrigin;
+    Vec3 axis{0, 0, 1};
+    double angle = 2 * kPi; // radians, circular
+
+    // The motion of every copy (not the original).
+    std::vector<geom::RigidMotion> copies() const;
+
+    FeatureKind kind() const override { return FeatureKind::Pattern; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new PatternFeature(*this)); }
     Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
     std::vector<ParameterInfo> parameters() const override;
     Status setParameter(std::string_view key, double value) override;

@@ -51,6 +51,9 @@ public:
     virtual bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
     // Instruction while the operation needs another pick (e.g. Align's target); "" otherwise.
     virtual std::string prompt() const { return {}; }
+    // Where the value editor goes when there is no arrow or ring (e.g. a
+    // circular pattern's angle); nullopt = no value editor.
+    virtual std::optional<Vec3> labelAnchor() const { return std::nullopt; }
 
     // Operations with several handles (Move: one arrow per axis). The active
     // handle receives drags and typed values; value() is its value.
@@ -201,6 +204,88 @@ private:
         : Operation(bodyId, std::move(m)), edges_(std::move(edges)), kind_(kind) {}
     std::vector<doc::EdgeRef> edges_;
     doc::FeatureKind kind_;
+};
+
+// Mirror: keeps the body and joins its mirror image. The plane comes from a
+// clicked flat face (on any body) or an origin plane (across YZ, XZ or XY).
+class MirrorOperation final : public Operation {
+public:
+    static std::unique_ptr<MirrorOperation> create(const doc::Document& document, const Uuid& bodyId);
+
+    std::string title() const override { return "Mirror"; }
+    std::string valueLabel() const override { return {}; }
+    bool allowsNegative() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Mirror; }
+    std::string prompt() const override;
+    bool canCommit() const override { return plane_.has_value() && error().empty() && hasPreview(); }
+    int handleCount() const override { return 0; }
+
+    bool hasPlane() const { return plane_.has_value(); }
+    // -1 when the plane came from a face.
+    int originPlane() const { return originAxis_; }
+    Status setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
+    // normalAxis 0: across YZ (flips X), 1: across XZ (flips Y), 2: across XY (flips Z).
+    void setOriginPlane(int normalAxis, const doc::Document& document);
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    bool zeroIsIdentity() const override { return false; }
+
+private:
+    MirrorOperation(Uuid bodyId, const Vec3& center) : Operation(bodyId, LinearManipulator(center, {0, 0, 1})) {}
+    struct Plane {
+        Vec3 origin, normal;
+    };
+    std::optional<Plane> plane_;
+    int originAxis_ = -1;
+};
+
+// Pattern: repeats the body, copies joined. Linear: `count` copies along X/Y/Z
+// (or a clicked straight edge), the arrow sets the spacing (it sits on the last
+// copy). Circular: copies turn around X/Y/Z through the body center (or a
+// clicked hole/shaft/circle), value() = total angle in degrees.
+class PatternOperation final : public Operation {
+public:
+    static std::unique_ptr<PatternOperation> create(const doc::Document& document, const Uuid& bodyId);
+
+    std::string title() const override { return "Pattern"; }
+    std::string valueLabel() const override;
+    bool allowsNegative() const override { return !circular_; }
+    bool isAngle() const override { return circular_; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Pattern; }
+    bool canCommit() const override { return count_ >= 2 && value() != 0.0 && error().empty() && hasPreview(); }
+
+    bool circular() const { return circular_; }
+    int count() const { return count_; }
+    // 0/1/2 = X/Y/Z, -1 = picked edge or axis.
+    int axisIndex() const { return axisIndex_; }
+    void setCircular(bool circular, const doc::Document& document);
+    void setAxisIndex(int axis, const doc::Document& document);
+    void setCount(int count, const doc::Document& document);
+    // A straight edge (linear direction) or a round face/edge (circular axis).
+    Status setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
+
+    int handleCount() const override { return circular_ ? 0 : 1; }
+    LinearManipulator handle(int index) const override;
+    double displayOffset(double value) const override { return value * std::max(count_ - 1, 1); }
+    double valueFromOffset(double offset) const override { return offset / std::max(count_ - 1, 1); }
+    std::optional<Vec3> labelAnchor() const override { return center_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    PatternOperation(Uuid bodyId, const Vec3& center, const Vec3& size)
+        : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center), size_(size) {}
+    Vec3 axisVectorFor() const;
+    double defaultSpacing() const;
+    Vec3 center_;
+    Vec3 size_;
+    bool circular_ = false;
+    int axisIndex_ = 0;
+    int count_ = 3;
+    Vec3 customOrigin_;
+    Vec3 customAxis_{0, 0, 1};
 };
 
 // Rotate: X/Y/Z rings through the body's center. Drag a ring or type an

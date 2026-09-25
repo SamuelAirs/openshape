@@ -248,6 +248,159 @@ std::unique_ptr<doc::Feature> MoveOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Mirror ------------------------------------------------------------------------
+
+std::unique_ptr<MirrorOperation> MirrorOperation::create(const doc::Document& document, const Uuid& bodyId)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const auto box = geom::approximateBoundingBox(body->shape());
+    if (!box.valid)
+        return nullptr;
+    return std::unique_ptr<MirrorOperation>(new MirrorOperation(bodyId, box.center()));
+}
+
+std::string MirrorOperation::prompt() const
+{
+    return plane_ ? std::string()
+                  : std::string("Click a flat face to mirror across, or choose a plane \xC2\xB7 Esc cancels");
+}
+
+Status MirrorOperation::setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex)
+{
+    const doc::Body* body = document.body(bodyId);
+    const auto info = body ? geom::faceInfo(body->shape(), faceIndex) : std::nullopt;
+    if (!info || !info->isPlanar())
+        return Status::failure(ErrorCode::NotPlanar, "Mirror across a flat face, or choose a plane.",
+                               "mirror: face is not planar");
+    plane_ = Plane{info->centroid, info->normal.normalized()};
+    originAxis_ = -1;
+    setValue(value(), document);
+    return okStatus();
+}
+
+void MirrorOperation::setOriginPlane(int normalAxis, const doc::Document& document)
+{
+    originAxis_ = std::clamp(normalAxis, 0, 2);
+    plane_ = Plane{{0, 0, 0}, axisVector(originAxis_)};
+    setValue(value(), document);
+}
+
+std::unique_ptr<doc::Feature> MirrorOperation::makeFeature(double) const
+{
+    auto feature = std::make_unique<doc::MirrorFeature>();
+    if (plane_) {
+        feature->planeOrigin = plane_->origin;
+        feature->planeNormal = plane_->normal;
+    }
+    return feature;
+}
+
+// ---- Pattern -----------------------------------------------------------------------
+
+std::unique_ptr<PatternOperation> PatternOperation::create(const doc::Document& document, const Uuid& bodyId)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const auto box = geom::approximateBoundingBox(body->shape());
+    if (!box.valid)
+        return nullptr;
+    auto op = std::unique_ptr<PatternOperation>(new PatternOperation(bodyId, box.center(), box.size()));
+    op->setValue(op->defaultSpacing(), document); // preview right away: copies side by side
+    return op;
+}
+
+std::string PatternOperation::valueLabel() const
+{
+    return std::string(circular_ ? "Angle" : "Spacing") + " \xC3\x97" + std::to_string(count_);
+}
+
+Vec3 PatternOperation::axisVectorFor() const
+{
+    return axisIndex_ >= 0 ? axisVector(axisIndex_) : customAxis_.normalized();
+}
+
+double PatternOperation::defaultSpacing() const
+{
+    // The body's extent along the direction plus a 5 mm gap, rounded up.
+    const Vec3 d = axisVectorFor();
+    const double extent = size_.x * std::abs(d.x) + size_.y * std::abs(d.y) + size_.z * std::abs(d.z);
+    return std::ceil(extent + 5.0 - 1e-3); // the fast box carries a tolerance: 20.0000002 is 20
+}
+
+void PatternOperation::setCircular(bool circular, const doc::Document& document)
+{
+    if (circular == circular_)
+        return;
+    circular_ = circular;
+    count_ = circular ? 6 : 3;
+    // Rows default to X, turns to Z (on the table); a picked edge/axis only
+    // makes sense for the layout it was picked for.
+    axisIndex_ = circular ? 2 : 0;
+    setActiveHandle(0);
+    setValue(circular ? 360.0 : defaultSpacing(), document);
+}
+
+void PatternOperation::setAxisIndex(int axis, const doc::Document& document)
+{
+    axisIndex_ = std::clamp(axis, 0, 2);
+    setValue(circular_ ? value() : defaultSpacing(), document);
+}
+
+void PatternOperation::setCount(int count, const doc::Document& document)
+{
+    count_ = std::clamp(count, 2, 500);
+    setValue(value(), document);
+}
+
+Status PatternOperation::setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index)
+{
+    const doc::Body* body = document.body(bodyId);
+    const auto frame = body ? geom::alignFrame(body->shape(), kind, index) : std::nullopt;
+    if (!frame || frame->sided) // flat faces give no direction to repeat along
+        return Status::failure(ErrorCode::InvalidArgument,
+                               circular_ ? "Pick a hole, shaft, circle or straight edge to turn around."
+                                         : "Pick a straight edge to repeat along.",
+                               "pattern: unusable axis pick");
+    if (!circular_) {
+        const auto edge = kind == geom::SubShapeKind::Edge ? geom::edgeInfo(body->shape(), index) : std::nullopt;
+        if (!edge || edge->kind != geom::CurveKind::Line)
+            return Status::failure(ErrorCode::InvalidArgument, "Pick a straight edge to repeat along.",
+                                   "pattern: linear needs a straight edge");
+    }
+    customOrigin_ = frame->point;
+    customAxis_ = frame->direction;
+    axisIndex_ = -1;
+    setValue(circular_ ? value() : defaultSpacing(), document);
+    return okStatus();
+}
+
+LinearManipulator PatternOperation::handle(int index) const
+{
+    if (index != 0 || circular_)
+        return {};
+    return LinearManipulator(center_, axisVectorFor());
+}
+
+std::unique_ptr<doc::Feature> PatternOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::PatternFeature>();
+    feature->count = count_;
+    if (circular_) {
+        feature->layout = doc::PatternFeature::Layout::Circular;
+        feature->axisOrigin = axisIndex_ >= 0 ? center_ : customOrigin_;
+        feature->axis = axisVectorFor();
+        feature->angle = std::clamp(value, -360.0, 360.0) * kPi / 180.0;
+    } else {
+        feature->layout = doc::PatternFeature::Layout::Linear;
+        feature->direction = axisVectorFor();
+        feature->spacing = value;
+    }
+    return feature;
+}
+
 // ---- Rotate ------------------------------------------------------------------------
 
 std::unique_ptr<RotateOperation> RotateOperation::create(const doc::Document& document, const Uuid& bodyId)

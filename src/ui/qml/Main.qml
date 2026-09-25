@@ -35,7 +35,8 @@ ApplicationWindow {
             }
             // Typing a number while an operation is armed goes straight into
             // the value field (no need to click it first).
-            if (window.app.operationActive && event.text.length === 1 && "0123456789.-+(".indexOf(event.text) >= 0
+            if (window.app.operationActive && window.app.valueLabelVisible && event.text.length === 1
+                    && "0123456789.-+(".indexOf(event.text) >= 0
                     && !(event.modifiers & Qt.ControlModifier)) {
                 valueChip.beginTyping(event.text)
                 event.accepted = true
@@ -209,6 +210,8 @@ ApplicationWindow {
                     { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
                     { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
                     { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z: drag a ring (15° steps, Alt for 1°) or type an angle." },
+                    { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
+                    { id: "pattern", label: "Pattern", tip: "Repeat a body in a row or around an axis (holes and shafts work as axes)." },
                     { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another (or lay a face on the ground)." }
                 ]
                 delegate: ActionButton {
@@ -362,6 +365,10 @@ ApplicationWindow {
             return "Drag an arrow or type a distance · Shift+double-click another body to combine them"
         if (app.operationActive && app.operationTitle === "Rotate")
             return "Drag a ring (15° steps, Alt for 1°) or type an angle · Enter applies"
+        if (app.operationActive && app.operationTitle === "Mirror")
+            return "Enter or Apply mirrors it · click another flat face or choose a plane to change it"
+        if (app.operationActive && app.operationTitle === "Pattern")
+            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · Enter applies"
         if (app.operationActive && (app.operationTitle === "Fillet" || app.operationTitle === "Chamfer"))
             return "Drag the arrow, or just type a value · Shift-click to add more edges"
         if (app.operationActive && app.operationTitle === "Shell")

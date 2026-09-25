@@ -193,7 +193,9 @@ private:
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
     bool alignRequested_ = false; // the selected face/edge is the source of an Align
-    bool rotateRequested_ = false; // a selected body shows rotation rings instead of arrows
+    // What a single selected body offers: arrows, rings, a mirror plane or a pattern.
+    enum class BodyTool { Move, Rotate, Mirror, Pattern };
+    BodyTool bodyTool_ = BodyTool::Move;
     int hoveredRing_ = -1;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;

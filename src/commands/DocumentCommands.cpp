@@ -61,6 +61,8 @@ AddFeatureCommand::AddFeatureCommand(Uuid bodyId, std::unique_ptr<doc::Feature> 
 
 std::string AddFeatureCommand::label() const
 {
+    if (!prototype_->name().empty())
+        return prototype_->name(); // "Align", "Rotate": more telling than the kind
     switch (prototype_->kind()) {
     case doc::FeatureKind::PushPull: return "Push/Pull";
     case doc::FeatureKind::Fillet: return "Fillet";
@@ -72,6 +74,8 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Combine: return "Combine";
     case doc::FeatureKind::Revolve: return "Revolve";
     case doc::FeatureKind::Hole: return "Hole";
+    case doc::FeatureKind::Mirror: return "Mirror";
+    case doc::FeatureKind::Pattern: return "Pattern";
     }
     return "Add step";
 }

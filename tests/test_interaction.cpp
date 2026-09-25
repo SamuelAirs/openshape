@@ -417,6 +417,92 @@ TEST(Interaction, RingDragPastHalfTurn)
     EXPECT_NEAR(angle, 1.5 * kPi, 1e-6);
 }
 
+// Mirror a cube across its own +X face: one 40 x 20 x 20 block.
+TEST(Interaction, MirrorAcrossAFace)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0)..(10,10,20)
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.runTool("mirror").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Mirror");
+    EXPECT_FALSE(h.controller.operation()->prompt().empty());
+    h.clickAt(h.screen({10, 0, 10})); // the +X face
+    ASSERT_TRUE(h.controller.operation() && h.controller.operation()->canCommit());
+    ASSERT_TRUE(h.controller.triggerAction("apply").ok());
+    const auto bb = geom::boundingBox(h.body().shape());
+    EXPECT_NEAR(bb.min.x, -10.0, 1e-6);
+    EXPECT_NEAR(bb.max.x, 30.0, 1e-6);
+    EXPECT_NEAR(geom::volume(h.body().shape()), 16000.0, 1e-3);
+    EXPECT_EQ(h.body().shape().solidCount(), 1);
+    EXPECT_EQ(h.stack.undoLabel(), "Mirror");
+}
+
+TEST(Interaction, MirrorAcrossAnOriginPlane)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {5, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // across YZ
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.min.x, -15.0, 1e-6);
+    EXPECT_EQ(h.document.body(a)->shape().solidCount(), 2);
+    bool detail = false;
+    for (const auto& row : h.controller.historyRows())
+        detail = detail || (row.name == "Mirror" && row.detail == "Across YZ");
+    EXPECT_TRUE(detail);
+}
+
+// Pattern defaults to three copies side by side along X; the count stays
+// editable in the model panel; circular patterns turn around the center.
+TEST(Interaction, PatternLinearThenEditCount)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.runTool("pattern").ok());
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    EXPECT_EQ(pattern->count(), 3);
+    EXPECT_NEAR(pattern->value(), 25.0, 1e-9); // 20 mm body + 5 mm gap
+    EXPECT_TRUE(pattern->hasPreview());
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_NEAR(geom::boundingBox(h.body().shape()).size().x, 20.0 + 2 * 25.0, 1e-6);
+    EXPECT_NEAR(geom::volume(h.body().shape()), 3 * 8000.0, 1e-3);
+
+    const Uuid step = h.body().features().back()->id();
+    ASSERT_TRUE(h.controller.setFeatureParameter(step, "count", "4").ok());
+    EXPECT_NEAR(geom::volume(h.body().shape()), 4 * 8000.0, 1e-3);
+    EXPECT_FALSE(h.controller.setFeatureParameter(step, "count", "2.5").ok());
+    bool detail = false;
+    for (const auto& row : h.controller.historyRows())
+        detail = detail || (row.name == "Pattern" && row.detail.find("along X") != std::string::npos);
+    EXPECT_TRUE(detail);
+}
+
+TEST(Interaction, PatternCircularAroundCenter)
+{
+    Harness h;
+    const Uuid bar = addBox(h, "Bar", {-10, -2, 0}, {20, 4, 4});
+    ASSERT_TRUE(h.controller.selectBody(bar, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("pattern").ok());
+    ASSERT_TRUE(h.controller.triggerAction("layout:circular").ok());
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    EXPECT_TRUE(pattern->circular());
+    EXPECT_EQ(pattern->count(), 6);
+    EXPECT_NEAR(pattern->value(), 360.0, 1e-9);
+    ASSERT_TRUE(h.controller.triggerAction("fewer").ok());
+    ASSERT_TRUE(h.controller.triggerAction("fewer").ok());
+    EXPECT_EQ(dynamic_cast<const PatternOperation*>(h.controller.operation())->count(), 4);
+    EXPECT_TRUE(h.controller.valueLabelPosition().has_value()); // the angle can be typed
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(geom::volume(h.document.body(bar)->shape()), 2 * 320.0 - 64.0, 1e-3); // a plus sign
+}
+
 TEST(Interaction, UnitAwareInput)
 {
     Harness h;

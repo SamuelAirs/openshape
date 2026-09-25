@@ -36,6 +36,13 @@ Result<Shape> translated(const Shape& shape, const Vec3& offset);
 Result<Shape> rotated(const Shape& shape, const Vec3& axisOrigin, const Vec3& axisDirection, double angleRadians);
 // Applies a rigid motion (see RigidMotion in Shape.h).
 Result<Shape> transformed(const Shape& shape, const RigidMotion& motion);
+// The mirror image across the plane through `planeOrigin` with `planeNormal`.
+Result<Shape> mirrored(const Shape& shape, const Vec3& planeOrigin, const Vec3& planeNormal);
+// The shape together with its mirror image, fused into one (halves that
+// touch the plane merge; a plane away from the body leaves two pieces).
+Result<Shape> mirrorJoined(const Shape& shape, const Vec3& planeOrigin, const Vec3& planeNormal);
+// The shape and one copy per motion, fused in a single boolean pass.
+Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& copies);
 
 
 // ---- Queries ----------------------------------------------------------------

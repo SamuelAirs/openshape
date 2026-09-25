@@ -147,6 +147,21 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         (void)interaction.commitOperation();
         return;
     }
+    if (demo == QLatin1String("mirror") || demo == QLatin1String("pattern")) {
+        // Mirror across the cube's +X face, or the default linear pattern.
+        app.createBox(20);
+        interaction.fitAll(false);
+        (void)interaction.selectBody(app.document().bodies().front()->id(), false);
+        (void)interaction.triggerAction(demo.toStdString());
+        if (demo == QLatin1String("mirror")) {
+            os::interact::PointerEvent face;
+            face.position = interaction.camera().project({10, 0, 10});
+            interaction.pointerPress(face);
+            interaction.pointerRelease(face);
+        }
+        interaction.fitAll(false);
+        return;
+    }
     if (demo == QLatin1String("rotate")) {
         // A body in Rotate mode with a 30 degree preview about Z.
         app.createBox(20);
