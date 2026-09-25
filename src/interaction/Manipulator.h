@@ -11,9 +11,9 @@ namespace os::interact {
 struct ArrowStyle {
     double gapPx = 6;        // distance from the anchor to the start of the shaft
     double shaftPx = 64;
-    double headPx = 18;
-    double shaftRadiusPx = 2.2;
-    double headRadiusPx = 7;
+    double headPx = 20;
+    double shaftRadiusPx = 2.6;
+    double headRadiusPx = 8.5;
     double totalPx() const { return gapPx + shaftPx + headPx; }
 };
 

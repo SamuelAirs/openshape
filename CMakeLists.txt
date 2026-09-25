@@ -28,8 +28,12 @@ find_package(nlohmann_json 3.10 REQUIRED)
 find_package(libzip REQUIRED)
 
 if(OPENSHAPE_BUILD_APP)
-    find_package(Qt6 6.7 REQUIRED COMPONENTS Core Gui Quick ShaderTools)
-    qt_standard_project_setup(REQUIRES 6.7)
+    # The renderer uses QRhi, whose headers ship via GuiPrivate with limited
+    # compatibility guarantees: builds are tied to the exact Qt version they
+    # were compiled against. Accepted deliberately (see ARCHITECTURE.md).
+    set(QT_NO_PRIVATE_MODULE_WARNING ON)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui GuiPrivate Qml Quick QuickControls2 ShaderTools)
+    qt_standard_project_setup(REQUIRES 6.8)
 endif()
 
 add_subdirectory(src)

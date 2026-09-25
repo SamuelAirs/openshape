@@ -279,6 +279,14 @@ void InteractionController::pointerLeave()
     }
 }
 
+void InteractionController::cancelPointer()
+{
+    if (drag_.mode == DragMode::Manipulator)
+        notifyState();
+    drag_ = {};
+    notifyView();
+}
+
 void InteractionController::wheel(Vec2 position, double steps)
 {
     animation_.reset();
@@ -433,8 +441,7 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
     const ArrowStyle style;
     const Vec3 anchor = operation_->anchor();
     const double px = camera_.pixelSize(anchor);
-    const Vec3 beyondTip = anchor + operation_->manipulator().direction() * ((style.totalPx() + 22) * px);
-    return camera_.project(beyondTip);
+    return camera_.project(anchor + operation_->manipulator().direction() * (style.totalPx() * px));
 }
 
 Status InteractionController::commitOperation()

@@ -201,7 +201,7 @@ void Camera::fit(const Vec3& boxMin, const Vec3& boxMax)
     const double radius = std::max((boxMax - boxMin).length() * 0.5, 1.0);
     target = center;
     const double aspect = viewportSize.x / std::max(viewportSize.y, 1.0);
-    const double margin = 1.25;
+    const double margin = 1.9; // leave room for manipulators and growth
     orthoHeight = 2 * radius * margin / std::min(aspect, 1.0);
     distance = radius * margin / std::sin(fovY / 2) / std::min(aspect, 1.0);
 }

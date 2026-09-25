@@ -54,6 +54,9 @@ public:
     void pointerRelease(const PointerEvent& event);
     void pointerDoubleClick(const PointerEvent& event);
     void pointerLeave();
+    // Abandons an in-progress press/drag without treating it as a click
+    // (e.g. a second finger touched down). A manipulator drag keeps its value.
+    void cancelPointer();
     // steps > 0 zooms in (one wheel notch = 1 step).
     void wheel(Vec2 position, double steps);
     // Two-finger gestures. scale > 1 means fingers moved apart (zoom in).
@@ -69,7 +72,7 @@ public:
     // error message, or empty on success.
     std::string setValueText(const std::string& text);
     std::string operationValueText() const;
-    // Screen position for the value label (next to the manipulator tip).
+    // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
     Status commitOperation();
     void cancelOperation();
