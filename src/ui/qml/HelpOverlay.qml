@@ -119,7 +119,11 @@ Rectangle {
                     HelpSection {
                         title: "Sketch"
                         rows: [
-                            ["Tools", "S select · L line · R rectangle · C circle · A arc"],
+                            ["Tools", "S select · L line · R rectangle · C circle · A arc · O slot · T trim"],
+                            ["Slot", "Click both centers, then move or type the width"],
+                            ["Trim", "Click the piece of a curve to cut away (it shows red first)"],
+                            ["Round a corner", "Select the corner point → Fillet, then click R to change it"],
+                            ["Offset", "Select curves → Offset, move to a side, click or type a distance"],
                             ["Arc", "Click start, click end, then bend it (or type a radius)"],
                             ["Exact size while drawing", "Type, Tab to the next value, Enter"],
                             ["Stop drawing lines", "Right-click or Esc (again: leave the tool)"],

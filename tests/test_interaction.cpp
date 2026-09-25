@@ -12,6 +12,7 @@
 #include "interaction/InteractionController.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <thread>
@@ -1006,4 +1007,48 @@ TEST(Interaction, AxisTriadFollowsTheView)
     EXPECT_LT(marks[2].direction.y, -0.8) << "Z points up the screen";
     EXPECT_GT(marks[0].direction.x, 0.5) << "X to the lower right";
     EXPECT_GT(marks[0].direction.y, 0.0);
+}
+
+// Fillets around a pushed face come along (Shapr3D-style), stored so that
+// older files without the flag recompute as before.
+TEST(Interaction, PushPullTakesRoundedEdgesAlong)
+{
+    Harness h;
+    const Uuid id = addBox(h, "Block", {-10, -10, 0}, {20, 20, 20});
+    const geom::Shape cube = h.document.body(id)->shape();
+    auto fillet = std::make_unique<doc::FilletFeature>();
+    fillet->size = 3;
+    for (int i = 0; i < cube.edgeCount(); ++i)
+        if (const auto e = geom::edgeInfo(cube, i); e && std::abs(e->start.z - 20) < 1e-9 && std::abs(e->end.z - 20) < 1e-9)
+            fillet->edges.push_back({i, *geom::captureEdgeSignature(cube, i)});
+    ASSERT_EQ(fillet->edges.size(), 4u);
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(fillet)), h.document).ok());
+    h.controller.documentChanged();
+    h.controller.fitAll(false);
+    const int facesBefore = h.body().shape().faceCount();
+
+    h.clickAt(h.screen({0, 0, 20}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Height");
+    EXPECT_NEAR(h.controller.operation()->value(), 20.0, 1e-9);
+    EXPECT_EQ(h.controller.setValueText("30"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.height(), 30.0, 1e-6);
+    EXPECT_EQ(h.body().shape().faceCount(), facesBefore) << "no step: the fillets moved up whole";
+    int roundEdges = 0;
+    for (int i = 0; i < h.body().shape().faceCount(); ++i)
+        if (const auto f = geom::faceInfo(h.body().shape(), i); f && f->kind == geom::SurfaceKind::Cylinder && std::abs(f->radius - 3) < 1e-9)
+            roundEdges += std::abs(f->axisOrigin.z - 27) < 1e-6 ? 1 : 0;
+    EXPECT_EQ(roundEdges, 4);
+
+    // The step says so in its file entry; an entry without it is the classic push/pull.
+    const auto& step = static_cast<const doc::PushPullFeature&>(*h.body().features().back());
+    EXPECT_TRUE(step.keepEdges);
+    nlohmann::json params;
+    step.writeParams(params);
+    EXPECT_TRUE(params.value("keepEdges", false));
+    params.erase("keepEdges");
+    doc::PushPullFeature old;
+    ASSERT_TRUE(old.readParams(params).ok());
+    EXPECT_FALSE(old.keepEdges);
 }

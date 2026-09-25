@@ -529,6 +529,18 @@ void InteractionController::click(const PointerEvent& event)
         notifyView();
         return;
     }
+    // Extrude "Up to face": the next face click sets the distance.
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && extrude->pickingTarget()) {
+        if (hit.kind == sel::PickKind::Face) {
+            if (const Status status = extrude->extendToFace(*document_, hit.bodyId, hit.index); !status)
+                message(status.userMessage());
+        } else {
+            extrude->setPickingTarget(false); // clicking elsewhere gives up picking
+        }
+        notifyState();
+        notifyView();
+        return;
+    }
     // Mirror: a flat face sets the plane; clicking empty space applies.
     if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get())) {
         if (hit.kind == sel::PickKind::Face) {
@@ -794,6 +806,13 @@ void InteractionController::cancelOperation()
         notifyView();
         return;
     }
+    // Esc first leaves "Up to face" picking, keeping the value.
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && extrude->pickingTarget()) {
+        extrude->setPickingTarget(false);
+        notifyState();
+        notifyView();
+        return;
+    }
     if (operation_ && operation_->value() != operation_->neutralValue()) {
         operation_->setValue(operation_->neutralValue(), *document_);
     } else {
@@ -958,6 +977,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
             if (mode == doc::ExtrudeMode::Cut)
                 actions.push_back({"throughAll", "Through all", extrude->throughAll()});
         }
+        actions.push_back({"symmetric", "Symmetric", extrude->symmetric()});
+        actions.push_back({"upToFace", "Up to face", extrude->pickingTarget()});
         actions.push_back({"editSketch", "Edit sketch", false});
         return actions;
     }
@@ -1071,6 +1092,18 @@ Status InteractionController::triggerAction(const std::string& id)
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "throughAll") {
         extrude->setThroughAll(!extrude->throughAll());
         extrude->setValue(extrude->value(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "symmetric") {
+        extrude->setSymmetric(!extrude->symmetric(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "upToFace") {
+        extrude->setPickingTarget(!extrude->pickingTarget());
         notifyState();
         notifyView();
         return okStatus();
@@ -1821,7 +1854,11 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     case doc::FeatureKind::Extrude: {
         const auto& e = static_cast<const doc::ExtrudeFeature&>(f);
         const char* mode = e.mode == doc::ExtrudeMode::NewBody ? "New body" : e.mode == doc::ExtrudeMode::Join ? "Join" : "Cut";
-        const std::string extent = e.throughAll && e.mode == doc::ExtrudeMode::Cut ? "Through all" : formatLength(e.distance, unit);
+        std::string extent = e.throughAll && e.mode == doc::ExtrudeMode::Cut
+                               ? std::string("Through all")
+                               : formatLength(e.symmetric ? std::abs(e.distance) : e.distance, unit);
+        if (e.symmetric)
+            extent += " symmetric";
         return extent + dot + mode;
     }
     }

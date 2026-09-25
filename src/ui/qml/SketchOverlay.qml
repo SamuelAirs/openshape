@@ -54,7 +54,7 @@ Item {
             }
         }
         if (!(event.modifiers & Qt.ControlModifier)) {
-            const tools = { "l": "line", "r": "rectangle", "c": "circle", "a": "arc", "s": "select" }
+            const tools = { "l": "line", "r": "rectangle", "c": "circle", "a": "arc", "o": "slot", "t": "trim", "s": "select" }
             const tool = tools[event.text.toLowerCase()]
             if (tool !== undefined && !app.sketchDrawing) {
                 app.setSketchTool(tool)
@@ -102,7 +102,9 @@ Item {
                     { id: "line", label: "Line", key: "L" },
                     { id: "rectangle", label: "Rectangle", key: "R" },
                     { id: "circle", label: "Circle", key: "C" },
-                    { id: "arc", label: "Arc", key: "A" }
+                    { id: "arc", label: "Arc", key: "A" },
+                    { id: "slot", label: "Slot", key: "O" },
+                    { id: "trim", label: "Trim", key: "T" }
                 ]
                 delegate: ActionButton {
                     required property var modelData
@@ -266,7 +268,9 @@ Item {
                 model: overlay.app.contextActions
                 delegate: ActionButton {
                     required property var modelData
+                    objectName: "sketchAction_" + modelData.id
                     text: modelData.label
+                    checked: modelData.active
                     onClicked: overlay.app.triggerAction(modelData.id)
                 }
             }

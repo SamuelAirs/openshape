@@ -158,6 +158,14 @@ Result<geom::Shape> PushPullFeature::compute(const geom::Shape& input, const Eva
                                             "The face this operation was applied to no longer exists.",
                                             "PushPull face reference unresolved");
     }
+    if (keepEdges) {
+        auto moved = geom::pushPullFaceKeepingEdges(input, *index, distance);
+        if (moved)
+            return moved;
+        // Not applicable here (no rounded edges, or not straight walls below
+        // them): the plain push/pull.
+        OS_LOG(Debug, Document) << "PushPull keeping edges not used: " << moved.developerMessage();
+    }
     return geom::pushPullFace(input, *index, distance);
 }
 
@@ -180,6 +188,8 @@ void PushPullFeature::writeParams(json& out) const
 {
     out["face"] = faceRefToJson(face);
     out["distance"] = distance;
+    if (keepEdges)
+        out["keepEdges"] = true;
 }
 
 Status PushPullFeature::readParams(const json& in)
@@ -189,6 +199,7 @@ Status PushPullFeature::readParams(const json& in)
         return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid push/pull.", "PushPull: bad params");
     face = *ref;
     distance = in["distance"].get<double>();
+    keepEdges = in.contains("keepEdges") && in["keepEdges"].is_boolean() && in["keepEdges"].get<bool>();
     return okStatus();
 }
 
@@ -715,16 +726,23 @@ Result<geom::Shape> ExtrudeFeature::toolSolid(const geom::Shape& input, const Ev
                                                 "Extrude: profile reference unresolved");
         faces.push_back(regions.value()[std::size_t(*index)].face);
     }
-    double length = distance;
+    double length = symmetric ? std::abs(distance) : distance;
     if (throughAll && mode == ExtrudeMode::Cut && !input.isNull()) {
         const auto box = geom::approximateBoundingBox(input);
         if (box.valid) {
-            // Far enough to leave the body from anywhere on the sketch plane.
+            // Far enough to leave the body from anywhere on the sketch plane
+            // (both ways for a symmetric cut).
             const double reach = box.size().length() + (box.center() - plane.origin).length() + 1.0;
-            length = (distance < 0 ? -1.0 : 1.0) * std::max(std::abs(distance), reach);
+            length = (length < 0 ? -1.0 : 1.0) * std::max(std::abs(length), symmetric ? 2 * reach : reach);
         }
     }
-    return geom::extrudeFaces(faces, plane.normal() * length);
+    if (!symmetric)
+        return geom::extrudeFaces(faces, plane.normal() * length);
+    // Extrude the full thickness, then center it on the sketch plane.
+    auto solid = geom::extrudeFaces(faces, plane.normal() * length);
+    if (!solid)
+        return solid;
+    return geom::translated(solid.value(), plane.normal() * (-length / 2));
 }
 
 Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const EvalContext& context) const
@@ -742,6 +760,8 @@ Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const Eval
 
 std::vector<ParameterInfo> ExtrudeFeature::parameters() const
 {
+    if (symmetric)
+        return {{"distance", "Thickness", ParameterKind::Length, std::abs(distance)}};
     return {{"distance", "Distance", ParameterKind::Length, distance}};
 }
 
@@ -765,6 +785,8 @@ void ExtrudeFeature::writeParams(json& out) const
     out["distance"] = distance;
     out["mode"] = std::string(toString(mode));
     out["throughAll"] = throughAll;
+    if (symmetric)
+        out["symmetric"] = true;
 }
 
 Status ExtrudeFeature::readParams(const json& in)
@@ -802,6 +824,7 @@ Status ExtrudeFeature::readParams(const json& in)
     profiles = std::move(refs);
     distance = *d;
     throughAll = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
+    symmetric = in.contains("symmetric") && in["symmetric"].is_boolean() && in["symmetric"].get<bool>();
     return okStatus();
 }
 

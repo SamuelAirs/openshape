@@ -95,6 +95,7 @@ std::unique_ptr<doc::Feature> PushPullOperation::makeFeature(double value) const
     auto feature = std::make_unique<doc::PushPullFeature>();
     feature->face = face_;
     feature->distance = value - neutralValue();
+    feature->keepEdges = true; // fillets and chamfers around the face come along
     return feature;
 }
 
@@ -763,7 +764,39 @@ std::unique_ptr<doc::Feature> ExtrudeOperation::makeFeature(double value) const
     feature->distance = value;
     feature->mode = mode();
     feature->throughAll = throughAll_ && feature->mode == doc::ExtrudeMode::Cut;
+    feature->symmetric = symmetric_;
     return feature;
+}
+
+std::string ExtrudeOperation::prompt() const
+{
+    return pickingTarget_ ? std::string("Click a flat face parallel to the sketch to extrude up to it \xC2\xB7 Esc cancels")
+                          : std::string();
+}
+
+void ExtrudeOperation::setSymmetric(bool symmetric, const doc::Document& document)
+{
+    symmetric_ = symmetric;
+    // The number stays: 10 one way becomes a 10 mm thick slab centered on the
+    // sketch (a symmetric thickness is never negative).
+    setValue(std::abs(value()), document);
+}
+
+Status ExtrudeOperation::extendToFace(const doc::Document& document, const Uuid& bodyId, int faceIndex)
+{
+    const doc::Body* body = document.body(bodyId);
+    const auto info = body ? geom::faceInfo(body->shape(), faceIndex) : std::nullopt;
+    const Vec3 normal = manipulator().direction().normalized();
+    if (!info || !info->isPlanar() || std::abs(info->normal.normalized().dot(normal)) < 1 - 1e-9)
+        return Status::failure(ErrorCode::InvalidArgument, "Pick a flat face parallel to the sketch.",
+                               "extrude up to: face not planar/parallel");
+    const double distance = (info->planeOrigin - manipulator().anchor(0)).dot(normal);
+    if (std::abs(distance) < 1e-6)
+        return Status::failure(ErrorCode::InvalidArgument, "That face lies in the sketch's plane.", "extrude up to: distance 0");
+    pickingTarget_ = false;
+    symmetric_ = false;
+    setValue(distance, document);
+    return okStatus();
 }
 
 std::unique_ptr<cmd::Command> ExtrudeOperation::makeCommand(const doc::Document& document) const

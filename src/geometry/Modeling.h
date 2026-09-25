@@ -25,6 +25,13 @@ Result<Shape> makeCylinder(const Vec3& baseCenter, const Vec3& axis, double radi
 // material, negative removes it). Coplanar faces are merged afterwards so a
 // pushed box face stays a single face.
 Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance);
+// Push/pull that takes the face's rounded and bevelled edges along (fillets
+// and chamfers keep their size, the walls below them extend or shorten): the
+// part is split on a plane just below those edges, the top piece moves, and
+// the cross-section fills the gap (or a slab of it is taken out). Fails with
+// ErrorCode::Unsupported when the face has no such edges or the region that
+// moves is not straight walls; callers then use pushPullFace.
+Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double distance);
 
 Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius);
 Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance);

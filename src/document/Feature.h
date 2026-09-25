@@ -132,6 +132,10 @@ public:
     using Feature::Feature;
     FaceRef face;
     double distance = 0; // mm, positive = outward
+    // Take the face's rounded and bevelled edges along (fillets keep their
+    // size) where possible. Off for steps from older files, which recompute
+    // exactly as they did (prism + boolean).
+    bool keepEdges = false;
 
     FeatureKind kind() const override { return FeatureKind::PushPull; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new PushPullFeature(*this)); }
@@ -340,6 +344,9 @@ public:
     // Cuts: extend through the whole body in the direction of `distance`,
     // so through-holes stay through when the body gets thicker.
     bool throughAll = false;
+    // Centered on the sketch plane: |distance| is the total thickness, half
+    // on each side (through-all cuts go through both ways).
+    bool symmetric = false;
 
     FeatureKind kind() const override { return FeatureKind::Extrude; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ExtrudeFeature(*this)); }

@@ -21,6 +21,9 @@
 #include <QtQuick/QQuickWindow>
 #include <qpa/qwindowsysteminterface.h>
 
+#include <algorithm>
+#include <vector>
+
 namespace os::app {
 
 namespace {
@@ -147,6 +150,14 @@ bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifier
                              << (!item ? "not found" : !item->isVisible() ? "not visible" : "disabled");
         return false;
     }
+    // Buttons created by the last input (e.g. the actions of a new selection)
+    // are not laid out until the next frame: lay out their rows now, from the
+    // top down, or the click lands wherever the row stacked them (on Delete).
+    std::vector<QQuickItem*> chain;
+    for (QQuickItem* p = item; p; p = p->parentItem())
+        chain.push_back(p);
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+        (*it)->ensurePolished();
     const QPointF center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
     OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center.x() << "," << center.y();
     click(center, mods);
@@ -621,6 +632,225 @@ void AcceptanceRunner::start()
         [=, this] {
             touchTap({QPointF(500, 300), QPointF(600, 300), QPointF(700, 300)});
             check(app_->bodyCount() == 3, "a three-finger tap redoes", QString::number(app_->bodyCount()));
+        },
+
+        // ================= Sketch tools, extrude options, edges that come along, face edits =================
+        [=, this] {
+            app_->newDocument();
+            check(app_->bodyCount() == 0, "new document for the sketch tools");
+            // A known 3D view to come back to (earlier sections turned the camera).
+            app_->interaction().setStandardView(StandardView::Isometric, false);
+            app_->interaction().fitAll(false);
+            key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+            check(app_->sketchMode(), "K starts another sketch");
+        },
+        [] {}, [] {}, [] {},
+        // A 40 x 20 rectangle and a line through it that sticks out at the top
+        // (off-center: the rectangle's width label sits below its middle).
+        [=, this] {
+            click(screenPoint(0, 0, 0));
+            mouseMove(screenPoint(30, 12, 0));
+            type(QStringLiteral("40"));
+            key(Qt::Key_Tab);
+            type(QStringLiteral("20"));
+            key(Qt::Key_Return);
+            key(Qt::Key_L, Qt::NoModifier, QStringLiteral("l"));
+            click(screenPoint(25, -5, 0));
+            click(screenPoint(25, 26, 0));
+            key(Qt::Key_Escape);
+            const auto* s = app_->interaction().sketchSession();
+            check(s && s->sketch().lines().size() == 5, "rectangle and a crossing line",
+                  s ? QString::number(s->sketch().lines().size()) : QString());
+        },
+        // Trim cuts the part above the rectangle away.
+        [=, this] {
+            check(clickItem(QStringLiteral("tool_trim")), "Trim tool button");
+            mouseMove(screenPoint(25, 24, 0));
+            click(screenPoint(25, 24, 0));
+            const auto& sk = app_->interaction().sketchSession()->sketch();
+            double topOfLine = 0;
+            for (const auto& [id, l] : sk.lines()) {
+                const Vec2 a = sk.point(l.start)->position, b = sk.point(l.end)->position;
+                if (std::abs(a.x - 25) < 1e-6 && std::abs(b.x - 25) < 1e-6)
+                    topOfLine = std::max(a.y, b.y);
+            }
+            check(std::abs(topOfLine - 20) < 1e-6, "trim stops the line at the rectangle's edge", num(topOfLine));
+        },
+        // A slot below the rectangle: two centers and a typed width.
+        [=, this] {
+            check(clickItem(QStringLiteral("tool_slot")), "Slot tool button");
+            click(screenPoint(8, -14, 0));
+            click(screenPoint(32, -14, 0));
+            mouseMove(screenPoint(20, -11, 0));
+            type(QStringLiteral("6"));
+            key(Qt::Key_Return);
+            const auto& sk = app_->interaction().sketchSession()->sketch();
+            bool round = sk.arcs().size() == 2;
+            for (const auto& [id, a] : sk.arcs())
+                round = round && std::abs(sk.arcRadius(id) - 3) < 1e-6;
+            check(round, "slot: two 3 mm end arcs", QString::number(sk.arcs().size()));
+        },
+        // Round the rectangle's top-right corner.
+        [=, this] {
+            key(Qt::Key_S, Qt::NoModifier, QStringLiteral("s"));
+            click(screenPoint(40, 20, 0));
+            check(clickItem(QStringLiteral("sketchAction_fillet")), "Fillet on a selected corner");
+            check(app_->interaction().sketchSession()->sketch().arcs().size() == 3, "the corner became an arc");
+        },
+        // Offset the slot 2 mm outward (clicked where its curves really are:
+        // the centers snapped to the grid).
+        [=, this] {
+            const auto* s = app_->interaction().sketchSession();
+            std::vector<Vec2> centers;
+            double radius = 0;
+            for (const auto& [id, a] : s->sketch().arcs())
+                if (s->sketch().arcRadius(id) < 3.5) {
+                    centers.push_back(s->sketch().point(a.center)->position);
+                    radius = s->sketch().arcRadius(id);
+                }
+            if (centers.size() != 2) {
+                check(false, "the slot's centers found");
+                return;
+            }
+            std::sort(centers.begin(), centers.end(), [](Vec2 p, Vec2 q) { return p.x < q.x; });
+            const Vec2 mid = (centers[0] + centers[1]) * 0.5;
+            click(screenPoint(mid.x, mid.y + radius, 0));
+            click(screenPoint(mid.x, mid.y - radius, 0), Qt::ShiftModifier);
+            click(screenPoint(centers[0].x - radius, centers[0].y, 0), Qt::ShiftModifier);
+            click(screenPoint(centers[1].x + radius, centers[1].y, 0), Qt::ShiftModifier);
+            check(s->selection().size() == 4, "the slot's four curves selected", QString::number(s->selection().size()));
+            check(clickItem(QStringLiteral("sketchAction_offset")), "Offset on the selected curves");
+            mouseMove(screenPoint(mid.x, mid.y - radius - 3, 0));
+            type(QStringLiteral("2"));
+            key(Qt::Key_Return);
+            bool offset = false;
+            for (const auto& [id, a] : s->sketch().arcs())
+                offset = offset || std::abs(s->sketch().arcRadius(id) - 5) < 1e-6;
+            check(offset && s->sketch().arcs().size() == 5, "offset slot with 5 mm end arcs",
+                  QString::number(s->sketch().arcs().size()));
+            screenshot(QStringLiteral("20_sketch_tools"));
+        },
+        [=, this] { check(clickItem(QStringLiteral("finishSketchButton")), "Finish sketch button (tools)"); },
+        [] {}, [] {}, [] {},
+        // Symmetric extrusion of the rectangle's left part: 10 mm, 5 each side.
+        [=, this] {
+            click(screenPoint(8, 8, 0));
+            check(app_->operationTitle() == QStringLiteral("Extrude"), "left part selected for extrusion", app_->operationTitle());
+            check(clickItem(QStringLiteral("action_symmetric")), "Symmetric option");
+            check(app_->operationValueLabel() == QStringLiteral("Thickness"), "symmetric extrusion shows the thickness",
+                  app_->operationValueLabel());
+            type(QStringLiteral("10"));
+            key(Qt::Key_Return);
+            const auto bb = geom::boundingBox(app_->document().bodies().front()->shape());
+            check(app_->bodyCount() == 1 && std::abs(bb.min.z + 5) < 1e-6 && std::abs(bb.max.z - 5) < 1e-6,
+                  "symmetric: 5 mm on each side of the sketch", num(bb.min.z) + QStringLiteral("..") + num(bb.max.z));
+        },
+        [] {},
+        // Up to face: the right part ends on the left block's top.
+        [=, this, &in] {
+            // (38, 3): in the iso view (30, 8, 0) lands exactly on the block's bottom edge.
+            click(screenPoint(38, 3, 0));
+            const auto& picked = in.selection();
+            check(app_->operationTitle() == QStringLiteral("Extrude"), "the right part selected for extrusion",
+                  app_->operationTitle() + QStringLiteral(" / ")
+                      + QString::number(picked.empty() ? -1 : int(picked.items().front().kind)));
+            check(clickItem(QStringLiteral("action_upToFace")), "Up to face option");
+            click(screenPoint(10, 10, 5));
+            const auto* op = app_->interaction().operation();
+            check(op && std::abs(op->value() - 5) < 1e-6, "the clicked top sets the distance", op ? num(op->value()) : QString());
+            key(Qt::Key_Return);
+            check(app_->bodyCount() == 2
+                      && std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).max.z - 5) < 1e-6,
+                  "up to face: the new block ends at z = 5");
+        },
+        // Round the left block's front top edge, then make the block taller: the rounding comes along.
+        [=, this, &in] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            click(screenPoint(10, 0, 5));
+            check(in.selection().size() == 1 && in.selection().items()[0].kind == sel::SelectionKind::Edge,
+                  "clicking the block's top edge selects it");
+            type(QStringLiteral("2"));
+            key(Qt::Key_Return);
+        },
+        [=, this] {
+            const geom::Shape before = app_->document().bodies().front()->shape();
+            click(screenPoint(10, 12, 5));
+            check(app_->operationValueLabel() == QStringLiteral("Height") && app_->operationValueText() == QStringLiteral("10.00 mm"),
+                  "the block's top shows its height", app_->operationValueLabel() + QStringLiteral(" ") + app_->operationValueText());
+            type(QStringLiteral("16"));
+            key(Qt::Key_Return);
+            const geom::Shape after = app_->document().bodies().front()->shape();
+            check(std::abs(geom::boundingBox(after).max.z - 11) < 1e-6, "the block is now 16 mm tall",
+                  num(geom::boundingBox(after).max.z));
+            check(after.faceCount() == before.faceCount(), "the rounded edge moved up with the face (no step)",
+                  QString::number(after.faceCount()) + QStringLiteral(" vs ") + QString::number(before.faceCount()));
+            screenshot(QStringLiteral("21_edge_comes_along"));
+        },
+        // A 4 mm hole through the right block.
+        [=, this] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            click(screenPoint(30, 12, 5));
+            key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+            check(app_->sketchMode(), "K on the right block's top face");
+        },
+        [] {}, [] {}, [] {},
+        [=, this] {
+            key(Qt::Key_C, Qt::NoModifier, QStringLiteral("c"));
+            click(screenPoint(30, 10, 5));
+            mouseMove(screenPoint(31, 10, 5));
+            type(QStringLiteral("4"));
+            key(Qt::Key_Return);
+            check(clickItem(QStringLiteral("finishSketchButton")), "Finish sketch button (hole)");
+        },
+        [] {}, [] {}, [] {},
+        [=, this] {
+            if (app_->bodyCount() < 2)
+                return; // reported by the up-to-face checks
+            holeBlockVolume_ = geom::volume(app_->document().bodies()[1]->shape());
+            click(screenPoint(30, 10, 5));
+            type(QStringLiteral("-5"));
+        },
+        [=, this] {
+            if (app_->bodyCount() < 2) {
+                check(false, "a second block for the hole");
+                return;
+            }
+            check(clickItem(QStringLiteral("action_throughAll")), "through-all for the hole");
+            key(Qt::Key_Return);
+            const double v = geom::volume(app_->document().bodies()[1]->shape());
+            check(std::abs(holeBlockVolume_ - v - kPi * 4 * 5) < 1e-3, "a 4 mm hole through the block", num(v));
+        },
+        // Click the hole's wall: it offers its diameter; type a new one. (Zoomed
+        // in, and 2 mm down the wall, so the rim edge is not what gets picked.)
+        [=, this] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            app_->interaction().fitAll(false);
+        },
+        [=, this] {
+            click(screenPoint(30 - 2 * 0.7071, 10 + 2 * 0.7071, 3));
+            check(app_->operationTitle() == QStringLiteral("Offset") && app_->operationValueLabel() == QStringLiteral("Diameter"),
+                  "the hole wall offers its diameter", app_->operationTitle() + QStringLiteral(" ") + app_->operationValueLabel());
+            type(QStringLiteral("5"));
+            key(Qt::Key_Return);
+            if (app_->bodyCount() < 2)
+                return;
+            const double v = geom::volume(app_->document().bodies()[1]->shape());
+            check(std::abs(holeBlockVolume_ - v - kPi * 6.25 * 5) < 1e-3, "the hole is now 5 mm", num(v));
+        },
+        // Select the wall again and press Delete: the hole is gone.
+        [=, this] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            click(screenPoint(30 - 2.5 * 0.7071, 10 + 2.5 * 0.7071, 3));
+            key(Qt::Key_Delete);
+            if (app_->bodyCount() < 2)
+                return;
+            const double v = geom::volume(app_->document().bodies()[1]->shape());
+            check(std::abs(v - holeBlockVolume_) < 1e-3, "Delete removes the hole", num(v));
+            screenshot(QStringLiteral("22_face_edits"));
         },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);

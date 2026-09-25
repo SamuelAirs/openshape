@@ -675,3 +675,84 @@ TEST(Geometry, PointOnFaceAvoidsHoles)
         }
     }
 }
+
+namespace {
+std::vector<int> topEdges(const Shape& s, double z)
+{
+    std::vector<int> out;
+    for (int i = 0; i < s.edgeCount(); ++i)
+        if (const auto e = edgeInfo(s, i); e && e->kind == CurveKind::Line && std::abs(e->start.z - z) < kTol && std::abs(e->end.z - z) < kTol)
+            out.push_back(i);
+    return out;
+}
+int cylinderCount(const Shape& s, double radius)
+{
+    int n = 0;
+    for (int i = 0; i < s.faceCount(); ++i)
+        if (const auto f = faceInfo(s, i); f && f->kind == SurfaceKind::Cylinder && std::abs(f->radius - radius) < 1e-6)
+            ++n;
+    return n;
+}
+} // namespace
+
+TEST(Geometry, PushPullKeepsFilletedEdges)
+{
+    // 20 mm cube with its four top edges rounded (R3).
+    const Shape cube = box(20, 20, 20);
+    const auto rounded = filletEdges(cube, topEdges(cube, 20), 3.0);
+    ASSERT_TRUE(rounded.ok()) << rounded.developerMessage();
+    const Shape part = rounded.value();
+    const int top = faceWithNormal(part, {0, 0, 1});
+    ASSERT_GE(top, 0);
+
+    const auto taller = pushPullFaceKeepingEdges(part, top, 10.0);
+    ASSERT_TRUE(taller.ok()) << taller.developerMessage();
+    EXPECT_NEAR(boundingBox(taller.value()).size().z, 30.0, kTol);
+    EXPECT_NEAR(volume(taller.value()) - volume(part), 20.0 * 20.0 * 10.0, 1e-6);
+    EXPECT_EQ(taller.value().faceCount(), part.faceCount()) << "same faces: the fillets moved up whole";
+    EXPECT_EQ(cylinderCount(taller.value(), 3.0), 4);
+    // A fillet's axis is now 3 mm below the new top.
+    bool moved = false;
+    for (int i = 0; i < taller.value().faceCount(); ++i)
+        if (const auto f = faceInfo(taller.value(), i); f && f->kind == SurfaceKind::Cylinder)
+            moved = moved || std::abs(f->axisOrigin.z - 27.0) < 1e-6;
+    EXPECT_TRUE(moved);
+
+    const auto shorter = pushPullFaceKeepingEdges(part, top, -5.0);
+    ASSERT_TRUE(shorter.ok()) << shorter.developerMessage();
+    EXPECT_NEAR(boundingBox(shorter.value()).size().z, 15.0, kTol);
+    EXPECT_NEAR(volume(part) - volume(shorter.value()), 20.0 * 20.0 * 5.0, 1e-6);
+    EXPECT_EQ(cylinderCount(shorter.value(), 3.0), 4);
+}
+
+TEST(Geometry, PushPullKeepsAllRoundedEdgesOfABox)
+{
+    // Every edge rounded (R2): corners are blends; the vertical fillets stretch.
+    const Shape cube = box(20, 20, 20);
+    std::vector<int> all(std::size_t(cube.edgeCount()));
+    for (int i = 0; i < cube.edgeCount(); ++i)
+        all[std::size_t(i)] = i;
+    const auto rounded = filletEdges(cube, all, 2.0);
+    ASSERT_TRUE(rounded.ok()) << rounded.developerMessage();
+    const Shape part = rounded.value();
+    const int top = faceWithNormal(part, {0, 0, 1});
+    const auto taller = pushPullFaceKeepingEdges(part, top, 5.0);
+    ASSERT_TRUE(taller.ok()) << taller.developerMessage();
+    EXPECT_NEAR(boundingBox(taller.value()).size().z, 25.0, kTol);
+    const double section = 20.0 * 20.0 - 4 * (4.0 - kPi * 4.0 / 4); // the square with rounded corners
+    EXPECT_NEAR(volume(taller.value()) - volume(part), section * 5.0, 1e-5);
+    EXPECT_EQ(taller.value().faceCount(), part.faceCount());
+
+    // Pulling in past the bottom fillets cannot be done this way.
+    const auto tooFar = pushPullFaceKeepingEdges(part, top, -17.0);
+    ASSERT_FALSE(tooFar.ok());
+    EXPECT_EQ(tooFar.error(), ErrorCode::Unsupported);
+}
+
+TEST(Geometry, PushPullKeepingEdgesNeedsRoundedEdges)
+{
+    const Shape cube = box(20, 20, 20);
+    const auto plain = pushPullFaceKeepingEdges(cube, faceWithNormal(cube, {0, 0, 1}), 5.0);
+    ASSERT_FALSE(plain.ok());
+    EXPECT_EQ(plain.error(), ErrorCode::Unsupported);
+}

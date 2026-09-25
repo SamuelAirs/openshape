@@ -88,6 +88,7 @@ enum class ConstraintKind {
     PointOnLine,        // point a on the (infinite) line b
     Midpoint,           // point a at the middle of line b
     Radius,             // arc a; value > 0
+    PointOnCircle,      // point a on the (full) circle of circle or arc b
 };
 
 struct SketchConstraint {
@@ -175,7 +176,9 @@ public:
     bool isRound(EntityId id) const { return circles_.contains(id) || arcs_.contains(id); }
     const SketchConstraint* constraint(EntityId id) const;
     SketchPoint* point(EntityId id);
+    SketchLine* line(EntityId id);
     SketchCircle* circle(EntityId id);
+    SketchArc* arc(EntityId id);
     SketchConstraint* constraint(EntityId id);
 
     // Constraints that mention an entity directly.

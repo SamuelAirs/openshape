@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "sketch/Sketch.h"
+#include "sketch/SketchEdit.h"
 
 #include <nlohmann/json.hpp>
 
@@ -370,4 +371,165 @@ TEST(Sketch, ArcsRoundTripAndOldFilesLoad)
     auto oldJson = plain.toJson();
     oldJson.erase("arcs");
     EXPECT_TRUE(Sketch::fromJson(oldJson).ok());
+}
+
+namespace {
+double distanceToLine(const Sketch& s, EntityId line, Vec2 p)
+{
+    const auto* l = s.line(line);
+    const Vec2 a = pos(s, l->start), b = pos(s, l->end), d = b - a;
+    return std::abs(d.x * (p.y - a.y) - d.y * (p.x - a.x)) / d.length();
+}
+} // namespace
+
+TEST(SketchEdit, SlotIsTwoTangentLinesAndEqualArcs)
+{
+    Sketch s;
+    const auto slot = addSlot(s, {0, 0}, {30, 0}, 5.0, kOriginId);
+    ASSERT_NE(slot.arcs[0], kNoEntity);
+    ASSERT_NE(slot.arcs[1], kNoEntity);
+    EXPECT_EQ(slot.centers[0], kOriginId);
+    ASSERT_TRUE(solve(s).ok);
+    for (const EntityId line : slot.lines)
+        for (const EntityId center : slot.centers)
+            EXPECT_NEAR(distanceToLine(s, line, pos(s, center)), 5.0, 1e-9);
+    EXPECT_NEAR(s.arcRadius(slot.arcs[0]), 5.0, 1e-9);
+    EXPECT_NEAR(s.arcRadius(slot.arcs[1]), 5.0, 1e-9);
+    // Free: the second center (2) and the radius (1); the first sits on the origin.
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 3);
+
+    // A radius on one arc sizes both.
+    s.addConstraint({ConstraintKind::Radius, slot.arcs[0], kNoEntity, 4.0});
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_NEAR(s.arcRadius(slot.arcs[1]), 4.0, 1e-9);
+    for (const EntityId line : slot.lines)
+        EXPECT_NEAR(distanceToLine(s, line, pos(s, slot.centers[1])), 4.0, 1e-9);
+}
+
+TEST(SketchEdit, FilletCornerKeepsTheRectangleDimensions)
+{
+    Sketch s;
+    const auto r = addRectangle(s, {0, 0}, {60, 40}, kOriginId);
+    s.addConstraint({ConstraintKind::HorizontalDistance, r.corners[0], r.corners[1], 60.0});
+    s.addConstraint({ConstraintKind::VerticalDistance, r.corners[1], r.corners[2], 40.0});
+    ASSERT_TRUE(solve(s).ok);
+    ASSERT_EQ(s.solveReport().degreesOfFreedom, 0);
+
+    const auto radius = suggestedFilletRadius(s, r.corners[2]);
+    ASSERT_TRUE(radius.has_value());
+    EXPECT_DOUBLE_EQ(*radius, 10.0); // a quarter of 40, rounded down to a round number
+
+    const auto arc = filletCorner(s, r.corners[2], 5.0);
+    ASSERT_TRUE(arc.ok()) << arc.developerMessage();
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0) << "still fully defined";
+    EXPECT_NEAR(s.arcRadius(arc.value()), 5.0, 1e-9);
+    const auto* a = s.arc(arc.value());
+    EXPECT_NEAR((pos(s, a->center) - Vec2{55, 35}).length(), 0.0, 1e-9);
+    // The ends touch the rectangle's top and right sides.
+    std::vector<Vec2> ends{pos(s, a->start), pos(s, a->end)};
+    std::sort(ends.begin(), ends.end(), [](Vec2 p, Vec2 q) { return p.x < q.x; });
+    EXPECT_NEAR((ends[0] - Vec2{55, 40}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((ends[1] - Vec2{60, 35}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((pos(s, r.corners[2]) - Vec2{60, 40}).length(), 0.0, 1e-9) << "the virtual sharp stays";
+
+    // Changing the radius moves the tangent points.
+    for (const auto& [id, c] : s.constraints())
+        if (c.kind == ConstraintKind::Radius)
+            s.constraint(id)->value = 8.0;
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_NEAR((pos(s, s.arc(arc.value())->center) - Vec2{52, 32}).length(), 0.0, 1e-9);
+
+    // Not a corner of two lines, or too big: refused.
+    EXPECT_FALSE(filletCorner(s, r.corners[2], 50.0).ok());
+    EXPECT_FALSE(filletCorner(s, s.arc(arc.value())->center, 2.0).ok());
+}
+
+TEST(SketchEdit, TrimLineEndAtACrossing)
+{
+    // A plus sign: trimming the right arm of the horizontal line.
+    Sketch s;
+    const EntityId h = s.addLine(s.addPoint({-10, 0}), s.addPoint({10, 0}));
+    const EntityId v = s.addLine(s.addPoint({0, -10}), s.addPoint({0, 10}));
+    ASSERT_TRUE(trimAt(s, h, {6, 0}).ok());
+    const auto* line = s.line(h);
+    ASSERT_NE(line, nullptr);
+    EXPECT_NEAR((pos(s, line->start) - Vec2{-10, 0}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((pos(s, line->end) - Vec2{0, 0}).length(), 0.0, 1e-9);
+    EXPECT_EQ(s.points().size(), 5u) << "origin, 4 original ends minus the trimmed one, plus the new end";
+    bool kept = false;
+    for (const auto& [id, c] : s.constraints())
+        kept = kept || (c.kind == ConstraintKind::PointOnLine && c.a == line->end && c.b == v);
+    EXPECT_TRUE(kept) << "the new end stays on the vertical line";
+    EXPECT_TRUE(solve(s).ok);
+}
+
+TEST(SketchEdit, TrimMiddleSplitsAndLoneCurvesDisappear)
+{
+    Sketch s;
+    const EntityId h = s.addLine(s.addPoint({0, 0}), s.addPoint({30, 0}));
+    s.addConstraint({ConstraintKind::Horizontal, h});
+    s.addLine(s.addPoint({10, -5}), s.addPoint({10, 5}));
+    s.addLine(s.addPoint({20, -5}), s.addPoint({20, 5}));
+    const auto preview = trimPreview(s, h, {15, 0.5});
+    ASSERT_EQ(preview.size(), 2u);
+    EXPECT_NEAR((preview[0] - Vec2{10, 0}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((preview[1] - Vec2{20, 0}).length(), 0.0, 1e-9);
+    ASSERT_TRUE(trimAt(s, h, {15, 0.5}).ok());
+    EXPECT_EQ(s.lines().size(), 4u) << "the middle is gone, two pieces remain";
+    std::size_t horizontals = 0;
+    for (const auto& [id, c] : s.constraints())
+        horizontals += c.kind == ConstraintKind::Horizontal ? 1 : 0;
+    EXPECT_EQ(horizontals, 2u) << "both pieces stay horizontal";
+    EXPECT_TRUE(solve(s).ok);
+
+    // A line crossing nothing goes entirely, with its points.
+    Sketch lone;
+    const EntityId l = lone.addLine(lone.addPoint({0, 5}), lone.addPoint({9, 5}));
+    ASSERT_TRUE(trimAt(lone, l, {4, 5}).ok());
+    EXPECT_TRUE(lone.lines().empty());
+    EXPECT_EQ(lone.points().size(), 1u) << "only the origin";
+}
+
+TEST(SketchEdit, TrimCircleBecomesAnArc)
+{
+    // A Ø20 circle cut by a vertical line through its center: trim the right half.
+    Sketch s;
+    const EntityId circle = s.addCircle(kOriginId, 10.0);
+    s.addConstraint({ConstraintKind::Diameter, circle, kNoEntity, 20.0});
+    const EntityId v = s.addLine(s.addPoint({0, -15}), s.addPoint({0, 15}));
+    ASSERT_TRUE(trimAt(s, circle, {10, 0}).ok());
+    EXPECT_TRUE(s.circles().empty());
+    ASSERT_EQ(s.arcs().size(), 1u);
+    const auto& [arcId, arc] = *s.arcs().begin();
+    EXPECT_NEAR(s.arcRadius(arcId), 10.0, 1e-9);
+    // Counterclockwise from the top to the bottom: the left half remains.
+    EXPECT_NEAR((pos(s, arc.start) - Vec2{0, 10}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((pos(s, arc.end) - Vec2{0, -10}).length(), 0.0, 1e-9);
+    std::size_t radius = 0, onLine = 0;
+    for (const auto& [id, c] : s.constraints()) {
+        radius += c.kind == ConstraintKind::Radius && c.a == arcId && std::abs(c.value - 10.0) < 1e-12 ? 1 : 0;
+        onLine += c.kind == ConstraintKind::PointOnLine && c.b == v ? 1 : 0;
+    }
+    EXPECT_EQ(radius, 1u) << "the diameter became a radius";
+    EXPECT_EQ(onLine, 2u);
+    EXPECT_TRUE(solve(s).ok);
+}
+
+TEST(SketchEdit, PointOnCircleConstraint)
+{
+    Sketch s;
+    const EntityId circle = s.addCircle(kOriginId, 10.0);
+    s.addConstraint({ConstraintKind::Diameter, circle, kNoEntity, 20.0});
+    const EntityId p = s.addPoint({7, 9});
+    EXPECT_NE(s.addConstraint({ConstraintKind::PointOnCircle, p, circle}), kNoEntity);
+    EXPECT_EQ(s.addConstraint({ConstraintKind::PointOnCircle, kOriginId, circle}), kNoEntity) << "not the center";
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_NEAR(pos(s, p).length(), 10.0, 1e-9);
+    const auto copy = Sketch::fromJson(s.toJson());
+    ASSERT_TRUE(copy.ok());
+    bool found = false;
+    for (const auto& [id, c] : copy.value().constraints())
+        found = found || c.kind == ConstraintKind::PointOnCircle;
+    EXPECT_TRUE(found);
 }

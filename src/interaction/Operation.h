@@ -533,11 +533,25 @@ public:
                                                     std::vector<doc::ProfileRef> profiles, const Vec3& anchor);
 
     std::string title() const override { return "Extrude"; }
-    std::string valueLabel() const override { return "Distance"; }
-    bool allowsNegative() const override { return true; }
+    // Symmetric: the value is the total thickness, centered on the sketch.
+    std::string valueLabel() const override { return symmetric_ ? "Thickness" : "Distance"; }
+    bool allowsNegative() const override { return !symmetric_; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Extrude; }
     Uuid previewBody() const override;
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+    double displayOffset(double value) const override { return symmetric_ ? value / 2 : value; }
+    double valueFromOffset(double offset) const override { return symmetric_ ? 2 * offset : offset; }
+    std::string prompt() const override;
+
+    bool symmetric() const { return symmetric_; }
+    void setSymmetric(bool symmetric, const doc::Document& document);
+    // "Up to face": the next face click sets the distance (see extendToFace).
+    bool pickingTarget() const { return pickingTarget_; }
+    void setPickingTarget(bool picking) { pickingTarget_ = picking; }
+    // Sets the distance so the extrusion ends on a flat face parallel to the
+    // sketch (any body). A one-time measurement, like Align: the step stores
+    // the distance, not a link to the face.
+    Status extendToFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
 
     doc::ExtrudeMode mode() const;
     void setModeOverride(std::optional<doc::ExtrudeMode> mode) { modeOverride_ = mode; }
@@ -561,6 +575,8 @@ private:
     std::optional<doc::ExtrudeMode> modeOverride_;
     bool autoNewBody_ = false; // an automatic join that would not touch the body becomes a new body
     bool throughAll_ = false;
+    bool symmetric_ = false;
+    bool pickingTarget_ = false;
 };
 
 } // namespace os::interact

@@ -20,18 +20,18 @@ Start here, in this order:
   checks (volumes, bounding boxes) over screenshots.
 
 ## Environment (Windows, no admin rights)
-- Toolchain: MSYS2 at `C:\Users\ayers\msys64` (UCRT64). In Git Bash:
-  `export PATH=/c/Users/ayers/msys64/ucrt64/bin:$PATH`
+- Toolchain: MSYS2 at `%USERPROFILE%\msys64` (UCRT64). In Git Bash:
+  `export PATH=$HOME/msys64/ucrt64/bin:$PATH`
 - Build & test: `cmake --preset msys2-ucrt64 && cmake --build build/msys2-ucrt64 && ctest --test-dir build/msys2-ucrt64`
   (`-LE gui` skips the real-UI acceptance run: ~20 s, moves the mouse — don't run it
   while the owner is using the machine). The local build cache has
   `OPENSHAPE_WARNINGS_AS_ERRORS=ON` like CI, and `OPENSHAPE_BUILD_TOOLS=ON`.
 - Visual check: `build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png`
-- Package: `export PATH=/c/Users/ayers/msys64/ucrt64/bin:/c/Users/ayers/msys64/usr/bin:$PATH && bash scripts/package-windows.sh`
+- Package: `export PATH=$HOME/msys64/ucrt64/bin:$HOME/msys64/usr/bin:$PATH && bash scripts/package-windows.sh`
   → `dist/OpenShape/`. The owner launches the app from a desktop shortcut to
   `dist/OpenShape/OpenShape.exe`, so re-run the package script after changes they
   should see. Don't build while it runs (it copies from the build folder).
-- Python: `/c/Users/ayers/msys64/ucrt64/bin/python.exe` is Windows-native (ctypes works).
+- Python: `$HOME/msys64/ucrt64/bin/python.exe` is Windows-native (ctypes works).
 
 ## Repository and CI
 - Remote: https://github.com/SamuelAirs/openshape (private). `gh` is not installed;

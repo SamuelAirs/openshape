@@ -6,6 +6,7 @@
 add_library(openshape_sketch STATIC
     Sketch.cpp Sketch.h
     SketchSolver.cpp
+    SketchEdit.cpp SketchEdit.h
 )
 target_link_libraries(openshape_sketch
     PUBLIC openshape_core nlohmann_json::nlohmann_json

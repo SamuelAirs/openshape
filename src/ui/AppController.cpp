@@ -176,6 +176,8 @@ QString AppController::sketchTool() const
     case interact::SketchTool::Rectangle: return QStringLiteral("rectangle");
     case interact::SketchTool::Circle: return QStringLiteral("circle");
     case interact::SketchTool::Arc: return QStringLiteral("arc");
+    case interact::SketchTool::Slot: return QStringLiteral("slot");
+    case interact::SketchTool::Trim: return QStringLiteral("trim");
     }
     return {};
 }
@@ -195,7 +197,7 @@ QString AppController::sketchHint() const
 bool AppController::sketchDrawing() const
 {
     const auto* s = interaction_->sketchSession();
-    return s && s->isDrawing();
+    return s && (s->isDrawing() || s->isOffsetting()); // typed values go to the shape or the offset
 }
 
 QVariantList AppController::sketchLabels() const
@@ -269,6 +271,10 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::Circle);
     else if (name == QLatin1String("arc"))
         interaction_->setSketchTool(interact::SketchTool::Arc);
+    else if (name == QLatin1String("slot"))
+        interaction_->setSketchTool(interact::SketchTool::Slot);
+    else if (name == QLatin1String("trim"))
+        interaction_->setSketchTool(interact::SketchTool::Trim);
 }
 
 QString AppController::sketchType(const QString& text)

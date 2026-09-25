@@ -21,7 +21,7 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle, Arc };
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
@@ -52,6 +52,9 @@ public:
     SketchTool tool() const { return tool_; }
     void setTool(SketchTool tool);
     bool isDrawing() const { return anchor_.has_value(); }
+    // Offset (from the "Offset" action on selected curves): the pointer picks
+    // the side and distance, a typed distance fixes it; click or Enter applies.
+    bool isOffsetting() const { return !offsetSource_.empty(); }
 
     // ---- Input (screen coordinates in logical pixels) ----
     // Returns true if the press was consumed by the sketch (tool or geometry);
@@ -110,7 +113,7 @@ private:
     std::optional<Vec2> toLocal(Vec2 screen, const Camera& camera) const;
     Vec2 toScreen(Vec2 local, const Camera& camera) const;
     Snap snapAt(Vec2 screen, const Camera& camera, PointerDevice device) const;
-    sketch::EntityId pickEntity(Vec2 screen, const Camera& camera, PointerDevice device) const;
+    sketch::EntityId pickEntity(Vec2 screen, const Camera& camera, PointerDevice device, bool curvesOnly = false) const;
 
     void beginShape(const Snap& at);
     void resetShape();
@@ -124,6 +127,17 @@ private:
         bool swapped = false; // start/end exchanged to keep it counterclockwise
     };
     std::optional<ArcShape> arcShape() const;
+    struct SlotShape {
+        Vec2 a, b; // centers
+        double radius = 0;
+    };
+    std::optional<SlotShape> slotShape() const;
+    // Trim: the curve under the pointer and where, for the preview.
+    sketch::EntityId pickCurve(Vec2 screen, const Camera& camera, PointerDevice device) const;
+    // Offset: recompute the preview for the pointer (local) position.
+    void updateOffset(std::optional<Vec2> pointer);
+    bool commitOffset();
+    void cancelOffset();
     bool finishShape(const Snap& end);
     bool commit(sketch::Sketch next, const std::string& label);
     std::optional<double> input(const std::string& key) const;
@@ -155,6 +169,13 @@ private:
 
     std::vector<sketch::EntityId> selected_;
     sketch::EntityId hovered_ = sketch::kNoEntity;
+
+    std::optional<Vec2> trimCursor_; // Trim tool: pointer position (local) over hovered_
+
+    std::vector<sketch::EntityId> offsetSource_;     // curves being offset
+    std::vector<geom::PlanarCurve> offsetPreview_;   // local coordinates (z = 0)
+    std::optional<Vec2> offsetPointer_;              // decides the side (and distance when not typed)
+    double offsetDistance_ = 0;                      // signed, as last previewed
 
     // Cached closed regions of the working copy.
     std::vector<geom::Region> regions_;

@@ -365,8 +365,10 @@ ApplicationWindow {
             return app.operationPrompt
         if (app.operationActive && app.operationTitle === "Align")
             return "Drag the arrow or type an offset · Flip turns it around · click another face to re-aim · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Thickness")
+            return "Drag the arrow or type the total thickness (half on each side of the sketch) \u00b7 Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
-            return "Drag the arrow or type a distance \u00b7 Shift-click to add more profiles"
+            return "Drag the arrow or type a distance \u00b7 \"Up to face\" ends it on a face you click \u00b7 Shift-click adds profiles"
         if (app.bodyCount === 0 && app.sketchCount > 0)
             return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)

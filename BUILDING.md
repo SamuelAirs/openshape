@@ -102,7 +102,7 @@ bash scripts/package-windows.sh
 From Git Bash instead of the UCRT64 shell, put both MSYS2 bin folders first:
 
 ```bash
-export PATH=/c/Users/ayers/msys64/ucrt64/bin:/c/Users/ayers/msys64/usr/bin:$PATH
+export PATH=$HOME/msys64/ucrt64/bin:$HOME/msys64/usr/bin:$PATH
 bash scripts/package-windows.sh
 ```
 
@@ -133,7 +133,7 @@ No installer yet, and not distributable yet (TD-17).
   MSYS2 one works:
 
   ```bash
-  /c/Users/ayers/msys64/ucrt64/bin/python.exe scripts/dev/drive.py "focus; info; shot view.png 0.5"
+  $HOME/msys64/ucrt64/bin/python.exe scripts/dev/drive.py "focus; info; shot view.png 0.5"
   ```
 
   Paths inside the command string must be Windows paths (`C:/...`): the

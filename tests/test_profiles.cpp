@@ -203,3 +203,76 @@ TEST(Profiles, SlotOfLinesAndArcs)
     ASSERT_EQ(r.size(), 1u);
     EXPECT_NEAR(r[0].area, 30 * 10 + kPi * 25, 1e-6);
 }
+
+namespace {
+// Area enclosed by offset curves (via the region finder), to compare sizes.
+double enclosedArea(const std::vector<PlanarCurve>& curves)
+{
+    const auto r = regions(curves);
+    return r.empty() ? 0.0 : r.front().area;
+}
+} // namespace
+
+TEST(Profiles, OffsetClosedSquareKeepsSharpCorners)
+{
+    const std::vector<PlanarCurve> square{seg(0, 0, 10, 0), seg(10, 0, 10, 10), seg(10, 10, 0, 10), seg(0, 10, 0, 0)};
+    const PlaneFrame plane;
+    const auto a = offsetCurves(plane, square, 1.0);
+    const auto b = offsetCurves(plane, square, -1.0);
+    ASSERT_TRUE(a.ok()) << a.developerMessage();
+    ASSERT_TRUE(b.ok()) << b.developerMessage();
+    // One side is 12 x 12, the other 8 x 8; both still four straight lines.
+    const double areaA = enclosedArea(a.value()), areaB = enclosedArea(b.value());
+    EXPECT_NEAR(std::max(areaA, areaB), 144.0, 1e-6);
+    EXPECT_NEAR(std::min(areaA, areaB), 64.0, 1e-6);
+    for (const auto* result : {&a.value(), &b.value()}) {
+        EXPECT_EQ(result->size(), 4u);
+        for (const auto& c : *result)
+            EXPECT_EQ(c.kind, PlanarCurve::Kind::Segment);
+    }
+}
+
+TEST(Profiles, OffsetSlotKeepsArcCenters)
+{
+    const std::vector<PlanarCurve> slot{seg(0, -5, 30, -5), arc({30, 0}, 5, {30, -5}, {30, 5}), seg(30, 5, 0, 5),
+                                        arc({0, 0}, 5, {0, 5}, {0, -5})};
+    const auto grown = offsetCurves(PlaneFrame{}, slot, 2.0);
+    const auto shrunk = offsetCurves(PlaneFrame{}, slot, -2.0);
+    ASSERT_TRUE(grown.ok()) << grown.developerMessage();
+    ASSERT_TRUE(shrunk.ok()) << shrunk.developerMessage();
+    const double big = std::max(enclosedArea(grown.value()), enclosedArea(shrunk.value()));
+    const double small = std::min(enclosedArea(grown.value()), enclosedArea(shrunk.value()));
+    EXPECT_NEAR(big, 30 * 14 + kPi * 49, 1e-4);
+    EXPECT_NEAR(small, 30 * 6 + kPi * 9, 1e-4);
+    std::size_t arcs = 0;
+    for (const auto& c : grown.value())
+        if (c.kind == PlanarCurve::Kind::Arc) {
+            ++arcs;
+            EXPECT_TRUE(std::abs(c.center.x) < 1e-9 || std::abs(c.center.x - 30) < 1e-9);
+        }
+    EXPECT_EQ(arcs, 2u);
+}
+
+TEST(Profiles, OffsetOpenChainAndSingleCurves)
+{
+    // An L-shaped open chain moves to one side or the other; still two lines.
+    const std::vector<PlanarCurve> ell{seg(0, 0, 10, 0), seg(10, 0, 10, 10)};
+    for (const double d : {1.0, -1.0}) {
+        const auto r = offsetCurves(PlaneFrame{}, ell, d);
+        ASSERT_TRUE(r.ok()) << r.developerMessage();
+        ASSERT_EQ(r.value().size(), 2u);
+        const bool inside = std::abs(r.value()[0].start.y - 1.0) < 1e-9; // above the bottom line
+        EXPECT_NEAR(std::abs(r.value()[0].start.y), 1.0, 1e-9);
+        EXPECT_NEAR(r.value()[1].start.x, inside ? 9.0 : 11.0, 1e-9) << "the corner stays sharp";
+    }
+    // Single curves: a line moves to its left, a circle and an arc grow.
+    const auto line = offsetCurves(PlaneFrame{}, {seg(0, 0, 10, 0)}, 2.0);
+    ASSERT_TRUE(line.ok());
+    EXPECT_NEAR(line.value()[0].start.y, 2.0, 1e-12);
+    const auto round = offsetCurves(PlaneFrame{}, {circle(0, 0, 5)}, 1.5);
+    ASSERT_TRUE(round.ok());
+    EXPECT_NEAR(round.value()[0].radius, 6.5, 1e-12);
+    EXPECT_FALSE(offsetCurves(PlaneFrame{}, {circle(0, 0, 5)}, -5.0).ok()) << "shrinks to nothing";
+    // Disconnected curves are not one chain.
+    EXPECT_FALSE(offsetCurves(PlaneFrame{}, {seg(0, 0, 10, 0), seg(0, 5, 10, 5)}, 1.0).ok());
+}

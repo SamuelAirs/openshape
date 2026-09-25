@@ -48,20 +48,22 @@ std::string describeAlgoErrors(const Algo& algo)
     return out.str();
 }
 
-// Runs `fn` and converts any kernel exception into a failed Result.
+// Runs `fn` and converts any kernel exception into a failed Result of the
+// same type `fn` returns.
 template <typename Fn>
-Result<Shape> guarded(const char* operation, const char* userMessage, Fn&& fn)
+auto guarded(const char* operation, const char* userMessage, Fn&& fn) -> decltype(fn())
 {
+    using R = decltype(fn());
     try {
         return fn();
     } catch (const Standard_Failure& failure) {
         const std::string dev = std::string(operation) + " threw " + describeFailure(failure);
         OS_LOG(Error, Kernel) << dev;
-        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, dev);
+        return R::failure(ErrorCode::KernelFailure, userMessage, dev);
     } catch (const std::exception& e) {
         const std::string dev = std::string(operation) + " threw std::exception: " + e.what();
         OS_LOG(Error, Kernel) << dev;
-        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, dev);
+        return R::failure(ErrorCode::KernelFailure, userMessage, dev);
     }
 }
 

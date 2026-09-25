@@ -5,12 +5,14 @@
 // Sketching driven through the interaction layer with synthetic input: the
 // same code paths the UI uses.
 #include "commands/Command.h"
+#include "commands/DocumentCommands.h"
 #include "document/Document.h"
 #include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 using namespace os;
 using namespace os::interact;
@@ -709,4 +711,238 @@ TEST(SketchInteraction, RevolveTypedAngle)
     EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 90.0) << "a refused value keeps the previous one";
     EXPECT_EQ(h.controller.setValueText("1rad"), "");
     EXPECT_NEAR(h.controller.operation()->value(), 57.2957795, 1e-6);
+}
+
+namespace {
+// A 60 x 40 rectangle from the origin on the ground, sketch finished, its
+// profile selected (the Extrude operation armed).
+void rectangleProfileSelected(Harness& h)
+{
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({35, 22}));
+    h.type("60");
+    h.session().focusNextInput();
+    h.type("40");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.finishSketch();
+    h.controller.skipAnimation();
+    h.click(h.controller.camera().project({30, 20, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    ASSERT_EQ(h.controller.operation()->title(), "Extrude");
+}
+} // namespace
+
+// Symmetric: the value is the total thickness, centered on the sketch plane.
+TEST(SketchInteraction, SymmetricExtrudeIsCenteredOnTheSketch)
+{
+    Harness h;
+    rectangleProfileSelected(h);
+    ASSERT_TRUE(h.controller.triggerAction("symmetric").ok());
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Thickness");
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    EXPECT_NE(h.controller.setValueText("-4"), "") << "a thickness is never negative";
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    const auto bb = geom::boundingBox(h.document.bodies()[0]->shape());
+    EXPECT_NEAR(bb.min.z, -5.0, 1e-6);
+    EXPECT_NEAR(bb.max.z, 5.0, 1e-6);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 60.0 * 40.0 * 10.0, 1e-4);
+
+    // Stored as a symmetric extrusion, shown so in the Model panel, and kept in files.
+    const auto& feature = static_cast<const doc::ExtrudeFeature&>(*h.document.bodies()[0]->features().front());
+    EXPECT_TRUE(feature.symmetric);
+    bool listed = false;
+    for (const auto& row : h.controller.historyRows())
+        listed = listed || row.detail.find("symmetric") != std::string::npos;
+    EXPECT_TRUE(listed);
+    nlohmann::json params;
+    feature.writeParams(params);
+    doc::ExtrudeFeature copy;
+    ASSERT_TRUE(copy.readParams(params).ok());
+    EXPECT_TRUE(copy.symmetric);
+}
+
+// Up to face: the next face click sets the distance so the extrusion ends on it.
+TEST(SketchInteraction, ExtrudeUpToAFace)
+{
+    Harness h;
+    auto box = std::make_unique<doc::BoxFeature>();
+    box->origin = {80, 0, 0};
+    box->size = {10, 10, 30};
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>("Tower", std::move(box)), h.document).ok());
+    h.controller.documentChanged();
+    rectangleProfileSelected(h);
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+
+    ASSERT_TRUE(h.controller.triggerAction("upToFace").ok());
+    const auto* extrude = dynamic_cast<const ExtrudeOperation*>(h.controller.operation());
+    ASSERT_NE(extrude, nullptr);
+    EXPECT_TRUE(extrude->pickingTarget());
+    EXPECT_FALSE(extrude->prompt().empty());
+
+    // A face that is not parallel to the sketch is refused; picking goes on.
+    h.click(h.controller.camera().project({90, 5, 15})); // the tower's +X side
+    EXPECT_FALSE(h.messages.empty());
+    EXPECT_TRUE(extrude->pickingTarget());
+
+    h.click(h.controller.camera().project({85, 5, 30})); // the tower's top
+    ASSERT_EQ(h.controller.operation(), extrude);
+    EXPECT_FALSE(extrude->pickingTarget());
+    EXPECT_NEAR(extrude->value(), 30.0, 1e-9);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    EXPECT_NEAR(geom::boundingBox(h.document.bodies()[1]->shape()).size().z, 30.0, 1e-6);
+}
+
+// Esc leaves face picking without dropping the extrusion.
+TEST(SketchInteraction, EscapeLeavesUpToFacePicking)
+{
+    Harness h;
+    rectangleProfileSelected(h);
+    EXPECT_EQ(h.controller.setValueText("12"), "");
+    ASSERT_TRUE(h.controller.triggerAction("upToFace").ok());
+    h.controller.keyPress(Key::Escape);
+    const auto* extrude = dynamic_cast<const ExtrudeOperation*>(h.controller.operation());
+    ASSERT_NE(extrude, nullptr);
+    EXPECT_FALSE(extrude->pickingTarget());
+    EXPECT_NEAR(extrude->value(), 12.0, 1e-9);
+}
+
+namespace {
+// A 40 x 20 rectangle from the origin, dimensioned (still in sketch mode).
+void rectangle40x20(Harness& h)
+{
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({30, 12}));
+    h.type("40");
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+}
+
+double largestRegion(const sketch::Sketch& s)
+{
+    const auto regions = doc::sketchRegions(s);
+    return regions.ok() && !regions.value().empty() ? regions.value().front().area : 0.0;
+}
+} // namespace
+
+TEST(SketchInteraction, SlotToolWithTypedWidth)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.session().setTool(SketchTool::Slot);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({30, 0}));
+    h.move(h.sketchScreen({15, 4}));
+    EXPECT_FALSE(h.session().hintText().empty());
+    h.type("10"); // the width
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 2u);
+    ASSERT_EQ(s.arcs().size(), 2u);
+    for (const auto& [id, arc] : s.arcs())
+        EXPECT_NEAR(s.arcRadius(id), 5.0, 1e-9);
+    EXPECT_NEAR(largestRegion(s), 30 * 10 + kPi * 25, 1e-6);
+}
+
+TEST(SketchInteraction, TrimToolRemovesThePieceBeyondACrossing)
+{
+    Harness h;
+    rectangle40x20(h);
+    // A vertical line through the rectangle, sticking out above and below.
+    h.session().setTool(SketchTool::Line);
+    h.click(h.sketchScreen({20, -10}));
+    h.click(h.sketchScreen({20, 30}));
+    h.controller.keyPress(Key::Escape); // end the chain
+    ASSERT_EQ(h.session().sketch().lines().size(), 5u);
+
+    h.session().setTool(SketchTool::Trim);
+    h.move(h.sketchScreen({20, 26}));
+    bool red = false;
+    for (const auto& line : h.session().renderData(h.controller.camera()).lines)
+        red = red || line.style == SketchStyle::Conflict;
+    EXPECT_TRUE(red) << "the piece to remove is previewed";
+    h.click(h.sketchScreen({20, 26}));
+    // The line now ends on the rectangle's top edge.
+    const sketch::Sketch& s = h.session().sketch();
+    bool shortened = false;
+    for (const auto& [id, l] : s.lines()) {
+        const Vec2 a = s.point(l.start)->position, b = s.point(l.end)->position;
+        if (std::abs(a.x - 20) < 1e-9 && std::abs(b.x - 20) < 1e-9)
+            shortened = std::abs(std::max(a.y, b.y) - 20) < 1e-9 && std::abs(std::min(a.y, b.y) + 10) < 1e-9;
+    }
+    EXPECT_TRUE(shortened);
+    EXPECT_TRUE(h.messages.empty());
+}
+
+TEST(SketchInteraction, FilletCornerThenEditTheRadius)
+{
+    Harness h;
+    rectangle40x20(h);
+    h.session().setTool(SketchTool::Select);
+    h.click(h.sketchScreen({40, 20})); // the top-right corner point
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    bool offered = false;
+    for (const auto& action : h.session().contextActions())
+        offered = offered || action.id == "fillet";
+    ASSERT_TRUE(offered);
+    ASSERT_TRUE(h.session().triggerAction("fillet").ok());
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 1u);
+    const sketch::EntityId arc = s.arcs().begin()->first;
+    EXPECT_NEAR(s.arcRadius(arc), 5.0, 1e-9) << "a quarter of the short side";
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0);
+    // The radius is an editable dimension.
+    sketch::EntityId radius = sketch::kNoEntity;
+    for (const auto& [id, c] : s.constraints())
+        if (c.kind == sketch::ConstraintKind::Radius)
+            radius = id;
+    ASSERT_NE(radius, sketch::kNoEntity);
+    EXPECT_EQ(h.session().setDimension(radius, "3"), "");
+    EXPECT_NEAR(h.session().sketch().arcRadius(arc), 3.0, 1e-9);
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 40 * 20 - (9 - kPi * 9 / 4), 1e-6);
+}
+
+TEST(SketchInteraction, OffsetSelectedCurves)
+{
+    Harness h;
+    rectangle40x20(h);
+    h.session().setTool(SketchTool::Select);
+    for (const Vec2 mid : {Vec2{20, 0}, Vec2{40, 10}, Vec2{20, 20}, Vec2{0, 10}})
+        h.click(h.sketchScreen(mid), true);
+    ASSERT_EQ(h.session().selection().size(), 4u);
+    ASSERT_TRUE(h.session().triggerAction("offset").ok());
+    EXPECT_TRUE(h.session().isOffsetting());
+    h.move(h.sketchScreen({45, 10})); // outside, to the right
+    h.type("2");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_FALSE(h.session().isOffsetting());
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 8u);
+    bool outer = false;
+    for (const auto& [id, l] : s.lines()) {
+        const Vec2 a = s.point(l.start)->position, b = s.point(l.end)->position;
+        outer = outer || (std::abs(a.x - 42) < 1e-9 && std::abs(b.x - 42) < 1e-9);
+    }
+    EXPECT_TRUE(outer) << "the right side moved out by 2";
+    const auto regions = doc::sketchRegions(s);
+    ASSERT_TRUE(regions.ok());
+    ASSERT_EQ(regions.value().size(), 2u);
+    EXPECT_NEAR(regions.value()[0].area, 40 * 20, 1e-6);           // the original rectangle
+    EXPECT_NEAR(regions.value()[1].area, 44 * 24 - 40 * 20, 1e-6); // the ring around it
+
+    // Esc leaves offsetting without adding anything.
+    for (const Vec2 mid : {Vec2{20, 0}})
+        h.click(h.sketchScreen(mid));
+    ASSERT_TRUE(h.session().triggerAction("offset").ok());
+    h.controller.keyPress(Key::Escape);
+    EXPECT_FALSE(h.session().isOffsetting());
+    EXPECT_EQ(h.session().sketch().lines().size(), 8u);
 }

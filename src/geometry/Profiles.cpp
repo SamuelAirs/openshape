@@ -9,6 +9,7 @@
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -16,14 +17,18 @@
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepGProp.hxx>
 #include <BRepLib.hxx>
+#include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <gp_Ax1.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_WireExplorer.hxx>
 #include <BRep_Tool.hxx>
 #include <GProp_GProps.hxx>
+#include <ShapeAnalysis_FreeBounds.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopTools_HSequenceOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
@@ -344,6 +349,113 @@ Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrig
         if (result.IsNull())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + fuseError);
         return finishSolid(result, "revolveFaces", userMessage);
+    });
+}
+
+Result<std::vector<PlanarCurve>> offsetCurves(const PlaneFrame& plane, const std::vector<PlanarCurve>& curves,
+                                              double distance)
+{
+    using R = Result<std::vector<PlanarCurve>>;
+    if (curves.empty())
+        return R::failure(ErrorCode::InvalidArgument, "Select the curves to offset.", "offsetCurves: no curves");
+    if (std::abs(distance) < kMinLength)
+        return R::failure(ErrorCode::InvalidArgument, "The offset distance must not be zero.", "offsetCurves: zero distance");
+    const Vec3 n = plane.normal().normalized();
+    const char* collapsed = "The offset would shrink these curves to nothing.";
+
+    // A single curve needs no kernel: a parallel line (to its left for a
+    // positive distance), a concentric circle or arc (bigger when positive).
+    if (curves.size() == 1) {
+        PlanarCurve c = curves.front();
+        if (c.kind == PlanarCurve::Kind::Segment) {
+            if ((c.end - c.start).length() < kMinLength)
+                return R::failure(ErrorCode::InvalidArgument, "This line has no length.", "offsetCurves: empty segment");
+            const Vec3 left = n.cross((c.end - c.start).normalized());
+            c.start = c.start + left * distance;
+            c.end = c.end + left * distance;
+            return R::success({c});
+        }
+        const double radius = c.radius + distance;
+        if (radius <= kMinLength)
+            return R::failure(ErrorCode::InvalidArgument, collapsed, "offsetCurves: radius <= 0");
+        if (c.kind == PlanarCurve::Kind::Arc) {
+            c.start = c.center + (c.start - c.center).normalized() * radius;
+            c.end = c.center + (c.end - c.center).normalized() * radius;
+        }
+        c.radius = radius;
+        return R::success({c});
+    }
+
+    const char* userMessage = "Unable to offset these curves.";
+    return guarded("offsetCurves", userMessage, [&]() -> R {
+        Handle(TopTools_HSequenceOfShape) edges = new TopTools_HSequenceOfShape;
+        for (const auto& c : curves) {
+            if (c.kind == PlanarCurve::Kind::Segment) {
+                if ((c.end - c.start).length() >= kMinLength)
+                    edges->Append(BRepBuilderAPI_MakeEdge(toPnt(c.start), toPnt(c.end)).Edge());
+                continue;
+            }
+            const gp_Circ circle(gp_Ax2(toPnt(c.center), toDir(n), toDir(plane.xAxis)), c.radius);
+            edges->Append(c.kind == PlanarCurve::Kind::Arc ? BRepBuilderAPI_MakeEdge(circle, toPnt(c.start), toPnt(c.end)).Edge()
+                                                           : BRepBuilderAPI_MakeEdge(circle).Edge());
+        }
+        Handle(TopTools_HSequenceOfShape) wires;
+        ShapeAnalysis_FreeBounds::ConnectEdgesToWires(edges, 1e-6, Standard_False, wires);
+        if (wires.IsNull() || wires->Length() != 1)
+            return R::failure(ErrorCode::InvalidArgument, "Select one connected chain of curves to offset.",
+                              "offsetCurves: " + std::to_string(wires.IsNull() ? 0 : wires->Length()) + " wires");
+        const TopoDS_Wire wire = TopoDS::Wire(wires->Value(1));
+
+        BRepOffsetAPI_MakeOffset offset;
+        if (BRep_Tool::IsClosed(wire)) {
+            BRepBuilderAPI_MakeFace face(gp_Pln(gp_Ax3(toPnt(plane.origin), toDir(n), toDir(plane.xAxis))), wire, Standard_True);
+            if (!face.IsDone())
+                return R::failure(ErrorCode::KernelFailure, userMessage, "offsetCurves: no face from the loop");
+            offset.Init(face.Face(), GeomAbs_Intersection);
+        } else {
+            offset.Init(GeomAbs_Intersection, Standard_True); // an open chain stays open
+            offset.AddWire(wire);
+        }
+        offset.Perform(distance);
+        if (!offset.IsDone() || offset.Shape().IsNull())
+            return R::failure(ErrorCode::KernelFailure, collapsed, "BRepOffsetAPI_MakeOffset not done");
+
+        std::vector<PlanarCurve> out;
+        for (TopExp_Explorer w(offset.Shape(), TopAbs_WIRE); w.More(); w.Next()) {
+            for (BRepTools_WireExplorer e(TopoDS::Wire(w.Current())); e.More(); e.Next()) {
+                const TopoDS_Edge& edge = e.Current();
+                const BRepAdaptor_Curve curve(edge);
+                const double f = curve.FirstParameter(), l = curve.LastParameter();
+                gp_Pnt p0 = curve.Value(f), p1 = curve.Value(l);
+                const gp_Pnt pm = curve.Value((f + l) / 2);
+                if (edge.Orientation() == TopAbs_REVERSED)
+                    std::swap(p0, p1);
+                PlanarCurve c;
+                if (curve.GetType() == GeomAbs_Line) {
+                    c.kind = PlanarCurve::Kind::Segment;
+                    c.start = fromPnt(p0);
+                    c.end = fromPnt(p1);
+                } else if (curve.GetType() == GeomAbs_Circle) {
+                    c.center = fromPnt(curve.Circle().Location());
+                    c.radius = curve.Circle().Radius();
+                    if (p0.Distance(p1) < 1e-7) {
+                        c.kind = PlanarCurve::Kind::Circle;
+                    } else {
+                        // Counterclockwise about the normal from start to end.
+                        c.kind = PlanarCurve::Kind::Arc;
+                        const bool ccw = (fromPnt(p0) - c.center).cross(fromPnt(pm) - c.center).dot(n) > 0;
+                        c.start = fromPnt(ccw ? p0 : p1);
+                        c.end = fromPnt(ccw ? p1 : p0);
+                    }
+                } else {
+                    return R::failure(ErrorCode::KernelFailure, userMessage, "offsetCurves: unexpected curve type");
+                }
+                out.push_back(c);
+            }
+        }
+        if (out.empty())
+            return R::failure(ErrorCode::KernelFailure, collapsed, "offsetCurves: empty result");
+        return R::success(std::move(out));
     });
 }
 

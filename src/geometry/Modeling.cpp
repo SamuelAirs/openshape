@@ -54,6 +54,7 @@
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Lin.hxx>
+#include <gp_Quaternion.hxx>
 #include <gp_Pnt2d.hxx>
 #include <gp_Trsf.hxx>
 
@@ -595,6 +596,144 @@ Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& c
     return guarded("repeatJoined", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("repeatJoined");
         return fuseInOnePass(parts, "repeatJoined", userMessage);
+    });
+}
+
+Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double distance)
+{
+    using R = Result<Shape>;
+    auto notHere = [](const std::string& why) {
+        return R::failure(ErrorCode::Unsupported, "This face cannot move together with its rounded edges.",
+                          "pushPullFaceKeepingEdges: " + why);
+    };
+    const auto info = faceInfo(shape, faceIndex);
+    if (!info || !info->isPlanar())
+        return notHere("not a flat face");
+    if (std::abs(distance) < kMinLength)
+        return R::success(shape);
+    const char* userMessage = "Unable to move this face by that distance.";
+    return guarded("pushPullFaceKeepingEdges", userMessage, [&]() -> R {
+        ScopedTimer timer("pushPullFaceKeepingEdges");
+        const Vec3 n = info->normal.normalized();
+        const double top = n.dot(info->planeOrigin);
+        const int count = shape.faceCount();
+
+        // Every face's extent along the normal: turn the part so the normal is
+        // +Z, then read the faces' bounding boxes.
+        gp_Trsf turn;
+        turn.SetRotation(gp_Quaternion(gp_Vec(toDir(n)), gp_Vec(0, 0, 1)));
+        const TopoDS_Shape turned = BRepBuilderAPI_Transform(occ(shape), turn, Standard_False).Shape();
+        TopTools_IndexedMapOfShape turnedFaces;
+        TopExp::MapShapes(turned, TopAbs_FACE, turnedFaces);
+        if (turnedFaces.Extent() != count)
+            return notHere("face order changed when turned");
+        std::vector<double> low(static_cast<std::size_t>(count)), high(static_cast<std::size_t>(count));
+        std::vector<char> wall(static_cast<std::size_t>(count), 0);
+        for (int i = 0; i < count; ++i) {
+            // The fast box follows the display mesh (the tight one costs tens
+            // of ms per curved face); it errs a little outward, which is safe.
+            Bnd_Box box;
+            BRepBndLib::Add(turnedFaces(i + 1), box, Standard_True);
+            double x0, y0, z0, x1, y1, z1;
+            box.Get(x0, y0, z0, x1, y1, z1);
+            const double gap = box.GetGap();
+            low[std::size_t(i)] = z0 + gap;
+            high[std::size_t(i)] = z1 - gap;
+            // Walls run along the normal: flat faces square to the face, and
+            // cylinders (holes, shafts, rounded vertical edges) parallel to it.
+            const BRepAdaptor_Surface surface(faceAt(shape, i));
+            if (surface.GetType() == GeomAbs_Plane)
+                wall[std::size_t(i)] = std::abs(fromDir(surface.Plane().Axis().Direction()).dot(n)) < 1e-7;
+            else if (surface.GetType() == GeomAbs_Cylinder)
+                wall[std::size_t(i)] = std::abs(std::abs(fromDir(surface.Cylinder().Axis().Direction()).dot(n)) - 1) < 1e-7;
+        }
+        auto isWall = [&](int i) { return wall[std::size_t(i)] != 0; };
+        // The rounded or bevelled edges: neighbours of the face that are not walls.
+        TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+        TopExp::MapShapesAndAncestors(occ(shape), TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+        double deepest = top;
+        bool treated = false;
+        for (TopExp_Explorer e(faceAt(shape, faceIndex), TopAbs_EDGE); e.More(); e.Next()) {
+            for (const TopoDS_Shape& f : edgeFaces.FindFromKey(e.Current())) {
+                const int j = shape.data()->faces.FindIndex(f) - 1;
+                if (j < 0 || j == faceIndex || isWall(j))
+                    continue;
+                treated = true;
+                deepest = std::min(deepest, low[std::size_t(j)]);
+            }
+        }
+        if (!treated)
+            return notHere("no rounded or bevelled edges around the face");
+
+        // Split just below them; everything the split passes through (and,
+        // when pulling in, the slab taken out) must be a wall.
+        const double split = deepest - std::max(0.05, 0.02 * (top - deepest));
+        const double bandLow = distance < 0 ? split + distance : split;
+        double bottom = top;
+        for (int i = 0; i < count; ++i) {
+            const auto k = std::size_t(i);
+            bottom = std::min(bottom, low[k]);
+            if (low[k] < split - 1e-7 && high[k] > bandLow + 1e-7 && !isWall(i))
+                return notHere("face " + std::to_string(i) + " crosses the band that moves");
+        }
+        if (bottom > bandLow - 1e-6)
+            return notHere("nothing below the split");
+
+        // A box above a plane at height `h` (large enough to hold the part).
+        const auto bounds = approximateBoundingBox(shape);
+        const double size = 4 * std::max(bounds.size().length(), 1.0) + 2 * std::abs(distance);
+        auto boxAbove = [&](double h) {
+            const Vec3 c = bounds.center() - n * (n.dot(bounds.center()) - h);
+            const gp_Ax2 frame(toPnt(c), toDir(n));
+            const gp_Pnt corner = toPnt(c).Translated(gp_Vec(frame.XDirection()) * (-size / 2))
+                                         .Translated(gp_Vec(frame.YDirection()) * (-size / 2));
+            return BRepPrimAPI_MakeBox(gp_Ax2(corner, frame.Direction(), frame.XDirection()), size, size, size).Shape();
+        };
+        const TopoDS_Shape above = boxAbove(split);
+        BRepAlgoAPI_Common upperOp(occ(shape), above);
+        BRepAlgoAPI_Cut lowerOp(occ(shape), distance > 0 ? above : boxAbove(bandLow));
+        if (upperOp.HasErrors() || lowerOp.HasErrors())
+            return R::failure(ErrorCode::KernelFailure, userMessage, "pushPullFaceKeepingEdges: split failed");
+        gp_Trsf shift;
+        shift.SetTranslation(gp_Vec(toDir(n)) * distance);
+        const TopoDS_Shape upper = BRepBuilderAPI_Transform(upperOp.Shape(), shift, Standard_True).Shape();
+
+        // The cross-section on the split plane (the cut faces of the lower part
+        // facing the normal): extruded to fill the gap when pushing out, and
+        // the measure for the volume check either way.
+        std::vector<TopoDS_Shape> parts{lowerOp.Shape(), upper};
+        double capArea = 0;
+        const double capHeight = distance > 0 ? split : bandLow;
+        for (TopExp_Explorer f(lowerOp.Shape(), TopAbs_FACE); f.More(); f.Next()) {
+            const TopoDS_Face cap = TopoDS::Face(f.Current());
+            BRepAdaptor_Surface surface(cap);
+            if (surface.GetType() != GeomAbs_Plane)
+                continue;
+            const auto cn = faceNormal(cap, (surface.FirstUParameter() + surface.LastUParameter()) / 2,
+                                       (surface.FirstVParameter() + surface.LastVParameter()) / 2);
+            if (!cn || fromDir(*cn).dot(n) < 1 - 1e-9 || std::abs(n.dot(fromPnt(surface.Plane().Location())) - capHeight) > 1e-6)
+                continue;
+            GProp_GProps props;
+            BRepGProp::SurfaceProperties(cap, props);
+            capArea += props.Mass();
+            if (distance > 0) {
+                BRepPrimAPI_MakePrism prism(cap, gp_Vec(toDir(n)) * distance);
+                prism.Build();
+                if (!prism.IsDone())
+                    return R::failure(ErrorCode::KernelFailure, userMessage, "pushPullFaceKeepingEdges: prism failed");
+                parts.push_back(prism.Shape());
+            }
+        }
+        if (capArea < 1e-9)
+            return notHere("no cross-section at the split");
+        auto result = fuseInOnePass(parts, "pushPullFaceKeepingEdges", userMessage);
+        if (!result)
+            return result;
+        // The part must grow or shrink by exactly the cross-section times the distance.
+        const double expected = capArea * distance, change = volume(result.value()) - volume(shape);
+        if (std::abs(change - expected) > 1e-6 * std::max(1.0, std::abs(expected)) + 1e-6)
+            return notHere("volume changed by " + std::to_string(change) + " instead of " + std::to_string(expected));
+        return result;
     });
 }
 

@@ -61,6 +61,7 @@ private:
     std::vector<Step> steps_;
     std::size_t next_ = 0;
     int failures_ = 0;
+    double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)
     int checks_ = 0;
 };
 

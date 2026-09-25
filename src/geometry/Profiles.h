@@ -45,6 +45,14 @@ Result<std::vector<Region>> findRegions(const PlaneFrame& plane, const std::vect
 // True if `point` (world, on the plane) lies inside the region face.
 bool regionContains(const Shape& face, const Vec3& point);
 
+// Offsets one connected chain (or closed loop) of curves in the plane by
+// |distance|, to one side or the other by its sign (which side depends on
+// the chain; callers pick the result nearest to where the user points).
+// Corners between lines stay sharp; arcs keep their centers. Fails when the
+// curves are not one connected chain or the offset collapses.
+Result<std::vector<PlanarCurve>> offsetCurves(const PlaneFrame& plane, const std::vector<PlanarCurve>& curves,
+                                              double distance);
+
 // Sweeps faces along `vector` and fuses the prisms into one shape.
 Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector);
 

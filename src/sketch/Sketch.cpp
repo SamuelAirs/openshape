@@ -153,6 +153,13 @@ bool Sketch::isValid(const SketchConstraint& c) const
         // An endpoint is on its line already: that would only be redundant.
         valid = isPoint(c.a) && lines_.contains(c.b) && lines_.at(c.b).start != c.a && lines_.at(c.b).end != c.a;
         break;
+    case ConstraintKind::PointOnCircle:
+        // Not the center, and not an arc's own end (already on it).
+        valid = isPoint(c.a) && isRound(c.b)
+             && (!circles_.contains(c.b) || circles_.at(c.b).center != c.a)
+             && (!arcs_.contains(c.b)
+                 || (arcs_.at(c.b).center != c.a && arcs_.at(c.b).start != c.a && arcs_.at(c.b).end != c.a));
+        break;
     }
     if (!valid || !std::isfinite(c.value))
         return false;
@@ -257,6 +264,16 @@ SketchCircle* Sketch::circle(EntityId id)
     auto it = circles_.find(id);
     return it == circles_.end() ? nullptr : &it->second;
 }
+SketchLine* Sketch::line(EntityId id)
+{
+    auto it = lines_.find(id);
+    return it == lines_.end() ? nullptr : &it->second;
+}
+SketchArc* Sketch::arc(EntityId id)
+{
+    auto it = arcs_.find(id);
+    return it == arcs_.end() ? nullptr : &it->second;
+}
 const SketchConstraint* Sketch::constraint(EntityId id) const
 {
     auto it = constraints_.find(id);
@@ -315,6 +332,7 @@ const char* kindName(ConstraintKind k)
     case ConstraintKind::PointOnLine: return "PointOnLine";
     case ConstraintKind::Midpoint: return "Midpoint";
     case ConstraintKind::Radius: return "Radius";
+    case ConstraintKind::PointOnCircle: return "PointOnCircle";
     }
     return "?";
 }
@@ -325,7 +343,7 @@ std::optional<ConstraintKind> kindFromName(const std::string& s)
                    ConstraintKind::HorizontalDistance, ConstraintKind::VerticalDistance, ConstraintKind::Diameter,
                    ConstraintKind::Parallel, ConstraintKind::Perpendicular, ConstraintKind::Equal, ConstraintKind::Tangent,
                    ConstraintKind::Concentric, ConstraintKind::PointOnLine, ConstraintKind::Midpoint,
-                   ConstraintKind::Radius})
+                   ConstraintKind::Radius, ConstraintKind::PointOnCircle})
         if (s == kindName(k))
             return k;
     return std::nullopt;

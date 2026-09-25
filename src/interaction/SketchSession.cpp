@@ -10,10 +10,12 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Tessellation.h"
 #include "interaction/Manipulator.h"
+#include "sketch/SketchEdit.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 namespace os::interact {
 
@@ -108,6 +110,8 @@ void SketchSession::setTool(SketchTool tool)
 {
     tool_ = tool;
     resetShape();
+    cancelOffset();
+    trimCursor_.reset();
     if (tool != SketchTool::Select)
         selected_.clear();
 }
@@ -191,21 +195,28 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
     return snap;
 }
 
-sketch::EntityId SketchSession::pickEntity(Vec2 screen, const Camera& camera, PointerDevice device) const
+sketch::EntityId SketchSession::pickCurve(Vec2 screen, const Camera& camera, PointerDevice device) const
+{
+    return pickEntity(screen, camera, device, true);
+}
+
+sketch::EntityId SketchSession::pickEntity(Vec2 screen, const Camera& camera, PointerDevice device, bool curvesOnly) const
 {
     const double tolerance = InputProfile::forDevice(device).pickTolerance + 2;
     sketch::EntityId best = sketch::kNoEntity;
     double bestDistance = tolerance;
     // Points win over curves so endpoints stay grabbable.
-    for (const auto& [id, p] : working_.points()) {
-        const double d = (toScreen(p.position, camera) - screen).length();
-        if (d < bestDistance) {
-            bestDistance = d;
-            best = id;
+    if (!curvesOnly) {
+        for (const auto& [id, p] : working_.points()) {
+            const double d = (toScreen(p.position, camera) - screen).length();
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = id;
+            }
         }
+        if (best != sketch::kNoEntity)
+            return best;
     }
-    if (best != sketch::kNoEntity)
-        return best;
     for (const auto& [id, l] : working_.lines()) {
         const double d = distanceToSegment2D(screen, toScreen(working_.point(l.start)->position, camera),
                                              toScreen(working_.point(l.end)->position, camera));
@@ -262,7 +273,9 @@ void SketchSession::beginShape(const Snap& at)
     case SketchTool::Line:
         inputs_ = {{"length", "L", "", false, 0}};
         break;
-    case SketchTool::Arc: // the radius input appears once the end is placed
+    case SketchTool::Arc:  // the radius input appears once the end is placed
+    case SketchTool::Slot: // the width input appears once the second center is placed
+    case SketchTool::Trim:
     case SketchTool::Select:
         break;
     }
@@ -315,10 +328,33 @@ Vec2 SketchSession::constrainedCursor() const
         }
         break;
     case SketchTool::Arc:
+    case SketchTool::Slot:
+    case SketchTool::Trim:
     case SketchTool::Select:
         break;
     }
     return c;
+}
+
+std::optional<SketchSession::SlotShape> SketchSession::slotShape() const
+{
+    if (!anchor_ || !arcEnd_)
+        return std::nullopt;
+    SlotShape slot{anchor_->position, arcEnd_->position, 0};
+    const Vec2 axis = slot.b - slot.a;
+    const double length = axis.length();
+    if (length < 1e-9)
+        return std::nullopt;
+    if (const auto width = input("slot")) {
+        slot.radius = *width / 2;
+    } else {
+        // The pointer's distance from the line through both centers.
+        const Vec2 d = cursor_.position - slot.a;
+        slot.radius = std::abs(axis.x * d.y - axis.y * d.x) / length;
+    }
+    if (slot.radius < 1e-6)
+        return std::nullopt;
+    return slot;
 }
 
 std::optional<SketchSession::ArcShape> SketchSession::arcShape() const
@@ -470,6 +506,34 @@ bool SketchSession::finishShape(const Snap& endSnap)
         resetShape();
         return true;
     }
+    case SketchTool::Slot: {
+        if (!arcEnd_) {
+            // Second click: the other center. The pointer (or a typed width)
+            // then sets the width.
+            if ((end.position - start.position).length() < kTiny || (end.point != sketch::kNoEntity && end.point == start.point))
+                return false;
+            arcEnd_ = end;
+            inputs_ = {{"slot", "W", "", false, 0}};
+            focusedInput_ = 0;
+            return true;
+        }
+        cursor_ = endSnap;
+        const auto slot = slotShape();
+        if (!slot) {
+            message("Move the pointer away from the centers to give the slot a width.");
+            return false;
+        }
+        const auto ids = sketch::addSlot(next, slot->a, slot->b, slot->radius, start.point, arcEnd_->point);
+        if (ids.arcs[0] == sketch::kNoEntity)
+            return false;
+        if (const auto width = input("slot"))
+            next.addConstraint({sketch::ConstraintKind::Radius, ids.arcs[0], sketch::kNoEntity, *width / 2});
+        if (!commit(std::move(next), "Slot"))
+            return false;
+        resetShape();
+        return true;
+    }
+    case SketchTool::Trim:
     case SketchTool::Select:
         break;
     }
@@ -528,6 +592,15 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     pressEvent_ = event;
     dragPoint_ = sketch::kNoEntity;
 
+    if (isOffsetting())
+        return true; // the release applies the offset
+    if (tool_ == SketchTool::Trim) {
+        if (pickCurve(event.position, camera, event.device) == sketch::kNoEntity) {
+            pressed_ = false;
+            return false; // empty space: let the controller orbit
+        }
+        return true;
+    }
     if (tool_ == SketchTool::Select) {
         const sketch::EntityId hit = pickEntity(event.position, camera, event.device);
         if (hit == sketch::kNoEntity) {
@@ -551,6 +624,10 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
 
 void SketchSession::pointerMove(const PointerEvent& event, const Camera& camera)
 {
+    if (isOffsetting()) {
+        updateOffset(toLocal(event.position, camera));
+        return;
+    }
     if (!pressed_) {
         hover(event, camera);
         return;
@@ -582,6 +659,26 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
         return;
     pressed_ = false;
 
+    if (isOffsetting()) {
+        updateOffset(toLocal(event.position, camera));
+        (void)commitOffset();
+        dragging_ = false;
+        return;
+    }
+    if (tool_ == SketchTool::Trim) {
+        const double threshold = InputProfile::forDevice(event.device).dragThreshold;
+        const sketch::EntityId curve = pickCurve(event.position, camera, event.device);
+        const auto local = toLocal(event.position, camera);
+        if ((event.position - pressScreen_).length() < threshold && curve != sketch::kNoEntity && local) {
+            sketch::Sketch next = working_;
+            if (const Status status = sketch::trimAt(next, curve, *local); !status)
+                message(status.userMessage());
+            else if (commit(std::move(next), "Trim"))
+                hovered_ = sketch::kNoEntity;
+        }
+        dragging_ = false;
+        return;
+    }
     if (tool_ == SketchTool::Select) {
         if (dragging_ && dragPoint_ != sketch::kNoEntity) {
             sketch::Sketch moved = working_;
@@ -612,6 +709,16 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
 
 void SketchSession::hover(const PointerEvent& event, const Camera& camera)
 {
+    if (isOffsetting()) {
+        updateOffset(toLocal(event.position, camera));
+        return;
+    }
+    if (tool_ == SketchTool::Trim) {
+        hovered_ = pickCurve(event.position, camera, event.device);
+        trimCursor_ = toLocal(event.position, camera);
+        cursorValid_ = false;
+        return;
+    }
     if (tool_ == SketchTool::Select) {
         hovered_ = pickEntity(event.position, camera, event.device);
         cursorValid_ = false;
@@ -631,6 +738,10 @@ bool SketchSession::keyPress(Key key)
 {
     switch (key) {
     case Key::Escape:
+        if (isOffsetting()) {
+            cancelOffset();
+            return true;
+        }
         if (anchor_) {
             resetShape();
             return true;
@@ -645,7 +756,7 @@ bool SketchSession::keyPress(Key key)
         }
         return false;
     case Key::Enter:
-        if (anchor_) {
+        if (anchor_ || isOffsetting()) {
             (void)commitTool();
             return true;
         }
@@ -691,6 +802,8 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
             return in.label + " must be greater than zero.";
         in.locked = true;
         in.value = *parsed.millimeters;
+        if (isOffsetting())
+            updateOffset(std::nullopt); // show the typed distance
         return {};
     }
     return "Unknown value.";
@@ -704,6 +817,9 @@ void SketchSession::focusNextInput()
 
 Status SketchSession::commitTool()
 {
+    if (isOffsetting())
+        return commitOffset() ? okStatus()
+                              : Status::failure(ErrorCode::InvalidArgument, "Unable to offset.", "commitOffset failed");
     if (!anchor_)
         return Status::failure(ErrorCode::InvalidArgument, "Nothing is being drawn.", "commitTool without anchor");
     if (!finishShape(cursor_))
@@ -792,8 +908,20 @@ std::vector<ContextAction> SketchSession::contextActions() const
         } else if (lines == 1 && points == 1) {
             actions.push_back({"online", "On line", false});
             actions.push_back({"midpoint", "Midpoint", false});
+        } else if (round == 1 && points == 1) {
+            actions.push_back({"oncircle", "On circle", false});
         }
     }
+    // Corners where two lines meet can be rounded.
+    if (points == selected_.size()) {
+        bool corners = true;
+        for (auto id : selected_)
+            corners = corners && sketch::suggestedFilletRadius(working_, id).has_value();
+        if (corners)
+            actions.push_back({"fillet", "Fillet", false});
+    }
+    if (lines + round > 0 && points == 0)
+        actions.push_back({"offset", "Offset", isOffsetting()});
     if (lines + round > 0) {
         // Construction curves guide the drawing but never become profiles.
         bool allConstruction = true;
@@ -861,6 +989,39 @@ Status SketchSession::triggerAction(const std::string& id)
             {"parallel", "Parallel"}, {"perpendicular", "Perpendicular"}, {"equal", "Equal"}, {"concentric", "Concentric"},
             {"tangent", "Tangent"},   {"online", "On line"},             {"midpoint", "Midpoint"}};
         label = labels.at(id);
+    } else if (id == "oncircle" && selected_.size() == 2) {
+        const sketch::EntityId p = working_.point(selected_[0]) ? selected_[0] : selected_[1];
+        const sketch::EntityId round = p == selected_[0] ? selected_[1] : selected_[0];
+        if (next.addConstraint({sketch::ConstraintKind::PointOnCircle, p, round}) == sketch::kNoEntity)
+            return Status::failure(ErrorCode::InvalidArgument, "That constraint does not apply to this selection.",
+                                   "sketch constraint rejected: oncircle");
+        label = "On circle";
+    } else if (id == "fillet") {
+        // A suggested radius for each corner; its R dimension is then editable.
+        for (auto corner : selected_) {
+            const auto radius = sketch::suggestedFilletRadius(next, corner);
+            const auto arc = radius ? sketch::filletCorner(next, corner, *radius)
+                                    : Result<sketch::EntityId>::failure(ErrorCode::InvalidArgument,
+                                                                        "Select corners where two lines meet.", "fillet");
+            if (!arc)
+                return Status::failure(ErrorCode::InvalidArgument, arc.userMessage(), arc.developerMessage());
+        }
+        label = selected_.size() == 1 ? "Fillet" : "Fillets";
+    } else if (id == "offset") {
+        if (isOffsetting()) {
+            cancelOffset();
+            return okStatus();
+        }
+        for (auto e : selected_)
+            if (working_.line(e) || working_.isRound(e))
+                offsetSource_.push_back(e);
+        if (offsetSource_.empty())
+            return Status::failure(ErrorCode::InvalidArgument, "Select the curves to offset.", "offset without curves");
+        resetShape();
+        inputs_ = {{"offset", "D", "", false, 0}};
+        focusedInput_ = 0;
+        updateOffset(std::nullopt);
+        return okStatus();
     } else if (id == "radius" && selected_.size() == 1 && working_.arc(selected_.front())) {
         next.addConstraint({sketch::ConstraintKind::Radius, selected_.front(), sketch::kNoEntity,
                             working_.arcRadius(selected_.front())});
@@ -887,9 +1048,139 @@ Status SketchSession::triggerAction(const std::string& id)
     }
     if (!commit(std::move(next), label))
         return Status::failure(ErrorCode::InvalidArgument, "That constraint conflicts with the sketch.", "sketch action failed");
-    if (id == "delete")
+    if (id == "delete" || id == "fillet")
         selected_.clear();
     return okStatus();
+}
+
+// ---- Offset -------------------------------------------------------------------------------
+
+namespace {
+
+double distanceToCurve(const geom::PlanarCurve& c, Vec2 p)
+{
+    const Vec2 center{c.center.x, c.center.y};
+    if (c.kind == geom::PlanarCurve::Kind::Segment) {
+        const Vec2 a{c.start.x, c.start.y}, b{c.end.x, c.end.y}, d = b - a;
+        const double t = std::clamp((p - a).dot(d) / std::max(d.dot(d), 1e-18), 0.0, 1.0);
+        return (p - (a + d * t)).length();
+    }
+    return std::abs((p - center).length() - c.radius); // arcs: as full circles (good enough to pick a side)
+}
+
+double distanceToCurves(const std::vector<geom::PlanarCurve>& curves, Vec2 p)
+{
+    double best = std::numeric_limits<double>::max();
+    for (const auto& c : curves)
+        best = std::min(best, distanceToCurve(c, p));
+    return best;
+}
+
+} // namespace
+
+void SketchSession::updateOffset(std::optional<Vec2> pointer)
+{
+    if (pointer)
+        offsetPointer_ = pointer;
+    offsetPreview_.clear();
+    std::vector<geom::PlanarCurve> source;
+    for (const auto id : offsetSource_) {
+        geom::PlanarCurve c;
+        auto at = [&](sketch::EntityId point) {
+            const Vec2 p = working_.point(point)->position;
+            return Vec3{p.x, p.y, 0};
+        };
+        if (const auto* l = working_.line(id)) {
+            c.kind = geom::PlanarCurve::Kind::Segment;
+            c.start = at(l->start);
+            c.end = at(l->end);
+        } else if (const auto* k = working_.circle(id)) {
+            c.kind = geom::PlanarCurve::Kind::Circle;
+            c.center = at(k->center);
+            c.radius = k->radius;
+        } else if (const auto* a = working_.arc(id)) {
+            c.kind = geom::PlanarCurve::Kind::Arc;
+            c.center = at(a->center);
+            c.start = at(a->start);
+            c.end = at(a->end);
+            c.radius = working_.arcRadius(id);
+        } else {
+            continue;
+        }
+        source.push_back(c);
+    }
+    // Typed distance, else how far the pointer is from the curves.
+    const auto typed = input("offset");
+    const double distance = typed ? *typed : offsetPointer_ ? distanceToCurves(source, *offsetPointer_) : 1.0;
+    if (source.empty() || distance < 1e-6)
+        return;
+    // The side: whichever result passes nearer the pointer.
+    const geom::PlaneFrame frame;
+    auto plus = geom::offsetCurves(frame, source, distance);
+    auto minus = geom::offsetCurves(frame, source, -distance);
+    const bool usePlus = plus && (!minus || !offsetPointer_
+                                  || distanceToCurves(plus.value(), *offsetPointer_) <= distanceToCurves(minus.value(), *offsetPointer_));
+    if (usePlus) {
+        offsetPreview_ = std::move(plus.value());
+        offsetDistance_ = distance;
+    } else if (minus) {
+        offsetPreview_ = std::move(minus.value());
+        offsetDistance_ = -distance;
+    }
+}
+
+bool SketchSession::commitOffset()
+{
+    if (offsetPreview_.empty()) {
+        message("These curves cannot be offset that far. Try a smaller distance, or select one connected chain.");
+        return false;
+    }
+    sketch::Sketch next = working_;
+    // Ends shared by neighbouring curves become one point; arcs reuse their
+    // original centers (so they stay concentric).
+    std::vector<std::pair<Vec2, sketch::EntityId>> made;
+    auto pointAt = [&](const Vec3& world, bool reuseExisting) {
+        const Vec2 p{world.x, world.y};
+        for (const auto& [q, id] : made)
+            if ((q - p).length() < 1e-6)
+                return id;
+        if (reuseExisting)
+            for (const auto& [id, point] : next.points())
+                if ((point.position - p).length() < 1e-9)
+                    return id;
+        const sketch::EntityId id = next.addPoint(p);
+        made.emplace_back(p, id);
+        return id;
+    };
+    for (const auto& c : offsetPreview_) {
+        switch (c.kind) {
+        case geom::PlanarCurve::Kind::Segment:
+            next.addLine(pointAt(c.start, false), pointAt(c.end, false));
+            break;
+        case geom::PlanarCurve::Kind::Arc:
+            next.addArc(pointAt(c.center, true), pointAt(c.start, false), pointAt(c.end, false));
+            break;
+        case geom::PlanarCurve::Kind::Circle:
+            next.addCircle(pointAt(c.center, true), c.radius);
+            break;
+        }
+    }
+    if (!commit(std::move(next), "Offset"))
+        return false;
+    cancelOffset();
+    selected_.clear();
+    return true;
+}
+
+void SketchSession::cancelOffset()
+{
+    if (offsetSource_.empty())
+        return;
+    offsetSource_.clear();
+    offsetPreview_.clear();
+    offsetPointer_.reset();
+    if (!anchor_)
+        inputs_.clear();
 }
 
 // ---- Presentation -------------------------------------------------------------------------
@@ -910,7 +1201,15 @@ std::string SketchSession::statusText() const
 
 std::string SketchSession::hintText() const
 {
+    if (isOffsetting())
+        return "Move to the side to offset to and click \xC2\xB7 or type a distance and press Enter \xC2\xB7 Esc cancels";
     switch (tool_) {
+    case SketchTool::Slot:
+        if (!anchor_)
+            return "Click the center of one end";
+        return arcEnd_ ? "Move to set the width and click, or type a width and press Enter" : "Click the center of the other end";
+    case SketchTool::Trim:
+        return "Click the piece of a curve to remove (up to where other curves cross it)";
     case SketchTool::Rectangle:
         return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle";
     case SketchTool::Circle:
@@ -1018,10 +1317,27 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 const auto arc = arcShape();
                 measured = arc ? arc->radius : 0;
                 label.screen = screen(cursor_.position) + Vec2{40, -18};
+            } else if (in.key == "slot") {
+                const auto slot = slotShape();
+                measured = slot ? 2 * slot->radius : 0;
+                label.screen = screen(cursor_.position) + Vec2{40, -18};
             }
             label.text = in.locked ? in.text : trimmed(measured, unit);
             out.push_back(label);
         }
+    }
+    // The offset distance, beside the pointer.
+    if (isOffsetting() && !inputs_.empty()) {
+        const Input& in = inputs_.front();
+        SketchLabel label;
+        label.kind = SketchLabel::Kind::Input;
+        label.key = in.key;
+        label.focused = true;
+        label.locked = in.locked;
+        const Vec2 at = offsetPointer_.value_or(Vec2{});
+        label.screen = screen(at) + Vec2{40, -18};
+        label.text = in.locked ? in.text : trimmed(std::abs(offsetDistance_), unit);
+        out.push_back(label);
     }
 
     // Inference hint next to the cursor.
@@ -1122,10 +1438,43 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                 out.lines.push_back({plane.toWorld(a), plane.toWorld(arcEnd_->position), SketchStyle::Guide});
             }
             break;
+        case SketchTool::Slot:
+            if (!arcEnd_) {
+                out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Guide}); // the axis so far
+            } else if (const auto slot = slotShape()) {
+                const Vec2 axis = slot->b - slot->a;
+                const Vec2 u = axis * (1.0 / axis.length()), v{-u.y, u.x};
+                const double r = slot->radius;
+                out.lines.push_back({plane.toWorld(slot->a + v * r), plane.toWorld(slot->b + v * r), SketchStyle::Preview});
+                out.lines.push_back({plane.toWorld(slot->b - v * r), plane.toWorld(slot->a - v * r), SketchStyle::Preview});
+                addArc(slot->b, r, slot->b - v * r, slot->b + v * r, SketchStyle::Preview);
+                addArc(slot->a, r, slot->a + v * r, slot->a - v * r, SketchStyle::Preview);
+                out.points.push_back({plane.toWorld(arcEnd_->position), SketchStyle::Preview});
+            } else {
+                out.lines.push_back({plane.toWorld(a), plane.toWorld(arcEnd_->position), SketchStyle::Guide});
+            }
+            break;
+        case SketchTool::Trim:
         case SketchTool::Select:
             break;
         }
         out.points.push_back({plane.toWorld(a), SketchStyle::Preview});
+    }
+    // Trim: the piece a click would remove, in red.
+    if (tool_ == SketchTool::Trim && hovered_ != sketch::kNoEntity && trimCursor_) {
+        const auto piece = sketch::trimPreview(working_, hovered_, *trimCursor_);
+        for (std::size_t i = 1; i < piece.size(); ++i)
+            out.lines.push_back({plane.toWorld(piece[i - 1]), plane.toWorld(piece[i]), SketchStyle::Conflict});
+    }
+    // Offset: the curves a click would add.
+    for (const auto& curve : offsetPreview_) {
+        const Vec2 s{curve.start.x, curve.start.y}, e{curve.end.x, curve.end.y}, center{curve.center.x, curve.center.y};
+        if (curve.kind == geom::PlanarCurve::Kind::Segment)
+            out.lines.push_back({plane.toWorld(s), plane.toWorld(e), SketchStyle::Preview});
+        else if (curve.kind == geom::PlanarCurve::Kind::Arc)
+            addArc(center, curve.radius, s, e, SketchStyle::Preview);
+        else
+            addCircle(center, curve.radius, SketchStyle::Preview);
     }
     // Inference guides and the snapped cursor.
     if (cursorValid_ && tool_ != SketchTool::Select) {

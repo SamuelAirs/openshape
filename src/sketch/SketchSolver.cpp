@@ -111,7 +111,9 @@ public:
                 system_.addConstraintArcRadius(arcs_.at(c.a), param(c.value), tag);
                 break;
             case ConstraintKind::Tangent:
-                if (lines_.contains(c.a)) {
+                if (lines_.contains(c.a) && arcs_.contains(c.b) && addEndpointTangency(c.a, c.b, tag)) {
+                    // A line and an arc sharing an end: handled as a smooth join.
+                } else if (lines_.contains(c.a)) {
                     // Keep the circle on the side of the line it is on now.
                     const SketchLine& l = sketch_.lines().at(c.a);
                     const Vec2 p = sketch_.point(l.start)->position;
@@ -128,12 +130,40 @@ public:
             case ConstraintKind::PointOnLine:
                 system_.addConstraintPointOnLine(points_.at(c.a), lines_.at(c.b), tag);
                 break;
+            case ConstraintKind::PointOnCircle:
+                system_.addConstraintPointOnCircle(points_.at(c.a), round(c.b), tag);
+                break;
             case ConstraintKind::Midpoint:
                 // The line's endpoints are symmetric about the point.
                 system_.addConstraintP2PSymmetric(lines_.at(c.b).p1, lines_.at(c.b).p2, points_.at(c.a), tag);
                 break;
             }
         }
+    }
+
+    // Tangency where a line and an arc share an end point, as a direction:
+    // travelling along the path, the line leaves (or arrives) in the arc's
+    // counterclockwise direction at that end. "Line touches the circle" plus
+    // the shared point would be degenerate there (the solver loses rank and
+    // later edits report false conflicts), which is why FreeCAD does the same.
+    bool addEndpointTangency(EntityId lineId, EntityId arcId, int tag)
+    {
+        const SketchLine& l = sketch_.lines().at(lineId);
+        const SketchArc& a = sketch_.arcs().at(arcId);
+        GCS::Line& line = lines_.at(lineId);
+        GCS::Arc& arc = arcs_.at(arcId);
+        constexpr double quarter = kPi / 2;
+        if (a.start == l.end) // line runs into the arc's start
+            system_.addConstraintP2PAngle(line.p1, line.p2, arc.startAngle, quarter, tag);
+        else if (a.start == l.start)
+            system_.addConstraintP2PAngle(line.p2, line.p1, arc.startAngle, quarter, tag);
+        else if (a.end == l.start) // line leaves from the arc's end
+            system_.addConstraintP2PAngle(line.p1, line.p2, arc.endAngle, quarter, tag);
+        else if (a.end == l.end)
+            system_.addConstraintP2PAngle(line.p2, line.p1, arc.endAngle, quarter, tag);
+        else
+            return false;
+        return true;
     }
 
     // Circles and arcs as solver circles (an arc is a circle with angles).
