@@ -92,7 +92,7 @@ std::unique_ptr<MoveOperation> MoveOperation::create(const doc::Document& docume
     const doc::Body* body = document.body(bodyId);
     if (!body || body->shape().isNull())
         return nullptr;
-    const auto box = geom::boundingBox(body->shape());
+    const auto box = geom::approximateBoundingBox(body->shape());
     if (!box.valid)
         return nullptr;
     return std::unique_ptr<MoveOperation>(new MoveOperation(bodyId, box.center()));

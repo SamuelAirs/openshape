@@ -7,6 +7,8 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS_Shape.hxx>
 
+#include <mutex>
+
 namespace os::geom {
 
 struct ShapeData {
@@ -16,6 +18,9 @@ struct ShapeData {
     TopTools_IndexedMapOfShape edges;
     TopTools_IndexedMapOfShape vertices;
     TopTools_IndexedMapOfShape solids;
+    // Tight bounding box, computed on first use (the shape never changes).
+    mutable std::once_flag tightBoxOnce;
+    mutable BoundingBox tightBox;
 };
 
 // Wraps a kernel shape, building the topology index maps once.

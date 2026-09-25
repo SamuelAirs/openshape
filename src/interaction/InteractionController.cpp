@@ -106,7 +106,7 @@ void InteractionController::fitAll(bool animate)
     for (const auto& body : document_->bodies()) {
         if (!body->isVisible() || body->shape().isNull())
             continue;
-        const auto box = geom::boundingBox(body->shape());
+        const auto box = geom::approximateBoundingBox(body->shape());
         if (!box.valid)
             continue;
         if (!total.valid) {
@@ -137,7 +137,7 @@ void InteractionController::fitSelection(bool animate)
         fitAll(animate);
         return;
     }
-    const auto box = geom::boundingBox(body->shape());
+    const auto box = geom::approximateBoundingBox(body->shape());
     if (!box.valid)
         return;
     Camera to = camera_;
@@ -630,7 +630,7 @@ Status InteractionController::createBox(double size)
     bool first = true;
     double maxX = 0, minY = 0;
     for (const auto& body : document_->bodies()) {
-        const auto bb = geom::boundingBox(body->shape());
+        const auto bb = geom::approximateBoundingBox(body->shape());
         if (!bb.valid)
             continue;
         maxX = first ? bb.max.x : std::max(maxX, bb.max.x);
@@ -1563,7 +1563,7 @@ void InteractionController::updateSceneBounds()
 {
     geom::BoundingBox total;
     for (const auto& body : document_->bodies()) {
-        const auto box = geom::boundingBox(body->shape());
+        const auto box = geom::approximateBoundingBox(body->shape());
         if (!box.valid)
             continue;
         if (!total.valid) {

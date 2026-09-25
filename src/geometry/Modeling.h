@@ -38,8 +38,14 @@ Result<Shape> rotated(const Shape& shape, const Vec3& axisOrigin, const Vec3& ax
 // ---- Queries ----------------------------------------------------------------
 double volume(const Shape& shape);
 double surfaceArea(const Shape& shape);
-// Tight (optimal) axis-aligned bounding box of the exact geometry.
+// Tight (optimal) axis-aligned bounding box of the exact geometry. Costs tens
+// of milliseconds on curved parts the first time; cached per Shape after that.
+// Use it for sizes shown to the user.
 BoundingBox boundingBox(const Shape& shape);
+// Conservative box from the geometry's own bounds (never smaller than the
+// shape; curved or B-spline faces may make it slightly larger). Microseconds.
+// Use it for camera fitting, mesh resolution and scale normalization.
+BoundingBox approximateBoundingBox(const Shape& shape);
 bool isValid(const Shape& shape);
 
 std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex);

@@ -48,7 +48,9 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
 
     double deflection = params.linearDeflection;
     if (!params.relative && params.adaptive) {
-        const BoundingBox box = boundingBox(shape);
+        // The cheap conservative box is plenty to pick a resolution; the tight
+        // one used to dominate the cost of tessellating every preview.
+        const BoundingBox box = approximateBoundingBox(shape);
         if (box.valid) {
             const double diagonal = box.size().length();
             // 0.1% of the diagonal, never finer than 2 microns.
@@ -57,7 +59,8 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
     }
 
     try {
-        BRepMesh_IncrementalMesh mesher(occShape, deflection, params.relative, params.angularDeflection, false);
+        // Faces are meshed in parallel inside this one call (OCCT synchronizes it).
+        BRepMesh_IncrementalMesh mesher(occShape, deflection, params.relative, params.angularDeflection, true);
         (void)mesher;
 
         const auto& faces = shape.data()->faces;

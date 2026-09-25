@@ -434,7 +434,7 @@ Result<geom::Shape> ExtrudeFeature::toolSolid(const geom::Shape& input, const Ev
     }
     double length = distance;
     if (throughAll && mode == ExtrudeMode::Cut && !input.isNull()) {
-        const auto box = geom::boundingBox(input);
+        const auto box = geom::approximateBoundingBox(input);
         if (box.valid) {
             // Far enough to leave the body from anywhere on the sketch plane.
             const double reach = box.size().length() + (box.center() - plane.origin).length() + 1.0;

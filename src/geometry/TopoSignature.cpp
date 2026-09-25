@@ -11,7 +11,7 @@ namespace {
 // Scale used to make centroid distances comparable across part sizes.
 double shapeScale(const Shape& shape)
 {
-    const BoundingBox box = boundingBox(shape);
+    const BoundingBox box = approximateBoundingBox(shape);
     return box.valid ? std::max(box.size().length(), 1e-3) : 1.0;
 }
 

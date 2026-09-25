@@ -157,6 +157,40 @@ TEST(Geometry, FilletVerticalEdges)
     EXPECT_NEAR(bb.size().y, 40.0, 1e-5);
 }
 
+// The fast box drives mesh resolution and camera fitting: it must never be
+// smaller than the tight box, and stay close to it for ordinary parts.
+TEST(Geometry, ApproximateBoundingBoxContainsTightBox)
+{
+    const Shape filleted = filletEdges(box(60, 40, 20), verticalEdges(box(60, 40, 20)), 3.0).value();
+    auto cylinder = makeCylinder({5, -3, 2}, {1, 1, 0}, 4.0, 25.0);
+    ASSERT_TRUE(cylinder.ok()) << cylinder.developerMessage();
+    for (const Shape& s : {filleted, cylinder.value()}) {
+        const auto tight = boundingBox(s);
+        const auto loose = approximateBoundingBox(s);
+        ASSERT_TRUE(tight.valid && loose.valid);
+        for (int axis = 0; axis < 3; ++axis) {
+            const auto pick = [axis](const Vec3& v) { return axis == 0 ? v.x : axis == 1 ? v.y : v.z; };
+            EXPECT_LE(pick(loose.min), pick(tight.min) + kTol);
+            EXPECT_GE(pick(loose.max), pick(tight.max) - kTol);
+        }
+        EXPECT_LT(loose.size().length(), tight.size().length() * 1.25);
+    }
+    EXPECT_FALSE(approximateBoundingBox(Shape{}).valid);
+}
+
+// The tight box is cached per shape: repeated calls return the same value.
+TEST(Geometry, BoundingBoxIsStablePerShape)
+{
+    const Shape s = filletEdges(box(30, 20, 10), verticalEdges(box(30, 20, 10)), 2.0).value();
+    const auto first = boundingBox(s);
+    const Shape copy = s; // shares the cached data
+    const auto second = boundingBox(copy);
+    EXPECT_TRUE(first.valid);
+    EXPECT_EQ(first.min.x, second.min.x);
+    EXPECT_EQ(first.max.z, second.max.z);
+    EXPECT_NEAR(first.size().x, 30.0, 1e-5);
+}
+
 TEST(Geometry, FilletTooLargeFailsGracefully)
 {
     const Shape s = box(10, 10, 10);

@@ -414,13 +414,10 @@ double surfaceArea(const Shape& shape)
     return props.Mass();
 }
 
-BoundingBox boundingBox(const Shape& shape)
+namespace {
+BoundingBox toBoundingBox(const Bnd_Box& box)
 {
     BoundingBox out;
-    if (shape.isNull())
-        return out;
-    Bnd_Box box;
-    BRepBndLib::AddOptimal(occ(shape), box, false, false);
     if (box.IsVoid())
         return out;
     double x0, y0, z0, x1, y1, z1;
@@ -429,6 +426,33 @@ BoundingBox boundingBox(const Shape& shape)
     out.max = {x1, y1, z1};
     out.valid = true;
     return out;
+}
+} // namespace
+
+BoundingBox boundingBox(const Shape& shape)
+{
+    if (shape.isNull())
+        return {};
+    // AddOptimal optimizes over every face and edge (~40 ms for a filleted
+    // cube), so it runs once per shape; callers ask for the same shape often.
+    const ShapeData& data = *shape.data();
+    std::call_once(data.tightBoxOnce, [&data] {
+        Bnd_Box box;
+        BRepBndLib::AddOptimal(data.shape, box, false, false);
+        data.tightBox = toBoundingBox(box);
+    });
+    return data.tightBox;
+}
+
+BoundingBox approximateBoundingBox(const Shape& shape)
+{
+    if (shape.isNull())
+        return {};
+    // Geometry bounds (control-point hulls for B-splines), independent of any
+    // triangulation, so the result does not depend on what was meshed before.
+    Bnd_Box box;
+    BRepBndLib::Add(occ(shape), box, false);
+    return toBoundingBox(box);
 }
 
 bool isValid(const Shape& shape)
