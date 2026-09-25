@@ -23,6 +23,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Chamfer: return "Chamfer";
     case FeatureKind::Extrude: return "Extrude";
     case FeatureKind::Shell: return "Shell";
+    case FeatureKind::Move: return "Move";
     }
     return "Unknown";
 }
@@ -30,7 +31,7 @@ std::string_view toString(FeatureKind kind)
 std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
-                          FeatureKind::Extrude, FeatureKind::Shell})
+                          FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -45,6 +46,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Chamfer: return std::make_unique<ChamferFeature>(id);
     case FeatureKind::Extrude: return std::make_unique<ExtrudeFeature>(id);
     case FeatureKind::Shell: return std::make_unique<ShellFeature>(id);
+    case FeatureKind::Move: return std::make_unique<MoveFeature>(id);
     }
     return nullptr;
 }
@@ -243,6 +245,47 @@ Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const Eval
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
     return geom::chamferEdges(input, indices.value(), size);
+}
+
+// ---- Move -----------------------------------------------------------------------
+
+Result<geom::Shape> MoveFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    if (translation.length() < 1e-12)
+        return Result<geom::Shape>::success(input);
+    return geom::translated(input, translation);
+}
+
+std::vector<ParameterInfo> MoveFeature::parameters() const
+{
+    return {{"x", "X", ParameterKind::Length, translation.x},
+            {"y", "Y", ParameterKind::Length, translation.y},
+            {"z", "Z", ParameterKind::Length, translation.z}};
+}
+
+Status MoveFeature::setParameter(std::string_view key, double value)
+{
+    double* target = key == "x" ? &translation.x : key == "y" ? &translation.y : key == "z" ? &translation.z : nullptr;
+    if (!target)
+        return unknownParameter(key);
+    if (!std::isfinite(value))
+        return Status::failure(ErrorCode::InvalidArgument, "Enter a valid distance.", "non-finite translation");
+    *target = value;
+    return okStatus();
+}
+
+void MoveFeature::writeParams(json& out) const
+{
+    out["translation"] = vecToJson(translation);
+}
+
+Status MoveFeature::readParams(const json& in)
+{
+    const auto t = vecFromJson(in, "translation");
+    if (!t)
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid move.", "Move: bad translation");
+    translation = *t;
+    return okStatus();
 }
 
 // ---- Shell ----------------------------------------------------------------------

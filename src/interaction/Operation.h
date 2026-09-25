@@ -45,7 +45,17 @@ public:
     const std::shared_ptr<const geom::Mesh>& previewMesh() const { return previewMesh_; }
     std::uint64_t previewKey() const { return previewKey_; }
     const std::string& error() const { return error_; }
-    bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
+    virtual bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
+
+    // Operations with several handles (Move: one arrow per axis). The active
+    // handle receives drags and typed values; value() is its value.
+    virtual int handleCount() const { return 1; }
+    virtual LinearManipulator handle(int index) const { return index == 0 ? manipulator_ : LinearManipulator(); }
+    virtual double handleOffset(int index) const { return index == 0 ? displayOffset(value_) : 0.0; }
+    // Axis color for a handle: -1 = accent, 0/1/2 = X/Y/Z.
+    virtual int handleAxis(int) const { return -1; }
+    int activeHandle() const { return activeHandle_; }
+    virtual void setActiveHandle(int index) { activeHandle_ = index; }
 
     virtual std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const;
 
@@ -57,11 +67,14 @@ public:
 
 protected:
     virtual std::unique_ptr<doc::Feature> makeFeature(double value) const = 0;
+    // Changes the stored value without recomputing the preview.
+    void setStoredValue(double value) { value_ = value; }
 
 private:
     Uuid bodyId_;
     LinearManipulator manipulator_;
     double value_ = 0;
+    int activeHandle_ = 0;
     std::shared_ptr<const geom::Mesh> previewMesh_;
     std::uint64_t previewKey_ = 0;
     std::string error_;
@@ -113,6 +126,35 @@ private:
         : Operation(bodyId, std::move(m)), edges_(std::move(edges)), kind_(kind) {}
     std::vector<doc::EdgeRef> edges_;
     doc::FeatureKind kind_;
+};
+
+// Move: X/Y/Z arrows at the body's center. Drag any arrow or type a value
+// for the active axis; the translation accumulates across axes.
+class MoveOperation final : public Operation {
+public:
+    static std::unique_ptr<MoveOperation> create(const doc::Document& document, const Uuid& bodyId);
+
+    std::string title() const override { return "Move"; }
+    std::string valueLabel() const override;
+    bool allowsNegative() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Move; }
+    bool canCommit() const override;
+
+    int handleCount() const override { return 3; }
+    LinearManipulator handle(int index) const override;
+    double handleOffset(int index) const override;
+    int handleAxis(int index) const override { return index; }
+    void setActiveHandle(int index) override;
+    Vec3 translation() const;
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    MoveOperation(Uuid bodyId, const Vec3& center)
+        : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center) {}
+    Vec3 center_;
+    Vec3 offset_; // committed per-axis values; the active axis lives in value()
 };
 
 // Shell: hollows the body through the selected faces. The arrow starts on the

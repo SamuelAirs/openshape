@@ -201,15 +201,34 @@ void InteractionController::pointerPress(const PointerEvent& event)
     }
 
     if (event.button == PointerButton::Left && operation_) {
-        const auto profile = InputProfile::forDevice(event.device);
-        const double offset = operation_->displayOffset(operation_->value());
-        if (operation_->manipulator().hitTest(camera_, event.position, offset, profile.handleTolerance)) {
+        const int index = handleAt(event.position, event.device);
+        if (index >= 0) {
+            operation_->setActiveHandle(index);
             drag_.mode = DragMode::Manipulator;
-            operation_->manipulator().beginDrag(camera_, event.position, offset);
+            drag_.handle = operation_->handle(index);
+            drag_.handle.beginDrag(camera_, event.position, operation_->handleOffset(index));
             hover_ = {};
+            notifyState();
             notifyView();
         }
     }
+}
+
+int InteractionController::handleAt(Vec2 screen, PointerDevice device) const
+{
+    if (!operation_)
+        return -1;
+    const double tolerance = InputProfile::forDevice(device).handleTolerance;
+    int best = -1;
+    double bestDistance = 1e300;
+    for (int i = 0; i < operation_->handleCount(); ++i) {
+        const auto d = operation_->handle(i).hitTest(camera_, screen, operation_->handleOffset(i), tolerance);
+        if (d && *d < bestDistance) {
+            bestDistance = *d;
+            best = i;
+        }
+    }
+    return best;
 }
 
 void InteractionController::pointerMove(const PointerEvent& event)
@@ -241,9 +260,9 @@ void InteractionController::pointerMove(const PointerEvent& event)
             const auto hit = sel::pickFace(pickTargets(), camera_, drag_.press.position);
             drag_.pivot = hit.hit() ? hit.point : camera_.target;
         }
-        if (hover_.hit() || manipulatorHovered_) {
+        if (hover_.hit() || hoveredHandle_ >= 0) {
             hover_ = {};
-            manipulatorHovered_ = false;
+            hoveredHandle_ = -1;
         }
     }
 
@@ -256,7 +275,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
         break;
     case DragMode::Manipulator:
         if (operation_) {
-            const double offset = operation_->manipulator().dragTo(camera_, event.position);
+            const double offset = drag_.handle.dragTo(camera_, event.position);
             double value = operation_->valueFromOffset(offset);
             if (!event.modifiers.alt)
                 value = snapValue(value, snapIncrement(camera_.pixelSize(operation_->anchor())));
@@ -324,9 +343,9 @@ void InteractionController::pointerLeave()
         notifyView();
         return;
     }
-    if (hover_.hit() || manipulatorHovered_) {
+    if (hover_.hit() || hoveredHandle_ >= 0) {
         hover_ = {};
-        manipulatorHovered_ = false;
+        hoveredHandle_ = -1;
         notifyView();
     }
 }
@@ -407,15 +426,11 @@ bool InteractionController::keyPress(Key key)
 void InteractionController::updateHover(const PointerEvent& event)
 {
     const auto profile = InputProfile::forDevice(event.device);
-    bool overManipulator = false;
-    if (operation_) {
-        const double offset = operation_->displayOffset(operation_->value());
-        overManipulator = operation_->manipulator().hitTest(camera_, event.position, offset, profile.handleTolerance).has_value();
-    }
-    const sel::PickResult hit = overManipulator ? sel::PickResult{} : pickAt(event.position, profile);
-    if (!sameHover(hit, hover_) || overManipulator != manipulatorHovered_) {
+    const int handle = handleAt(event.position, event.device);
+    const sel::PickResult hit = handle >= 0 ? sel::PickResult{} : pickAt(event.position, profile);
+    if (!sameHover(hit, hover_) || handle != hoveredHandle_) {
         hover_ = hit;
-        manipulatorHovered_ = overManipulator;
+        hoveredHandle_ = handle;
         notifyView();
     }
 }
@@ -492,6 +507,8 @@ void InteractionController::rebuildOperation()
         for (const auto& item : selection_.items())
             edges.push_back(item.index);
         operation_ = EdgeOperation::create(*document_, *selection_.singleBody(), edges, edgeOperationKind_);
+    } else if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Body) {
+        operation_ = MoveOperation::create(*document_, selection_.items().front().bodyId);
     } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody()) {
         const Uuid sketchId = *selection_.singleBody();
         const auto* entry = scene_.sketch(sketchId);
@@ -534,9 +551,11 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
     if (!operation_)
         return std::nullopt;
     const ArrowStyle style;
-    const Vec3 anchor = operation_->anchor();
+    const int active = operation_->activeHandle();
+    const LinearManipulator handle = operation_->handle(active);
+    const Vec3 anchor = handle.anchor(operation_->handleOffset(active));
     const double px = camera_.pixelSize(anchor);
-    return camera_.project(anchor + operation_->manipulator().direction() * (style.totalPx() * px));
+    return camera_.project(anchor + handle.direction() * (style.totalPx() * px));
 }
 
 Status InteractionController::commitOperation()
@@ -549,7 +568,8 @@ Status InteractionController::commitOperation()
     }
     // Fillets consume their edges and extrusions their profiles: clear those
     // selections. A pushed face still exists and stays selected.
-    const bool clearSelection = operation_->featureKind() != doc::FeatureKind::PushPull;
+    const bool clearSelection = operation_->featureKind() != doc::FeatureKind::PushPull
+                             && operation_->featureKind() != doc::FeatureKind::Move;
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
@@ -685,6 +705,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
     }
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
+        if (operation_ && operation_->featureKind() == doc::FeatureKind::Move)
+            actions.push_back({"move", "Move", true});
         actions.push_back({"fit", "Zoom to", false});
         actions.push_back({"delete", "Delete", false});
     } else if (selection_.singleBody()) {
@@ -721,8 +743,8 @@ Status InteractionController::triggerAction(const std::string& id)
             return editSketch(*sketchId);
         return Status::failure(ErrorCode::InvalidArgument, "Select a sketch profile first.", "editSketch without profile");
     }
-    if (id == "extrude")
-        return okStatus(); // already active: the arrow is the tool
+    if (id == "extrude" || id == "move")
+        return okStatus(); // already active: the arrows are the tool
     if (id == "pushpull" || id == "shell") {
         faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell : doc::FeatureKind::PushPull;
         rebuildOperation();
@@ -910,16 +932,21 @@ RenderScene InteractionController::renderScene() const
     }
 
     if (operation_) {
-        RenderArrow arrow;
-        arrow.anchor = operation_->anchor();
-        arrow.direction = operation_->manipulator().direction();
-        if (!operation_->error().empty())
-            arrow.state = HandleState::Error;
-        else if (drag_.mode == DragMode::Manipulator)
-            arrow.state = HandleState::Active;
-        else if (manipulatorHovered_)
-            arrow.state = HandleState::Hovered;
-        scene.arrows.push_back(arrow);
+        for (int i = 0; i < operation_->handleCount(); ++i) {
+            const LinearManipulator handle = operation_->handle(i);
+            RenderArrow arrow;
+            arrow.anchor = handle.anchor(operation_->handleOffset(i));
+            arrow.direction = handle.direction();
+            arrow.axis = operation_->handleAxis(i);
+            const bool active = i == operation_->activeHandle();
+            if (!operation_->error().empty() && active)
+                arrow.state = HandleState::Error;
+            else if (drag_.mode == DragMode::Manipulator && active)
+                arrow.state = HandleState::Active;
+            else if (hoveredHandle_ == i)
+                arrow.state = HandleState::Hovered;
+            scene.arrows.push_back(arrow);
+        }
     }
 
     // Grid on the XY plane, spaced for the current zoom.
@@ -1137,6 +1164,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Chamfer: return "Chamfer";
     case doc::FeatureKind::Extrude: return "Extrude";
     case doc::FeatureKind::Shell: return "Shell";
+    case doc::FeatureKind::Move: return "Move";
     }
     return "Step";
 }
@@ -1160,6 +1188,13 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit)
         const auto& e = static_cast<const doc::EdgeTreatmentFeature&>(f);
         const std::string count = std::to_string(e.edges.size()) + (e.edges.size() == 1 ? " edge" : " edges");
         return (f.kind() == doc::FeatureKind::Fillet ? "R " : "") + formatLength(e.size, unit) + dot + count;
+    }
+    case doc::FeatureKind::Move: {
+        const Vec3 t = static_cast<const doc::MoveFeature&>(f).translation;
+        char text[128];
+        std::snprintf(text, sizeof text, "%.2f, %.2f, %.2f %s", fromMillimeters(t.x, unit), fromMillimeters(t.y, unit),
+                      fromMillimeters(t.z, unit), std::string(unitSymbol(unit)).c_str());
+        return text;
     }
     case doc::FeatureKind::Shell: {
         const auto& s = static_cast<const doc::ShellFeature&>(f);

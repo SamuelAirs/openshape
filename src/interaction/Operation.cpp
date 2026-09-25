@@ -6,6 +6,8 @@
 #include "geometry/Modeling.h"
 #include "geometry/Tessellation.h"
 
+#include <algorithm>
+
 namespace os::interact {
 
 namespace {
@@ -24,7 +26,7 @@ void Operation::setValue(double value, const doc::Document& document)
         value = 0;
     value_ = value;
     error_.clear();
-    if (value == 0.0) {
+    if (value == 0.0 && handleCount() == 1) {
         previewMesh_.reset();
         return;
     }
@@ -65,6 +67,83 @@ std::unique_ptr<doc::Feature> PushPullOperation::makeFeature(double value) const
     auto feature = std::make_unique<doc::PushPullFeature>();
     feature->face = face_;
     feature->distance = value;
+    return feature;
+}
+
+// ---- Move ------------------------------------------------------------------------
+
+namespace {
+Vec3 axisVector(int axis)
+{
+    return axis == 0 ? Vec3{1, 0, 0} : axis == 1 ? Vec3{0, 1, 0} : Vec3{0, 0, 1};
+}
+double& component(Vec3& v, int axis)
+{
+    return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
+}
+double component(const Vec3& v, int axis)
+{
+    return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
+}
+} // namespace
+
+std::unique_ptr<MoveOperation> MoveOperation::create(const doc::Document& document, const Uuid& bodyId)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const auto box = geom::boundingBox(body->shape());
+    if (!box.valid)
+        return nullptr;
+    return std::unique_ptr<MoveOperation>(new MoveOperation(bodyId, box.center()));
+}
+
+std::string MoveOperation::valueLabel() const
+{
+    static const char* names[] = {"X", "Y", "Z"};
+    return names[std::clamp(activeHandle(), 0, 2)];
+}
+
+Vec3 MoveOperation::translation() const
+{
+    Vec3 t = offset_;
+    component(t, activeHandle()) = value();
+    return t;
+}
+
+bool MoveOperation::canCommit() const
+{
+    return translation().length() > 1e-9 && error().empty() && hasPreview();
+}
+
+LinearManipulator MoveOperation::handle(int index) const
+{
+    // Every arrow starts at the moved center; handle i slides along axis i.
+    const Vec3 t = translation();
+    const Vec3 axis = axisVector(index);
+    return LinearManipulator(center_ + t - axis * component(t, index), axis);
+}
+
+double MoveOperation::handleOffset(int index) const
+{
+    return component(translation(), index);
+}
+
+void MoveOperation::setActiveHandle(int index)
+{
+    if (index == activeHandle())
+        return;
+    component(offset_, activeHandle()) = value();
+    Operation::setActiveHandle(index);
+    setStoredValue(component(offset_, index));
+}
+
+std::unique_ptr<doc::Feature> MoveOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::MoveFeature>();
+    Vec3 t = offset_;
+    component(t, activeHandle()) = value;
+    feature->translation = t;
     return feature;
 }
 

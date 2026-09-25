@@ -21,7 +21,7 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell };
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -173,6 +173,21 @@ public:
 
 private:
     const char* sizeLabel() const override { return "Distance"; }
+};
+
+// Moves the body by a translation (a history step, so it stays editable).
+class MoveFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Vec3 translation;
+
+    FeatureKind kind() const override { return FeatureKind::Move; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MoveFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
 };
 
 // Hollows the body, opening the referenced faces, with walls of `thickness`.

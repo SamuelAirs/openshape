@@ -524,10 +524,19 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         const quint32 first = quint32(arrowPos.size() / 3);
         appendArrow(arrowPos, arrowNrm, arrow.anchor, arrow.direction, camera.pixelSize(arrow.anchor), scene_.arrowStyle);
         Color c = kAccent;
+        if (arrow.axis == 0)
+            c = {0.86f, 0.26f, 0.26f, 1.0f};
+        else if (arrow.axis == 1)
+            c = {0.24f, 0.64f, 0.30f, 1.0f};
+        auto mix = [](Color a, float t, float target) {
+            for (int k = 0; k < 3; ++k)
+                a[k] = a[k] + (target - a[k]) * t;
+            return a;
+        };
         if (arrow.state == interact::HandleState::Hovered)
-            c = kAccentHover;
+            c = arrow.axis < 0 ? kAccentHover : mix(c, 0.3f, 1.0f);
         else if (arrow.state == interact::HandleState::Active)
-            c = kAccentActive;
+            c = arrow.axis < 0 ? kAccentActive : mix(c, 0.25f, 0.0f);
         else if (arrow.state == interact::HandleState::Error)
             c = kError;
         arrowDraws.push_back({first, c});

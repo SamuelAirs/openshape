@@ -139,6 +139,11 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         interaction.pointerPress(click);
         interaction.pointerRelease(click);
         interaction.setValueText("4");
+    } else if (demo == QLatin1String("move")) {
+        interaction.pointerPress(click);
+        interaction.pointerRelease(click);
+        interaction.pointerDoubleClick(click);
+        interaction.setValueText("12");
     } else if (demo == QLatin1String("hover")) {
         click.button = os::interact::PointerButton::None;
         interaction.pointerMove(click);

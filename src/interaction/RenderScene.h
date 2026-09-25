@@ -30,6 +30,7 @@ struct RenderArrow {
     Vec3 anchor;
     Vec3 direction;
     HandleState state = HandleState::Normal;
+    int axis = -1; // -1 accent color, 0/1/2 = X/Y/Z colors
 };
 
 struct RenderGrid {

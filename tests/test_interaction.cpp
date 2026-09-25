@@ -328,3 +328,51 @@ TEST(Interaction, ShellMakesAnOpenEnclosure)
     EXPECT_NE(h.controller.setValueText("12"), "");
     EXPECT_FALSE(h.controller.operation()->canCommit());
 }
+
+// Move: grab an axis arrow, type a value, switch axis, type again, apply.
+TEST(Interaction, MoveBodyAlongAxes)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0) .. (10,10,20)
+    h.controller.fitAll(false);
+    const Vec2 p = h.screen({0, 0, 20});
+    h.clickAt(p);
+    h.controller.pointerDoubleClick(Harness::at(p));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Move");
+    ASSERT_EQ(h.controller.renderScene().arrows.size(), 3u);
+
+    // Grab an axis arrow where it is currently drawn (arrows follow the preview).
+    auto grab = [&](int axis) {
+        const auto arrow = h.controller.renderScene().arrows.at(std::size_t(axis));
+        const double px = h.controller.camera().pixelSize(arrow.anchor);
+        const Vec2 s = h.screen(arrow.anchor + arrow.direction * (50 * px));
+        h.controller.pointerPress(Harness::at(s));
+        h.controller.pointerRelease(Harness::at(s));
+    };
+    grab(0);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "X");
+    EXPECT_EQ(h.controller.setValueText("15"), "");
+    grab(1);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Y");
+    EXPECT_EQ(h.controller.setValueText("-5"), "");
+    ASSERT_TRUE(h.controller.operation()->canCommit());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+
+    const auto bb = geom::boundingBox(h.body().shape());
+    EXPECT_NEAR(bb.min.x, 5.0, 1e-9);
+    EXPECT_NEAR(bb.min.y, -15.0, 1e-9);
+    EXPECT_NEAR(bb.min.z, 0.0, 1e-9);
+    // Still selected with fresh arrows for another move.
+    EXPECT_TRUE(h.controller.selection().allOfKind(sel::SelectionKind::Body));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Move");
+
+    bool listed = false;
+    for (const auto& row : h.controller.historyRows())
+        listed = listed || (row.name == "Move" && row.detail.find("15.00, -5.00, 0.00") != std::string::npos);
+    EXPECT_TRUE(listed);
+
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(geom::boundingBox(h.body().shape()).min.x, -10.0, 1e-9);
+}

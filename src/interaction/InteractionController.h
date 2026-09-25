@@ -169,7 +169,7 @@ private:
     SceneCache scene_;
     sel::SelectionSet selection_;
     sel::PickResult hover_;
-    bool manipulatorHovered_ = false;
+    int hoveredHandle_ = -1;
     std::unique_ptr<Operation> operation_;
     std::unique_ptr<SketchSession> session_;
     std::optional<Camera> cameraBeforeSketch_; // restored when the sketch is finished
@@ -181,7 +181,11 @@ private:
         PointerEvent press;
         Vec2 last;
         Vec3 pivot;
+        LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
     } drag_;
+
+    // Index of the operation handle under the pointer (tolerance per device), or -1.
+    int handleAt(Vec2 screen, PointerDevice device) const;
 
     struct Animation {
         Camera from;
