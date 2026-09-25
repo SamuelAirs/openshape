@@ -147,6 +147,15 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         (void)interaction.commitOperation();
         return;
     }
+    if (demo == QLatin1String("rotate")) {
+        // A body in Rotate mode with a 30 degree preview about Z.
+        app.createBox(20);
+        interaction.fitAll(false);
+        (void)interaction.selectBody(app.document().bodies().front()->id(), false);
+        (void)interaction.triggerAction("rotate");
+        interaction.setValueText("30");
+        return;
+    }
     if (demo == QLatin1String("combine") || demo == QLatin1String("history")) {
         // Two bodies selected from the model panel (combine actions), or a
         // fillet step highlighted in the view (history).

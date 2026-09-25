@@ -172,6 +172,7 @@ void ViewportRenderer::initialize(QRhiCommandBuffer*)
         bodies_.clear();
         regions_.clear();
         sketchVertices_.reset();
+        ringVertices_.reset();
         meshPipeline_.reset();
         tintPipeline_.reset();
         overlayPipeline_.reset();
@@ -535,6 +536,44 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
                 lineDraw(b.onTop ? overlayLinePipeline_.get() : linePipeline_.get(), sketchVertices_.get(), b.first, b.count,
                          b.color, b.width, kEdgeBias * 2);
         }
+    }
+
+    // ---- 6a. Rotation rings (on top), with a dot at the current angle -----------------
+    if (!scene_.rings.empty()) {
+        std::vector<float> lines;
+        struct RingBatch {
+            quint32 first, count;
+            Color color;
+            float width;
+        };
+        std::vector<RingBatch> batches;
+        for (const auto& ring : scene_.rings) {
+            Color c = ring.axis == 0 ? Color{0.86f, 0.26f, 0.26f, 1.0f}
+                    : ring.axis == 1 ? Color{0.24f, 0.64f, 0.30f, 1.0f}
+                                     : kAccent;
+            float width = 2.5f;
+            if (ring.state == interact::HandleState::Hovered) {
+                for (int k = 0; k < 3; ++k)
+                    c[k] += (1.0f - c[k]) * 0.3f;
+                width = 4.0f;
+            } else if (ring.state == interact::HandleState::Active) {
+                width = 4.5f;
+            } else if (ring.state == interact::HandleState::Error) {
+                c = kError;
+            }
+            const quint32 first = quint32(lines.size() / kLineVertexFloats);
+            for (std::size_t k = 0; k + 1 < ring.points.size(); ++k)
+                appendSegment(lines, ring.points[k], ring.points[k + 1]);
+            batches.push_back({first, quint32(lines.size() / kLineVertexFloats) - first, c, width});
+            const quint32 dot = quint32(lines.size() / kLineVertexFloats);
+            appendSegment(lines, ring.marker, ring.marker); // zero length: drawn as a square
+            batches.push_back({dot, quint32(lines.size() / kLineVertexFloats) - dot, c, 11.0f});
+        }
+        const quint32 bytes = quint32(lines.size() * sizeof(float));
+        ensureDynamicBuffer(ringVertices_, bytes, QRhiBuffer::VertexBuffer);
+        u->updateDynamicBuffer(ringVertices_.get(), 0, bytes, lines.data());
+        for (const auto& b : batches)
+            lineDraw(overlayLinePipeline_.get(), ringVertices_.get(), b.first, b.count, b.color, b.width, 0);
     }
 
     // ---- 6. Manipulator arrows (always on top) --------------------------------------------

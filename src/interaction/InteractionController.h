@@ -193,6 +193,8 @@ private:
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
     bool alignRequested_ = false; // the selected face/edge is the source of an Align
+    bool rotateRequested_ = false; // a selected body shows rotation rings instead of arrows
+    int hoveredRing_ = -1;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
@@ -206,10 +208,14 @@ private:
         Vec2 last;
         Vec3 pivot;
         LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
+        int ring = -1;            // grabbed rotation ring, or -1 for an arrow
+        RingManipulator ringHandle;
     } drag_;
 
     // Index of the operation handle under the pointer (tolerance per device), or -1.
     int handleAt(Vec2 screen, PointerDevice device) const;
+    // Index of the rotation ring under the pointer, or -1.
+    int ringAt(Vec2 screen, PointerDevice device) const;
 
     struct Animation {
         Camera from;

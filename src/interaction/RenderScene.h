@@ -34,6 +34,14 @@ struct RenderArrow {
     int axis = -1; // -1 accent color, 0/1/2 = X/Y/Z colors
 };
 
+// A rotation ring, as a closed polyline in world space (sized for the camera).
+struct RenderRing {
+    std::vector<Vec3> points;
+    Vec3 marker; // on the ring at the current angle
+    HandleState state = HandleState::Normal;
+    int axis = 2; // 0/1/2 = X/Y/Z colors
+};
+
 struct RenderGrid {
     bool visible = true;
     double minorStep = 1.0;  // mm
@@ -84,6 +92,7 @@ struct RenderScene {
     std::vector<RenderBody> bodies;
     std::vector<RenderSketch> sketches;
     std::vector<RenderArrow> arrows;
+    std::vector<RenderRing> rings;
     ArrowStyle arrowStyle;
     RenderGrid grid;
 };

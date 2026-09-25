@@ -52,6 +52,52 @@ private:
     bool screenFallback_ = false;
 };
 
+// Screen-space size of a rotation ring (logical pixels).
+struct RingStyle {
+    double radiusPx = 92;
+    double widthPx = 3;
+};
+
+// A rotation handle: a circle of constant screen size around `center`, in the
+// plane normal to `axis`. Dragging around it changes an angle (radians); the
+// angle keeps counting past half a turn.
+class RingManipulator {
+public:
+    RingManipulator() = default;
+    RingManipulator(const Vec3& center, const Vec3& axis);
+
+    const Vec3& center() const { return center_; }
+    const Vec3& axis() const { return axis_; }
+    // World radius for the current zoom.
+    double radius(const Camera& camera, const RingStyle& style = {}) const;
+    // Point on the ring at `angle` radians from its reference direction.
+    Vec3 pointAt(const Camera& camera, double angle, const RingStyle& style = {}) const;
+
+    // Distance in pixels from `screen` to the ring, if within tolerance.
+    std::optional<double> hitTest(const Camera& camera, Vec2 screen, double tolerancePx, const RingStyle& style = {}) const;
+
+    void beginDrag(const Camera& camera, Vec2 screen, double angle);
+    // New (unsnapped) angle for the pointer position.
+    double dragTo(const Camera& camera, Vec2 screen);
+
+private:
+    // Pointer angle around the axis in the ring's plane; nullopt when the
+    // plane is seen (almost) edge-on.
+    std::optional<double> pointerAngle(const Camera& camera, Vec2 screen) const;
+
+    Vec3 center_;
+    Vec3 axis_{0, 0, 1};
+    Vec3 u_{1, 0, 0}; // in-plane basis: angle 0 lies along u
+    Vec3 v_{0, 1, 0};
+    double dragStartAngle_ = 0;
+    double lastPointer_ = 0;
+    double turned_ = 0;
+    bool screenFallback_ = false;
+    Vec2 dragStartScreen_;
+    Vec2 screenTangent_;     // fallback: pointer motion along this turns the ring
+    double screenRadiusPx_ = 92;
+};
+
 // Rounds `value` to a "nice" increment appropriate for the current zoom:
 // roughly `targetPixels` on screen per step (1, 2, 5 x 10^n mm).
 double snapIncrement(double pixelSize, double targetPixels = 8.0);

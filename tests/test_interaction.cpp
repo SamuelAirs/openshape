@@ -352,6 +352,71 @@ TEST(Interaction, AlignOntoGround)
     EXPECT_NEAR(bb.size().y, 20.0, 1e-6);
 }
 
+// Rotation rings: dragging along the Z ring turns the body in 15 degree
+// steps; a 30 x 10 footprint becomes 10 x 30 after a quarter turn.
+TEST(Interaction, RotateBodyWithRing)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {0, 0, 0}, {30, 10, 5});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    const Operation* op = h.controller.operation();
+    ASSERT_NE(op, nullptr);
+    EXPECT_EQ(op->title(), "Rotate");
+    ASSERT_EQ(op->ringCount(), 3);
+    EXPECT_EQ(h.controller.renderScene().rings.size(), 3u);
+
+    // Drag the Z ring a quarter turn through intermediate points on it,
+    // grabbing at 45 degrees (the rings cross each other on the axes).
+    const RingManipulator ring = op->ring(2);
+    const Camera& cam = h.controller.camera();
+    const double a0 = kPi / 4;
+    h.controller.pointerPress(Harness::at(cam.project(ring.pointAt(cam, a0))));
+    for (int i = 1; i <= 12; ++i)
+        h.controller.pointerMove(Harness::at(cam.project(ring.pointAt(cam, a0 + kPi / 2 * i / 12.0))));
+    h.controller.pointerRelease(Harness::at(cam.project(ring.pointAt(cam, a0 + kPi / 2))));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_NEAR(h.controller.operation()->value(), 90.0, 1e-9);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Angle Z");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+
+    const auto bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.size().x, 10.0, 1e-6);
+    EXPECT_NEAR(bb.size().y, 30.0, 1e-6);
+    EXPECT_NEAR(bb.center().x, 15.0, 1e-6); // turned about its own center
+    EXPECT_NEAR(bb.center().y, 5.0, 1e-6);
+    bool detail = false;
+    for (const auto& row : h.controller.historyRows())
+        detail = detail || (row.name == "Rotate" && row.detail.find("about Z") != std::string::npos);
+    EXPECT_TRUE(detail);
+
+    // Typed angle on the X ring; switching rings starts from zero.
+    ASSERT_NE(dynamic_cast<const RotateOperation*>(h.controller.operation()), nullptr); // still rotating
+    EXPECT_EQ(h.controller.setValueText("45"), "");
+    EXPECT_NEAR(h.controller.operation()->value(), 45.0, 1e-9);
+    const_cast<Operation*>(h.controller.operation())->setActiveHandle(0);
+    EXPECT_EQ(h.controller.operation()->value(), 0.0);
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(geom::boundingBox(h.document.body(a)->shape()).size().x, 30.0, 1e-6);
+}
+
+// The ring keeps counting past half a turn, and snaps unless Alt is held.
+TEST(Interaction, RingDragPastHalfTurn)
+{
+    Camera cam;
+    cam.viewportSize = {1000, 800};
+    cam.fit({-10, -10, -10}, {10, 10, 10});
+    RingManipulator ring({0, 0, 0}, {0, 0, 1});
+    ASSERT_TRUE(ring.hitTest(cam, cam.project(ring.pointAt(cam, 1.0)), 4.0).has_value());
+    EXPECT_FALSE(ring.hitTest(cam, cam.project({0, 0, 0}), 4.0).has_value()); // the center is not the ring
+    ring.beginDrag(cam, cam.project(ring.pointAt(cam, 0.0)), 0.0);
+    double angle = 0;
+    for (int i = 1; i <= 30; ++i)
+        angle = ring.dragTo(cam, cam.project(ring.pointAt(cam, 1.5 * kPi * i / 30.0)));
+    EXPECT_NEAR(angle, 1.5 * kPi, 1e-6);
+}
+
 TEST(Interaction, UnitAwareInput)
 {
     Harness h;

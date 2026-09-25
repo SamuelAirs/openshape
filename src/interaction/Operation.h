@@ -59,6 +59,10 @@ public:
     virtual double handleOffset(int index) const { return index == 0 ? displayOffset(value_) : 0.0; }
     // Axis color for a handle: -1 = accent, 0/1/2 = X/Y/Z.
     virtual int handleAxis(int) const { return -1; }
+    // Rotation rings (Rotate). A grabbed ring becomes the active handle and
+    // value() is its angle in degrees.
+    virtual int ringCount() const { return 0; }
+    virtual RingManipulator ring(int /*index*/) const { return {}; }
     int activeHandle() const { return activeHandle_; }
     virtual void setActiveHandle(int index) { activeHandle_ = index; }
 
@@ -197,6 +201,35 @@ private:
         : Operation(bodyId, std::move(m)), edges_(std::move(edges)), kind_(kind) {}
     std::vector<doc::EdgeRef> edges_;
     doc::FeatureKind kind_;
+};
+
+// Rotate: X/Y/Z rings through the body's center. Drag a ring or type an
+// angle (degrees) for the active ring; one axis per step (switching rings
+// starts over). Commits as a Move step with a rotation, named "Rotate".
+class RotateOperation final : public Operation {
+public:
+    static std::unique_ptr<RotateOperation> create(const doc::Document& document, const Uuid& bodyId);
+
+    std::string title() const override { return "Rotate"; }
+    std::string valueLabel() const override;
+    bool allowsNegative() const override { return true; }
+    bool isAngle() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Move; }
+
+    int handleCount() const override { return 0; }
+    int ringCount() const override { return 3; }
+    RingManipulator ring(int index) const override;
+    int handleAxis(int index) const override { return index; }
+    void setActiveHandle(int index) override;
+    const Vec3& center() const { return center_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double degrees) const override;
+
+private:
+    RotateOperation(Uuid bodyId, const Vec3& center)
+        : Operation(bodyId, LinearManipulator(center, {0, 0, 1})), center_(center) {}
+    Vec3 center_;
 };
 
 // Move: X/Y/Z arrows at the body's center. Drag any arrow or type a value

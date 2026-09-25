@@ -211,8 +211,36 @@ void InteractionController::pointerPress(const PointerEvent& event)
             hover_ = {};
             notifyState();
             notifyView();
+            return;
+        }
+        if (const int ring = ringAt(event.position, event.device); ring >= 0) {
+            operation_->setActiveHandle(ring); // a different ring starts from zero
+            drag_.mode = DragMode::Manipulator;
+            drag_.ring = ring;
+            drag_.ringHandle = operation_->ring(ring);
+            drag_.ringHandle.beginDrag(camera_, event.position, operation_->value() * kPi / 180.0);
+            hover_ = {};
+            notifyState();
+            notifyView();
         }
     }
+}
+
+int InteractionController::ringAt(Vec2 screen, PointerDevice device) const
+{
+    if (!operation_)
+        return -1;
+    const double tolerance = InputProfile::forDevice(device).handleTolerance;
+    int best = -1;
+    double bestDistance = 1e300;
+    for (int i = 0; i < operation_->ringCount(); ++i) {
+        const auto d = operation_->ring(i).hitTest(camera_, screen, tolerance);
+        if (d && *d < bestDistance) {
+            bestDistance = *d;
+            best = i;
+        }
+    }
+    return best;
 }
 
 int InteractionController::handleAt(Vec2 screen, PointerDevice device) const
@@ -261,9 +289,10 @@ void InteractionController::pointerMove(const PointerEvent& event)
             const auto hit = sel::pickFace(pickTargets(), camera_, drag_.press.position);
             drag_.pivot = hit.hit() ? hit.point : camera_.target;
         }
-        if (hover_.hit() || hoveredHandle_ >= 0) {
+        if (hover_.hit() || hoveredHandle_ >= 0 || hoveredRing_ >= 0) {
             hover_ = {};
             hoveredHandle_ = -1;
+            hoveredRing_ = -1;
         }
     }
 
@@ -275,7 +304,15 @@ void InteractionController::pointerMove(const PointerEvent& event)
         camera_.pan(drag_.last, event.position);
         break;
     case DragMode::Manipulator:
-        if (operation_) {
+        if (operation_ && drag_.ring >= 0) {
+            // Rings snap to 15 degrees (Alt: whole degrees).
+            const double degrees = drag_.ringHandle.dragTo(camera_, event.position) * 180.0 / kPi;
+            const double value = snapValue(degrees, event.modifiers.alt ? 1.0 : 15.0);
+            if (value != operation_->value()) {
+                operation_->setValue(value, *document_);
+                notifyState();
+            }
+        } else if (operation_) {
             const double offset = drag_.handle.dragTo(camera_, event.position);
             double value = operation_->valueFromOffset(offset);
             if (!event.modifiers.alt)
@@ -354,9 +391,10 @@ void InteractionController::pointerLeave()
         notifyView();
         return;
     }
-    if (hover_.hit() || hoveredHandle_ >= 0) {
+    if (hover_.hit() || hoveredHandle_ >= 0 || hoveredRing_ >= 0) {
         hover_ = {};
         hoveredHandle_ = -1;
+        hoveredRing_ = -1;
         notifyView();
     }
 }
@@ -438,10 +476,12 @@ void InteractionController::updateHover(const PointerEvent& event)
 {
     const auto profile = InputProfile::forDevice(event.device);
     const int handle = handleAt(event.position, event.device);
-    const sel::PickResult hit = handle >= 0 ? sel::PickResult{} : pickAt(event.position, profile);
-    if (!sameHover(hit, hover_) || handle != hoveredHandle_) {
+    const int ring = handle >= 0 ? -1 : ringAt(event.position, event.device);
+    const sel::PickResult hit = handle >= 0 || ring >= 0 ? sel::PickResult{} : pickAt(event.position, profile);
+    if (!sameHover(hit, hover_) || handle != hoveredHandle_ || ring != hoveredRing_) {
         hover_ = hit;
         hoveredHandle_ = handle;
+        hoveredRing_ = ring;
         notifyView();
     }
 }
@@ -523,6 +563,7 @@ void InteractionController::rebuildOperation()
             edgeOperationKind_ = doc::FeatureKind::Fillet;
         profileOperationKind_ = doc::FeatureKind::Extrude;
         alignRequested_ = false;
+        rotateRequested_ = false;
     }
     if (alignRequested_) {
         const auto& items = selection_.items();
@@ -558,7 +599,11 @@ void InteractionController::rebuildOperation()
             operation_ = EdgeOperation::create(*document_, *selection_.singleBody(), edges, edgeOperationKind_);
         }
     } else if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Body) {
-        operation_ = MoveOperation::create(*document_, selection_.items().front().bodyId);
+        const Uuid body = selection_.items().front().bodyId;
+        if (rotateRequested_)
+            operation_ = RotateOperation::create(*document_, body);
+        else
+            operation_ = MoveOperation::create(*document_, body);
     } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody()) {
         const Uuid sketchId = *selection_.singleBody();
         const auto* entry = scene_.sketch(sketchId);
@@ -607,6 +652,11 @@ std::string InteractionController::operationValueText() const
 
 std::optional<Vec2> InteractionController::valueLabelPosition() const
 {
+    if (operation_ && operation_->ringCount() > 0) {
+        // Beside the rings, to the right of their center.
+        const Vec2 c = camera_.project(operation_->ring(0).center());
+        return Vec2{c.x + RingStyle{}.radiusPx, c.y - RingStyle{}.radiusPx * 0.5};
+    }
     if (!operation_ || operation_->handleCount() == 0)
         return std::nullopt; // e.g. Align still waiting for its target
     const ArrowStyle style;
@@ -816,8 +866,10 @@ std::vector<ContextAction> InteractionController::contextActions() const
         }
     }
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
-        if (operation_ && operation_->featureKind() == doc::FeatureKind::Move)
-            actions.push_back({"move", "Move", true});
+        if (selection_.size() == 1) {
+            actions.push_back({"move", "Move", dynamic_cast<const MoveOperation*>(operation_.get()) != nullptr});
+            actions.push_back({"rotate", "Rotate", dynamic_cast<const RotateOperation*>(operation_.get()) != nullptr});
+        }
         if (selection_.size() >= 2) {
             // The first body is kept; the others are the tools.
             const doc::Body* second = document_->body(selection_.items()[1].bodyId);
@@ -895,8 +947,14 @@ Status InteractionController::triggerAction(const std::string& id)
         return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
                                      : id == "subtract" ? doc::CombineMode::Subtract
                                                         : doc::CombineMode::Intersect);
-    if (id == "move")
-        return okStatus(); // already active: the arrows are the tool
+    if (id == "move" || id == "rotate") {
+        rotateRequested_ = id == "rotate";
+        if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Body)
+            rebuildOperation();
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "align") {
         alignRequested_ = true;
         rebuildOperation();
@@ -1196,6 +1254,23 @@ RenderScene InteractionController::renderScene() const
                 arrow.state = HandleState::Hovered;
             scene.arrows.push_back(arrow);
         }
+        for (int i = 0; i < operation_->ringCount(); ++i) {
+            const RingManipulator ring = operation_->ring(i);
+            const bool active = i == operation_->activeHandle();
+            RenderRing rr;
+            constexpr int segments = 72;
+            for (int k = 0; k <= segments; ++k)
+                rr.points.push_back(ring.pointAt(camera_, 2 * kPi * k / segments));
+            rr.marker = ring.pointAt(camera_, active ? operation_->value() * kPi / 180.0 : 0.0);
+            rr.axis = i;
+            if (!operation_->error().empty() && active)
+                rr.state = HandleState::Error;
+            else if (drag_.mode == DragMode::Manipulator && drag_.ring == i)
+                rr.state = HandleState::Active;
+            else if (hoveredRing_ == i)
+                rr.state = HandleState::Hovered;
+            scene.rings.push_back(std::move(rr));
+        }
     }
 
     // Grid on the XY plane, spaced for the current zoom.
@@ -1465,10 +1540,26 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         return std::string(doc::toString(c.mode)) + dot + (tool ? tool->name() : std::string("missing body"));
     }
     case doc::FeatureKind::Move: {
-        const Vec3 t = static_cast<const doc::MoveFeature&>(f).translation;
-        char text[128];
-        std::snprintf(text, sizeof text, "%.2f, %.2f, %.2f %s", fromMillimeters(t.x, unit), fromMillimeters(t.y, unit),
-                      fromMillimeters(t.z, unit), std::string(unitSymbol(unit)).c_str());
+        const auto& m = static_cast<const doc::MoveFeature&>(f);
+        std::string text;
+        if (m.rotates) {
+            // "90.0° about Z" for axis rotations, "37.5° turn" for Align's free axes.
+            const Vec3 a = m.rotationAxis.normalized();
+            const double c[3] = {a.x, a.y, a.z};
+            int axis = -1;
+            for (int k = 0; k < 3; ++k)
+                if (std::abs(c[k]) > 0.9999)
+                    axis = k;
+            const double shown = axis >= 0 && c[axis] < 0 ? -m.rotationAngle : m.rotationAngle;
+            text = formatAngle(shown) + (axis >= 0 ? std::string(" about ") + "XYZ"[axis] : std::string(" turn"));
+        }
+        const Vec3 t = m.translation;
+        if (!m.rotates || t.length() > 1e-9) {
+            char buf[128];
+            std::snprintf(buf, sizeof buf, "%.2f, %.2f, %.2f %s", fromMillimeters(t.x, unit), fromMillimeters(t.y, unit),
+                          fromMillimeters(t.z, unit), std::string(unitSymbol(unit)).c_str());
+            text += (text.empty() ? std::string() : dot) + buf;
+        }
         return text;
     }
     case doc::FeatureKind::Shell: {
@@ -1763,9 +1854,16 @@ Status InteractionController::runTool(const std::string& id)
             return triggerAction("shell");
         return explain("Click the face to leave open (Shift-click adds more), then type the wall thickness.");
     }
+    if (id == "rotate") {
+        if (!bodies && !selection_.empty() && selection_.singleBody())
+            (void)triggerAction("selectBody");
+        if (selection_.allOfKind(sel::SelectionKind::Body) && selection_.size() == 1)
+            return triggerAction("rotate");
+        return explain("Double-click a body (or click it in the Model panel), then drag a ring or type an angle.");
+    }
     if (id == "move") {
         if (bodies && selection_.size() == 1)
-            return okStatus(); // the arrows are already there
+            return triggerAction("move");
         if (const auto body = selection_.singleBody(); body && !selection_.empty() && !bodies)
             return triggerAction("selectBody");
         return explain("Double-click a body (or click it in the Model panel), then drag an arrow or type a distance.");

@@ -248,6 +248,53 @@ std::unique_ptr<doc::Feature> MoveOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Rotate ------------------------------------------------------------------------
+
+std::unique_ptr<RotateOperation> RotateOperation::create(const doc::Document& document, const Uuid& bodyId)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const auto box = geom::approximateBoundingBox(body->shape());
+    if (!box.valid)
+        return nullptr;
+    auto op = std::unique_ptr<RotateOperation>(new RotateOperation(bodyId, box.center()));
+    op->Operation::setActiveHandle(2); // Z: turning on the table is the common case
+    return op;
+}
+
+std::string RotateOperation::valueLabel() const
+{
+    static const char* names[] = {"Angle X", "Angle Y", "Angle Z"};
+    return names[std::clamp(activeHandle(), 0, 2)];
+}
+
+RingManipulator RotateOperation::ring(int index) const
+{
+    return RingManipulator(center_, axisVector(std::clamp(index, 0, 2)));
+}
+
+void RotateOperation::setActiveHandle(int index)
+{
+    if (index == activeHandle())
+        return;
+    // One axis per step: a different ring starts from zero.
+    Operation::setActiveHandle(index);
+    setStoredValue(0.0);
+    clearPreview();
+}
+
+std::unique_ptr<doc::Feature> RotateOperation::makeFeature(double degrees) const
+{
+    auto feature = std::make_unique<doc::MoveFeature>();
+    feature->setName("Rotate");
+    feature->rotates = true;
+    feature->rotationCenter = center_;
+    feature->rotationAxis = axisVector(std::clamp(activeHandle(), 0, 2));
+    feature->rotationAngle = degrees * kPi / 180.0;
+    return feature;
+}
+
 // ---- Revolve -------------------------------------------------------------------------
 
 std::unique_ptr<RevolveOperation> RevolveOperation::create(const doc::Document& document, const Uuid& sketchId,

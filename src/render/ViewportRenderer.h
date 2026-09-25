@@ -68,6 +68,7 @@ private:
     // Sketch profile fills, keyed by mesh key.
     std::unordered_map<std::uint64_t, GpuBody> regions_;
     std::unique_ptr<QRhiBuffer> sketchVertices_;
+    std::unique_ptr<QRhiBuffer> ringVertices_;
     std::unique_ptr<QRhiBuffer> gridVertices_;
     std::unique_ptr<QRhiBuffer> arrowPositions_;
     std::unique_ptr<QRhiBuffer> arrowNormals_;

@@ -497,6 +497,47 @@ void AcceptanceRunner::start()
             check(std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).min.z) < 1e-6,
                   "undo puts the box back");
         },
+        // Rotate through the real UI: pick the box in the Model panel, Rotate,
+        // drag the Z ring by 45 degrees.
+        [=, this] {
+            key(Qt::Key_Escape);
+            key(Qt::Key_Escape);
+            const QString box = QString::fromStdString(app_->document().bodies()[1]->id().toString());
+            check(clickItem(QStringLiteral("historyRow_") + box), "Model panel row selects the box again");
+        },
+        [=, this] {
+            check(clickItem(QStringLiteral("tool_rotate")), "Rotate tool button");
+            const auto* op = app_->interaction().operation();
+            check(op && op->title() == "Rotate" && op->ringCount() == 3, "Rotate shows three rings");
+            if (!op || op->ringCount() != 3)
+                return;
+            const interact::RingManipulator ring = op->ring(2);
+            const Camera& cam = app_->interaction().camera();
+            auto at = [&](double a) {
+                const Vec2 p = cam.project(ring.pointAt(cam, a));
+                return QPointF(p.x, p.y);
+            };
+            const double a0 = kPi / 4;
+            mouseMove(at(a0));
+            mousePress(at(a0));
+            for (int i = 1; i <= 12; ++i)
+                mouseMove(at(a0 + kPi / 4 * i / 12.0), Qt::LeftButton);
+            mouseRelease(at(a0 + kPi / 4));
+            check(app_->interaction().operation() && std::abs(app_->interaction().operation()->value() - 45.0) < 1e-9,
+                  "dragging the Z ring turns 45 degrees (15 degree snaps)",
+                  app_->interaction().operation() ? num(app_->interaction().operation()->value()) : QStringLiteral("none"));
+            screenshot(QStringLiteral("18_rotate_preview"));
+            key(Qt::Key_Return);
+        },
+        [] {},
+        [=, this] {
+            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            check(std::abs(bb.size().x - 20.0 * std::sqrt(2.0)) < 1e-6, "Enter: the box is turned 45 degrees",
+                  num(bb.size().x));
+            key(Qt::Key_Z, Qt::ControlModifier);
+            check(std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).size().x - 20.0) < 1e-6,
+                  "undo turns it back");
+        },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);
 }
