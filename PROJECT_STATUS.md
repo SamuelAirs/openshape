@@ -67,6 +67,9 @@ packaging, interaction polish (M3).
 
 ## Known technical risks
 
+- **Do not distribute the Windows package yet:** it contains GPL FFmpeg/x264/x265
+  DLLs pulled in by MSYS2's OCCT (TD-17). Fix: build OCCT without FFmpeg.
+
 - Topological naming on symmetric parts after large upstream edits (TD-3).
 - GUI-thread tessellation/booleans/profile detection will stutter on big models (TD-1, TD-13).
 - QRhi via GuiPrivate ties builds to a Qt minor version (TD-5).

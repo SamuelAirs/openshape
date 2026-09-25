@@ -13,6 +13,11 @@ Versions are those used for the verified Windows build (MSYS2 UCRT64, 2026-09-25
 | GoogleTest | 1.18.0 | BSD-3-Clause | Tests only (not shipped) | – |
 | GCC / MinGW-w64 runtime | 16.2.0 | GPL-3.0 with GCC Runtime Library Exception | Compiler and runtime | dynamic |
 
+**Warning (TD-17):** the current Windows package also contains FFmpeg built
+with `--enable-gpl` and the GPL codecs x264/x265, pulled in indirectly by
+MSYS2's OCCT build. Do not distribute the package until OCCT is rebuilt
+without FFmpeg.
+
 Transitive runtime dependencies of Qt and OCCT from MSYS2 (FreeType, zlib,
 libpng, HarfBuzz, ICU, TBB etc.) must be listed with their licenses in any
 binary distribution. Producing that list is part of the packaging task in
