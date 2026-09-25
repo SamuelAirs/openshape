@@ -66,6 +66,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Fillet: return "Fillet";
     case doc::FeatureKind::Chamfer: return "Chamfer";
     case doc::FeatureKind::Box: return "Add box";
+    case doc::FeatureKind::Extrude: return "Extrude";
     }
     return "Add step";
 }
@@ -176,6 +177,54 @@ Status SetBodyVisibilityCommand::execute(doc::Document& document)
 void SetBodyVisibilityCommand::undo(doc::Document& document)
 {
     document.setBodyVisible(bodyId_, previous_);
+}
+
+// ---- Sketches ---------------------------------------------------------------------
+
+Status CreateSketchCommand::execute(doc::Document& document)
+{
+    if (document.sketch(sketch_.id()))
+        return Status::failure(ErrorCode::InvalidArgument, "Unable to create the sketch.", "sketch id already exists");
+    document.addSketch(std::make_unique<sketch::Sketch>(sketch_));
+    return okStatus();
+}
+
+void CreateSketchCommand::undo(doc::Document& document)
+{
+    document.removeSketch(sketch_.id());
+}
+
+Status EditSketchCommand::execute(doc::Document& document)
+{
+    const sketch::Sketch* current = document.sketch(after_.id());
+    if (!current)
+        return Status::failure(ErrorCode::InvalidReference, "The sketch no longer exists.", "EditSketch: unknown sketch");
+    before_ = *current;
+    document.replaceSketch(after_);
+    return okStatus();
+}
+
+void EditSketchCommand::undo(doc::Document& document)
+{
+    if (before_)
+        document.replaceSketch(*before_);
+}
+
+Status DeleteSketchCommand::execute(doc::Document& document)
+{
+    if (!document.dependentFeatures(sketchId_).empty())
+        return Status::failure(ErrorCode::InvalidArgument,
+                               "This sketch is used by a 3D feature. Delete that feature first.",
+                               "DeleteSketch: sketch has dependents");
+    removed_ = document.removeSketch(sketchId_, &index_);
+    return removed_ ? okStatus()
+                    : Status::failure(ErrorCode::InvalidReference, "The sketch no longer exists.", "DeleteSketch: unknown");
+}
+
+void DeleteSketchCommand::undo(doc::Document& document)
+{
+    if (removed_)
+        document.addSketch(std::move(removed_), index_);
 }
 
 } // namespace os::cmd

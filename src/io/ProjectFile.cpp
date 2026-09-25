@@ -149,6 +149,9 @@ json documentToJson(const doc::Document& document)
                           {"visible", body->isVisible()},
                           {"features", features}});
     }
+    json sketches = json::array();
+    for (const auto& sketch : document.sketches())
+        sketches.push_back(sketch->toJson());
     return {{"format", kProjectFormatName},
             {"version", kProjectFormatVersion},
             // Stored lengths are always millimeters, independent of display unit.
@@ -156,6 +159,7 @@ json documentToJson(const doc::Document& document)
             {"angleUnit", "rad"},
             {"displayUnit", std::string(unitSymbol(document.displayUnit()))},
             {"id", document.id().toString()},
+            {"sketches", sketches},
             {"bodies", bodies}};
 }
 
@@ -203,6 +207,20 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input)
         seenIds.push_back(id);
         return true;
     };
+
+    // Sketches first: body features look them up during the initial recompute.
+    if (root.contains("sketches")) {
+        if (!root["sketches"].is_array())
+            return R::failureFrom(formatError("'sketches' is not an array"));
+        for (const auto& s : root["sketches"]) {
+            auto sketch = sketch::Sketch::fromJson(s);
+            if (!sketch)
+                return R::failureFrom(sketch);
+            if (!checkUnique(sketch.value().id()))
+                return R::failureFrom(formatError("duplicate sketch id"));
+            document->addSketch(std::make_unique<sketch::Sketch>(std::move(sketch.value())));
+        }
+    }
 
     for (const auto& b : root["bodies"]) {
         if (!b.is_object() || !b.contains("id") || !b["id"].is_string() || !b.contains("features") || !b["features"].is_array())

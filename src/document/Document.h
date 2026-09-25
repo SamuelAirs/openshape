@@ -4,6 +4,7 @@
 #include "core/Units.h"
 #include "core/Uuid.h"
 #include "document/Body.h"
+#include "sketch/Sketch.h"
 
 #include <cstdint>
 #include <functional>
@@ -45,8 +46,24 @@ public:
     void featureChanged(const Uuid& featureId);
 
     // Evaluates `feature` as if appended to the end of the body's history,
-    // without modifying the document. Used for interactive previews.
+    // without modifying the document. Used for interactive previews. A nil
+    // body id previews a base feature (new body) with no input shape.
     Result<geom::Shape> preview(const Uuid& bodyId, const Feature& feature) const;
+
+    // ---- Sketches ----
+    const std::vector<std::unique_ptr<sketch::Sketch>>& sketches() const { return sketches_; }
+    sketch::Sketch* sketch(const Uuid& id) const;
+    void addSketch(std::unique_ptr<sketch::Sketch> sketch, int index = -1);
+    std::unique_ptr<sketch::Sketch> removeSketch(const Uuid& id, int* removedIndex = nullptr);
+    // Replaces a sketch's content (matched by id) and recomputes dependent features.
+    void replaceSketch(const sketch::Sketch& sketch);
+    // Changes whenever a sketch's content changes (for view caches).
+    std::uint64_t sketchRevision(const Uuid& id) const;
+    // Features (in any body) that depend on a document object.
+    std::vector<Uuid> dependentFeatures(const Uuid& objectId) const;
+    std::string nextSketchName();
+
+    EvalContext context() const { return EvalContext{this}; }
 
     void recomputeAll();
 
@@ -63,7 +80,12 @@ private:
 
     Uuid id_;
     LengthUnit displayUnit_ = LengthUnit::Millimeter;
+    void recomputeDependents(const Uuid& objectId);
+    void bumpSketchRevision(const Uuid& id);
+
     std::vector<std::unique_ptr<Body>> bodies_;
+    std::vector<std::unique_ptr<sketch::Sketch>> sketches_;
+    std::vector<std::pair<Uuid, std::uint64_t>> sketchRevisions_;
     std::uint64_t revision_ = 0;
     std::vector<std::pair<int, Listener>> listeners_;
     int nextListener_ = 1;

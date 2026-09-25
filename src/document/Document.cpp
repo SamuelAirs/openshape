@@ -46,7 +46,7 @@ Body& Document::addBody(std::unique_ptr<Body> body, int index)
         index = static_cast<int>(bodies_.size());
     Body& ref = *body;
     bodies_.insert(bodies_.begin() + index, std::move(body));
-    ref.recompute();
+    ref.recompute(0, context());
     OS_LOG(Debug, Document) << "added body " << ref.id().toString() << " '" << ref.name() << "'";
     changed();
     return ref;
@@ -85,7 +85,7 @@ const FeatureState& Document::insertFeature(const Uuid& bodyId, std::unique_ptr<
     if (index < 0 || index > static_cast<int>(b->features().size()))
         index = static_cast<int>(b->features().size());
     b->insertFeature(std::move(feature), index);
-    b->recompute(index);
+    b->recompute(index, context());
     changed();
     return b->state(index);
 }
@@ -102,7 +102,7 @@ std::unique_ptr<Feature> Document::removeFeature(const Uuid& featureId, int* rem
     auto feature = b->removeFeature(featureId, &index);
     if (removedIndex)
         *removedIndex = index;
-    b->recompute(index);
+    b->recompute(index, context());
     changed();
     return feature;
 }
@@ -112,22 +112,129 @@ void Document::featureChanged(const Uuid& featureId)
     Body* b = bodyOfFeature(featureId);
     if (!b)
         return;
-    b->recompute(b->featureIndex(featureId));
+    b->recompute(b->featureIndex(featureId), context());
     changed();
 }
 
 Result<geom::Shape> Document::preview(const Uuid& bodyId, const Feature& feature) const
 {
+    if (bodyId.isNil())
+        return feature.compute({}, context());
     const Body* b = body(bodyId);
     if (!b)
         return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "preview: unknown body");
-    return feature.compute(b->shape());
+    return feature.compute(b->shape(), context());
+}
+
+sketch::Sketch* Document::sketch(const Uuid& id) const
+{
+    for (const auto& s : sketches_)
+        if (s->id() == id)
+            return s.get();
+    return nullptr;
+}
+
+void Document::addSketch(std::unique_ptr<sketch::Sketch> sketch, int index)
+{
+    if (index < 0 || index > static_cast<int>(sketches_.size()))
+        index = static_cast<int>(sketches_.size());
+    const Uuid id = sketch->id();
+    sketches_.insert(sketches_.begin() + index, std::move(sketch));
+    bumpSketchRevision(id);
+    recomputeDependents(id);
+    changed();
+}
+
+std::unique_ptr<sketch::Sketch> Document::removeSketch(const Uuid& id, int* removedIndex)
+{
+    for (std::size_t i = 0; i < sketches_.size(); ++i) {
+        if (sketches_[i]->id() != id)
+            continue;
+        auto removed = std::move(sketches_[i]);
+        sketches_.erase(sketches_.begin() + static_cast<long>(i));
+        if (removedIndex)
+            *removedIndex = static_cast<int>(i);
+        bumpSketchRevision(id);
+        recomputeDependents(id);
+        changed();
+        return removed;
+    }
+    if (removedIndex)
+        *removedIndex = -1;
+    return nullptr;
+}
+
+void Document::replaceSketch(const sketch::Sketch& replacement)
+{
+    for (auto& s : sketches_) {
+        if (s->id() != replacement.id())
+            continue;
+        *s = replacement;
+        bumpSketchRevision(replacement.id());
+        recomputeDependents(replacement.id());
+        changed();
+        return;
+    }
+}
+
+std::uint64_t Document::sketchRevision(const Uuid& id) const
+{
+    for (const auto& [sid, rev] : sketchRevisions_)
+        if (sid == id)
+            return rev;
+    return 0;
+}
+
+void Document::bumpSketchRevision(const Uuid& id)
+{
+    static std::uint64_t counter = 0;
+    for (auto& [sid, rev] : sketchRevisions_)
+        if (sid == id) {
+            rev = ++counter;
+            return;
+        }
+    sketchRevisions_.emplace_back(id, ++counter);
+}
+
+std::vector<Uuid> Document::dependentFeatures(const Uuid& objectId) const
+{
+    std::vector<Uuid> out;
+    for (const auto& b : bodies_)
+        for (const auto& f : b->features())
+            for (const auto& dep : f->dependencies())
+                if (dep == objectId)
+                    out.push_back(f->id());
+    return out;
+}
+
+void Document::recomputeDependents(const Uuid& objectId)
+{
+    for (auto& b : bodies_) {
+        const auto& features = b->features();
+        for (std::size_t i = 0; i < features.size(); ++i) {
+            const auto deps = features[i]->dependencies();
+            if (std::find(deps.begin(), deps.end(), objectId) != deps.end()) {
+                b->recompute(static_cast<int>(i), context());
+                break;
+            }
+        }
+    }
+}
+
+std::string Document::nextSketchName()
+{
+    for (int n = 1;; ++n) {
+        const std::string candidate = "Sketch " + std::to_string(n);
+        const bool taken = std::any_of(sketches_.begin(), sketches_.end(), [&](const auto& s) { return s->name() == candidate; });
+        if (!taken)
+            return candidate;
+    }
 }
 
 void Document::recomputeAll()
 {
     for (auto& b : bodies_)
-        b->recompute(0);
+        b->recompute(0, context());
     changed();
 }
 

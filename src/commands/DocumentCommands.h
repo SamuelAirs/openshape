@@ -4,6 +4,7 @@
 #include "core/Uuid.h"
 #include "document/Body.h"
 #include "document/Feature.h"
+#include "sketch/Sketch.h"
 
 #include <memory>
 #include <string>
@@ -98,6 +99,49 @@ private:
     Uuid bodyId_;
     bool visible_;
     bool previous_ = true;
+};
+
+// Adds a new sketch.
+class CreateSketchCommand final : public Command {
+public:
+    explicit CreateSketchCommand(sketch::Sketch sketch) : sketch_(std::move(sketch)) {}
+    std::string label() const override { return "New sketch"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+    const Uuid& sketchId() const { return sketch_.id(); }
+
+private:
+    sketch::Sketch sketch_;
+};
+
+// Replaces a sketch's content with a new state (one drawing step, a new
+// constraint, an edited dimension...). Stores full before/after snapshots:
+// sketches are small, and snapshots make undo exact.
+class EditSketchCommand final : public Command {
+public:
+    EditSketchCommand(sketch::Sketch after, std::string label) : after_(std::move(after)), label_(std::move(label)) {}
+    std::string label() const override { return label_; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    sketch::Sketch after_;
+    std::optional<sketch::Sketch> before_;
+    std::string label_;
+};
+
+// Deletes a sketch. Refused while features still use it.
+class DeleteSketchCommand final : public Command {
+public:
+    explicit DeleteSketchCommand(Uuid sketchId) : sketchId_(sketchId) {}
+    std::string label() const override { return "Delete sketch"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    Uuid sketchId_;
+    std::unique_ptr<sketch::Sketch> removed_;
+    int index_ = -1;
 };
 
 } // namespace os::cmd

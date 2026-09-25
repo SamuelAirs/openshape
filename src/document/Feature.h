@@ -12,9 +12,21 @@
 #include <string_view>
 #include <vector>
 
+namespace os::sketch {
+class Sketch;
+}
+
 namespace os::doc {
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer };
+class Document;
+
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude };
+
+// What a feature may consult besides its input shape.
+struct EvalContext {
+    const Document* document = nullptr;
+    const sketch::Sketch* sketch(const Uuid& id) const;
+};
 
 std::string_view toString(FeatureKind kind);
 std::optional<FeatureKind> featureKindFromString(std::string_view text);
@@ -61,7 +73,7 @@ public:
     // True for features that create a body from nothing (input is ignored).
     virtual bool isBaseFeature() const { return false; }
 
-    virtual Result<geom::Shape> compute(const geom::Shape& input) const = 0;
+    virtual Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const = 0;
 
     virtual std::vector<ParameterInfo> parameters() const = 0;
     virtual Status setParameter(std::string_view key, double value) = 0;
@@ -96,7 +108,7 @@ public:
     FeatureKind kind() const override { return FeatureKind::Box; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new BoxFeature(*this)); }
     bool isBaseFeature() const override { return true; }
-    Result<geom::Shape> compute(const geom::Shape& input) const override;
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
     std::vector<ParameterInfo> parameters() const override;
     Status setParameter(std::string_view key, double value) override;
     void writeParams(nlohmann::json& out) const override;
@@ -112,7 +124,7 @@ public:
 
     FeatureKind kind() const override { return FeatureKind::PushPull; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new PushPullFeature(*this)); }
-    Result<geom::Shape> compute(const geom::Shape& input) const override;
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
     std::vector<ParameterInfo> parameters() const override;
     Status setParameter(std::string_view key, double value) override;
     void writeParams(nlohmann::json& out) const override;
@@ -141,7 +153,7 @@ public:
     using EdgeTreatmentFeature::EdgeTreatmentFeature;
     FeatureKind kind() const override { return FeatureKind::Fillet; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new FilletFeature(*this)); }
-    Result<geom::Shape> compute(const geom::Shape& input) const override;
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
 
 private:
     const char* sizeLabel() const override { return "Radius"; }
@@ -152,10 +164,45 @@ public:
     using EdgeTreatmentFeature::EdgeTreatmentFeature;
     FeatureKind kind() const override { return FeatureKind::Chamfer; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ChamferFeature(*this)); }
-    Result<geom::Shape> compute(const geom::Shape& input) const override;
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
 
 private:
     const char* sizeLabel() const override { return "Distance"; }
+};
+
+// A reference to one closed region of a sketch, by a point inside it (in
+// sketch coordinates) plus its area as a tie-breaker. Survives dimension
+// edits that keep the region around that point.
+struct ProfileRef {
+    Vec2 interiorPoint;
+    double area = 0;
+};
+
+enum class ExtrudeMode { NewBody, Join, Cut };
+std::string_view toString(ExtrudeMode mode);
+
+// Extrudes sketch profiles along the sketch normal: as a new body (base
+// feature), or joined to / cut from the body it belongs to.
+class ExtrudeFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sketchId;
+    std::vector<ProfileRef> profiles;
+    double distance = 10; // mm along the sketch normal (negative = opposite side)
+    ExtrudeMode mode = ExtrudeMode::NewBody;
+
+    FeatureKind kind() const override { return FeatureKind::Extrude; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ExtrudeFeature(*this)); }
+    bool isBaseFeature() const override { return mode == ExtrudeMode::NewBody; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sketchId}; }
+
+    // The extruded tool solid alone (before join/cut).
+    Result<geom::Shape> toolSolid(const EvalContext& context) const;
 };
 
 } // namespace os::doc

@@ -1,7 +1,9 @@
 #include "document/Feature.h"
 
 #include "core/Log.h"
+#include "document/Document.h"
 #include "document/JsonHelpers.h"
+#include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 
 #include <nlohmann/json.hpp>
@@ -19,13 +21,15 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::PushPull: return "PushPull";
     case FeatureKind::Fillet: return "Fillet";
     case FeatureKind::Chamfer: return "Chamfer";
+    case FeatureKind::Extrude: return "Extrude";
     }
     return "Unknown";
 }
 
 std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
-    for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer})
+    for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
+                          FeatureKind::Extrude})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -38,8 +42,14 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::PushPull: return std::make_unique<PushPullFeature>(id);
     case FeatureKind::Fillet: return std::make_unique<FilletFeature>(id);
     case FeatureKind::Chamfer: return std::make_unique<ChamferFeature>(id);
+    case FeatureKind::Extrude: return std::make_unique<ExtrudeFeature>(id);
     }
     return nullptr;
+}
+
+const sketch::Sketch* EvalContext::sketch(const Uuid& id) const
+{
+    return document ? document->sketch(id) : nullptr;
 }
 
 std::optional<double> Feature::parameter(std::string_view key) const
@@ -70,7 +80,7 @@ Status requirePositive(double value, const char* what)
 
 // ---- Box ----------------------------------------------------------------------
 
-Result<geom::Shape> BoxFeature::compute(const geom::Shape&) const
+Result<geom::Shape> BoxFeature::compute(const geom::Shape&, const EvalContext&) const
 {
     return geom::makeBox(origin, size);
 }
@@ -114,7 +124,7 @@ Status BoxFeature::readParams(const json& in)
 
 // ---- Push/pull ----------------------------------------------------------------
 
-Result<geom::Shape> PushPullFeature::compute(const geom::Shape& input) const
+Result<geom::Shape> PushPullFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
     const auto index = geom::resolveFace(input, face.signature, face.indexHint);
     if (!index) {
@@ -217,7 +227,7 @@ Status EdgeTreatmentFeature::readParams(const json& in)
     return okStatus();
 }
 
-Result<geom::Shape> FilletFeature::compute(const geom::Shape& input) const
+Result<geom::Shape> FilletFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
     auto indices = resolveEdges(input);
     if (!indices)
@@ -225,12 +235,124 @@ Result<geom::Shape> FilletFeature::compute(const geom::Shape& input) const
     return geom::filletEdges(input, indices.value(), size);
 }
 
-Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input) const
+Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
     auto indices = resolveEdges(input);
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
     return geom::chamferEdges(input, indices.value(), size);
+}
+
+// ---- Extrude --------------------------------------------------------------------
+
+std::string_view toString(ExtrudeMode mode)
+{
+    switch (mode) {
+    case ExtrudeMode::NewBody: return "NewBody";
+    case ExtrudeMode::Join: return "Join";
+    case ExtrudeMode::Cut: return "Cut";
+    }
+    return "NewBody";
+}
+
+Result<geom::Shape> ExtrudeFeature::toolSolid(const EvalContext& context) const
+{
+    const sketch::Sketch* sk = context.sketch(sketchId);
+    if (!sk)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The sketch for this extrusion no longer exists.",
+                                            "Extrude: sketch " + sketchId.toString() + " not found");
+    if (profiles.empty())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidArgument, "Select a closed shape to extrude.",
+                                            "Extrude: no profiles");
+    auto regions = sketchRegions(*sk);
+    if (!regions)
+        return Result<geom::Shape>::failureFrom(regions);
+    std::vector<geom::Shape> faces;
+    for (const ProfileRef& ref : profiles) {
+        const auto index = resolveProfile(regions.value(), *sk, ref);
+        if (!index)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                                "A shape this extrusion used is no longer closed or no longer exists.",
+                                                "Extrude: profile reference unresolved");
+        faces.push_back(regions.value()[std::size_t(*index)].face);
+    }
+    return geom::extrudeFaces(faces, sk->plane().normal() * distance);
+}
+
+Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const EvalContext& context) const
+{
+    auto tool = toolSolid(context);
+    if (!tool)
+        return tool;
+    switch (mode) {
+    case ExtrudeMode::NewBody: return tool;
+    case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
+    case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
+    }
+    return tool;
+}
+
+std::vector<ParameterInfo> ExtrudeFeature::parameters() const
+{
+    return {{"distance", "Distance", ParameterKind::Length, distance}};
+}
+
+Status ExtrudeFeature::setParameter(std::string_view key, double value)
+{
+    if (key != "distance")
+        return unknownParameter(key);
+    if (!std::isfinite(value) || std::abs(value) < 1e-6)
+        return Status::failure(ErrorCode::InvalidArgument, "The extrusion distance must not be zero.", "distance ~ 0");
+    distance = value;
+    return okStatus();
+}
+
+void ExtrudeFeature::writeParams(json& out) const
+{
+    json refs = json::array();
+    for (const auto& r : profiles)
+        refs.push_back({{"point", json::array({r.interiorPoint.x, r.interiorPoint.y})}, {"area", r.area}});
+    out["sketch"] = sketchId.toString();
+    out["profiles"] = refs;
+    out["distance"] = distance;
+    out["mode"] = std::string(toString(mode));
+}
+
+Status ExtrudeFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid extrusion.", why);
+    };
+    if (!in.contains("sketch") || !in["sketch"].is_string())
+        return bad("Extrude: missing sketch");
+    const auto id = Uuid::parse(in["sketch"].get<std::string>());
+    const auto d = numberFrom(in, "distance");
+    if (!id || !d || std::abs(*d) < 1e-6 || !in.contains("profiles") || !in["profiles"].is_array()
+        || !in.contains("mode") || !in["mode"].is_string())
+        return bad("Extrude: bad fields");
+    std::vector<ProfileRef> refs;
+    for (const auto& r : in["profiles"]) {
+        if (!r.is_object() || !r.contains("point") || !r["point"].is_array() || r["point"].size() != 2
+            || !r["point"][0].is_number() || !r["point"][1].is_number())
+            return bad("Extrude: bad profile");
+        const auto area = numberFrom(r, "area");
+        if (!area)
+            return bad("Extrude: bad profile area");
+        refs.push_back({{r["point"][0].get<double>(), r["point"][1].get<double>()}, *area});
+    }
+    const std::string m = in["mode"].get<std::string>();
+    if (m == "NewBody")
+        mode = ExtrudeMode::NewBody;
+    else if (m == "Join")
+        mode = ExtrudeMode::Join;
+    else if (m == "Cut")
+        mode = ExtrudeMode::Cut;
+    else
+        return bad("Extrude: unknown mode");
+    sketchId = *id;
+    profiles = std::move(refs);
+    distance = *d;
+    return okStatus();
 }
 
 } // namespace os::doc

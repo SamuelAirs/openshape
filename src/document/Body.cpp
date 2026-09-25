@@ -75,7 +75,7 @@ geom::Shape Body::shapeBefore(int index) const
     return {};
 }
 
-void Body::recompute(int fromIndex)
+void Body::recompute(int fromIndex, const EvalContext& context)
 {
     ScopedTimer timer("Body::recompute");
     fromIndex = std::clamp(fromIndex, 0, static_cast<int>(features_.size()));
@@ -110,7 +110,7 @@ void Body::recompute(int fromIndex)
             blocked = true;
             continue;
         }
-        auto result = feature.compute(current);
+        auto result = feature.compute(current, context);
         if (result) {
             state.status = FeatureStatus::Ok;
             state.output = result.value();

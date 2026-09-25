@@ -50,7 +50,7 @@ public:
 
     // Re-evaluates features [fromIndex, end). Earlier cached results are reused.
     // Evaluation stops at the first failure; later features become NotComputed.
-    void recompute(int fromIndex = 0);
+    void recompute(int fromIndex, const EvalContext& context);
 
     const FeatureState& state(int index) const { return states_.at(static_cast<std::size_t>(index)); }
     // Shape before feature `index` (i.e. the output of the last good feature before it).
