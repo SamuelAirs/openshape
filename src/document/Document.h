@@ -81,6 +81,9 @@ private:
     Uuid id_;
     LengthUnit displayUnit_ = LengthUnit::Millimeter;
     void recomputeDependents(const Uuid& objectId);
+    // Moves attached sketches onto their faces' current planes (and
+    // recomputes what depends on them). Called after every recompute.
+    void syncSketchAttachments();
     void bumpSketchRevision(const Uuid& id);
 
     std::vector<std::unique_ptr<Body>> bodies_;

@@ -110,7 +110,10 @@ void Body::recompute(int fromIndex, const EvalContext& context)
             blocked = true;
             continue;
         }
-        auto result = feature.compute(current, context);
+        EvalContext local = context;
+        local.body = this;
+        local.featureIndex = static_cast<int>(i);
+        auto result = feature.compute(current, local);
         if (result) {
             state.status = FeatureStatus::Ok;
             state.output = result.value();

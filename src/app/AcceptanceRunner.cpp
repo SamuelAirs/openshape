@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "geometry/Modeling.h"
+#include "interaction/Operation.h"
 #include "ui/AppController.h"
 
 #include <QtCore/QCoreApplication>
@@ -85,10 +86,29 @@ void AcceptanceRunner::type(const QString& text)
     }
 }
 
+namespace {
+// Depth-first search of the visual item tree. Needed for delegates created by
+// Repeater/ListView, which are not QObject children of the window.
+QQuickItem* findVisualItem(QQuickItem* root, const QString& objectName)
+{
+    if (!root)
+        return nullptr;
+    if (root->objectName() == objectName)
+        return root;
+    for (QQuickItem* child : root->childItems())
+        if (QQuickItem* found = findVisualItem(child, objectName))
+            return found;
+    return nullptr;
+}
+} // namespace
+
 bool AcceptanceRunner::clickItem(const QString& objectName)
 {
-    // QML items declared in an ApplicationWindow are QObject children of the window itself.
+    // Declared items are QObject children of the window; generated delegates
+    // are only reachable through the visual tree.
     auto* item = window_->findChild<QQuickItem*>(objectName);
+    if (!item)
+        item = findVisualItem(window_->contentItem(), objectName);
     if (!item || !item->isVisible() || !item->isEnabled()) {
         OS_LOG(Warning, App) << "clickItem: '" << objectName.toStdString() << "' "
                              << (!item ? "not found" : !item->isVisible() ? "not visible" : "disabled");
@@ -336,12 +356,17 @@ void AcceptanceRunner::start()
             check(clickItem(QStringLiteral("finishSketchButton")), "Finish sketch button (holes)");
         },
         [] {}, [] {}, [] {},
-        // Select both hole profiles and cut 5 mm down.
+        // Select both hole profiles, push down (cut) and choose "Through all".
         [=, this, &in] {
             click(screenPoint(10, 15, 5));
             click(screenPoint(50, 15, 5), Qt::ShiftModifier);
             check(in.selection().size() == 2, "shift-click adds the second hole profile");
             type(QStringLiteral("-5"));
+        },
+        [=, this] {
+            check(clickItem(QStringLiteral("action_throughAll")), "cut offers Through all");
+            const auto* op = dynamic_cast<const interact::ExtrudeOperation*>(app_->interaction().operation());
+            check(op && op->throughAll() && op->mode() == doc::ExtrudeMode::Cut, "through-all cut armed");
             key(Qt::Key_Return);
             const double expected = 9000.0 - 2 * kPi * 9.0 * 5.0;
             check(std::abs(bodyVolume() - expected) < 1e-3, "two 6 mm holes cut through the plate", num(bodyVolume()));
@@ -358,6 +383,29 @@ void AcceptanceRunner::start()
             const QString project = outputDir_ + QStringLiteral("/bracket.openshape");
             QFile::remove(project);
             check(app_->saveProjectAs(QUrl::fromLocalFile(project)), "bracket project saves");
+        },
+        // Parametric edit through the history panel: make the plate 8 mm.
+        [=, this] {
+            const doc::Body& body = *app_->document().bodies().front();
+            const QString id = QString::fromStdString(body.features().front()->id().toString());
+            check(clickItem(QStringLiteral("historyRow_") + id), "history row of the plate extrusion");
+        },
+        [=, this] {
+            const doc::Body& body = *app_->document().bodies().front();
+            const QString id = QString::fromStdString(body.features().front()->id().toString());
+            check(clickItem(QStringLiteral("historyParam_") + id + QStringLiteral("_distance")), "distance field in the history");
+            type(QStringLiteral("8"));
+            key(Qt::Key_Return);
+        },
+        [] {}, [] {},
+        [=, this] {
+            const double expected = (1800.0 - 2 * kPi * 9.0) * 8.0;
+            check(std::abs(bodyHeight() - 8.0) < 1e-6, "plate is now 8 mm thick", num(bodyHeight()));
+            check(std::abs(bodyVolume() - expected) < 1e-3, "holes still go through after the edit", num(bodyVolume()));
+            check(!app_->document().bodies().front()->hasFailures(), "no failed steps after the edit");
+            screenshot(QStringLiteral("13_edited_8mm"));
+            key(Qt::Key_Z, Qt::ControlModifier);
+            check(std::abs(bodyHeight() - 5.0) < 1e-6, "undo restores 5 mm", num(bodyHeight()));
         },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);

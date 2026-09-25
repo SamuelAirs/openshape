@@ -150,6 +150,7 @@ std::unique_ptr<doc::Feature> ExtrudeOperation::makeFeature(double value) const
     feature->profiles = profiles_;
     feature->distance = value;
     feature->mode = mode();
+    feature->throughAll = throughAll_ && feature->mode == doc::ExtrudeMode::Cut;
     return feature;
 }
 

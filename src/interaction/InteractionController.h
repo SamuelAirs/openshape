@@ -21,6 +21,29 @@
 
 namespace os::interact {
 
+// One row of the model tree shown in the history panel.
+struct HistoryRow {
+    enum class Kind { Sketch, Body, Feature };
+    enum class Status { Ok, Failed, NotComputed, Suppressed };
+    struct Parameter {
+        std::string key;
+        std::string label;
+        std::string valueText; // formatted in the display unit
+    };
+
+    Kind kind = Kind::Body;
+    Uuid id;
+    Uuid parentId;          // body of a feature
+    std::string name;       // "Body 1", "Extrude", "Sketch 2"
+    std::string detail;     // "20.00 mm \xC2\xB7 New body"
+    Status status = Status::Ok;
+    std::string message;    // user-facing explanation when not Ok
+    bool visible = true;    // bodies and sketches
+    bool canDelete = true;
+    bool canSuppress = false;
+    std::vector<Parameter> parameters;
+};
+
 // Turns application-level input into navigation, selection, previews and
 // commands. Owns no UI toolkit objects; the Qt layer feeds it events and
 // reads back state. Everything here is unit-testable headlessly.
@@ -94,6 +117,18 @@ public:
     // Leaves sketch mode. An empty sketch is deleted.
     void finishSketch();
     void setSketchTool(SketchTool tool);
+
+    // ---- History (model tree) ----
+    std::vector<HistoryRow> historyRows() const;
+    // Parameter edits from the history keep downstream failures (they are
+    // shown, and undo restores the previous value).
+    Status setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text);
+    Status setFeatureSuppressed(const Uuid& featureId, bool suppressed);
+    Status deleteFeature(const Uuid& featureId);
+    Status setBodyVisible(const Uuid& bodyId, bool visible);
+    Status deleteBody(const Uuid& bodyId);
+    Status deleteSketch(const Uuid& sketchId);
+    Status setSketchVisible(const Uuid& sketchId, bool visible);
 
     // ---- State ----
     const sel::SelectionSet& selection() const { return selection_; }

@@ -1,6 +1,8 @@
 #include "document/Document.h"
 
 #include "core/Log.h"
+#include "document/SketchProfiles.h"
+#include "geometry/TopoSignature.h"
 
 #include <algorithm>
 
@@ -48,6 +50,7 @@ Body& Document::addBody(std::unique_ptr<Body> body, int index)
     bodies_.insert(bodies_.begin() + index, std::move(body));
     ref.recompute(0, context());
     OS_LOG(Debug, Document) << "added body " << ref.id().toString() << " '" << ref.name() << "'";
+    syncSketchAttachments();
     changed();
     return ref;
 }
@@ -62,6 +65,7 @@ std::unique_ptr<Body> Document::removeBody(const Uuid& id, int* removedIndex)
     auto body = std::move(bodies_[static_cast<std::size_t>(index)]);
     bodies_.erase(bodies_.begin() + index);
     OS_LOG(Debug, Document) << "removed body " << id.toString();
+    syncSketchAttachments();
     changed();
     return body;
 }
@@ -72,6 +76,7 @@ void Document::setBodyVisible(const Uuid& id, bool visible)
     if (!b || b->isVisible() == visible)
         return;
     b->setVisible(visible);
+    syncSketchAttachments();
     changed();
 }
 
@@ -86,6 +91,7 @@ const FeatureState& Document::insertFeature(const Uuid& bodyId, std::unique_ptr<
         index = static_cast<int>(b->features().size());
     b->insertFeature(std::move(feature), index);
     b->recompute(index, context());
+    syncSketchAttachments();
     changed();
     return b->state(index);
 }
@@ -103,6 +109,7 @@ std::unique_ptr<Feature> Document::removeFeature(const Uuid& featureId, int* rem
     if (removedIndex)
         *removedIndex = index;
     b->recompute(index, context());
+    syncSketchAttachments();
     changed();
     return feature;
 }
@@ -113,6 +120,7 @@ void Document::featureChanged(const Uuid& featureId)
     if (!b)
         return;
     b->recompute(b->featureIndex(featureId), context());
+    syncSketchAttachments();
     changed();
 }
 
@@ -142,6 +150,7 @@ void Document::addSketch(std::unique_ptr<sketch::Sketch> sketch, int index)
     sketches_.insert(sketches_.begin() + index, std::move(sketch));
     bumpSketchRevision(id);
     recomputeDependents(id);
+    syncSketchAttachments();
     changed();
 }
 
@@ -156,7 +165,8 @@ std::unique_ptr<sketch::Sketch> Document::removeSketch(const Uuid& id, int* remo
             *removedIndex = static_cast<int>(i);
         bumpSketchRevision(id);
         recomputeDependents(id);
-        changed();
+        syncSketchAttachments();
+    changed();
         return removed;
     }
     if (removedIndex)
@@ -172,7 +182,8 @@ void Document::replaceSketch(const sketch::Sketch& replacement)
         *s = replacement;
         bumpSketchRevision(replacement.id());
         recomputeDependents(replacement.id());
-        changed();
+        syncSketchAttachments();
+    changed();
         return;
     }
 }
@@ -235,6 +246,7 @@ void Document::recomputeAll()
 {
     for (auto& b : bodies_)
         b->recompute(0, context());
+    syncSketchAttachments();
     changed();
 }
 
@@ -257,6 +269,44 @@ std::string Document::nextBodyName() const
         const bool taken = std::any_of(bodies_.begin(), bodies_.end(), [&](const auto& b) { return b->name() == candidate; });
         if (!taken)
             return candidate;
+    }
+}
+
+void Document::syncSketchAttachments()
+{
+    // A few passes at most: moving a sketch recomputes its dependents, which
+    // may move another sketch attached downstream.
+    for (int pass = 0; pass < 4; ++pass) {
+        bool moved = false;
+        for (auto& sk : sketches_) {
+            if (!sk->attachment())
+                continue;
+            const sketch::Plane plane = effectivePlane(*sk, context());
+            const sketch::Plane& stored = sk->plane();
+            const bool same = (plane.origin - stored.origin).length() < 1e-9 && (plane.xAxis - stored.xAxis).length() < 1e-12
+                           && (plane.yAxis - stored.yAxis).length() < 1e-12;
+            if (same)
+                continue;
+            sk->setPlane(plane);
+            // Keep the attachment's signature current so the next change is
+            // compared against where the face is now.
+            if (const Body* body = this->body(sk->attachment()->body)) {
+                const int index = body->featureIndex(sk->attachment()->feature);
+                if (index >= 0) {
+                    const auto& output = body->state(index).output;
+                    const geom::FaceSignature old{geom::SurfaceKind::Plane, sk->attachment()->faceNormal,
+                                                  sk->attachment()->faceCentroid, sk->attachment()->faceArea};
+                    if (const auto face = geom::resolveFace(output, old, sk->attachment()->faceHint))
+                        if (auto fresh = makeAttachment(*body, sk->attachment()->feature, *face))
+                            sk->setAttachment(fresh);
+                }
+            }
+            bumpSketchRevision(sk->id());
+            recomputeDependents(sk->id());
+            moved = true;
+        }
+        if (!moved)
+            return;
     }
 }
 

@@ -134,6 +134,8 @@ public:
     void setModeOverride(std::optional<doc::ExtrudeMode> mode) { modeOverride_ = mode; }
     const std::optional<doc::ExtrudeMode>& modeOverride() const { return modeOverride_; }
     bool hasHost() const { return host_.has_value(); }
+    bool throughAll() const { return throughAll_; }
+    void setThroughAll(bool throughAll) { throughAll_ = throughAll; }
     const Uuid& sketchId() const { return sketchId_; }
 
 protected:
@@ -146,6 +148,7 @@ private:
     std::optional<Uuid> host_;
     std::vector<doc::ProfileRef> profiles_;
     std::optional<doc::ExtrudeMode> modeOverride_;
+    bool throughAll_ = false;
 };
 
 } // namespace os::interact

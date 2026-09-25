@@ -101,6 +101,20 @@ private:
     bool previous_ = true;
 };
 
+// Suppresses or restores a feature (a suppressed feature passes its input through).
+class SetFeatureSuppressedCommand final : public Command {
+public:
+    SetFeatureSuppressedCommand(Uuid featureId, bool suppressed) : featureId_(featureId), suppressed_(suppressed) {}
+    std::string label() const override { return suppressed_ ? "Suppress step" : "Restore step"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    Uuid featureId_;
+    bool suppressed_;
+    bool previous_ = false;
+};
+
 // Adds a new sketch.
 class CreateSketchCommand final : public Command {
 public:

@@ -649,6 +649,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
             actions.push_back({"mode:join", "Join", mode == doc::ExtrudeMode::Join});
             actions.push_back({"mode:cut", "Cut", mode == doc::ExtrudeMode::Cut});
+            if (mode == doc::ExtrudeMode::Cut)
+                actions.push_back({"throughAll", "Through all", extrude->throughAll()});
         }
         actions.push_back({"editSketch", "Edit sketch", false});
         return actions;
@@ -681,6 +683,13 @@ Status InteractionController::triggerAction(const std::string& id)
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id.rfind("mode:", 0) == 0) {
         const auto mode = id == "mode:join" ? doc::ExtrudeMode::Join : id == "mode:cut" ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::NewBody;
         extrude->setModeOverride(mode);
+        extrude->setValue(extrude->value(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "throughAll") {
+        extrude->setThroughAll(!extrude->throughAll());
         extrude->setValue(extrude->value(), *document_);
         notifyState();
         notifyView();
@@ -930,6 +939,7 @@ Status InteractionController::startSketch()
         finishSketch();
     sketch::Plane plane = sketch::Plane::xy();
     std::optional<Uuid> host;
+    std::optional<sketch::Attachment> attachment;
     if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face) {
         const auto& item = selection_.items().front();
         const doc::Body* body = document_->body(item.bodyId);
@@ -944,6 +954,12 @@ Status InteractionController::startSketch()
         const Vec3 n = info->normal.normalized();
         plane = sketch::Plane::fromNormal(n * n.dot(info->centroid), n);
         host = item.bodyId;
+        // The shown shape is the output of the body's last successful step.
+        for (int i = static_cast<int>(body->features().size()) - 1; i >= 0 && !attachment; --i) {
+            const auto status = body->state(i).status;
+            if (status == doc::FeatureStatus::Ok || status == doc::FeatureStatus::Suppressed)
+                attachment = doc::makeAttachment(*body, body->features()[std::size_t(i)]->id(), item.index);
+        }
     }
     operation_.reset();
     selection_.clear();
@@ -951,6 +967,7 @@ Status InteractionController::startSketch()
     sketch::Sketch s(Uuid::generate(), plane);
     s.setName(document_->nextSketchName());
     s.setHostBody(host);
+    s.setAttachment(attachment);
     const Uuid id = s.id();
     Status status = undoStack_->push(std::make_unique<cmd::CreateSketchCommand>(std::move(s)), *document_);
     if (!status) {
@@ -1076,6 +1093,192 @@ sel::PickResult InteractionController::pickProfile(Vec2 screen) const
         }
     }
     return best;
+}
+
+
+// ---- History ---------------------------------------------------------------------------
+
+namespace {
+
+std::string featureTitle(const doc::Feature& f)
+{
+    switch (f.kind()) {
+    case doc::FeatureKind::Box: return "Box";
+    case doc::FeatureKind::PushPull: return "Push/Pull";
+    case doc::FeatureKind::Fillet: return "Fillet";
+    case doc::FeatureKind::Chamfer: return "Chamfer";
+    case doc::FeatureKind::Extrude: return "Extrude";
+    }
+    return "Step";
+}
+
+std::string featureDetail(const doc::Feature& f, LengthUnit unit)
+{
+    const std::string dot = " \xC2\xB7 ";
+    switch (f.kind()) {
+    case doc::FeatureKind::Box: {
+        const auto& box = static_cast<const doc::BoxFeature&>(f);
+        char text[128];
+        std::snprintf(text, sizeof text, "%.2f \xC3\x97 %.2f \xC3\x97 %.2f %s", fromMillimeters(box.size.x, unit),
+                      fromMillimeters(box.size.y, unit), fromMillimeters(box.size.z, unit),
+                      std::string(unitSymbol(unit)).c_str());
+        return text;
+    }
+    case doc::FeatureKind::PushPull:
+        return formatLength(static_cast<const doc::PushPullFeature&>(f).distance, unit);
+    case doc::FeatureKind::Fillet:
+    case doc::FeatureKind::Chamfer: {
+        const auto& e = static_cast<const doc::EdgeTreatmentFeature&>(f);
+        const std::string count = std::to_string(e.edges.size()) + (e.edges.size() == 1 ? " edge" : " edges");
+        return (f.kind() == doc::FeatureKind::Fillet ? "R " : "") + formatLength(e.size, unit) + dot + count;
+    }
+    case doc::FeatureKind::Extrude: {
+        const auto& e = static_cast<const doc::ExtrudeFeature&>(f);
+        const char* mode = e.mode == doc::ExtrudeMode::NewBody ? "New body" : e.mode == doc::ExtrudeMode::Join ? "Join" : "Cut";
+        const std::string extent = e.throughAll && e.mode == doc::ExtrudeMode::Cut ? "Through all" : formatLength(e.distance, unit);
+        return extent + dot + mode;
+    }
+    }
+    return {};
+}
+
+} // namespace
+
+std::vector<HistoryRow> InteractionController::historyRows() const
+{
+    std::vector<HistoryRow> rows;
+    const LengthUnit unit = document_->displayUnit();
+    for (const auto& sk : document_->sketches()) {
+        HistoryRow row;
+        row.kind = HistoryRow::Kind::Sketch;
+        row.id = sk->id();
+        row.name = sk->name();
+        const auto& report = sk->solveReport();
+        if (report.ok && report.degreesOfFreedom == 0)
+            row.detail = "Fully defined";
+        else if (report.ok && report.degreesOfFreedom > 0)
+            row.detail = std::to_string(report.degreesOfFreedom) + " DOF";
+        row.visible = sk->isVisible();
+        row.canDelete = document_->dependentFeatures(sk->id()).empty();
+        if (!row.canDelete)
+            row.message = "Used by a 3D step";
+        rows.push_back(std::move(row));
+    }
+    for (const auto& body : document_->bodies()) {
+        HistoryRow bodyRow;
+        bodyRow.kind = HistoryRow::Kind::Body;
+        bodyRow.id = body->id();
+        bodyRow.name = body->name();
+        bodyRow.visible = body->isVisible();
+        if (body->hasFailures()) {
+            bodyRow.status = HistoryRow::Status::Failed;
+            bodyRow.message = "Some steps failed; the last good shape is shown.";
+        }
+        rows.push_back(std::move(bodyRow));
+
+        const auto& features = body->features();
+        for (std::size_t i = 0; i < features.size(); ++i) {
+            const doc::Feature& f = *features[i];
+            const doc::FeatureState& state = body->state(static_cast<int>(i));
+            HistoryRow row;
+            row.kind = HistoryRow::Kind::Feature;
+            row.id = f.id();
+            row.parentId = body->id();
+            row.name = f.name().empty() ? featureTitle(f) : f.name();
+            row.detail = featureDetail(f, unit);
+            row.canDelete = i > 0;
+            row.canSuppress = i > 0;
+            switch (state.status) {
+            case doc::FeatureStatus::Ok: row.status = HistoryRow::Status::Ok; break;
+            case doc::FeatureStatus::Failed: row.status = HistoryRow::Status::Failed; break;
+            case doc::FeatureStatus::NotComputed: row.status = HistoryRow::Status::NotComputed; break;
+            case doc::FeatureStatus::Suppressed: row.status = HistoryRow::Status::Suppressed; break;
+            }
+            row.message = state.status == doc::FeatureStatus::Suppressed ? "Suppressed" : state.userMessage;
+            for (const auto& p : f.parameters())
+                if (p.kind == doc::ParameterKind::Length)
+                    row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
+            rows.push_back(std::move(row));
+        }
+    }
+    return rows;
+}
+
+Status InteractionController::setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text)
+{
+    const auto parsed = parseLength(text, document_->displayUnit());
+    if (!parsed.millimeters)
+        return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
+    Status status = undoStack_->push(
+        std::make_unique<cmd::SetParameterCommand>(featureId, key, *parsed.millimeters, /*rejectIfFeatureFails=*/false),
+        *document_);
+    if (!status)
+        return status;
+    operation_.reset();
+    afterDocumentEdit();
+    if (const doc::Body* body = document_->bodyOfFeature(featureId); body && body->hasFailures())
+        message("Some steps can no longer be built. They are marked in the history; undo restores the previous value.");
+    return status;
+}
+
+Status InteractionController::setFeatureSuppressed(const Uuid& featureId, bool suppressed)
+{
+    Status status = undoStack_->push(std::make_unique<cmd::SetFeatureSuppressedCommand>(featureId, suppressed), *document_);
+    if (status) {
+        operation_.reset();
+        afterDocumentEdit();
+    }
+    return status;
+}
+
+Status InteractionController::deleteFeature(const Uuid& featureId)
+{
+    Status status = undoStack_->push(std::make_unique<cmd::DeleteFeatureCommand>(featureId), *document_);
+    if (status) {
+        operation_.reset();
+        afterDocumentEdit();
+    }
+    return status;
+}
+
+Status InteractionController::setBodyVisible(const Uuid& bodyId, bool visible)
+{
+    Status status = undoStack_->push(std::make_unique<cmd::SetBodyVisibilityCommand>(bodyId, visible), *document_);
+    if (status)
+        afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::deleteBody(const Uuid& bodyId)
+{
+    Status status = undoStack_->push(std::make_unique<cmd::DeleteBodyCommand>(bodyId), *document_);
+    if (status)
+        afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::deleteSketch(const Uuid& sketchId)
+{
+    if (session_ && session_->sketchId() == sketchId)
+        finishSketch();
+    Status status = undoStack_->push(std::make_unique<cmd::DeleteSketchCommand>(sketchId), *document_);
+    if (status)
+        afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::setSketchVisible(const Uuid& sketchId, bool visible)
+{
+    const sketch::Sketch* current = document_->sketch(sketchId);
+    if (!current)
+        return Status::failure(ErrorCode::InvalidReference, "That sketch no longer exists.", "setSketchVisible");
+    sketch::Sketch next = *current;
+    next.setVisible(visible);
+    Status status = undoStack_->push(std::make_unique<cmd::EditSketchCommand>(next, visible ? "Show sketch" : "Hide sketch"),
+                                     *document_);
+    if (status)
+        afterDocumentEdit();
+    return status;
 }
 
 

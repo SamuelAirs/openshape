@@ -255,7 +255,7 @@ std::string_view toString(ExtrudeMode mode)
     return "NewBody";
 }
 
-Result<geom::Shape> ExtrudeFeature::toolSolid(const EvalContext& context) const
+Result<geom::Shape> ExtrudeFeature::toolSolid(const geom::Shape& input, const EvalContext& context) const
 {
     const sketch::Sketch* sk = context.sketch(sketchId);
     if (!sk)
@@ -264,24 +264,34 @@ Result<geom::Shape> ExtrudeFeature::toolSolid(const EvalContext& context) const
     if (profiles.empty())
         return Result<geom::Shape>::failure(ErrorCode::InvalidArgument, "Select a closed shape to extrude.",
                                             "Extrude: no profiles");
-    auto regions = sketchRegions(*sk);
+    const sketch::Plane plane = effectivePlane(*sk, context);
+    auto regions = sketchRegions(*sk, plane);
     if (!regions)
         return Result<geom::Shape>::failureFrom(regions);
     std::vector<geom::Shape> faces;
     for (const ProfileRef& ref : profiles) {
-        const auto index = resolveProfile(regions.value(), *sk, ref);
+        const auto index = resolveProfile(regions.value(), plane, ref);
         if (!index)
             return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
                                                 "A shape this extrusion used is no longer closed or no longer exists.",
                                                 "Extrude: profile reference unresolved");
         faces.push_back(regions.value()[std::size_t(*index)].face);
     }
-    return geom::extrudeFaces(faces, sk->plane().normal() * distance);
+    double length = distance;
+    if (throughAll && mode == ExtrudeMode::Cut && !input.isNull()) {
+        const auto box = geom::boundingBox(input);
+        if (box.valid) {
+            // Far enough to leave the body from anywhere on the sketch plane.
+            const double reach = box.size().length() + (box.center() - plane.origin).length() + 1.0;
+            length = (distance < 0 ? -1.0 : 1.0) * std::max(std::abs(distance), reach);
+        }
+    }
+    return geom::extrudeFaces(faces, plane.normal() * length);
 }
 
 Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
-    auto tool = toolSolid(context);
+    auto tool = toolSolid(input, context);
     if (!tool)
         return tool;
     switch (mode) {
@@ -316,6 +326,7 @@ void ExtrudeFeature::writeParams(json& out) const
     out["profiles"] = refs;
     out["distance"] = distance;
     out["mode"] = std::string(toString(mode));
+    out["throughAll"] = throughAll;
 }
 
 Status ExtrudeFeature::readParams(const json& in)
@@ -352,6 +363,7 @@ Status ExtrudeFeature::readParams(const json& in)
     sketchId = *id;
     profiles = std::move(refs);
     distance = *d;
+    throughAll = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
     return okStatus();
 }
 

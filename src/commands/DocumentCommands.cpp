@@ -110,6 +110,9 @@ Status DeleteFeatureCommand::execute(doc::Document& document)
     doc::Body* body = document.bodyOfFeature(featureId_);
     if (!body)
         return missingFeature();
+    if (body->featureIndex(featureId_) == 0)
+        return Status::failure(ErrorCode::InvalidArgument, "The first step of a body cannot be deleted. Delete the body instead.",
+                               "delete base feature");
     bodyId_ = body->id();
     removed_ = document.removeFeature(featureId_, &index_);
     return removed_ ? okStatus() : missingFeature();
@@ -177,6 +180,32 @@ Status SetBodyVisibilityCommand::execute(doc::Document& document)
 void SetBodyVisibilityCommand::undo(doc::Document& document)
 {
     document.setBodyVisible(bodyId_, previous_);
+}
+
+// ---- SetFeatureSuppressed --------------------------------------------------------
+
+Status SetFeatureSuppressedCommand::execute(doc::Document& document)
+{
+    doc::Body* body = document.bodyOfFeature(featureId_);
+    doc::Feature* feature = body ? body->feature(featureId_) : nullptr;
+    if (!feature)
+        return missingFeature();
+    if (feature->isBaseFeature() && suppressed_)
+        return Status::failure(ErrorCode::InvalidArgument, "The first step of a body cannot be suppressed.",
+                               "suppress base feature");
+    previous_ = feature->isSuppressed();
+    feature->setSuppressed(suppressed_);
+    document.featureChanged(featureId_);
+    return okStatus();
+}
+
+void SetFeatureSuppressedCommand::undo(doc::Document& document)
+{
+    doc::Body* body = document.bodyOfFeature(featureId_);
+    if (doc::Feature* feature = body ? body->feature(featureId_) : nullptr) {
+        feature->setSuppressed(previous_);
+        document.featureChanged(featureId_);
+    }
 }
 
 // ---- Sketches ---------------------------------------------------------------------

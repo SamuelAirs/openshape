@@ -266,6 +266,102 @@ QString AppController::setSketchDimension(int constraintId, const QString& text)
     return error;
 }
 
+// ---- History ------------------------------------------------------------------------------
+
+QVariantList AppController::history() const
+{
+    QVariantList list;
+    for (const auto& row : interaction_->historyRows()) {
+        QVariantMap map;
+        map.insert(QStringLiteral("kind"), row.kind == interact::HistoryRow::Kind::Sketch ? QStringLiteral("sketch")
+                                           : row.kind == interact::HistoryRow::Kind::Body ? QStringLiteral("body")
+                                                                                          : QStringLiteral("feature"));
+        map.insert(QStringLiteral("id"), q(row.id.toString()));
+        map.insert(QStringLiteral("name"), q(row.name));
+        map.insert(QStringLiteral("detail"), q(row.detail));
+        map.insert(QStringLiteral("status"), row.status == interact::HistoryRow::Status::Ok            ? QStringLiteral("ok")
+                                             : row.status == interact::HistoryRow::Status::Failed      ? QStringLiteral("failed")
+                                             : row.status == interact::HistoryRow::Status::Suppressed  ? QStringLiteral("suppressed")
+                                                                                                        : QStringLiteral("blocked"));
+        map.insert(QStringLiteral("message"), q(row.message));
+        map.insert(QStringLiteral("visible"), row.visible);
+        map.insert(QStringLiteral("canDelete"), row.canDelete);
+        map.insert(QStringLiteral("canSuppress"), row.canSuppress);
+        QVariantList params;
+        for (const auto& p : row.parameters) {
+            QVariantMap pm;
+            pm.insert(QStringLiteral("key"), q(p.key));
+            pm.insert(QStringLiteral("label"), q(p.label));
+            pm.insert(QStringLiteral("value"), q(p.valueText));
+            params.append(pm);
+        }
+        map.insert(QStringLiteral("parameters"), params);
+        list.append(map);
+    }
+    return list;
+}
+
+namespace {
+std::optional<Uuid> uuidOf(const QString& text)
+{
+    return Uuid::parse(text.toStdString());
+}
+} // namespace
+
+QString AppController::setFeatureParameter(const QString& featureId, const QString& key, const QString& text)
+{
+    const auto id = uuidOf(featureId);
+    if (!id)
+        return QStringLiteral("That step no longer exists.");
+    const Status status = interaction_->setFeatureParameter(*id, key.toStdString(), text.toStdString());
+    return status ? QString() : q(status.userMessage());
+}
+
+void AppController::setFeatureSuppressed(const QString& featureId, bool suppressed)
+{
+    if (const auto id = uuidOf(featureId)) {
+        const Status status = interaction_->setFeatureSuppressed(*id, suppressed);
+        if (!status)
+            notifyMessage(q(status.userMessage()));
+    }
+}
+
+void AppController::deleteHistoryItem(const QString& kind, const QString& idText)
+{
+    const auto id = uuidOf(idText);
+    if (!id)
+        return;
+    Status status = okStatus();
+    if (kind == QLatin1String("feature"))
+        status = interaction_->deleteFeature(*id);
+    else if (kind == QLatin1String("body"))
+        status = interaction_->deleteBody(*id);
+    else if (kind == QLatin1String("sketch"))
+        status = interaction_->deleteSketch(*id);
+    if (!status)
+        notifyMessage(q(status.userMessage()));
+}
+
+void AppController::setHistoryItemVisible(const QString& kind, const QString& idText, bool visible)
+{
+    const auto id = uuidOf(idText);
+    if (!id)
+        return;
+    const Status status = kind == QLatin1String("sketch") ? interaction_->setSketchVisible(*id, visible)
+                                                          : interaction_->setBodyVisible(*id, visible);
+    if (!status)
+        notifyMessage(q(status.userMessage()));
+}
+
+void AppController::editSketch(const QString& sketchId)
+{
+    if (const auto id = uuidOf(sketchId)) {
+        const Status status = interaction_->editSketch(*id);
+        if (!status)
+            notifyMessage(q(status.userMessage()));
+    }
+}
+
 // ---- Files ------------------------------------------------------------------------------
 
 void AppController::newDocument()

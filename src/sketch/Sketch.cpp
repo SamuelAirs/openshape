@@ -269,8 +269,17 @@ json Sketch::toJson() const
         cls.push_back({{"id", id}, {"center", c.center}, {"radius", c.radius}, {"construction", c.construction}});
     for (const auto& [id, c] : constraints_)
         cns.push_back({{"id", id}, {"type", kindName(c.kind)}, {"a", c.a}, {"b", c.b}, {"value", c.value}});
+    json attachment = nullptr;
+    if (attachment_)
+        attachment = {{"body", attachment_->body.toString()},
+                      {"feature", attachment_->feature.toString()},
+                      {"faceHint", attachment_->faceHint},
+                      {"normal", vec3(attachment_->faceNormal)},
+                      {"centroid", vec3(attachment_->faceCentroid)},
+                      {"area", attachment_->faceArea}};
     return {{"id", id_.toString()},
             {"name", name_},
+            {"attachment", attachment},
             {"visible", visible_},
             {"plane", {{"origin", vec3(plane_.origin)}, {"xAxis", vec3(plane_.xAxis)}, {"yAxis", vec3(plane_.yAxis)}}},
             {"hostBody", hostBody_ ? json(hostBody_->toString()) : json(nullptr)},
@@ -308,6 +317,18 @@ Result<Sketch> Sketch::fromJson(const json& j)
         s.visible_ = j["visible"].get<bool>();
     if (j.contains("hostBody") && j["hostBody"].is_string())
         s.hostBody_ = Uuid::parse(j["hostBody"].get<std::string>());
+    if (j.contains("attachment") && j["attachment"].is_object()) {
+        const json& a = j["attachment"];
+        const auto body = a.contains("body") && a["body"].is_string() ? Uuid::parse(a["body"].get<std::string>()) : std::nullopt;
+        const auto feature = a.contains("feature") && a["feature"].is_string() ? Uuid::parse(a["feature"].get<std::string>())
+                                                                               : std::nullopt;
+        const auto normal = vec3From(a.value("normal", json()));
+        const auto centroid = vec3From(a.value("centroid", json()));
+        if (!body || !feature || !normal || !centroid || !finiteNumber(a, "area") || !a.contains("faceHint")
+            || !a["faceHint"].is_number_integer())
+            return bad("invalid attachment");
+        s.attachment_ = Attachment{*body, *feature, a["faceHint"].get<int>(), *normal, *centroid, a["area"].get<double>()};
+    }
     if (!idField(j, "nextId"))
         return bad("missing nextId");
     s.nextId_ = j["nextId"].get<EntityId>();

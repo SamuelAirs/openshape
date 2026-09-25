@@ -81,6 +81,18 @@ struct SketchConstraint {
     }
 };
 
+// A sketch placed on a planar face follows that face when the body changes.
+// The face is identified like any persistent face reference: the feature
+// whose output it belongs to, an index hint, and a geometric signature.
+struct Attachment {
+    Uuid body;
+    Uuid feature;
+    int faceHint = -1;
+    Vec3 faceNormal;
+    Vec3 faceCentroid;
+    double faceArea = 0;
+};
+
 struct SolveReport {
     bool ok = true;
     int degreesOfFreedom = -1;
@@ -105,6 +117,8 @@ public:
     // Body whose face the sketch was placed on (used to choose join/cut).
     const std::optional<Uuid>& hostBody() const { return hostBody_; }
     void setHostBody(std::optional<Uuid> body) { hostBody_ = body; }
+    const std::optional<Attachment>& attachment() const { return attachment_; }
+    void setAttachment(std::optional<Attachment> attachment) { attachment_ = std::move(attachment); }
 
     // ---- Entities ----
     EntityId addPoint(Vec2 position, bool fixed = false);
@@ -151,6 +165,7 @@ private:
     Plane plane_;
     bool visible_ = true;
     std::optional<Uuid> hostBody_;
+    std::optional<Attachment> attachment_;
     std::map<EntityId, SketchPoint> points_;
     std::map<EntityId, SketchLine> lines_;
     std::map<EntityId, SketchCircle> circles_;

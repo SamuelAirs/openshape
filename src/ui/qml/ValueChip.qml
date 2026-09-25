@@ -138,6 +138,7 @@ Item {
                 model: chip.app.contextActions
                 delegate: ActionButton {
                     required property var modelData
+                    objectName: "action_" + modelData.id
                     text: modelData.label
                     checked: modelData.active
                     compact: true

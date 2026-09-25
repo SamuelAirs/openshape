@@ -19,12 +19,17 @@ class Sketch;
 namespace os::doc {
 
 class Document;
+class Body;
 
 enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
     const Document* document = nullptr;
+    // Set while a body is being recomputed: the body and the index of the
+    // feature being evaluated (earlier features' results are current).
+    const Body* body = nullptr;
+    int featureIndex = -1;
     const sketch::Sketch* sketch(const Uuid& id) const;
 };
 
@@ -190,6 +195,9 @@ public:
     std::vector<ProfileRef> profiles;
     double distance = 10; // mm along the sketch normal (negative = opposite side)
     ExtrudeMode mode = ExtrudeMode::NewBody;
+    // Cuts: extend through the whole body in the direction of `distance`,
+    // so through-holes stay through when the body gets thicker.
+    bool throughAll = false;
 
     FeatureKind kind() const override { return FeatureKind::Extrude; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ExtrudeFeature(*this)); }
@@ -201,8 +209,9 @@ public:
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sketchId}; }
 
-    // The extruded tool solid alone (before join/cut).
-    Result<geom::Shape> toolSolid(const EvalContext& context) const;
+    // The extruded tool solid alone (before join/cut). `input` sizes
+    // through-all cuts.
+    Result<geom::Shape> toolSolid(const geom::Shape& input, const EvalContext& context) const;
 };
 
 } // namespace os::doc

@@ -179,6 +179,16 @@ ApplicationWindow {
         }
     }
 
+    // ---------------------------------------------------------------- model history
+    HistoryPanel {
+        id: historyPanel
+        app: window.app
+        anchors { right: parent.right; top: parent.top; margins: Theme.margin }
+        visible: window.app.history.length > 0
+        maximumHeight: window.height - 2 * Theme.margin - 80
+        onFinished: viewport.forceActiveFocus()
+    }
+
     // ---------------------------------------------------------------- view controls
     Panel {
         anchors { right: parent.right; bottom: parent.bottom; margins: Theme.margin }

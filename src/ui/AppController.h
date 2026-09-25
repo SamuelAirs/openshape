@@ -53,6 +53,7 @@ class AppController : public QObject {
     Q_PROPERTY(QVariantList sketchLabels READ sketchLabels NOTIFY viewChanged)
     Q_PROPERTY(bool canStartSketch READ canStartSketch NOTIFY stateChanged)
     Q_PROPERTY(int sketchCount READ sketchCount NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList history READ history NOTIFY stateChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -92,6 +93,7 @@ public:
     QVariantList sketchLabels() const;
     bool canStartSketch() const;
     int sketchCount() const { return int(document_->sketches().size()); }
+    QVariantList history() const;
 
     Q_INVOKABLE void newDocument();
     Q_INVOKABLE bool openProject(const QUrl& url);
@@ -124,6 +126,13 @@ public:
     Q_INVOKABLE void focusNextSketchInput();
     Q_INVOKABLE void commitSketchTool();
     Q_INVOKABLE QString setSketchDimension(int constraintId, const QString& text);
+
+    // History panel. Ids are UUID strings. Edits return an error message or "".
+    Q_INVOKABLE QString setFeatureParameter(const QString& featureId, const QString& key, const QString& text);
+    Q_INVOKABLE void setFeatureSuppressed(const QString& featureId, bool suppressed);
+    Q_INVOKABLE void deleteHistoryItem(const QString& kind, const QString& id);
+    Q_INVOKABLE void setHistoryItemVisible(const QString& kind, const QString& id, bool visible);
+    Q_INVOKABLE void editSketch(const QString& sketchId);
 
 signals:
     void stateChanged();
