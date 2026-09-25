@@ -40,6 +40,7 @@ if(OPENSHAPE_BUILD_TESTS)
     enable_testing() # before src/: the app registers its GUI acceptance test
 endif()
 
+add_subdirectory(third_party/planegcs)
 add_subdirectory(src)
 
 if(OPENSHAPE_BUILD_TESTS)

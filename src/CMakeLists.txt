@@ -4,6 +4,7 @@
 # Everything below render/ui/app is Qt-free and unit tested headlessly.
 add_subdirectory(core)
 add_subdirectory(geometry)
+add_subdirectory(sketch)
 add_subdirectory(document)
 add_subdirectory(commands)
 add_subdirectory(selection)

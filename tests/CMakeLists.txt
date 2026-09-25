@@ -18,3 +18,6 @@ target_link_libraries(test_document PRIVATE openshape_commands openshape_io libz
 
 openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction)
+
+openshape_add_test(test_sketch test_sketch.cpp)
+target_link_libraries(test_sketch PRIVATE openshape_sketch)
