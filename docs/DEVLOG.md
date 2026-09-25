@@ -137,3 +137,18 @@ a 360° preview next to "400" — refused now with an explanation.
 **Tooling pitfall.** Backslash escapes inside shell heredocs were being
 collapsed by the tool layer (e.g. `\\xC2\\xB7` arriving as raw bytes). Edits
 with escapes now go through written script files or the Edit tool.
+
+## 2026-09-25 — Measure first: a 3.4x recompute win
+
+A throwaway benchmark (120×120×5 plate, 10×10 grid of Ø4 through-holes)
+timed each stage before any optimization: cut 685 ms, full recompute after a
+thickness edit 625 ms, tessellation 107 ms, profile detection 50 ms, pick
+1.9 ms. The outlier was `extrudeFaces`/`revolveFaces` fusing tool solids
+pairwise (quadratic). One General Fuse run with the first solid as argument
+and the rest as tools: cut 241 ms, recompute 186 ms. Everything else is
+already within budget for maker-sized parts, so off-thread work (TD-1) stays
+scheduled for M3 rather than being rushed.
+
+Also: OCCT keeps cylinder **seam** edges; a test clicking a hole rim hit the
+seam instead. Seams are now skipped in display and picking (standard CAD
+behaviour), which also removes the stray vertical line in every hole.

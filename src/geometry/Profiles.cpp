@@ -82,6 +82,35 @@ TopoDS_Face cleanFace(const TopoDS_Face& face)
     return rebuilt;
 }
 
+// Fuses many solids in one General Fuse run (one argument, the rest as tools).
+// Fusing pairwise is quadratic: 100 hole cylinders took ~0.7 s that way.
+TopoDS_Shape fuseAll(const TopTools_ListOfShape& solids, std::string& error)
+{
+    if (solids.IsEmpty())
+        return {};
+    if (solids.Extent() == 1)
+        return solids.First();
+    TopTools_ListOfShape arguments, tools;
+    arguments.Append(solids.First());
+    bool first = true;
+    for (const TopoDS_Shape& s : solids) {
+        if (first) {
+            first = false;
+            continue;
+        }
+        tools.Append(s);
+    }
+    BRepAlgoAPI_Fuse fuse;
+    fuse.SetArguments(arguments);
+    fuse.SetTools(tools);
+    fuse.Build();
+    if (fuse.HasErrors()) {
+        error = describeAlgoErrors(fuse);
+        return {};
+    }
+    return fuse.Shape();
+}
+
 // A point guaranteed to be inside the face: centroid of its largest triangle.
 Vec3 interiorPoint(const Shape& face, const Vec3& fallback)
 {
@@ -221,6 +250,7 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
     return guarded("extrudeFaces", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("extrudeFaces");
         TopoDS_Shape result;
+        TopTools_ListOfShape solids;
         for (const Shape& face : faces) {
             BRepPrimAPI_MakePrism prism(occ(face), toVec(vector));
             prism.Build();
@@ -233,15 +263,12 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
                 solid = s;
                 break;
             }
-            if (result.IsNull()) {
-                result = solid;
-            } else {
-                BRepAlgoAPI_Fuse fuse(result, solid);
-                if (fuse.HasErrors())
-                    return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(fuse));
-                result = fuse.Shape();
-            }
+            solids.Append(solid);
         }
+        std::string fuseError;
+        result = fuseAll(solids, fuseError);
+        if (result.IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + fuseError);
         if (faces.size() > 1) {
             ShapeUpgrade_UnifySameDomain unify(result, true, true, true);
             unify.Build();
@@ -287,6 +314,7 @@ Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrig
         ScopedTimer timer("revolveFaces");
         const gp_Ax1 ax(toPnt(axisOrigin), toDir(axis));
         TopoDS_Shape result;
+        TopTools_ListOfShape solids;
         for (const Shape& face : faces) {
             BRepPrimAPI_MakeRevol revol(occ(face), ax, std::min(angle, 2 * kPi));
             revol.Build();
@@ -299,15 +327,12 @@ Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrig
                 solid = s;
                 break;
             }
-            if (result.IsNull()) {
-                result = solid;
-            } else {
-                BRepAlgoAPI_Fuse fuse(result, solid);
-                if (fuse.HasErrors())
-                    return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(fuse));
-                result = fuse.Shape();
-            }
+            solids.Append(solid);
         }
+        std::string fuseError;
+        result = fuseAll(solids, fuseError);
+        if (result.IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + fuseError);
         return finishSolid(result, "revolveFaces", userMessage);
     });
 }

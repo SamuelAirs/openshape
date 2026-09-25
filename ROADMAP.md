@@ -70,7 +70,13 @@ parallel/perpendicular/tangent/equal constraints.
 - ⬜ Mirror, linear pattern, circular pattern
 - ⬜ Offset face (push/pull of non-planar faces)
 
-## Milestone 3 — interaction quality ⬜
+## Milestone 3 — interaction quality 🟡
+
+Done so far: help overlay (? / F1), seam edges hidden from display and
+picking, arrow handles placed where the geometry is (value chip beside the
+tip, revolve handle on the arc), consumed sketches recede, view returns to 3D
+after sketching, QML delegate lifetime bugs fixed.
+
 
 Contextual tools, manipulator feel, snapping, box/touch selection, selection
 cycling, keyboard shortcuts, touch-sized targets, viewport transitions,
@@ -98,9 +104,11 @@ error messages, discoverability. Also: BVH picking, off-thread tessellation.
 - ✅ 3MF export: welded, closed manifold meshes at 0.01 mm deflection, units in
   millimeters (verified: every edge shared twice, mesh volume within 0.1 % of
   the exact volume)
-- ⬜ Hole tool, countersink/counterbore, heat-set insert presets, magnet
-  pockets, clearance helper, draft, emboss/deboss, text, snap-fit helpers,
-  threads, section view
+- ✅ Heat-set insert helper: select a hole's rim → "Heat-set insert" → M2–M5
+  presets propose a pilot hole (typical diameter and depth, editable), drilled
+  as an editable Hole step
+- ⬜ General hole tool, countersink/counterbore, magnet pockets, clearance
+  helper, draft, emboss/deboss, text, snap-fit helpers, threads, section view
 
 ## Platform & infrastructure
 

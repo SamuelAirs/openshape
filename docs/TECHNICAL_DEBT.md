@@ -4,7 +4,7 @@ Intentional shortcuts, with the milestone by which each should be resolved.
 
 | ID | Where | Debt | Why accepted | Resolve by |
 |---|---|---|---|---|
-| TD-1 | `interaction/SceneCache`, `Operation::setValue` | Tessellation and preview booleans run synchronously on the GUI thread. Fine for M0-size parts (a few ms); will stutter on large models. | Simplicity while the interaction model settles. | M3 |
+| TD-1 | `interaction/SceneCache`, `Operation::setValue` | Tessellation and preview booleans run synchronously on the GUI thread. Measured (RelWithDebInfo, i5-13500) on a 120×120 plate with 100 holes: full recompute 186 ms, tessellation 104 ms (19k triangles), profile detection 51 ms, pick 1.9 ms. Fine for typical maker parts; noticeable while dragging on heavy parts. | Simplicity while the interaction model settles. | M3 |
 | TD-2 | `selection/Picking.cpp` | Brute-force ray/triangle and edge-segment picking, O(triangles) per hover. | Correct and simple; models are small. | M3 (BVH) |
 | TD-3 | `geometry/TopoSignature` | Signature-based topological naming only; can mis-resolve on symmetric parts after large upstream edits. | Awareness now, provenance naming when history editing ships. | M4 |
 | TD-4 | `geometry/Tessellation.cpp` | `BRepMesh_IncrementalMesh` stores triangulation inside the shared TShape, so tessellating is a hidden mutation of an "immutable" `Shape`; not safe to tessellate one shape from two threads. | Single-threaded today. | Before TD-1 |
