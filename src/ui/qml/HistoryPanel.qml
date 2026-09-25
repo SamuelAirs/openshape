@@ -149,14 +149,20 @@ Panel {
                                 }
                                 onActiveFocusChanged: if (activeFocus) selectAll()
                                 onAccepted: {
-                                    const error = panel.app.setFeatureParameter(row.modelData.id, paramRow.modelData.key, text)
+                                    // A successful edit rebuilds the history and
+                                    // destroys this delegate: capture first.
+                                    const owner = panel
+                                    const error = owner.app.setFeatureParameter(row.modelData.id, paramRow.modelData.key, text)
+                                    if (error.length === 0) {
+                                        owner.finished()
+                                        return
+                                    }
                                     paramError.text = error
-                                    if (error.length === 0)
-                                        panel.finished()
                                 }
                                 Keys.onEscapePressed: {
+                                    const owner = panel
                                     text = paramRow.modelData.value
-                                    panel.finished()
+                                    owner.finished()
                                 }
                             }
                             Text {
@@ -195,8 +201,11 @@ Panel {
                             visible: row.modelData.canDelete
                             text: "Delete"
                             onClicked: {
-                                panel.expandedId = ""
-                                panel.app.deleteHistoryItem(row.modelData.kind, row.modelData.id)
+                                const owner = panel
+                                const kind = row.modelData.kind
+                                const id = row.modelData.id
+                                owner.expandedId = ""
+                                owner.app.deleteHistoryItem(kind, id)
                             }
                         }
                     }

@@ -10,6 +10,7 @@ qt_add_qml_module(openshape_ui
         qml/ValueChip.qml
         qml/SketchOverlay.qml
         qml/HistoryPanel.qml
+        qml/HelpOverlay.qml
         qml/Panel.qml
         qml/ActionButton.qml
         qml/Separator.qml

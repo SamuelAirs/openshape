@@ -143,8 +143,12 @@ Item {
                     checked: modelData.active
                     compact: true
                     onClicked: {
-                        chip.app.triggerAction(modelData.id)
-                        chip.finished()
+                        // The action rebuilds the action list and destroys this
+                        // delegate: capture what we need first.
+                        const owner = chip
+                        const id = modelData.id
+                        owner.app.triggerAction(id)
+                        owner.finished()
                     }
                 }
             }

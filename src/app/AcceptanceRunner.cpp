@@ -172,8 +172,19 @@ void AcceptanceRunner::start()
 
     steps_ = {
         // 1-2. Launch, create a 20 mm cube with the "B" shortcut.
+        // Discoverability: the help card opens from "?" and closes with Esc.
         [=, this] {
             check(app_->bodyCount() == 0, "starts with an empty document");
+            check(clickItem(QStringLiteral("helpButton")), "help button");
+        },
+        [=, this] {
+            auto* help = findVisualItem(window_->contentItem(), QStringLiteral("helpOverlay"));
+            check(help && help->isVisible(), "help card is shown");
+            screenshot(QStringLiteral("00_help"));
+            key(Qt::Key_Escape);
+            check(help && !help->isVisible(), "Esc closes the help card");
+        },
+        [=, this] {
             key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
         },
         [] {}, [] {}, [] {}, // let the fit animation finish

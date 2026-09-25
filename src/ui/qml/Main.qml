@@ -61,6 +61,7 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Open]; onActivated: window.confirmDiscard(() => openDialog.open()) }
     Shortcut { sequences: [StandardKey.New]; onActivated: window.confirmDiscard(() => window.app.newDocument()) }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
+    Shortcut { sequence: "F1"; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
     Shortcut {
         sequence: "K"
@@ -128,6 +129,16 @@ ApplicationWindow {
                 onClicked: window.app.redo()
                 ToolTip.visible: hovered && window.app.canRedo
                 ToolTip.text: "Redo " + window.app.redoText + "  (Ctrl+Y)"
+                ToolTip.delay: 500
+            }
+            Separator {}
+            ActionButton {
+                objectName: "helpButton"
+                text: "?"
+                implicitWidth: Theme.controlHeight
+                onClicked: helpOverlay.toggle()
+                ToolTip.visible: hovered
+                ToolTip.text: "How OpenShape works (F1)"
                 ToolTip.delay: 500
             }
         }
@@ -328,6 +339,15 @@ ApplicationWindow {
         x: Math.max(Theme.margin, fitsRight ? tipX + 28 : tipX - 28 - width)
         y: Math.max(topBar.y + topBar.height + 8, Math.min(window.height - height - 70, tipY - 24))
         onFinished: viewport.forceActiveFocus()
+    }
+
+    // ---------------------------------------------------------------- help
+    HelpOverlay {
+        id: helpOverlay
+        objectName: "helpOverlay"
+        anchors.fill: parent
+        z: 100
+        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
     }
 
     // ---------------------------------------------------------------- toast
