@@ -97,7 +97,8 @@ measure, section view, 3MF export.
   build) written but **never run** — the repository has no remote yet.
   Linux not configured: no Linux environment was available to verify it
   (WSL is not installed and needs admin rights)
-- ⬜ Windows packaging (windeployqt, installer, license bundle)
+- 🟡 Windows packaging: self-contained folder verified (clean PATH, full
+  acceptance run); installer and size reduction pending
 - ⬜ MSVC + vcpkg build
 - ⬜ macOS, Linux runtime verification
 - ⬜ OCCT 8.x migration

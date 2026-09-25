@@ -46,7 +46,8 @@ packaging, interaction polish (M3).
 
 ## Broken / missing
 
-- No packaging: the exe runs only with MSYS2 DLLs on PATH.
+- Packaging: a verified self-contained folder (`scripts/package-windows.sh`);
+  no installer, large (~290 MB, see TD-6).
 - No thumbnails in project files.
 - CI workflow written but never run (no remote); Linux unverified.
 - Sketch: no arcs, construction toggle, parallel/perpendicular/tangent/equal.
@@ -69,8 +70,7 @@ packaging, interaction polish (M3).
 
 ## Next concrete tasks
 
-1. Windows packaging (windeployqt + DLLs + license bundle).
-2. Rotate (ring manipulator), mirror, linear/circular pattern.
+1. Rotate (ring manipulator), mirror, linear/circular pattern.
 3. Arc tool and parallel/perpendicular/equal constraints.
 4. Off-GUI-thread tessellation and previews (TD-1).
 

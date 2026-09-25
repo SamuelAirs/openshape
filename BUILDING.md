@@ -79,8 +79,18 @@ Logs are written to stderr and to
 Building from another shell (e.g. Git Bash) also works if
 `<msys64>/ucrt64/bin` is first on `PATH`.
 
-Running the executable outside MSYS2 is not packaged yet (needs
-`windeployqt6` and the OCCT DLLs; see docs/TECHNICAL_DEBT.md TD-6).
+### 5. Package a self-contained folder (verified)
+
+```bash
+pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-ntldd
+bash scripts/package-windows.sh
+```
+
+This produces `dist/OpenShape/` (≈290 MB, 363 files): the stripped
+executable, Qt (via `windeployqt6`), OCCT, PlaneGCS and runtime DLLs, Qt
+plugins, QML modules, a `qt.conf`, and license files. Verified by running the
+packaged `OpenShape.exe` with `PATH` reduced to `C:\Windows\System32` —
+including the full `--acceptance` run (60/60). No installer yet.
 
 ## Other platforms — not yet verified
 

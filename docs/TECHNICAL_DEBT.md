@@ -9,7 +9,8 @@ Intentional shortcuts, with the milestone by which each should be resolved.
 | TD-3 | `geometry/TopoSignature` | Signature-based topological naming only; can mis-resolve on symmetric parts after large upstream edits. | Awareness now, provenance naming when history editing ships. | M4 |
 | TD-4 | `geometry/Tessellation.cpp` | `BRepMesh_IncrementalMesh` stores triangulation inside the shared TShape, so tessellating is a hidden mutation of an "immutable" `Shape`; not safe to tessellate one shape from two threads. | Single-threaded today. | Before TD-1 |
 | TD-5 | `render/` | QRhi via `Qt6::GuiPrivate` ties binaries to the Qt minor version. | Only way to use QRhi; widely done. | Review per Qt upgrade |
-| TD-6 | packaging | No deployment: running outside the MSYS2 environment needs Qt/OCCT DLLs and Qt plugins next to the exe (windeployqt), plus a license bundle. | Development builds only so far. | Before first release |
+| TD-6 | packaging | `scripts/package-windows.sh` produces a verified self-contained folder, but: no installer/zip/signing; ~290 MB because MSYS2's OCCT links its visualization toolkit (and through it ffmpeg/AV1 codecs) into the STEP translator; the full transitive license list is not generated yet. | First step done; size needs an OCCT build without TKService/ffmpeg. | Before first release |
+| TD-16 | `geometry/Exchange.cpp` | OCCT's STEP writer prints transfer statistics to stdout instead of our log. | Harmless in the GUI. | M3 |
 | TD-7 | `interaction/InteractionController::deleteSelectedBodies` | Deleting several bodies creates one undo step per body. | Rare; needs a macro command. | M3 |
 | TD-8 | `io/ProjectFile.cpp` | The BRep geometry cache is written but never read. | Recompute is fast at current sizes. | When load times matter |
 | TD-9 | `ui/qml/Main.qml` | Text-only buttons, no icon set. | Avoids fake polish; icons need a consistent original set. | M3 |
