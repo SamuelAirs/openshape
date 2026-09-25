@@ -9,6 +9,8 @@ Start here, in this order:
 5. `BUILDING.md` — the exact, verified build/test/package commands, demo scenes
    and developer tools.
 6. `CONTRIBUTING.md` — rules and checklists for adding a feature, tool or constraint.
+7. `docs/IPAD.md` (the iPad plan, for a session on the owner's Mac) and
+   `docs/MANUAL_TESTS.md` (what the owner is asked to try).
 
 ## Working agreement with the owner
 - Act as the lead engineer: decide engineering questions yourself, build, test,
@@ -23,7 +25,7 @@ Start here, in this order:
 - Toolchain: MSYS2 at `%USERPROFILE%\msys64` (UCRT64). In Git Bash:
   `export PATH=$HOME/msys64/ucrt64/bin:$PATH`
 - Build & test: `cmake --preset msys2-ucrt64 && cmake --build build/msys2-ucrt64 && ctest --test-dir build/msys2-ucrt64`
-  (`-LE gui` skips the real-UI acceptance run: ~20 s, moves the mouse — don't run it
+  (`-LE gui` skips the real-UI acceptance run: ~30 s, moves the mouse — don't run it
   while the owner is using the machine). The local build cache has
   `OPENSHAPE_WARNINGS_AS_ERRORS=ON` like CI, and `OPENSHAPE_BUILD_TOOLS=ON`.
 - Visual check: `build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png`

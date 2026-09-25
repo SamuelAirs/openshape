@@ -68,13 +68,19 @@ Rules:
   and `VerticalDistance` (signed: b − a), `Diameter` (circle), `Radius` (arc,
   `value` > 0), `Parallel`, `Perpendicular`, `Equal` (two lines or two
   circles/arcs), `Tangent`, `Concentric`, `PointOnLine` (point `a` on line
-  `b`), `Midpoint` (point `a` at the middle of line `b`). Unknown constraint
-  types make the file unreadable with a "newer version" message.
+  `b`), `Midpoint` (point `a` at the middle of line `b`), `PointOnCircle`
+  (point `a` on the circle of circle or arc `b`). Unknown constraint types
+  make the file unreadable with a "newer version" message.
 - `Extrude` params: `{ "sketch": uuid, "profiles": [{ "point": [x, y], "area" }],
   "distance", "mode": "NewBody" | "Join" | "Cut" }`. Profiles are referenced by
   a point inside the region (sketch coordinates) plus its area.
 - `Extrude` may carry `"throughAll": true` (cuts only): the cut extends
-  through the whole body in the direction of `distance`.
+  through the whole body in the direction of `distance`; and
+  `"symmetric": true`: centered on the sketch plane, `|distance|` being the
+  total thickness.
+- `PushPull` params: `{ "face": faceRef, "distance" }` plus optional
+  `"keepEdges": true` (fillets and chamfers around the face move with it
+  where possible; steps without it are the plain prism + boolean).
 - A sketch placed on a face has `"attachment": { "body", "feature",
   "faceHint", "normal", "centroid", "area" }` identifying the face (on the
   output of `feature`); its `plane` is then derived from that face and the

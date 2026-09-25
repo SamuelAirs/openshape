@@ -280,6 +280,9 @@ int main(int argc, char* argv[])
     QCommandLineOption acceptanceOption(QStringLiteral("acceptance"),
                                         QStringLiteral("Run the end-to-end acceptance script, write screenshots to <dir>, exit with the failure count."),
                                         QStringLiteral("dir"));
+    QCommandLineOption touchOption(QStringLiteral("touch"),
+                                   QStringLiteral("Start with the touch layout (as on a tablet): larger controls, Pen switch."));
+    parser.addOption(touchOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
     parser.addOption(screenshotOption);
@@ -289,6 +292,8 @@ int main(int argc, char* argv[])
     OS_LOG(Info, App) << "OpenShape 0.1.0 starting";
 
     os::ui::AppController controller;
+    if (parser.isSet(touchOption))
+        controller.setTouchMode(true);
     QQmlApplicationEngine engine;
     engine.setInitialProperties({{QStringLiteral("app"), QVariant::fromValue(&controller)}});
     engine.loadFromModule("OpenShape", "Main");

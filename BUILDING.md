@@ -73,6 +73,7 @@ Developer switches:
 
 ```bash
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
+./build/msys2-ucrt64/bin/OpenShape.exe --touch   # the tablet layout (bigger controls, Pen switch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ```
@@ -108,9 +109,11 @@ bash scripts/package-windows.sh
 
 Don't build while the script runs: it copies from the build folder.
 
-This produces `dist/OpenShape/` (≈290 MB, 363 files): the stripped
-executable, Qt (via `windeployqt6`), OCCT, PlaneGCS and runtime DLLs, Qt
-plugins, QML modules, a `qt.conf`, and license files. Verified 2026-09-25 by
+This produces `dist/OpenShape/` (≈290 MB, 364 files, ~5 minutes): the
+stripped executable, Qt (via `windeployqt6`), OCCT, PlaneGCS and runtime
+DLLs, Qt plugins, QML modules, a `qt.conf`, and license files, including
+THIRD_PARTY_LICENSES.txt with the license texts of all bundled MSYS2
+packages (generated with `pacman`). Verified 2026-09-25 by
 running the packaged `OpenShape.exe` with `PATH` reduced to
 `C:\Windows\System32`, including the full `--acceptance` run (103/103).
 No installer yet, and not distributable yet (TD-17).
@@ -144,6 +147,12 @@ No installer yet, and not distributable yet (TD-17).
   `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
   the user, failed previews and GUI-thread stalls, one line per event
   (run it in the background).
+
+## macOS and iPad — prepared, not yet verified
+
+A `macos` preset (Homebrew packages) and a macOS CI job exist; the iPad build
+is described step by step in [docs/IPAD.md](docs/IPAD.md). Neither has been
+run on a Mac yet.
 
 ## Other platforms — not yet verified
 

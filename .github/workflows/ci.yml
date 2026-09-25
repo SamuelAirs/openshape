@@ -45,3 +45,20 @@ jobs:
         run: cmake --build build/msys2-ucrt64
       - name: Test (headless; the GUI acceptance run needs a desktop session)
         run: ctest --test-dir build/msys2-ucrt64 -LE gui --output-on-failure
+
+  # The macOS build (Apple Clang, Homebrew packages): the first step toward
+  # the iPad. Skipped while the repository is private, where macOS minutes
+  # bill at 10x; free for public repositories.
+  macos:
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install ninja opencascade qt nlohmann-json libzip eigen googletest
+      - name: Configure
+        run: cmake --preset macos -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
+      - name: Build
+        run: cmake --build build/macos
+      - name: Test (headless)
+        run: ctest --test-dir build/macos -LE gui --output-on-failure

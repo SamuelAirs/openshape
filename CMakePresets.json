@@ -26,6 +26,16 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (Homebrew packages)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew"
+      }
     }
   ],
   "buildPresets": [
@@ -40,6 +50,10 @@
     {
       "name": "linux",
       "configurePreset": "linux"
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos"
     }
   ],
   "testPresets": [
@@ -53,6 +67,13 @@
     {
       "name": "linux",
       "configurePreset": "linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
       "output": {
         "outputOnFailure": true
       }

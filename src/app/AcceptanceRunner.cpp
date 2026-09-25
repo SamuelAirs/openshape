@@ -227,6 +227,15 @@ void AcceptanceRunner::start()
             screenshot(QStringLiteral("00_help"));
             key(Qt::Key_Escape);
             check(help && !help->isVisible(), "Esc closes the help card");
+            check(clickItem(QStringLiteral("fileMenuButton")), "File menu");
+        },
+        [=, this] {
+            check(clickItem(QStringLiteral("aboutMenuItem")), "About OpenShape in the File menu");
+            auto* about = findVisualItem(window_->contentItem(), QStringLiteral("aboutOverlay"));
+            check(about && about->isVisible(), "the About card shows the license and source link");
+            screenshot(QStringLiteral("00b_about"));
+            key(Qt::Key_Escape);
+            check(about && !about->isVisible(), "Esc closes the About card");
             auto* triad = findVisualItem(window_->contentItem(), QStringLiteral("axisTriad"));
             check(triad && triad->isVisible() && triad->width() > 0, "the X/Y/Z axis marker is shown");
         },
@@ -632,6 +641,16 @@ void AcceptanceRunner::start()
         [=, this] {
             touchTap({QPointF(500, 300), QPointF(600, 300), QPointF(700, 300)});
             check(app_->bodyCount() == 3, "a three-finger tap redoes", QString::number(app_->bodyCount()));
+            check(app_->touchMode(), "touch switches to the touch layout");
+        },
+        // The touch layout offers the Pen switch.
+        [=, this] {
+            check(clickItem(QStringLiteral("penModeButton")), "Pen switch in the touch layout");
+            check(app_->penMode(), "Pen mode on");
+        },
+        [=, this] {
+            check(clickItem(QStringLiteral("penModeButton")), "Pen switch again");
+            check(!app_->penMode(), "Pen mode off");
         },
 
         // ================= Sketch tools, extrude options, edges that come along, face edits =================
@@ -649,6 +668,7 @@ void AcceptanceRunner::start()
         // (off-center: the rectangle's width label sits below its middle).
         [=, this] {
             click(screenPoint(0, 0, 0));
+            check(!app_->touchMode(), "a mouse click in the view returns to the mouse layout");
             mouseMove(screenPoint(30, 12, 0));
             type(QStringLiteral("40"));
             key(Qt::Key_Tab);

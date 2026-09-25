@@ -56,8 +56,9 @@ and vertical distances between any two points (position holes precisely).
 Since the first hands-on session: 3-point arcs (typed radius), parallel/
 perpendicular/equal/tangent/concentric/on-line/midpoint/radius constraints,
 construction toggle, and sketching on a sketch (or its plane) continues it.
-Not yet: slot, center rectangle, polygon, offset, trim, sketch fillet,
-splines, text, constraint icons, sketch patterns.
+Later the same day: slot, trim, corner fillet, offset, "On circle".
+Not yet: center rectangle, polygon, tangent arc, splines, text, constraint
+icons, sketch patterns.
 
 ## Milestone 2 — common modeling tools ✅
 
@@ -84,9 +85,10 @@ splines, text, constraint icons, sketch patterns.
   verified against area x distance) and delete faces (defeaturing: holes,
   fillets, chamfers, bosses)
 
-Follow-ups (not blocking M2): extrude symmetric / up to a face / with draft,
-faces that move together with tangent fillets (TD-21), mirror/pattern as
-separate bodies, rotation about a picked edge or point.
+Since: ✅ extrude Symmetric and Up to face; ✅ push/pull takes fillets and
+chamfers along (TD-21, where the moved region is straight walls).
+Follow-ups: extrude with draft, mirror/pattern as separate bodies, rotation
+about a picked edge or point.
 
 ## Milestone 3 — interaction quality 🟡
 
@@ -101,11 +103,13 @@ Modify/Combine tool palette that explains what to select, selection action
 bar, Model panel hover highlighting, automatic new body for joins that miss,
 3x faster drag previews (cached bounding boxes).
 
+Also done: touch-sized controls in the touch layout, a scrollable tool
+palette, the About box.
+
 Still to do: asynchronous previews and tessellation (TD-1), BVH picking
 (TD-2), finer-grained UI updates (TD-18, TD-19), box/lasso selection,
-cycling through stacked faces, snapping while moving bodies, touch-sized
-targets, an icon set (TD-9), project thumbnails (TD-11), a scrollable tool
-palette (TD-30).
+cycling through stacked faces, snapping while moving bodies, an icon set
+(TD-9), project thumbnails (TD-11).
 
 ## Milestone 4 — editable parametric history 🟡
 
@@ -142,7 +146,10 @@ palette (TD-30).
 - ✅ Gesture recognizer (Qt-free): tap, drag, double-tap, two-finger pan and
   pinch after real movement, two-finger tap = undo, three-finger tap = redo
 - ✅ Pen mode: pen selects and draws, fingers only navigate
-- ⬜ Touch-sized controls, pen-mode switch in the UI, iOS build (needs a Mac)
+- ✅ Touch layout: 44 pt controls and a Pen switch once touch is used (from
+  the start on tablets; `--touch` on Windows)
+- 🟡 iPad build: settings, Info.plist and guide ready (docs/IPAD.md); needs
+  the owner's Mac
 
 ## Platform & infrastructure
 
@@ -151,6 +158,8 @@ palette (TD-30).
   headless tests) on every push to the private GitHub repository
   (SamuelAirs/openshape); green as checked on 2026-09-25, 6–11 min per run.
   Pushes that only change documentation skip it
+- 🟡 macOS CI job (Apple Clang, Homebrew): written, runs once the repository
+  is public
 - ⬜ Linux CI: no Linux environment was available to verify it (WSL is not
   installed and needs admin rights)
 - ✅ License: MPL-2.0 (`LICENSE`, notice in every source file; see

@@ -118,7 +118,7 @@ ApplicationWindow {
                 Layout.leftMargin: 6
                 Layout.rightMargin: 8
             }
-            ActionButton { text: "File"; onClicked: fileMenu.popup(this, 0, height + 6) }
+            ActionButton { objectName: "fileMenuButton"; text: "File"; onClicked: fileMenu.popup(this, 0, height + 6) }
             Separator {}
             ActionButton {
                 text: "Undo"
@@ -167,6 +167,8 @@ ApplicationWindow {
         MenuItem { text: "Export STEP…"; enabled: window.app.bodyCount > 0; onTriggered: stepDialog.open() }
         MenuItem { text: "Export STL…"; enabled: window.app.bodyCount > 0; onTriggered: stlDialog.open() }
         MenuItem { text: "Export 3MF…"; enabled: window.app.bodyCount > 0; onTriggered: threeMfDialog.open() }
+        MenuSeparator {}
+        MenuItem { objectName: "aboutMenuItem"; text: "About OpenShape"; onTriggered: aboutOverlay.open() }
     }
 
     // ---------------------------------------------------------------- create palette
@@ -175,11 +177,22 @@ ApplicationWindow {
         visible: !window.app.sketchMode
         anchors { left: parent.left; verticalCenter: parent.verticalCenter; margins: Theme.margin }
         width: createColumn.implicitWidth + 2 * Theme.panelPadding
-        height: createColumn.implicitHeight + 2 * Theme.panelPadding
+        // Scrolls when the window is too short for every tool (touch-sized
+        // buttons on a tablet): room is left for the header and the hints.
+        height: Math.min(createColumn.implicitHeight + 2 * Theme.panelPadding, window.height - 2 * Theme.margin - 150)
+
+        Flickable {
+            id: createScroll
+            anchors { fill: parent; margins: Theme.panelPadding }
+            contentWidth: width
+            contentHeight: createColumn.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
 
         ColumnLayout {
             id: createColumn
-            anchors.centerIn: parent
+            width: createScroll.width
             spacing: 4
             SectionLabel { text: "Create" }
             ActionButton {
@@ -249,6 +262,18 @@ ApplicationWindow {
                 }
             }
         }
+        }
+        // More tools below: a fade at the bottom edge says "scroll".
+        Rectangle {
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
+            height: 28
+            radius: 12
+            visible: createScroll.contentY + createScroll.height < createScroll.contentHeight - 1
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#00F9FAFB" }
+                GradientStop { position: 1.0; color: Theme.panel }
+            }
+        }
     }
 
     // ---------------------------------------------------------------- model history
@@ -260,6 +285,9 @@ ApplicationWindow {
         maximumHeight: window.height - 2 * Theme.margin - 80
         onFinished: viewport.forceActiveFocus()
     }
+
+    // Touch-sized controls once the app is used by touch (from the start on a tablet).
+    Binding { target: Theme; property: "touch"; value: window.app.touchMode }
 
     // ---------------------------------------------------------------- view controls
     AxisTriad {
@@ -290,6 +318,18 @@ ApplicationWindow {
                 onClicked: window.app.togglePerspective()
             }
             Separator {}
+            ActionButton {
+                id: penButton
+                objectName: "penModeButton"
+                visible: window.app.touchMode || window.app.penMode
+                text: "Pen"
+                checked: window.app.penMode
+                onClicked: window.app.penMode = !window.app.penMode
+                ToolTip.visible: hovered
+                ToolTip.text: "Pen mode: the pen selects and draws, fingers only move the view (a resting hand does nothing)."
+                ToolTip.delay: 500
+            }
+            Separator { visible: penButton.visible }
             ActionButton {
                 text: window.app.displayUnit
                 onClicked: window.app.setDisplayUnit(window.app.displayUnit === "mm" ? "in" : "mm")
@@ -461,6 +501,14 @@ ApplicationWindow {
     HelpOverlay {
         id: helpOverlay
         objectName: "helpOverlay"
+        anchors.fill: parent
+        z: 100
+        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+    }
+
+    AboutOverlay {
+        id: aboutOverlay
+        objectName: "aboutOverlay"
         anchors.fill: parent
         z: 100
         onVisibleChanged: if (!visible) viewport.forceActiveFocus()

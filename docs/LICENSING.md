@@ -51,6 +51,7 @@ What that needs:
   OCCT, PlaneGCS) then require giving recipients a way to relink them with
   modified versions (e.g. shipping the object files). Check this before the
   first iPad release.
-- **Windows:** before any public download, fix TD-17 (GPL FFmpeg DLLs pulled
-  in by MSYS2's OCCT), generate the transitive license list (TD-6) and add
-  an About box with the license notices and the source link (TD-32).
+- **Windows:** before any public download, fix TD-17 (GPL FFmpeg and jbigkit
+  DLLs pulled in by MSYS2's OCCT: rebuild OCCT without FFmpeg/FreeImage) and
+  make the repository public (the About box links to it). The package
+  already ships the full license list (THIRD_PARTY_LICENSES.txt).

@@ -24,24 +24,27 @@ a Qt Quick interface designed for mouse, touch and stylus.
 - Sketch on the ground, an origin plane or any flat face: lines, rectangles,
   circles and arcs with snapping, horizontal/vertical inference and typed
   dimensions; constraints (parallel, perpendicular, equal, tangent,
-  concentric, midpoint, …) and construction lines; click a dimension to
-  change it; sketch on a sketch to add to it
+  concentric, midpoint, …) and construction lines; slots, trim, rounded
+  corners and offsets; click a dimension to change it; sketch on a sketch
+  to add to it
 - Extrude or revolve closed sketch profiles into new bodies, or join/cut into
-  a body
+  a body; extrude symmetrically or up to a face
 - Move, rotate, align (face to face, edge to edge, hole to shaft, or onto the
   build plate), mirror and pattern bodies
 - Combine bodies: union, subtract, intersect (select bodies by double-click
   or in the Model panel; Shift adds)
 - Direct face edits: select a hole, fillet or chamfer and press Delete to
-  remove it; click a hole's wall and type its new diameter
+  remove it; click a hole's wall and type its new diameter; pushing a face
+  takes its rounded edges along
 - Heat-set insert pilot holes (M2–M5 presets)
 - Live previews; failures explained in plain language, never corrupting the model
 - Undo/redo for every change
 - Model panel: hover a step to see what it made; click a step to change its
   values later
 - Orbit, pan, zoom, standard views, orthographic/perspective
-- Hover highlighting, face/edge/body selection, touch-friendly tolerances;
-  with a pen, the pen draws and fingers only navigate
+- Hover highlighting, face/edge/body selection; a touch layout (bigger
+  controls, Pen switch) when used by touch; with a pen, the pen draws and
+  fingers only navigate
 - `.openshape` project files that reopen with their full history (sketches stay editable)
 - Measure wall thickness, distances and angles between faces/edges
 - STEP export (and import in the kernel), STL and 3MF export for slicers

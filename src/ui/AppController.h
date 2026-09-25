@@ -44,6 +44,11 @@ class AppController : public QObject {
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
+    // Used by touch: touch-sized controls and the Pen switch (on from the
+    // start on tablets; on desktops after a touch, off after a real mouse click).
+    Q_PROPERTY(bool touchMode READ touchMode NOTIFY touchModeChanged)
+    // Pen mode: the pen selects and draws, fingers only navigate.
+    Q_PROPERTY(bool penMode READ penMode WRITE setPenMode NOTIFY stateChanged)
     Q_PROPERTY(QString documentTitle READ documentTitle NOTIFY documentChanged)
     Q_PROPERTY(bool dirty READ dirty NOTIFY stateChanged)
     Q_PROPERTY(int bodyCount READ bodyCount NOTIFY stateChanged)
@@ -86,6 +91,10 @@ public:
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariantList axisTriad() const;
+    bool touchMode() const { return touchMode_; }
+    void setTouchMode(bool on);
+    bool penMode() const;
+    void setPenMode(bool on);
     QString documentTitle() const;
     bool dirty() const;
     int bodyCount() const;
@@ -159,6 +168,7 @@ signals:
     void viewChanged();
     void documentChanged();
     void message(const QString& text);
+    void touchModeChanged();
 
 private:
     void attach();
@@ -168,6 +178,11 @@ private:
     std::unique_ptr<cmd::UndoStack> undoStack_;
     std::unique_ptr<interact::InteractionController> interaction_;
     QString path_;
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    bool touchMode_ = true;
+#else
+    bool touchMode_ = false;
+#endif
 };
 
 } // namespace os::ui

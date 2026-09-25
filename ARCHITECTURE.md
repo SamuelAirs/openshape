@@ -131,6 +131,15 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Tessellation.h`: `BRepMesh_IncrementalMesh` (faces meshed in parallel) →
   `Mesh` with per-triangle face ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
   polylines taken from the triangulation (so edges sit exactly on mesh vertices).
+- `pushPullFaceKeepingEdges`: push/pull that takes fillets and chamfers
+  along: split the part on a plane just below the face's non-wall
+  neighbours, move the top piece, fill the gap with the extruded
+  cross-section (or take out a slab), fuse; everything the moving band
+  passes through must be a wall and the volume must change by exactly
+  cross-section x distance, else `ErrorCode::Unsupported` and the caller
+  uses `pushPullFace`.
+- `offsetCurves` (Profiles.h): offsets one connected chain of planar curves
+  (`BRepOffsetAPI_MakeOffset`, sharp corners) for the sketch Offset action.
 - `pointOnFace` (a point inside a flat face, away from holes) and
   `faceThickness` (distance to the parallel face straight behind, by a line
   intersection with `IntCurvesFace_ShapeIntersector`) back push/pull's size.
@@ -182,7 +191,12 @@ Document (UUID, display unit)
 - Constraints: coincident, horizontal, vertical, distance, horizontal/vertical
   distance (signed), diameter, radius (arcs), parallel, perpendicular, equal
   (lengths or radii), tangent (line or round to round), concentric, point on
-  line, midpoint. `solve()` / `solveDragging()` build a PlaneGCS
+  line, point on circle, midpoint. A line and an arc tangent at a shared end
+  are solved as a direction (angle constraint), not "line touches circle".
+  `sketch/SketchEdit` holds the edits behind tools that change geometry:
+  `addSlot`, `filletCorner` (keeps the corner as a reference point on both
+  lines), `trimAt` / `trimPreview` (pieces between crossings; new ends kept
+  on the curves they meet). `solve()` / `solveDragging()` build a PlaneGCS
   system per call (DogLeg), write positions back, and report DOF plus
   conflicting/redundant constraints. A failed solve never changes the sketch.
 - Profiles: `geom::findRegions` splits a large face on the sketch plane with
@@ -258,7 +272,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (host body recorded) or the XY plane, animates the view to face it, and hands
   input to a `SketchSession`. The session edits a working copy; tools are
   Select, Line, Rectangle, Circle, Arc (3-point: start, end, then bend; a
-  typed radius locks it). Starting a sketch on a plane where a visible sketch
+  typed radius locks it), Slot (two centers, then the width) and Trim (click
+  a piece, previewed red). Selected curves offer Offset (a mode: the pointer
+  picks the side, a typed distance fixes it, click/Enter applies); selected
+  corner points offer Fillet. Starting a sketch on a plane where a visible sketch
   already lies (exactly coplanar), or with one of its profiles selected,
   reopens that sketch instead, so new curves split its shapes. Selecting
   sketch items offers constraint and Construction actions (`contextActions`).
@@ -298,6 +315,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
   faces) lays the face on the XY plane. It commits as a Move step named
   "Align": a one-time placement, not linked to the target.
+- **Extrude options:** Symmetric makes the value the total thickness
+  (`displayOffset` = value / 2); "Up to face" makes the next face click set
+  the distance to a parallel flat face (`ExtrudeOperation::extendToFace`,
+  stored as a plain distance). Push/pull steps from the UI set `keepEdges`.
 - **Mirror / Pattern:** Mirror waits for a flat face (or an origin plane from
   the action bar) and has no value; Apply or Enter commits. Pattern previews
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
@@ -316,8 +337,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as
   undo/redo; `ViewportItem` only converts `QTouchEvent`s. Pen mode (turned on
-  by the first pen press; `setPenMode`) makes finger presses navigation-only.
-  There is no UI switch for it yet.
+  by the first pen press, or the Pen switch) makes finger presses
+  navigation-only. `AppController::touchMode` (on after a touch, off after a
+  real mouse click, on from the start on iOS/Android, `--touch` on the
+  command line) makes `Theme.controlHeight` 44 and shows the Pen switch.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -389,12 +412,15 @@ disk. Saves are atomic (temp file + rename). See
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
   the real application through Qt's platform input path — including clicking
   QML buttons found by `objectName` — and checks geometry after each step,
-  saving screenshots. 105 checks, ~20 s (it moves the real mouse cursor):
+  saving screenshots. 147 checks, ~30 s (it moves the real mouse cursor):
   help card, the Milestone 0 script, save/open, exports, the Milestone 1
   bracket, a history edit, booleans through the Model panel and the action
-  bar, Align, Rotate rings, Pattern, Mirror, and two-/three-finger taps
-  through synthetic touch events. Arcs, sketch constraints and face edits
-  are covered headlessly (`tests/`) but not yet clicked through the real UI.
+  bar, Align, Rotate rings, Pattern, Mirror, two-/three-finger taps and the
+  touch layout, the About box, trim/slot/fillet/offset in a sketch,
+  symmetric and up-to-face extrusions, a fillet carried by a push, a hole
+  resized by its diameter and deleted. `clickItem` lays out freshly created
+  buttons before clicking (a click once landed on the Delete button that
+  still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
   previews, tessellation, recompute and bounding boxes on a filleted part;
   `scripts/dev/` has a Win32 input driver and a live log watcher (see

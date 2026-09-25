@@ -11,7 +11,7 @@ AbstractButton {
     property bool accent: false
     property bool compact: false
 
-    implicitHeight: compact ? 30 : Theme.controlHeight
+    implicitHeight: compact ? (Theme.touch ? 40 : 30) : Theme.controlHeight
     implicitWidth: Math.max(implicitHeight, label.implicitWidth + (compact ? 20 : 24))
     hoverEnabled: true
     focusPolicy: Qt.NoFocus

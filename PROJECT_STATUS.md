@@ -20,8 +20,8 @@ first, tested version. Their follow-ups are the next tasks below.
   rebuilt from it. If the working tree is not clean, someone changed it
   after this note.
 - **Verify first:** build, `ctest --test-dir build/msys2-ucrt64 -LE gui`
-  (211 pass), then — only when nobody is using the mouse —
-  `ctest --test-dir build/msys2-ucrt64 -L gui` (105 real-UI checks, ~20 s).
+  (238 pass), then — only when nobody is using the mouse —
+  `ctest --test-dir build/msys2-ucrt64 -L gui` (147 real-UI checks, ~30 s).
 - **Last session (2026-09-25):** the owner modeled hands-on while the debug
   log was watched; everything they reported was fixed (right-click ends a
   line, sketching on a sketch continues it, separate pieces are flagged and
@@ -30,6 +30,17 @@ first, tested version. Their follow-ups are the next tasks below.
   order: booleans + Align, Rotate, Mirror/Pattern, the sketch toolkit (arcs,
   eight constraints, construction), direct face edits, touch & pen
   groundwork. Details and lessons: docs/DEVLOG.md.
+- **Latest (same day, later):** license MPL-2.0 applied; the repository was
+  checked for anything sensitive (nothing found; ready to be made public by
+  the owner); push/pull shows and sets the part's size; X/Y/Z axes and an
+  axis marker; slot, trim, corner fillet and offset in sketches; extrude
+  symmetric and up to a face; push/pull takes fillets and chamfers along;
+  touch layout with a Pen switch; About box; license list in the package;
+  iPad build prepared (docs/IPAD.md) but not yet run on a Mac.
+- **Waiting on the owner:** making the GitHub repository public (they said
+  they will); an OK to download OpenCASCADE's source (~60 MB, from
+  github.com/Open-Cascade-SAS/OCCT) to rebuild it without FFmpeg/FreeImage
+  for a distributable Windows package (TD-17); the iPad steps on their Mac.
 - **Owner decisions:** the license is **MPL-2.0** (chosen 2026-09-25; see
   docs/LICENSING.md). No product decision is pending. Their global git
   `user.email` is malformed but they don't mind; this repository sets its
@@ -37,7 +48,9 @@ first, tested version. Their follow-ups are the next tasks below.
 - **CI is green:** the owner checked the Actions page on 2026-09-25 (runs
   #3–#8 passed, 6–11 min each). Results are only visible there: the
   repository is private and `gh` is not installed here, so ask the owner
-  when a result matters.
+  when a result matters. Once the repository is public, anyone (including
+  Claude) can read the results through the public API, and the macOS job
+  (skipped while private) starts running.
 - **Working with the owner:** they test hands-on and report issues while you
   watch the log (`OPENSHAPE_LOG=debug`, `scripts/dev/watch_log.py`). For each
   report: reproduce, fix, add a check that clicks the fixed path, re-package
@@ -87,6 +100,21 @@ first, tested version. Their follow-ups are the next tasks below.
 - Sketches on faces follow their faces; through-all cuts.
 - Shell, Move (X/Y/Z arrows), Rotate (X/Y/Z rings, 15° snaps), Revolve —
   editable history steps.
+- **Sketch tools, part 2**: slot (O), trim (T: click a piece, shown red
+  first), fillet on selected corner points (editable R; the sharp corner is
+  kept as a reference), offset of selected curves (side by pointer, typed
+  distance), "On circle" constraint.
+- **Extrude options**: Symmetric (total thickness, centered) and Up to face
+  (click a parallel flat face).
+- **Push/pull takes rounded and bevelled edges along**: fillets and chamfers
+  around a pushed face keep their size (split, move, fill; exact volume
+  check; otherwise the classic push/pull). New steps only (`keepEdges`).
+- **Touch layout**: 44 pt controls and a Pen switch once touch is used (from
+  the start on a tablet; `--touch` shows it on Windows); the tool palette
+  scrolls when short.
+- **About box** (File → About OpenShape): license, source link, bundled
+  components; the package carries THIRD_PARTY_LICENSES.txt for all 92
+  bundled MSYS2 packages.
 - **Direct face edits**: select holes, fillets, chamfers or bosses and press
   Delete to remove them (the neighbours heal the gap); click a hole or shaft
   wall and type its new diameter (print tolerance); offset other faces with
@@ -109,22 +137,26 @@ first, tested version. Their follow-ups are the next tasks below.
 
 | | Before 2026-09-25 fix | Now |
 |---|---|---|
-| Push/pull drag preview (per pointer move) | 130 ms | 43 ms |
-| Body tessellation (820 triangles) | 43 ms | 0.85 ms |
-| Recompute after an upstream edit | 57 ms | 14.5 ms |
+| Push/pull drag preview (per pointer move) | 130 ms | 37 ms |
+| Body tessellation (820 triangles) | 43 ms | 1-4 ms |
+| Recompute after an upstream edit | 57 ms | 15-17 ms |
 
-The remaining preview cost is the kernel boolean (38 ms when the pushed face
-meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD-1).
-Re-measure with `bench_session` (BUILDING.md, "Developer tools"); the
-end-of-session run gave 45 / 0.93 / 14.9 ms.
+The preview now moves the fillets along (split + fuse, ~33 ms of kernel time
+on this part; the old prism + boolean against tangent fillets took 38 ms).
+The tessellation figure depends on whether the body's faces were already
+meshed by earlier previews (0.9 ms warm, ~4 ms cold). Previews still run on
+the GUI thread (TD-1). Re-measure with `bench_session` (BUILDING.md,
+"Developer tools").
 
 ## Partially implemented
 
 - STEP import: kernel function and tests; not exposed in the UI.
 - Touch/pen: gestures (tap, drag, double-tap, two-finger pan/pinch after real
-  movement, two-finger tap = undo, three-finger tap = redo) and pen mode (pen
-  selects/draws, fingers navigate) are implemented and tested with synthetic
+  movement, two-finger tap = undo, three-finger tap = redo), pen mode with a
+  Pen switch, and the touch layout are implemented and tested with synthetic
   Qt touch events; not yet tried on real touch hardware or an iPad.
+- iPad: build settings, Info.plist and a step-by-step guide (docs/IPAD.md);
+  never built on a Mac yet. macOS CI job waits for the repository to be public.
 - Disconnected pieces: flagged in the Model panel, not yet split into bodies (TD-22).
 
 ## Broken / missing
@@ -133,11 +165,11 @@ end-of-session run gave 45 / 0.93 / 14.9 ms.
   no installer, large (~290 MB, see TD-6); **not distributable** (TD-17).
 - No thumbnails in project files.
 - CI covers Windows only; Linux is unverified.
-- Sketch: no offset, trim, sketch fillet, slot, polygon, center rectangle,
-  spline or text yet; no sketch-level patterns/mirror; constraints have no
-  on-canvas icons yet. Separate (hidden or consumed) sketches on one plane
-  still do not interact.
-- Push/pull is prism + boolean: fillets next to a pushed face do not follow it (TD-21).
+- Sketch: no polygon, center rectangle, tangent arc, spline or text yet; no
+  sketch-level patterns/mirror; constraints have no on-canvas icons yet.
+  Separate (hidden or consumed) sketches on one plane still do not interact.
+- Push/pull carries fillets only where everything it moves through is
+  straight walls; elsewhere it falls back to prism + boolean (TD-21).
 
 ## Recent architectural decisions
 
@@ -162,50 +194,55 @@ end-of-session run gave 45 / 0.93 / 14.9 ms.
 - Touch gestures are recognized by a Qt-free class (`TouchGestureRecognizer`)
   so they are unit-tested; two fingers do not navigate until they move, which
   makes two-/three-finger taps usable as undo/redo.
+- A line and an arc tangent at a shared end are solved as a direction
+  (PlaneGCS angle constraint, as FreeCAD does): "line touches circle" plus
+  the shared point is degenerate there (false DOF, false conflicts).
+- Push/pull keeps edge treatments by splitting the part below them, moving
+  the top piece and filling the gap with the cross-section; a new
+  `keepEdges` flag keeps older files computing as they did.
 
 ## Known technical risks
 
 - **Do not distribute the Windows package yet:** it contains GPL FFmpeg/x264/x265
-  DLLs pulled in by MSYS2's OCCT (TD-17). Fix: build OCCT without FFmpeg.
+  DLLs and GPL-2.0 jbigkit, pulled in by MSYS2's OCCT (TD-17; see
+  THIRD_PARTY_LICENSES.txt in the package). Fix: build OCCT without
+  FFmpeg and FreeImage (needs the owner's OK to download its source).
 - Topological naming on symmetric parts after large upstream edits (TD-3).
 - GUI-thread previews and QML binding churn will stutter on big models (TD-1, TD-18, TD-19).
 - QRhi via GuiPrivate ties builds to a Qt minor version (TD-5).
-- Distributing binaries needs more than TD-17: an About box with the
-  license notices and a source link (MPL-2.0 section 3.2; TD-32) and the
-  transitive license list (TD-6). See docs/LICENSING.md.
+- Distributing binaries also needs the source to be public (the About box
+  links to the GitHub repository). See docs/LICENSING.md.
 
 ## Next concrete tasks (owner priorities)
 
-1. Acceptance gaps: click the Arc tool, a sketch constraint, Delete face and
-   a hole-diameter Offset through the real UI in `AcceptanceRunner` (today
-   they are covered by headless tests only).
-2. Sketch toolkit, part 2: slot, center rectangle, polygon, offset, trim,
-   sketch fillet, tangent arc, constraint icons, sketch patterns; separate
-   sketches on one plane should interact (TD-27, TD-28).
-3. Direct face edits, part 2: extrude symmetric / to a face / with draft;
-   move a face together with tangent fillets (TD-21).
-4. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
+1. The owner's test pass (docs/MANUAL_TESTS.md): act on what they report.
+2. iPad: run docs/IPAD.md on the owner's Mac (best with Claude Code there);
+   once the repository is public, fix whatever the macOS CI job reports.
+3. Distributable Windows package: rebuild OCCT without FFmpeg/FreeImage
+   (TD-17, after the owner's OK to download it), installer or zip, then a
+   GitHub release.
+4. Sketch toolkit, part 3: tangent arc, polygon, center rectangle,
+   constraint icons, sketch patterns; separate sketches on one plane should
+   interact (TD-27, TD-28).
+5. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
    models (TD-18), cache sketch/grid geometry (TD-19), BVH picking (TD-2, TD-20).
-5. iPad: touch-sized targets (44 pt) when touch is used, a pen-mode switch in
-   the UI (TD-29), then the iOS build on the owner's Mac (Qt for iOS, OCCT for
-   iOS, static-linking obligations — see docs/LICENSING.md).
 6. Split disconnected pieces into separate bodies (TD-22); pattern/mirror as
    separate bodies (copies) as an option (TD-26).
 7. Align follow-ups: snap alignment while moving (Shapr3D-style); rotate
-   about a picked edge or point (TD-24).
-8. Installer and smaller, distributable package with an About box (TD-6,
-   TD-17, TD-32).
+   about a picked edge or point (TD-24). Extrude with draft.
 
 ## Tests currently passing
 
-218/218 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
-model and solver, document, commands, project files, sketch features, face
-attachment, camera, picking, interaction (headless M0 script, sketch
-workflows, history editing, highlight, booleans, right-click, align,
-rotate, mirror, pattern, sketch constraints, arcs, face edits, touch
-gestures, pen mode, push/pull thickness, axis marker), plus `acceptance_gui`:
-105 end-to-end checks through the
-real UI (including multi-finger taps). Build with
+238/238 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+model and solver, sketch edits (slot, fillet, trim), document, commands,
+project files, sketch features, face attachment, camera, picking,
+interaction (headless M0 script, sketch workflows and tools, history
+editing, highlight, booleans, right-click, align, rotate, mirror, pattern,
+sketch constraints, arcs, offsets, face edits, extrude options, push/pull
+thickness and kept edges, touch gestures, pen mode, axis marker), plus
+`acceptance_gui`: 147 end-to-end checks through the real UI (including
+multi-finger taps, the touch layout, the About box, every sketch tool and
+the face edits). Build with
 `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (as CI does): 0 warnings.
 
 ## Platforms verified

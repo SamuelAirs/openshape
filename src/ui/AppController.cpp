@@ -122,6 +122,24 @@ QPointF AppController::valueLabelPosition() const
 
 bool AppController::valueLabelVisible() const { return interaction_->valueLabelPosition().has_value(); }
 
+void AppController::setTouchMode(bool on)
+{
+    if (touchMode_ == on)
+        return;
+    touchMode_ = on;
+    emit touchModeChanged();
+}
+
+bool AppController::penMode() const { return interaction_->penMode(); }
+
+void AppController::setPenMode(bool on)
+{
+    if (interaction_->penMode() == on)
+        return;
+    interaction_->setPenMode(on);
+    emit stateChanged();
+}
+
 QVariantList AppController::axisTriad() const
 {
     QVariantList list;

@@ -105,6 +105,10 @@ void ViewportItem::geometryChange(const QRectF& newGeometry, const QRectF& oldGe
 void ViewportItem::mousePressEvent(QMouseEvent* event)
 {
     forceActiveFocus(Qt::MouseFocusReason);
+    // A real mouse (not a touch or pen turned into mouse events) leaves touch mode.
+    if (controller_ && event->source() == Qt::MouseEventNotSynthesized && event->pointingDevice()
+        && event->pointingDevice()->type() == QInputDevice::DeviceType::Mouse)
+        controller_->setTouchMode(false);
     if (controller_)
         controller_->interaction().pointerPress(toPointer(event, event->button()));
     event->accept();
@@ -166,6 +170,7 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         event->ignore();
         return;
     }
+    controller_->setTouchMode(true);
     auto& interaction = controller_->interaction();
     if (event->type() == QEvent::TouchCancel) {
         interaction.cancelPointer();

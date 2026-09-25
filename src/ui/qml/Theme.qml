@@ -23,6 +23,8 @@ QtObject {
 
     readonly property int margin: 16
     readonly property int panelPadding: 6
-    // Touch-friendly: never smaller than ~36 logical px.
-    readonly property int controlHeight: 36
+    // Set while the app is used by touch (Main.qml binds it to app.touchMode):
+    // controls grow to 44 logical px, Apple's minimum touch target.
+    property bool touch: false
+    readonly property int controlHeight: touch ? 44 : 36
 }

@@ -21,6 +21,7 @@ qt_add_qml_module(openshape_ui
         qml/SectionLabel.qml
         qml/Theme.qml
         qml/AxisTriad.qml
+        qml/AboutOverlay.qml
     SOURCES
         AppController.cpp AppController.h
         ViewportItem.cpp ViewportItem.h

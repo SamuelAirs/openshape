@@ -4,7 +4,14 @@
 find_package(Eigen3 REQUIRED NO_MODULE)
 
 set(PLANEGCS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Sketcher/App/planegcs)
-add_library(planegcs SHARED
+# iOS apps cannot ship plain dynamic libraries: static there (the LGPL's
+# relinking option is then met by providing the object files).
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(PLANEGCS_LIBRARY_TYPE STATIC)
+else()
+    set(PLANEGCS_LIBRARY_TYPE SHARED)
+endif()
+add_library(planegcs ${PLANEGCS_LIBRARY_TYPE}
     ${PLANEGCS_DIR}/Constraints.cpp
     ${PLANEGCS_DIR}/GCS.cpp
     ${PLANEGCS_DIR}/Geo.cpp

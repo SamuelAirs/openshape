@@ -74,6 +74,42 @@ cp LICENSE "$OUT_DIR/LICENSE.txt"
 cp THIRD_PARTY.md README.md "$OUT_DIR/"
 cp third_party/planegcs/COPYING.LIB "$OUT_DIR/PlaneGCS-COPYING.LIB.txt"
 
+# The license texts of every bundled library, from the MSYS2 packages they
+# came from (plugins and QML modules belong to the Qt packages found here).
+if command -v pacman >/dev/null; then
+    owned=()
+    for dll in "$OUT_DIR"/*.dll; do
+        owned+=("$prefix/$(basename "$dll")")
+    done
+    # Batched queries (pacman scans its database once per call) and no
+    # pacman inside a `while read` loop: it would read the loop's input.
+    mapfile -t packages < <({ pacman -Qqo "${owned[@]}" 2>/dev/null || true; } | sort -u)
+    info="$(pacman -Qi "${packages[@]}" </dev/null)"
+    licenseFiles="$(pacman -Ql "${packages[@]}" </dev/null | grep '/share/licenses/.' || true)"
+    msysRoot="$(cygpath -m /)" # package paths are relative to it (one call, not one per file)
+    {
+        echo "Libraries bundled with OpenShape (${#packages[@]} MSYS2 packages) and their licenses,"
+        echo "as recorded by those packages. OpenShape's own license is in LICENSE.txt."
+        for pkg in "${packages[@]}"; do
+            echo
+            echo "================================================================================"
+            awk -v p="$pkg" '/^Name *:/ { show = ($3 == p) } show && /^(Name|Version|Licenses|URL) *:/' <<<"$info" \
+                | sed -e 's/^Name *: /Package:  /' -e 's/^Version *: /Version:  /' \
+                      -e 's/^Licenses *: /Licenses: /' -e 's/^URL *: /Source:   /'
+            echo "================================================================================"
+            mapfile -t files < <(grep "^$pkg " <<<"$licenseFiles" | cut -d' ' -f2-)
+            for file in "${files[@]}"; do
+                path="${msysRoot%/}$file"
+                [ -f "$path" ] || continue
+                echo "--- ${file##*/}"
+                cat "$path"
+            done
+        done
+    } > "$OUT_DIR/THIRD_PARTY_LICENSES.txt"
+else
+    echo "warning: pacman not found; THIRD_PARTY_LICENSES.txt not generated"
+fi
+
 count=$(find "$OUT_DIR" -type f | wc -l)
 size=$(du -sh "$OUT_DIR" | cut -f1)
 echo "Packaged $OUT_DIR ($count files, $size)"

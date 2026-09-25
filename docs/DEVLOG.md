@@ -305,3 +305,40 @@ unbraced `if` trips `-Werror=dangling-else`.
 open deleted its files from under it (MSYS2's `rm` can remove files that are
 in use on Windows). The folder was restored within minutes, and the package
 script now refuses to run while OpenShape runs from the output folder.
+
+## 2026-09-25 — Sketch tools, extrude options, edges that follow, iPad groundwork
+
+**A degenerate tangency.** A slot solved with the wrong number of free
+parameters (7 instead of 3) and a filleted rectangle reported "conflicting
+constraints" as soon as its radius changed. The cause: tangency between a
+line and an arc sharing an end was "line touches circle" plus the shared
+point; at the touching point those equations lose rank. FreeCAD solves it as
+a direction (the line leaves in the arc's direction at that end); the
+solver now does the same.
+
+**Push/pull that keeps fillets without re-filleting.** Removing the fillets,
+pushing and re-filleting is fragile (corner blends). Instead: split the part
+on a plane just below the face's fillets and chamfers, move the top piece,
+fill the gap with the extruded cross-section (or remove a slab), fuse. It
+only runs where everything the moving band crosses is straight walls, and
+must change the volume by exactly cross-section x distance; otherwise the
+classic push/pull runs. A `keepEdges` flag keeps older files unchanged.
+First version called the tight bounding box per face (tens of ms each on
+curved faces): 82 ms per preview. With the mesh-based box: 37 ms, faster
+than the old boolean against tangent fillets.
+
+**Acceptance lessons.** A click placed below a rectangle landed on its
+dimension label; freshly created action buttons were clicked before Qt laid
+them out, so the click hit Delete (clickItem now lays rows out first); in the
+iso view one click point projected exactly onto a body edge (edges win
+picking); at low zoom a click 1 mm under a hole's rim picked the rim.
+Pick points away from labels and edges, and zoom in for small targets.
+
+**Packaging.** The license list needed one `pacman -Qo` for all DLLs (one
+database scan) and no `pacman` inside a `while read` loop (it swallowed the
+loop's input: 8 of 92 packages listed).
+
+**Small C++ pitfalls.** `std::vector<double> low(std::size_t(count))` is a
+function declaration (most vexing parse); a gtest macro inside an unbraced
+`if` trips `-Werror=dangling-else`; GCC's `-Wshadow=local` is rejected by
+Clang (now GCC-only, for the Mac build).

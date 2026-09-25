@@ -131,7 +131,8 @@ Rectangle {
                             ["Constrain", "Select 1–2 items → Parallel, Perpendicular, Equal, Tangent, Concentric, …"],
                             ["Construction curves", "Select curves → Construction (never become shapes)"],
                             ["Add to a sketch", "Select one of its shapes → Sketch, or sketch on its plane"],
-                            ["Extrude / revolve", "Finish, then click inside a closed shape"]
+                            ["Extrude / revolve", "Finish, then click inside a closed shape"],
+                            ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face"]
                         ]
                     }
                     HelpSection {
