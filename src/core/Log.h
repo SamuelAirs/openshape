@@ -60,7 +60,6 @@ private:
 
 } // namespace os
 
-#define OS_LOG(level, category)                                                \
-    if (!::os::isLogEnabled(::os::LogLevel::level)) {                          \
-    } else                                                                     \
-        ::os::LogLine(::os::LogLevel::level, ::os::LogCategory::category)
+// Uses a one-iteration for-loop instead of if/else so the macro composes
+// safely inside unbraced if-statements (no dangling-else ambiguity).
+#define OS_LOG(level, category)                                                              for (bool os_log_once_ = ::os::isLogEnabled(::os::LogLevel::level); os_log_once_;              os_log_once_ = false)                                                                ::os::LogLine(::os::LogLevel::level, ::os::LogCategory::category)

@@ -12,3 +12,6 @@ target_link_libraries(test_core PRIVATE openshape_core)
 
 openshape_add_test(test_geometry test_geometry.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
+
+openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp)
+target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)
