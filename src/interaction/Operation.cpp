@@ -30,8 +30,13 @@ void Operation::setValue(double value, const doc::Document& document)
         previewMesh_.reset();
         return;
     }
+    resetAutomaticChoices();
     auto feature = makeFeature(value);
     auto result = document.preview(previewBody(), *feature);
+    if (result && reconsider(result.value(), document)) {
+        feature = makeFeature(value);
+        result = document.preview(previewBody(), *feature);
+    }
     if (!result) {
         previewMesh_.reset();
         error_ = result.userMessage();
@@ -191,7 +196,25 @@ LinearManipulator RevolveOperation::handle(int index) const
 
 Uuid RevolveOperation::previewBody() const
 {
-    return mode_ == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
+    return mode() == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
+}
+
+namespace {
+// A join whose result has more separate pieces than the body had did not
+// touch it: the user meant a new body (as Shapr3D does).
+bool joinMissedBody(const geom::Shape& result, const doc::Document& document, const std::optional<Uuid>& host)
+{
+    const doc::Body* body = host ? document.body(*host) : nullptr;
+    return body && result.solidCount() > std::max(body->shape().solidCount(), 1);
+}
+} // namespace
+
+bool RevolveOperation::reconsider(const geom::Shape& result, const doc::Document& document)
+{
+    if (modeChosen_ || mode_ != doc::ExtrudeMode::Join || !joinMissedBody(result, document, host_))
+        return false;
+    autoNewBody_ = true;
+    return true;
 }
 
 std::unique_ptr<doc::Feature> RevolveOperation::makeFeature(double degrees) const
@@ -201,13 +224,13 @@ std::unique_ptr<doc::Feature> RevolveOperation::makeFeature(double degrees) cons
     feature->profiles = profiles_;
     feature->axis = axis_;
     feature->angle = std::clamp(degrees, 0.0, 360.0) * kPi / 180.0;
-    feature->mode = host_ ? mode_ : doc::ExtrudeMode::NewBody;
+    feature->mode = host_ ? mode() : doc::ExtrudeMode::NewBody;
     return feature;
 }
 
 std::unique_ptr<cmd::Command> RevolveOperation::makeCommand(const doc::Document& document) const
 {
-    if (!host_ || mode_ == doc::ExtrudeMode::NewBody)
+    if (!host_ || mode() == doc::ExtrudeMode::NewBody)
         return std::make_unique<cmd::CreateBodyCommand>(document.nextBodyName(), makeFeature(value()));
     return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
 }
@@ -349,9 +372,17 @@ doc::ExtrudeMode ExtrudeOperation::mode() const
 {
     if (modeOverride_)
         return host_ || *modeOverride_ == doc::ExtrudeMode::NewBody ? *modeOverride_ : doc::ExtrudeMode::NewBody;
-    if (!host_)
+    if (!host_ || autoNewBody_)
         return doc::ExtrudeMode::NewBody;
     return value() < 0 ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::Join;
+}
+
+bool ExtrudeOperation::reconsider(const geom::Shape& result, const doc::Document& document)
+{
+    if (modeOverride_ || mode() != doc::ExtrudeMode::Join || !joinMissedBody(result, document, host_))
+        return false;
+    autoNewBody_ = true;
+    return true;
 }
 
 Uuid ExtrudeOperation::previewBody() const

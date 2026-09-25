@@ -285,6 +285,79 @@ TEST(SketchInteraction, SketchOnFaceCutsHole)
     EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 8000 - kPi * 16 * 20, 1e-3);
 }
 
+namespace {
+// Draws a typed w x h rectangle with its first corner at `corner` (sketch coordinates).
+void typedRectangle(Harness& h, Vec2 corner, double w, double hgt)
+{
+    h.controller.setSketchTool(SketchTool::Rectangle);
+    h.click(h.sketchScreen(corner));
+    h.move(h.sketchScreen(corner + Vec2{w * 0.6, hgt * 0.6}));
+    h.type(std::to_string(w));
+    h.session().focusNextInput();
+    h.type(std::to_string(hgt));
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+}
+} // namespace
+
+// A profile drawn on a body's face but off the body: pulling it out would
+// "join" a separate piece. It becomes a new body instead (as in Shapr3D).
+TEST(SketchInteraction, JoinThatMissesTheBodyMakesANewBody)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0) .. (10,10,20)
+    h.controller.fitAll(false);
+    h.click(h.controller.camera().project({0, 0, 20}));
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    typedRectangle(h, {30, 30}, 10, 10);
+    const Uuid sketchId = h.session().sketchId();
+    h.controller.finishSketch();
+
+    const Vec3 inside = h.document.sketch(sketchId)->plane().toWorld({35, 35});
+    h.click(h.controller.camera().project(inside));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::SketchProfile);
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    const auto* extrude = dynamic_cast<const ExtrudeOperation*>(h.controller.operation());
+    ASSERT_NE(extrude, nullptr);
+    EXPECT_EQ(extrude->mode(), doc::ExtrudeMode::NewBody);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 8000.0, 1e-3);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[1]->shape()), 500.0, 1e-3);
+}
+
+// A cut that splits a body is allowed, but the model panel says so.
+TEST(SketchInteraction, CutThatSplitsTheBodyIsFlagged)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    h.controller.fitAll(false);
+    h.click(h.controller.camera().project({0, 0, 20}));
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    typedRectangle(h, {-1, -15}, 2, 30); // a slot across the whole top face
+    const Uuid sketchId = h.session().sketchId();
+    h.controller.finishSketch();
+
+    const Vec3 inside = h.document.sketch(sketchId)->plane().toWorld({0, 12});
+    h.click(h.controller.camera().project(inside));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_EQ(h.controller.setValueText("-25"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_EQ(h.document.bodies()[0]->shape().solidCount(), 2);
+    bool bodyWarned = false, stepWarned = false;
+    for (const auto& row : h.controller.historyRows()) {
+        if (row.kind == HistoryRow::Kind::Body)
+            bodyWarned = row.status == HistoryRow::Status::Warning && row.message.find("2 separate pieces") != std::string::npos;
+        if (row.kind == HistoryRow::Kind::Feature && row.name == "Extrude")
+            stepWarned = row.status == HistoryRow::Status::Warning;
+    }
+    EXPECT_TRUE(bodyWarned);
+    EXPECT_TRUE(stepWarned);
+}
+
 TEST(SketchInteraction, UndoPastSketchCreationLeavesSketchMode)
 {
     Harness h;

@@ -3,8 +3,10 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import OpenShape
 
-// The model tree: sketches, bodies and each body's steps, in order. Click a
-// step to edit its values; failures are shown in place with an explanation.
+// The model tree: sketches, bodies and each body's steps, in order. Hovering
+// a row highlights its geometry in the view; clicking a body selects it
+// (Shift adds another, e.g. to combine); clicking a step edits its values.
+// Failures and warnings are shown in place with an explanation.
 Panel {
     id: panel
 
@@ -13,6 +15,8 @@ Panel {
     property bool collapsed: false
     property string expandedId: ""
     signal finished()
+
+    onExpandedIdChanged: app.highlightHistoryItem(expandedId)
 
     width: 290
     height: collapsed ? header.height + 2 * Theme.panelPadding
@@ -53,6 +57,7 @@ Panel {
                 readonly property bool isFeature: modelData.kind === "feature"
                 readonly property bool expanded: panel.expandedId === modelData.id
                 readonly property bool failed: modelData.status === "failed"
+                readonly property bool warned: modelData.status === "warning"
                 readonly property bool inactive: modelData.status === "suppressed" || modelData.status === "blocked"
 
                 width: ListView.view.width
@@ -64,7 +69,17 @@ Panel {
                     id: rowMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    onClicked: panel.expandedId = row.expanded ? "" : row.modelData.id
+                    onEntered: panel.app.highlightHistoryItem(row.modelData.id)
+                    onExited: panel.app.highlightHistoryItem(panel.expandedId)
+                    onClicked: (mouse) => {
+                        // Selecting rebuilds the rows (and this delegate): capture first.
+                        const owner = panel
+                        const data = row.modelData
+                        const wasExpanded = row.expanded
+                        if (data.kind === "body" && data.visible)
+                            owner.app.selectBody(data.id, (mouse.modifiers & Qt.ShiftModifier) !== 0)
+                        owner.expandedId = wasExpanded ? "" : data.id
+                    }
                     onDoubleClicked: if (row.modelData.kind === "sketch") panel.app.editSketch(row.modelData.id)
                 }
 
@@ -84,7 +99,7 @@ Panel {
                             width: 7
                             height: 7
                             radius: 3.5
-                            color: row.failed ? Theme.error : row.inactive ? "#B8BEC6" : "#4CAF6A"
+                            color: row.failed ? Theme.error : row.warned ? "#E0A030" : row.inactive ? "#B8BEC6" : "#4CAF6A"
                         }
                         Text {
                             text: row.modelData.name
@@ -109,13 +124,14 @@ Panel {
                     }
 
                     Text {
-                        visible: row.modelData.message.length > 0 && (row.failed || row.expanded || row.modelData.status === "blocked")
+                        visible: row.modelData.message.length > 0
+                                 && (row.failed || row.warned || row.expanded || row.modelData.status === "blocked")
                         Layout.fillWidth: true
                         text: row.modelData.status === "blocked" && row.modelData.message.length === 0
                               ? "Not computed" : row.modelData.message
                         wrapMode: Text.WordWrap
                         font.pixelSize: 11
-                        color: row.failed ? Theme.error : Theme.mutedText
+                        color: row.failed ? Theme.error : row.warned ? "#9A6A00" : Theme.mutedText
                     }
 
                     // Editable values of the expanded step.

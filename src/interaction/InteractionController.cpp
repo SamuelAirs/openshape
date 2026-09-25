@@ -60,6 +60,7 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
     operation_.reset();
     hover_ = {};
     drag_ = {};
+    historyHighlight_.reset();
     scene_.clear();
     afterDocumentEdit();
     fitAll(false);
@@ -762,10 +763,16 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
         if (operation_ && operation_->featureKind() == doc::FeatureKind::Move)
             actions.push_back({"move", "Move", true});
-        if (selection_.size() == 2) {
+        if (selection_.size() >= 2) {
+            // The first body is kept; the others are the tools.
+            const doc::Body* second = document_->body(selection_.items()[1].bodyId);
+            const std::string tools = selection_.size() == 2 && second ? second->name()
+                                                                       : std::to_string(selection_.size() - 1) + " bodies";
             actions.push_back({"union", "Union", false});
-            actions.push_back({"subtract", "Subtract", false});
+            actions.push_back({"subtract", "Subtract " + tools, false});
             actions.push_back({"intersect", "Intersect", false});
+            if (selection_.size() == 2)
+                actions.push_back({"swap", "Swap", false});
         }
         actions.push_back({"fit", "Zoom to", false});
         actions.push_back({"delete", "Delete", false});
@@ -835,6 +842,19 @@ Status InteractionController::triggerAction(const std::string& id)
                                                         : doc::CombineMode::Intersect);
     if (id == "move")
         return okStatus(); // already active: the arrows are the tool
+    if (id == "swap") {
+        // Subtract keeps the first body: swapping changes which one is cut.
+        if (selection_.size() != 2 || !selection_.allOfKind(sel::SelectionKind::Body))
+            return okStatus();
+        const sel::SelectionItem first = selection_.items()[0];
+        const sel::SelectionItem second = selection_.items()[1];
+        selection_.set(second);
+        selection_.add(first);
+        rebuildOperation();
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "pushpull" || id == "shell") {
         faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell : doc::FeatureKind::PushPull;
         rebuildOperation();
@@ -930,6 +950,13 @@ std::string InteractionController::selectionSummary() const
             }
         }
     }
+    if (selection_.size() > 1 && selection_.allOfKind(sel::SelectionKind::Body) && selection_.size() <= 3) {
+        std::string names;
+        for (const auto& item : selection_.items())
+            if (const doc::Body* b = document_->body(item.bodyId))
+                names += (names.empty() ? "" : " + ") + b->name();
+        return names;
+    }
     if (selection_.size() > 1) {
         const char* noun = first.kind == sel::SelectionKind::Edge ? " edges" : first.kind == sel::SelectionKind::Face ? " faces" : " bodies";
         return std::to_string(selection_.size()) + noun;
@@ -999,6 +1026,8 @@ RenderScene InteractionController::renderScene() const
                 else if (item.kind == sel::SelectionKind::Body)
                     rb.selected = true;
             }
+            if (highlightBody_ == body->id())
+                rb.highlightFaces = highlightFaces_;
         }
         if (rb.mesh)
             scene.bodies.push_back(std::move(rb));
@@ -1020,14 +1049,18 @@ RenderScene InteractionController::renderScene() const
             scene.sketches.push_back(session_->renderData(camera_));
             continue;
         }
-        if (!sk->isVisible())
+        // Hovering a sketch in the model panel shows it, even when hidden.
+        const bool highlighted = historyHighlight_ && *historyHighlight_ == sk->id();
+        if (!sk->isVisible() && !highlighted)
             continue;
         RenderSketch rs;
         const sketch::Plane& plane = sk->plane();
         // Sketches already used by a feature recede: thin grey curves, and
         // profile fills only while hovered or selected.
         const bool consumed = !document_->dependentFeatures(sk->id()).empty();
-        const SketchStyle curveStyle = consumed ? SketchStyle::Construction : SketchStyle::Normal;
+        const SketchStyle curveStyle = highlighted ? SketchStyle::Hovered
+                                     : consumed    ? SketchStyle::Construction
+                                                   : SketchStyle::Normal;
         for (const auto& [id, l] : sk->lines())
             rs.lines.push_back({plane.toWorld(sk->point(l.start)->position), plane.toWorld(sk->point(l.end)->position),
                                 l.construction ? SketchStyle::Construction : curveStyle});
@@ -1043,7 +1076,7 @@ RenderScene InteractionController::renderScene() const
         }
         if (const auto* entry = scene_.sketch(sk->id())) {
             for (std::size_t i = 0; i < entry->meshes.size(); ++i) {
-                SketchStyle style = SketchStyle::Normal;
+                SketchStyle style = highlighted ? SketchStyle::Hovered : SketchStyle::Normal;
                 if (hover_.kind == sel::PickKind::Profile && hover_.bodyId == sk->id() && hover_.index == static_cast<int>(i))
                     style = SketchStyle::Hovered;
                 for (const auto& item : selection_.items())
@@ -1395,6 +1428,10 @@ std::vector<HistoryRow> InteractionController::historyRows() const
         if (body->hasFailures()) {
             bodyRow.status = HistoryRow::Status::Failed;
             bodyRow.message = "Some steps failed; the last good shape is shown.";
+        } else if (body->shape().solidCount() > 1) {
+            bodyRow.status = HistoryRow::Status::Warning;
+            bodyRow.message = "Made of " + std::to_string(body->shape().solidCount())
+                            + " separate pieces; they move and combine together.";
         }
         rows.push_back(std::move(bodyRow));
 
@@ -1411,12 +1448,16 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.canDelete = i > 0;
             row.canSuppress = i > 0;
             switch (state.status) {
-            case doc::FeatureStatus::Ok: row.status = HistoryRow::Status::Ok; break;
+            case doc::FeatureStatus::Ok:
+                row.status = state.note.empty() ? HistoryRow::Status::Ok : HistoryRow::Status::Warning;
+                break;
             case doc::FeatureStatus::Failed: row.status = HistoryRow::Status::Failed; break;
             case doc::FeatureStatus::NotComputed: row.status = HistoryRow::Status::NotComputed; break;
             case doc::FeatureStatus::Suppressed: row.status = HistoryRow::Status::Suppressed; break;
             }
-            row.message = state.status == doc::FeatureStatus::Suppressed ? "Suppressed" : state.userMessage;
+            row.message = state.status == doc::FeatureStatus::Suppressed ? "Suppressed"
+                        : state.status == doc::FeatureStatus::Ok         ? state.note
+                                                                         : state.userMessage;
             for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
                     row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
@@ -1496,24 +1537,31 @@ Status InteractionController::deleteSketch(const Uuid& sketchId)
     return status;
 }
 
+namespace {
+constexpr const char* kSelectTwoBodies =
+    "Select two bodies: double-click one, then Shift+double-click the other (or Shift-click them in the Model panel).";
+} // namespace
+
 Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
 {
-    if (selection_.size() != 2 || !selection_.allOfKind(sel::SelectionKind::Body))
-        return Status::failure(ErrorCode::InvalidArgument, "Select two bodies (double-click, then Shift+double-click).",
-                               "combine without two bodies");
+    if (selection_.size() < 2 || !selection_.allOfKind(sel::SelectionKind::Body))
+        return Status::failure(ErrorCode::InvalidArgument, kSelectTwoBodies, "combine without two bodies");
+    // The first selected body is the target; every other one is a tool.
     const Uuid target = selection_.items()[0].bodyId;
-    const Uuid tool = selection_.items()[1].bodyId;
-    if (document_->dependsOn(tool, target)) {
-        const std::string text = "These bodies already depend on each other.";
-        message(text);
-        return Status::failure(ErrorCode::InvalidArgument, text, "combine would create a cycle");
-    }
-    auto feature = std::make_unique<doc::CombineFeature>();
-    feature->toolBody = tool;
-    feature->mode = mode;
     std::vector<std::unique_ptr<cmd::Command>> steps;
-    steps.push_back(std::make_unique<cmd::AddFeatureCommand>(target, std::move(feature)));
-    steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(tool, false));
+    for (std::size_t i = 1; i < selection_.size(); ++i) {
+        const Uuid tool = selection_.items()[i].bodyId;
+        if (document_->dependsOn(tool, target)) {
+            const std::string text = "These bodies already depend on each other.";
+            message(text);
+            return Status::failure(ErrorCode::InvalidArgument, text, "combine would create a cycle");
+        }
+        auto feature = std::make_unique<doc::CombineFeature>();
+        feature->toolBody = tool;
+        feature->mode = mode;
+        steps.push_back(std::make_unique<cmd::AddFeatureCommand>(target, std::move(feature)));
+        steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(tool, false));
+    }
     const char* label = mode == doc::CombineMode::Union ? "Union" : mode == doc::CombineMode::Subtract ? "Subtract" : "Intersect";
     Status status = undoStack_->push(std::make_unique<cmd::CompositeCommand>(label, std::move(steps)), *document_);
     if (!status) {
@@ -1525,6 +1573,126 @@ Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
         selection_.set(*item);
     afterDocumentEdit();
     return status;
+}
+
+void InteractionController::setHistoryHighlight(const std::optional<Uuid>& id)
+{
+    if (historyHighlight_ == id)
+        return;
+    historyHighlight_ = id;
+    refreshHistoryHighlight();
+    notifyView();
+}
+
+void InteractionController::refreshHistoryHighlight()
+{
+    highlightBody_ = Uuid();
+    highlightFaces_.clear();
+    if (!historyHighlight_)
+        return;
+    auto allFaces = [this](const doc::Body& body) {
+        highlightBody_ = body.id();
+        for (int i = 0; i < body.shape().faceCount(); ++i)
+            highlightFaces_.push_back(i);
+    };
+    if (const doc::Body* body = document_->body(*historyHighlight_)) {
+        allFaces(*body);
+        return;
+    }
+    const doc::Body* body = document_->bodyOfFeature(*historyHighlight_);
+    if (!body)
+        return;
+    const int index = body->featureIndex(*historyHighlight_);
+    const doc::FeatureState& state = body->state(index);
+    if (state.status != doc::FeatureStatus::Ok)
+        return;
+    if (body->features()[std::size_t(index)]->isBaseFeature()) {
+        allFaces(*body); // the step that made the body: all of it
+        return;
+    }
+    highlightBody_ = body->id();
+    // New geometry (the fillet, the extruded walls) says best what a step did;
+    // a pure move creates none, so fall back to everything it changed.
+    const geom::Shape before = body->shapeBefore(index);
+    highlightFaces_ = geom::facesCreatedBy(before, state.output, body->shape());
+    if (highlightFaces_.empty())
+        highlightFaces_ = geom::facesChangedBy(before, state.output, body->shape());
+}
+
+Status InteractionController::selectBody(const Uuid& bodyId, bool additive)
+{
+    if (session_)
+        return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "selectBody in sketch mode");
+    const doc::Body* body = document_->body(bodyId);
+    if (!body)
+        return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "selectBody: unknown body");
+    if (!body->isVisible()) {
+        const std::string text = "Show the body first to select it.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "selectBody: hidden body");
+    }
+    // Like clicking elsewhere in the view: a pending value is applied first.
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, bodyId, -1);
+    if (!item)
+        return Status::failure(ErrorCode::InvalidReference, "That body has no shape to select.", "selectBody: no item");
+    if (additive && selection_.allOfKind(sel::SelectionKind::Body))
+        selection_.toggle(*item);
+    else
+        selection_.set(*item);
+    rebuildOperation();
+    notifyState();
+    notifyView();
+    return okStatus();
+}
+
+Status InteractionController::runTool(const std::string& id)
+{
+    auto explain = [this](const std::string& text) {
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "runTool: selection does not fit");
+    };
+    if (session_)
+        return explain("Finish the sketch first.");
+    const bool faces = selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody();
+    const bool edges = selection_.allOfKind(sel::SelectionKind::Edge) && selection_.singleBody();
+    const bool bodies = selection_.allOfKind(sel::SelectionKind::Body);
+    if (id == "pushpull") {
+        if (faces && selection_.size() == 1)
+            return triggerAction("pushpull");
+        return explain("Click a flat face, then drag its arrow or type a distance.");
+    }
+    if (id == "fillet" || id == "chamfer") {
+        if (edges)
+            return triggerAction(id);
+        return explain("Click an edge (Shift-click adds more), then drag the arrow or type the size.");
+    }
+    if (id == "shell") {
+        if (faces)
+            return triggerAction("shell");
+        return explain("Click the face to leave open (Shift-click adds more), then type the wall thickness.");
+    }
+    if (id == "move") {
+        if (bodies && selection_.size() == 1)
+            return okStatus(); // the arrows are already there
+        if (const auto body = selection_.singleBody(); body && !selection_.empty() && !bodies)
+            return triggerAction("selectBody");
+        return explain("Double-click a body (or click it in the Model panel), then drag an arrow or type a distance.");
+    }
+    if (id == "union" || id == "subtract" || id == "intersect") {
+        if (bodies && selection_.size() >= 2)
+            return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
+                                         : id == "subtract" ? doc::CombineMode::Subtract
+                                                            : doc::CombineMode::Intersect);
+        return explain(id == "subtract" ? std::string("Select the body to keep first, then the body to cut away with "
+                                                      "Shift+double-click (or Shift-click in the Model panel).")
+                                        : std::string(kSelectTwoBodies));
+    }
+    if (id == "measure")
+        return explain("Select two faces or edges (Shift-click the second); the distance and angle appear at the bottom left.");
+    return Status::failure(ErrorCode::InvalidArgument, "Unknown tool.", "runTool: unknown id '" + id + "'");
 }
 
 Status InteractionController::setSketchVisible(const Uuid& sketchId, bool visible)
@@ -1557,6 +1725,7 @@ void InteractionController::afterDocumentEdit()
     scene_.update(*document_);
     selection_.refresh(*document_);
     hover_ = {};
+    refreshHistoryHighlight();
     rebuildOperation();
     updateSceneBounds();
     notifyState();

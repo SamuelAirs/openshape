@@ -197,6 +197,47 @@ ApplicationWindow {
                 ToolTip.text: "Sketch on the selected flat face, or on an origin plane (K = ground)."
                 ToolTip.delay: 500
             }
+
+            // Tools that act on a selection: with a fitting selection they run,
+            // otherwise they say what to select (no hidden gestures to learn).
+            SectionLabel { text: "Modify"; Layout.topMargin: 6 }
+            Repeater {
+                model: [
+                    { id: "pushpull", label: "Push/Pull", tip: "Move a flat face: select it, drag the arrow or type a distance." },
+                    { id: "fillet", label: "Fillet", tip: "Round edges: select them, drag or type the radius." },
+                    { id: "chamfer", label: "Chamfer", tip: "Bevel edges: select them, drag or type the size." },
+                    { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
+                    { id: "move", label: "Move", tip: "Move a body along X, Y or Z." }
+                ]
+                delegate: ActionButton {
+                    required property var modelData
+                    objectName: "tool_" + modelData.id
+                    text: modelData.label
+                    Layout.fillWidth: true
+                    onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.tip
+                    ToolTip.delay: 500
+                }
+            }
+            SectionLabel { text: "Combine"; Layout.topMargin: 6 }
+            Repeater {
+                model: [
+                    { id: "union", label: "Union", tip: "Join two or more bodies into one." },
+                    { id: "subtract", label: "Subtract", tip: "Cut the other bodies away from the first one selected." },
+                    { id: "intersect", label: "Intersect", tip: "Keep only the volume the bodies share." }
+                ]
+                delegate: ActionButton {
+                    required property var modelData
+                    objectName: "tool_" + modelData.id
+                    text: modelData.label
+                    Layout.fillWidth: true
+                    onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.tip + " Select bodies by double-clicking (Shift adds), or in the Model panel."
+                    ToolTip.delay: 500
+                }
+            }
         }
     }
 
@@ -247,6 +288,38 @@ ApplicationWindow {
         anchors { left: parent.left; bottom: parent.bottom; margins: Theme.margin }
         spacing: 6
 
+        // What can be done with the selection when there is no manipulator
+        // (e.g. two bodies: Union / Subtract / Intersect). With a manipulator,
+        // the same actions sit in the value chip instead.
+        Panel {
+            objectName: "selectionActions"
+            visible: !window.app.sketchMode && !window.app.operationActive && window.app.contextActions.length > 0
+            width: selectionActionRow.implicitWidth + 2 * Theme.panelPadding
+            height: Theme.controlHeight + 2 * Theme.panelPadding
+            Row {
+                id: selectionActionRow
+                anchors.centerIn: parent
+                spacing: 4
+                Repeater {
+                    model: window.app.contextActions
+                    delegate: ActionButton {
+                        required property var modelData
+                        objectName: "barAction_" + modelData.id
+                        text: modelData.label
+                        checked: modelData.active
+                        compact: true
+                        onClicked: {
+                            // Triggering rebuilds this list: capture first.
+                            const app = window.app
+                            const id = modelData.id
+                            app.triggerAction(id)
+                            viewport.forceActiveFocus()
+                        }
+                    }
+                }
+            }
+        }
+
         Panel {
             visible: window.app.selectionSummary.length > 0
             width: summaryText.implicitWidth + 28
@@ -278,8 +351,16 @@ ApplicationWindow {
             return "Add a box, or start a sketch."
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
-        if (app.operationActive)
+        if (app.operationActive && app.operationTitle === "Move")
+            return "Drag an arrow or type a distance · Shift+double-click another body to combine them"
+        if (app.operationActive && (app.operationTitle === "Fillet" || app.operationTitle === "Chamfer"))
             return "Drag the arrow, or just type a value · Shift-click to add more edges"
+        if (app.operationActive && app.operationTitle === "Shell")
+            return "Type the wall thickness · Shift-click to open more faces"
+        if (app.operationActive)
+            return "Drag the arrow, or just type a value"
+        if (app.hasSelection && app.contextActions.length > 0)
+            return "Choose an action above · Esc clears the selection"
         return "Click a face to push/pull, an edge to round it · double-click selects the body · "
              + "drag to orbit · Shift/middle-drag to pan · scroll to zoom"
     }

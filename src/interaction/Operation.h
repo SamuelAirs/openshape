@@ -71,6 +71,11 @@ protected:
     virtual std::unique_ptr<doc::Feature> makeFeature(double value) const = 0;
     // Changes the stored value without recomputing the preview.
     void setStoredValue(double value) { value_ = value; }
+    // Automatic choices (e.g. join vs. new body) start over for every value...
+    virtual void resetAutomaticChoices() {}
+    // ...and may be revised once the preview result is known; returning true
+    // recomputes the preview with the revised choice.
+    virtual bool reconsider(const geom::Shape& /*result*/, const doc::Document& /*document*/) { return false; }
 
 private:
     Uuid bodyId_;
@@ -182,8 +187,12 @@ public:
     // ends up at the current angle and points along the local tangent.
     LinearManipulator handle(int index) const override;
 
-    doc::ExtrudeMode mode() const { return mode_; }
-    void setMode(doc::ExtrudeMode mode) { mode_ = mode; }
+    doc::ExtrudeMode mode() const { return !modeChosen_ && autoNewBody_ ? doc::ExtrudeMode::NewBody : mode_; }
+    void setMode(doc::ExtrudeMode mode)
+    {
+        mode_ = mode;
+        modeChosen_ = true;
+    }
     bool hasHost() const { return host_.has_value(); }
     doc::SketchAxis axis() const { return axis_; }
     const Uuid& sketchId() const { return sketchId_; }
@@ -191,6 +200,8 @@ public:
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    void resetAutomaticChoices() override { autoNewBody_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
 
 private:
     RevolveOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles,
@@ -204,6 +215,8 @@ private:
     doc::SketchAxis axis_;
     double radius_;
     doc::ExtrudeMode mode_;
+    bool modeChosen_ = false;  // the user picked New body / Join / Cut
+    bool autoNewBody_ = false; // a join that would not touch the body becomes a new body
     Vec3 axisOrigin_;
     Vec3 axisDirection_;
     Vec3 start_; // profile point the handle starts on
@@ -288,6 +301,8 @@ public:
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    void resetAutomaticChoices() override { autoNewBody_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
 
 private:
     ExtrudeOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles)
@@ -296,6 +311,7 @@ private:
     std::optional<Uuid> host_;
     std::vector<doc::ProfileRef> profiles_;
     std::optional<doc::ExtrudeMode> modeOverride_;
+    bool autoNewBody_ = false; // an automatic join that would not touch the body becomes a new body
     bool throughAll_ = false;
 };
 

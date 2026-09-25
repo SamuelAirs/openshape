@@ -86,7 +86,7 @@ const FeatureState& Document::insertFeature(const Uuid& bodyId, std::unique_ptr<
 {
     Body* b = body(bodyId);
     static const FeatureState missing{FeatureStatus::Failed, {}, ErrorCode::InvalidReference, "The body no longer exists.",
-                                      "insertFeature: unknown body"};
+                                      "insertFeature: unknown body", {}};
     if (!b)
         return missing;
     if (index < 0 || index > static_cast<int>(b->features().size()))

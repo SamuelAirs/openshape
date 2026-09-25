@@ -192,6 +192,108 @@ TEST(Interaction, RightClickDoesNotSelectOrCommit)
     EXPECT_NEAR(h.height(), 25.0, 1e-6);
 }
 
+namespace {
+Uuid addBox(Harness& h, const std::string& name, Vec3 origin, Vec3 size)
+{
+    auto box = std::make_unique<doc::BoxFeature>();
+    box->origin = origin;
+    box->size = size;
+    EXPECT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>(name, std::move(box)), h.document).ok());
+    h.controller.documentChanged();
+    return h.document.bodies().back()->id();
+}
+} // namespace
+
+// Bodies picked in the model panel (Shift adds) show clear boolean actions;
+// Swap flips which body is cut; the tool body is consumed.
+TEST(Interaction, SelectBodiesFromPanelAndSubtract)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {0, 0, 0}, {20, 20, 20});
+    const Uuid b = addBox(h, "Body 2", {10, 10, 10}, {20, 20, 20});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(b, true).ok());
+    EXPECT_EQ(h.controller.selectionSummary(), "Body 1 + Body 2");
+    bool subtractLabel = false, swap = false;
+    for (const auto& action : h.controller.contextActions()) {
+        subtractLabel = subtractLabel || (action.id == "subtract" && action.label == "Subtract Body 2");
+        swap = swap || action.id == "swap";
+    }
+    EXPECT_TRUE(subtractLabel);
+    ASSERT_TRUE(swap);
+    ASSERT_TRUE(h.controller.triggerAction("swap").ok());
+    EXPECT_EQ(h.controller.selection().items()[0].bodyId, b); // now Body 2 is kept
+    ASSERT_TRUE(h.controller.triggerAction("swap").ok());
+
+    ASSERT_TRUE(h.controller.runTool("subtract").ok());
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 8000.0 - 1000.0, 1e-3);
+    EXPECT_FALSE(h.document.body(b)->isVisible());
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 8000.0, 1e-3);
+    EXPECT_TRUE(h.document.body(b)->isVisible());
+}
+
+TEST(Interaction, UnionOfThreeBodies)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {0, 0, 0}, {10, 10, 10});
+    const Uuid b = addBox(h, "Body 2", {5, 0, 0}, {10, 10, 10});
+    const Uuid c = addBox(h, "Body 3", {10, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(b, true).ok());
+    ASSERT_TRUE(h.controller.selectBody(c, true).ok());
+    ASSERT_TRUE(h.controller.runTool("union").ok());
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 20.0 * 10 * 10, 1e-3);
+    EXPECT_EQ(h.document.body(a)->features().size(), 3u); // box + two combine steps
+    EXPECT_FALSE(h.document.body(b)->isVisible());
+    EXPECT_FALSE(h.document.body(c)->isVisible());
+    EXPECT_TRUE(h.controller.undo()); // one undo step for the whole union
+    EXPECT_EQ(h.document.body(a)->features().size(), 1u);
+}
+
+// Tools from the palette explain what to select instead of failing silently.
+TEST(Interaction, ToolPaletteExplainsSelection)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    EXPECT_FALSE(h.controller.runTool("subtract").ok());
+    ASSERT_FALSE(h.messages.empty());
+    EXPECT_NE(h.messages.back().find("Select the body to keep"), std::string::npos);
+    EXPECT_FALSE(h.controller.runTool("fillet").ok());
+    EXPECT_NE(h.messages.back().find("edge"), std::string::npos);
+}
+
+// Hovering a step in the model panel highlights the faces it created or
+// changed; hovering the body highlights all of it.
+TEST(Interaction, HistoryHighlightShowsWhatAStepTouched)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({10, -10, 10})); // the front vertical edge of the centered cube
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Edge);
+    h.controller.setValueText("3");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const doc::Body& body = h.body();
+    const Uuid fillet = body.features().back()->id();
+
+    auto highlighted = [&] {
+        for (const auto& rb : h.controller.renderScene().bodies)
+            if (rb.id == body.id())
+                return rb.highlightFaces;
+        return std::vector<int>{};
+    };
+    h.controller.setHistoryHighlight(fillet);
+    const auto faces = highlighted();
+    ASSERT_EQ(faces.size(), 1u); // the fillet surface only
+    EXPECT_EQ(geom::faceInfo(body.shape(), faces.front())->kind, geom::SurfaceKind::Cylinder);
+    h.controller.setHistoryHighlight(body.id());
+    EXPECT_EQ(highlighted().size(), std::size_t(body.shape().faceCount()));
+    h.controller.setHistoryHighlight(std::nullopt);
+    EXPECT_TRUE(highlighted().empty());
+}
+
 TEST(Interaction, UnitAwareInput)
 {
     Harness h;

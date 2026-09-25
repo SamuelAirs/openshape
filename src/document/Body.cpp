@@ -118,6 +118,8 @@ void Body::recompute(int fromIndex, const EvalContext& context)
             state.status = FeatureStatus::Ok;
             state.output = result.value();
             current = result.value();
+            for (const auto& warning : result.warnings())
+                state.note += (state.note.empty() ? "" : " ") + warning;
         } else {
             state.status = FeatureStatus::Failed;
             state.error = result.error();

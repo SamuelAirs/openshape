@@ -289,6 +289,7 @@ QVariantList AppController::history() const
         map.insert(QStringLiteral("name"), q(row.name));
         map.insert(QStringLiteral("detail"), q(row.detail));
         map.insert(QStringLiteral("status"), row.status == interact::HistoryRow::Status::Ok            ? QStringLiteral("ok")
+                                             : row.status == interact::HistoryRow::Status::Warning     ? QStringLiteral("warning")
                                              : row.status == interact::HistoryRow::Status::Failed      ? QStringLiteral("failed")
                                              : row.status == interact::HistoryRow::Status::Suppressed  ? QStringLiteral("suppressed")
                                                                                                         : QStringLiteral("blocked"));
@@ -369,6 +370,23 @@ void AppController::editSketch(const QString& sketchId)
         if (!status)
             notifyMessage(q(status.userMessage()));
     }
+}
+
+void AppController::highlightHistoryItem(const QString& id)
+{
+    interaction_->setHistoryHighlight(id.isEmpty() ? std::nullopt : uuidOf(id));
+}
+
+void AppController::selectBody(const QString& bodyId, bool additive)
+{
+    if (const auto id = uuidOf(bodyId))
+        (void)interaction_->selectBody(*id, additive); // failures explain themselves via message()
+}
+
+void AppController::runTool(const QString& id)
+{
+    // Guidance for a selection that does not fit arrives through message().
+    (void)interaction_->runTool(id.toStdString());
 }
 
 // ---- Files ------------------------------------------------------------------------------

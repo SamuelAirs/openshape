@@ -102,7 +102,7 @@ QQuickItem* findVisualItem(QQuickItem* root, const QString& objectName)
 }
 } // namespace
 
-bool AcceptanceRunner::clickItem(const QString& objectName)
+bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifiers mods)
 {
     // Declared items are QObject children of the window; generated delegates
     // are only reachable through the visual tree.
@@ -116,7 +116,7 @@ bool AcceptanceRunner::clickItem(const QString& objectName)
     }
     const QPointF center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
     OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center.x() << "," << center.y();
-    click(center);
+    click(center, mods);
     return true;
 }
 
@@ -419,6 +419,52 @@ void AcceptanceRunner::start()
             screenshot(QStringLiteral("13_edited_8mm"));
             key(Qt::Key_Z, Qt::ControlModifier);
             check(std::abs(bodyHeight() - 5.0) < 1e-6, "undo restores 5 mm", num(bodyHeight()));
+        },
+        // Booleans through the real UI: a box moved into the plate, both picked
+        // in the Model panel (Shift adds), then "Subtract Body 2" in the bar.
+        [=, this] {
+            check(clickItem(QStringLiteral("tool_union")), "Union tool button");
+            check(app_->bodyCount() == 1, "Union with nothing selected changes nothing");
+            key(Qt::Key_B);
+            check(app_->bodyCount() == 2, "B adds a second body beside the plate");
+        },
+        [=, this] {
+            const QString box = QString::fromStdString(app_->document().bodies()[1]->id().toString());
+            check(clickItem(QStringLiteral("historyRow_") + box), "Model panel row selects the box");
+            check(app_->operationTitle() == QStringLiteral("Move"), "a selected body offers Move", app_->operationTitle());
+            type(QStringLiteral("-30"));
+            key(Qt::Key_Return);
+        },
+        [] {},
+        [=, this] {
+            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            check(std::abs(bb.min.x - 40.0) < 1e-6, "typing -30 moves the box into the plate", num(bb.min.x));
+            const QString plate = QString::fromStdString(app_->document().bodies()[0]->id().toString());
+            check(clickItem(QStringLiteral("historyRow_") + plate), "Model panel row selects the plate");
+        },
+        [=, this] {
+            const QString box = QString::fromStdString(app_->document().bodies()[1]->id().toString());
+            check(clickItem(QStringLiteral("historyRow_") + box, Qt::ShiftModifier), "Shift-click adds the box");
+        },
+        [=, this] {
+            check(app_->interaction().selection().size() == 2, "two bodies selected",
+                  QString::number(app_->interaction().selection().size()));
+            check(app_->selectionSummary() == QStringLiteral("Body 1 + Body 2"), "summary names both bodies",
+                  app_->selectionSummary());
+            screenshot(QStringLiteral("14_two_bodies"));
+            check(clickItem(QStringLiteral("barAction_subtract")), "Subtract button is shown and clickable");
+        },
+        [] {},
+        [=, this] {
+            // Plate (5 mm, two holes) minus the 20 x 20 overlap, which contains one hole.
+            const double plate = (1800.0 - 2 * kPi * 9.0) * 5.0;
+            const double overlap = (400.0 - kPi * 9.0) * 5.0;
+            check(std::abs(bodyVolume() - (plate - overlap)) < 1e-3, "subtract removes the overlap", num(bodyVolume()));
+            check(!app_->document().bodies()[1]->isVisible(), "the tool body is consumed (hidden)");
+            screenshot(QStringLiteral("15_subtracted"));
+            key(Qt::Key_Z, Qt::ControlModifier);
+            check(std::abs(bodyVolume() - plate) < 1e-3 && app_->document().bodies()[1]->isVisible(),
+                  "undo restores both bodies", num(bodyVolume()));
         },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);

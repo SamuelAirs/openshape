@@ -191,6 +191,37 @@ TEST(Geometry, BoundingBoxIsStablePerShape)
     EXPECT_NEAR(first.size().x, 30.0, 1e-5);
 }
 
+// What a step touched: a fillet on one edge creates a cylindrical face and
+// trims its neighbours; the face opposite the edge is untouched.
+TEST(Geometry, FacesChangedByAStep)
+{
+    const Shape before = box(30, 20, 10);
+    const int edge = verticalEdges(before).front();
+    const Shape after = filletEdges(before, {edge}, 2.0).value();
+    const auto changed = facesChangedBy(before, after, after);
+    ASSERT_FALSE(changed.empty());
+    EXPECT_LT(changed.size(), std::size_t(after.faceCount()));
+    int cylinders = 0;
+    for (int f : changed)
+        cylinders += faceInfo(after, f)->kind == SurfaceKind::Cylinder ? 1 : 0;
+    EXPECT_EQ(cylinders, 1);
+    // A base feature (no input) touched every face.
+    EXPECT_EQ(facesChangedBy(Shape{}, before, before).size(), std::size_t(before.faceCount()));
+    // Faces changed again later are no longer reported for the earlier step.
+    const Shape moved = translated(after, {5, 0, 0}).value();
+    EXPECT_TRUE(facesChangedBy(before, after, moved).empty());
+
+    // New geometry only: just the fillet surface, not the trimmed neighbours.
+    const auto created = facesCreatedBy(before, after, after);
+    ASSERT_EQ(created.size(), 1u);
+    EXPECT_EQ(faceInfo(after, created.front())->kind, SurfaceKind::Cylinder);
+    // A move changes every face (translated() copies the geometry, so the
+    // faces also count as created): the whole body is what a Move did.
+    EXPECT_EQ(facesChangedBy(after, moved, moved).size(), std::size_t(moved.faceCount()));
+    const auto createdByMove = facesCreatedBy(after, moved, moved);
+    EXPECT_TRUE(createdByMove.empty() || createdByMove.size() == std::size_t(moved.faceCount()));
+}
+
 TEST(Geometry, FilletTooLargeFailsGracefully)
 {
     const Shape s = box(10, 10, 10);

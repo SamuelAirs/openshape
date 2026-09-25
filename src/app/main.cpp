@@ -147,6 +147,27 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         (void)interaction.commitOperation();
         return;
     }
+    if (demo == QLatin1String("combine") || demo == QLatin1String("history")) {
+        // Two bodies selected from the model panel (combine actions), or a
+        // fillet step highlighted in the view (history).
+        app.createBox(20);
+        app.createBox(20);
+        interaction.fitAll(false);
+        const auto& bodies = app.document().bodies();
+        if (demo == QLatin1String("combine")) {
+            (void)interaction.selectBody(bodies[0]->id(), false);
+            (void)interaction.selectBody(bodies[1]->id(), true);
+            return;
+        }
+        os::interact::PointerEvent edge;
+        edge.position = interaction.camera().project({10, -10, 10});
+        interaction.pointerPress(edge);
+        interaction.pointerRelease(edge);
+        interaction.setValueText("4");
+        (void)interaction.commitOperation();
+        interaction.setHistoryHighlight(bodies[0]->features().back()->id());
+        return;
+    }
     app.createBox(20);
     interaction.fitAll(false);
     const os::Vec2 top = interaction.camera().project({0, 0, 20});

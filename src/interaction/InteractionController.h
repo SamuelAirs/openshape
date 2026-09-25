@@ -24,7 +24,7 @@ namespace os::interact {
 // One row of the model tree shown in the history panel.
 struct HistoryRow {
     enum class Kind { Sketch, Body, Feature };
-    enum class Status { Ok, Failed, NotComputed, Suppressed };
+    enum class Status { Ok, Warning, Failed, NotComputed, Suppressed };
     struct Parameter {
         std::string key;
         std::string label;
@@ -131,8 +131,19 @@ public:
     Status deleteBody(const Uuid& bodyId);
     Status deleteSketch(const Uuid& sketchId);
     Status setSketchVisible(const Uuid& sketchId, bool visible);
-    // Combines the first selected body with the second (which is hidden).
+    // Combines the first selected body with each of the others (which are
+    // hidden): union, subtract them from it, or keep only the common volume.
     Status combineSelectedBodies(doc::CombineMode mode);
+    // Model panel hover/expansion: highlights what a row refers to in the view
+    // (a body, a sketch, or the faces a step created or modified). nullopt clears.
+    void setHistoryHighlight(const std::optional<Uuid>& id);
+    const std::optional<Uuid>& historyHighlight() const { return historyHighlight_; }
+    // Selects a body from the model panel; `additive` adds it (e.g. to combine).
+    Status selectBody(const Uuid& bodyId, bool additive);
+    // A tool chosen from the palette: runs it if the selection fits, otherwise
+    // explains what to select. Ids: pushpull, fillet, chamfer, shell, move,
+    // union, subtract, intersect, measure.
+    Status runTool(const std::string& id);
 
     // ---- State ----
     const sel::SelectionSet& selection() const { return selection_; }
@@ -159,6 +170,7 @@ private:
     void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
     void rebuildOperation();
+    void refreshHistoryHighlight();
     void afterDocumentEdit();
     void updateSceneBounds();
     void startAnimation(const Camera& to);
@@ -182,6 +194,10 @@ private:
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
+    std::optional<Uuid> historyHighlight_;
+    // Faces (of the current body shape) the highlighted step created or changed.
+    Uuid highlightBody_;
+    std::vector<int> highlightFaces_;
 
     struct Drag {
         DragMode mode = DragMode::None;

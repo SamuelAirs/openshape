@@ -48,6 +48,17 @@ BoundingBox boundingBox(const Shape& shape);
 BoundingBox approximateBoundingBox(const Shape& shape);
 bool isValid(const Shape& shape);
 
+// Faces of `current` that a step created or modified: present in the step's
+// output `after` but not in its input `before`, compared by kernel identity
+// (faces a step leaves untouched keep their identity). With a null `before`
+// (a base feature) every face of `after` counts. Faces changed again by later
+// steps are not in `current` any more and are not reported.
+std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const Shape& current);
+// Like facesChangedBy, but only faces on new surface geometry (a fillet, a
+// chamfer, the walls of an extrusion or cut), not neighbours a step merely
+// trimmed (those keep their original surface). Empty for pure moves.
+std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const Shape& current);
+
 std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex);
 std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex);
 // Indices of the faces adjacent to an edge (1 for seam/boundary, usually 2).

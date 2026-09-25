@@ -24,6 +24,7 @@ struct RenderBody {
     int hoverEdge = -1;
     std::vector<int> selectedFaces;
     std::vector<int> selectedEdges;
+    std::vector<int> highlightFaces; // faces of the step highlighted in the model panel
 };
 
 struct RenderArrow {

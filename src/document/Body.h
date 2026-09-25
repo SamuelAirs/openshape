@@ -23,6 +23,9 @@ struct FeatureState {
     ErrorCode error = ErrorCode::None;
     std::string userMessage;
     std::string developerMessage;
+    // Non-fatal remark on a successful step, e.g. that its result has several
+    // separate solids. Shown in the model panel.
+    std::string note;
 };
 
 // A solid body with a linear feature history. The body's shape is the output

@@ -36,6 +36,7 @@
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
+#include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Solid.hxx>
@@ -43,6 +44,7 @@
 #include <gp_Ax2.hxx>
 #include <gp_Trsf.hxx>
 
+#include <set>
 #include <sstream>
 
 namespace os::geom {
@@ -76,7 +78,7 @@ Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, con
 
     std::vector<std::string> warnings;
     if (solidCount > 1)
-        warnings.push_back("The result has " + std::to_string(solidCount) + " separate solids.");
+        warnings.push_back("The body is now in " + std::to_string(solidCount) + " separate pieces.");
     return Result<Shape>::success(makeShape(out), std::move(warnings));
 }
 
@@ -453,6 +455,56 @@ BoundingBox approximateBoundingBox(const Shape& shape)
     Bnd_Box box;
     BRepBndLib::Add(occ(shape), box, false);
     return toBoundingBox(box);
+}
+
+std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const Shape& current)
+{
+    std::vector<int> out;
+    if (after.isNull() || current.isNull())
+        return out;
+    // TopTools_MapOfShape compares with IsSame (same TShape and location), so a
+    // moved face counts as changed while an untouched one does not.
+    TopTools_MapOfShape old;
+    if (!before.isNull())
+        for (int i = 1; i <= before.data()->faces.Extent(); ++i)
+            old.Add(before.data()->faces(i));
+    TopTools_MapOfShape changed;
+    for (int i = 1; i <= after.data()->faces.Extent(); ++i)
+        if (!old.Contains(after.data()->faces(i)))
+            changed.Add(after.data()->faces(i));
+    for (int i = 1; i <= current.data()->faces.Extent(); ++i)
+        if (changed.Contains(current.data()->faces(i)))
+            out.push_back(i - 1);
+    return out;
+}
+
+std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const Shape& current)
+{
+    std::vector<int> out;
+    if (after.isNull() || current.isNull())
+        return out;
+    // Trimmed or split faces are rebuilt on the input face's surface object;
+    // genuinely new faces get new surfaces.
+    std::set<const Geom_Surface*> oldSurfaces;
+    TopTools_MapOfShape oldFaces;
+    if (!before.isNull())
+        for (int i = 1; i <= before.data()->faces.Extent(); ++i) {
+            const TopoDS_Face face = TopoDS::Face(before.data()->faces(i));
+            oldFaces.Add(face);
+            TopLoc_Location location;
+            oldSurfaces.insert(BRep_Tool::Surface(face, location).get());
+        }
+    TopTools_MapOfShape created;
+    for (int i = 1; i <= after.data()->faces.Extent(); ++i) {
+        const TopoDS_Face face = TopoDS::Face(after.data()->faces(i));
+        TopLoc_Location location;
+        if (!oldFaces.Contains(face) && !oldSurfaces.count(BRep_Tool::Surface(face, location).get()))
+            created.Add(face);
+    }
+    for (int i = 1; i <= current.data()->faces.Extent(); ++i)
+        if (created.Contains(current.data()->faces(i)))
+            out.push_back(i - 1);
+    return out;
 }
 
 bool isValid(const Shape& shape)

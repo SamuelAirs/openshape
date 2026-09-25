@@ -41,7 +41,7 @@ private:
     void key(int key, Qt::KeyboardModifiers mods = Qt::NoModifier, const QString& text = {});
     void type(const QString& text);
     // Clicks the center of a QML item found by objectName; false if not found/visible.
-    bool clickItem(const QString& objectName);
+    bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
 
     QPointF screenPoint(double x, double y, double z) const;
     double bodyHeight() const;

@@ -7,6 +7,7 @@
 #include <QtQuick/QQuickWindow>
 #include <rhi/qshader.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -39,6 +40,7 @@ constexpr Color kGridMajor{0.0f, 0.0f, 0.0f, 0.11f};
 constexpr Color kAxisX{0.86f, 0.27f, 0.27f, 0.6f};
 constexpr Color kAxisY{0.27f, 0.66f, 0.33f, 0.6f};
 constexpr Color kSketchSelected{0.96f, 0.52f, 0.13f, 1.0f};
+constexpr Color kHistoryHighlight{0.96f, 0.52f, 0.13f, 0.42f}; // model panel hover: what a step touched
 constexpr Color kSketchDefined{0.12f, 0.14f, 0.18f, 1.0f};
 constexpr Color kSketchConstruction{0.55f, 0.58f, 0.62f, 1.0f};
 constexpr Color kSketchDimension{0.36f, 0.39f, 0.44f, 0.9f};
@@ -449,6 +451,24 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         quint32 first = 0, count = 0;
         if (rb.hoverFace >= 0 && faceRange(rb.hoverFace, first, count))
             meshDraw(tintPipeline_.get(), &gpu, first, count, withAlpha(kAccentHover, 0.25f), 1);
+        // Faces are stored contiguously by index: merge runs into one draw each.
+        std::vector<int> faces = rb.highlightFaces;
+        std::sort(faces.begin(), faces.end());
+        for (std::size_t i = 0; i < faces.size();) {
+            std::size_t j = i;
+            while (j + 1 < faces.size() && faces[j + 1] == faces[j] + 1)
+                ++j;
+            quint32 runFirst = 0, runCount = 0, lastFirst = 0, lastCount = 0;
+            const bool okFirst = faceRange(faces[i], runFirst, runCount);
+            const bool okLast = faceRange(faces[j], lastFirst, lastCount);
+            if (okFirst || okLast) {
+                const quint32 begin = okFirst ? runFirst : lastFirst;
+                const quint32 end = okLast ? lastFirst + lastCount : runFirst + runCount;
+                if (end > begin)
+                    meshDraw(tintPipeline_.get(), &gpu, begin, end - begin, kHistoryHighlight, 1);
+            }
+            i = j + 1;
+        }
     }
 
     // ---- 4. Edges ------------------------------------------------------------------------

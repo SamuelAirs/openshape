@@ -136,6 +136,12 @@ public:
     Q_INVOKABLE void deleteHistoryItem(const QString& kind, const QString& id);
     Q_INVOKABLE void setHistoryItemVisible(const QString& kind, const QString& id, bool visible);
     Q_INVOKABLE void editSketch(const QString& sketchId);
+    // Highlights a row's geometry in the view while hovered/expanded ("" clears).
+    Q_INVOKABLE void highlightHistoryItem(const QString& id);
+    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine.
+    Q_INVOKABLE void selectBody(const QString& bodyId, bool additive);
+    // Tool palette: runs a tool if the selection fits, otherwise explains it.
+    Q_INVOKABLE void runTool(const QString& id);
 
 signals:
     void stateChanged();
