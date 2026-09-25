@@ -61,7 +61,10 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
         (void)mesher;
 
         const auto& faces = shape.data()->faces;
+        mesh.faceTriangleOffset.assign(static_cast<std::size_t>(faces.Extent()) + 1, 0);
         for (int fi = 1; fi <= faces.Extent(); ++fi) {
+            mesh.faceTriangleOffset[static_cast<std::size_t>(fi - 1)] = static_cast<std::uint32_t>(mesh.triangleCount());
+            mesh.faceTriangleOffset[static_cast<std::size_t>(fi)] = static_cast<std::uint32_t>(mesh.triangleCount());
             const TopoDS_Face face = TopoDS::Face(faces.FindKey(fi));
             TopLoc_Location location;
             Handle(Poly_Triangulation) triangulation = BRep_Tool::Triangulation(face, location);
@@ -85,7 +88,6 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
                     n.Reverse();
                 mesh.positions.insert(mesh.positions.end(), {float(p.X()), float(p.Y()), float(p.Z())});
                 mesh.normals.insert(mesh.normals.end(), {float(n.X()), float(n.Y()), float(n.Z())});
-                mesh.faceIds.push_back(faceId);
             }
             for (int t = 1; t <= triangulation->NbTriangles(); ++t) {
                 int a, b, c;
@@ -95,6 +97,7 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
                 mesh.indices.insert(mesh.indices.end(), {base + a - 1, base + b - 1, base + c - 1});
                 mesh.triangleFace.push_back(faceId);
             }
+            mesh.faceTriangleOffset[static_cast<std::size_t>(fi)] = static_cast<std::uint32_t>(mesh.triangleCount());
         }
 
         // Edges: prefer the polygon on the adjacent face's triangulation so edge

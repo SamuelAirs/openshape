@@ -1,4 +1,5 @@
 add_library(openshape_core STATIC
+    Camera.cpp Camera.h
     Log.cpp Log.h
     Math.cpp Math.h
     Result.cpp Result.h
