@@ -124,6 +124,148 @@ QString AppController::projectFolder() const
     return path_.isEmpty() ? QString() : QUrl::fromLocalFile(QFileInfo(path_).absolutePath()).toString();
 }
 
+// ---- Sketch state ---------------------------------------------------------------------
+
+bool AppController::sketchMode() const
+{
+    return interaction_->sketchSession() != nullptr;
+}
+
+QString AppController::sketchName() const
+{
+    const auto* s = interaction_->sketchSession();
+    return s ? q(s->sketch().name()) : QString();
+}
+
+QString AppController::sketchTool() const
+{
+    const auto* s = interaction_->sketchSession();
+    if (!s)
+        return {};
+    switch (s->tool()) {
+    case interact::SketchTool::Select: return QStringLiteral("select");
+    case interact::SketchTool::Line: return QStringLiteral("line");
+    case interact::SketchTool::Rectangle: return QStringLiteral("rectangle");
+    case interact::SketchTool::Circle: return QStringLiteral("circle");
+    }
+    return {};
+}
+
+QString AppController::sketchStatus() const
+{
+    const auto* s = interaction_->sketchSession();
+    return s ? q(s->statusText()) : QString();
+}
+
+QString AppController::sketchHint() const
+{
+    const auto* s = interaction_->sketchSession();
+    return s ? q(s->hintText()) : QString();
+}
+
+bool AppController::sketchDrawing() const
+{
+    const auto* s = interaction_->sketchSession();
+    return s && s->isDrawing();
+}
+
+QVariantList AppController::sketchLabels() const
+{
+    QVariantList list;
+    const auto* s = interaction_->sketchSession();
+    if (!s)
+        return list;
+    for (const auto& label : s->labels(interaction_->camera())) {
+        QVariantMap map;
+        map.insert(QStringLiteral("kind"), label.kind == interact::SketchLabel::Kind::Dimension ? QStringLiteral("dimension")
+                                           : label.kind == interact::SketchLabel::Kind::Input   ? QStringLiteral("input")
+                                                                                                : QStringLiteral("hint"));
+        map.insert(QStringLiteral("key"), q(label.key));
+        map.insert(QStringLiteral("constraint"), int(label.constraint));
+        map.insert(QStringLiteral("text"), q(label.text));
+        map.insert(QStringLiteral("x"), label.screen.x);
+        map.insert(QStringLiteral("y"), label.screen.y);
+        map.insert(QStringLiteral("focused"), label.focused);
+        map.insert(QStringLiteral("locked"), label.locked);
+        list.append(map);
+    }
+    return list;
+}
+
+bool AppController::canStartSketch() const
+{
+    if (interaction_->sketchSession())
+        return false;
+    const auto& sel = interaction_->selection();
+    // Nothing selected: sketch on the ground plane. One flat face: sketch on it.
+    return sel.empty() || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::Face);
+}
+
+void AppController::startSketch()
+{
+    const Status status = interaction_->startSketch();
+    if (!status)
+        notifyMessage(q(status.userMessage()));
+}
+
+void AppController::finishSketch()
+{
+    interaction_->finishSketch();
+}
+
+void AppController::setSketchTool(const QString& name)
+{
+    if (name == QLatin1String("select"))
+        interaction_->setSketchTool(interact::SketchTool::Select);
+    else if (name == QLatin1String("line"))
+        interaction_->setSketchTool(interact::SketchTool::Line);
+    else if (name == QLatin1String("rectangle"))
+        interaction_->setSketchTool(interact::SketchTool::Rectangle);
+    else if (name == QLatin1String("circle"))
+        interaction_->setSketchTool(interact::SketchTool::Circle);
+}
+
+QString AppController::sketchType(const QString& text)
+{
+    auto* s = interaction_->sketchSession();
+    if (!s)
+        return {};
+    const QString error = q(s->typeIntoInput(text.toStdString()));
+    emit stateChanged();
+    emit viewChanged();
+    return error;
+}
+
+void AppController::focusNextSketchInput()
+{
+    if (auto* s = interaction_->sketchSession()) {
+        s->focusNextInput();
+        emit viewChanged();
+    }
+}
+
+void AppController::commitSketchTool()
+{
+    if (auto* s = interaction_->sketchSession()) {
+        const Status status = s->commitTool();
+        if (!status && status.error() != ErrorCode::InvalidArgument)
+            notifyMessage(q(status.userMessage()));
+        emit stateChanged();
+        emit viewChanged();
+    }
+}
+
+QString AppController::setSketchDimension(int constraintId, const QString& text)
+{
+    auto* s = interaction_->sketchSession();
+    if (!s)
+        return {};
+    const QString error = q(s->setDimension(sketch::EntityId(constraintId), text.toStdString()));
+    emit stateChanged();
+    emit viewChanged();
+    return error;
+}
+
 // ---- Files ------------------------------------------------------------------------------
 
 void AppController::newDocument()

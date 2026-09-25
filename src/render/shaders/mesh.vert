@@ -17,4 +17,6 @@ void main()
 {
     vNormal = mat3(view) * normal;
     gl_Position = mvp * vec4(position, 1.0);
+    // Optional depth bias (sketch profile fills lying on body faces).
+    gl_Position.z -= params.w * gl_Position.w;
 }

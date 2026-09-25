@@ -8,6 +8,7 @@ qt_add_qml_module(openshape_ui
     QML_FILES
         qml/Main.qml
         qml/ValueChip.qml
+        qml/SketchOverlay.qml
         qml/Panel.qml
         qml/ActionButton.qml
         qml/Separator.qml

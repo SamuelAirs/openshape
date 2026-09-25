@@ -44,6 +44,15 @@ class AppController : public QObject {
     Q_PROPERTY(QString displayUnit READ displayUnit NOTIFY stateChanged)
     Q_PROPERTY(bool perspective READ perspective NOTIFY stateChanged)
     Q_PROPERTY(QString projectFolder READ projectFolder NOTIFY documentChanged)
+    Q_PROPERTY(bool sketchMode READ sketchMode NOTIFY stateChanged)
+    Q_PROPERTY(QString sketchName READ sketchName NOTIFY stateChanged)
+    Q_PROPERTY(QString sketchTool READ sketchTool NOTIFY stateChanged)
+    Q_PROPERTY(QString sketchStatus READ sketchStatus NOTIFY stateChanged)
+    Q_PROPERTY(QString sketchHint READ sketchHint NOTIFY stateChanged)
+    Q_PROPERTY(bool sketchDrawing READ sketchDrawing NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList sketchLabels READ sketchLabels NOTIFY viewChanged)
+    Q_PROPERTY(bool canStartSketch READ canStartSketch NOTIFY stateChanged)
+    Q_PROPERTY(int sketchCount READ sketchCount NOTIFY stateChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -74,6 +83,15 @@ public:
     QString displayUnit() const;
     bool perspective() const;
     QString projectFolder() const;
+    bool sketchMode() const;
+    QString sketchName() const;
+    QString sketchTool() const;
+    QString sketchStatus() const;
+    QString sketchHint() const;
+    bool sketchDrawing() const;
+    QVariantList sketchLabels() const;
+    bool canStartSketch() const;
+    int sketchCount() const { return int(document_->sketches().size()); }
 
     Q_INVOKABLE void newDocument();
     Q_INVOKABLE bool openProject(const QUrl& url);
@@ -96,6 +114,16 @@ public:
     Q_INVOKABLE void togglePerspective();
     Q_INVOKABLE void setDisplayUnit(const QString& symbol);
     Q_INVOKABLE bool handleKey(int key);
+
+    // Sketching
+    Q_INVOKABLE void startSketch();
+    Q_INVOKABLE void finishSketch();
+    Q_INVOKABLE void setSketchTool(const QString& name);
+    // Replaces the focused input's text while drawing; returns an error or "".
+    Q_INVOKABLE QString sketchType(const QString& text);
+    Q_INVOKABLE void focusNextSketchInput();
+    Q_INVOKABLE void commitSketchTool();
+    Q_INVOKABLE QString setSketchDimension(int constraintId, const QString& text);
 
 signals:
     void stateChanged();

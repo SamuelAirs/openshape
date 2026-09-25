@@ -61,6 +61,68 @@ void runDemo(os::ui::AppController& app, const QString& demo)
     interaction.fitAll(false);
     if (demo == QLatin1String("empty"))
         return;
+    if (demo.startsWith(QLatin1String("sketch")) || demo == QLatin1String("extrude") || demo == QLatin1String("bracket")) {
+        using os::interact::Key;
+        using os::interact::SketchTool;
+        auto screenOf = [&](os::Vec2 local) {
+            return interaction.camera().project(interaction.sketchSession()->sketch().plane().toWorld(local));
+        };
+        auto clickAt = [&](os::Vec2 screen) {
+            os::interact::PointerEvent e;
+            e.position = screen;
+            interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, screen, {}});
+            interaction.pointerPress(e);
+            interaction.pointerRelease(e);
+        };
+        (void)interaction.startSketch();
+        interaction.skipAnimation();
+        clickAt(screenOf({0, 0}));
+        interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, screenOf({38, 24}), {}});
+        interaction.sketchSession()->typeIntoInput("60");
+        if (demo == QLatin1String("sketch"))
+            return; // mid-rectangle: width typed, height following the cursor
+        interaction.sketchSession()->focusNextInput();
+        interaction.sketchSession()->typeIntoInput(demo == QLatin1String("bracket") ? "30" : "40");
+        interaction.keyPress(Key::Enter);
+        if (demo == QLatin1String("sketchdone")) {
+            interaction.setSketchTool(SketchTool::Circle);
+            clickAt(screenOf({15, 20}));
+            interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, screenOf({18, 20}), {}});
+            interaction.sketchSession()->typeIntoInput("8");
+            interaction.keyPress(Key::Enter);
+            return;
+        }
+        interaction.finishSketch();
+        interaction.fitAll(false);
+        clickAt(interaction.camera().project({30, 15, 0}));
+        interaction.setValueText(demo == QLatin1String("bracket") ? "5" : "20");
+        if (demo == QLatin1String("extrude"))
+            return; // preview with the value chip
+        (void)interaction.commitOperation();
+        // Hole sketch on the top face: two 6 mm circles, cut through.
+        clickAt(interaction.camera().project({30, 15, 5}));
+        (void)interaction.startSketch();
+        interaction.skipAnimation();
+        for (double x : {10.0, 50.0}) {
+            interaction.setSketchTool(SketchTool::Circle);
+            clickAt(screenOf({x, 15}));
+            interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, screenOf({x + 3, 15}), {}});
+            interaction.sketchSession()->typeIntoInput("6");
+            interaction.keyPress(Key::Enter);
+        }
+        interaction.finishSketch();
+        interaction.setStandardView(os::StandardView::Isometric, false);
+        interaction.fitAll(false);
+        clickAt(interaction.camera().project({10, 15, 5}));
+        os::interact::PointerEvent shiftClick;
+        shiftClick.position = interaction.camera().project({50, 15, 5});
+        shiftClick.modifiers.shift = true;
+        interaction.pointerPress(shiftClick);
+        interaction.pointerRelease(shiftClick);
+        interaction.setValueText("-5");
+        (void)interaction.commitOperation();
+        return;
+    }
     app.createBox(20);
     interaction.fitAll(false);
     const os::Vec2 top = interaction.camera().project({0, 0, 20});

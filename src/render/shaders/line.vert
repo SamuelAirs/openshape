@@ -30,7 +30,9 @@ void main()
     vec4 c = atEnd ? c1 : c0;
     float halfWidth = params.z * 0.5;
     // Extend slightly past the endpoints so joints between segments close.
-    vec2 offset = side * corner.y * halfWidth + dir * (atEnd ? halfWidth : -halfWidth) * 0.5;
+    // Zero-length segments (point markers) extend fully and become squares.
+    float cap = len > 1e-6 ? 0.5 : 1.0;
+    vec2 offset = side * corner.y * halfWidth + dir * (atEnd ? halfWidth : -halfWidth) * cap;
     c.xy += offset / halfViewport * c.w;
     c.z -= params.w * c.w;
     gl_Position = c;

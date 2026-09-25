@@ -38,6 +38,11 @@ constexpr Color kGridMinor{0.0f, 0.0f, 0.0f, 0.05f};
 constexpr Color kGridMajor{0.0f, 0.0f, 0.0f, 0.11f};
 constexpr Color kAxisX{0.86f, 0.27f, 0.27f, 0.6f};
 constexpr Color kAxisY{0.27f, 0.66f, 0.33f, 0.6f};
+constexpr Color kSketchSelected{0.96f, 0.52f, 0.13f, 1.0f};
+constexpr Color kSketchDefined{0.12f, 0.14f, 0.18f, 1.0f};
+constexpr Color kSketchConstruction{0.55f, 0.58f, 0.62f, 1.0f};
+constexpr Color kSketchDimension{0.36f, 0.39f, 0.44f, 0.9f};
+
 
 constexpr quint32 kLineVertexFloats = 8; // p0(3) p1(3) corner(2)
 
@@ -45,6 +50,29 @@ Color withAlpha(Color c, float a)
 {
     c[3] = a;
     return c;
+}
+
+struct SketchLook {
+    Color color;
+    float width;      // line width, logical px
+    float pointSize;  // point marker size, logical px
+};
+
+SketchLook lookOf(interact::SketchStyle style)
+{
+    using S = interact::SketchStyle;
+    switch (style) {
+    case S::Normal: return {kAccent, 2.0f, 7.0f};
+    case S::Defined: return {kSketchDefined, 2.0f, 6.0f};
+    case S::Construction: return {kSketchConstruction, 1.25f, 5.0f};
+    case S::Hovered: return {kAccentHover, 3.2f, 10.0f};
+    case S::Selected: return {kSketchSelected, 3.5f, 10.0f};
+    case S::Preview: return {withAlpha(kAccent, 0.85f), 1.75f, 8.0f};
+    case S::Guide: return {withAlpha(kAccent, 0.45f), 1.0f, 5.0f};
+    case S::Dimension: return {kSketchDimension, 1.0f, 4.0f};
+    case S::Conflict: return {kError, 2.0f, 7.0f};
+    }
+    return {kAccent, 2.0f, 7.0f};
 }
 
 Mat4 toMat4(const QMatrix4x4& q)
@@ -140,6 +168,8 @@ void ViewportRenderer::initialize(QRhiCommandBuffer*)
     if (rhi_ != rhi()) {
         // New QRhi (first init or device change): drop every GPU resource.
         bodies_.clear();
+        regions_.clear();
+        sketchVertices_.reset();
         meshPipeline_.reset();
         tintPipeline_.reset();
         overlayPipeline_.reset();
@@ -290,6 +320,23 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     }
     bodies_ = std::move(kept);
 
+    // Sketch profile fills are cached the same way, keyed by mesh key.
+    std::unordered_map<std::uint64_t, GpuBody> keptRegions;
+    for (const auto& sketch : scene_.sketches) {
+        for (const auto& region : sketch.regions) {
+            if (!region.mesh || keptRegions.contains(region.meshKey))
+                continue;
+            auto it = regions_.find(region.meshKey);
+            GpuBody gpu = it != regions_.end() ? std::move(it->second) : GpuBody{};
+            if (!gpu.positions) {
+                uploadBody(gpu, *region.mesh, u);
+                gpu.meshKey = region.meshKey;
+            }
+            keptRegions.emplace(region.meshKey, std::move(gpu));
+        }
+    }
+    regions_ = std::move(keptRegions);
+
     // ---- Matrices --------------------------------------------------------------------
     const Mat4 view = camera.viewMatrix();
     const Mat4 mvp = toMat4(rhi_->clipSpaceCorrMatrix()) * camera.projectionMatrix(false) * view;
@@ -307,14 +354,16 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     };
 
     std::vector<Draw> draws;
-    auto meshDraw = [&](QRhiGraphicsPipeline* p, const GpuBody* b, quint32 first, quint32 count, const Color& c, float mode) {
+    constexpr float kEdgeBias = 0.0004f;
+    auto meshDraw = [&](QRhiGraphicsPipeline* p, const GpuBody* b, quint32 first, quint32 count, const Color& c, float mode,
+                        float bias = 0) {
         Draw d;
         d.kind = Draw::Kind::Mesh;
         d.pipeline = p;
         d.body = b;
         d.first = first;
         d.count = count;
-        d.uniforms = uniformsFor(c, 0, 0, mode);
+        d.uniforms = uniformsFor(c, 0, bias, mode);
         draws.push_back(d);
     };
     auto lineDraw = [&](QRhiGraphicsPipeline* p, QRhiBuffer* buffer, quint32 first, quint32 count, const Color& c, float width,
@@ -403,7 +452,6 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     }
 
     // ---- 4. Edges ------------------------------------------------------------------------
-    constexpr float kEdgeBias = 0.0004f;
     for (const auto& rb : scene_.bodies) {
         const GpuBody& gpu = bodies_.at(rb.id);
         lineDraw(linePipeline_.get(), gpu.edgeVertices.get(), 0, gpu.edgeVertexCount, kEdge, 1.25f, kEdgeBias);
@@ -416,7 +464,60 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
                      kEdgeBias * 2);
     }
 
-    // ---- 5. Manipulator arrows (always on top) --------------------------------------------
+    // ---- 5. Sketches: profile fills, curves, points --------------------------------------------
+    {
+        std::vector<float> lines;
+        struct Batch {
+            quint32 first, count;
+            Color color;
+            float width;
+            bool onTop;
+        };
+        std::vector<Batch> batches;
+        for (const auto& sketch : scene_.sketches) {
+            for (const auto& region : sketch.regions) {
+                const auto it = regions_.find(region.meshKey);
+                if (it == regions_.end() || !it->second.indexCount)
+                    continue;
+                const float alpha = region.style == interact::SketchStyle::Selected ? 0.38f
+                                  : region.style == interact::SketchStyle::Hovered  ? 0.22f
+                                                                                    : 0.08f;
+                meshDraw(sketch.editing ? overlayPipeline_.get() : tintPipeline_.get(), &it->second, 0, it->second.indexCount,
+                         withAlpha(kAccent, alpha), 1, kEdgeBias);
+            }
+            // Group segments by style so each style is one draw call.
+            for (int s = 0; s <= int(interact::SketchStyle::Conflict); ++s) {
+                const auto style = interact::SketchStyle(s);
+                const quint32 first = quint32(lines.size() / kLineVertexFloats);
+                for (const auto& l : sketch.lines)
+                    if (l.style == style)
+                        appendSegment(lines, l.a, l.b);
+                const quint32 count = quint32(lines.size() / kLineVertexFloats) - first;
+                const SketchLook look = lookOf(style);
+                if (count)
+                    batches.push_back({first, count, look.color, look.width, sketch.editing});
+                // Points are zero-length segments: the shader turns them into squares.
+                const quint32 pointFirst = quint32(lines.size() / kLineVertexFloats);
+                if (sketch.editing)
+                    for (const auto& p : sketch.points)
+                        if (p.style == style)
+                            appendSegment(lines, p.position, p.position);
+                const quint32 pointCount = quint32(lines.size() / kLineVertexFloats) - pointFirst;
+                if (pointCount)
+                    batches.push_back({pointFirst, pointCount, look.color, look.pointSize, true});
+            }
+        }
+        if (!lines.empty()) {
+            const quint32 bytes = quint32(lines.size() * sizeof(float));
+            ensureDynamicBuffer(sketchVertices_, bytes, QRhiBuffer::VertexBuffer);
+            u->updateDynamicBuffer(sketchVertices_.get(), 0, bytes, lines.data());
+            for (const auto& b : batches)
+                lineDraw(b.onTop ? overlayLinePipeline_.get() : linePipeline_.get(), sketchVertices_.get(), b.first, b.count,
+                         b.color, b.width, kEdgeBias * 2);
+        }
+    }
+
+    // ---- 6. Manipulator arrows (always on top) --------------------------------------------
     std::vector<float> arrowPos, arrowNrm;
     std::vector<std::pair<quint32, Color>> arrowDraws;
     for (const auto& arrow : scene_.arrows) {

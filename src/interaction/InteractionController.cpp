@@ -55,6 +55,7 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
     document_ = &document;
     undoStack_ = &undoStack;
     session_.reset();
+    cameraBeforeSketch_.reset();
     selection_.clear();
     operation_.reset();
     hover_ = {};
@@ -837,9 +838,13 @@ RenderScene InteractionController::renderScene() const
             continue;
         RenderSketch rs;
         const sketch::Plane& plane = sk->plane();
+        // Sketches already used by a feature recede: thin grey curves, and
+        // profile fills only while hovered or selected.
+        const bool consumed = !document_->dependentFeatures(sk->id()).empty();
+        const SketchStyle curveStyle = consumed ? SketchStyle::Construction : SketchStyle::Normal;
         for (const auto& [id, l] : sk->lines())
             rs.lines.push_back({plane.toWorld(sk->point(l.start)->position), plane.toWorld(sk->point(l.end)->position),
-                                l.construction ? SketchStyle::Construction : SketchStyle::Normal});
+                                l.construction ? SketchStyle::Construction : curveStyle});
         for (const auto& [id, c] : sk->circles()) {
             constexpr int segments = 72;
             const Vec2 center = sk->point(c.center)->position;
@@ -847,7 +852,7 @@ RenderScene InteractionController::renderScene() const
                 const double a0 = 2 * kPi * i / segments, a1 = 2 * kPi * (i + 1) / segments;
                 rs.lines.push_back({plane.toWorld(center + Vec2{std::cos(a0), std::sin(a0)} * c.radius),
                                     plane.toWorld(center + Vec2{std::cos(a1), std::sin(a1)} * c.radius),
-                                    c.construction ? SketchStyle::Construction : SketchStyle::Normal});
+                                    c.construction ? SketchStyle::Construction : curveStyle});
             }
         }
         if (const auto* entry = scene_.sketch(sk->id())) {
@@ -859,6 +864,8 @@ RenderScene InteractionController::renderScene() const
                     if (item.kind == sel::SelectionKind::SketchProfile && item.bodyId == sk->id()
                         && item.index == static_cast<int>(i))
                         style = SketchStyle::Selected;
+                if (consumed && style == SketchStyle::Normal)
+                    continue;
                 rs.regions.push_back({entry->meshes[i], entry->meshKeys[i], style});
             }
         }
@@ -970,6 +977,8 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
     operation_.reset();
     hover_ = {};
     drag_ = {};
+    if (!cameraBeforeSketch_)
+        cameraBeforeSketch_ = animation_ ? animation_->to : camera_;
     session_ = std::make_unique<SketchSession>(*document_, *undoStack_, sketchId);
     session_->onMessage = [this](const std::string& text) { message(text); };
     session_->onCommitted = [this] { afterDocumentEdit(); };
@@ -990,6 +999,18 @@ void InteractionController::finishSketch()
     if (empty && document_->sketch(id))
         (void)undoStack_->push(std::make_unique<cmd::DeleteSketchCommand>(id), *document_);
     afterDocumentEdit();
+    // Return to the 3D view the user came from, so the next step (e.g. an
+    // extrusion arrow) is visible in depth rather than pointing at the viewer.
+    if (cameraBeforeSketch_) {
+        // Orientation only: keep the current target and zoom on the sketch.
+        Camera to = camera_;
+        to.yaw = cameraBeforeSketch_->yaw;
+        to.pitch = cameraBeforeSketch_->pitch;
+        cameraBeforeSketch_.reset();
+        if (!empty && std::abs(to.forward().z) > 0.999 && std::abs(camera_.forward().z) > 0.999)
+            to.setStandardView(StandardView::Isometric); // came from a top view: tilt for depth
+        startAnimation(to);
+    }
 }
 
 void InteractionController::setSketchTool(SketchTool tool)

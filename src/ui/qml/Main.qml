@@ -28,6 +28,11 @@ ApplicationWindow {
         focus: true
 
         Keys.onPressed: (event) => {
+            if (window.app.sketchMode) {
+                if (sketchOverlay.handleKey(event))
+                    event.accepted = true
+                return
+            }
             // Typing a number while an operation is armed goes straight into
             // the value field (no need to click it first).
             if (window.app.operationActive && event.text.length === 1 && "0123456789.-+(".indexOf(event.text) >= 0
@@ -56,7 +61,12 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Open]; onActivated: window.confirmDiscard(() => openDialog.open()) }
     Shortcut { sequences: [StandardKey.New]; onActivated: window.confirmDiscard(() => window.app.newDocument()) }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
-    Shortcut { sequence: "B"; enabled: viewport.activeFocus; onActivated: window.app.createBox(20) }
+    Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
+    Shortcut {
+        sequence: "K"
+        enabled: viewport.activeFocus && window.app.canStartSketch
+        onActivated: window.app.startSketch()
+    }
 
     function save() {
         if (app.hasProjectPath())
@@ -138,6 +148,7 @@ ApplicationWindow {
     // ---------------------------------------------------------------- create palette
     Panel {
         id: createPanel
+        visible: !window.app.sketchMode
         anchors { left: parent.left; verticalCenter: parent.verticalCenter; margins: Theme.margin }
         width: createColumn.implicitWidth + 2 * Theme.panelPadding
         height: createColumn.implicitHeight + 2 * Theme.panelPadding
@@ -153,6 +164,16 @@ ApplicationWindow {
                 onClicked: window.app.createBox(20)
                 ToolTip.visible: hovered
                 ToolTip.text: "Add a 20 mm cube (B). Push and pull its faces to shape it."
+                ToolTip.delay: 500
+            }
+            ActionButton {
+                objectName: "sketchButton"
+                text: "Sketch"
+                Layout.fillWidth: true
+                enabled: window.app.canStartSketch
+                onClicked: window.app.startSketch()
+                ToolTip.visible: hovered
+                ToolTip.text: "Sketch on the ground plane, or on the selected flat face (K)."
                 ToolTip.delay: 500
             }
         }
@@ -216,8 +237,14 @@ ApplicationWindow {
     }
 
     function hintText() {
+        if (app.sketchMode)
+            return app.sketchHint
+        if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
+            return "Drag the arrow or type a distance \u00b7 Shift-click to add more profiles"
+        if (app.bodyCount === 0 && app.sketchCount > 0)
+            return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)
-            return "Add a box to start modeling."
+            return "Add a box, or start a sketch."
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
         if (app.operationActive)
@@ -230,7 +257,7 @@ ApplicationWindow {
     Column {
         anchors.centerIn: parent
         spacing: 14
-        visible: window.app.bodyCount === 0
+        visible: window.app.bodyCount === 0 && window.app.sketchCount === 0 && !window.app.sketchMode
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Start with a shape"
@@ -240,16 +267,32 @@ ApplicationWindow {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Then pull its faces and round its edges."
+            text: "Pull faces, round edges, or sketch a profile and extrude it."
             font.pixelSize: 14
             color: Theme.mutedText
         }
-        ActionButton {
+        Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Add a box"
-            accent: true
-            onClicked: window.app.createBox(20)
+            spacing: 10
+            ActionButton {
+                text: "Add a box"
+                accent: true
+                onClicked: window.app.createBox(20)
+            }
+            ActionButton {
+                text: "Start a sketch"
+                onClicked: window.app.startSketch()
+            }
         }
+    }
+
+    // ---------------------------------------------------------------- sketch mode
+    SketchOverlay {
+        id: sketchOverlay
+        anchors.fill: parent
+        app: window.app
+        visible: window.app.sketchMode
+        onFinished: viewport.forceActiveFocus()
     }
 
     // ---------------------------------------------------------------- operation chip

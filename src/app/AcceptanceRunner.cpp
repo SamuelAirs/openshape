@@ -11,6 +11,7 @@
 #include <QtCore/QUrl>
 #include <QtGui/QCursor>
 #include <QtGui/QImage>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <qpa/qwindowsysteminterface.h>
 
@@ -82,6 +83,21 @@ void AcceptanceRunner::type(const QString& text)
             k = Qt::Key_Period;
         key(k, Qt::NoModifier, QString(c));
     }
+}
+
+bool AcceptanceRunner::clickItem(const QString& objectName)
+{
+    // QML items declared in an ApplicationWindow are QObject children of the window itself.
+    auto* item = window_->findChild<QQuickItem*>(objectName);
+    if (!item || !item->isVisible() || !item->isEnabled()) {
+        OS_LOG(Warning, App) << "clickItem: '" << objectName.toStdString() << "' "
+                             << (!item ? "not found" : !item->isVisible() ? "not visible" : "disabled");
+        return false;
+    }
+    const QPointF center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
+    OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center.x() << "," << center.y();
+    click(center);
+    return true;
 }
 
 // ---- Measurements -----------------------------------------------------------------
@@ -254,6 +270,95 @@ void AcceptanceRunner::start()
         },
         [] {}, [] {},
         [=, this] { screenshot(QStringLiteral("09_reopened")); },
+
+        // ================= Milestone 1: the printable bracket =================
+        // New document; K starts a sketch on the ground plane.
+        [=, this] {
+            app_->newDocument();
+            check(app_->bodyCount() == 0, "new document for the bracket");
+            key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+            check(app_->sketchMode(), "K starts a sketch");
+            check(app_->sketchTool() == QStringLiteral("rectangle"), "a new sketch starts with the rectangle tool",
+                  app_->sketchTool());
+        },
+        [] {}, [] {}, [] {}, // camera turns to face the sketch plane
+        // Rectangle: click the origin, move, type 60 Tab 30 Enter.
+        [=, this, &in] {
+            check(std::abs(in.camera().forward().z + 1.0) < 1e-6, "view looks straight down at the XY sketch");
+            click(screenPoint(0, 0, 0));
+            mouseMove(screenPoint(40, 22, 0));
+            check(app_->sketchDrawing(), "first click starts the rectangle");
+            type(QStringLiteral("60"));
+            key(Qt::Key_Tab);
+            type(QStringLiteral("30"));
+            key(Qt::Key_Return);
+            check(!app_->sketchDrawing(), "Enter completes the rectangle");
+            check(app_->sketchStatus() == QStringLiteral("Fully defined"), "rectangle anchored at the origin is fully defined",
+                  app_->sketchStatus());
+            screenshot(QStringLiteral("10_sketch_rectangle"));
+        },
+        [=, this] {
+            check(clickItem(QStringLiteral("finishSketchButton")), "Finish sketch button");
+            check(!app_->sketchMode(), "finishing leaves sketch mode");
+        },
+        [] {}, [] {}, [] {},
+        // Select the profile and extrude 5 mm.
+        [=, this, &in] {
+            click(screenPoint(30, 15, 0));
+            check(in.selection().size() == 1 && in.selection().items()[0].kind == sel::SelectionKind::SketchProfile,
+                  "clicking inside the rectangle selects the profile");
+            check(app_->operationTitle() == QStringLiteral("Extrude"), "profile selection offers extrude", app_->operationTitle());
+            type(QStringLiteral("5"));
+            key(Qt::Key_Return);
+            check(app_->bodyCount() == 1, "extrusion creates a body");
+            check(std::abs(bodyVolume() - 9000.0) < 1e-6, "plate volume is 60 x 30 x 5", num(bodyVolume()));
+        },
+        [] {},
+        // Sketch two 6 mm holes on the top face.
+        [=, this] {
+            click(screenPoint(30, 15, 5));
+            key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+            check(app_->sketchMode(), "K on a selected face starts a sketch on it");
+        },
+        [] {}, [] {}, [] {},
+        [=, this] {
+            key(Qt::Key_C, Qt::NoModifier, QStringLiteral("c"));
+            check(app_->sketchTool() == QStringLiteral("circle"), "C picks the circle tool", app_->sketchTool());
+            for (double x : {10.0, 50.0}) {
+                click(screenPoint(x, 15, 5));
+                mouseMove(screenPoint(x + 2, 15, 5));
+                type(QStringLiteral("6"));
+                key(Qt::Key_Return);
+            }
+            const auto* session = app_->interaction().sketchSession();
+            check(session && session->sketch().circles().size() == 2, "two circles drawn");
+            screenshot(QStringLiteral("11_sketch_holes"));
+            check(clickItem(QStringLiteral("finishSketchButton")), "Finish sketch button (holes)");
+        },
+        [] {}, [] {}, [] {},
+        // Select both hole profiles and cut 5 mm down.
+        [=, this, &in] {
+            click(screenPoint(10, 15, 5));
+            click(screenPoint(50, 15, 5), Qt::ShiftModifier);
+            check(in.selection().size() == 2, "shift-click adds the second hole profile");
+            type(QStringLiteral("-5"));
+            key(Qt::Key_Return);
+            const double expected = 9000.0 - 2 * kPi * 9.0 * 5.0;
+            check(std::abs(bodyVolume() - expected) < 1e-3, "two 6 mm holes cut through the plate", num(bodyVolume()));
+            check(!app_->document().bodies().empty() && geom::isValid(app_->document().bodies().front()->shape()),
+                  "bracket is a valid solid");
+        },
+        [] {}, [] {}, [] {},
+        [=, this] {
+            screenshot(QStringLiteral("12_bracket"));
+            const QString step = outputDir_ + QStringLiteral("/bracket.step");
+            const QString stl = outputDir_ + QStringLiteral("/bracket.stl");
+            check(app_->exportStep(QUrl::fromLocalFile(step)) && QFileInfo(step).size() > 1000, "bracket STEP export");
+            check(app_->exportStl(QUrl::fromLocalFile(stl)) && QFileInfo(stl).size() > 84, "bracket STL export");
+            const QString project = outputDir_ + QStringLiteral("/bracket.openshape");
+            QFile::remove(project);
+            check(app_->saveProjectAs(QUrl::fromLocalFile(project)), "bracket project saves");
+        },
     };
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);
 }

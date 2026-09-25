@@ -65,6 +65,9 @@ private:
     std::unique_ptr<QRhiGraphicsPipeline> overlayLinePipeline_;
 
     std::unordered_map<Uuid, GpuBody> bodies_;
+    // Sketch profile fills, keyed by mesh key.
+    std::unordered_map<std::uint64_t, GpuBody> regions_;
+    std::unique_ptr<QRhiBuffer> sketchVertices_;
     std::unique_ptr<QRhiBuffer> gridVertices_;
     std::unique_ptr<QRhiBuffer> arrowPositions_;
     std::unique_ptr<QRhiBuffer> arrowNormals_;

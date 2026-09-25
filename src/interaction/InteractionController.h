@@ -137,6 +137,7 @@ private:
     bool manipulatorHovered_ = false;
     std::unique_ptr<Operation> operation_;
     std::unique_ptr<SketchSession> session_;
+    std::optional<Camera> cameraBeforeSketch_; // restored when the sketch is finished
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
 
     struct Drag {
