@@ -150,6 +150,7 @@ ApplicationWindow {
         MenuSeparator {}
         MenuItem { text: "Export STEP…"; enabled: window.app.bodyCount > 0; onTriggered: stepDialog.open() }
         MenuItem { text: "Export STL…"; enabled: window.app.bodyCount > 0; onTriggered: stlDialog.open() }
+        MenuItem { text: "Export 3MF…"; enabled: window.app.bodyCount > 0; onTriggered: threeMfDialog.open() }
     }
 
     // ---------------------------------------------------------------- create palette
@@ -399,6 +400,14 @@ ApplicationWindow {
         defaultSuffix: "stl"
         nameFilters: ["STL files (*.stl)"]
         onAccepted: window.app.exportStl(selectedFile)
+    }
+    FileDialog {
+        id: threeMfDialog
+        title: "Export 3MF"
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "3mf"
+        nameFilters: ["3MF files (*.3mf)"]
+        onAccepted: window.app.export3mf(selectedFile)
     }
     MessageDialog {
         id: unsavedDialog

@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "geometry/Exchange.h"
+#include "io/Export3mf.h"
 #include "io/ProjectFile.h"
 
 #include <QtCore/QFileInfo>
@@ -453,6 +454,17 @@ bool AppController::exportStl(const QUrl& url)
             shapes.push_back({body->name(), body->shape()});
     const Status status = geom::exportStl(shapes, withExtension(toPath(url), ".stl"));
     notifyMessage(status ? QStringLiteral("Exported STL") : q(status.userMessage()));
+    return status.ok();
+}
+
+bool AppController::export3mf(const QUrl& url)
+{
+    std::vector<geom::NamedShape> shapes;
+    for (const auto& body : document_->bodies())
+        if (body->isVisible() && !body->shape().isNull())
+            shapes.push_back({body->name(), body->shape()});
+    const Status status = io::export3mf(shapes, withExtension(toPath(url), ".3mf"));
+    notifyMessage(status ? QStringLiteral("Exported 3MF") : q(status.userMessage()));
     return status.ok();
 }
 

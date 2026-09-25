@@ -25,7 +25,8 @@ a Qt Quick interface designed for mouse, touch and stylus.
 - Orbit, pan, zoom, standard views, orthographic/perspective
 - Hover highlighting, face/edge/body selection, touch-friendly tolerances
 - `.openshape` project files that reopen with their full history (sketches stay editable)
-- STEP export and import (kernel), STL export
+- Measure wall thickness, distances and angles between faces/edges
+- STEP export (and import in the kernel), STL and 3MF export for slicers
 
 ## Quick start
 

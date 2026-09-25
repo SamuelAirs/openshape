@@ -380,6 +380,8 @@ void AcceptanceRunner::start()
             const QString stl = outputDir_ + QStringLiteral("/bracket.stl");
             check(app_->exportStep(QUrl::fromLocalFile(step)) && QFileInfo(step).size() > 1000, "bracket STEP export");
             check(app_->exportStl(QUrl::fromLocalFile(stl)) && QFileInfo(stl).size() > 84, "bracket STL export");
+            const QString threeMf = outputDir_ + QStringLiteral("/bracket.3mf");
+            check(app_->export3mf(QUrl::fromLocalFile(threeMf)) && QFileInfo(threeMf).size() > 500, "bracket 3MF export");
             const QString project = outputDir_ + QStringLiteral("/bracket.openshape");
             QFile::remove(project);
             check(app_->saveProjectAs(QUrl::fromLocalFile(project)), "bracket project saves");

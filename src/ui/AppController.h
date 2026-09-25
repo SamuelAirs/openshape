@@ -102,6 +102,7 @@ public:
     Q_INVOKABLE bool hasProjectPath() const { return !path_.isEmpty(); }
     Q_INVOKABLE bool exportStep(const QUrl& url);
     Q_INVOKABLE bool exportStl(const QUrl& url);
+    Q_INVOKABLE bool export3mf(const QUrl& url);
 
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();

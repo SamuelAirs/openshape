@@ -47,7 +47,7 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
     const TopoDS_Shape& occShape = occ(shape);
 
     double deflection = params.linearDeflection;
-    if (!params.relative) {
+    if (!params.relative && params.adaptive) {
         const BoundingBox box = boundingBox(shape);
         if (box.valid) {
             const double diagonal = box.size().length();

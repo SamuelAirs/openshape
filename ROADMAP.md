@@ -90,11 +90,17 @@ error messages, discoverability. Also: BVH picking, off-thread tessellation.
 - ⬜ Provenance-based topological naming (docs/TOPOLOGICAL_NAMING.md)
 - ⬜ Reordering steps; rolling back to a step
 
-## Milestone 5 — maker features ⬜
+## Milestone 5 — maker features 🟡
 
-Hole tool, countersink/counterbore, heat-set insert presets, magnet pockets,
-clearance helper, draft, emboss/deboss, text, snap-fit helpers, threads,
-measure, section view, 3MF export.
+- ✅ Measure: select two faces/edges (same or different bodies) for the exact
+  minimum distance, the gap between parallel faces (wall thickness) and the
+  angle between flat faces or straight edges
+- ✅ 3MF export: welded, closed manifold meshes at 0.01 mm deflection, units in
+  millimeters (verified: every edge shared twice, mesh volume within 0.1 % of
+  the exact volume)
+- ⬜ Hole tool, countersink/counterbore, heat-set insert presets, magnet
+  pockets, clearance helper, draft, emboss/deboss, text, snap-fit helpers,
+  threads, section view
 
 ## Platform & infrastructure
 

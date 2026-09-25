@@ -114,3 +114,26 @@ undo restores the value. Direct manipulation keeps rejecting failing values.
 
 **Repeater/ListView delegates are not QObject children.** The acceptance
 runner now falls back to a visual-tree search to click generated items.
+
+## 2026-09-25 — Maker tools: shell, move, booleans, revolve, measure, 3MF
+
+**Kernel "success" is not success.** `BRepOffsetAPI_MakeThickSolid` returns
+the untouched solid (and `IsDone() == true`) when shell walls would meet. A
+shell must remove material, so the result's volume is now checked against the
+input. General lesson, applied since: verify kernel results against a cheap
+invariant of the operation's intent, not only `IsDone()` and `BRepCheck`.
+
+**Multi-handle operations.** Move needs three arrows; rather than a special
+manipulator, `Operation` exposes N handles and an active one. The same hook
+lets Revolve's arrow ride the swept arc instead of drifting along the initial
+tangent (found by looking at a 270° screenshot).
+
+**Out-of-range typed values must be refused, not clamped.** Typing 400° showed
+a 360° preview next to "400" — refused now with an explanation.
+
+**3MF by hand.** A ZIP with three small XML parts; vertices are welded on a
+1 µm grid. Verified as closed manifolds with a divergence-theorem volume check.
+
+**Tooling pitfall.** Backslash escapes inside shell heredocs were being
+collapsed by the tool layer (e.g. `\\xC2\\xB7` arriving as raw bytes). Edits
+with escapes now go through written script files or the Edit tool.

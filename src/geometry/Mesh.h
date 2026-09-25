@@ -32,9 +32,12 @@ struct Mesh {
 };
 
 struct TessellationParams {
-    double linearDeflection = 0.05;   // mm; scaled by body size (see tessellate)
+    double linearDeflection = 0.05;   // mm (ignored when `adaptive`)
     double angularDeflection = 0.35;  // radians (~20 degrees)
     bool relative = false;
+    // Display meshes pick the deflection from the body size; exports use a
+    // fixed, fine `linearDeflection` instead.
+    bool adaptive = true;
 };
 
 } // namespace os::geom

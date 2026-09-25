@@ -38,6 +38,7 @@ packaging, interaction polish (M3).
 - Shell (enclosures), Move (X/Y/Z arrows), Union/Subtract/Intersect between
   bodies, Revolve (spacers, knobs) — all as editable history steps.
 - Sketch planes: ground (XY), front (XZ), right (YZ), or any flat face.
+- Measure (distance / parallel gap / angle) and 3MF export.
 
 ## Partially implemented
 
@@ -78,10 +79,10 @@ packaging, interaction polish (M3).
 
 ## Tests currently passing
 
-158/158 (`ctest`): 157 GTest cases (core, geometry, profiles, sketch model and
+163/163 (`ctest`): 162 GTest cases (core, geometry, profiles, sketch model and
 solver, document, commands, project files, sketch features, face attachment,
 camera, picking, interaction incl. headless M0 script, sketch workflows,
-history editing, shell, move, combine and revolve) plus `acceptance_gui` (60 end-to-end checks through the
+history editing, shell, move, combine, revolve, measure, 3MF) plus `acceptance_gui` (61 end-to-end checks through the
 real UI).
 
 ## Platforms verified
