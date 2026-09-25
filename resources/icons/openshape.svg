@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#1F2329"/>
+  <!-- An isometric block being pulled upward: the product in one glyph. -->
+  <polygon points="128,60 196,99 128,138 60,99" fill="#8FB4F2"/>
+  <polygon points="60,99 128,138 128,206 60,167" fill="#C8CDD4"/>
+  <polygon points="196,99 128,138 128,206 196,167" fill="#9AA1AB"/>
+  <polyline points="128,60 196,99 196,167 128,206 60,167 60,99 128,60" fill="none" stroke="#1F2329" stroke-width="4" stroke-linejoin="round"/>
+  <line x1="128" y1="138" x2="128" y2="206" stroke="#1F2329" stroke-width="4"/>
+  <polyline points="60,99 128,138 196,99" fill="none" stroke="#1F2329" stroke-width="4" stroke-linejoin="round"/>
+  <line x1="128" y1="92" x2="128" y2="34" stroke="#2977ED" stroke-width="9" stroke-linecap="round"/>
+  <polygon points="128,20 144,44 112,44" fill="#2977ED"/>
+</svg>

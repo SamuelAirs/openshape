@@ -207,9 +207,20 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         case QEventPoint::Updated:
             interaction.pointerMove(e);
             break;
-        case QEventPoint::Released:
+        case QEventPoint::Released: {
             interaction.pointerRelease(e);
+            const qint64 now = qint64(event->timestamp());
+            const QPointF delta = p.position() - lastTapPosition_;
+            const bool isTap = (p.position() - p.pressPosition()).manhattanLength() < 12;
+            if (isTap && now - lastTapTime_ < 350 && delta.manhattanLength() < 24) {
+                interaction.pointerDoubleClick(e);
+                lastTapTime_ = 0;
+            } else if (isTap) {
+                lastTapTime_ = now;
+                lastTapPosition_ = p.position();
+            }
             break;
+        }
         default:
             break;
         }

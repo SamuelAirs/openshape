@@ -9,6 +9,7 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QIcon>
 #include <QtGui/QImage>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlExtensionPlugin>
@@ -90,6 +91,7 @@ int main(int argc, char* argv[])
     QGuiApplication::setOrganizationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     installLogging();
 

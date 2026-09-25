@@ -45,6 +45,10 @@ private:
     QPointer<AppController> controller_;
     QTimer animationTimer_;
 
+    // Double-tap detection (touch has no native double-click here).
+    qint64 lastTapTime_ = 0;
+    QPointF lastTapPosition_;
+
     // Two-finger gesture tracking.
     bool twoFinger_ = false;
     QPointF lastCentroid_;
