@@ -185,6 +185,9 @@ int main(int argc, char* argv[])
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     installLogging();
+    // OPENSHAPE_LOG=debug shows kernel/tessellation/recompute timings (PERFORMANCE).
+    if (qEnvironmentVariable("OPENSHAPE_LOG").compare(QLatin1String("debug"), Qt::CaseInsensitive) == 0)
+        os::setMinimumLogLevel(os::LogLevel::Debug);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("OpenShape - direct solid modeling"));
