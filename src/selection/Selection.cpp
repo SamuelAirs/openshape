@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "document/Document.h"
+#include "document/SketchProfiles.h"
 
 #include <algorithm>
 
@@ -83,6 +84,26 @@ bool SelectionSet::refresh(const doc::Document& document)
     bool changed = false;
     std::vector<SelectionItem> kept;
     for (SelectionItem item : items_) {
+        if (item.kind == SelectionKind::SketchProfile) {
+            const sketch::Sketch* sk = document.sketch(item.bodyId);
+            if (!sk || !sk->isVisible() || !item.profile) {
+                changed = true;
+                continue;
+            }
+            const std::uint64_t revision = document.sketchRevision(item.bodyId);
+            if (revision != item.shapeRevision) {
+                changed = true;
+                auto regions = doc::sketchRegions(*sk);
+                const auto index = regions ? doc::resolveProfile(regions.value(), *sk, *item.profile) : std::nullopt;
+                if (!index)
+                    continue;
+                item.index = *index;
+                item.shapeRevision = revision;
+                item.profile = doc::makeProfileRef(regions.value()[std::size_t(*index)], *sk);
+            }
+            kept.push_back(item);
+            continue;
+        }
         const doc::Body* body = document.body(item.bodyId);
         if (!body || !body->isVisible() || body->shape().isNull()) {
             changed = true;

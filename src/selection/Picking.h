@@ -9,7 +9,7 @@
 
 namespace os::sel {
 
-enum class PickKind { None, Face, Edge };
+enum class PickKind { None, Face, Edge, Profile };
 
 struct PickTarget {
     Uuid bodyId;
@@ -18,8 +18,8 @@ struct PickTarget {
 
 struct PickResult {
     PickKind kind = PickKind::None;
-    Uuid bodyId;
-    int index = -1;       // topology index (face or edge) in the body's current shape
+    Uuid bodyId;          // body, or sketch for PickKind::Profile
+    int index = -1;       // topology index (face or edge) in the body's current shape, or region index
     Vec3 point;           // world-space hit point
     double depth = 0;     // view depth of the hit
     double screenDistance = 0; // for edges: pixels from the cursor

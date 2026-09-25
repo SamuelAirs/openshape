@@ -221,7 +221,7 @@ void Document::recomputeDependents(const Uuid& objectId)
     }
 }
 
-std::string Document::nextSketchName()
+std::string Document::nextSketchName() const
 {
     for (int n = 1;; ++n) {
         const std::string candidate = "Sketch " + std::to_string(n);
@@ -250,7 +250,7 @@ void Document::removeListener(int handle)
     std::erase_if(listeners_, [handle](const auto& p) { return p.first == handle; });
 }
 
-std::string Document::nextBodyName()
+std::string Document::nextBodyName() const
 {
     for (int n = 1;; ++n) {
         const std::string candidate = "Body " + std::to_string(n);

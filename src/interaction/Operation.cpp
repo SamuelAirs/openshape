@@ -29,7 +29,7 @@ void Operation::setValue(double value, const doc::Document& document)
         return;
     }
     auto feature = makeFeature(value);
-    auto result = document.preview(bodyId_, *feature);
+    auto result = document.preview(previewBody(), *feature);
     if (!result) {
         previewMesh_.reset();
         error_ = result.userMessage();
@@ -40,7 +40,7 @@ void Operation::setValue(double value, const doc::Document& document)
     previewKey_ = nextPreviewKey();
 }
 
-std::unique_ptr<cmd::Command> Operation::makeCommand() const
+std::unique_ptr<cmd::Command> Operation::makeCommand(const doc::Document&) const
 {
     return std::make_unique<cmd::AddFeatureCommand>(bodyId_, makeFeature(value_));
 }
@@ -112,6 +112,53 @@ std::unique_ptr<doc::Feature> EdgeOperation::makeFeature(double value) const
     feature->edges = edges_;
     feature->size = value;
     return feature;
+}
+
+// ---- Extrude --------------------------------------------------------------------
+
+std::unique_ptr<ExtrudeOperation> ExtrudeOperation::create(const doc::Document& document, const Uuid& sketchId,
+                                                           std::vector<doc::ProfileRef> profiles, const Vec3& anchor)
+{
+    const sketch::Sketch* sk = document.sketch(sketchId);
+    if (!sk || profiles.empty())
+        return nullptr;
+    std::optional<Uuid> host;
+    if (sk->hostBody() && document.body(*sk->hostBody()) && document.body(*sk->hostBody())->isVisible())
+        host = sk->hostBody();
+    return std::unique_ptr<ExtrudeOperation>(
+        new ExtrudeOperation(sketchId, host, LinearManipulator(anchor, sk->plane().normal()), std::move(profiles)));
+}
+
+doc::ExtrudeMode ExtrudeOperation::mode() const
+{
+    if (modeOverride_)
+        return host_ || *modeOverride_ == doc::ExtrudeMode::NewBody ? *modeOverride_ : doc::ExtrudeMode::NewBody;
+    if (!host_)
+        return doc::ExtrudeMode::NewBody;
+    return value() < 0 ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::Join;
+}
+
+Uuid ExtrudeOperation::previewBody() const
+{
+    return mode() == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
+}
+
+std::unique_ptr<doc::Feature> ExtrudeOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::ExtrudeFeature>();
+    feature->sketchId = sketchId_;
+    feature->profiles = profiles_;
+    feature->distance = value;
+    feature->mode = mode();
+    return feature;
+}
+
+std::unique_ptr<cmd::Command> ExtrudeOperation::makeCommand(const doc::Document& document) const
+{
+    if (mode() == doc::ExtrudeMode::NewBody) {
+        return std::make_unique<cmd::CreateBodyCommand>(document.nextBodyName(), makeFeature(value()));
+    }
+    return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
 }
 
 } // namespace os::interact

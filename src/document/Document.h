@@ -61,7 +61,7 @@ public:
     std::uint64_t sketchRevision(const Uuid& id) const;
     // Features (in any body) that depend on a document object.
     std::vector<Uuid> dependentFeatures(const Uuid& objectId) const;
-    std::string nextSketchName();
+    std::string nextSketchName() const;
 
     EvalContext context() const { return EvalContext{this}; }
 
@@ -73,7 +73,7 @@ public:
     int addListener(Listener listener);
     void removeListener(int handle);
 
-    std::string nextBodyName();
+    std::string nextBodyName() const;
 
 private:
     void changed();

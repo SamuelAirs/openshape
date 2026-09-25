@@ -31,6 +31,8 @@ public:
     virtual doc::FeatureKind featureKind() const = 0;
 
     const Uuid& bodyId() const { return bodyId_; }
+    // Body whose display the preview replaces; nil when the result is a new body.
+    virtual Uuid previewBody() const { return bodyId_; }
     const LinearManipulator& manipulator() const { return manipulator_; }
     LinearManipulator& manipulator() { return manipulator_; }
 
@@ -45,7 +47,7 @@ public:
     const std::string& error() const { return error_; }
     bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
 
-    std::unique_ptr<cmd::Command> makeCommand() const;
+    virtual std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const;
 
     // Where the arrow sits for the current value.
     Vec3 anchor() const { return manipulator_.anchor(displayOffset(value_)); }
@@ -111,6 +113,39 @@ private:
         : Operation(bodyId, std::move(m)), edges_(std::move(edges)), kind_(kind) {}
     std::vector<doc::EdgeRef> edges_;
     doc::FeatureKind kind_;
+};
+
+// Extrudes selected sketch profiles along the sketch normal. Without an
+// explicit mode it creates a new body, or - for sketches placed on a body -
+// joins when pulled outward and cuts when pushed inward.
+class ExtrudeOperation final : public Operation {
+public:
+    static std::unique_ptr<ExtrudeOperation> create(const doc::Document& document, const Uuid& sketchId,
+                                                    std::vector<doc::ProfileRef> profiles, const Vec3& anchor);
+
+    std::string title() const override { return "Extrude"; }
+    std::string valueLabel() const override { return "Distance"; }
+    bool allowsNegative() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Extrude; }
+    Uuid previewBody() const override;
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+
+    doc::ExtrudeMode mode() const;
+    void setModeOverride(std::optional<doc::ExtrudeMode> mode) { modeOverride_ = mode; }
+    const std::optional<doc::ExtrudeMode>& modeOverride() const { return modeOverride_; }
+    bool hasHost() const { return host_.has_value(); }
+    const Uuid& sketchId() const { return sketchId_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    ExtrudeOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles)
+        : Operation(host.value_or(Uuid()), std::move(m)), sketchId_(sketchId), host_(host), profiles_(std::move(profiles)) {}
+    Uuid sketchId_;
+    std::optional<Uuid> host_;
+    std::vector<doc::ProfileRef> profiles_;
+    std::optional<doc::ExtrudeMode> modeOverride_;
 };
 
 } // namespace os::interact

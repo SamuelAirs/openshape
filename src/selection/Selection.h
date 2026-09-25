@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Uuid.h"
+#include "document/Feature.h"
 #include "geometry/TopoSignature.h"
 
 #include <cstdint>
@@ -27,6 +28,9 @@ struct SelectionItem {
     std::uint64_t shapeRevision = 0;
     std::optional<geom::FaceSignature> faceSignature;
     std::optional<geom::EdgeSignature> edgeSignature;
+    // SketchProfile: bodyId holds the sketch id, index the region index,
+    // shapeRevision the sketch revision, and `profile` the persistent ref.
+    std::optional<doc::ProfileRef> profile;
 
     bool sameTarget(const SelectionItem& other) const
     {

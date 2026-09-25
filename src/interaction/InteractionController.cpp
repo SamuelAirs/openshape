@@ -1,6 +1,7 @@
 #include "interaction/InteractionController.h"
 
 #include "commands/DocumentCommands.h"
+#include "document/SketchProfiles.h"
 #include "core/Log.h"
 #include "core/Units.h"
 #include "geometry/Modeling.h"
@@ -53,6 +54,7 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
 {
     document_ = &document;
     undoStack_ = &undoStack;
+    session_.reset();
     selection_.clear();
     operation_.reset();
     hover_ = {};
@@ -170,6 +172,14 @@ bool InteractionController::advanceAnimation()
     return animation_.has_value();
 }
 
+void InteractionController::skipAnimation()
+{
+    if (!animation_)
+        return;
+    animation_->start -= std::chrono::seconds(10);
+    advanceAnimation();
+}
+
 // ---- Input -----------------------------------------------------------------------
 
 void InteractionController::pointerPress(const PointerEvent& event)
@@ -179,6 +189,15 @@ void InteractionController::pointerPress(const PointerEvent& event)
     drag_.press = event;
     drag_.last = event.position;
     drag_.mode = DragMode::Pending;
+
+    if (session_) {
+        if (session_->pointerPress(event, camera_)) {
+            drag_.mode = DragMode::Sketch;
+            notifyState();
+            notifyView();
+        }
+        return;
+    }
 
     if (event.button == PointerButton::Left && operation_) {
         const auto profile = InputProfile::forDevice(event.device);
@@ -194,7 +213,19 @@ void InteractionController::pointerPress(const PointerEvent& event)
 
 void InteractionController::pointerMove(const PointerEvent& event)
 {
+    if (drag_.mode == DragMode::Sketch) {
+        session_->pointerMove(event, camera_);
+        notifyState();
+        notifyView();
+        return;
+    }
     if (drag_.mode == DragMode::None) {
+        if (session_) {
+            session_->hover(event, camera_);
+            notifyState();
+            notifyView();
+            return;
+        }
         updateHover(event);
         return;
     }
@@ -246,6 +277,15 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
     drag_.mode = DragMode::None;
+    if (session_) {
+        if (mode == DragMode::Sketch)
+            session_->pointerRelease(event, camera_);
+        else if (mode == DragMode::Pending)
+            session_->select(sketch::kNoEntity, false); // click on empty space
+        notifyState();
+        notifyView();
+        return;
+    }
     if (mode == DragMode::Pending)
         click(press);
     else if (mode == DragMode::Manipulator)
@@ -257,7 +297,13 @@ void InteractionController::pointerRelease(const PointerEvent& event)
 
 void InteractionController::pointerDoubleClick(const PointerEvent& event)
 {
+    if (session_)
+        return;
     const auto hit = pickAt(event.position, InputProfile::forDevice(event.device));
+    if (hit.kind == sel::PickKind::Profile) {
+        (void)editSketch(hit.bodyId); // double-click a profile: edit its sketch
+        return;
+    }
     if (!hit.hit())
         return;
     if (operation_ && operation_->canCommit())
@@ -272,6 +318,11 @@ void InteractionController::pointerDoubleClick(const PointerEvent& event)
 
 void InteractionController::pointerLeave()
 {
+    if (session_) {
+        session_->leave();
+        notifyView();
+        return;
+    }
     if (hover_.hit() || manipulatorHovered_) {
         hover_ = {};
         manipulatorHovered_ = false;
@@ -319,6 +370,12 @@ void InteractionController::twoFingerRotate(double dxPixels, double dyPixels)
 
 bool InteractionController::keyPress(Key key)
 {
+    if (session_) {
+        const bool handled = session_->keyPress(key);
+        notifyState();
+        notifyView();
+        return handled;
+    }
     switch (key) {
     case Key::Escape:
         if (drag_.mode != DragMode::None)
@@ -379,6 +436,22 @@ void InteractionController::click(const PointerEvent& event)
 
     if (!hit.hit()) {
         selection_.clear();
+    } else if (hit.kind == sel::PickKind::Profile) {
+        const auto* entry = scene_.sketch(hit.bodyId);
+        const sketch::Sketch* sk = document_->sketch(hit.bodyId);
+        if (entry && sk && hit.index >= 0 && hit.index < static_cast<int>(entry->regions.size())) {
+            sel::SelectionItem item;
+            item.kind = sel::SelectionKind::SketchProfile;
+            item.bodyId = hit.bodyId;
+            item.index = hit.index;
+            item.shapeRevision = document_->sketchRevision(hit.bodyId);
+            item.profile = doc::makeProfileRef(entry->regions[std::size_t(hit.index)], *sk);
+            const bool sameSketch = selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody() == hit.bodyId;
+            if (additive && sameSketch)
+                selection_.toggle(item);
+            else
+                selection_.set(item);
+        }
     } else {
         const auto kind = hit.kind == sel::PickKind::Edge ? sel::SelectionKind::Edge : sel::SelectionKind::Face;
         if (auto item = sel::makeSelectionItem(*document_, kind, hit.bodyId, hit.index)) {
@@ -408,6 +481,17 @@ void InteractionController::rebuildOperation()
         for (const auto& item : selection_.items())
             edges.push_back(item.index);
         operation_ = EdgeOperation::create(*document_, *selection_.singleBody(), edges, edgeOperationKind_);
+    } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody()) {
+        const Uuid sketchId = *selection_.singleBody();
+        const auto* entry = scene_.sketch(sketchId);
+        std::vector<doc::ProfileRef> refs;
+        for (const auto& item : selection_.items())
+            if (item.profile)
+                refs.push_back(*item.profile);
+        const int first = selection_.items().front().index;
+        if (entry && first >= 0 && first < static_cast<int>(entry->regions.size()))
+            operation_ = ExtrudeOperation::create(*document_, sketchId, std::move(refs),
+                                                  entry->regions[std::size_t(first)].interiorPoint);
     }
 }
 
@@ -452,8 +536,10 @@ Status InteractionController::commitOperation()
         const std::string text = operation_->error().empty() ? "Drag the arrow or type a value first." : operation_->error();
         return Status::failure(ErrorCode::InvalidArgument, text, "commit of non-committable operation");
     }
-    const bool edgeOperation = operation_->featureKind() != doc::FeatureKind::PushPull;
-    Status status = undoStack_->push(operation_->makeCommand(), *document_);
+    // Fillets consume their edges and extrusions their profiles: clear those
+    // selections. A pushed face still exists and stays selected.
+    const bool clearSelection = operation_->featureKind() != doc::FeatureKind::PushPull;
+    Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
@@ -461,7 +547,7 @@ Status InteractionController::commitOperation()
     operation_.reset();
     // Edges consumed by a fillet/chamfer no longer exist; a face that was
     // pushed still does and stays selected for the next push.
-    if (edgeOperation)
+    if (clearSelection)
         selection_.clear();
     afterDocumentEdit();
     return status;
@@ -552,7 +638,20 @@ Status InteractionController::deleteSelectedBodies()
 
 std::vector<ContextAction> InteractionController::contextActions() const
 {
+    if (session_)
+        return session_->contextActions();
     std::vector<ContextAction> actions;
+    if (const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get())) {
+        actions.push_back({"extrude", "Extrude", true});
+        if (extrude->hasHost()) {
+            const auto mode = extrude->mode();
+            actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
+            actions.push_back({"mode:join", "Join", mode == doc::ExtrudeMode::Join});
+            actions.push_back({"mode:cut", "Cut", mode == doc::ExtrudeMode::Cut});
+        }
+        actions.push_back({"editSketch", "Edit sketch", false});
+        return actions;
+    }
     if (selection_.empty())
         return actions;
     if (operation_ && operation_->featureKind() == doc::FeatureKind::PushPull) {
@@ -572,6 +671,27 @@ std::vector<ContextAction> InteractionController::contextActions() const
 
 Status InteractionController::triggerAction(const std::string& id)
 {
+    if (session_) {
+        Status status = session_->triggerAction(id);
+        notifyState();
+        notifyView();
+        return status;
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id.rfind("mode:", 0) == 0) {
+        const auto mode = id == "mode:join" ? doc::ExtrudeMode::Join : id == "mode:cut" ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::NewBody;
+        extrude->setModeOverride(mode);
+        extrude->setValue(extrude->value(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (id == "editSketch") {
+        if (const auto sketchId = selection_.singleBody(); sketchId && selection_.allOfKind(sel::SelectionKind::SketchProfile))
+            return editSketch(*sketchId);
+        return Status::failure(ErrorCode::InvalidArgument, "Select a sketch profile first.", "editSketch without profile");
+    }
+    if (id == "extrude")
+        return okStatus(); // already active: the arrow is the tool
     if (id == "fillet" || id == "chamfer") {
         const auto kind = id == "fillet" ? doc::FeatureKind::Fillet : doc::FeatureKind::Chamfer;
         const double keep = operation_ ? operation_->value() : 0.0;
@@ -608,6 +728,18 @@ std::string InteractionController::selectionSummary() const
         return {};
     const LengthUnit unit = document_->displayUnit();
     const auto& first = selection_.items().front();
+    if (first.kind == sel::SelectionKind::SketchProfile) {
+        double area = 0;
+        const auto* entry = scene_.sketch(first.bodyId);
+        for (const auto& item : selection_.items())
+            if (entry && item.index >= 0 && item.index < static_cast<int>(entry->regions.size()))
+                area += entry->regions[std::size_t(item.index)].area;
+        char text[96];
+        std::snprintf(text, sizeof text, "%.2f %s\xC2\xB2", fromMillimeters(fromMillimeters(area, unit), unit),
+                      std::string(unitSymbol(unit)).c_str());
+        const std::string noun = selection_.size() == 1 ? "Profile" : std::to_string(selection_.size()) + " profiles";
+        return noun + " \xC2\xB7 " + text;
+    }
     const doc::Body* body = document_->body(first.bodyId);
     if (!body)
         return {};
@@ -657,7 +789,7 @@ RenderScene InteractionController::renderScene() const
             continue;
         RenderBody rb;
         rb.id = body->id();
-        if (operation_ && operation_->bodyId() == body->id() && operation_->hasPreview()) {
+        if (operation_ && !operation_->previewBody().isNil() && operation_->previewBody() == body->id() && operation_->hasPreview()) {
             rb.mesh = operation_->previewMesh();
             rb.meshKey = operation_->previewKey();
             rb.isPreview = true;
@@ -683,6 +815,54 @@ RenderScene InteractionController::renderScene() const
         }
         if (rb.mesh)
             scene.bodies.push_back(std::move(rb));
+    }
+
+    // A new-body preview has no document body to stand in for.
+    if (operation_ && operation_->previewBody().isNil() && operation_->hasPreview()) {
+        RenderBody rb;
+        rb.mesh = operation_->previewMesh();
+        rb.meshKey = operation_->previewKey();
+        rb.isPreview = true;
+        scene.bodies.push_back(std::move(rb));
+    }
+
+    // Sketches: the one being edited in full detail, the others as curves
+    // plus selectable profile fills.
+    for (const auto& sk : document_->sketches()) {
+        if (session_ && sk->id() == session_->sketchId()) {
+            scene.sketches.push_back(session_->renderData(camera_));
+            continue;
+        }
+        if (!sk->isVisible())
+            continue;
+        RenderSketch rs;
+        const sketch::Plane& plane = sk->plane();
+        for (const auto& [id, l] : sk->lines())
+            rs.lines.push_back({plane.toWorld(sk->point(l.start)->position), plane.toWorld(sk->point(l.end)->position),
+                                l.construction ? SketchStyle::Construction : SketchStyle::Normal});
+        for (const auto& [id, c] : sk->circles()) {
+            constexpr int segments = 72;
+            const Vec2 center = sk->point(c.center)->position;
+            for (int i = 0; i < segments; ++i) {
+                const double a0 = 2 * kPi * i / segments, a1 = 2 * kPi * (i + 1) / segments;
+                rs.lines.push_back({plane.toWorld(center + Vec2{std::cos(a0), std::sin(a0)} * c.radius),
+                                    plane.toWorld(center + Vec2{std::cos(a1), std::sin(a1)} * c.radius),
+                                    c.construction ? SketchStyle::Construction : SketchStyle::Normal});
+            }
+        }
+        if (const auto* entry = scene_.sketch(sk->id())) {
+            for (std::size_t i = 0; i < entry->meshes.size(); ++i) {
+                SketchStyle style = SketchStyle::Normal;
+                if (hover_.kind == sel::PickKind::Profile && hover_.bodyId == sk->id() && hover_.index == static_cast<int>(i))
+                    style = SketchStyle::Hovered;
+                for (const auto& item : selection_.items())
+                    if (item.kind == sel::SelectionKind::SketchProfile && item.bodyId == sk->id()
+                        && item.index == static_cast<int>(i))
+                        style = SketchStyle::Selected;
+                rs.regions.push_back({entry->meshes[i], entry->meshKeys[i], style});
+            }
+        }
+        scene.sketches.push_back(std::move(rs));
     }
 
     if (operation_) {
@@ -725,8 +905,158 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
 {
     sel::PickOptions options;
     options.edgeTolerance = profile.pickTolerance;
-    return sel::pick(pickTargets(), camera_, screen, options);
+    const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
+    if (body.kind == sel::PickKind::Edge)
+        return body; // edges are the smallest targets; keep them reachable
+    const sel::PickResult region = pickProfile(screen);
+    // A sketch lying on a face is "on top" of it.
+    if (region.hit() && (!body.hit() || region.depth <= body.depth + camera_.pixelSize(region.point) * 2))
+        return region;
+    return body;
 }
+
+// ---- Sketching -------------------------------------------------------------------------
+
+Status InteractionController::startSketch()
+{
+    if (session_)
+        finishSketch();
+    sketch::Plane plane = sketch::Plane::xy();
+    std::optional<Uuid> host;
+    if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face) {
+        const auto& item = selection_.items().front();
+        const doc::Body* body = document_->body(item.bodyId);
+        const auto info = body ? geom::faceInfo(body->shape(), item.index) : std::nullopt;
+        if (!info || !info->isPlanar()) {
+            const std::string text = "Sketches can only be placed on flat faces.";
+            message(text);
+            return Status::failure(ErrorCode::NotPlanar, text, "startSketch on non-planar face");
+        }
+        // Origin: the world origin projected onto the face plane, so sketch
+        // coordinates line up with the model's coordinates.
+        const Vec3 n = info->normal.normalized();
+        plane = sketch::Plane::fromNormal(n * n.dot(info->centroid), n);
+        host = item.bodyId;
+    }
+    operation_.reset();
+    selection_.clear();
+
+    sketch::Sketch s(Uuid::generate(), plane);
+    s.setName(document_->nextSketchName());
+    s.setHostBody(host);
+    const Uuid id = s.id();
+    Status status = undoStack_->push(std::make_unique<cmd::CreateSketchCommand>(std::move(s)), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    enterSketch(id, SketchTool::Rectangle);
+    return status;
+}
+
+Status InteractionController::editSketch(const Uuid& sketchId)
+{
+    if (!document_->sketch(sketchId))
+        return Status::failure(ErrorCode::InvalidReference, "That sketch no longer exists.", "editSketch: unknown sketch");
+    if (session_)
+        finishSketch();
+    enterSketch(sketchId, SketchTool::Select);
+    return okStatus();
+}
+
+void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
+{
+    selection_.clear();
+    operation_.reset();
+    hover_ = {};
+    drag_ = {};
+    session_ = std::make_unique<SketchSession>(*document_, *undoStack_, sketchId);
+    session_->onMessage = [this](const std::string& text) { message(text); };
+    session_->onCommitted = [this] { afterDocumentEdit(); };
+    session_->setTool(tool);
+    alignViewTo(session_->sketch().plane());
+    afterDocumentEdit();
+}
+
+void InteractionController::finishSketch()
+{
+    if (!session_)
+        return;
+    const Uuid id = session_->sketchId();
+    const bool empty = !session_->sketch().hasGeometry();
+    session_.reset();
+    drag_ = {};
+    // An empty sketch is clutter; remove it (undoable like everything else).
+    if (empty && document_->sketch(id))
+        (void)undoStack_->push(std::make_unique<cmd::DeleteSketchCommand>(id), *document_);
+    afterDocumentEdit();
+}
+
+void InteractionController::setSketchTool(SketchTool tool)
+{
+    if (!session_)
+        return;
+    session_->setTool(tool);
+    notifyState();
+    notifyView();
+}
+
+void InteractionController::alignViewTo(const sketch::Plane& plane)
+{
+    Camera to = camera_;
+    const Vec3 n = plane.normal().normalized();
+    to.pitch = std::asin(std::clamp(n.z, -1.0, 1.0));
+    // Looking straight down/up: choose the yaw that keeps the sketch x axis
+    // pointing right on screen. Otherwise face the plane head-on.
+    to.yaw = std::abs(n.z) > 0.999 ? std::atan2(-plane.xAxis.x, plane.xAxis.y) : std::atan2(n.y, n.x);
+    to.target = plane.origin;
+    if (session_ && session_->sketch().hasGeometry()) {
+        Vec3 lo{1e300, 1e300, 1e300}, hi{-1e300, -1e300, -1e300};
+        for (const auto& [id, p] : session_->sketch().points()) {
+            const Vec3 w = plane.toWorld(p.position);
+            lo = {std::min(lo.x, w.x), std::min(lo.y, w.y), std::min(lo.z, w.z)};
+            hi = {std::max(hi.x, w.x), std::max(hi.y, w.y), std::max(hi.z, w.z)};
+        }
+        to.fit(lo, hi);
+    }
+    startAnimation(to);
+}
+
+sel::PickResult InteractionController::pickProfile(Vec2 screen) const
+{
+    sel::PickResult best;
+    const Ray ray = camera_.rayAt(screen);
+    for (const auto& sk : document_->sketches()) {
+        if (!sk->isVisible() || (session_ && sk->id() == session_->sketchId()))
+            continue;
+        const auto* entry = scene_.sketch(sk->id());
+        if (!entry || entry->regions.empty())
+            continue;
+        const Vec3 n = sk->plane().normal();
+        const double denom = ray.direction.dot(n);
+        if (std::abs(denom) < 1e-12)
+            continue;
+        const double t = (sk->plane().origin - ray.origin).dot(n) / denom;
+        if (t < 0)
+            continue;
+        const Vec3 p = ray.at(t);
+        const double depth = camera_.depthOf(p);
+        if (best.hit() && depth >= best.depth)
+            continue;
+        for (std::size_t i = 0; i < entry->regions.size(); ++i) {
+            if (geom::regionContains(entry->regions[i].face, p)) {
+                best.kind = sel::PickKind::Profile;
+                best.bodyId = sk->id();
+                best.index = static_cast<int>(i);
+                best.point = p;
+                best.depth = depth;
+                break;
+            }
+        }
+    }
+    return best;
+}
+
 
 void InteractionController::documentChanged()
 {
@@ -735,6 +1065,11 @@ void InteractionController::documentChanged()
 
 void InteractionController::afterDocumentEdit()
 {
+    if (session_) {
+        session_->syncFromDocument();
+        if (!session_->isValid())
+            session_.reset(); // undo removed the sketch being edited
+    }
     scene_.update(*document_);
     selection_.refresh(*document_);
     hover_ = {};

@@ -40,9 +40,47 @@ struct RenderGrid {
     int halfLines = 60;      // minor lines on each side of the center
 };
 
+// ---- Sketches ----
+enum class SketchStyle {
+    Normal,       // under-constrained geometry
+    Defined,      // fully constrained geometry
+    Construction,
+    Hovered,
+    Selected,
+    Preview,      // rubber band of the active drawing tool
+    Guide,        // inference / alignment guide
+    Dimension,    // dimension and extension lines
+    Conflict,     // over-constrained
+};
+
+struct RenderSketchLine {
+    Vec3 a, b;
+    SketchStyle style = SketchStyle::Normal;
+};
+
+struct RenderSketchPoint {
+    Vec3 position;
+    SketchStyle style = SketchStyle::Normal;
+};
+
+// A closed profile region, drawn as a translucent fill.
+struct RenderRegion {
+    std::shared_ptr<const geom::Mesh> mesh;
+    std::uint64_t meshKey = 0;
+    SketchStyle style = SketchStyle::Normal; // Normal, Hovered or Selected
+};
+
+struct RenderSketch {
+    bool editing = false; // the sketch being edited draws on top of everything
+    std::vector<RenderSketchLine> lines;
+    std::vector<RenderSketchPoint> points;
+    std::vector<RenderRegion> regions;
+};
+
 struct RenderScene {
     Camera camera;
     std::vector<RenderBody> bodies;
+    std::vector<RenderSketch> sketches;
     std::vector<RenderArrow> arrows;
     ArrowStyle arrowStyle;
     RenderGrid grid;

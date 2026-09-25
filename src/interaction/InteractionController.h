@@ -3,10 +3,12 @@
 #include "commands/Command.h"
 #include "core/Camera.h"
 #include "document/Document.h"
+#include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
 #include "interaction/Operation.h"
 #include "interaction/RenderScene.h"
 #include "interaction/SceneCache.h"
+#include "interaction/SketchSession.h"
 #include "selection/Picking.h"
 #include "selection/Selection.h"
 
@@ -18,12 +20,6 @@
 #include <vector>
 
 namespace os::interact {
-
-struct ContextAction {
-    std::string id;     // stable identifier passed back to triggerAction()
-    std::string label;  // user-facing
-    bool active = false;
-};
 
 // Turns application-level input into navigation, selection, previews and
 // commands. Owns no UI toolkit objects; the Qt layer feeds it events and
@@ -47,6 +43,8 @@ public:
     // Advances a running camera animation. Returns true while animating.
     bool advanceAnimation();
     bool isAnimating() const { return animation_.has_value(); }
+    // Jumps to the end of a running camera animation (tests, reduced motion).
+    void skipAnimation();
 
     // ---- Input ----
     void pointerPress(const PointerEvent& event);
@@ -85,6 +83,18 @@ public:
     std::vector<ContextAction> contextActions() const;
     Status triggerAction(const std::string& id);
 
+    // ---- Sketching ----
+    enum class Mode { Model, Sketch };
+    Mode mode() const { return session_ ? Mode::Sketch : Mode::Model; }
+    SketchSession* sketchSession() { return session_.get(); }
+    const SketchSession* sketchSession() const { return session_.get(); }
+    // Starts a sketch on the selected planar face, or on the ground (XY) plane.
+    Status startSketch();
+    Status editSketch(const Uuid& sketchId);
+    // Leaves sketch mode. An empty sketch is deleted.
+    void finishSketch();
+    void setSketchTool(SketchTool tool);
+
     // ---- State ----
     const sel::SelectionSet& selection() const { return selection_; }
     const sel::PickResult& hover() const { return hover_; }
@@ -102,9 +112,12 @@ public:
     std::function<void(const std::string&)> onMessage;   // user-facing message
 
 private:
-    enum class DragMode { None, Pending, Orbit, Pan, Manipulator };
+    enum class DragMode { None, Pending, Orbit, Pan, Manipulator, Sketch };
 
     void click(const PointerEvent& event);
+    sel::PickResult pickProfile(Vec2 screen) const;
+    void enterSketch(const Uuid& sketchId, SketchTool tool);
+    void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
     void rebuildOperation();
     void afterDocumentEdit();
@@ -123,6 +136,7 @@ private:
     sel::PickResult hover_;
     bool manipulatorHovered_ = false;
     std::unique_ptr<Operation> operation_;
+    std::unique_ptr<SketchSession> session_;
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
 
     struct Drag {

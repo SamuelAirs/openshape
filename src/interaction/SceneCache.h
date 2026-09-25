@@ -2,6 +2,7 @@
 
 #include "core/Uuid.h"
 #include "geometry/Mesh.h"
+#include "geometry/Profiles.h"
 #include "geometry/Shape.h"
 
 #include <cstdint>
@@ -24,14 +25,28 @@ public:
         std::shared_ptr<const geom::Mesh> mesh;
     };
 
+    // Closed regions of a sketch with display meshes (for profile picking and fills).
+    struct SketchEntry {
+        std::uint64_t revision = 0;
+        std::vector<geom::Region> regions;
+        std::vector<std::shared_ptr<const geom::Mesh>> meshes;
+        std::vector<std::uint64_t> meshKeys;
+    };
+
     // Brings the cache in sync with the document. Returns true if any mesh changed.
     bool update(const doc::Document& document);
     std::shared_ptr<const geom::Mesh> mesh(const Uuid& bodyId) const;
     std::uint64_t revision(const Uuid& bodyId) const;
-    void clear() { entries_.clear(); }
+    const SketchEntry* sketch(const Uuid& sketchId) const;
+    void clear()
+    {
+        entries_.clear();
+        sketches_.clear();
+    }
 
 private:
     std::unordered_map<Uuid, Entry> entries_;
+    std::unordered_map<Uuid, SketchEntry> sketches_;
 };
 
 } // namespace os::interact
