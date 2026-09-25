@@ -69,6 +69,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Extrude: return "Extrude";
     case doc::FeatureKind::Shell: return "Shell";
     case doc::FeatureKind::Move: return "Move";
+    case doc::FeatureKind::Combine: return "Combine";
     }
     return "Add step";
 }

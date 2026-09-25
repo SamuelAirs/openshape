@@ -49,6 +49,7 @@ Body& Document::addBody(std::unique_ptr<Body> body, int index)
     Body& ref = *body;
     bodies_.insert(bodies_.begin() + index, std::move(body));
     ref.recompute(0, context());
+    recomputeDependents(ref.id()); // bodies that combine with this one
     OS_LOG(Debug, Document) << "added body " << ref.id().toString() << " '" << ref.name() << "'";
     syncSketchAttachments();
     changed();
@@ -64,6 +65,7 @@ std::unique_ptr<Body> Document::removeBody(const Uuid& id, int* removedIndex)
         return nullptr;
     auto body = std::move(bodies_[static_cast<std::size_t>(index)]);
     bodies_.erase(bodies_.begin() + index);
+    recomputeDependents(id);
     OS_LOG(Debug, Document) << "removed body " << id.toString();
     syncSketchAttachments();
     changed();
@@ -91,6 +93,7 @@ const FeatureState& Document::insertFeature(const Uuid& bodyId, std::unique_ptr<
         index = static_cast<int>(b->features().size());
     b->insertFeature(std::move(feature), index);
     b->recompute(index, context());
+    recomputeDependents(bodyId);
     syncSketchAttachments();
     changed();
     return b->state(index);
@@ -109,6 +112,7 @@ std::unique_ptr<Feature> Document::removeFeature(const Uuid& featureId, int* rem
     if (removedIndex)
         *removedIndex = index;
     b->recompute(index, context());
+    recomputeDependents(b->id());
     syncSketchAttachments();
     changed();
     return feature;
@@ -120,6 +124,7 @@ void Document::featureChanged(const Uuid& featureId)
     if (!b)
         return;
     b->recompute(b->featureIndex(featureId), context());
+    recomputeDependents(b->id());
     syncSketchAttachments();
     changed();
 }
@@ -207,6 +212,28 @@ void Document::bumpSketchRevision(const Uuid& id)
     sketchRevisions_.emplace_back(id, ++counter);
 }
 
+bool Document::dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const
+{
+    // Depth-first over "body uses body" edges.
+    std::vector<Uuid> stack{bodyId};
+    std::vector<Uuid> seen;
+    while (!stack.empty()) {
+        const Uuid current = stack.back();
+        stack.pop_back();
+        if (current == otherBodyId)
+            return true;
+        if (std::find(seen.begin(), seen.end(), current) != seen.end())
+            continue;
+        seen.push_back(current);
+        if (const Body* b = body(current))
+            for (const auto& f : b->features())
+                for (const auto& dep : f->dependencies())
+                    if (body(dep))
+                        stack.push_back(dep);
+    }
+    return false;
+}
+
 std::vector<Uuid> Document::dependentFeatures(const Uuid& objectId) const
 {
     std::vector<Uuid> out;
@@ -246,6 +273,9 @@ void Document::recomputeAll()
 {
     for (auto& b : bodies_)
         b->recompute(0, context());
+    // Bodies that combine with bodies listed after them need a second pass.
+    for (auto& b : bodies_)
+        recomputeDependents(b->id());
     syncSketchAttachments();
     changed();
 }

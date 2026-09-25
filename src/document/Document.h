@@ -61,6 +61,8 @@ public:
     std::uint64_t sketchRevision(const Uuid& id) const;
     // Features (in any body) that depend on a document object.
     std::vector<Uuid> dependentFeatures(const Uuid& objectId) const;
+    // True if `bodyId` (transitively) uses `otherBodyId` (or is it).
+    bool dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const;
     std::string nextSketchName() const;
 
     EvalContext context() const { return EvalContext{this}; }

@@ -329,7 +329,13 @@ void InteractionController::pointerDoubleClick(const PointerEvent& event)
     if (operation_ && operation_->canCommit())
         return; // never discard a pending value on a double-click
     if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, hit.bodyId, -1)) {
-        selection_.set(*item);
+        // Shift (or a touch/pen double-tap) adds a second body, e.g. to combine them.
+        const bool additive = event.modifiers.shift || event.modifiers.control
+                           || InputProfile::forDevice(event.device).additiveSelection;
+        if (additive && selection_.allOfKind(sel::SelectionKind::Body))
+            selection_.add(*item);
+        else
+            selection_.set(*item);
         rebuildOperation();
         notifyState();
         notifyView();
@@ -707,6 +713,11 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
         if (operation_ && operation_->featureKind() == doc::FeatureKind::Move)
             actions.push_back({"move", "Move", true});
+        if (selection_.size() == 2) {
+            actions.push_back({"union", "Union", false});
+            actions.push_back({"subtract", "Subtract", false});
+            actions.push_back({"intersect", "Intersect", false});
+        }
         actions.push_back({"fit", "Zoom to", false});
         actions.push_back({"delete", "Delete", false});
     } else if (selection_.singleBody()) {
@@ -743,6 +754,10 @@ Status InteractionController::triggerAction(const std::string& id)
             return editSketch(*sketchId);
         return Status::failure(ErrorCode::InvalidArgument, "Select a sketch profile first.", "editSketch without profile");
     }
+    if (id == "union" || id == "subtract" || id == "intersect")
+        return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
+                                     : id == "subtract" ? doc::CombineMode::Subtract
+                                                        : doc::CombineMode::Intersect);
     if (id == "extrude" || id == "move")
         return okStatus(); // already active: the arrows are the tool
     if (id == "pushpull" || id == "shell") {
@@ -1165,11 +1180,12 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Extrude: return "Extrude";
     case doc::FeatureKind::Shell: return "Shell";
     case doc::FeatureKind::Move: return "Move";
+    case doc::FeatureKind::Combine: return "Combine";
     }
     return "Step";
 }
 
-std::string featureDetail(const doc::Feature& f, LengthUnit unit)
+std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Document& document)
 {
     const std::string dot = " \xC2\xB7 ";
     switch (f.kind()) {
@@ -1188,6 +1204,11 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit)
         const auto& e = static_cast<const doc::EdgeTreatmentFeature&>(f);
         const std::string count = std::to_string(e.edges.size()) + (e.edges.size() == 1 ? " edge" : " edges");
         return (f.kind() == doc::FeatureKind::Fillet ? "R " : "") + formatLength(e.size, unit) + dot + count;
+    }
+    case doc::FeatureKind::Combine: {
+        const auto& c = static_cast<const doc::CombineFeature&>(f);
+        const doc::Body* tool = document.body(c.toolBody);
+        return std::string(doc::toString(c.mode)) + dot + (tool ? tool->name() : std::string("missing body"));
     }
     case doc::FeatureKind::Move: {
         const Vec3 t = static_cast<const doc::MoveFeature&>(f).translation;
@@ -1254,7 +1275,7 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.id = f.id();
             row.parentId = body->id();
             row.name = f.name().empty() ? featureTitle(f) : f.name();
-            row.detail = featureDetail(f, unit);
+            row.detail = featureDetail(f, unit, *document_);
             row.canDelete = i > 0;
             row.canSuppress = i > 0;
             switch (state.status) {
@@ -1333,6 +1354,37 @@ Status InteractionController::deleteSketch(const Uuid& sketchId)
     Status status = undoStack_->push(std::make_unique<cmd::DeleteSketchCommand>(sketchId), *document_);
     if (status)
         afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
+{
+    if (selection_.size() != 2 || !selection_.allOfKind(sel::SelectionKind::Body))
+        return Status::failure(ErrorCode::InvalidArgument, "Select two bodies (double-click, then Shift+double-click).",
+                               "combine without two bodies");
+    const Uuid target = selection_.items()[0].bodyId;
+    const Uuid tool = selection_.items()[1].bodyId;
+    if (document_->dependsOn(tool, target)) {
+        const std::string text = "These bodies already depend on each other.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "combine would create a cycle");
+    }
+    auto feature = std::make_unique<doc::CombineFeature>();
+    feature->toolBody = tool;
+    feature->mode = mode;
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    steps.push_back(std::make_unique<cmd::AddFeatureCommand>(target, std::move(feature)));
+    steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(tool, false));
+    const char* label = mode == doc::CombineMode::Union ? "Union" : mode == doc::CombineMode::Subtract ? "Subtract" : "Intersect";
+    Status status = undoStack_->push(std::make_unique<cmd::CompositeCommand>(label, std::move(steps)), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    operation_.reset();
+    if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, target, -1))
+        selection_.set(*item);
+    afterDocumentEdit();
     return status;
 }
 

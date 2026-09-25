@@ -21,7 +21,7 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move };
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -173,6 +173,27 @@ public:
 
 private:
     const char* sizeLabel() const override { return "Distance"; }
+};
+
+enum class CombineMode { Union, Subtract, Intersect };
+std::string_view toString(CombineMode mode);
+
+// Boolean with another body's current shape. The tool body is a dependency:
+// editing it updates this body.
+class CombineFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid toolBody;
+    CombineMode mode = CombineMode::Union;
+
+    FeatureKind kind() const override { return FeatureKind::Combine; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new CombineFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {toolBody}; }
 };
 
 // Moves the body by a translation (a history step, so it stays editable).

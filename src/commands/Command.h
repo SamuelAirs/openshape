@@ -29,6 +29,21 @@ public:
     virtual void undo(doc::Document& document) = 0;
 };
 
+// Several commands applied as one undo step. If a child fails, the ones
+// already applied are undone and the failure is returned.
+class CompositeCommand final : public Command {
+public:
+    CompositeCommand(std::string label, std::vector<std::unique_ptr<Command>> children)
+        : label_(std::move(label)), children_(std::move(children)) {}
+    std::string label() const override { return label_; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    std::string label_;
+    std::vector<std::unique_ptr<Command>> children_;
+};
+
 class UndoStack {
 public:
     explicit UndoStack(std::size_t maxDepth = 500) : maxDepth_(maxDepth) {}

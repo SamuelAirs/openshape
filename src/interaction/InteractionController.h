@@ -129,6 +129,8 @@ public:
     Status deleteBody(const Uuid& bodyId);
     Status deleteSketch(const Uuid& sketchId);
     Status setSketchVisible(const Uuid& sketchId, bool visible);
+    // Combines the first selected body with the second (which is hidden).
+    Status combineSelectedBodies(doc::CombineMode mode);
 
     // ---- State ----
     const sel::SelectionSet& selection() const { return selection_; }

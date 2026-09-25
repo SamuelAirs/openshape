@@ -24,6 +24,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Extrude: return "Extrude";
     case FeatureKind::Shell: return "Shell";
     case FeatureKind::Move: return "Move";
+    case FeatureKind::Combine: return "Combine";
     }
     return "Unknown";
 }
@@ -31,7 +32,7 @@ std::string_view toString(FeatureKind kind)
 std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
-                          FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move})
+                          FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -47,6 +48,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Extrude: return std::make_unique<ExtrudeFeature>(id);
     case FeatureKind::Shell: return std::make_unique<ShellFeature>(id);
     case FeatureKind::Move: return std::make_unique<MoveFeature>(id);
+    case FeatureKind::Combine: return std::make_unique<CombineFeature>(id);
     }
     return nullptr;
 }
@@ -245,6 +247,52 @@ Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const Eval
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
     return geom::chamferEdges(input, indices.value(), size);
+}
+
+// ---- Combine --------------------------------------------------------------------
+
+std::string_view toString(CombineMode mode)
+{
+    switch (mode) {
+    case CombineMode::Union: return "Union";
+    case CombineMode::Subtract: return "Subtract";
+    case CombineMode::Intersect: return "Intersect";
+    }
+    return "Union";
+}
+
+Result<geom::Shape> CombineFeature::compute(const geom::Shape& input, const EvalContext& context) const
+{
+    const Body* tool = context.document ? context.document->body(toolBody) : nullptr;
+    if (!tool || tool->shape().isNull())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body this step combines with no longer exists.",
+                                            "Combine: tool body " + toolBody.toString() + " missing");
+    const geom::BooleanKind kind = mode == CombineMode::Union      ? geom::BooleanKind::Union
+                                 : mode == CombineMode::Subtract ? geom::BooleanKind::Subtract
+                                                                 : geom::BooleanKind::Intersect;
+    return geom::booleanOp(input, tool->shape(), kind);
+}
+
+Status CombineFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void CombineFeature::writeParams(json& out) const
+{
+    out["tool"] = toolBody.toString();
+    out["mode"] = std::string(toString(mode));
+}
+
+Status CombineFeature::readParams(const json& in)
+{
+    const auto tool = in.contains("tool") && in["tool"].is_string() ? Uuid::parse(in["tool"].get<std::string>()) : std::nullopt;
+    const std::string m = in.contains("mode") && in["mode"].is_string() ? in["mode"].get<std::string>() : std::string();
+    if (!tool || (m != "Union" && m != "Subtract" && m != "Intersect"))
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid combine step.", "Combine: bad params");
+    toolBody = *tool;
+    mode = m == "Union" ? CombineMode::Union : m == "Subtract" ? CombineMode::Subtract : CombineMode::Intersect;
+    return okStatus();
 }
 
 // ---- Move -----------------------------------------------------------------------

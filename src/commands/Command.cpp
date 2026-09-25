@@ -4,6 +4,25 @@
 
 namespace os::cmd {
 
+Status CompositeCommand::execute(doc::Document& document)
+{
+    for (std::size_t i = 0; i < children_.size(); ++i) {
+        Status status = children_[i]->execute(document);
+        if (!status) {
+            for (std::size_t j = i; j-- > 0;)
+                children_[j]->undo(document);
+            return status;
+        }
+    }
+    return okStatus();
+}
+
+void CompositeCommand::undo(doc::Document& document)
+{
+    for (std::size_t j = children_.size(); j-- > 0;)
+        children_[j]->undo(document);
+}
+
 Status UndoStack::push(std::unique_ptr<Command> command, doc::Document& document)
 {
     if (!command)

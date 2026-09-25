@@ -1,6 +1,7 @@
 // Headless end-to-end tests of the interaction layer: the same code paths the
 // desktop UI drives, fed with synthetic pointer/keyboard events.
 #include "commands/Command.h"
+#include "commands/DocumentCommands.h"
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
@@ -375,4 +376,75 @@ TEST(Interaction, MoveBodyAlongAxes)
 
     EXPECT_TRUE(h.controller.undo());
     EXPECT_NEAR(geom::boundingBox(h.body().shape()).min.x, -10.0, 1e-9);
+}
+
+namespace {
+// Two overlapping 20 mm boxes: A at the origin, B shifted +10 in X.
+Uuid addBox(doc::Document& d, cmd::UndoStack& stack, const std::string& name, Vec3 origin)
+{
+    auto box = std::make_unique<doc::BoxFeature>();
+    box->origin = origin;
+    box->size = {20, 20, 20};
+    auto command = std::make_unique<cmd::CreateBodyCommand>(name, std::move(box));
+    const Uuid id = command->bodyId();
+    EXPECT_TRUE(stack.push(std::move(command), d).ok());
+    return id;
+}
+} // namespace
+
+TEST(Interaction, CombineBodies)
+{
+    for (const auto& [action, expected] : std::vector<std::pair<std::string, double>>{
+             {"union", 12000.0}, {"subtract", 4000.0}, {"intersect", 4000.0}}) {
+        Harness h;
+        const Uuid a = addBox(h.document, h.stack, "A", {0, 0, 0});
+        const Uuid b = addBox(h.document, h.stack, "B", {10, 0, 0});
+        h.controller.documentChanged();
+        h.controller.fitAll(false);
+        // Double-click A's top (x=5), Shift+double-click B's top (x=25).
+        h.controller.pointerDoubleClick(Harness::at(h.screen({5, 10, 20})));
+        auto e = Harness::at(h.screen({25, 10, 20}));
+        e.modifiers.shift = true;
+        h.controller.pointerDoubleClick(e);
+        ASSERT_EQ(h.controller.selection().size(), 2u) << action;
+        ASSERT_TRUE(h.controller.triggerAction(action).ok()) << action;
+        EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), expected, 1e-3) << action;
+        EXPECT_FALSE(h.document.body(b)->isVisible()) << "tool body is consumed";
+        // One undo restores both bodies as they were.
+        EXPECT_TRUE(h.controller.undo());
+        EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 8000.0, 1e-6);
+        EXPECT_TRUE(h.document.body(b)->isVisible());
+    }
+}
+
+TEST(Interaction, CombineFollowsToolEdits)
+{
+    Harness h;
+    const Uuid a = addBox(h.document, h.stack, "A", {0, 0, 0});
+    const Uuid b = addBox(h.document, h.stack, "B", {10, 0, 0});
+    h.controller.documentChanged();
+    h.controller.fitAll(false);
+    h.controller.pointerDoubleClick(Harness::at(h.screen({5, 10, 20})));
+    auto e = Harness::at(h.screen({25, 10, 20}));
+    e.modifiers.shift = true;
+    h.controller.pointerDoubleClick(e);
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 4000.0, 1e-3);
+    // Make the (hidden) tool narrower through the history: A regains material.
+    const Uuid toolBox = h.document.body(b)->features().front()->id();
+    ASSERT_TRUE(h.controller.setFeatureParameter(toolBox, "width", "5").ok());
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 8000.0 - 5.0 * 20 * 20, 1e-3);
+    bool named = false;
+    for (const auto& row : h.controller.historyRows())
+        named = named || row.detail == "Subtract \xC2\xB7 B";
+    EXPECT_TRUE(named);
+    // B cannot now subtract A (cycle).
+    h.document.setBodyVisible(b, true);
+    h.controller.documentChanged();
+    h.controller.pointerDoubleClick(Harness::at(h.screen({12, 10, 20})));
+    auto e2 = Harness::at(h.screen({2, 10, 20}));
+    e2.modifiers.shift = true;
+    h.controller.pointerDoubleClick(e2);
+    ASSERT_EQ(h.controller.selection().size(), 2u);
+    EXPECT_FALSE(h.controller.triggerAction("subtract").ok());
 }
