@@ -3,9 +3,11 @@ add_library(openshape_geometry STATIC
     Exchange.cpp Exchange.h
     Mesh.h
     Modeling.cpp Modeling.h
+    Profiles.cpp Profiles.h
     Shape.cpp Shape.h
     Tessellation.cpp Tessellation.h
     TopoSignature.cpp TopoSignature.h
+    internal/KernelUtil.h
     internal/ShapeData.h
 )
 target_link_libraries(openshape_geometry

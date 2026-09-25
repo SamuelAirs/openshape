@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "core/Timer.h"
+#include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
 #include <BRepAdaptor_Curve.hxx>
@@ -44,53 +45,8 @@
 
 namespace os::geom {
 
-namespace {
+namespace detail {
 
-gp_Pnt toPnt(const Vec3& v) { return gp_Pnt(v.x, v.y, v.z); }
-gp_Vec toVec(const Vec3& v) { return gp_Vec(v.x, v.y, v.z); }
-Vec3 fromPnt(const gp_Pnt& p) { return {p.X(), p.Y(), p.Z()}; }
-Vec3 fromDir(const gp_Dir& d) { return {d.X(), d.Y(), d.Z()}; }
-Vec3 fromVec(const gp_Vec& d) { return {d.X(), d.Y(), d.Z()}; }
-
-// Minimum length accepted for any dimension (kernel confusion tolerance is 1e-7).
-constexpr double kMinLength = 1e-6;
-
-std::string describeFailure(const Standard_Failure& failure)
-{
-    std::ostringstream out;
-    out << failure.DynamicType()->Name();
-    if (failure.GetMessageString() && *failure.GetMessageString())
-        out << ": " << failure.GetMessageString();
-    return out.str();
-}
-
-template <typename Algo>
-std::string describeAlgoErrors(const Algo& algo)
-{
-    std::ostringstream out;
-    algo.DumpErrors(out);
-    return out.str();
-}
-
-// Runs `fn` and converts any kernel exception into a failed Result.
-template <typename Fn>
-Result<Shape> guarded(const char* operation, const char* userMessage, Fn&& fn)
-{
-    try {
-        return fn();
-    } catch (const Standard_Failure& failure) {
-        const std::string dev = std::string(operation) + " threw " + describeFailure(failure);
-        OS_LOG(Error, Kernel) << dev;
-        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, dev);
-    } catch (const std::exception& e) {
-        const std::string dev = std::string(operation) + " threw std::exception: " + e.what();
-        OS_LOG(Error, Kernel) << dev;
-        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, dev);
-    }
-}
-
-// Normalizes a kernel result: unwraps single-solid compounds, rejects empty
-// results, and runs the B-rep validity checker.
 Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage)
 {
     if (result.IsNull())
@@ -121,6 +77,12 @@ Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, con
         warnings.push_back("The result has " + std::to_string(solidCount) + " separate solids.");
     return Result<Shape>::success(makeShape(out), std::move(warnings));
 }
+
+} // namespace detail
+
+using namespace detail;
+
+namespace {
 
 bool validIndex(const Shape& shape, int index, int count)
 {

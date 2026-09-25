@@ -10,7 +10,7 @@ endfunction()
 openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp)
 target_link_libraries(test_core PRIVATE openshape_core)
 
-openshape_add_test(test_geometry test_geometry.cpp)
+openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
 
 openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp)
