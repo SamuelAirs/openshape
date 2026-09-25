@@ -266,7 +266,9 @@ int main(int argc, char* argv[])
     parser.setApplicationDescription(QStringLiteral("OpenShape - direct solid modeling"));
     parser.addHelpOption();
     parser.addVersionOption();
-    QCommandLineOption demoOption(QStringLiteral("demo"), QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet)."),
+    QCommandLineOption demoOption(QStringLiteral("demo"),
+                                  QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
+                                                 "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),

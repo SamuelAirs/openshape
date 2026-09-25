@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(OPENSHAPE_BUILD_APP   "Build the Qt desktop application" ON)
 option(OPENSHAPE_BUILD_TESTS "Build unit and integration tests" ON)
 option(OPENSHAPE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(OPENSHAPE_BUILD_TOOLS "Build developer tools (benchmarks)" OFF)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -42,6 +43,10 @@ endif()
 
 add_subdirectory(third_party/planegcs)
 add_subdirectory(src)
+
+if(OPENSHAPE_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
 
 if(OPENSHAPE_BUILD_TESTS)
     find_package(GTest REQUIRED)
