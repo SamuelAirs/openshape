@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 # Builds a self-contained OpenShape folder for Windows from an MSYS2 UCRT64
 # build: the executable, every DLL it needs (Qt, OCCT, PlaneGCS, runtime),
 # Qt plugins and QML modules, plus license information.
@@ -15,6 +19,18 @@ EXE="$BUILD_DIR/bin/OpenShape.exe"
 command -v windeployqt6 >/dev/null || { echo "windeployqt6 not found (install mingw-w64-ucrt-x86_64-qt6-base)"; exit 1; }
 command -v ntldd >/dev/null || { echo "ntldd not found (pacman -S mingw-w64-ucrt-x86_64-ntldd)"; exit 1; }
 [ -f "$EXE" ] || { echo "missing $EXE - build first"; exit 1; }
+
+# Refuse while the packaged app is running: on Windows, MSYS2's rm can delete
+# the files of a running program, which breaks it (e.g. its file dialogs).
+if [ -d "$OUT_DIR" ]; then
+    out_win=$(cygpath -w "$(cd "$OUT_DIR" && pwd)")
+    running=$(powershell.exe -NoProfile -Command "@(Get-Process -ErrorAction SilentlyContinue | Where-Object { \$_.Path -and \$_.Path.StartsWith('$out_win\\', 'OrdinalIgnoreCase') }).Count" | tr -d '\r')
+    case "$running" in
+        0) ;;
+        ''|*[!0-9]*) echo "Could not check whether OpenShape is running from $OUT_DIR ($running)."; exit 1 ;;
+        *) echo "OpenShape is running from $OUT_DIR: close it, then package again."; exit 1 ;;
+    esac
+fi
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -52,9 +68,10 @@ done | tr '\\' '/' | grep -i "^${prefix}" | sort -u | while read -r dll; do
     [ -f "$target" ] || cp "$(cygpath -u "$dll")" "$target"
 done
 
-# Licenses: our pending-license notice, the dependency list, and the LGPL
-# text for the vendored solver.
-cp LICENSE_PENDING.md THIRD_PARTY.md README.md "$OUT_DIR/"
+# Licenses: OpenShape's (MPL-2.0), the dependency list, and the LGPL text
+# for the vendored solver.
+cp LICENSE "$OUT_DIR/LICENSE.txt"
+cp THIRD_PARTY.md README.md "$OUT_DIR/"
 cp third_party/planegcs/COPYING.LIB "$OUT_DIR/PlaneGCS-COPYING.LIB.txt"
 
 count=$(find "$OUT_DIR" -type f | wc -l)

@@ -117,5 +117,7 @@ the in-app help card (`HelpOverlay.qml`).
 
 ## Licensing
 
-The project license is still pending (see `LICENSE_PENDING.md`). Please don't
-submit code you cannot license under common open-source licenses.
+OpenShape is licensed under the Mozilla Public License 2.0 (`LICENSE`), and
+contributions are accepted under the same license. Every source file starts
+with the MPL notice; add it to new files (copy it from any existing file).
+Code in `third_party/` keeps its upstream license. See `docs/LICENSING.md`.

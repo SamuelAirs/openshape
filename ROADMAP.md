@@ -143,11 +143,14 @@ palette (TD-30).
 ## Platform & infrastructure
 
 - ✅ Windows 11 / MSYS2 UCRT64 / GCC 16 / Qt 6.11 / OCCT 7.9.3 (Direct3D 11)
-- 🟡 CI: `.github/workflows/ci.yml` (Windows/MSYS2, warnings as errors,
-  headless tests) runs on every push to the private GitHub repository
-  (SamuelAirs/openshape); no run has been checked yet (no `gh` here).
-  Linux not configured: no Linux environment was available to verify it
-  (WSL is not installed and needs admin rights)
+- ✅ CI on Windows: `.github/workflows/ci.yml` (MSYS2, warnings as errors,
+  headless tests) on every push to the private GitHub repository
+  (SamuelAirs/openshape); green as checked on 2026-09-25, 6–11 min per run.
+  Pushes that only change documentation skip it
+- ⬜ Linux CI: no Linux environment was available to verify it (WSL is not
+  installed and needs admin rights)
+- ✅ License: MPL-2.0 (`LICENSE`, notice in every source file; see
+  docs/LICENSING.md)
 - 🟡 Windows packaging: self-contained folder verified (clean PATH, full
   acceptance run); installer and size reduction pending
 - ⬜ MSVC + vcpkg build

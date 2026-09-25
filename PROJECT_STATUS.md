@@ -30,15 +30,14 @@ first, tested version. Their follow-ups are the next tasks below.
   order: booleans + Align, Rotate, Mirror/Pattern, the sketch toolkit (arcs,
   eight constraints, construction), direct face edits, touch & pen
   groundwork. Details and lessons: docs/DEVLOG.md.
-- **Waiting on the owner** (product decisions; do not guess):
-  1. The license (LICENSE_PENDING.md). It also decides how the iPad app can
-     be distributed.
-  2. Their global git `user.email` is malformed. This repository overrides it
-     locally with their GitHub noreply address, so commits made here are
-     attributed correctly; fixing the global setting is up to them.
-  3. CI has never been seen green: the repository is private and `gh` is not
-     installed here. The owner can check the Actions tab (or install `gh`
-     and log in).
+- **Owner decisions:** the license is **MPL-2.0** (chosen 2026-09-25; see
+  docs/LICENSING.md). No product decision is pending. Their global git
+  `user.email` is malformed but they don't mind; this repository sets its
+  own (GitHub noreply address).
+- **CI is green:** the owner checked the Actions page on 2026-09-25 (runs
+  #3–#8 passed, 6–11 min each). Results are only visible there: the
+  repository is private and `gh` is not installed here, so ask the owner
+  when a result matters.
 - **Working with the owner:** they test hands-on and report issues while you
   watch the log (`OPENSHAPE_LOG=debug`, `scripts/dev/watch_log.py`). For each
   report: reproduce, fix, add a check that clicks the fixed path, re-package
@@ -128,7 +127,7 @@ end-of-session run gave 45 / 0.93 / 14.9 ms.
 - Packaging: a verified self-contained folder (`scripts/package-windows.sh`);
   no installer, large (~290 MB, see TD-6); **not distributable** (TD-17).
 - No thumbnails in project files.
-- CI runs on GitHub (private repo) but has not been confirmed green yet; Linux unverified.
+- CI covers Windows only; Linux is unverified.
 - Sketch: no offset, trim, sketch fillet, slot, polygon, center rectangle,
   spline or text yet; no sketch-level patterns/mirror; constraints have no
   on-canvas icons yet. Separate (hidden or consumed) sketches on one plane
@@ -166,7 +165,9 @@ end-of-session run gave 45 / 0.93 / 14.9 ms.
 - Topological naming on symmetric parts after large upstream edits (TD-3).
 - GUI-thread previews and QML binding churn will stutter on big models (TD-1, TD-18, TD-19).
 - QRhi via GuiPrivate ties builds to a Qt minor version (TD-5).
-- Project license still undecided (see LICENSE_PENDING.md).
+- Distributing binaries needs more than TD-17: an About box with the
+  license notices and a source link (MPL-2.0 section 3.2; TD-32) and the
+  transitive license list (TD-6). See docs/LICENSING.md.
 
 ## Next concrete tasks (owner priorities)
 
@@ -182,12 +183,13 @@ end-of-session run gave 45 / 0.93 / 14.9 ms.
    models (TD-18), cache sketch/grid geometry (TD-19), BVH picking (TD-2, TD-20).
 5. iPad: touch-sized targets (44 pt) when touch is used, a pen-mode switch in
    the UI (TD-29), then the iOS build on the owner's Mac (Qt for iOS, OCCT for
-   iOS, licensing — see LICENSE_PENDING.md).
+   iOS, static-linking obligations — see docs/LICENSING.md).
 6. Split disconnected pieces into separate bodies (TD-22); pattern/mirror as
    separate bodies (copies) as an option (TD-26).
 7. Align follow-ups: snap alignment while moving (Shapr3D-style); rotate
    about a picked edge or point (TD-24).
-8. Installer and smaller, distributable package (TD-6, TD-17).
+8. Installer and smaller, distributable package with an About box (TD-6,
+   TD-17, TD-32).
 
 ## Tests currently passing
 

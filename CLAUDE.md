@@ -13,7 +13,9 @@ Start here, in this order:
 ## Working agreement with the owner
 - Act as the lead engineer: decide engineering questions yourself, build, test,
   and keep the docs above in sync. Ask only about product-level decisions.
-- Open decision: the project **license** (see `LICENSE_PENDING.md`).
+- License: **MPL-2.0** (the owner's choice, 2026-09-25). New source files start
+  with the MPL notice (copy it from any file); `third_party/` keeps its own
+  licenses. See `docs/LICENSING.md`.
 - Never claim something works without running it. Prefer measurable geometry
   checks (volumes, bounding boxes) over screenshots.
 
@@ -36,6 +38,8 @@ Start here, in this order:
   git over HTTPS works with the owner's stored credentials.
 - CI (`.github/workflows/ci.yml`) runs on every push on a Windows runner and builds with
   warnings as errors; private-repo Windows minutes bill 2x, so batch pushes.
+  Docs-only pushes skip it. Results are only visible on the Actions page (the owner's
+  login): green as of 2026-09-25; ask the owner when a result matters.
 - Commit identity for this repo is set locally (GitHub noreply address).
 
 ## Debugging with the owner

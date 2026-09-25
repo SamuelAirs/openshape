@@ -1,6 +1,8 @@
 # Third-party software
 
-Versions are those used for the verified Windows build (MSYS2 UCRT64, 2026-09-25).
+OpenShape itself is licensed under MPL-2.0 (`LICENSE`); the components below
+keep their own licenses (see also docs/LICENSING.md). Versions are those used
+for the verified Windows build (MSYS2 UCRT64, 2026-09-25).
 
 | Component | Version | License | Used for | Linked |
 |---|---|---|---|---|

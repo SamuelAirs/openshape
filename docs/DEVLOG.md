@@ -257,3 +257,18 @@ and `-Wmissing-field-initializers` for a new struct field only surfaced with
 the same flag locally, which the local build now uses. The input driver,
 log watcher and benchmark used in this session are now in the repository
 (`scripts/dev/`, `tools/bench/`) so the next session can use them.
+
+## 2026-09-25 — License: MPL-2.0; CI confirmed green
+
+The owner chose MPL-2.0 (file-level copyleft; allows store distribution,
+unlike GPL). `LICENSE` is the official text (identical to the copies Eigen
+and Qt ship), every one of the 130 source files outside `third_party/` got
+the Exhibit A notice (after a shebang or GLSL `#version` line), and the
+package ships `LICENSE.txt`. Distribution obligations are collected in
+docs/LICENSING.md.
+
+The owner also checked the private repository's Actions page: runs #3–#8
+passed (#9 was still running), at 6–11 minutes each (billed at 2x for
+Windows on a private repository). Pushes that only change documentation now skip CI, a newer
+push cancels a run still in progress, and CI also builds the developer
+tools so the benchmark keeps compiling.

@@ -1,11 +1,18 @@
 # Mirrors the build verified locally in BUILDING.md (MSYS2 UCRT64).
-# Runs on every push to the private GitHub repository; private-repo Windows
-# minutes bill at 2x, so push in batches. No run has been checked yet.
+# A run takes 6-11 minutes and private-repo Windows minutes bill at 2x, so:
+# push in batches; documentation-only pushes skip CI; a newer push to the
+# same branch cancels a run still in progress.
 name: CI
 
 on:
   push:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'scripts/dev/**']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'scripts/dev/**']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows-msys2:
@@ -33,7 +40,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libzip
             mingw-w64-ucrt-x86_64-eigen3
       - name: Configure
-        run: cmake --preset msys2-ucrt64 -DOPENSHAPE_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset msys2-ucrt64 -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
       - name: Build
         run: cmake --build build/msys2-ucrt64
       - name: Test (headless; the GUI acceptance run needs a desktop session)

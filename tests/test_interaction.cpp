@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 // Headless end-to-end tests of the interaction layer: the same code paths the
 // desktop UI drives, fed with synthetic pointer/keyboard events.
 #include "commands/Command.h"

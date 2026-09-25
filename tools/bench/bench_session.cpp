@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 // Interaction-level benchmark: builds a small filleted part through the real
 // document/command/operation code and times what a user feels. Used for the
 // performance table in PROJECT_STATUS.md; rerun before and after any change

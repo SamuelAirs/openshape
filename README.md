@@ -79,4 +79,6 @@ Or sketch: press `K` (Sketch), click the origin, type `60`, `Tab`, `30`,
 
 ## License
 
-Not yet chosen — see [LICENSE_PENDING.md](LICENSE_PENDING.md).
+[Mozilla Public License 2.0](LICENSE). Third-party components keep their
+own licenses ([THIRD_PARTY.md](THIRD_PARTY.md)); what this means for
+distribution is in [docs/LICENSING.md](docs/LICENSING.md).

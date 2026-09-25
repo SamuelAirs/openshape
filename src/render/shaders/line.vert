@@ -1,4 +1,7 @@
 #version 440
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // Screen-space expanded line segments: every segment is a quad of 4 vertices
 // that all carry both endpoints; `corner` picks the end and the side.

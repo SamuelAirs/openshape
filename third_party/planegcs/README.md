@@ -21,6 +21,6 @@ by newer versions without merging:
 FreeCAD's precompiled header (standard headers the sources rely on) is
 reproduced with `target_precompile_headers`.
 
-The library is built as a shared library (`planegcs.dll`) and linked
+The library is built as a shared library (`libplanegcs.dll`) and linked
 dynamically, satisfying the LGPL's replaceability requirement regardless of
 OpenShape's own license. Only `src/sketch/` may include its headers.

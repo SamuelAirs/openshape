@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 // Touch gestures without a touch screen: frames fed straight into the
 // recognizer, and pen/finger roles through the interaction controller.
 #include "commands/Command.h"
