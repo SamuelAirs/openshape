@@ -320,6 +320,64 @@ TEST(Geometry, RepeatJoinedLinearAndCircular)
     EXPECT_NEAR(volume(plus.value()), 2 * 320.0 - 64.0, 1e-6);
 }
 
+namespace {
+Shape plateWithHole()
+{
+    const Shape plate = box(40, 30, 10);
+    auto pin = makeCylinder({20, 15, -1}, {0, 0, 1}, 3.0, 12.0);
+    return booleanOp(plate, pin.value(), BooleanKind::Subtract).value();
+}
+int cylinderFace(const Shape& s, double radius)
+{
+    for (int i = 0; i < s.faceCount(); ++i)
+        if (const auto f = faceInfo(s, i); f && f->kind == SurfaceKind::Cylinder && std::abs(f->radius - radius) < 1e-6)
+            return i;
+    return -1;
+}
+} // namespace
+
+TEST(Geometry, DeleteFacesHealsHolesAndFillets)
+{
+    const Shape plate = plateWithHole();
+    const int hole = cylinderFace(plate, 3.0);
+    ASSERT_GE(hole, 0);
+    auto healed = deleteFaces(plate, {hole});
+    ASSERT_TRUE(healed.ok()) << healed.developerMessage();
+    EXPECT_NEAR(volume(healed.value()), 40 * 30 * 10, 1e-6);
+    EXPECT_EQ(healed.value().faceCount(), 6);
+
+    const Shape rounded = filletEdges(box(60, 40, 20), verticalEdges(box(60, 40, 20)), 3.0).value();
+    auto oneLess = deleteFaces(rounded, {cylinderFace(rounded, 3.0)});
+    ASSERT_TRUE(oneLess.ok()) << oneLess.developerMessage();
+    EXPECT_NEAR(volume(oneLess.value()) - volume(rounded), (9.0 - kPi * 9.0 / 4.0) * 20.0, 1e-6);
+
+    // A box side cannot be healed away: refused, not a broken solid.
+    EXPECT_FALSE(deleteFaces(box(10, 10, 10), {0}).ok());
+}
+
+TEST(Geometry, OffsetFaceResizesHolesAndRefusesWhatCannotFollow)
+{
+    const Shape plate = plateWithHole();
+    const int hole = cylinderFace(plate, 3.0);
+    // The hole wall's outward normal points into the hole: +0.2 shrinks it.
+    auto smaller = offsetFace(plate, hole, 0.2);
+    ASSERT_TRUE(smaller.ok()) << smaller.developerMessage();
+    EXPECT_EQ(smaller.value().solidCount(), 1);
+    EXPECT_NEAR(volume(smaller.value()) - volume(plate), kPi * (9.0 - 2.8 * 2.8) * 10, 1e-4);
+    auto larger = offsetFace(plate, hole, -0.2);
+    ASSERT_TRUE(larger.ok()) << larger.developerMessage();
+    EXPECT_NEAR(volume(larger.value()) - volume(plate), -kPi * (3.2 * 3.2 - 9.0) * 10, 1e-4);
+
+    const Shape b = box(20, 20, 20);
+    auto taller = offsetFace(b, faceWithNormal(b, {0, 0, 1}), 5.0);
+    ASSERT_TRUE(taller.ok()) << taller.developerMessage();
+    EXPECT_NEAR(boundingBox(taller.value()).size().z, 25.0, 1e-6);
+
+    // A flat face between tangent fillets cannot take them along: refused.
+    const Shape rounded = filletEdges(box(40, 30, 10), verticalEdges(box(40, 30, 10)), 4.0).value();
+    EXPECT_FALSE(offsetFace(rounded, faceWithNormal(rounded, {1, 0, 0}), 5.0).ok());
+}
+
 TEST(Geometry, FilletTooLargeFailsGracefully)
 {
     const Shape s = box(10, 10, 10);

@@ -490,6 +490,66 @@ TEST(SketchInteraction, ArcToolThreeClicksAndTypedRadius)
     EXPECT_EQ(h.count(sketch::ConstraintKind::Radius), 1u);
 }
 
+namespace {
+// A 20 mm cube (centered) with a vertical 8 mm hole cut through its top.
+void cubeWithHole(Harness& h)
+{
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    h.controller.fitAll(false);
+    h.click(h.controller.camera().project({0, 0, 20}));
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Circle);
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({2, 0}));
+    h.type("8");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({0, 0, 20}));
+    EXPECT_EQ(h.controller.setValueText("-20"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    h.controller.skipAnimation();
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+}
+// The far side of the hole's wall, seen from the default view.
+Vec2 holeWall(Harness& h)
+{
+    return h.controller.camera().project({-2.83, 2.83, 17});
+}
+} // namespace
+
+// Clicking a hole's wall offers its diameter: type the new one.
+TEST(SketchInteraction, ResizeHoleByDiameter)
+{
+    Harness h;
+    cubeWithHole(h);
+    h.click(holeWall(h));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    const auto* offset = dynamic_cast<const OffsetFaceOperation*>(h.controller.operation());
+    ASSERT_NE(offset, nullptr);
+    EXPECT_TRUE(offset->round());
+    EXPECT_NEAR(offset->value(), 8.0, 1e-9);
+    EXPECT_EQ(offset->valueLabel(), "Diameter");
+    EXPECT_EQ(h.controller.setValueText("8.4"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 8000 - kPi * 4.2 * 4.2 * 20, 1e-3);
+}
+
+// Delete on a selected hole wall removes the hole.
+TEST(SketchInteraction, DeleteKeyRemovesAHole)
+{
+    Harness h;
+    cubeWithHole(h);
+    h.click(holeWall(h));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 8000.0, 1e-3);
+    EXPECT_EQ(h.stack.undoLabel(), "Delete faces");
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 8000 - kPi * 16 * 20, 1e-3);
+}
+
 TEST(SketchInteraction, UndoPastSketchCreationLeavesSketchMode)
 {
     Harness h;

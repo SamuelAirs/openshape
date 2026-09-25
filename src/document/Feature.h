@@ -21,7 +21,9 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern };
+enum class FeatureKind {
+    Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace
+};
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -212,6 +214,38 @@ public:
 
     FeatureKind kind() const override { return FeatureKind::Move; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MoveFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// Removes faces (holes, fillets, chamfers, bosses) and heals the gap.
+class DeleteFacesFeature final : public Feature {
+public:
+    using Feature::Feature;
+    std::vector<FaceRef> faces;
+
+    FeatureKind kind() const override { return FeatureKind::DeleteFaces; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new DeleteFacesFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// Moves one face along its normal (positive = the body grows) with its
+// neighbours following; the UI edits round faces by diameter.
+class OffsetFaceFeature final : public Feature {
+public:
+    using Feature::Feature;
+    FaceRef face;
+    double distance = 0; // mm
+
+    FeatureKind kind() const override { return FeatureKind::OffsetFace; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new OffsetFaceFeature(*this)); }
     Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
     std::vector<ParameterInfo> parameters() const override;
     Status setParameter(std::string_view key, double value) override;

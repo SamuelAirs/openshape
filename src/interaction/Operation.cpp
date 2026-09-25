@@ -248,6 +248,46 @@ std::unique_ptr<doc::Feature> MoveOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Offset face -------------------------------------------------------------------
+
+std::unique_ptr<OffsetFaceOperation> OffsetFaceOperation::create(const doc::Document& document, const Uuid& bodyId,
+                                                                 int faceIndex)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body)
+        return nullptr;
+    const auto info = geom::faceInfo(body->shape(), faceIndex);
+    const auto signature = geom::captureFaceSignature(body->shape(), faceIndex);
+    if (!info || !signature)
+        return nullptr;
+    if (info->kind == geom::SurfaceKind::Cylinder && info->radius > 0) {
+        // The arrow sits on the wall and points away from the axis: dragging
+        // out widens the circle. (A full cylinder's centroid is on its axis.)
+        Vec3 radial = info->point - info->axisOrigin;
+        radial = radial - info->axisDirection.normalized() * radial.dot(info->axisDirection.normalized());
+        if (radial.length() < 1e-9)
+            return nullptr;
+        radial = radial.normalized();
+        auto op = std::unique_ptr<OffsetFaceOperation>(
+            new OffsetFaceOperation(bodyId, LinearManipulator(info->point, radial), doc::FaceRef{faceIndex, *signature}));
+        op->round_ = true;
+        op->diameter_ = 2 * info->radius;
+        op->outward_ = info->normal.dot(radial) > 0 ? 1.0 : -1.0; // boss: normal points away from the axis
+        op->setStoredValue(op->diameter_);
+        return op;
+    }
+    return std::unique_ptr<OffsetFaceOperation>(new OffsetFaceOperation(
+        bodyId, LinearManipulator(info->centroid, info->normal), doc::FaceRef{faceIndex, *signature}));
+}
+
+std::unique_ptr<doc::Feature> OffsetFaceOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::OffsetFaceFeature>();
+    feature->face = face_;
+    feature->distance = round_ ? outward_ * (value - diameter_) / 2 : value;
+    return feature;
+}
+
 // ---- Mirror ------------------------------------------------------------------------
 
 std::unique_ptr<MirrorOperation> MirrorOperation::create(const doc::Document& document, const Uuid& bodyId)

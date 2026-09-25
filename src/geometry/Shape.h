@@ -58,8 +58,9 @@ enum class CurveKind { Line, Circle, Ellipse, BSpline, Other };
 
 struct FaceInfo {
     SurfaceKind kind = SurfaceKind::Other;
-    Vec3 centroid;   // area centroid
-    Vec3 normal;     // outward normal at centroid (exact for planes)
+    Vec3 centroid;   // area centroid (may lie off the face, e.g. on a cylinder's axis)
+    Vec3 normal;     // outward normal at `point` (exact for planes)
+    Vec3 point;      // a point on the face (mid parameters), where `normal` is taken
     double area = 0;
     // Plane axis origin for planar faces (a point on the plane).
     Vec3 planeOrigin;

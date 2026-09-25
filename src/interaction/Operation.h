@@ -51,6 +51,9 @@ public:
     virtual bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
     // Instruction while the operation needs another pick (e.g. Align's target); "" otherwise.
     virtual std::string prompt() const { return {}; }
+    // The value that means "no change" (Esc returns to it): 0 for most, the
+    // current diameter when a hole is resized.
+    virtual double neutralValue() const { return 0.0; }
     // Where the value editor goes when there is no arrow or ring (e.g. a
     // circular pattern's angle); nullopt = no value editor.
     virtual std::optional<Vec3> labelAnchor() const { return std::nullopt; }
@@ -204,6 +207,38 @@ private:
         : Operation(bodyId, std::move(m)), edges_(std::move(edges)), kind_(kind) {}
     std::vector<doc::EdgeRef> edges_;
     doc::FeatureKind kind_;
+};
+
+// Offset face: moves one face along its normal with its neighbours following.
+// Round faces (holes, shafts, bosses) take the new diameter; other faces a
+// distance (positive = the body grows).
+class OffsetFaceOperation final : public Operation {
+public:
+    static std::unique_ptr<OffsetFaceOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex);
+
+    std::string title() const override { return "Offset"; }
+    std::string valueLabel() const override { return round_ ? "Diameter" : "Offset"; }
+    bool allowsNegative() const override { return !round_; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::OffsetFace; }
+    double neutralValue() const override { return round_ ? diameter_ : 0.0; }
+    bool canCommit() const override
+    {
+        return std::abs(value() - neutralValue()) > 1e-9 && error().empty() && hasPreview();
+    }
+    double displayOffset(double value) const override { return round_ ? (value - diameter_) / 2 : value; }
+    double valueFromOffset(double offset) const override { return round_ ? diameter_ + 2 * offset : offset; }
+    bool round() const { return round_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    OffsetFaceOperation(Uuid bodyId, LinearManipulator m, doc::FaceRef face)
+        : Operation(bodyId, std::move(m)), face_(std::move(face)) {}
+    doc::FaceRef face_;
+    bool round_ = false;
+    double diameter_ = 0; // round faces: the current diameter
+    double outward_ = 1;  // +1 when growing the diameter adds material (a boss), -1 for a hole
 };
 
 // Mirror: keeps the body and joins its mirror image. The plane comes from a

@@ -8,7 +8,10 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepOffset_MakeOffset.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -433,6 +436,87 @@ Result<Shape> transformed(const Shape& shape, const RigidMotion& motion)
     });
 }
 
+Result<Shape> deleteFaces(const Shape& shape, const std::vector<int>& faceIndices)
+{
+    if (faceIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the faces to remove.", "deleteFaces: no faces");
+    for (int f : faceIndices)
+        if (!validIndex(shape, f, shape.faceCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
+                                          "deleteFaces: face index " + std::to_string(f) + " out of range");
+    const char* userMessage = "Unable to remove this. Its neighbours cannot close the gap.";
+    return guarded("deleteFaces", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("deleteFaces");
+        BRepAlgoAPI_Defeaturing defeaturing;
+        defeaturing.SetShape(occ(shape));
+        for (int f : faceIndices)
+            defeaturing.AddFaceToRemove(faceAt(shape, f));
+        defeaturing.Build();
+        if (!defeaturing.IsDone() || defeaturing.HasErrors())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "Defeaturing failed: " + describeAlgoErrors(defeaturing));
+        ShapeUpgrade_UnifySameDomain unify(defeaturing.Shape(), true, true, true);
+        unify.Build();
+        auto out = finishSolid(unify.Shape(), "deleteFaces", userMessage);
+        // Defeaturing may leave faces it cannot remove in place and report
+        // success: require a real change.
+        if (out && out.value().faceCount() >= shape.faceCount()
+            && std::abs(volume(out.value()) - volume(shape)) < 1e-9 * std::max(volume(shape), 1.0))
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "deleteFaces: shape unchanged");
+        return out;
+    });
+}
+
+Result<Shape> offsetFace(const Shape& shape, int faceIndex, double distance)
+{
+    if (!validIndex(shape, faceIndex, shape.faceCount()))
+        return Result<Shape>::failure(ErrorCode::InvalidReference, "The selected face no longer exists.",
+                                      "offsetFace: face index " + std::to_string(faceIndex) + " out of range");
+    if (std::abs(distance) < kMinLength)
+        return Result<Shape>::success(shape);
+    const char* userMessage = "Unable to move this face that far. Its neighbours cannot follow.";
+    return guarded("offsetFace", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("offsetFace");
+        const TopoDS_Face face = faceAt(shape, faceIndex);
+        BRepOffset_MakeOffset maker;
+        maker.Initialize(occ(shape), 0.0, 1e-6, BRepOffset_Skin, false, false, GeomAbs_Intersection, false);
+        maker.SetOffsetOnFace(face, distance);
+        maker.MakeOffsetShape();
+        if (!maker.IsDone())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "BRepOffset_MakeOffset not done, error " + std::to_string(int(maker.Error())));
+        // Skin mode yields a shell: close it into a solid.
+        TopoDS_Shape result = maker.Shape();
+        if (!TopExp_Explorer(result, TopAbs_SOLID).More()) {
+            BRepBuilderAPI_MakeSolid solidMaker;
+            for (TopExp_Explorer ex(result, TopAbs_SHELL); ex.More(); ex.Next())
+                solidMaker.Add(TopoDS::Shell(ex.Current()));
+            if (!solidMaker.IsDone())
+                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "offsetFace: no closed shell");
+            TopoDS_Solid solid = solidMaker.Solid();
+            BRepLib::OrientClosedSolid(solid);
+            result = solid;
+        }
+        ShapeUpgrade_UnifySameDomain unify(result, true, true, true);
+        unify.Build();
+        auto out = finishSolid(unify.Shape(), "offsetFace", userMessage);
+        if (!out)
+            return out;
+        // Kernel "success" is not success: when the neighbours cannot follow
+        // (tangent fillets), the solid is wrong. The volume must change by
+        // about the face's area times the distance.
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(face, props);
+        const double expected = props.Mass() * distance;
+        const double actual = volume(out.value()) - volume(shape);
+        if (!(volume(out.value()) > 0) || std::abs(actual - expected) > 0.25 * std::abs(expected) + 1e-9 * volume(shape))
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "offsetFace: volume changed by " + std::to_string(actual) + ", expected about "
+                                              + std::to_string(expected));
+        return out;
+    });
+}
+
 Result<Shape> mirrored(const Shape& shape, const Vec3& planeOrigin, const Vec3& planeNormal)
 {
     if (shape.isNull() || planeNormal.length() < 1e-12)
@@ -689,6 +773,7 @@ std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex)
         BRepTools::UVBounds(face, u0, u1, v0, v1);
         if (const auto n = faceNormal(face, (u0 + u1) / 2, (v0 + v1) / 2))
             info.normal = fromDir(*n);
+        info.point = fromPnt(surface.Value((u0 + u1) / 2, (v0 + v1) / 2));
         if (info.kind == SurfaceKind::Plane)
             info.planeOrigin = fromPnt(surface.Plane().Location());
         if (info.hasAxis()) {

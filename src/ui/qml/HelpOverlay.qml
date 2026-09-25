@@ -92,6 +92,8 @@ Rectangle {
                             ["Push or pull a flat face", "Select it, drag or type"],
                             ["Round or bevel edges", "Select edges → Fillet / Chamfer"],
                             ["Hollow out", "Face → Shell"],
+                            ["Resize a hole", "Click its wall, type the new diameter"],
+                            ["Remove a hole or fillet", "Select its face(s), press Delete"],
                             ["Insert for a screw", "Hole rim → Heat-set insert"],
                             ["Measure", "Select two faces or edges"],
                             ["Apply / cancel", "Enter / Esc (or ✓ / ✕)"]

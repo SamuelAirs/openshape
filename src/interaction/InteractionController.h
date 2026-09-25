@@ -103,6 +103,8 @@ public:
     bool undo();
     bool redo();
     Status deleteSelectedBodies();
+    // Removes the selected faces (holes, fillets, chamfers, bosses) and heals the gap.
+    Status deleteSelectedFaces();
     std::vector<ContextAction> contextActions() const;
     Status triggerAction(const std::string& id);
 

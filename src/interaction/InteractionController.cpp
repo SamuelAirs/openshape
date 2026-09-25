@@ -465,6 +465,10 @@ bool InteractionController::keyPress(Key key)
             (void)deleteSelectedBodies();
             return true;
         }
+        if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
+            (void)deleteSelectedFaces();
+            return true;
+        }
         return false;
     case Key::Other:
         break;
@@ -606,8 +610,15 @@ void InteractionController::rebuildOperation()
     }
     if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
         const auto& first = selection_.items().front();
-        if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
+        if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::OffsetFace)
+            operation_ = OffsetFaceOperation::create(*document_, first.bodyId, first.index);
+        if (!operation_ && selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
             operation_ = PushPullOperation::create(*document_, first.bodyId, first.index);
+        // A single round face (a hole, a shaft) is resized by default.
+        if (!operation_ && selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
+            if (const doc::Body* body = document_->body(first.bodyId))
+                if (const auto info = geom::faceInfo(body->shape(), first.index); info && info->kind == geom::SurfaceKind::Cylinder)
+                    operation_ = OffsetFaceOperation::create(*document_, first.bodyId, first.index);
         if (!operation_) {
             // Several faces, a curved face, or Shell chosen explicitly.
             std::vector<int> faces;
@@ -751,8 +762,8 @@ void InteractionController::cancelOperation()
         notifyView();
         return;
     }
-    if (operation_ && operation_->value() != 0.0) {
-        operation_->setValue(0.0, *document_);
+    if (operation_ && operation_->value() != operation_->neutralValue()) {
+        operation_->setValue(operation_->neutralValue(), *document_);
     } else {
         selection_.clear();
         rebuildOperation();
@@ -832,6 +843,32 @@ Status InteractionController::deleteSelectedBodies()
     return okStatus();
 }
 
+Status InteractionController::deleteSelectedFaces()
+{
+    if (!selection_.allOfKind(sel::SelectionKind::Face) || !selection_.singleBody())
+        return Status::failure(ErrorCode::InvalidArgument, "Select faces of one body to remove.", "deleteFaces: selection");
+    const Uuid bodyId = *selection_.singleBody();
+    const doc::Body* body = document_->body(bodyId);
+    if (!body)
+        return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "deleteFaces: body");
+    auto feature = std::make_unique<doc::DeleteFacesFeature>();
+    for (const auto& item : selection_.items()) {
+        const auto signature = geom::captureFaceSignature(body->shape(), item.index);
+        if (!signature)
+            return Status::failure(ErrorCode::InvalidReference, "A selected face no longer exists.", "deleteFaces: face");
+        feature->faces.push_back({item.index, *signature});
+    }
+    Status status = undoStack_->push(std::make_unique<cmd::AddFeatureCommand>(bodyId, std::move(feature)), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    operation_.reset();
+    selection_.clear();
+    afterDocumentEdit();
+    return status;
+}
+
 std::vector<ContextAction> InteractionController::contextActions() const
 {
     if (session_)
@@ -895,7 +932,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (selection_.empty())
         return actions;
     if (operation_ && (operation_->featureKind() == doc::FeatureKind::PushPull
-                       || operation_->featureKind() == doc::FeatureKind::Shell)) {
+                       || operation_->featureKind() == doc::FeatureKind::Shell
+                       || operation_->featureKind() == doc::FeatureKind::OffsetFace)) {
         const bool single = selection_.size() == 1;
         bool planar = false;
         if (single)
@@ -907,8 +945,11 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
         if (single && planar)
             actions.push_back({"sketch", "Sketch", false});
+        if (single && !planar)
+            actions.push_back({"offset", "Offset", operation_->featureKind() == doc::FeatureKind::OffsetFace});
         if (single)
             actions.push_back({"align", "Align", false});
+        actions.push_back({"deleteFaces", single ? "Delete face" : "Delete faces", false});
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && operation_) {
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
@@ -1083,8 +1124,12 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyView();
         return okStatus();
     }
-    if (id == "pushpull" || id == "shell") {
-        faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell : doc::FeatureKind::PushPull;
+    if (id == "deleteFaces")
+        return deleteSelectedFaces();
+    if (id == "pushpull" || id == "shell" || id == "offset") {
+        faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell
+                           : id == "offset" ? doc::FeatureKind::OffsetFace
+                                            : doc::FeatureKind::PushPull;
         rebuildOperation();
         notifyState();
         notifyView();
@@ -1409,8 +1454,13 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     if (body.kind == sel::PickKind::Edge)
         return body; // edges are the smallest targets; keep them reachable
     const sel::PickResult region = pickProfile(screen);
-    // A sketch lying on a face is "on top" of it.
-    if (region.hit() && (!body.hit() || region.depth <= body.depth + camera_.pixelSize(region.point) * 2))
+    // A sketch lying on a face is "on top" of it. A sketch already used by a
+    // step only wins where it lies on the surface hit: otherwise, e.g. the
+    // circle over a hole it cut, it would hide the body behind it.
+    const double slack = camera_.pixelSize(region.point) * 2;
+    const bool consumed = region.hit() && !document_->dependentFeatures(region.bodyId).empty();
+    if (region.hit()
+        && (!body.hit() || (consumed ? std::abs(region.depth - body.depth) <= slack : region.depth <= body.depth + slack)))
         return region;
     return body;
 }
@@ -1626,6 +1676,8 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Hole: return "Hole";
     case doc::FeatureKind::Mirror: return "Mirror";
     case doc::FeatureKind::Pattern: return "Pattern";
+    case doc::FeatureKind::DeleteFaces: return "Delete faces";
+    case doc::FeatureKind::OffsetFace: return "Offset face";
     }
     return "Step";
 }
@@ -1689,6 +1741,14 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
             text += (text.empty() ? std::string() : dot) + buf;
         }
         return text;
+    }
+    case doc::FeatureKind::DeleteFaces: {
+        const auto n = static_cast<const doc::DeleteFacesFeature&>(f).faces.size();
+        return std::to_string(n) + (n == 1 ? " face" : " faces");
+    }
+    case doc::FeatureKind::OffsetFace: {
+        const double d = static_cast<const doc::OffsetFaceFeature&>(f).distance;
+        return (d >= 0 ? "+" : "") + formatLength(d, unit);
     }
     case doc::FeatureKind::Mirror: {
         const auto& m = static_cast<const doc::MirrorFeature&>(f);
@@ -2044,6 +2104,11 @@ Status InteractionController::runTool(const std::string& id)
         return explain(id == "subtract" ? std::string("Select the body to keep first, then the body to cut away with "
                                                       "Shift+double-click (or Shift-click in the Model panel).")
                                         : std::string(kSelectTwoBodies));
+    }
+    if (id == "offset") {
+        if (faces && selection_.size() == 1)
+            return triggerAction("offset");
+        return explain("Click a face (a hole or shaft takes its new diameter), then drag the arrow or type the value.");
     }
     if (id == "align") {
         if ((faces || edges) && selection_.size() == 1)

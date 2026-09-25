@@ -28,6 +28,15 @@ Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndic
 // Hollows the solid, removing the given faces (openings) and keeping walls of
 // `thickness` inside the original boundary.
 Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness);
+// Removes faces and closes the gap by extending their neighbours: holes,
+// fillets, chamfers and bosses disappear (OCCT defeaturing).
+Result<Shape> deleteFaces(const Shape& shape, const std::vector<int>& faceIndices);
+// Moves one face along its own normal by `distance` (positive = outward, the
+// body grows) while its neighbours extend or shrink to meet it. A hole's wall
+// moved outward (into the hole) makes the hole smaller. Refused when the
+// neighbours cannot follow (e.g. tangent fillets): the volume change must be
+// close to face area x distance.
+Result<Shape> offsetFace(const Shape& shape, int faceIndex, double distance);
 
 enum class BooleanKind { Union, Subtract, Intersect };
 Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind);

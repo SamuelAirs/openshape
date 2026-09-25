@@ -29,6 +29,8 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Hole: return "Hole";
     case FeatureKind::Mirror: return "Mirror";
     case FeatureKind::Pattern: return "Pattern";
+    case FeatureKind::DeleteFaces: return "DeleteFaces";
+    case FeatureKind::OffsetFace: return "OffsetFace";
     }
     return "Unknown";
 }
@@ -37,7 +39,8 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
-                          FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern})
+                          FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
+                          FeatureKind::DeleteFaces, FeatureKind::OffsetFace})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -58,6 +61,8 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Hole: return std::make_unique<HoleFeature>(id);
     case FeatureKind::Mirror: return std::make_unique<MirrorFeature>(id);
     case FeatureKind::Pattern: return std::make_unique<PatternFeature>(id);
+    case FeatureKind::DeleteFaces: return std::make_unique<DeleteFacesFeature>(id);
+    case FeatureKind::OffsetFace: return std::make_unique<OffsetFaceFeature>(id);
     }
     return nullptr;
 }
@@ -382,6 +387,92 @@ Status MoveFeature::readParams(const json& in)
         rotationAxis = *axis;
         rotationAngle = r["angle"].get<double>();
     }
+    return okStatus();
+}
+
+// ---- Delete faces ---------------------------------------------------------------
+
+Result<geom::Shape> DeleteFacesFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    std::vector<int> indices;
+    for (const FaceRef& ref : faces) {
+        const auto index = geom::resolveFace(input, ref.signature, ref.indexHint);
+        if (!index)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "A face this step removed no longer exists.",
+                                                "DeleteFaces: face reference unresolved");
+        indices.push_back(*index);
+    }
+    return geom::deleteFaces(input, indices);
+}
+
+Status DeleteFacesFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void DeleteFacesFeature::writeParams(json& out) const
+{
+    json list = json::array();
+    for (const FaceRef& ref : faces)
+        list.push_back(faceRefToJson(ref));
+    out["faces"] = list;
+}
+
+Status DeleteFacesFeature::readParams(const json& in)
+{
+    if (!in.contains("faces") || !in["faces"].is_array() || in["faces"].empty())
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid face removal.", "DeleteFaces: faces");
+    faces.clear();
+    for (const auto& item : in["faces"]) {
+        const json wrapper{{"face", item}};
+        const auto ref = faceRefFromJson(wrapper, "face");
+        if (!ref)
+            return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid face removal.",
+                                   "DeleteFaces: bad face ref");
+        faces.push_back(*ref);
+    }
+    return okStatus();
+}
+
+// ---- Offset face ----------------------------------------------------------------
+
+Result<geom::Shape> OffsetFaceFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    const auto index = geom::resolveFace(input, face.signature, face.indexHint);
+    if (!index)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The face this step moved no longer exists.",
+                                            "OffsetFace: face reference unresolved");
+    return geom::offsetFace(input, *index, distance);
+}
+
+std::vector<ParameterInfo> OffsetFaceFeature::parameters() const
+{
+    return {{"distance", "Offset", ParameterKind::Length, distance}};
+}
+
+Status OffsetFaceFeature::setParameter(std::string_view key, double value)
+{
+    if (key != "distance")
+        return unknownParameter(key);
+    if (!std::isfinite(value))
+        return Status::failure(ErrorCode::InvalidArgument, "Enter a valid distance.", "non-finite offset");
+    distance = value;
+    return okStatus();
+}
+
+void OffsetFaceFeature::writeParams(json& out) const
+{
+    out["face"] = faceRefToJson(face);
+    out["distance"] = distance;
+}
+
+Status OffsetFaceFeature::readParams(const json& in)
+{
+    auto ref = faceRefFromJson(in, "face");
+    if (!ref || !in.contains("distance") || !in["distance"].is_number())
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid face offset.", "OffsetFace: params");
+    face = *ref;
+    distance = in["distance"].get<double>();
     return okStatus();
 }
 

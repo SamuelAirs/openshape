@@ -76,6 +76,8 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Hole: return "Hole";
     case doc::FeatureKind::Mirror: return "Mirror";
     case doc::FeatureKind::Pattern: return "Pattern";
+    case doc::FeatureKind::DeleteFaces: return "Delete faces";
+    case doc::FeatureKind::OffsetFace: return "Offset face";
     }
     return "Add step";
 }
