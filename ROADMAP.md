@@ -57,7 +57,7 @@ construction toggle, and sketching on a sketch (or its plane) continues it.
 Not yet: slot, center rectangle, polygon, offset, trim, sketch fillet,
 splines, text, constraint icons, sketch patterns.
 
-## Milestone 2 — common modeling tools 🟡
+## Milestone 2 — common modeling tools ✅
 
 - ✅ Fillet (edges, manipulator + typed radius)
 - ✅ Chamfer (equal distance)
@@ -82,6 +82,10 @@ splines, text, constraint icons, sketch patterns.
   verified against area x distance) and delete faces (defeaturing: holes,
   fillets, chamfers, bosses)
 
+Follow-ups (not blocking M2): extrude symmetric / up to a face / with draft,
+faces that move together with tangent fillets (TD-21), mirror/pattern as
+separate bodies, rotation about a picked edge or point.
+
 ## Milestone 3 — interaction quality 🟡
 
 Done so far: help overlay (? / F1), seam edges hidden from display and
@@ -93,10 +97,11 @@ Modify/Combine tool palette that explains what to select, selection action
 bar, Model panel hover highlighting, automatic new body for joins that miss,
 3x faster drag previews (cached bounding boxes).
 
-
-Contextual tools, manipulator feel, snapping, box/touch selection, selection
-cycling, keyboard shortcuts, touch-sized targets, viewport transitions,
-error messages, discoverability. Also: BVH picking, off-thread tessellation.
+Still to do: asynchronous previews and tessellation (TD-1), BVH picking
+(TD-2), finer-grained UI updates (TD-18, TD-19), box/lasso selection,
+cycling through stacked faces, snapping while moving bodies, touch-sized
+targets, an icon set (TD-9), project thumbnails (TD-11), a scrollable tool
+palette (TD-30).
 
 ## Milestone 4 — editable parametric history 🟡
 
@@ -138,8 +143,9 @@ error messages, discoverability. Also: BVH picking, off-thread tessellation.
 ## Platform & infrastructure
 
 - ✅ Windows 11 / MSYS2 UCRT64 / GCC 16 / Qt 6.11 / OCCT 7.9.3 (Direct3D 11)
-- 🟡 CI: `.github/workflows/ci.yml` (Windows/MSYS2, mirrors the verified local
-  build) written but **never run** — the repository has no remote yet.
+- 🟡 CI: `.github/workflows/ci.yml` (Windows/MSYS2, warnings as errors,
+  headless tests) runs on every push to the private GitHub repository
+  (SamuelAirs/openshape); no run has been checked yet (no `gh` here).
   Linux not configured: no Linux environment was available to verify it
   (WSL is not installed and needs admin rights)
 - 🟡 Windows packaging: self-contained folder verified (clean PATH, full

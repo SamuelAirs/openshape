@@ -1,14 +1,49 @@
 # Project status
 
-_Last updated: 2026-09-25 (after the first hands-on session with the owner)_
+_Last updated: 2026-09-25, end of the first long session (hands-on testing
+with the owner, then the owner's five priorities). New here? Read "Handoff"
+first._
 
 ## Current milestone
 
-**Milestones 0 and 1 complete; Milestone 4 core (editable history) done;
-Milestone 2 mostly done** (shell, move, booleans). Owner priorities for what
-comes next (2026-09-25): booleans and **align tools**, then the sketch
-toolkit, transform & repeat, direct face edits, and the iPad/Pencil workflow —
-"similar to Shapr3D".
+**Milestones 0, 1 and 2 complete; Milestone 4 core (editable history) done;
+Milestones 3 and 5 partial.** The owner's priorities from 2026-09-25 —
+booleans and **align tools**, the sketch toolkit, transform & repeat, direct
+face edits, the iPad/Pencil workflow ("similar to Shapr3D") — each have a
+first, tested version. Their follow-ups are the next tasks below.
+
+## Handoff: where we left off
+
+- **State:** everything is committed and pushed to `origin/main`
+  (<https://github.com/SamuelAirs/openshape>, private), and the owner's
+  package (`dist/OpenShape/`, which their desktop shortcut starts) was
+  rebuilt from it. If the working tree is not clean, someone changed it
+  after this note.
+- **Verify first:** build, `ctest --test-dir build/msys2-ucrt64 -LE gui`
+  (211 pass), then — only when nobody is using the mouse —
+  `ctest --test-dir build/msys2-ucrt64 -L gui` (103 real-UI checks, ~20 s).
+- **Last session (2026-09-25):** the owner modeled hands-on while the debug
+  log was watched; everything they reported was fixed (right-click ends a
+  line, sketching on a sketch continues it, separate pieces are flagged and
+  joins that miss make new bodies, Model-panel rows highlight their
+  geometry, booleans are reachable). Then their priorities were built in
+  order: booleans + Align, Rotate, Mirror/Pattern, the sketch toolkit (arcs,
+  eight constraints, construction), direct face edits, touch & pen
+  groundwork. Details and lessons: docs/DEVLOG.md.
+- **Waiting on the owner** (product decisions; do not guess):
+  1. The license (LICENSE_PENDING.md). It also decides how the iPad app can
+     be distributed.
+  2. Their global git `user.email` is malformed. This repository overrides it
+     locally with their GitHub noreply address, so commits made here are
+     attributed correctly; fixing the global setting is up to them.
+  3. CI has never been seen green: the repository is private and `gh` is not
+     installed here. The owner can check the Actions tab (or install `gh`
+     and log in).
+- **Working with the owner:** they test hands-on and report issues while you
+  watch the log (`OPENSHAPE_LOG=debug`, `scripts/dev/watch_log.py`). For each
+  report: reproduce, fix, add a check that clicks the fixed path, re-package
+  so their shortcut runs the fix. Shapr3D is the reference for UX questions.
+  Push in batches (CI minutes on a private repo bill at 2x).
 
 ## What works (verified)
 
@@ -76,6 +111,8 @@ toolkit, transform & repeat, direct face edits, and the iPad/Pencil workflow —
 
 The remaining preview cost is the kernel boolean (38 ms when the pushed face
 meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD-1).
+Re-measure with `bench_session` (BUILDING.md, "Developer tools"); the
+end-of-session run gave 45 / 0.93 / 14.9 ms.
 
 ## Partially implemented
 
@@ -109,6 +146,18 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
   (`Operation::reconsider`), used for join -> new body.
 - Every user-facing action gets at least one acceptance check that reaches it
   by clicking (booleans were unreachable while headless tests passed).
+- Rotate and Align are Move steps with an optional rotation (`MoveFeature` +
+  `RigidMotion`): one feature kind, one file-format entry. Align stores the
+  resulting motion, not a link to its target.
+- Mirror and Pattern join their copies into the body in one General Fuse
+  pass; their plane/axis/direction is stored as geometry.
+- Kernel results are checked against an invariant of the intent (shell
+  removes volume, defeaturing changes the shape, offset face changes the
+  volume by about area x distance): OCCT can report success with a wrong
+  result.
+- Touch gestures are recognized by a Qt-free class (`TouchGestureRecognizer`)
+  so they are unit-tested; two fingers do not navigate until they move, which
+  makes two-/three-finger taps usable as undo/redo.
 
 ## Known technical risks
 
@@ -121,19 +170,24 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Next concrete tasks (owner priorities)
 
-1. Sketch toolkit, part 2: slot, center rectangle, polygon, offset, trim,
-   sketch fillet, constraint icons, sketch patterns.
-2. Direct face edits, part 2: extrude symmetric / to a face / with draft;
+1. Acceptance gaps: click the Arc tool, a sketch constraint, Delete face and
+   a hole-diameter Offset through the real UI in `AcceptanceRunner` (today
+   they are covered by headless tests only).
+2. Sketch toolkit, part 2: slot, center rectangle, polygon, offset, trim,
+   sketch fillet, tangent arc, constraint icons, sketch patterns; separate
+   sketches on one plane should interact (TD-27, TD-28).
+3. Direct face edits, part 2: extrude symmetric / to a face / with draft;
    move a face together with tangent fillets (TD-21).
-3. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
+4. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
    models (TD-18), cache sketch/grid geometry (TD-19), BVH picking (TD-2, TD-20).
-4. iPad: touch-sized targets (44 pt) when touch is used, a pen-mode switch in
-   the UI, then the iOS build on the owner's Mac (Qt for iOS, OCCT for iOS,
-   licensing — see LICENSE_PENDING.md).
-5. Split disconnected pieces into separate bodies (TD-22); pattern/mirror as
-   separate bodies (copies) as an option.
-6. Align follow-ups: snap alignment while moving (Shapr3D-style).
-7. Installer and smaller, distributable package (TD-6, TD-17).
+5. iPad: touch-sized targets (44 pt) when touch is used, a pen-mode switch in
+   the UI (TD-29), then the iOS build on the owner's Mac (Qt for iOS, OCCT for
+   iOS, licensing — see LICENSE_PENDING.md).
+6. Split disconnected pieces into separate bodies (TD-22); pattern/mirror as
+   separate bodies (copies) as an option (TD-26).
+7. Align follow-ups: snap alignment while moving (Shapr3D-style); rotate
+   about a picked edge or point (TD-24).
+8. Installer and smaller, distributable package (TD-6, TD-17).
 
 ## Tests currently passing
 
@@ -143,7 +197,8 @@ attachment, camera, picking, interaction (headless M0 script, sketch
 workflows, history editing, highlight, booleans, right-click, align,
 rotate, mirror, pattern, sketch constraints, arcs, face edits, touch
 gestures, pen mode), plus `acceptance_gui`: 103 end-to-end checks through the
-real UI (including multi-finger taps).
+real UI (including multi-finger taps). Build with
+`-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (as CI does): 0 warnings.
 
 ## Platforms verified
 

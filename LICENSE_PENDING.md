@@ -27,6 +27,23 @@ to the project owner rather than guessed.
 3. **Apache-2.0** — permissive with a patent grant; maximum adoption, including
    proprietary derivatives. Rules out libslvs.
 
+## The owner's distribution goals (2026-09-25)
+
+These are what the license has to allow; details are the owner's call.
+
+- Platforms: Windows desktop, and an iPad app (built on the owner's Mac).
+  The main goal is to use OpenShape on their own iPad.
+- Selling is not a priority; at most small fees (e.g. a Microsoft Store
+  build, a paid iPad app) to cover costs such as Apple's developer fee.
+  Avoid anything that needs costly commercial licenses (e.g. a commercial
+  Qt license).
+- Consequences: GPL-3.0 conflicts with App Store terms, so it would rule
+  out the paid iPad app; iOS apps link statically, which makes LGPL
+  compliance for Qt, OCCT and PlaneGCS awkward (users must be able to
+  relink, e.g. by shipping object files). Check this before choosing.
+- The Windows package must not be distributed until TD-17 (GPL FFmpeg DLLs
+  pulled in by MSYS2's OCCT) is fixed.
+
 ## Recommendation
 
 **MPL-2.0**, if the goal is a healthy open project that companies can also

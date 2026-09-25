@@ -52,11 +52,68 @@ ctest --test-dir build/msys2-ucrt64 --output-on-failure
 A failing test means the code, the test, or an assumption is wrong — find out
 which. Do not disable tests to get green.
 
+Two rules learned the hard way:
+
+- **Every user-facing action gets an acceptance check that reaches it by
+  clicking** (`src/app/AcceptanceRunner.cpp`, e.g. `clickItem("barAction_subtract")`).
+  Headless tests once passed while Union/Subtract could not be reached in
+  the UI at all.
+- **Verify kernel results against an invariant of the intent** (volume
+  change, bounding box, face count), not only `IsDone()` and `BRepCheck`:
+  OCCT's shell, defeaturing and per-face offset can all report success with
+  an unchanged or wrong solid.
+
+Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (CI does). A new enum value
+without its `switch` cases (`-Wswitch`) or a struct initializer missing a
+field (`-Wmissing-field-initializers`) fails CI.
+
+## Checklists for common extensions
+
+**A new history step (feature kind)**
+1. `document/Feature.h/.cpp`: the class (`compute`, `parameters` /
+   `setParameter`, `writeParams` / `readParams`, `clone`, `dependencies` if
+   it reads sketches or other bodies); append to `FeatureKind`; add it to
+   `toString`, `featureKindFromString` and `createFeature`.
+2. `commands/DocumentCommands.cpp`: its undo label.
+3. `interaction/InteractionController.cpp`: `featureTitle` and
+   `featureDetail` (Model panel).
+4. `docs/FILE_FORMAT.md`: its params. Unknown types make older builds refuse
+   the file, which is intended.
+5. Tests: geometry of `compute`, and a project-file round trip
+   (`tests/test_project_file.cpp`).
+
+**A new operation or tool**
+1. `interaction/Operation.h/.cpp`: an `Operation` subclass (`makeFeature`,
+   `title`, `valueLabel`; hooks such as `prompt()`, `neutralValue()`,
+   `labelAnchor()` as needed).
+2. `InteractionController`: arm it in `rebuildOperation()`, offer it in
+   `contextActions()`, handle its id in `triggerAction()`, and in `runTool()`
+   when it belongs in the palette.
+3. `ui/qml/Main.qml`: palette entry (Modify/Combine) and its hint in
+   `hintText()`; `ui/qml/HelpOverlay.qml`: a row.
+4. Tests: a headless flow in `tests/test_interaction.cpp` and an acceptance
+   step that clicks it.
+
+**A new sketch entity or constraint**
+1. `sketch/Sketch.h/.cpp`: the entity, or an appended `ConstraintKind` with
+   its name (`toString` / parsing) and validity check; JSON; the removal
+   cascade.
+2. `sketch/SketchSolver.cpp`: the PlaneGCS mapping.
+3. Entities also need `document/SketchProfiles.cpp` and `geometry/Profiles`
+   (curves for regions), `SketchSession` picking, drawing and labels, and
+   `InteractionController::renderScene` (sketches outside edit mode).
+4. `SketchSession::contextActions()` / `triggerAction()` for the button;
+   `ui/qml/SketchOverlay.qml` for a new tool.
+5. Tests: `tests/test_sketch.cpp` (solved geometry, JSON) and
+   `tests/test_sketch_interaction.cpp` (the tool or action).
+
 ## Documentation
 
 Keep `ARCHITECTURE.md`, `ROADMAP.md`, `PROJECT_STATUS.md` and `BUILDING.md`
-in step with the code. Record notable discoveries in `docs/DEVLOG.md`.
-Only document build commands that have actually been run.
+in step with the code. Record notable discoveries in `docs/DEVLOG.md` and
+intentional shortcuts in `docs/TECHNICAL_DEBT.md`. Only document build
+commands that have actually been run. User-visible behaviour also belongs in
+the in-app help card (`HelpOverlay.qml`).
 
 ## Licensing
 

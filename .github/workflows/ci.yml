@@ -1,5 +1,6 @@
 # Mirrors the build verified locally in BUILDING.md (MSYS2 UCRT64).
-# NOTE: not yet executed on GitHub (the repository has no remote yet).
+# Runs on every push to the private GitHub repository; private-repo Windows
+# minutes bill at 2x, so push in batches. No run has been checked yet.
 name: CI
 
 on:

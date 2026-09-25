@@ -27,20 +27,25 @@ Technology choices and the alternatives considered are in
  ui/        ViewportItem (QQuickRhiItem), AppController (QObject bridge), QML
         │  PointerEvent / Key / numeric text      ▲ properties, RenderScene
         ▼                                         │
- interaction/  InteractionController ── Operation (PushPull, Fillet/Chamfer, Extrude)
-        │         │  camera, hover, selection, manipulators, previews
+ interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
+        │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
+        │         │   Pattern, Insert)
+        │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
+        │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
         │         ▼
         │   selection/  picking (CPU ray/segment/profile), SelectionSet (+signatures)
         ▼
  commands/  Command + UndoStack (CreateBody, AddFeature, SetParameter, EditSketch…)
         ▼
  document/  Document → Sketches + Bodies → Feature history (Box, PushPull,
-        │            Fillet, Chamfer, Extrude); SketchProfiles bridge
+        │            Fillet, Chamfer, Shell, Extrude, Revolve, Hole, Move,
+        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace);
+        │            SketchProfiles bridge
         ├──────────────────────────────┐
         ▼                              ▼
  geometry/  Shape, Modeling,       sketch/  Sketch model (points, lines, circles,
-   Profiles, Tessellation,                  constraints) + SketchSolver
+   Profiles, Tessellation,                  arcs, constraints) + SketchSolver
    TopoSignature, Exchange                        ▼
         ▼                             PlaneGCS (vendored, shared lib, Eigen)
  OpenCASCADE 7.9 (only included inside geometry/)
@@ -89,11 +94,33 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   (faces/edges/vertices) are built once. Indices are **0-based and only valid
   for that Shape instance**.
 - `Modeling.h`: box, cylinder, push/pull of a planar face (prism + fuse/cut +
-  `ShapeUpgrade_UnifySameDomain`), fillet, chamfer, booleans, transforms,
-  measurements (volume, area, optimal bounding box), face/edge info,
-  BRep (de)serialization. Every call is wrapped in `guarded()` (catches
+  `ShapeUpgrade_UnifySameDomain`), fillet, chamfer, shell, booleans,
+  transforms, direct face edits, measurements (volume, area, optimal bounding
+  box, `measure`: distance / parallel gap / angle), face/edge info, BRep
+  (de)serialization. Every call is wrapped in `guarded()` (catches
   `Standard_Failure`) and results pass `finishSolid()` (unwraps single solids,
-  rejects empty results, runs `BRepCheck_Analyzer`).
+  rejects empty results, runs `BRepCheck_Analyzer`, and adds a `Result`
+  warning when the result is in several pieces).
+- **Kernel "success" is verified.** OCCT sometimes reports success with an
+  unchanged or wrong result, so operations check a cheap invariant of their
+  intent: `shell` must remove volume; `deleteFaces` (`BRepAlgoAPI_Defeaturing`)
+  must change the shape; `offsetFace` (`BRepOffset_MakeOffset` with one face
+  offset; the skin-mode result is a shell, closed into a solid) must change
+  the volume by about area × distance (within 25 %), otherwise the
+  neighbours could not follow (e.g. tangent fillets) and the edit is refused.
+- Rigid motions: `RigidMotion` (`Shape.h`: rotate about the axis through
+  `center`, then translate) and `transformed`; `mirrored`; `mirrorJoined`
+  and `repeatJoined` fuse the original and all copies in one General Fuse
+  pass (`fuseInOnePass`; pairwise fusing is quadratic).
+- Align: `alignFrame(shape, kind, index)` reduces a face or edge to a point
+  and a direction (flat faces: centroid + outward normal, *sided*; straight
+  edges: midpoint + direction; circles, cylinders, cones: center + axis).
+  `alignMotion(source, target, flip, offset)` is the motion that brings one
+  onto the other: sided pairs end up touching, facing each other; others
+  become parallel with the smaller rotation.
+- `FaceInfo` has `point` (a point on the face where `normal` is taken; a full
+  cylinder's centroid lies on its axis, off the face) and, for cylinders and
+  cones, `axisOrigin` / `axisDirection` / `radius`.
 - Bounding boxes: `boundingBox()` is the tight (optimal) box, computed once
   per Shape and cached in `ShapeData` (it costs tens of ms on curved parts);
   `approximateBoundingBox()` is a conservative microsecond box for camera
@@ -104,6 +131,8 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Tessellation.h`: `BRepMesh_IncrementalMesh` (faces meshed in parallel) →
   `Mesh` with per-triangle face ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
   polylines taken from the triangulation (so edges sit exactly on mesh vertices).
+- `Profiles.h`: planar curves (lines, circles, counter-clockwise arcs) →
+  regions (see Sketches).
 - `TopoSignature.h`: interim topological naming (see below).
 - `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export.
 
@@ -122,7 +151,19 @@ Document (UUID, display unit)
   the failed feature is `Failed` (with user/developer messages), later ones are
   `NotComputed`, and the body shows the last good shape. Nothing is deleted.
 - Features expose editable scalar `parameters()` (e.g. box width, push/pull
-  distance, fillet radius) — the basis for history editing (Milestone 4).
+  distance, fillet radius, pattern count) — the basis for history editing.
+- Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
+  (base features when they make a new body); PushPull, Fillet, Chamfer,
+  Shell, Hole (drilled at a circular rim), Move (a translation plus an
+  optional rotation: Rotate and Align steps are Moves), Combine (with a tool
+  body), Mirror and Pattern (copies joined into the body), DeleteFaces and
+  OffsetFace. Planes, axes and directions are stored as geometry, not as
+  references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
+  bodies are references. So an Align or Mirror step does not follow the face
+  it was aimed at when that face moves later.
+- A successful step can carry a `FeatureState::note` (from `Result`
+  warnings, e.g. "The body is now in 2 separate pieces."); the Model panel
+  shows it in amber.
 - `Document::preview(body, feature)` evaluates a feature without mutating
   anything; interactive previews use it.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
@@ -131,10 +172,14 @@ Document (UUID, display unit)
 ## Sketches (`sketch/`, `document/SketchProfiles`)
 
 - A `Sketch` (UUID) lives on a `Plane` (origin + orthonormal x/y axes) and holds
-  points, lines, circles and constraints under per-sketch integer ids (id 1 is
-  the fixed origin). Positions are always the last solved state.
+  points, lines, circles, arcs (counter-clockwise from start to end around
+  the center; PlaneGCS `Arc` plus its arc rules) and constraints under
+  per-sketch integer ids (id 1 is the fixed origin). Positions are always the
+  last solved state. Curves flagged `construction` never become profiles.
 - Constraints: coincident, horizontal, vertical, distance, horizontal/vertical
-  distance (signed), diameter. `solve()` / `solveDragging()` build a PlaneGCS
+  distance (signed), diameter, radius (arcs), parallel, perpendicular, equal
+  (lengths or radii), tangent (line or round to round), concentric, point on
+  line, midpoint. `solve()` / `solveDragging()` build a PlaneGCS
   system per call (DogLeg), write positions back, and report DOF plus
   conflicting/redundant constraints. A failed solve never changes the sketch.
 - Profiles: `geom::findRegions` splits a large face on the sketch plane with
@@ -201,7 +246,12 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Sketch mode:** `startSketch()` creates a sketch on the selected planar face
   (host body recorded) or the XY plane, animates the view to face it, and hands
   input to a `SketchSession`. The session edits a working copy; tools are
-  Select, Line, Rectangle, Circle. Snapping order: existing points (incl.
+  Select, Line, Rectangle, Circle, Arc (3-point: start, end, then bend; a
+  typed radius locks it). Starting a sketch on a plane where a visible sketch
+  already lies (exactly coplanar), or with one of its profiles selected,
+  reopens that sketch instead, so new curves split its shapes. Selecting
+  sketch items offers constraint and Construction actions (`contextActions`).
+  Snapping order: existing points (incl.
   origin) → line midpoints → horizontal/vertical inference relative to the
   shape start → zoom-dependent grid. Inferred H/V becomes a constraint only
   when shown during drawing. Typed values (width/height, diameter, length) lock
@@ -211,12 +261,39 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Operations with several handles:** an `Operation` may expose several
   arrows (`handleCount()`); the grabbed one becomes active and receives drags
   and typed values. `MoveOperation` uses this for X/Y/Z (axis-colored).
-- **Face/body actions:** a single flat face arms Push/Pull and offers Shell
-  and Sketch; several faces arm Shell. A body (double-click) arms Move; two
-  bodies (Shift+double-click) offer Union/Subtract/Intersect, applied as one
-  `CompositeCommand` (add `Combine` step + hide the tool body).
+  `RotateOperation` exposes three `RingManipulator`s instead (`ringCount()`:
+  constant screen size, the angle unwrapped past ±180°, a screen-space
+  fallback when a ring is seen edge-on; 15° snaps, Alt for 1°).
+- **Operation hooks** (`Operation.h`): `prompt()` while a further pick is
+  needed (Align's target, Mirror's plane); `labelAnchor()` for a value editor
+  without an arrow; `neutralValue()` (what Esc returns to, e.g. a hole's
+  current diameter); `zeroIsIdentity()` (Align previews at 0);
+  `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
+  the preview is known); `canCommit()`; `clearPreview()`.
+- **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
+  Sketch, Align and Delete face; a single cylindrical face (hole, shaft) arms
+  Offset, typed as a diameter; several faces arm Shell. The Delete key on
+  selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
+  Chamfer; a hole rim also offers the heat-set insert; one edge offers Align).
+  One body (double-click, or its Model-panel row) arms Move and offers Rotate,
+  Mirror and Pattern (`BodyTool`). Two or more bodies offer Union / Subtract /
+  Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
+  tool bodies); the first selected body is kept and Swap exchanges the two.
+- **Align:** Align on a face or edge creates an `AlignOperation` that waits
+  for a target on another body (`prompt()`), then previews at offset 0; the
+  arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
+  faces) lays the face on the XY plane. It commits as a Move step named
+  "Align": a one-time placement, not linked to the target.
+- **Mirror / Pattern:** Mirror waits for a flat face (or an origin plane from
+  the action bar) and has no value; Apply or Enter commits. Pattern previews
+  right away (spacing = the body's extent plus 5 mm); the arrow sets the
+  spacing (angle when circular), ± copy changes the count, and clicking an
+  edge or a hole/shaft sets the direction or axis. Both commit one step with
+  the copies joined into the body.
 - **Profiles in model mode:** sketch regions are pickable (a region lying on a
-  face wins over the face); selecting profiles arms `ExtrudeOperation`, whose
+  face wins over the face; a consumed sketch's region only when it is
+  coplanar with the body face hit, so used sketches do not steal clicks);
+  selecting profiles arms `ExtrudeOperation`, whose
   arrow follows the plane normal. For sketches on a body, pulling out joins
   and pushing in cuts, unless overridden (New body / Join / Cut). An
   automatic join whose preview would add separate pieces becomes a new body
@@ -225,15 +302,18 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as
   undo/redo; `ViewportItem` only converts `QTouchEvent`s. Pen mode (turned on
-  by the first pen press) makes finger presses navigation-only.
+  by the first pen press; `setPenMode`) makes finger presses navigation-only.
+  There is no UI switch for it yet.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
 - **Tools and actions:** `contextActions()` lists what the selection offers;
   the UI shows them in the value chip while a manipulator is active and in the
-  selection action bar otherwise. `runTool(id)` backs the Modify/Combine
-  palette: it runs the tool when the selection fits and otherwise explains
-  what to select.
+  selection action bar otherwise (`barAction_<id>` object names, used by the
+  acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
+  pushpull, fillet, chamfer, shell, offset, move, rotate, mirror, pattern,
+  align, union, subtract, intersect, measure): it runs the tool when the
+  selection fits and otherwise explains what to select.
 
 ## Rendering (`render/`, `ui/ViewportItem`)
 
@@ -246,11 +326,14 @@ blocked) and draws with 4× MSAA:
 1. bodies (lit, two-sided shading), keyed by mesh key so unchanged bodies are
    never re-uploaded;
 2. adaptive grid + X/Y axes (depth-tested, no depth write);
-3. face highlights as **index sub-ranges of the body mesh** (no extra buffers);
+3. face highlights (hover, selection, and the orange Model-panel highlight
+   with adjacent ranges merged) as **index sub-ranges of the body mesh** (no
+   extra buffers);
 4. edges as screen-space expanded quads (constant pixel width, depth bias);
 5. sketches: profile fills (cached meshes), curves batched per style, point
    markers as zero-length line quads; the sketch being edited draws on top;
-6. manipulator arrows on top (no depth test), sized in screen pixels.
+6. manipulator arrows and rotation rings on top (no depth test), sized in
+   screen pixels.
 
 Sketch labels (dimensions, live inputs, inference hints) are QML items
 positioned from `SketchSession::labels()` screen coordinates.
@@ -290,8 +373,16 @@ disk. Saves are atomic (temp file + rename). See
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
   the real application through Qt's platform input path — including clicking
   QML buttons found by `objectName` — and checks geometry after each step,
-  saving screenshots. It covers the Milestone 0 script and the Milestone 1
-  bracket end to end (52 checks).
+  saving screenshots. 103 checks, ~20 s (it moves the real mouse cursor):
+  help card, the Milestone 0 script, save/open, exports, the Milestone 1
+  bracket, a history edit, booleans through the Model panel and the action
+  bar, Align, Rotate rings, Pattern, Mirror, and two-/three-finger taps
+  through synthetic touch events. Arcs, sketch constraints and face edits
+  are covered headlessly (`tests/`) but not yet clicked through the real UI.
+- `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
+  previews, tessellation, recompute and bounding boxes on a filleted part;
+  `scripts/dev/` has a Win32 input driver and a live log watcher (see
+  BUILDING.md, "Developer tools").
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 

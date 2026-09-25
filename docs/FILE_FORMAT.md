@@ -21,11 +21,12 @@ A ZIP archive (deflate) with these entries:
   "id": "5f0c…",
   "sketches": [
     {
-      "id": "c21d…", "name": "Sketch 1", "visible": true, "hostBody": null, "attachment": null, "nextId": 14,
+      "id": "c21d…", "name": "Sketch 1", "visible": true, "hostBody": null, "attachment": null, "nextId": 18,
       "plane": { "origin": [0,0,0], "xAxis": [1,0,0], "yAxis": [0,1,0] },
       "points": [ { "id": 1, "x": 0, "y": 0, "fixed": true }, { "id": 2, "x": 60, "y": 0, "fixed": false } ],
       "lines": [ { "id": 6, "start": 1, "end": 2, "construction": false } ],
       "circles": [ { "id": 12, "center": 11, "radius": 3.0, "construction": false } ],
+      "arcs": [ { "id": 17, "center": 14, "start": 15, "end": 16, "construction": false } ],
       "constraints": [ { "id": 10, "type": "HorizontalDistance", "a": 1, "b": 2, "value": 60.0 } ]
     }
   ],
@@ -55,12 +56,20 @@ Rules:
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
 - The first feature of every body must be a base feature (`Box`, or
-  `Extrude` with mode `NewBody`).
+  `Extrude` / `Revolve` with mode `NewBody`).
 - Sketch entity ids are integers unique within their sketch; id 1 is always
   the fixed origin point. `nextId` is the next unused id. Sketch coordinates
   are millimeters in the plane's (xAxis, yAxis) frame.
-- Constraint types: `Coincident`, `Horizontal`, `Vertical`, `Distance`,
-  `HorizontalDistance` and `VerticalDistance` (signed: b − a), `Diameter`.
+- `arcs` (optional; older files have none): `{ "id", "center", "start",
+  "end", "construction" }` — point ids; the arc runs counterclockwise from
+  start to end around center.
+- Constraint types (entity ids in `a`, `b`; dimensions in `value`):
+  `Coincident`, `Horizontal`, `Vertical`, `Distance`, `HorizontalDistance`
+  and `VerticalDistance` (signed: b − a), `Diameter` (circle), `Radius` (arc,
+  `value` > 0), `Parallel`, `Perpendicular`, `Equal` (two lines or two
+  circles/arcs), `Tangent`, `Concentric`, `PointOnLine` (point `a` on line
+  `b`), `Midpoint` (point `a` at the middle of line `b`). Unknown constraint
+  types make the file unreadable with a "newer version" message.
 - `Extrude` params: `{ "sketch": uuid, "profiles": [{ "point": [x, y], "area" }],
   "distance", "mode": "NewBody" | "Join" | "Cut" }`. Profiles are referenced by
   a point inside the region (sketch coordinates) plus its area.
@@ -95,21 +104,15 @@ Rules:
 - `DeleteFaces` params: `{ "faces": [faceRef…] }` — removed and healed.
   `OffsetFace` params: `{ "face": faceRef, "distance" }` (positive: the body
   grows along the face's outward normal).
+- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset" }` — a
+  cylindrical hole centered on a circular rim edge, drilled into the
+  material (the direction comes from the flat face next to the rim);
+  `preset` is an informational label such as "M3 heat-set insert".
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
   `OffsetFace`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
-
-## Sketch additions (2026-09-25)
-
-- Sketches may carry `"arcs": [{ "id", "center", "start", "end", "construction" }]`
-  (point ids; counterclockwise from start to end around center). Optional:
-  sketches without it load as before.
-- Constraint types added: `Parallel`, `Perpendicular`, `Equal`, `Tangent`,
-  `Concentric`, `PointOnLine`, `Midpoint` (entity ids in `a`, `b`) and
-  `Radius` (arc `a`, `value` > 0). Unknown constraint types make the file
-  unreadable with a "newer version" message.
 
 ## Versioning
 

@@ -11,29 +11,40 @@ OpenShape is an original open-source CAD application for makers, 3D-printing
 users and product designers, built on the OpenCASCADE exact B-rep kernel with
 a Qt Quick interface designed for mouse, touch and stylus.
 
-> Status: early development (Milestones 0 and 1 complete). Windows is the first
-> verified platform. See [PROJECT_STATUS.md](PROJECT_STATUS.md).
+> Status: early development (Milestones 0–2 complete, editable history, first
+> maker tools). Windows is the first verified platform; iPad is planned. See
+> [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 ## What works today
 
 - Create boxes; push/pull any flat face with a draggable arrow or an exact
   typed value (units and arithmetic: `25`, `1in`, `20+5`)
-- Fillet and chamfer edges (drag or type the size)
-- Sketch on the ground or on any flat face: lines, rectangles, circles with
-  snapping, horizontal/vertical inference and typed dimensions; constraint
-  status ("Fully defined"); click a dimension to change it
-- Extrude closed sketch profiles into new bodies, or join/cut into a body
-- Live previews; failures explained in plain language, never corrupting the model
-- Undo/redo for every change
-- Orbit, pan, zoom, standard views, orthographic/perspective
-- Hover highlighting, face/edge/body selection, touch-friendly tolerances
-- `.openshape` project files that reopen with their full history (sketches stay editable)
+- Fillet and chamfer edges (drag or type the size); shell a body
+- Sketch on the ground, an origin plane or any flat face: lines, rectangles,
+  circles and arcs with snapping, horizontal/vertical inference and typed
+  dimensions; constraints (parallel, perpendicular, equal, tangent,
+  concentric, midpoint, …) and construction lines; click a dimension to
+  change it; sketch on a sketch to add to it
+- Extrude or revolve closed sketch profiles into new bodies, or join/cut into
+  a body
+- Move, rotate, align (face to face, edge to edge, hole to shaft, or onto the
+  build plate), mirror and pattern bodies
 - Combine bodies: union, subtract, intersect (select bodies by double-click
   or in the Model panel; Shift adds)
+- Direct face edits: select a hole, fillet or chamfer and press Delete to
+  remove it; click a hole's wall and type its new diameter
+- Heat-set insert pilot holes (M2–M5 presets)
+- Live previews; failures explained in plain language, never corrupting the model
+- Undo/redo for every change
 - Model panel: hover a step to see what it made; click a step to change its
   values later
+- Orbit, pan, zoom, standard views, orthographic/perspective
+- Hover highlighting, face/edge/body selection, touch-friendly tolerances;
+  with a pen, the pen draws and fingers only navigate
+- `.openshape` project files that reopen with their full history (sketches stay editable)
 - Measure wall thickness, distances and angles between faces/edges
 - STEP export (and import in the kernel), STL and 3MF export for slicers
+- `F1` (or the `?` button) shows every gesture, shortcut and tool
 
 ## Quick start
 
@@ -53,6 +64,8 @@ Or sketch: press `K` (Sketch), click the origin, type `60`, `Tab`, `30`,
 | Select body | double-click | double-tap |
 | Apply / cancel | Enter / Esc | ✓ / ✕ |
 | Stop drawing lines | right-click or Esc | ✕ |
+| Undo / redo | Ctrl+Z / Ctrl+Y | two-finger tap / three-finger tap |
+| Help | F1 | ? button |
 
 ## Documentation
 

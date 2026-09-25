@@ -193,6 +193,67 @@ separate piece (now a new body; any step that leaves a body in several pieces
 is flagged); booleans were not discoverable (tool palette plus action bar).
 Still open from the session: curves of different sketches on one plane do not
 split each other, and drawing on a plane with a sketch does not continue it.
+(Continuing was added the same day; separate sketches still don't interact.)
 
 **Tooling pitfall, again.** Python heredocs in the Bash tool turn `\n` inside
 string literals into real newlines. Write such files with the Write/Edit tools.
+
+## 2026-09-25 — The owner's priorities: align, transform & repeat, sketch toolkit, face edits, touch
+
+Built in the owner's order, each with headless tests and, for the body
+tools, acceptance steps that click through the real UI.
+
+**One feature kind for Move, Rotate and Align.** A Move step gained an
+optional rotation applied before its translation (`RigidMotion`). Rotate and
+Align are Move steps with different operations in front, so the file format,
+history editing and undo needed almost nothing new. Align stores the
+resulting motion; it does not follow its target later (TD-23).
+
+**Align frames.** Every alignable thing reduces to a point, a direction and
+whether it is "sided": flat faces are (they end up touching, facing each
+other), edges and axes are not (parallel, with the smaller rotation). Found
+on the way: a full cylinder's area centroid lies on its axis, off the face,
+so normals taken "at the centroid" were meaningless; `FaceInfo` now carries a
+point on the face.
+
+**Rotate rings** keep a constant screen size, unwrap the angle past half a
+turn, and fall back to screen-space angles when a ring is seen edge-on.
+Tests that grab a ring must avoid the points where two rings cross (they
+grab at 45°).
+
+**Mirror and Pattern join copies in one boolean pass** (the lesson from the
+extrude speedup). Bugs fixed on the way: typing digits while no value
+editor was visible (Mirror has none) edited a hidden value chip; the body
+lost its selection after applying; the circular pattern's default axis is
+now Z; and the default spacing came out 1 mm too large because the fast
+bounding box carries a tolerance (ceil of 25.0000002 is 26).
+
+**Sketch toolkit.** Arcs run counterclockwise from start to end (PlaneGCS
+`Arc` plus its arc rules). The arc tool takes start, end and a bend point;
+a typed radius locks it. Eight constraints were added as PlaneGCS mappings
+(midpoint = the line's endpoints symmetric about the point; tangent keeps
+the side the curves are on). Sketching where a visible sketch already lies
+now continues it, so new curves split its shapes.
+
+**Face edits: kernel success is still not success.** `BRepOffset_MakeOffset`
+with one offset face returns a valid-looking solid even when the neighbours
+cannot follow (tangent fillets); the volume must change by about area ×
+distance or the edit is refused. Defeaturing can report success while
+leaving the faces in place, so the shape must change. The per-face offset in
+skin mode yields a shell that has to be closed into a solid. A used
+sketch's circle lying over the hole it cut hid the hole's wall from clicks;
+consumed sketches now win only where they lie on the surface hit.
+
+**Touch.** Gestures are recognized by a Qt-free class so they can be unit
+tested. Two fingers do nothing until they move past a threshold, which is
+what makes a quick two-finger tap usable as undo (three fingers: redo). The
+first pen press switches to pen mode: the pen selects and draws, fingers
+only navigate. The acceptance run sends real Qt multi-touch events.
+
+**Tooling.** A script that moved a struct between headers by regex cut it at
+the `};` inside `axis{0, 0, 1};` — move code with an editor, not regexes on
+braces. CI builds with warnings as errors; `-Wswitch` for a new enum value
+and `-Wmissing-field-initializers` for a new struct field only surfaced with
+the same flag locally, which the local build now uses. The input driver,
+log watcher and benchmark used in this session are now in the repository
+(`scripts/dev/`, `tools/bench/`) so the next session can use them.

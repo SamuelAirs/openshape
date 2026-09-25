@@ -1,11 +1,14 @@
 # OpenShape — notes for AI assistants picking up this project
 
 Start here, in this order:
-1. `PROJECT_STATUS.md` — what works, what's missing, next tasks, test counts.
+1. `PROJECT_STATUS.md` — "Handoff: where we left off" first; then what works,
+   what's missing, next tasks, test counts.
 2. `ARCHITECTURE.md` — how the code is organized (layers, key types).
 3. `ROADMAP.md` — milestones with ✅/🟡/⬜ status.
 4. `docs/DEVLOG.md` — discoveries and pitfalls; `docs/TECHNICAL_DEBT.md` — known shortcuts.
-5. `BUILDING.md` — the exact, verified build/test/package commands.
+5. `BUILDING.md` — the exact, verified build/test/package commands, demo scenes
+   and developer tools.
+6. `CONTRIBUTING.md` — rules and checklists for adding a feature, tool or constraint.
 
 ## Working agreement with the owner
 - Act as the lead engineer: decide engineering questions yourself, build, test,
@@ -18,11 +21,15 @@ Start here, in this order:
 - Toolchain: MSYS2 at `C:\Users\ayers\msys64` (UCRT64). In Git Bash:
   `export PATH=/c/Users/ayers/msys64/ucrt64/bin:$PATH`
 - Build & test: `cmake --preset msys2-ucrt64 && cmake --build build/msys2-ucrt64 && ctest --test-dir build/msys2-ucrt64`
-  (`-LE gui` skips the real-UI acceptance run, which moves the mouse).
+  (`-LE gui` skips the real-UI acceptance run: ~20 s, moves the mouse — don't run it
+  while the owner is using the machine). The local build cache has
+  `OPENSHAPE_WARNINGS_AS_ERRORS=ON` like CI, and `OPENSHAPE_BUILD_TOOLS=ON`.
 - Visual check: `build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png`
-- Package: `bash scripts/package-windows.sh` (run in the MSYS2 UCRT64 shell) → `dist/OpenShape/`.
-  The owner launches the app from a desktop shortcut to `dist/OpenShape/OpenShape.exe`,
-  so re-run the package script after changes they should see.
+- Package: `export PATH=/c/Users/ayers/msys64/ucrt64/bin:/c/Users/ayers/msys64/usr/bin:$PATH && bash scripts/package-windows.sh`
+  → `dist/OpenShape/`. The owner launches the app from a desktop shortcut to
+  `dist/OpenShape/OpenShape.exe`, so re-run the package script after changes they
+  should see. Don't build while it runs (it copies from the build folder).
+- Python: `/c/Users/ayers/msys64/ucrt64/bin/python.exe` is Windows-native (ctypes works).
 
 ## Repository and CI
 - Remote: https://github.com/SamuelAirs/openshape (private). `gh` is not installed;
@@ -33,8 +40,13 @@ Start here, in this order:
 
 ## Debugging with the owner
 - `OPENSHAPE_LOG=debug` logs per-operation timings; the owner likes to model while
-  Claude watches the log (and pings the window for GUI stalls) and reports findings.
+  Claude watches the log with `scripts/dev/watch_log.py` (slow steps, warnings,
+  GUI stalls) and reports findings.
+- `scripts/dev/drive.py` drives the real window (mouse, keys, screenshots);
+  `tools/bench/bench_session.cpp` times previews/recompute. See BUILDING.md.
 - Measure before optimizing: the 2026-09-25 slowdown was the bounding box, not meshing.
+- Every user-facing action needs an acceptance check that clicks it
+  (`src/app/AcceptanceRunner.cpp`).
 
 ## Pitfalls
 - Python on Windows defaults to CRLF/cp1252: open files with `encoding='utf-8', newline=''`.

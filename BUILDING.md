@@ -47,15 +47,18 @@ ctest --test-dir build/msys2-ucrt64 --output-on-failure
 ```
 
 `ctest` includes `acceptance_gui`, which opens the application window and
-drives it with synthetic input for ~15 s (it moves the mouse cursor). On a
-machine without a desktop session, skip it:
+drives it with synthetic input for ~20 s (it moves the mouse cursor, so
+don't use the machine meanwhile). On a machine without a desktop session,
+skip it:
 
 ```bash
 ctest --test-dir build/msys2-ucrt64 -LE gui
 ```
 
 Options: `-DOPENSHAPE_BUILD_APP=OFF` builds only the Qt-free core and its
-tests; `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` makes warnings fatal.
+tests; `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` makes warnings fatal (CI uses it,
+so use it locally too — a new enum value without its `switch` cases fails
+there); `-DOPENSHAPE_BUILD_TOOLS=ON` adds the developer tools (see below).
 
 ### 4. Run
 
@@ -76,7 +79,9 @@ OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 
 Demo scenes: `empty`, `hover`, `pushpull`, `committed`, `fillet`, `move`,
 `sketch`, `sketchdone`, `extrude`, `bracket`, `revolve`, `combine` (two bodies
-selected), `history` (a fillet step highlighted from the Model panel).
+selected), `history` (a fillet step highlighted from the Model panel),
+`rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews) and
+`arc` (a sketch with arcs). Without `--screenshot` the window stays open.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 
@@ -93,11 +98,51 @@ pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-ntldd
 bash scripts/package-windows.sh
 ```
 
+From Git Bash instead of the UCRT64 shell, put both MSYS2 bin folders first:
+
+```bash
+export PATH=/c/Users/ayers/msys64/ucrt64/bin:/c/Users/ayers/msys64/usr/bin:$PATH
+bash scripts/package-windows.sh
+```
+
+Don't build while the script runs: it copies from the build folder.
+
 This produces `dist/OpenShape/` (≈290 MB, 363 files): the stripped
 executable, Qt (via `windeployqt6`), OCCT, PlaneGCS and runtime DLLs, Qt
-plugins, QML modules, a `qt.conf`, and license files. Verified by running the
-packaged `OpenShape.exe` with `PATH` reduced to `C:\Windows\System32` —
-including the full `--acceptance` run (60/60). No installer yet.
+plugins, QML modules, a `qt.conf`, and license files. Verified 2026-09-25 by
+running the packaged `OpenShape.exe` with `PATH` reduced to
+`C:\Windows\System32`, including the full `--acceptance` run (103/103).
+No installer yet, and not distributable yet (TD-17).
+
+### 6. Developer tools
+
+- **Benchmark** — times a push/pull drag preview, tessellation, recompute
+  and bounding boxes on a 21-face filleted part (numbers in
+  PROJECT_STATUS.md):
+
+  ```bash
+  cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
+  cmake --build build/msys2-ucrt64 --target bench_session
+  ./build/msys2-ucrt64/bin/bench_session.exe
+  ```
+
+- **`scripts/dev/drive.py`** — drives a running OpenShape window with real
+  mouse and keyboard input and captures screenshots, for exploring the UI
+  like a user (it takes over the mouse). Needs a Windows-native Python; the
+  MSYS2 one works:
+
+  ```bash
+  /c/Users/ayers/msys64/ucrt64/bin/python.exe scripts/dev/drive.py "focus; info; shot view.png 0.5"
+  ```
+
+  Paths inside the command string must be Windows paths (`C:/...`): the
+  shell does not convert them. Coordinates are window client pixels, as in
+  the screenshots.
+
+- **`scripts/dev/watch_log.py`** — while someone uses the app started with
+  `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
+  the user, failed previews and GUI-thread stalls, one line per event
+  (run it in the background).
 
 ## Other platforms — not yet verified
 
