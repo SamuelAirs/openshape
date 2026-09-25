@@ -147,6 +147,34 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         (void)interaction.commitOperation();
         return;
     }
+    if (demo == QLatin1String("arc")) {
+        // A "D" (line + arc) and a second arc being bent.
+        using os::interact::SketchTool;
+        (void)interaction.startSketch();
+        interaction.skipAnimation();
+        auto at = [&](os::Vec2 local) {
+            return interaction.camera().project(interaction.sketchSession()->sketch().plane().toWorld(local));
+        };
+        auto clickAt = [&](os::Vec2 local) {
+            os::interact::PointerEvent e;
+            e.position = at(local);
+            interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, e.position, {}});
+            interaction.pointerPress(e);
+            interaction.pointerRelease(e);
+        };
+        interaction.setSketchTool(SketchTool::Line);
+        clickAt({0, 0});
+        clickAt({20, 0});
+        interaction.keyPress(os::interact::Key::Escape);
+        interaction.setSketchTool(SketchTool::Arc);
+        clickAt({20, 0});
+        clickAt({0, 0});
+        clickAt({10, 6});
+        clickAt({30, 0});
+        clickAt({50, 0});
+        interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, at({40, -8}), {}});
+        return;
+    }
     if (demo == QLatin1String("mirror") || demo == QLatin1String("pattern")) {
         // Mirror across the cube's +X face, or the default linear pattern.
         app.createBox(20);

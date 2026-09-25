@@ -100,7 +100,8 @@ Rectangle {
                     HelpSection {
                         title: "Sketch"
                         rows: [
-                            ["Tools", "S select · L line · R rectangle · C circle"],
+                            ["Tools", "S select · L line · R rectangle · C circle · A arc"],
+                            ["Arc", "Click start, click end, then bend it (or type a radius)"],
                             ["Exact size while drawing", "Type, Tab to the next value, Enter"],
                             ["Stop drawing lines", "Right-click or Esc (again: leave the tool)"],
                             ["Change a dimension", "Click its label"],

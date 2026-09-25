@@ -168,3 +168,34 @@ TEST(Profiles, RevolveProfileTouchingAxisMakesCylinder)
     ASSERT_TRUE(cyl.ok()) << cyl.developerMessage();
     EXPECT_NEAR(volume(cyl.value()), kPi * 16 * 10, 1e-3);
 }
+
+namespace {
+PlanarCurve arc(Vec2 center, double r, Vec2 from, Vec2 to)
+{
+    PlanarCurve c;
+    c.kind = PlanarCurve::Kind::Arc;
+    c.center = {center.x, center.y, 0};
+    c.radius = r;
+    c.start = {from.x, from.y, 0};
+    c.end = {to.x, to.y, 0};
+    return c;
+}
+} // namespace
+
+// A "D": a vertical line closed by a counterclockwise arc on its right.
+TEST(Profiles, LineAndArcEncloseHalfDisc)
+{
+    const auto r = regions({seg(0, -10, 0, 10), arc({0, 0}, 10, {0, -10}, {0, 10})});
+    ASSERT_EQ(r.size(), 1u);
+    EXPECT_NEAR(r[0].area, kPi * 100 / 2, 1e-6);
+    EXPECT_GT(r[0].centroid.x, 0.0); // the arc bulges to the right (counterclockwise from -Y to +Y)
+}
+
+// A slot: two lines and two half-circle arcs.
+TEST(Profiles, SlotOfLinesAndArcs)
+{
+    const auto r = regions({seg(0, -5, 30, -5), arc({30, 0}, 5, {30, -5}, {30, 5}), seg(30, 5, 0, 5),
+                            arc({0, 0}, 5, {0, 5}, {0, -5})});
+    ASSERT_EQ(r.size(), 1u);
+    EXPECT_NEAR(r[0].area, 30 * 10 + kPi * 25, 1e-6);
+}

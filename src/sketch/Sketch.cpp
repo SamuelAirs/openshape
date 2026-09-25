@@ -40,7 +40,8 @@ Sketch::Sketch(Uuid id, Plane plane) : id_(id), plane_(plane)
 
 bool Sketch::exists(EntityId id) const
 {
-    return points_.contains(id) || lines_.contains(id) || circles_.contains(id) || constraints_.contains(id);
+    return points_.contains(id) || lines_.contains(id) || circles_.contains(id) || arcs_.contains(id)
+        || constraints_.contains(id);
 }
 
 EntityId Sketch::addPoint(Vec2 position, bool fixed)
@@ -68,6 +69,30 @@ EntityId Sketch::addCircle(EntityId center, double radius, bool construction)
     return id;
 }
 
+EntityId Sketch::addArc(EntityId center, EntityId start, EntityId end, bool construction)
+{
+    if (!points_.contains(center) || !points_.contains(start) || !points_.contains(end) || center == start
+        || center == end || start == end)
+        return kNoEntity;
+    if (!((points_.at(start).position - points_.at(center).position).length() > 0))
+        return kNoEntity;
+    const EntityId id = allocate();
+    arcs_[id] = SketchArc{center, start, end, construction};
+    return id;
+}
+
+const SketchArc* Sketch::arc(EntityId id) const
+{
+    auto it = arcs_.find(id);
+    return it == arcs_.end() ? nullptr : &it->second;
+}
+
+double Sketch::arcRadius(EntityId id) const
+{
+    const SketchArc* a = arc(id);
+    return a ? (points_.at(a->start).position - points_.at(a->center).position).length() : 0.0;
+}
+
 bool Sketch::setConstruction(EntityId id, bool construction)
 {
     if (auto it = lines_.find(id); it != lines_.end()) {
@@ -75,6 +100,10 @@ bool Sketch::setConstruction(EntityId id, bool construction)
         return true;
     }
     if (auto it = circles_.find(id); it != circles_.end()) {
+        it->second.construction = construction;
+        return true;
+    }
+    if (auto it = arcs_.find(id); it != arcs_.end()) {
         it->second.construction = construction;
         return true;
     }
@@ -104,14 +133,16 @@ bool Sketch::isValid(const SketchConstraint& c) const
         valid = lines_.contains(c.a) && lines_.contains(c.b) && c.a != c.b;
         break;
     case ConstraintKind::Equal:
-        valid = c.a != c.b
-             && ((lines_.contains(c.a) && lines_.contains(c.b)) || (circles_.contains(c.a) && circles_.contains(c.b)));
+        valid = c.a != c.b && ((lines_.contains(c.a) && lines_.contains(c.b)) || (isRound(c.a) && isRound(c.b)));
         break;
     case ConstraintKind::Tangent:
-        valid = c.a != c.b && (lines_.contains(c.a) || circles_.contains(c.a)) && circles_.contains(c.b);
+        valid = c.a != c.b && (lines_.contains(c.a) || isRound(c.a)) && isRound(c.b);
         break;
     case ConstraintKind::Concentric:
-        valid = c.a != c.b && circles_.contains(c.a) && circles_.contains(c.b);
+        valid = c.a != c.b && isRound(c.a) && isRound(c.b);
+        break;
+    case ConstraintKind::Radius:
+        valid = arcs_.contains(c.a);
         break;
     case ConstraintKind::PointOnLine:
     case ConstraintKind::Midpoint:
@@ -121,7 +152,8 @@ bool Sketch::isValid(const SketchConstraint& c) const
     }
     if (!valid || !std::isfinite(c.value))
         return false;
-    if ((c.kind == ConstraintKind::Distance || c.kind == ConstraintKind::Diameter) && !(c.value > 0))
+    if ((c.kind == ConstraintKind::Distance || c.kind == ConstraintKind::Diameter || c.kind == ConstraintKind::Radius)
+        && !(c.value > 0))
         return false;
     return true;
 }
@@ -147,6 +179,20 @@ bool Sketch::remove(EntityId id)
         removedPoints.push_back(id);
         std::erase_if(lines_, [&](const auto& l) { return l.second.start == id || l.second.end == id; });
         std::erase_if(circles_, [&](const auto& c) { return c.second.center == id; });
+        std::erase_if(arcs_, [&](const auto& a) {
+            const SketchArc& arc = a.second;
+            if (arc.center != id && arc.start != id && arc.end != id)
+                return false;
+            // The arc's other points may become unused.
+            for (EntityId p : {arc.center, arc.start, arc.end})
+                if (p != id)
+                    removedPoints.push_back(p);
+            return true;
+        });
+    } else if (auto at = arcs_.find(id); at != arcs_.end()) {
+        const SketchArc arc = at->second;
+        arcs_.erase(at);
+        removedPoints = {arc.center, arc.start, arc.end};
     } else if (auto it = lines_.find(id); it != lines_.end()) {
         const SketchLine line = it->second;
         lines_.erase(it);
@@ -163,7 +209,10 @@ bool Sketch::remove(EntityId id)
             continue;
         const bool used = std::any_of(lines_.begin(), lines_.end(),
                                       [&](const auto& l) { return l.second.start == p || l.second.end == p; })
-            || std::any_of(circles_.begin(), circles_.end(), [&](const auto& c) { return c.second.center == p; });
+            || std::any_of(circles_.begin(), circles_.end(), [&](const auto& c) { return c.second.center == p; })
+            || std::any_of(arcs_.begin(), arcs_.end(), [&](const auto& a) {
+                   return a.second.center == p || a.second.start == p || a.second.end == p;
+               });
         if (!used)
             points_.erase(p);
     }
@@ -171,7 +220,8 @@ bool Sketch::remove(EntityId id)
     std::erase_if(constraints_, [&](const auto& c) {
         const SketchConstraint& k = c.second;
         auto gone = [&](EntityId e) {
-            return e != kNoEntity && !points_.contains(e) && !lines_.contains(e) && !circles_.contains(e);
+            return e != kNoEntity && !points_.contains(e) && !lines_.contains(e) && !circles_.contains(e)
+                && !arcs_.contains(e);
         };
         return gone(k.a) || gone(k.b);
     });
@@ -260,6 +310,7 @@ const char* kindName(ConstraintKind k)
     case ConstraintKind::Concentric: return "Concentric";
     case ConstraintKind::PointOnLine: return "PointOnLine";
     case ConstraintKind::Midpoint: return "Midpoint";
+    case ConstraintKind::Radius: return "Radius";
     }
     return "?";
 }
@@ -269,7 +320,8 @@ std::optional<ConstraintKind> kindFromName(const std::string& s)
     for (auto k : {ConstraintKind::Coincident, ConstraintKind::Horizontal, ConstraintKind::Vertical, ConstraintKind::Distance,
                    ConstraintKind::HorizontalDistance, ConstraintKind::VerticalDistance, ConstraintKind::Diameter,
                    ConstraintKind::Parallel, ConstraintKind::Perpendicular, ConstraintKind::Equal, ConstraintKind::Tangent,
-                   ConstraintKind::Concentric, ConstraintKind::PointOnLine, ConstraintKind::Midpoint})
+                   ConstraintKind::Concentric, ConstraintKind::PointOnLine, ConstraintKind::Midpoint,
+                   ConstraintKind::Radius})
         if (s == kindName(k))
             return k;
     return std::nullopt;
@@ -301,13 +353,15 @@ bool idField(const json& j, const char* key)
 
 json Sketch::toJson() const
 {
-    json pts = json::array(), lns = json::array(), cls = json::array(), cns = json::array();
+    json pts = json::array(), lns = json::array(), cls = json::array(), arcs = json::array(), cns = json::array();
     for (const auto& [id, p] : points_)
         pts.push_back({{"id", id}, {"x", p.position.x}, {"y", p.position.y}, {"fixed", p.fixed}});
     for (const auto& [id, l] : lines_)
         lns.push_back({{"id", id}, {"start", l.start}, {"end", l.end}, {"construction", l.construction}});
     for (const auto& [id, c] : circles_)
         cls.push_back({{"id", id}, {"center", c.center}, {"radius", c.radius}, {"construction", c.construction}});
+    for (const auto& [id, a] : arcs_)
+        arcs.push_back({{"id", id}, {"center", a.center}, {"start", a.start}, {"end", a.end}, {"construction", a.construction}});
     for (const auto& [id, c] : constraints_)
         cns.push_back({{"id", id}, {"type", kindName(c.kind)}, {"a", c.a}, {"b", c.b}, {"value", c.value}});
     json attachment = nullptr;
@@ -328,6 +382,7 @@ json Sketch::toJson() const
             {"points", pts},
             {"lines", lns},
             {"circles", cls},
+            {"arcs", arcs},
             {"constraints", cns}};
 }
 
@@ -410,6 +465,22 @@ Result<Sketch> Sketch::fromJson(const json& j)
         if (!s.points_.contains(c.center) || !(c.radius > 0))
             return bad("circle references missing center or has bad radius");
         s.circles_[eid] = c;
+    }
+    // Arcs arrived after the first files were written: optional.
+    if (j.contains("arcs")) {
+        if (!j["arcs"].is_array())
+            return bad("invalid arcs");
+        for (const auto& e : j["arcs"]) {
+            EntityId eid{};
+            if (!e.is_object() || !takeId(e, eid) || !idField(e, "center") || !idField(e, "start") || !idField(e, "end"))
+                return bad("invalid arc");
+            SketchArc a{e["center"].get<EntityId>(), e["start"].get<EntityId>(), e["end"].get<EntityId>(),
+                        e.value("construction", false)};
+            if (!s.points_.contains(a.center) || !s.points_.contains(a.start) || !s.points_.contains(a.end)
+                || a.center == a.start || a.center == a.end || a.start == a.end)
+                return bad("arc references missing or repeated points");
+            s.arcs_[eid] = a;
+        }
     }
     for (const auto& e : j["constraints"]) {
         EntityId eid{};

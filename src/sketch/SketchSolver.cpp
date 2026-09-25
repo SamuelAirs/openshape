@@ -43,6 +43,29 @@ public:
             unknowns_.push_back(circle.rad);
             circles_[id] = circle;
         }
+        for (const auto& [id, a] : sketch_.arcs()) {
+            // Counterclockwise from start to end; ArcRules ties the end points
+            // to center + radius at the two angles.
+            const Vec2 c = sketch_.point(a.center)->position;
+            const Vec2 s = sketch_.point(a.start)->position;
+            const Vec2 e = sketch_.point(a.end)->position;
+            const double a0 = std::atan2(s.y - c.y, s.x - c.x);
+            double a1 = std::atan2(e.y - c.y, e.x - c.x);
+            if (a1 <= a0)
+                a1 += 2 * kPi;
+            GCS::Arc arc;
+            arc.center = points_.at(a.center);
+            arc.start = points_.at(a.start);
+            arc.end = points_.at(a.end);
+            arc.rad = param((s - c).length());
+            arc.startAngle = param(a0);
+            arc.endAngle = param(a1);
+            unknowns_.push_back(arc.rad);
+            unknowns_.push_back(arc.startAngle);
+            unknowns_.push_back(arc.endAngle);
+            arcs_[id] = arc;
+            system_.addConstraintArcRules(arcs_[id], 0); // tag 0: structural, never reported as a conflict
+        }
         for (const auto& [id, c] : sketch_.constraints()) {
             const int tag = static_cast<int>(id);
             switch (c.kind) {
@@ -78,7 +101,10 @@ public:
                 if (lines_.contains(c.a))
                     system_.addConstraintEqualLength(lines_.at(c.a), lines_.at(c.b), tag);
                 else
-                    system_.addConstraintEqualRadius(circles_.at(c.a), circles_.at(c.b), tag);
+                    system_.addConstraintEqualRadius(round(c.a), round(c.b), tag);
+                break;
+            case ConstraintKind::Radius:
+                system_.addConstraintArcRadius(arcs_.at(c.a), param(c.value), tag);
                 break;
             case ConstraintKind::Tangent:
                 if (lines_.contains(c.a)) {
@@ -86,14 +112,14 @@ public:
                     const SketchLine& l = sketch_.lines().at(c.a);
                     const Vec2 p = sketch_.point(l.start)->position;
                     const Vec2 d = sketch_.point(l.end)->position - p;
-                    const Vec2 q = sketch_.point(sketch_.circles().at(c.b).center)->position - p;
-                    system_.addConstraintTangent(lines_.at(c.a), circles_.at(c.b), d.x * q.y - d.y * q.x > 0, tag);
+                    const Vec2 q = roundCenter(c.b) - p;
+                    system_.addConstraintTangent(lines_.at(c.a), round(c.b), d.x * q.y - d.y * q.x > 0, tag);
                 } else {
-                    system_.addConstraintTangent(circles_.at(c.a), circles_.at(c.b), tag);
+                    system_.addConstraintTangent(round(c.a), round(c.b), tag);
                 }
                 break;
             case ConstraintKind::Concentric:
-                system_.addConstraintP2PCoincident(circles_.at(c.a).center, circles_.at(c.b).center, tag);
+                system_.addConstraintP2PCoincident(round(c.a).center, round(c.b).center, tag);
                 break;
             case ConstraintKind::PointOnLine:
                 system_.addConstraintPointOnLine(points_.at(c.a), lines_.at(c.b), tag);
@@ -104,6 +130,20 @@ public:
                 break;
             }
         }
+    }
+
+    // Circles and arcs as solver circles (an arc is a circle with angles).
+    GCS::Circle& round(EntityId id)
+    {
+        if (auto it = circles_.find(id); it != circles_.end())
+            return it->second;
+        return arcs_.at(id);
+    }
+    Vec2 roundCenter(EntityId id) const
+    {
+        if (const SketchCircle* c = sketch_.circle(id))
+            return sketch_.point(c->center)->position;
+        return sketch_.point(sketch_.arc(id)->center)->position;
     }
 
     // Adds a soft constraint pulling a point to a target (interactive drag).
@@ -175,6 +215,7 @@ private:
     std::map<EntityId, GCS::Point> points_;
     std::map<EntityId, GCS::Line> lines_;
     std::map<EntityId, GCS::Circle> circles_;
+    std::map<EntityId, GCS::Arc> arcs_;
     GCS::Point dragTarget_;
     GCS::System system_;
 };

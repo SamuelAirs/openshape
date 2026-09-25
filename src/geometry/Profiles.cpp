@@ -164,6 +164,12 @@ Result<std::vector<Region>> findRegions(const PlaneFrame& plane, const std::vect
                 tools.Append(BRepBuilderAPI_MakeEdge(toPnt(c.start), toPnt(c.end)).Edge());
                 extend(c.start, 0);
                 extend(c.end, 0);
+            } else if (c.kind == PlanarCurve::Kind::Arc) {
+                if (c.radius < kMinLength || (c.end - c.start).length() < kMinLength)
+                    continue;
+                const gp_Circ circle(gp_Ax2(toPnt(c.center), toDir(n), toDir(plane.xAxis)), c.radius);
+                tools.Append(BRepBuilderAPI_MakeEdge(circle, toPnt(c.start), toPnt(c.end)).Edge());
+                extend(c.center, c.radius);
             } else {
                 if (c.radius < kMinLength)
                     continue;

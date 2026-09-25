@@ -308,3 +308,62 @@ TEST(Sketch, NewConstraintKindsAndConstructionRoundTrip)
     EXPECT_FALSE(back.value().line(b)->construction);
     EXPECT_TRUE(back.value().circle(c)->construction);
 }
+
+TEST(Sketch, ArcKeepsItsEndsOnTheCircle)
+{
+    Sketch s;
+    const EntityId c = s.addPoint({0, 0});
+    const EntityId a = s.addPoint({8, 0});
+    const EntityId b = s.addPoint({0, 8});
+    const EntityId arc = s.addArc(c, a, b);
+    ASSERT_NE(arc, kNoEntity);
+    EXPECT_EQ(s.addArc(c, a, a), kNoEntity); // repeated point
+    auto report = solve(s);
+    ASSERT_TRUE(report.ok) << report.message;
+    EXPECT_EQ(report.degreesOfFreedom, 5); // center (2) + radius + two angles
+    ASSERT_NE(s.addConstraint({ConstraintKind::Radius, arc, kNoEntity, 12.5}), kNoEntity);
+    report = solve(s);
+    ASSERT_TRUE(report.ok) << report.message;
+    EXPECT_EQ(report.degreesOfFreedom, 4);
+    EXPECT_NEAR((pos(s, a) - pos(s, c)).length(), 12.5, 1e-7);
+    EXPECT_NEAR((pos(s, b) - pos(s, c)).length(), 12.5, 1e-7);
+    EXPECT_NEAR(s.arcRadius(arc), 12.5, 1e-7);
+}
+
+TEST(Sketch, ArcTangentToLineAndRemoval)
+{
+    Sketch s;
+    const EntityId l = line(s, {-20, -3}, {20, -3});
+    const EntityId c = s.addPoint({0, 4});
+    const EntityId arc = s.addArc(c, s.addPoint({6, 4}), s.addPoint({-6, 4}));
+    ASSERT_NE(s.addConstraint({ConstraintKind::Tangent, l, arc}), kNoEntity);
+    const auto report = solve(s);
+    ASSERT_TRUE(report.ok) << report.message;
+    const Vec2 p = pos(s, s.line(l)->start), d = dir(s, l);
+    EXPECT_NEAR(std::abs(cross(d, pos(s, c) - p)) / d.length(), s.arcRadius(arc), 1e-7);
+    // Removing the arc drops its now unused points and its constraint.
+    const std::size_t pointsBefore = s.points().size();
+    ASSERT_TRUE(s.remove(arc));
+    EXPECT_EQ(s.arcs().size(), 0u);
+    EXPECT_EQ(s.points().size(), pointsBefore - 3);
+    EXPECT_TRUE(s.constraints().empty());
+}
+
+TEST(Sketch, ArcsRoundTripAndOldFilesLoad)
+{
+    Sketch s;
+    const EntityId arc = s.addArc(s.addPoint({0, 0}), s.addPoint({5, 0}), s.addPoint({0, 5}), true);
+    s.addConstraint({ConstraintKind::Radius, arc, kNoEntity, 5});
+    auto json = s.toJson();
+    auto back = Sketch::fromJson(json);
+    ASSERT_TRUE(back.ok()) << back.developerMessage();
+    ASSERT_NE(back.value().arc(arc), nullptr);
+    EXPECT_TRUE(back.value().arc(arc)->construction);
+    EXPECT_EQ(back.value().constraints().size(), 1u);
+    // A sketch saved before arcs existed has no "arcs" entry.
+    Sketch plain;
+    line(plain, {0, 0}, {10, 0});
+    auto oldJson = plain.toJson();
+    oldJson.erase("arcs");
+    EXPECT_TRUE(Sketch::fromJson(oldJson).ok());
+}

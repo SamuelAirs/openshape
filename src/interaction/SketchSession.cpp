@@ -44,6 +44,30 @@ double sign(double v)
     return v < 0 ? -1.0 : 1.0;
 }
 
+// Angle of `p` around `c`, and a counterclockwise sweep in [0, 2pi).
+double angleOf(Vec2 c, Vec2 p)
+{
+    return std::atan2(p.y - c.y, p.x - c.x);
+}
+double ccw(double from, double to)
+{
+    double d = std::fmod(to - from, 2 * kPi);
+    return d < 0 ? d + 2 * kPi : d;
+}
+
+// Circle through three points; nullopt when they are (nearly) collinear.
+std::optional<std::pair<Vec2, double>> circleThrough(Vec2 a, Vec2 b, Vec2 c)
+{
+    const double d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+    const double scale = std::max({(b - a).length(), (c - a).length(), 1e-9});
+    if (std::abs(d) < 1e-6 * scale * scale)
+        return std::nullopt;
+    const double a2 = a.x * a.x + a.y * a.y, b2 = b.x * b.x + b.y * b.y, c2 = c.x * c.x + c.y * c.y;
+    const Vec2 center{(a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d,
+                      (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d};
+    return std::make_pair(center, (a - center).length());
+}
+
 } // namespace
 
 SketchSession::SketchSession(doc::Document& document, cmd::UndoStack& undoStack, const Uuid& sketchId)
@@ -70,7 +94,8 @@ void SketchSession::syncFromDocument()
     if (working_.solveReport().degreesOfFreedom < 0)
         (void)sketch::solve(working_); // loaded from file: compute DOF for display
     std::erase_if(selected_, [&](sketch::EntityId id) {
-        return !working_.point(id) && !working_.line(id) && !working_.circle(id) && !working_.constraint(id);
+        return !working_.point(id) && !working_.line(id) && !working_.circle(id) && !working_.arc(id)
+            && !working_.constraint(id);
     });
     regionsChanged();
 }
@@ -197,6 +222,22 @@ sketch::EntityId SketchSession::pickEntity(Vec2 screen, const Camera& camera, Po
             best = id;
         }
     }
+    for (const auto& [id, a] : working_.arcs()) {
+        const auto local = toLocal(screen, camera);
+        if (!local)
+            continue;
+        const Vec2 center = working_.point(a.center)->position;
+        const double a0 = angleOf(center, working_.point(a.start)->position);
+        const double sweep = ccw(a0, angleOf(center, working_.point(a.end)->position));
+        if (ccw(a0, angleOf(center, *local)) > sweep)
+            continue; // beside the arc, not on it
+        const double pixel = camera.pixelSize(working_.plane().toWorld(center));
+        const double d = std::abs((*local - center).length() - working_.arcRadius(id)) / pixel;
+        if (d < bestDistance) {
+            bestDistance = d;
+            best = id;
+        }
+    }
     return best;
 }
 
@@ -217,6 +258,7 @@ void SketchSession::beginShape(const Snap& at)
     case SketchTool::Line:
         inputs_ = {{"length", "L", "", false, 0}};
         break;
+    case SketchTool::Arc: // the radius input appears once the end is placed
     case SketchTool::Select:
         break;
     }
@@ -225,6 +267,7 @@ void SketchSession::beginShape(const Snap& at)
 void SketchSession::resetShape()
 {
     anchor_.reset();
+    arcEnd_.reset();
     chainStart_ = sketch::kNoEntity;
     inputs_.clear();
     focusedInput_ = 0;
@@ -267,10 +310,47 @@ Vec2 SketchSession::constrainedCursor() const
             c = a + d * (*dia / 2);
         }
         break;
+    case SketchTool::Arc:
     case SketchTool::Select:
         break;
     }
     return c;
+}
+
+std::optional<SketchSession::ArcShape> SketchSession::arcShape() const
+{
+    if (!anchor_ || !arcEnd_)
+        return std::nullopt;
+    const Vec2 a = anchor_->position, b = arcEnd_->position, bulge = cursor_.position;
+    ArcShape arc;
+    Vec2 onArc = bulge; // a point the arc must pass through (decides its direction)
+    if (const auto r = input("radius")) {
+        // Center on the far side of the chord from the pointer: the arc bulges
+        // toward the pointer (the shorter arc for a radius above half the chord).
+        const Vec2 m = (a + b) * 0.5, chord = b - a;
+        const double half = chord.length() / 2;
+        if (*r < half - 1e-9)
+            return std::nullopt;
+        Vec2 n{-chord.y, chord.x};
+        n = n * (1.0 / std::max(n.length(), 1e-12));
+        if ((bulge - m).x * n.x + (bulge - m).y * n.y < 0)
+            n = n * -1.0;
+        const double h = std::sqrt(std::max(*r * *r - half * half, 0.0));
+        arc.center = m - n * h;
+        arc.radius = *r;
+        onArc = arc.center + n * *r;
+    } else {
+        const auto circle = circleThrough(a, b, bulge);
+        if (!circle)
+            return std::nullopt;
+        arc.center = circle->first;
+        arc.radius = circle->second;
+    }
+    const double a0 = angleOf(arc.center, a);
+    arc.swapped = ccw(a0, angleOf(arc.center, onArc)) > ccw(a0, angleOf(arc.center, b));
+    arc.start = arc.swapped ? b : a;
+    arc.end = arc.swapped ? a : b;
+    return arc;
 }
 
 bool SketchSession::finishShape(const Snap& endSnap)
@@ -351,6 +431,39 @@ bool SketchSession::finishShape(const Snap& endSnap)
             beginShape(nextStart);
             chainStart_ = keepChain;
         }
+        return true;
+    }
+    case SketchTool::Arc: {
+        if (!arcEnd_) {
+            // Second click: where the arc ends. The third click (or a typed
+            // radius) bends it.
+            if ((end.position - start.position).length() < kTiny || (end.point != sketch::kNoEntity && end.point == start.point))
+                return false;
+            arcEnd_ = end;
+            inputs_ = {{"radius", "R", "", false, 0}};
+            focusedInput_ = 0;
+            return true;
+        }
+        cursor_ = endSnap; // the bulge point is where the pointer is, not snapped by typing
+        const auto arc = arcShape();
+        if (!arc) {
+            message(input("radius") ? "The radius must be at least half the distance between the ends."
+                                    : "Move the pointer off the line between the ends to bend the arc.");
+            return false;
+        }
+        const Snap& first = arc->swapped ? *arcEnd_ : start;
+        const Snap& last = arc->swapped ? start : *arcEnd_;
+        const sketch::EntityId s = first.point != sketch::kNoEntity ? first.point : next.addPoint(arc->start);
+        const sketch::EntityId e = last.point != sketch::kNoEntity ? last.point : next.addPoint(arc->end);
+        const sketch::EntityId center = next.addPoint(arc->center);
+        const sketch::EntityId id = next.addArc(center, s, e);
+        if (id == sketch::kNoEntity)
+            return false;
+        if (const auto r = input("radius"))
+            next.addConstraint({sketch::ConstraintKind::Radius, id, sketch::kNoEntity, *r});
+        if (!commit(std::move(next), "Arc"))
+            return false;
+        resetShape();
         return true;
     }
     case SketchTool::Select:
@@ -637,12 +750,14 @@ std::vector<ContextAction> SketchSession::contextActions() const
     std::vector<ContextAction> actions;
     if (selected_.empty())
         return actions;
-    std::size_t points = 0, lines = 0, circles = 0;
+    std::size_t points = 0, lines = 0, circles = 0, arcs = 0;
     for (auto id : selected_) {
         points += working_.point(id) ? 1 : 0;
         lines += working_.line(id) ? 1 : 0;
         circles += working_.circle(id) ? 1 : 0;
+        arcs += working_.arc(id) ? 1 : 0;
     }
+    const std::size_t round = circles + arcs;
     if (lines >= 1 && points == 0 && circles == 0) {
         actions.push_back({"horizontal", "Horizontal", false});
         actions.push_back({"vertical", "Vertical", false});
@@ -651,6 +766,8 @@ std::vector<ContextAction> SketchSession::contextActions() const
     }
     if (circles == 1 && selected_.size() == 1)
         actions.push_back({"diameter", "Diameter", false});
+    if (arcs == 1 && selected_.size() == 1)
+        actions.push_back({"radius", "Radius", false});
     if (points == 2 && selected_.size() == 2) {
         actions.push_back({"coincident", "Coincident", false});
         // Position one point relative to another (e.g. a hole from the origin).
@@ -662,18 +779,18 @@ std::vector<ContextAction> SketchSession::contextActions() const
             actions.push_back({"parallel", "Parallel", false});
             actions.push_back({"perpendicular", "Perpendicular", false});
             actions.push_back({"equal", "Equal", false});
-        } else if (circles == 2) {
+        } else if (round == 2) {
             actions.push_back({"equal", "Equal", false});
             actions.push_back({"concentric", "Concentric", false});
             actions.push_back({"tangent", "Tangent", false});
-        } else if (lines == 1 && circles == 1) {
+        } else if (lines == 1 && round == 1) {
             actions.push_back({"tangent", "Tangent", false});
         } else if (lines == 1 && points == 1) {
             actions.push_back({"online", "On line", false});
             actions.push_back({"midpoint", "Midpoint", false});
         }
     }
-    if (lines + circles > 0) {
+    if (lines + round > 0) {
         // Construction curves guide the drawing but never become profiles.
         bool allConstruction = true;
         for (auto id : selected_) {
@@ -681,6 +798,8 @@ std::vector<ContextAction> SketchSession::contextActions() const
                 allConstruction = allConstruction && l->construction;
             if (const auto* c = working_.circle(id))
                 allConstruction = allConstruction && c->construction;
+            if (const auto* a = working_.arc(id))
+                allConstruction = allConstruction && a->construction;
         }
         actions.push_back({"construction", "Construction", allConstruction});
     }
@@ -725,7 +844,7 @@ Status SketchSession::triggerAction(const std::string& id)
         // Order the pair the way the constraint expects: line before circle,
         // point before line.
         sketch::EntityId a = selected_[0], b = selected_[1];
-        if ((working_.circle(a) && working_.line(b)) || (working_.line(a) && working_.point(b)))
+        if ((working_.isRound(a) && working_.line(b)) || (working_.line(a) && working_.point(b)))
             std::swap(a, b);
         using K = sketch::ConstraintKind;
         const K kind = id == "parallel" ? K::Parallel : id == "perpendicular" ? K::Perpendicular : id == "equal" ? K::Equal
@@ -738,6 +857,10 @@ Status SketchSession::triggerAction(const std::string& id)
             {"parallel", "Parallel"}, {"perpendicular", "Perpendicular"}, {"equal", "Equal"}, {"concentric", "Concentric"},
             {"tangent", "Tangent"},   {"online", "On line"},             {"midpoint", "Midpoint"}};
         label = labels.at(id);
+    } else if (id == "radius" && selected_.size() == 1 && working_.arc(selected_.front())) {
+        next.addConstraint({sketch::ConstraintKind::Radius, selected_.front(), sketch::kNoEntity,
+                            working_.arcRadius(selected_.front())});
+        label = "Radius";
     } else if (id == "construction") {
         bool allConstruction = true;
         for (auto e : selected_) {
@@ -745,6 +868,8 @@ Status SketchSession::triggerAction(const std::string& id)
                 allConstruction = allConstruction && l->construction;
             if (const auto* c = working_.circle(e))
                 allConstruction = allConstruction && c->construction;
+            if (const auto* a = working_.arc(e))
+                allConstruction = allConstruction && a->construction;
         }
         for (auto e : selected_)
             next.setConstruction(e, !allConstruction);
@@ -788,6 +913,10 @@ std::string SketchSession::hintText() const
         return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center";
     case SketchTool::Line:
         return anchor_ ? "Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line" : "Click the start point";
+    case SketchTool::Arc:
+        if (!anchor_)
+            return "Click where the arc starts";
+        return arcEnd_ ? "Move to bend the arc and click, or type a radius and press Enter" : "Click where the arc ends";
     case SketchTool::Select:
         break;
     }
@@ -841,6 +970,16 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             label.text = "\xC3\x98" + trimmed(c.value, unit);
             break;
         }
+        case sketch::ConstraintKind::Radius: {
+            const auto* arc = working_.arc(c.a);
+            const Vec2 center = working_.point(arc->center)->position;
+            const double a0 = angleOf(center, working_.point(arc->start)->position);
+            const double mid = a0 + ccw(a0, angleOf(center, working_.point(arc->end)->position)) / 2;
+            const double r = working_.arcRadius(c.a) + offset;
+            label.screen = screen(center + Vec2{std::cos(mid), std::sin(mid)} * r);
+            label.text = "R" + trimmed(c.value, unit);
+            break;
+        }
         default:
             continue;
         }
@@ -871,6 +1010,10 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             } else if (in.key == "length") {
                 measured = (c - a).length();
                 label.screen = screen((a + c) * 0.5) + Vec2{0, -26};
+            } else if (in.key == "radius") {
+                const auto arc = arcShape();
+                measured = arc ? arc->radius : 0;
+                label.screen = screen(cursor_.position) + Vec2{40, -18};
             }
             label.text = in.locked ? in.text : trimmed(measured, unit);
             out.push_back(label);
@@ -933,6 +1076,18 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                              styleOf(id, l.construction)});
     for (const auto& [id, c] : working_.circles())
         addCircle(working_.point(c.center)->position, c.radius, styleOf(id, c.construction));
+    auto addArc = [&](Vec2 center, double radius, Vec2 from, Vec2 to, SketchStyle style) {
+        const double a0 = angleOf(center, from), sweep = ccw(a0, angleOf(center, to));
+        const int n = std::max(2, int(std::ceil(sweep / (2 * kPi) * kCircleSegments)));
+        for (int i = 0; i < n; ++i) {
+            const double t0 = a0 + sweep * i / n, t1 = a0 + sweep * (i + 1) / n;
+            out.lines.push_back({plane.toWorld(center + Vec2{std::cos(t0), std::sin(t0)} * radius),
+                                 plane.toWorld(center + Vec2{std::cos(t1), std::sin(t1)} * radius), style});
+        }
+    };
+    for (const auto& [id, arc] : working_.arcs())
+        addArc(working_.point(arc.center)->position, working_.arcRadius(id), working_.point(arc.start)->position,
+               working_.point(arc.end)->position, styleOf(id, arc.construction));
     for (const auto& [id, p] : working_.points())
         out.points.push_back({plane.toWorld(p.position), styleOf(id, false)});
 
@@ -952,6 +1107,16 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
             break;
         case SketchTool::Line:
             out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Preview});
+            break;
+        case SketchTool::Arc:
+            if (!arcEnd_) {
+                out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Guide}); // the chord so far
+            } else if (const auto arc = arcShape()) {
+                addArc(arc->center, arc->radius, arc->start, arc->end, SketchStyle::Preview);
+                out.points.push_back({plane.toWorld(arcEnd_->position), SketchStyle::Preview});
+            } else {
+                out.lines.push_back({plane.toWorld(a), plane.toWorld(arcEnd_->position), SketchStyle::Guide});
+            }
             break;
         case SketchTool::Select:
             break;

@@ -50,7 +50,7 @@ Item {
             }
         }
         if (!(event.modifiers & Qt.ControlModifier)) {
-            const tools = { "l": "line", "r": "rectangle", "c": "circle", "s": "select" }
+            const tools = { "l": "line", "r": "rectangle", "c": "circle", "a": "arc", "s": "select" }
             const tool = tools[event.text.toLowerCase()]
             if (tool !== undefined && !app.sketchDrawing) {
                 app.setSketchTool(tool)
@@ -97,7 +97,8 @@ Item {
                     { id: "select", label: "Select", key: "S" },
                     { id: "line", label: "Line", key: "L" },
                     { id: "rectangle", label: "Rectangle", key: "R" },
-                    { id: "circle", label: "Circle", key: "C" }
+                    { id: "circle", label: "Circle", key: "C" },
+                    { id: "arc", label: "Arc", key: "A" }
                 ]
                 delegate: ActionButton {
                     required property var modelData

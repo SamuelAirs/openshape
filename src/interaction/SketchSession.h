@@ -17,7 +17,7 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle };
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
@@ -112,6 +112,14 @@ private:
     void resetShape();
     // Current end/radius point honoring typed values.
     Vec2 constrainedCursor() const;
+    // Arc tool: the arc from the anchor to arcEnd_ through the cursor (or with
+    // the typed radius on the cursor's side), counterclockwise start -> end.
+    struct ArcShape {
+        Vec2 center, start, end;
+        double radius = 0;
+        bool swapped = false; // start/end exchanged to keep it counterclockwise
+    };
+    std::optional<ArcShape> arcShape() const;
     bool finishShape(const Snap& end);
     bool commit(sketch::Sketch next, const std::string& label);
     std::optional<double> input(const std::string& key) const;
@@ -128,6 +136,7 @@ private:
     Snap cursor_;
     bool cursorValid_ = false;
     std::optional<Snap> anchor_;                        // first point of the shape being drawn
+    std::optional<Snap> arcEnd_;                        // Arc tool: second click (the end); the third bends it
     sketch::EntityId chainStart_ = sketch::kNoEntity;   // first point of a line chain
     std::vector<Input> inputs_;
     std::size_t focusedInput_ = 0;

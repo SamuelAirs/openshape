@@ -1310,6 +1310,22 @@ RenderScene InteractionController::renderScene() const
                                     c.construction ? SketchStyle::Construction : curveStyle});
             }
         }
+        for (const auto& [id, a] : sk->arcs()) {
+            const Vec2 center = sk->point(a.center)->position;
+            const Vec2 s = sk->point(a.start)->position, e = sk->point(a.end)->position;
+            const double a0 = std::atan2(s.y - center.y, s.x - center.x);
+            double sweep = std::atan2(e.y - center.y, e.x - center.x) - a0;
+            while (sweep <= 0)
+                sweep += 2 * kPi;
+            const double r = sk->arcRadius(id);
+            const int n = std::max(2, int(std::ceil(sweep / (2 * kPi) * 72)));
+            for (int i = 0; i < n; ++i) {
+                const double t0 = a0 + sweep * i / n, t1 = a0 + sweep * (i + 1) / n;
+                rs.lines.push_back({plane.toWorld(center + Vec2{std::cos(t0), std::sin(t0)} * r),
+                                    plane.toWorld(center + Vec2{std::cos(t1), std::sin(t1)} * r),
+                                    a.construction ? SketchStyle::Construction : curveStyle});
+            }
+        }
         if (const auto* entry = scene_.sketch(sk->id())) {
             for (std::size_t i = 0; i < entry->meshes.size(); ++i) {
                 SketchStyle style = highlighted ? SketchStyle::Hovered : SketchStyle::Normal;

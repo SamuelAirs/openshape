@@ -17,10 +17,11 @@ struct PlaneFrame {
 
 // A curve lying in the plane (world coordinates).
 struct PlanarCurve {
-    enum class Kind { Segment, Circle } kind = Kind::Segment;
-    Vec3 start, end;   // Segment
-    Vec3 center;       // Circle
-    double radius = 0; // Circle
+    enum class Kind { Segment, Circle, Arc } kind = Kind::Segment;
+    Vec3 start, end;   // Segment, Arc
+    Vec3 center;       // Circle, Arc
+    double radius = 0; // Circle, Arc
+    // An Arc runs counterclockwise about the plane normal from start to end.
 };
 
 // A bounded region enclosed by the curves: one candidate profile.

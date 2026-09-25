@@ -439,6 +439,57 @@ TEST(SketchInteraction, ParallelAndConstructionFromSelection)
         EXPECT_FALSE(l.construction);
 }
 
+// Arc tool: start, end, then a third click bends it through that point; a
+// typed radius gives an exact arc. A line closed by an arc extrudes.
+TEST(SketchInteraction, ArcToolThreeClicksAndTypedRadius)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.setSketchTool(SketchTool::Arc);
+    h.click(h.sketchScreen({20, 0})); // the line's end
+    h.click(h.sketchScreen({0, 0}));  // back to the origin
+    EXPECT_TRUE(h.session().isDrawing());
+    h.click(h.sketchScreen({10, 5})); // bend it up through (10, 5)
+    EXPECT_FALSE(h.session().isDrawing());
+    ASSERT_EQ(h.session().sketch().arcs().size(), 1u);
+    const sketch::EntityId arcId = h.session().sketch().arcs().begin()->first;
+    // Circle through (0,0), (20,0), (10,5): center (10,-7.5), radius 12.5.
+    EXPECT_NEAR(h.session().sketch().arcRadius(arcId), 12.5, 1e-6);
+
+    const Uuid sketchId = h.session().sketchId();
+    h.controller.finishSketch();
+    const auto regions = doc::sketchRegions(*h.document.sketch(sketchId));
+    ASSERT_TRUE(regions.ok());
+    ASSERT_EQ(regions.value().size(), 1u);
+    const double half = std::asin(10.0 / 12.5); // half the central angle
+    const double segment = 12.5 * 12.5 / 2 * (2 * half - std::sin(2 * half));
+    EXPECT_NEAR(regions.value()[0].area, segment, 1e-6);
+    h.click(h.controller.camera().project(h.document.sketch(sketchId)->plane().toWorld({10, 2})));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_EQ(h.controller.setValueText("4"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), segment * 4, 1e-3);
+
+    // A typed radius: exact, with a Radius dimension.
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Front).ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Arc);
+    h.click(h.sketchScreen({30, 0}));
+    h.click(h.sketchScreen({50, 0}));
+    h.move(h.sketchScreen({40, 3}));
+    h.type("15");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.session().sketch().arcs().size(), 1u);
+    EXPECT_NEAR(h.session().sketch().arcRadius(h.session().sketch().arcs().begin()->first), 15.0, 1e-7);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Radius), 1u);
+}
+
 TEST(SketchInteraction, UndoPastSketchCreationLeavesSketchMode)
 {
     Harness h;

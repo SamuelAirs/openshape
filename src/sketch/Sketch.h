@@ -58,6 +58,16 @@ struct SketchCircle {
     bool construction = false;
 };
 
+// A circular arc, counterclockwise (in sketch coordinates) from `start` to
+// `end` around `center`. Its radius is the distance from center to start;
+// the solver keeps the end on the same circle.
+struct SketchArc {
+    EntityId center = kNoEntity;
+    EntityId start = kNoEntity;
+    EntityId end = kNoEntity;
+    bool construction = false;
+};
+
 enum class ConstraintKind {
     Coincident,         // points a, b
     Horizontal,         // line a
@@ -73,6 +83,7 @@ enum class ConstraintKind {
     Concentric,         // circles a, b
     PointOnLine,        // point a on the (infinite) line b
     Midpoint,           // point a at the middle of line b
+    Radius,             // arc a; value > 0
 };
 
 struct SketchConstraint {
@@ -84,7 +95,7 @@ struct SketchConstraint {
     bool isDimension() const
     {
         return kind == ConstraintKind::Distance || kind == ConstraintKind::HorizontalDistance
-            || kind == ConstraintKind::VerticalDistance || kind == ConstraintKind::Diameter;
+            || kind == ConstraintKind::VerticalDistance || kind == ConstraintKind::Diameter || kind == ConstraintKind::Radius;
     }
 };
 
@@ -131,6 +142,9 @@ public:
     EntityId addPoint(Vec2 position, bool fixed = false);
     EntityId addLine(EntityId start, EntityId end, bool construction = false);
     EntityId addCircle(EntityId center, double radius, bool construction = false);
+    // The three points must exist and differ; start and end should already lie
+    // on a circle around center (the solver keeps them there).
+    EntityId addArc(EntityId center, EntityId start, EntityId end, bool construction = false);
     EntityId addConstraint(const SketchConstraint& constraint);
     // Marks a line or circle as construction (never part of a profile).
     bool setConstruction(EntityId id, bool construction);
@@ -144,11 +158,17 @@ public:
     const std::map<EntityId, SketchPoint>& points() const { return points_; }
     const std::map<EntityId, SketchLine>& lines() const { return lines_; }
     const std::map<EntityId, SketchCircle>& circles() const { return circles_; }
+    const std::map<EntityId, SketchArc>& arcs() const { return arcs_; }
     const std::map<EntityId, SketchConstraint>& constraints() const { return constraints_; }
 
     const SketchPoint* point(EntityId id) const;
     const SketchLine* line(EntityId id) const;
     const SketchCircle* circle(EntityId id) const;
+    const SketchArc* arc(EntityId id) const;
+    // Distance from an arc's center to its start (0 for unknown ids).
+    double arcRadius(EntityId id) const;
+    // Circles and arcs.
+    bool isRound(EntityId id) const { return circles_.contains(id) || arcs_.contains(id); }
     const SketchConstraint* constraint(EntityId id) const;
     SketchPoint* point(EntityId id);
     SketchCircle* circle(EntityId id);
@@ -156,7 +176,7 @@ public:
 
     // Constraints that mention an entity directly.
     std::vector<EntityId> constraintsOn(EntityId id) const;
-    bool hasGeometry() const { return !lines_.empty() || !circles_.empty(); }
+    bool hasGeometry() const { return !lines_.empty() || !circles_.empty() || !arcs_.empty(); }
 
     // Last solver report (not persisted; recomputed by solve()).
     const SolveReport& solveReport() const { return report_; }
@@ -178,6 +198,7 @@ private:
     std::map<EntityId, SketchPoint> points_;
     std::map<EntityId, SketchLine> lines_;
     std::map<EntityId, SketchCircle> circles_;
+    std::map<EntityId, SketchArc> arcs_;
     std::map<EntityId, SketchConstraint> constraints_;
     EntityId nextId_ = kOriginId + 1;
     SolveReport report_;

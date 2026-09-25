@@ -35,6 +35,17 @@ std::vector<geom::PlanarCurve> worldCurves(const sketch::Sketch& sketch, const s
         c.radius = circle.radius;
         curves.push_back(c);
     }
+    for (const auto& [id, arc] : sketch.arcs()) {
+        if (arc.construction)
+            continue;
+        geom::PlanarCurve c;
+        c.kind = geom::PlanarCurve::Kind::Arc;
+        c.center = plane.toWorld(sketch.point(arc.center)->position);
+        c.start = plane.toWorld(sketch.point(arc.start)->position);
+        c.end = plane.toWorld(sketch.point(arc.end)->position);
+        c.radius = sketch.arcRadius(id);
+        curves.push_back(c);
+    }
     return curves;
 }
 

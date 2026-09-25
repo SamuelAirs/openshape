@@ -153,6 +153,7 @@ QString AppController::sketchTool() const
     case interact::SketchTool::Line: return QStringLiteral("line");
     case interact::SketchTool::Rectangle: return QStringLiteral("rectangle");
     case interact::SketchTool::Circle: return QStringLiteral("circle");
+    case interact::SketchTool::Arc: return QStringLiteral("arc");
     }
     return {};
 }
@@ -244,6 +245,8 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::Rectangle);
     else if (name == QLatin1String("circle"))
         interaction_->setSketchTool(interact::SketchTool::Circle);
+    else if (name == QLatin1String("arc"))
+        interaction_->setSketchTool(interact::SketchTool::Arc);
 }
 
 QString AppController::sketchType(const QString& text)
