@@ -290,3 +290,34 @@ TEST(SketchInteraction, DraggingAPointReshapes)
     EXPECT_TRUE(moved);
     EXPECT_TRUE(h.session().sketch().solveReport().ok);
 }
+
+TEST(SketchInteraction, PositionHoleFromOrigin)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Circle);
+    h.click(h.sketchScreen({10, 15}));
+    h.move(h.sketchScreen({13, 15}));
+    h.type("6");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.setSketchTool(SketchTool::Select);
+
+    // Select the origin, then Shift-select the circle center.
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({10, 15}), true);
+    ASSERT_EQ(h.session().selection().size(), 2u);
+    ASSERT_TRUE(h.controller.triggerAction("hdistance").ok());
+    ASSERT_TRUE(h.controller.triggerAction("vdistance").ok());
+    EXPECT_EQ(h.session().sketch().solveReport().degreesOfFreedom, 0) << "diameter + two positions";
+
+    sketch::EntityId hdim = sketch::kNoEntity;
+    for (const auto& [id, c] : h.session().sketch().constraints())
+        if (c.kind == sketch::ConstraintKind::HorizontalDistance)
+            hdim = id;
+    ASSERT_NE(hdim, sketch::kNoEntity);
+    EXPECT_EQ(h.session().setDimension(hdim, "12"), "");
+    const auto& circle = h.session().sketch().circles().begin()->second;
+    EXPECT_NEAR(h.session().sketch().point(circle.center)->position.x, 12.0, 1e-9);
+    EXPECT_NEAR(h.session().sketch().point(circle.center)->position.y, 15.0, 1e-9);
+}

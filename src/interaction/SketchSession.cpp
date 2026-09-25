@@ -651,8 +651,12 @@ std::vector<ContextAction> SketchSession::contextActions() const
     }
     if (circles == 1 && selected_.size() == 1)
         actions.push_back({"diameter", "Diameter", false});
-    if (points == 2 && selected_.size() == 2)
+    if (points == 2 && selected_.size() == 2) {
         actions.push_back({"coincident", "Coincident", false});
+        // Position one point relative to another (e.g. a hole from the origin).
+        actions.push_back({"hdistance", "Horizontal distance", false});
+        actions.push_back({"vdistance", "Vertical distance", false});
+    }
     const bool onlyOrigin = selected_.size() == 1 && selected_.front() == sketch::kOriginId;
     if (!onlyOrigin)
         actions.push_back({"delete", "Delete", false});
@@ -677,6 +681,14 @@ Status SketchSession::triggerAction(const std::string& id)
         next.addConstraint({sketch::ConstraintKind::Diameter, selected_.front(), sketch::kNoEntity,
                             working_.circle(selected_.front())->radius * 2});
         label = "Diameter";
+    } else if ((id == "hdistance" || id == "vdistance") && selected_.size() == 2 && working_.point(selected_[0])
+               && working_.point(selected_[1])) {
+        const Vec2 a = working_.point(selected_[0])->position;
+        const Vec2 b = working_.point(selected_[1])->position;
+        const bool horizontal = id == "hdistance";
+        next.addConstraint({horizontal ? sketch::ConstraintKind::HorizontalDistance : sketch::ConstraintKind::VerticalDistance,
+                            selected_[0], selected_[1], horizontal ? b.x - a.x : b.y - a.y});
+        label = horizontal ? "Horizontal distance" : "Vertical distance";
     } else if (id == "coincident" && selected_.size() == 2) {
         next.addConstraint({sketch::ConstraintKind::Coincident, selected_[0], selected_[1]});
         label = "Coincident";
