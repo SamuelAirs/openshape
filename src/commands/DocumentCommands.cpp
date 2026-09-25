@@ -71,6 +71,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Move: return "Move";
     case doc::FeatureKind::Combine: return "Combine";
     case doc::FeatureKind::Revolve: return "Revolve";
+    case doc::FeatureKind::Hole: return "Hole";
     }
     return "Add step";
 }

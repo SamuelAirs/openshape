@@ -488,8 +488,12 @@ std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex)
         info.midpoint = fromPnt(mid);
         info.tangent = fromVec(tangent).normalized();
         info.length = GCPnts_AbscissaPoint::Length(curve);
-        if (info.kind == CurveKind::Circle)
-            info.radius = curve.Circle().Radius();
+        if (info.kind == CurveKind::Circle) {
+            const gp_Circ circle = curve.Circle();
+            info.radius = circle.Radius();
+            info.center = fromPnt(circle.Location());
+            info.axis = fromDir(circle.Axis().Direction());
+        }
         return info;
     } catch (const Standard_Failure& failure) {
         OS_LOG(Warning, Kernel) << "edgeInfo(" << edgeIndex << ") failed: " << describeFailure(failure);

@@ -3,6 +3,7 @@
 #include "commands/Command.h"
 #include "commands/DocumentCommands.h"
 #include "document/Document.h"
+#include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
 
@@ -476,4 +477,59 @@ TEST(Interaction, MeasureBetweenTwoFaces)
     h.controller.pointerRelease(top);
     ASSERT_EQ(h.controller.selection().size(), 2u);
     EXPECT_EQ(h.controller.selectionSummary(), "Gap 20.00 mm \xC2\xB7 parallel");
+}
+
+// The heat-set insert helper: select a hole's rim, choose the insert size.
+TEST(Interaction, HeatSetInsertFromHoleRim)
+{
+    Harness h;
+    // 40 x 40 x 10 block with a 3 mm through-hole at the center (cut from a sketch).
+    auto block = std::make_unique<doc::BoxFeature>();
+    block->origin = {-20, -20, 0};
+    block->size = {40, 40, 10};
+    auto create = std::make_unique<cmd::CreateBodyCommand>("Block", std::move(block));
+    const Uuid id = create->bodyId();
+    ASSERT_TRUE(h.stack.push(std::move(create), h.document).ok());
+    auto sk = std::make_unique<sketch::Sketch>(Uuid::generate(), sketch::Plane::fromNormal({0, 0, 10}, {0, 0, 1}));
+    sk->addCircle(sketch::kOriginId, 1.5);
+    const Uuid sketchId = sk->id();
+    h.document.addSketch(std::move(sk));
+    auto regions = doc::sketchRegions(*h.document.sketch(sketchId)).value();
+    auto cut = std::make_unique<doc::ExtrudeFeature>();
+    cut->sketchId = sketchId;
+    cut->profiles = {doc::makeProfileRef(regions.front(), *h.document.sketch(sketchId))};
+    cut->distance = -10;
+    cut->mode = doc::ExtrudeMode::Cut;
+    cut->throughAll = true;
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(cut)), h.document).ok());
+    h.controller.documentChanged();
+    h.controller.fitAll(false);
+    const double holed = 16000.0 - kPi * 2.25 * 10;
+    ASSERT_NEAR(geom::volume(h.document.body(id)->shape()), holed, 1e-3);
+
+    // Click the top rim of the hole.
+    h.clickAt(h.screen({1.5, 0, 10}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Edge);
+    bool offered = false;
+    for (const auto& a : h.controller.contextActions())
+        offered = offered || a.id == "insert";
+    ASSERT_TRUE(offered) << "a hole rim offers the heat-set insert helper";
+
+    ASSERT_TRUE(h.controller.triggerAction("insert").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Heat-set insert M3");
+    EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 6.0) << "typical M3 depth, previewed right away";
+    EXPECT_TRUE(h.controller.operation()->hasPreview());
+
+    // Switch to M4, then apply.
+    ASSERT_TRUE(h.controller.triggerAction("preset:3").ok());
+    EXPECT_EQ(h.controller.operation()->title(), "Heat-set insert M4");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const double expected = holed - kPi * (2.8 * 2.8 - 1.5 * 1.5) * 8.5;
+    EXPECT_NEAR(geom::volume(h.document.body(id)->shape()), expected, 1e-3);
+    bool listed = false;
+    for (const auto& row : h.controller.historyRows())
+        listed = listed || (row.name == "Hole" && row.detail.find("M4 heat-set insert") != std::string::npos);
+    EXPECT_TRUE(listed);
 }

@@ -63,6 +63,8 @@ struct EdgeInfo {
     Vec3 tangent;        // unit tangent at mid parameter
     double length = 0;
     double radius = 0;   // for circles
+    Vec3 center;         // for circles
+    Vec3 axis;           // for circles (unit normal of the circle's plane)
 };
 
 } // namespace os::geom

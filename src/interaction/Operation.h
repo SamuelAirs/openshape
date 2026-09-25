@@ -209,6 +209,39 @@ private:
     Vec3 start_; // profile point the handle starts on
 };
 
+// Heat-set insert: drills a preset pilot hole at a circular rim. The arrow
+// points into the material; its value is the depth. Presets set both the
+// diameter and a typical depth.
+class InsertOperation final : public Operation {
+public:
+    static std::unique_ptr<InsertOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
+                                                   std::size_t presetIndex);
+
+    std::string title() const override { return "Heat-set insert " + preset().name; }
+    std::string valueLabel() const override { return "Depth"; }
+    bool allowsNegative() const override { return false; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Hole; }
+
+    std::size_t presetIndex() const { return presetIndex_; }
+    void setPreset(std::size_t index, const doc::Document& document);
+    double diameter() const { return diameter_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    struct Preset {
+        std::string name;
+        double diameter, depth;
+    };
+    Preset preset() const;
+    InsertOperation(Uuid bodyId, LinearManipulator m, doc::EdgeRef rim, std::size_t presetIndex)
+        : Operation(bodyId, std::move(m)), rim_(std::move(rim)), presetIndex_(presetIndex) {}
+    doc::EdgeRef rim_;
+    std::size_t presetIndex_;
+    double diameter_ = 0;
+};
+
 // Shell: hollows the body through the selected faces. The arrow starts on the
 // first face and points into the material; its length is the wall thickness.
 class ShellOperation final : public Operation {

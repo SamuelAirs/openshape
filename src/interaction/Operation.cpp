@@ -212,6 +212,48 @@ std::unique_ptr<cmd::Command> RevolveOperation::makeCommand(const doc::Document&
     return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
 }
 
+// ---- Heat-set insert --------------------------------------------------------------
+
+std::unique_ptr<InsertOperation> InsertOperation::create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
+                                                         std::size_t presetIndex)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body)
+        return nullptr;
+    const auto placement = doc::holePlacement(body->shape(), rimEdge);
+    const auto signature = geom::captureEdgeSignature(body->shape(), rimEdge);
+    if (!placement || !signature)
+        return nullptr;
+    presetIndex = std::min(presetIndex, doc::heatSetInsertPresets().size() - 1);
+    auto op = std::unique_ptr<InsertOperation>(new InsertOperation(
+        bodyId, LinearManipulator(placement->center, placement->direction), doc::EdgeRef{rimEdge, *signature}, presetIndex));
+    op->setPreset(presetIndex, document);
+    return op;
+}
+
+InsertOperation::Preset InsertOperation::preset() const
+{
+    const auto& p = doc::heatSetInsertPresets()[presetIndex_];
+    return {p.name, p.diameter, p.depth};
+}
+
+void InsertOperation::setPreset(std::size_t index, const doc::Document& document)
+{
+    presetIndex_ = std::min(index, doc::heatSetInsertPresets().size() - 1);
+    diameter_ = preset().diameter;
+    setValue(preset().depth, document); // preview right away
+}
+
+std::unique_ptr<doc::Feature> InsertOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::HoleFeature>();
+    feature->rim = rim_;
+    feature->diameter = diameter_;
+    feature->depth = value;
+    feature->preset = preset().name + " heat-set insert";
+    return feature;
+}
+
 // ---- Shell -----------------------------------------------------------------------
 
 std::unique_ptr<ShellOperation> ShellOperation::create(const doc::Document& document, const Uuid& bodyId,

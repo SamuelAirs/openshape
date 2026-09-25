@@ -497,6 +497,8 @@ void InteractionController::rebuildOperation()
     operation_.reset();
     if (selection_.empty()) {
         faceOperationKind_ = doc::FeatureKind::PushPull;
+        if (edgeOperationKind_ == doc::FeatureKind::Hole)
+            edgeOperationKind_ = doc::FeatureKind::Fillet;
         profileOperationKind_ = doc::FeatureKind::Extrude;
     }
     if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
@@ -514,7 +516,13 @@ void InteractionController::rebuildOperation()
         std::vector<int> edges;
         for (const auto& item : selection_.items())
             edges.push_back(item.index);
-        operation_ = EdgeOperation::create(*document_, *selection_.singleBody(), edges, edgeOperationKind_);
+        if (edgeOperationKind_ == doc::FeatureKind::Hole && edges.size() == 1)
+            operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
+        if (!operation_) {
+            if (edgeOperationKind_ == doc::FeatureKind::Hole)
+                edgeOperationKind_ = doc::FeatureKind::Fillet;
+            operation_ = EdgeOperation::create(*document_, *selection_.singleBody(), edges, edgeOperationKind_);
+        }
     } else if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Body) {
         operation_ = MoveOperation::create(*document_, selection_.items().front().bodyId);
     } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody()) {
@@ -734,6 +742,18 @@ std::vector<ContextAction> InteractionController::contextActions() const
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && operation_) {
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
+        // A hole's rim: offer the heat-set insert helper.
+        bool rim = false;
+        if (selection_.size() == 1)
+            if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
+                rim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
+        if (rim)
+            actions.push_back({"insert", "Heat-set insert", edgeOperationKind_ == doc::FeatureKind::Hole});
+        if (const auto* insert = dynamic_cast<const InsertOperation*>(operation_.get())) {
+            const auto& presets = doc::heatSetInsertPresets();
+            for (std::size_t i = 0; i < presets.size(); ++i)
+                actions.push_back({"preset:" + std::to_string(i), presets[i].name, insert->presetIndex() == i});
+        }
     }
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
         if (operation_ && operation_->featureKind() == doc::FeatureKind::Move)
@@ -820,6 +840,20 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "sketch")
         return startSketch();
+    if (id == "insert") {
+        edgeOperationKind_ = doc::FeatureKind::Hole;
+        rebuildOperation();
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* insert = dynamic_cast<InsertOperation*>(operation_.get()); insert && id.rfind("preset:", 0) == 0) {
+        insertPreset_ = std::stoul(id.substr(7));
+        insert->setPreset(insertPreset_, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "fillet" || id == "chamfer") {
         const auto kind = id == "fillet" ? doc::FeatureKind::Fillet : doc::FeatureKind::Chamfer;
         const double keep = operation_ ? operation_->value() : 0.0;
@@ -1262,6 +1296,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Move: return "Move";
     case doc::FeatureKind::Combine: return "Combine";
     case doc::FeatureKind::Revolve: return "Revolve";
+    case doc::FeatureKind::Hole: return "Hole";
     }
     return "Step";
 }
@@ -1285,6 +1320,13 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         const auto& e = static_cast<const doc::EdgeTreatmentFeature&>(f);
         const std::string count = std::to_string(e.edges.size()) + (e.edges.size() == 1 ? " edge" : " edges");
         return (f.kind() == doc::FeatureKind::Fillet ? "R " : "") + formatLength(e.size, unit) + dot + count;
+    }
+    case doc::FeatureKind::Hole: {
+        const auto& h = static_cast<const doc::HoleFeature&>(f);
+        std::string text = "\xC3\x98" + formatLength(h.diameter, unit) + " \xC3\x97 " + formatLength(h.depth, unit);
+        if (!h.preset.empty())
+            text += dot + h.preset;
+        return text;
     }
     case doc::FeatureKind::Revolve: {
         const auto& r = static_cast<const doc::RevolveFeature&>(f);

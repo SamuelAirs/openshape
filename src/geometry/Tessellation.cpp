@@ -109,6 +109,16 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
             const TopoDS_Edge edge = TopoDS::Edge(edges.FindKey(ei));
             if (BRep_Tool::Degenerated(edge))
                 continue;
+            // Seams (where a periodic face such as a cylinder wraps onto
+            // itself) are not real edges to the user: don't draw or pick them.
+            if (edgeFaces.Contains(edge)) {
+                const auto& owners = edgeFaces.FindFromKey(edge);
+                bool seam = false;
+                for (const TopoDS_Shape& f : owners)
+                    seam = seam || BRep_Tool::IsClosed(edge, TopoDS::Face(f));
+                if (seam)
+                    continue;
+            }
             Mesh::EdgePolyline polyline;
             polyline.edgeIndex = ei - 1;
 

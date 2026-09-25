@@ -180,6 +180,7 @@ private:
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
+    std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
 
     struct Drag {

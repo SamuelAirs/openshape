@@ -26,6 +26,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Move: return "Move";
     case FeatureKind::Combine: return "Combine";
     case FeatureKind::Revolve: return "Revolve";
+    case FeatureKind::Hole: return "Hole";
     }
     return "Unknown";
 }
@@ -34,7 +35,7 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
-                          FeatureKind::Revolve})
+                          FeatureKind::Revolve, FeatureKind::Hole})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -52,6 +53,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Move: return std::make_unique<MoveFeature>(id);
     case FeatureKind::Combine: return std::make_unique<CombineFeature>(id);
     case FeatureKind::Revolve: return std::make_unique<RevolveFeature>(id);
+    case FeatureKind::Hole: return std::make_unique<HoleFeature>(id);
     }
     return nullptr;
 }
@@ -517,6 +519,83 @@ Status ExtrudeFeature::readParams(const json& in)
     profiles = std::move(refs);
     distance = *d;
     throughAll = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
+    return okStatus();
+}
+
+// ---- Hole -----------------------------------------------------------------------
+
+const std::vector<InsertPreset>& heatSetInsertPresets()
+{
+    static const std::vector<InsertPreset> presets{
+        {"M2", 3.2, 4.0}, {"M2.5", 3.6, 5.0}, {"M3", 4.0, 6.0}, {"M4", 5.6, 8.5}, {"M5", 6.4, 10.0}};
+    return presets;
+}
+
+std::optional<HolePlacement> holePlacement(const geom::Shape& shape, int edgeIndex)
+{
+    const auto edge = geom::edgeInfo(shape, edgeIndex);
+    if (!edge || edge->kind != geom::CurveKind::Circle)
+        return std::nullopt;
+    // The drilling direction is into the flat face that owns this rim.
+    for (int f : geom::facesOfEdge(shape, edgeIndex)) {
+        const auto face = geom::faceInfo(shape, f);
+        if (face && face->isPlanar() && std::abs(face->normal.dot(edge->axis)) > 0.999)
+            return HolePlacement{edge->center, face->normal * -1.0, edge->radius};
+    }
+    return std::nullopt;
+}
+
+Result<geom::Shape> HoleFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    const auto index = geom::resolveEdge(input, rim.signature, rim.indexHint);
+    const auto placement = index ? holePlacement(input, *index) : std::nullopt;
+    if (!placement)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The hole edge this step uses no longer exists.",
+                                            "Hole: rim unresolved");
+    // Start slightly outside the surface so the cut opens cleanly.
+    constexpr double kLead = 0.05;
+    auto drill = geom::makeCylinder(placement->center - placement->direction * kLead, placement->direction, diameter / 2,
+                                    depth + kLead);
+    if (!drill)
+        return drill;
+    return geom::booleanOp(input, drill.value(), geom::BooleanKind::Subtract);
+}
+
+std::vector<ParameterInfo> HoleFeature::parameters() const
+{
+    return {{"diameter", "Diameter", ParameterKind::Length, diameter}, {"depth", "Depth", ParameterKind::Length, depth}};
+}
+
+Status HoleFeature::setParameter(std::string_view key, double value)
+{
+    double* target = key == "diameter" ? &diameter : key == "depth" ? &depth : nullptr;
+    if (!target)
+        return unknownParameter(key);
+    if (auto s = requirePositive(value, key == "diameter" ? "Diameter" : "Depth"); !s)
+        return s;
+    *target = value;
+    return okStatus();
+}
+
+void HoleFeature::writeParams(json& out) const
+{
+    out["rim"] = edgeRefToJson(rim);
+    out["diameter"] = diameter;
+    out["depth"] = depth;
+    out["preset"] = preset;
+}
+
+Status HoleFeature::readParams(const json& in)
+{
+    const auto ref = in.contains("rim") ? edgeRefFromJson(in["rim"]) : std::nullopt;
+    const auto d = numberFrom(in, "diameter");
+    const auto h = numberFrom(in, "depth");
+    if (!ref || !d || !h || !(*d > 0) || !(*h > 0))
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid hole.", "Hole: bad params");
+    rim = *ref;
+    diameter = *d;
+    depth = *h;
+    preset = in.contains("preset") && in["preset"].is_string() ? in["preset"].get<std::string>() : std::string();
     return okStatus();
 }
 

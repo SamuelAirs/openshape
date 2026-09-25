@@ -21,7 +21,7 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve };
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -265,6 +265,43 @@ public:
     // through-all cuts.
     Result<geom::Shape> toolSolid(const geom::Shape& input, const EvalContext& context) const;
 };
+
+// A cylindrical hole drilled at the rim of an existing circular edge (for
+// example to turn a hole into a heat-set insert pilot hole). The rim gives
+// the center; the flat face next to it gives the drilling direction.
+class HoleFeature final : public Feature {
+public:
+    using Feature::Feature;
+    EdgeRef rim;
+    double diameter = 4.0; // mm
+    double depth = 6.0;    // mm
+    std::string preset;    // e.g. "M3 heat-set insert" (informational)
+
+    FeatureKind kind() const override { return FeatureKind::Hole; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new HoleFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// Where a hole at a circular rim starts and which way it goes into the body.
+struct HolePlacement {
+    Vec3 center;
+    Vec3 direction; // unit, into the material
+    double rimRadius = 0;
+};
+std::optional<HolePlacement> holePlacement(const geom::Shape& shape, int edgeIndex);
+
+// Typical pilot holes for brass heat-set inserts (community rules of thumb,
+// not a standard: check your insert's datasheet).
+struct InsertPreset {
+    const char* name;  // "M3"
+    double diameter;   // mm
+    double depth;      // mm
+};
+const std::vector<InsertPreset>& heatSetInsertPresets();
 
 // Revolves sketch profiles around the sketch's own X or Y axis (through the
 // sketch origin): new body, or joined to / cut from the body it belongs to.
