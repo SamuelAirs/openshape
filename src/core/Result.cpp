@@ -1,0 +1,27 @@
+#include "core/Result.h"
+
+namespace os {
+
+const char* toString(ErrorCode code)
+{
+    switch (code) {
+    case ErrorCode::None: return "None";
+    case ErrorCode::InvalidArgument: return "InvalidArgument";
+    case ErrorCode::InvalidReference: return "InvalidReference";
+    case ErrorCode::KernelFailure: return "KernelFailure";
+    case ErrorCode::InvalidResultShape: return "InvalidResultShape";
+    case ErrorCode::FilletRadiusTooLarge: return "FilletRadiusTooLarge";
+    case ErrorCode::ChamferTooLarge: return "ChamferTooLarge";
+    case ErrorCode::EmptyResult: return "EmptyResult";
+    case ErrorCode::NotPlanar: return "NotPlanar";
+    case ErrorCode::FileNotFound: return "FileNotFound";
+    case ErrorCode::FileReadError: return "FileReadError";
+    case ErrorCode::FileWriteError: return "FileWriteError";
+    case ErrorCode::FileFormatError: return "FileFormatError";
+    case ErrorCode::FileVersionUnsupported: return "FileVersionUnsupported";
+    case ErrorCode::Unsupported: return "Unsupported";
+    }
+    return "Unknown";
+}
+
+} // namespace os

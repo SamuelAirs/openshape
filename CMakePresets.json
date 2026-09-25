@@ -1,0 +1,61 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "msys2-ucrt64",
+      "displayName": "Windows / MSYS2 UCRT64 (GCC + Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "msys2-ucrt64-debug",
+      "inherits": "msys2-ucrt64",
+      "displayName": "Windows / MSYS2 UCRT64 Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux (system packages)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msys2-ucrt64",
+      "configurePreset": "msys2-ucrt64"
+    },
+    {
+      "name": "msys2-ucrt64-debug",
+      "configurePreset": "msys2-ucrt64-debug"
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "msys2-ucrt64",
+      "configurePreset": "msys2-ucrt64",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
