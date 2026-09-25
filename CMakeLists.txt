@@ -36,10 +36,13 @@ if(OPENSHAPE_BUILD_APP)
     qt_standard_project_setup(REQUIRES 6.8)
 endif()
 
+if(OPENSHAPE_BUILD_TESTS)
+    enable_testing() # before src/: the app registers its GUI acceptance test
+endif()
+
 add_subdirectory(src)
 
 if(OPENSHAPE_BUILD_TESTS)
-    enable_testing()
     find_package(GTest REQUIRED)
     add_subdirectory(tests)
 endif()
