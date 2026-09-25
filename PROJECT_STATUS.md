@@ -80,7 +80,10 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 ## Partially implemented
 
 - STEP import: kernel function and tests; not exposed in the UI.
-- Touch/pen: input mapping implemented; not tested on real touch hardware.
+- Touch/pen: gestures (tap, drag, double-tap, two-finger pan/pinch after real
+  movement, two-finger tap = undo, three-finger tap = redo) and pen mode (pen
+  selects/draws, fingers navigate) are implemented and tested with synthetic
+  Qt touch events; not yet tried on real touch hardware or an iPad.
 - Disconnected pieces: flagged in the Model panel, not yet split into bodies (TD-22).
 
 ## Broken / missing
@@ -124,8 +127,9 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
    move a face together with tangent fillets (TD-21).
 3. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
    models (TD-18), cache sketch/grid geometry (TD-19), BVH picking (TD-2, TD-20).
-4. Touch & Pencil: pen draws/selects, fingers navigate, two-/three-finger taps
-   undo/redo, touch-sized targets. The iPad build needs the owner's Mac.
+4. iPad: touch-sized targets (44 pt) when touch is used, a pen-mode switch in
+   the UI, then the iOS build on the owner's Mac (Qt for iOS, OCCT for iOS,
+   licensing — see LICENSE_PENDING.md).
 5. Split disconnected pieces into separate bodies (TD-22); pattern/mirror as
    separate bodies (copies) as an option.
 6. Align follow-ups: snap alignment while moving (Shapr3D-style).
@@ -133,12 +137,13 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Tests currently passing
 
-204/204 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+211/211 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, document, commands, project files, sketch features, face
 attachment, camera, picking, interaction (headless M0 script, sketch
 workflows, history editing, highlight, booleans, right-click, align,
-rotate, mirror, pattern, sketch constraints, arcs, face edits), plus `acceptance_gui`:
-100 end-to-end checks through the real UI.
+rotate, mirror, pattern, sketch constraints, arcs, face edits, touch
+gestures, pen mode), plus `acceptance_gui`: 103 end-to-end checks through the
+real UI (including multi-finger taps).
 
 ## Platforms verified
 

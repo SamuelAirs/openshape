@@ -221,6 +221,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   and pushing in cuts, unless overridden (New body / Join / Cut). An
   automatic join whose preview would add separate pieces becomes a new body
   (`Operation::reconsider` revises automatic choices after a preview).
+- **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
+  intents — one-finger pointer press/move/release and double-tap, two-finger
+  pan/pinch once they move past a threshold, quick two/three-finger taps as
+  undo/redo; `ViewportItem` only converts `QTouchEvent`s. Pen mode (turned on
+  by the first pen press) makes finger presses navigation-only.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).

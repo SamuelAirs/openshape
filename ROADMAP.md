@@ -128,6 +128,13 @@ error messages, discoverability. Also: BVH picking, off-thread tessellation.
 - ⬜ General hole tool, countersink/counterbore, magnet pockets, clearance
   helper, draft, emboss/deboss, text, snap-fit helpers, threads, section view
 
+## Touch & pen (iPad groundwork) 🟡
+
+- ✅ Gesture recognizer (Qt-free): tap, drag, double-tap, two-finger pan and
+  pinch after real movement, two-finger tap = undo, three-finger tap = redo
+- ✅ Pen mode: pen selects and draws, fingers only navigate
+- ⬜ Touch-sized controls, pen-mode switch in the UI, iOS build (needs a Mac)
+
 ## Platform & infrastructure
 
 - ✅ Windows 11 / MSYS2 UCRT64 / GCC 16 / Qt 6.11 / OCCT 7.9.3 (Direct3D 11)
