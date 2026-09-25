@@ -72,8 +72,14 @@ error messages, discoverability. Also: BVH picking, off-thread tessellation.
 - ✅ Feature history with recompute from the changed feature; failures keep the
   document intact and mark the failing feature (core + tests)
 - ✅ `SetParameterCommand` (undoable parameter edits, reject or keep-failed modes)
-- ⬜ History panel UI (list, double-click to edit, failure markers, suppress)
+- ✅ History panel: sketches, bodies, steps with status dots; click a step to
+  edit its values; failure explanations in place; suppress/restore; delete;
+  hide/show; edit sketch
+- ✅ Sketches attached to faces follow them when upstream steps change;
+  through-all cuts keep through-holes through (verified: 5 → 8 mm plate
+  edit through the real UI)
 - ⬜ Provenance-based topological naming (docs/TOPOLOGICAL_NAMING.md)
+- ⬜ Reordering steps; rolling back to a step
 
 ## Milestone 5 — maker features ⬜
 

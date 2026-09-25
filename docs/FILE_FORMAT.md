@@ -21,7 +21,7 @@ A ZIP archive (deflate) with these entries:
   "id": "5f0c…",
   "sketches": [
     {
-      "id": "c21d…", "name": "Sketch 1", "visible": true, "hostBody": null, "nextId": 14,
+      "id": "c21d…", "name": "Sketch 1", "visible": true, "hostBody": null, "attachment": null, "nextId": 14,
       "plane": { "origin": [0,0,0], "xAxis": [1,0,0], "yAxis": [0,1,0] },
       "points": [ { "id": 1, "x": 0, "y": 0, "fixed": true }, { "id": 2, "x": 60, "y": 0, "fixed": false } ],
       "lines": [ { "id": 6, "start": 1, "end": 2, "construction": false } ],
@@ -64,6 +64,12 @@ Rules:
 - `Extrude` params: `{ "sketch": uuid, "profiles": [{ "point": [x, y], "area" }],
   "distance", "mode": "NewBody" | "Join" | "Cut" }`. Profiles are referenced by
   a point inside the region (sketch coordinates) plus its area.
+- `Extrude` may carry `"throughAll": true` (cuts only): the cut extends
+  through the whole body in the direction of `distance`.
+- A sketch placed on a face has `"attachment": { "body", "feature",
+  "faceHint", "normal", "centroid", "area" }` identifying the face (on the
+  output of `feature`); its `plane` is then derived from that face and the
+  stored plane is the last resolved one.
 - Sketches are stored before bodies and loaded first, because extrusions
   look them up during the initial recompute.
 - UUIDs must be unique across the document.

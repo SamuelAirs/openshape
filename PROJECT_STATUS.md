@@ -4,9 +4,8 @@ _Last updated: 2026-09-25_
 
 ## Current milestone
 
-**Milestones 0 and 1 complete.** Next: editable history panel (Milestone 4
-core) so every parameter of a reopened model can be changed, then Milestone 2
-tools.
+**Milestones 0 and 1 complete; Milestone 4 core (editable history) done.**
+Next: Milestone 2 tools (booleans, move/rotate UI), CI, packaging.
 
 ## What works (verified)
 
@@ -30,13 +29,14 @@ tools.
   never enter history.
 - Save/open `.openshape` (versioned, validated, atomic save); STEP/STL export.
 - Milestone 1 bracket (60 × 30 × 5 plate, two Ø6 through-holes) built through
-  the real UI by the acceptance runner, exported to STEP and STL.
+  the real UI by the acceptance runner, exported to STEP and STL, then edited
+  to 8 mm in the history panel with the holes staying through.
+- History panel: edit any step's values after reopening; failures explained
+  in place; suppress/delete/hide.
+- Sketches on faces follow their faces; through-all cuts.
 
 ## Partially implemented
 
-- Parametric history: recompute from changed features, failure marking,
-  undoable parameter edits work in the core; **no history panel UI** (feature
-  parameters such as extrude distance cannot yet be edited after commit).
 - Booleans, move/rotate: kernel functions and tests exist; no UI.
 - STEP import: kernel function and tests; not exposed in the UI.
 - Touch/pen: input mapping implemented; not tested on real touch hardware.
@@ -58,25 +58,25 @@ tools.
 
 ## Known technical risks
 
-- Topological naming on symmetric parts after large upstream edits (TD-3);
-  sketches on faces do not follow face changes (TD-14).
+- Topological naming on symmetric parts after large upstream edits (TD-3).
 - GUI-thread tessellation/booleans/profile detection will stutter on big models (TD-1, TD-13).
 - QRhi via GuiPrivate ties builds to a Qt minor version (TD-5).
 - Project license still undecided (see LICENSE_PENDING.md).
 
 ## Next concrete tasks
 
-1. History panel: list bodies/sketches/features, edit parameters, show failures.
-2. Boolean and move/rotate UI (Milestone 2).
+1. Boolean and move/rotate UI (Milestone 2).
+2. CI (Windows MSYS2 + Linux) and Windows packaging.
 3. Arc tool and parallel/perpendicular/equal constraints.
-4. CI (Windows MSYS2 + Linux) and Windows packaging.
+4. Off-GUI-thread tessellation and previews (TD-1).
 
 ## Tests currently passing
 
-134/134 (`ctest`): 133 GTest cases (core, geometry, profiles, sketch model and
-solver, document, commands, project files, sketch features, camera, picking,
-interaction incl. headless M0 script and sketch workflows) plus
-`acceptance_gui` (52 end-to-end checks through the real UI).
+144/144 (`ctest`): 143 GTest cases (core, geometry, profiles, sketch model and
+solver, document, commands, project files, sketch features, face attachment,
+camera, picking, interaction incl. headless M0 script, sketch workflows and
+history editing) plus `acceptance_gui` (60 end-to-end checks through the
+real UI).
 
 ## Platforms verified
 

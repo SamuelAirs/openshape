@@ -17,5 +17,5 @@ Intentional shortcuts, with the milestone by which each should be resolved.
 | TD-11 | `AppController::saveProject` | No thumbnail in project files. | Needs an offscreen render path. | M3 |
 | TD-12 | `sketch/SketchSolver.cpp` | A new PlaneGCS system is built for every solve, including every drag step. | Sketches are small; simplest correct approach. | When sketches get large |
 | TD-13 | `geometry/Profiles.cpp` | Profile regions are recomputed (General Fuse + tessellation) after every sketch edit, on the GUI thread. | A few ms for typical sketches. | With TD-1 |
-| TD-14 | `sketch/` | Sketch planes are stored explicitly; a sketch on a face does not follow the face if the body changes. | Needs face references with topological naming. | M4 |
+| ~~TD-14~~ | `sketch/` | ~~Sketches on faces did not follow the face.~~ **Resolved**: sketches carry an `Attachment` (body, feature, face signature); the plane is re-resolved during recompute and synced after every change. | | |
 | TD-15 | `geometry/Profiles.cpp` `cleanFace` | A region whose *outer* wire carries a dangling edge keeps it (the splitter face is used as is). | Rare; extrusion still succeeds in tests. | M3 |

@@ -135,8 +135,13 @@ Document (UUID, display unit)
   the bounded pieces — this handles nesting, crossings and dangling lines
   without our own arrangement code. `ProfileRef` = an interior point (sketch
   coordinates) plus area; it resolves to the region containing that point.
+- A sketch created on a face stores an `Attachment` (body, feature whose
+  output holds the face, face signature). `effectivePlane()` re-resolves the
+  face during recompute (only from features *before* the one being
+  evaluated), and `Document::syncSketchAttachments()` writes the resolved
+  plane back after every change, so sketches ride along with their faces.
 - `ExtrudeFeature` references a sketch UUID and profile refs; mode NewBody
-  (base feature), Join or Cut. `Feature::compute` receives an `EvalContext`
+  (base feature), Join or Cut; cuts can be "through all". `Feature::compute` receives an `EvalContext`
   for such lookups, `Feature::dependencies()` declares them, and
   `Document::replaceSketch` recomputes dependent bodies. Deleting a sketch that
   a feature uses is refused.
@@ -224,6 +229,16 @@ positioned from `SketchSession::labels()` screen coordinates.
 Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages.
 All draws share one dynamic uniform buffer with per-draw offsets.
 
+## History panel
+
+`InteractionController::historyRows()` flattens sketches, bodies and each
+body's features into rows (name, detail, status, explanation, editable
+length parameters). The QML `HistoryPanel` edits values through
+`setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
+mode: an edit that breaks a later step is kept, the step is marked failed
+with its user message, and undo restores the value. Base features cannot be
+deleted or suppressed; sketches used by features cannot be deleted.
+
 ## Files (`io/`)
 
 `.openshape` = ZIP: `document.json` (source of truth), `metadata.json`,
@@ -250,5 +265,5 @@ disk. Saves are atomic (temp file + rename). See
 - Tessellation and previews run synchronously on the GUI thread.
 - Picking is brute force (no BVH).
 - Only linear per-body history; features may depend on sketches, not on
-  other bodies. Sketch planes are stored explicitly, not linked to faces.
+  other bodies.
 - QRhi comes from `Qt6::GuiPrivate`: binaries are tied to the Qt version.

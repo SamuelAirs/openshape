@@ -95,3 +95,22 @@ and extrusion arrows pointing straight at the viewer after finishing a
 sketch in top view. Now: consumed sketches recede (thin grey, fills only on
 hover), zero-length segments render as squares, and finishing a sketch
 restores the previous view orientation (tilting to iso if that was top-down).
+
+## 2026-09-25 — Editable history, and a parametric trap avoided
+
+**The history panel exposed a real modeling bug before it shipped.** Changing
+the bracket plate from 5 to 8 mm left the hole sketch on the old plane
+(z = 5) and the 5 mm cut then produced blind holes from inside the plate — a
+silent wrong result, the worst kind for makers. Two fixes: sketches created on
+a face now store an attachment (feature + face signature) and follow the face
+through recompute; and cuts can be "through all", which is what a through-hole
+means. Both are covered by headless tests and by the GUI acceptance run,
+which edits the thickness in the history panel through real clicks and keys.
+
+**Keep-failed edits.** Parameter edits from the history use
+`SetParameterCommand` in keep-failed mode: a too-large fillet radius is kept,
+marked red with "Unable to create this fillet. Try a smaller radius.", and
+undo restores the value. Direct manipulation keeps rejecting failing values.
+
+**Repeater/ListView delegates are not QObject children.** The acceptance
+runner now falls back to a visual-tree search to click generated items.
