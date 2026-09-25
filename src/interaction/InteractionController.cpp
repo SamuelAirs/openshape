@@ -474,9 +474,19 @@ void InteractionController::click(const PointerEvent& event)
 void InteractionController::rebuildOperation()
 {
     operation_.reset();
-    if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face) {
-        const auto& item = selection_.items().front();
-        operation_ = PushPullOperation::create(*document_, item.bodyId, item.index);
+    if (selection_.empty())
+        faceOperationKind_ = doc::FeatureKind::PushPull;
+    if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
+        const auto& first = selection_.items().front();
+        if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
+            operation_ = PushPullOperation::create(*document_, first.bodyId, first.index);
+        if (!operation_) {
+            // Several faces, a curved face, or Shell chosen explicitly.
+            std::vector<int> faces;
+            for (const auto& item : selection_.items())
+                faces.push_back(item.index);
+            operation_ = ShellOperation::create(*document_, first.bodyId, faces);
+        }
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && selection_.singleBody()) {
         std::vector<int> edges;
         for (const auto& item : selection_.items())
@@ -657,8 +667,19 @@ std::vector<ContextAction> InteractionController::contextActions() const
     }
     if (selection_.empty())
         return actions;
-    if (operation_ && operation_->featureKind() == doc::FeatureKind::PushPull) {
-        actions.push_back({"pushpull", "Push/Pull", true});
+    if (operation_ && (operation_->featureKind() == doc::FeatureKind::PushPull
+                       || operation_->featureKind() == doc::FeatureKind::Shell)) {
+        const bool single = selection_.size() == 1;
+        bool planar = false;
+        if (single)
+            if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
+                if (const auto info = geom::faceInfo(body->shape(), selection_.items().front().index))
+                    planar = info->isPlanar();
+        if (single && planar)
+            actions.push_back({"pushpull", "Push/Pull", operation_->featureKind() == doc::FeatureKind::PushPull});
+        actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
+        if (single && planar)
+            actions.push_back({"sketch", "Sketch", false});
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && operation_) {
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
@@ -702,6 +723,15 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "extrude")
         return okStatus(); // already active: the arrow is the tool
+    if (id == "pushpull" || id == "shell") {
+        faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell : doc::FeatureKind::PushPull;
+        rebuildOperation();
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (id == "sketch")
+        return startSketch();
     if (id == "fillet" || id == "chamfer") {
         const auto kind = id == "fillet" ? doc::FeatureKind::Fillet : doc::FeatureKind::Chamfer;
         const double keep = operation_ ? operation_->value() : 0.0;
@@ -720,8 +750,6 @@ Status InteractionController::triggerAction(const std::string& id)
         return deleteSelectedBodies();
     } else if (id == "fit") {
         fitSelection(true);
-    } else if (id == "pushpull") {
-        // Already active; the manipulator is the tool.
     } else {
         return Status::failure(ErrorCode::InvalidArgument, "Unknown action.", "unknown action '" + id + "'");
     }
@@ -1108,6 +1136,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Fillet: return "Fillet";
     case doc::FeatureKind::Chamfer: return "Chamfer";
     case doc::FeatureKind::Extrude: return "Extrude";
+    case doc::FeatureKind::Shell: return "Shell";
     }
     return "Step";
 }
@@ -1131,6 +1160,11 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit)
         const auto& e = static_cast<const doc::EdgeTreatmentFeature&>(f);
         const std::string count = std::to_string(e.edges.size()) + (e.edges.size() == 1 ? " edge" : " edges");
         return (f.kind() == doc::FeatureKind::Fillet ? "R " : "") + formatLength(e.size, unit) + dot + count;
+    }
+    case doc::FeatureKind::Shell: {
+        const auto& s = static_cast<const doc::ShellFeature&>(f);
+        return "Wall " + formatLength(s.thickness, unit) + dot + std::to_string(s.faces.size())
+             + (s.faces.size() == 1 ? " opening" : " openings");
     }
     case doc::FeatureKind::Extrude: {
         const auto& e = static_cast<const doc::ExtrudeFeature&>(f);

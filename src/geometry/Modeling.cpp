@@ -15,6 +15,7 @@
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepLib.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
@@ -282,6 +283,44 @@ Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndic
     });
     if (!result && result.error() != ErrorCode::InvalidArgument)
         return Result<Shape>::failure(ErrorCode::ChamferTooLarge, userMessage, result.developerMessage());
+    return result;
+}
+
+Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
+{
+    if (openFaces.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the face(s) to open.", "shell: no faces");
+    if (thickness < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The wall thickness must be greater than zero.",
+                                      "shell: thickness " + std::to_string(thickness));
+    for (int f : openFaces)
+        if (!validIndex(shape, f, shape.faceCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
+                                          "shell: face index " + std::to_string(f) + " out of range");
+
+    const char* userMessage = "Unable to shell with this wall thickness. Try thinner walls.";
+    auto result = guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("shell");
+        TopTools_ListOfShape faces;
+        for (int f : openFaces)
+            faces.Append(faceAt(shape, f));
+        BRepOffsetAPI_MakeThickSolid maker;
+        // Negative offset: walls grow inward, the outside stays where it is.
+        maker.MakeThickSolidByJoin(occ(shape), faces, -thickness, 1e-3);
+        maker.Build();
+        if (!maker.IsDone())
+            return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage,
+                                          "MakeThickSolidByJoin not done: thickness=" + std::to_string(thickness));
+        auto hollow = finishSolid(maker.Shape(), "BRepOffsetAPI_MakeThickSolid", userMessage);
+        // When the walls would meet, OCCT can report success and hand back the
+        // untouched solid. A shell always removes material: reject anything else.
+        if (hollow && volume(hollow.value()) >= volume(shape) * (1.0 - 1e-9))
+            return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage,
+                                          "MakeThickSolidByJoin removed no material: thickness=" + std::to_string(thickness));
+        return hollow;
+    });
+    if (!result && result.error() != ErrorCode::InvalidArgument)
+        return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage, result.developerMessage());
     return result;
 }
 

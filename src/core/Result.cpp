@@ -12,6 +12,7 @@ const char* toString(ErrorCode code)
     case ErrorCode::InvalidResultShape: return "InvalidResultShape";
     case ErrorCode::FilletRadiusTooLarge: return "FilletRadiusTooLarge";
     case ErrorCode::ChamferTooLarge: return "ChamferTooLarge";
+    case ErrorCode::ShellTooThick: return "ShellTooThick";
     case ErrorCode::EmptyResult: return "EmptyResult";
     case ErrorCode::NotPlanar: return "NotPlanar";
     case ErrorCode::FileNotFound: return "FileNotFound";

@@ -295,3 +295,36 @@ TEST(Interaction, AnimationReachesTarget)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     EXPECT_NEAR(h.controller.camera().pitch, kPi / 2, 1e-9);
 }
+
+// Maker enclosure: shell a box open at the top with 2 mm walls.
+TEST(Interaction, ShellMakesAnOpenEnclosure)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0) .. (10,10,20)
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({0, 0, 20}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Push/Pull");
+    bool offersShell = false, offersSketch = false;
+    for (const auto& a : h.controller.contextActions()) {
+        offersShell = offersShell || a.id == "shell";
+        offersSketch = offersSketch || a.id == "sketch";
+    }
+    EXPECT_TRUE(offersShell);
+    EXPECT_TRUE(offersSketch);
+
+    ASSERT_TRUE(h.controller.triggerAction("shell").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Shell");
+    EXPECT_EQ(h.controller.setValueText("2"), "");
+    EXPECT_TRUE(h.controller.operation()->hasPreview());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(geom::volume(h.body().shape()), 8000.0 - 16.0 * 16.0 * 18.0, 1e-3);
+    EXPECT_TRUE(h.controller.selection().empty());
+
+    // Too thick: explained, not applied.
+    h.clickAt(h.screen({10, 0, 10})); // right side face
+    ASSERT_TRUE(h.controller.triggerAction("shell").ok());
+    EXPECT_NE(h.controller.setValueText("12"), "");
+    EXPECT_FALSE(h.controller.operation()->canCommit());
+}

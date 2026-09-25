@@ -22,6 +22,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Fillet: return "Fillet";
     case FeatureKind::Chamfer: return "Chamfer";
     case FeatureKind::Extrude: return "Extrude";
+    case FeatureKind::Shell: return "Shell";
     }
     return "Unknown";
 }
@@ -29,7 +30,7 @@ std::string_view toString(FeatureKind kind)
 std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
-                          FeatureKind::Extrude})
+                          FeatureKind::Extrude, FeatureKind::Shell})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -43,6 +44,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Fillet: return std::make_unique<FilletFeature>(id);
     case FeatureKind::Chamfer: return std::make_unique<ChamferFeature>(id);
     case FeatureKind::Extrude: return std::make_unique<ExtrudeFeature>(id);
+    case FeatureKind::Shell: return std::make_unique<ShellFeature>(id);
     }
     return nullptr;
 }
@@ -241,6 +243,63 @@ Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const Eval
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
     return geom::chamferEdges(input, indices.value(), size);
+}
+
+// ---- Shell ----------------------------------------------------------------------
+
+Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    std::vector<int> indices;
+    for (const FaceRef& ref : faces) {
+        const auto index = geom::resolveFace(input, ref.signature, ref.indexHint);
+        if (!index)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                                "A face this shell opens no longer exists.", "Shell face unresolved");
+        indices.push_back(*index);
+    }
+    return geom::shell(input, indices, thickness);
+}
+
+std::vector<ParameterInfo> ShellFeature::parameters() const
+{
+    return {{"thickness", "Wall", ParameterKind::Length, thickness}};
+}
+
+Status ShellFeature::setParameter(std::string_view key, double value)
+{
+    if (key != "thickness")
+        return unknownParameter(key);
+    if (auto s = requirePositive(value, "Wall thickness"); !s)
+        return s;
+    thickness = value;
+    return okStatus();
+}
+
+void ShellFeature::writeParams(json& out) const
+{
+    json list = json::array();
+    for (const auto& f : faces)
+        list.push_back(faceRefToJson(f));
+    out["faces"] = list;
+    out["thickness"] = thickness;
+}
+
+Status ShellFeature::readParams(const json& in)
+{
+    const auto t = numberFrom(in, "thickness");
+    if (!t || !(*t > 0) || !in.contains("faces") || !in["faces"].is_array() || in["faces"].empty())
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid shell.", "Shell: bad params");
+    std::vector<FaceRef> refs;
+    for (const auto& f : in["faces"]) {
+        const json wrapper = {{"face", f}};
+        auto ref = faceRefFromJson(wrapper, "face");
+        if (!ref)
+            return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid shell.", "Shell: bad face");
+        refs.push_back(*ref);
+    }
+    faces = std::move(refs);
+    thickness = *t;
+    return okStatus();
 }
 
 // ---- Extrude --------------------------------------------------------------------

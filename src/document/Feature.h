@@ -21,7 +21,7 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude };
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -173,6 +173,22 @@ public:
 
 private:
     const char* sizeLabel() const override { return "Distance"; }
+};
+
+// Hollows the body, opening the referenced faces, with walls of `thickness`.
+class ShellFeature final : public Feature {
+public:
+    using Feature::Feature;
+    std::vector<FaceRef> faces;
+    double thickness = 2; // mm
+
+    FeatureKind kind() const override { return FeatureKind::Shell; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ShellFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
 };
 
 // A reference to one closed region of a sketch, by a point inside it (in

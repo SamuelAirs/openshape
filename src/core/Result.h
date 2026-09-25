@@ -17,6 +17,7 @@ enum class ErrorCode {
     InvalidResultShape,   // the kernel produced a shape that fails validity checks
     FilletRadiusTooLarge,
     ChamferTooLarge,
+    ShellTooThick,
     EmptyResult,          // e.g. a cut removed the whole body
     NotPlanar,
     FileNotFound,

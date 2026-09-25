@@ -115,6 +115,27 @@ private:
     doc::FeatureKind kind_;
 };
 
+// Shell: hollows the body through the selected faces. The arrow starts on the
+// first face and points into the material; its length is the wall thickness.
+class ShellOperation final : public Operation {
+public:
+    static std::unique_ptr<ShellOperation> create(const doc::Document& document, const Uuid& bodyId,
+                                                  const std::vector<int>& faceIndices);
+
+    std::string title() const override { return "Shell"; }
+    std::string valueLabel() const override { return "Wall"; }
+    bool allowsNegative() const override { return false; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Shell; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    ShellOperation(Uuid bodyId, LinearManipulator m, std::vector<doc::FaceRef> faces)
+        : Operation(bodyId, std::move(m)), faces_(std::move(faces)) {}
+    std::vector<doc::FaceRef> faces_;
+};
+
 // Extrudes selected sketch profiles along the sketch normal. Without an
 // explicit mode it creates a new body, or - for sketches placed on a body -
 // joins when pulled outward and cuts when pushed inward.

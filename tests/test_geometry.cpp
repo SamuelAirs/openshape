@@ -320,3 +320,26 @@ TEST(Geometry, ImportMissingOrGarbageStep)
     }
     EXPECT_FALSE(importStep(garbage).ok());
 }
+
+TEST(Geometry, ShellOpenTopBox)
+{
+    // 60 x 40 x 30 enclosure, open top, 2 mm walls.
+    const Shape s = box(60, 40, 30);
+    const int top = faceWithNormal(s, {0, 0, 1});
+    auto r = shell(s, {top}, 2.0);
+    ASSERT_TRUE(r.ok()) << r.developerMessage();
+    const double inner = 56.0 * 36.0 * 28.0;
+    EXPECT_NEAR(volume(r.value()), 60.0 * 40.0 * 30.0 - inner, 1e-3);
+    const auto bb = boundingBox(r.value());
+    EXPECT_NEAR(bb.size().x, 60.0, 1e-6);
+    EXPECT_NEAR(bb.size().z, 30.0, 1e-6);
+    EXPECT_EQ(r.value().faceCount(), 11); // 5 outside + 5 inside + rim
+}
+
+TEST(Geometry, ShellTooThickFails)
+{
+    const Shape s = box(10, 10, 10);
+    auto r = shell(s, {faceWithNormal(s, {0, 0, 1})}, 6.0);
+    EXPECT_FALSE(r.ok());
+    EXPECT_FALSE(r.userMessage().empty());
+}

@@ -67,6 +67,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Chamfer: return "Chamfer";
     case doc::FeatureKind::Box: return "Add box";
     case doc::FeatureKind::Extrude: return "Extrude";
+    case doc::FeatureKind::Shell: return "Shell";
     }
     return "Add step";
 }

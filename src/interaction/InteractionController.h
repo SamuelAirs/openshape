@@ -174,6 +174,7 @@ private:
     std::unique_ptr<SketchSession> session_;
     std::optional<Camera> cameraBeforeSketch_; // restored when the sketch is finished
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
+    doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
 
     struct Drag {
         DragMode mode = DragMode::None;

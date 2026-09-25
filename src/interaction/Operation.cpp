@@ -68,6 +68,36 @@ std::unique_ptr<doc::Feature> PushPullOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Shell -----------------------------------------------------------------------
+
+std::unique_ptr<ShellOperation> ShellOperation::create(const doc::Document& document, const Uuid& bodyId,
+                                                       const std::vector<int>& faceIndices)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || faceIndices.empty())
+        return nullptr;
+    std::vector<doc::FaceRef> refs;
+    for (int f : faceIndices) {
+        const auto signature = geom::captureFaceSignature(body->shape(), f);
+        if (!signature)
+            return nullptr;
+        refs.push_back({f, *signature});
+    }
+    const auto first = geom::faceInfo(body->shape(), faceIndices.front());
+    if (!first)
+        return nullptr;
+    return std::unique_ptr<ShellOperation>(
+        new ShellOperation(bodyId, LinearManipulator(first->centroid, first->normal * -1.0), std::move(refs)));
+}
+
+std::unique_ptr<doc::Feature> ShellOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::ShellFeature>();
+    feature->faces = faces_;
+    feature->thickness = value;
+    return feature;
+}
+
 // ---- Fillet / chamfer ------------------------------------------------------------
 
 std::unique_ptr<EdgeOperation> EdgeOperation::create(const doc::Document& document, const Uuid& bodyId,

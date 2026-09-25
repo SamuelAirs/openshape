@@ -25,6 +25,10 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance);
 Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius);
 Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance);
 
+// Hollows the solid, removing the given faces (openings) and keeping walls of
+// `thickness` inside the original boundary.
+Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness);
+
 enum class BooleanKind { Union, Subtract, Intersect };
 Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind);
 
