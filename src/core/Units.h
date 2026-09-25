@@ -30,6 +30,11 @@ struct LengthParseResult {
 // take plain factors: "2 * 10mm" is valid, "10mm * 10mm" is rejected.
 LengthParseResult parseLength(std::string_view text, LengthUnit defaultUnit);
 
+// Parses an angle. Degrees by default; accepts "deg", "\xC2\xB0" and "rad"
+// suffixes and the same arithmetic as lengths. Returns radians.
+LengthParseResult parseAngle(std::string_view text);
+std::string formatAngle(double radians, int decimals = 1);
+
 // Formats a length for display, e.g. "25.00 mm". Trailing zeros are kept to
 // `decimals` so values read as exact.
 std::string formatLength(double millimeters, LengthUnit unit, int decimals = 2);

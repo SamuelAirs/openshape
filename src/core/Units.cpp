@@ -266,6 +266,31 @@ LengthParseResult parseLength(std::string_view text, LengthUnit defaultUnit)
     return Parser(text, defaultUnit).run();
 }
 
+LengthParseResult parseAngle(std::string_view text)
+{
+    // Reuse the length expression parser: rewrite angle units into plain
+    // arithmetic on degrees and parse as a unitless (default-unit) value.
+    std::string s(text);
+    auto replaceAll = [&](const std::string& from, const std::string& to) {
+        for (std::size_t pos = 0; (pos = s.find(from, pos)) != std::string::npos; pos += to.size())
+            s.replace(pos, from.size(), to);
+    };
+    replaceAll("\xC2\xB0", "");
+    replaceAll("deg", "");
+    replaceAll("rad", "*57.29577951308232");
+    LengthParseResult result = parseLength(s, LengthUnit::Millimeter);
+    if (result.millimeters)
+        result.millimeters = *result.millimeters * 3.14159265358979323846 / 180.0;
+    return result;
+}
+
+std::string formatAngle(double radians, int decimals)
+{
+    char buffer[64];
+    std::snprintf(buffer, sizeof buffer, "%.*f\xC2\xB0", decimals, radians * 180.0 / 3.14159265358979323846);
+    return buffer;
+}
+
 std::string formatLength(double millimeters, LengthUnit unit, int decimals)
 {
     double value = fromMillimeters(millimeters, unit);

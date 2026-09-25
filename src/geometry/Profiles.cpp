@@ -13,6 +13,8 @@
 #include <BRepGProp.hxx>
 #include <BRepLib.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <gp_Ax1.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <GProp_GProps.hxx>
@@ -246,6 +248,67 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
             result = unify.Shape();
         }
         return finishSolid(result, "extrudeFaces", userMessage);
+    });
+}
+
+Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrigin, const Vec3& axisDirection,
+                           double angle)
+{
+    if (faces.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select a closed shape to revolve.", "revolveFaces: no faces");
+    if (!(angle > 1e-9) || angle > 2 * kPi + 1e-9)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The angle must be between 0\xC2\xB0 and 360\xC2\xB0.",
+                                      "revolveFaces: angle " + std::to_string(angle));
+    const Vec3 axis = axisDirection.normalized();
+    // A profile on both sides of the axis would sweep through itself.
+    for (const Shape& face : faces) {
+        const Mesh mesh = tessellate(face);
+        double lo = 0, hi = 0;
+        bool first = true;
+        Vec3 normal;
+        for (std::size_t i = 0; i < mesh.vertexCount(); ++i) {
+            const Vec3 d = mesh.vertex(i) - axisOrigin;
+            const Vec3 c = axis.cross(d);
+            if (first && c.length() > 1e-9) {
+                normal = c.normalized();
+                first = false;
+            }
+            const double side = first ? 0.0 : c.dot(normal);
+            lo = std::min(lo, side);
+            hi = std::max(hi, side);
+        }
+        if (lo < -1e-6 && hi > 1e-6)
+            return Result<Shape>::failure(ErrorCode::InvalidArgument,
+                                          "The shape crosses the revolve axis. Draw it on one side of the axis.",
+                                          "revolveFaces: profile straddles the axis");
+    }
+    const char* userMessage = "Unable to revolve this shape.";
+    return guarded("revolveFaces", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("revolveFaces");
+        const gp_Ax1 ax(toPnt(axisOrigin), toDir(axis));
+        TopoDS_Shape result;
+        for (const Shape& face : faces) {
+            BRepPrimAPI_MakeRevol revol(occ(face), ax, std::min(angle, 2 * kPi));
+            revol.Build();
+            if (!revol.IsDone())
+                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "BRepPrimAPI_MakeRevol not done");
+            TopoDS_Shape solid = revol.Shape();
+            for (TopExp_Explorer ex(solid, TopAbs_SOLID); ex.More(); ex.Next()) {
+                TopoDS_Solid s = TopoDS::Solid(ex.Current());
+                BRepLib::OrientClosedSolid(s);
+                solid = s;
+                break;
+            }
+            if (result.IsNull()) {
+                result = solid;
+            } else {
+                BRepAlgoAPI_Fuse fuse(result, solid);
+                if (fuse.HasErrors())
+                    return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(fuse));
+                result = fuse.Shape();
+            }
+        }
+        return finishSolid(result, "revolveFaces", userMessage);
     });
 }
 

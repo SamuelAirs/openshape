@@ -118,7 +118,9 @@ public:
     Q_INVOKABLE bool handleKey(int key);
 
     // Sketching
-    Q_INVOKABLE void startSketch();
+    // plane: "top" (default), "front" or "right"; ignored when a face is selected.
+    Q_INVOKABLE void startSketch(const QString& plane = QString());
+    Q_INVOKABLE bool faceSelected() const;
     Q_INVOKABLE void finishSketch();
     Q_INVOKABLE void setSketchTool(const QString& name);
     // Replaces the focused input's text while drawing; returns an error or "".

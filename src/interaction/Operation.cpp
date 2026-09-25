@@ -147,6 +147,71 @@ std::unique_ptr<doc::Feature> MoveOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Revolve -------------------------------------------------------------------------
+
+std::unique_ptr<RevolveOperation> RevolveOperation::create(const doc::Document& document, const Uuid& sketchId,
+                                                           std::vector<doc::ProfileRef> profiles, const Vec3& anchor,
+                                                           doc::SketchAxis axis)
+{
+    const sketch::Sketch* sk = document.sketch(sketchId);
+    if (!sk || profiles.empty())
+        return nullptr;
+    std::optional<Uuid> host;
+    if (sk->hostBody() && document.body(*sk->hostBody()) && document.body(*sk->hostBody())->isVisible())
+        host = sk->hostBody();
+    const sketch::Plane& plane = sk->plane();
+    const Vec3 axisDir = axis == doc::SketchAxis::Y ? plane.yAxis : plane.xAxis;
+    const Vec3 fromAxis = anchor - plane.origin;
+    const Vec3 radial = fromAxis - axisDir * fromAxis.dot(axisDir);
+    const double radius = std::max(radial.length(), 1.0);
+    Vec3 tangent = axisDir.cross(radial).normalized();
+    if (tangent.length() < 0.5)
+        tangent = plane.normal();
+    return std::unique_ptr<RevolveOperation>(new RevolveOperation(sketchId, host, LinearManipulator(anchor, tangent),
+                                                                  std::move(profiles), axis, radius, plane.origin, axisDir,
+                                                                  anchor));
+}
+
+LinearManipulator RevolveOperation::handle(int index) const
+{
+    if (index != 0)
+        return {};
+    // Rodrigues rotation of the start point around the axis by the current angle.
+    const double angle = value() * kPi / 180.0;
+    const Vec3 k = axisDirection_.normalized();
+    const Vec3 v = start_ - axisOrigin_;
+    const Vec3 rotated = v * std::cos(angle) + k.cross(v) * std::sin(angle) + k * (k.dot(v) * (1 - std::cos(angle)));
+    const Vec3 onArc = axisOrigin_ + rotated;
+    Vec3 tangent = k.cross(rotated - k * k.dot(rotated)).normalized();
+    if (tangent.length() < 0.5)
+        tangent = manipulator().direction();
+    // anchor(handleOffset) must land on the arc point.
+    return LinearManipulator(onArc - tangent * displayOffset(value()), tangent);
+}
+
+Uuid RevolveOperation::previewBody() const
+{
+    return mode_ == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
+}
+
+std::unique_ptr<doc::Feature> RevolveOperation::makeFeature(double degrees) const
+{
+    auto feature = std::make_unique<doc::RevolveFeature>();
+    feature->sketchId = sketchId_;
+    feature->profiles = profiles_;
+    feature->axis = axis_;
+    feature->angle = std::clamp(degrees, 0.0, 360.0) * kPi / 180.0;
+    feature->mode = host_ ? mode_ : doc::ExtrudeMode::NewBody;
+    return feature;
+}
+
+std::unique_ptr<cmd::Command> RevolveOperation::makeCommand(const doc::Document& document) const
+{
+    if (!host_ || mode_ == doc::ExtrudeMode::NewBody)
+        return std::make_unique<cmd::CreateBodyCommand>(document.nextBodyName(), makeFeature(value()));
+    return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
+}
+
 // ---- Shell -----------------------------------------------------------------------
 
 std::unique_ptr<ShellOperation> ShellOperation::create(const doc::Document& document, const Uuid& bodyId,

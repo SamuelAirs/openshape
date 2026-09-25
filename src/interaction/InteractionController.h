@@ -111,8 +111,10 @@ public:
     Mode mode() const { return session_ ? Mode::Sketch : Mode::Model; }
     SketchSession* sketchSession() { return session_.get(); }
     const SketchSession* sketchSession() const { return session_.get(); }
-    // Starts a sketch on the selected planar face, or on the ground (XY) plane.
-    Status startSketch();
+    // Origin planes a sketch can start on when no face is selected.
+    enum class SketchPlane { Top, Front, Right };
+    // Starts a sketch on the selected planar face, or on an origin plane.
+    Status startSketch(SketchPlane plane = SketchPlane::Top);
     Status editSketch(const Uuid& sketchId);
     // Leaves sketch mode. An empty sketch is deleted.
     void finishSketch();
@@ -177,6 +179,8 @@ private:
     std::optional<Camera> cameraBeforeSketch_; // restored when the sketch is finished
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
+    doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
+    doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
 
     struct Drag {
         DragMode mode = DragMode::None;

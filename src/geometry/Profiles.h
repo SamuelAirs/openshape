@@ -43,4 +43,9 @@ bool regionContains(const Shape& face, const Vec3& point);
 // Sweeps faces along `vector` and fuses the prisms into one shape.
 Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector);
 
+// Revolves faces around an axis (in their plane) by `angle` radians and fuses
+// the results. Fails if a face crosses the axis.
+Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrigin, const Vec3& axisDirection,
+                           double angle);
+
 } // namespace os::geom

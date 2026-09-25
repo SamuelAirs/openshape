@@ -4,6 +4,8 @@
 
 using namespace os;
 
+static constexpr double kPiForTests = 3.14159265358979323846;
+
 namespace {
 
 double mm(std::string_view text, LengthUnit unit = LengthUnit::Millimeter)
@@ -86,4 +88,15 @@ TEST(Units, Formatting)
     EXPECT_EQ(formatLength(25.0, LengthUnit::Millimeter), "25.00 mm");
     EXPECT_EQ(formatLength(25.4, LengthUnit::Inch, 3), "1.000 in");
     EXPECT_EQ(formatLength(-0.0001, LengthUnit::Millimeter), "0.00 mm");
+}
+
+TEST(Units, Angles)
+{
+    EXPECT_NEAR(*parseAngle("90").millimeters, kPiForTests / 2, 1e-12);
+    EXPECT_NEAR(*parseAngle("180deg").millimeters, kPiForTests, 1e-12);
+    EXPECT_NEAR(*parseAngle("45\xC2\xB0").millimeters, kPiForTests / 4, 1e-12);
+    EXPECT_NEAR(*parseAngle("1rad").millimeters, 1.0, 1e-12);
+    EXPECT_NEAR(*parseAngle("360/4").millimeters, kPiForTests / 2, 1e-12);
+    EXPECT_FALSE(parseAngle("north").millimeters.has_value());
+    EXPECT_EQ(formatAngle(kPiForTests), "180.0\xC2\xB0");
 }

@@ -25,6 +25,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Shell: return "Shell";
     case FeatureKind::Move: return "Move";
     case FeatureKind::Combine: return "Combine";
+    case FeatureKind::Revolve: return "Revolve";
     }
     return "Unknown";
 }
@@ -32,7 +33,8 @@ std::string_view toString(FeatureKind kind)
 std::optional<FeatureKind> featureKindFromString(std::string_view text)
 {
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
-                          FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine})
+                          FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
+                          FeatureKind::Revolve})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -49,6 +51,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Shell: return std::make_unique<ShellFeature>(id);
     case FeatureKind::Move: return std::make_unique<MoveFeature>(id);
     case FeatureKind::Combine: return std::make_unique<CombineFeature>(id);
+    case FeatureKind::Revolve: return std::make_unique<RevolveFeature>(id);
     }
     return nullptr;
 }
@@ -514,6 +517,86 @@ Status ExtrudeFeature::readParams(const json& in)
     profiles = std::move(refs);
     distance = *d;
     throughAll = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
+    return okStatus();
+}
+
+// ---- Revolve --------------------------------------------------------------------
+
+Result<geom::Shape> RevolveFeature::compute(const geom::Shape& input, const EvalContext& context) const
+{
+    const sketch::Sketch* sk = context.sketch(sketchId);
+    if (!sk)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The sketch for this revolve no longer exists.",
+                                            "Revolve: sketch missing");
+    const sketch::Plane plane = effectivePlane(*sk, context);
+    auto regions = sketchRegions(*sk, plane);
+    if (!regions)
+        return Result<geom::Shape>::failureFrom(regions);
+    std::vector<geom::Shape> faces;
+    for (const ProfileRef& ref : profiles) {
+        const auto index = resolveProfile(regions.value(), plane, ref);
+        if (!index)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                                "A shape this revolve used is no longer closed or no longer exists.",
+                                                "Revolve: profile unresolved");
+        faces.push_back(regions.value()[std::size_t(*index)].face);
+    }
+    auto tool = geom::revolveFaces(faces, plane.origin, axis == SketchAxis::Y ? plane.yAxis : plane.xAxis, angle);
+    if (!tool)
+        return tool;
+    switch (mode) {
+    case ExtrudeMode::NewBody: return tool;
+    case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
+    case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
+    }
+    return tool;
+}
+
+std::vector<ParameterInfo> RevolveFeature::parameters() const
+{
+    return {{"angle", "Angle", ParameterKind::Angle, angle}};
+}
+
+Status RevolveFeature::setParameter(std::string_view key, double value)
+{
+    if (key != "angle")
+        return unknownParameter(key);
+    if (!(value > 1e-9) || value > 2 * kPi + 1e-9)
+        return Status::failure(ErrorCode::InvalidArgument, "The angle must be between 0\xC2\xB0 and 360\xC2\xB0.",
+                               "revolve angle out of range");
+    angle = std::min(value, 2 * kPi);
+    return okStatus();
+}
+
+void RevolveFeature::writeParams(json& out) const
+{
+    json refs = json::array();
+    for (const auto& r : profiles)
+        refs.push_back({{"point", json::array({r.interiorPoint.x, r.interiorPoint.y})}, {"area", r.area}});
+    out["sketch"] = sketchId.toString();
+    out["profiles"] = refs;
+    out["axis"] = axis == SketchAxis::Y ? "Y" : "X";
+    out["angle"] = angle;
+    out["mode"] = std::string(toString(mode));
+}
+
+Status RevolveFeature::readParams(const json& in)
+{
+    // Same profile/mode encoding as Extrude; reuse its validation.
+    ExtrudeFeature probe;
+    json asExtrude = in;
+    asExtrude["distance"] = 1.0;
+    if (Status s = probe.readParams(asExtrude); !s)
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid revolve.", s.developerMessage());
+    const auto a = numberFrom(in, "angle");
+    const std::string ax = in.contains("axis") && in["axis"].is_string() ? in["axis"].get<std::string>() : std::string();
+    if (!a || !(*a > 0) || *a > 2 * kPi + 1e-9 || (ax != "X" && ax != "Y"))
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid revolve.", "Revolve: bad angle/axis");
+    sketchId = probe.sketchId;
+    profiles = probe.profiles;
+    mode = probe.mode;
+    angle = *a;
+    axis = ax == "Y" ? SketchAxis::Y : SketchAxis::X;
     return okStatus();
 }
 

@@ -138,3 +138,33 @@ TEST(Profiles, ExtrudeRectangleAndPlateWithHole)
     EXPECT_NEAR(volume(down.value()), kPi * 9.0 * 7.0, 1e-4);
     EXPECT_NEAR(boundingBox(down.value()).min.z, -7.0, 1e-6);
 }
+
+TEST(Profiles, RevolveRectangleMakesTube)
+{
+    // Profile x in [5, 8], y in [0, 10] on the XY plane, revolved about Y: a tube.
+    const auto r = regions(rectangle(5, 0, 8, 10));
+    ASSERT_EQ(r.size(), 1u);
+    auto tube = revolveFaces({r[0].face}, {0, 0, 0}, {0, 1, 0}, 2 * kPi);
+    ASSERT_TRUE(tube.ok()) << tube.developerMessage();
+    EXPECT_NEAR(volume(tube.value()), kPi * (64 - 25) * 10, 1e-3);
+    auto half = revolveFaces({r[0].face}, {0, 0, 0}, {0, 1, 0}, kPi);
+    ASSERT_TRUE(half.ok());
+    EXPECT_NEAR(volume(half.value()), kPi * (64 - 25) * 10 / 2, 1e-3);
+}
+
+TEST(Profiles, RevolveRejectsProfileCrossingAxis)
+{
+    const auto r = regions(rectangle(-2, 0, 3, 5));
+    ASSERT_EQ(r.size(), 1u);
+    auto result = revolveFaces({r[0].face}, {0, 0, 0}, {0, 1, 0}, 2 * kPi);
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.userMessage().find("axis"), std::string::npos);
+}
+
+TEST(Profiles, RevolveProfileTouchingAxisMakesCylinder)
+{
+    const auto r = regions(rectangle(0, 0, 4, 10));
+    auto cyl = revolveFaces({r[0].face}, {0, 0, 0}, {0, 1, 0}, 2 * kPi);
+    ASSERT_TRUE(cyl.ok()) << cyl.developerMessage();
+    EXPECT_NEAR(volume(cyl.value()), kPi * 16 * 10, 1e-3);
+}

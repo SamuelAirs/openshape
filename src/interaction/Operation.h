@@ -29,6 +29,8 @@ public:
     virtual std::string valueLabel() const = 0;
     virtual bool allowsNegative() const = 0;
     virtual doc::FeatureKind featureKind() const = 0;
+    // Angle-valued operations take degrees in text input and show "\xC2\xB0".
+    virtual bool isAngle() const { return false; }
 
     const Uuid& bodyId() const { return bodyId_; }
     // Body whose display the preview replaces; nil when the result is a new body.
@@ -155,6 +157,56 @@ private:
         : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center) {}
     Vec3 center_;
     Vec3 offset_; // committed per-axis values; the active axis lives in value()
+};
+
+// Revolve: sweeps profiles around the sketch's Y (or X) axis. value() is in
+// degrees. The arrow is tangent to the sweep at the profile, so dragging it
+// sweeps the profile around (arc length -> angle).
+class RevolveOperation final : public Operation {
+public:
+    static std::unique_ptr<RevolveOperation> create(const doc::Document& document, const Uuid& sketchId,
+                                                    std::vector<doc::ProfileRef> profiles, const Vec3& anchor,
+                                                    doc::SketchAxis axis);
+
+    std::string title() const override { return "Revolve"; }
+    std::string valueLabel() const override { return "Angle"; }
+    bool allowsNegative() const override { return false; }
+    bool isAngle() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Revolve; }
+    Uuid previewBody() const override;
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+    double displayOffset(double degrees) const override { return degrees * kPi / 180.0 * radius_; }
+    double valueFromOffset(double offset) const override { return std::min(offset / radius_ * 180.0 / kPi, 360.0); }
+
+    // The handle rides on the swept arc: it sits where the profile point
+    // ends up at the current angle and points along the local tangent.
+    LinearManipulator handle(int index) const override;
+
+    doc::ExtrudeMode mode() const { return mode_; }
+    void setMode(doc::ExtrudeMode mode) { mode_ = mode; }
+    bool hasHost() const { return host_.has_value(); }
+    doc::SketchAxis axis() const { return axis_; }
+    const Uuid& sketchId() const { return sketchId_; }
+    const std::vector<doc::ProfileRef>& profiles() const { return profiles_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    RevolveOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles,
+                     doc::SketchAxis axis, double radius, Vec3 axisOrigin, Vec3 axisDirection, Vec3 start)
+        : Operation(host.value_or(Uuid()), std::move(m)), sketchId_(sketchId), host_(host), profiles_(std::move(profiles)),
+          axis_(axis), radius_(radius), mode_(host ? doc::ExtrudeMode::Join : doc::ExtrudeMode::NewBody),
+          axisOrigin_(axisOrigin), axisDirection_(axisDirection), start_(start) {}
+    Uuid sketchId_;
+    std::optional<Uuid> host_;
+    std::vector<doc::ProfileRef> profiles_;
+    doc::SketchAxis axis_;
+    double radius_;
+    doc::ExtrudeMode mode_;
+    Vec3 axisOrigin_;
+    Vec3 axisDirection_;
+    Vec3 start_; // profile point the handle starts on
 };
 
 // Shell: hollows the body through the selected faces. The arrow starts on the

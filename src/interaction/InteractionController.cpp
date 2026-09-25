@@ -495,8 +495,10 @@ void InteractionController::click(const PointerEvent& event)
 void InteractionController::rebuildOperation()
 {
     operation_.reset();
-    if (selection_.empty())
+    if (selection_.empty()) {
         faceOperationKind_ = doc::FeatureKind::PushPull;
+        profileOperationKind_ = doc::FeatureKind::Extrude;
+    }
     if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
         const auto& first = selection_.items().front();
         if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
@@ -523,9 +525,13 @@ void InteractionController::rebuildOperation()
             if (item.profile)
                 refs.push_back(*item.profile);
         const int first = selection_.items().front().index;
-        if (entry && first >= 0 && first < static_cast<int>(entry->regions.size()))
-            operation_ = ExtrudeOperation::create(*document_, sketchId, std::move(refs),
-                                                  entry->regions[std::size_t(first)].interiorPoint);
+        if (entry && first >= 0 && first < static_cast<int>(entry->regions.size())) {
+            const Vec3 anchor = entry->regions[std::size_t(first)].interiorPoint;
+            if (profileOperationKind_ == doc::FeatureKind::Revolve)
+                operation_ = RevolveOperation::create(*document_, sketchId, std::move(refs), anchor, revolveAxis_);
+            else
+                operation_ = ExtrudeOperation::create(*document_, sketchId, std::move(refs), anchor);
+        }
     }
 }
 
@@ -533,10 +539,13 @@ std::string InteractionController::setValueText(const std::string& text)
 {
     if (!operation_)
         return "Select a face or an edge first.";
-    const auto parsed = parseLength(text, document_->displayUnit());
+    const auto parsed = operation_->isAngle() ? parseAngle(text) : parseLength(text, document_->displayUnit());
     if (!parsed.millimeters)
         return parsed.error;
-    const double value = *parsed.millimeters;
+    // Angle operations keep their value in degrees.
+    const double value = operation_->isAngle() ? *parsed.millimeters * 180.0 / kPi : *parsed.millimeters;
+    if (operation_->isAngle() && value > 360.0 + 1e-9)
+        return "The angle must be between 0Â° and 360Â°.";
     if (!operation_->allowsNegative() && value <= 0)
         return operation_->valueLabel() + " must be greater than zero.";
     operation_->setValue(value, *document_);
@@ -549,6 +558,8 @@ std::string InteractionController::operationValueText() const
 {
     if (!operation_)
         return {};
+    if (operation_->isAngle())
+        return formatAngle(operation_->value() * kPi / 180.0);
     return formatLength(operation_->value(), document_->displayUnit());
 }
 
@@ -678,8 +689,22 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (session_)
         return session_->contextActions();
     std::vector<ContextAction> actions;
+    if (const auto* revolve = dynamic_cast<const RevolveOperation*>(operation_.get())) {
+        actions.push_back({"extrude", "Extrude", false});
+        actions.push_back({"revolve", "Revolve", true});
+        actions.push_back({"axis:y", "Axis: vertical", revolve->axis() == doc::SketchAxis::Y});
+        actions.push_back({"axis:x", "Axis: horizontal", revolve->axis() == doc::SketchAxis::X});
+        if (revolve->hasHost()) {
+            actions.push_back({"mode:new", "New body", revolve->mode() == doc::ExtrudeMode::NewBody});
+            actions.push_back({"mode:join", "Join", revolve->mode() == doc::ExtrudeMode::Join});
+            actions.push_back({"mode:cut", "Cut", revolve->mode() == doc::ExtrudeMode::Cut});
+        }
+        actions.push_back({"editSketch", "Edit sketch", false});
+        return actions;
+    }
     if (const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get())) {
         actions.push_back({"extrude", "Extrude", true});
+        actions.push_back({"revolve", "Revolve", false});
         if (extrude->hasHost()) {
             const auto mode = extrude->mode();
             actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
@@ -734,6 +759,32 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyView();
         return status;
     }
+    if (id == "revolve" || id == "extrude" || id.rfind("axis:", 0) == 0) {
+        if (!selection_.allOfKind(sel::SelectionKind::SketchProfile))
+            return okStatus();
+        if (id == "revolve" || id.rfind("axis:", 0) == 0)
+            profileOperationKind_ = doc::FeatureKind::Revolve;
+        else
+            profileOperationKind_ = doc::FeatureKind::Extrude;
+        if (id == "axis:x")
+            revolveAxis_ = doc::SketchAxis::X;
+        else if (id == "axis:y")
+            revolveAxis_ = doc::SketchAxis::Y;
+        rebuildOperation();
+        // A revolve is most often a full turn: preview it right away.
+        if (auto* revolve = dynamic_cast<RevolveOperation*>(operation_.get()))
+            revolve->setValue(360.0, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* revolve = dynamic_cast<RevolveOperation*>(operation_.get()); revolve && id.rfind("mode:", 0) == 0) {
+        revolve->setMode(id == "mode:join" ? doc::ExtrudeMode::Join : id == "mode:cut" ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::NewBody);
+        revolve->setValue(revolve->value(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id.rfind("mode:", 0) == 0) {
         const auto mode = id == "mode:join" ? doc::ExtrudeMode::Join : id == "mode:cut" ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::NewBody;
         extrude->setModeOverride(mode);
@@ -758,7 +809,7 @@ Status InteractionController::triggerAction(const std::string& id)
         return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
                                      : id == "subtract" ? doc::CombineMode::Subtract
                                                         : doc::CombineMode::Intersect);
-    if (id == "extrude" || id == "move")
+    if (id == "move")
         return okStatus(); // already active: the arrows are the tool
     if (id == "pushpull" || id == "shell") {
         faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell : doc::FeatureKind::PushPull;
@@ -1003,11 +1054,17 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
 
 // ---- Sketching -------------------------------------------------------------------------
 
-Status InteractionController::startSketch()
+Status InteractionController::startSketch(SketchPlane originPlane)
 {
     if (session_)
         finishSketch();
     sketch::Plane plane = sketch::Plane::xy();
+    // Front (XZ) faces a viewer at -Y; Right (YZ) faces a viewer at +X. Both
+    // keep sketch "up" along world Z.
+    if (originPlane == SketchPlane::Front)
+        plane = sketch::Plane{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}};
+    else if (originPlane == SketchPlane::Right)
+        plane = sketch::Plane{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     std::optional<Uuid> host;
     std::optional<sketch::Attachment> attachment;
     if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face) {
@@ -1181,6 +1238,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Shell: return "Shell";
     case doc::FeatureKind::Move: return "Move";
     case doc::FeatureKind::Combine: return "Combine";
+    case doc::FeatureKind::Revolve: return "Revolve";
     }
     return "Step";
 }
@@ -1204,6 +1262,11 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         const auto& e = static_cast<const doc::EdgeTreatmentFeature&>(f);
         const std::string count = std::to_string(e.edges.size()) + (e.edges.size() == 1 ? " edge" : " edges");
         return (f.kind() == doc::FeatureKind::Fillet ? "R " : "") + formatLength(e.size, unit) + dot + count;
+    }
+    case doc::FeatureKind::Revolve: {
+        const auto& r = static_cast<const doc::RevolveFeature&>(f);
+        const char* mode = r.mode == doc::ExtrudeMode::NewBody ? "New body" : r.mode == doc::ExtrudeMode::Join ? "Join" : "Cut";
+        return formatAngle(r.angle) + dot + mode;
     }
     case doc::FeatureKind::Combine: {
         const auto& c = static_cast<const doc::CombineFeature&>(f);
@@ -1285,9 +1348,12 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             case doc::FeatureStatus::Suppressed: row.status = HistoryRow::Status::Suppressed; break;
             }
             row.message = state.status == doc::FeatureStatus::Suppressed ? "Suppressed" : state.userMessage;
-            for (const auto& p : f.parameters())
+            for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
                     row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
+                else if (p.kind == doc::ParameterKind::Angle)
+                    row.parameters.push_back({p.key, p.label, formatAngle(p.value)});
+            }
             rows.push_back(std::move(row));
         }
     }
@@ -1296,7 +1362,11 @@ std::vector<HistoryRow> InteractionController::historyRows() const
 
 Status InteractionController::setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text)
 {
-    const auto parsed = parseLength(text, document_->displayUnit());
+    bool isAngle = false;
+    if (const doc::Body* body = document_->bodyOfFeature(featureId))
+        for (const auto& p : body->feature(featureId)->parameters())
+            isAngle = isAngle || (p.key == key && p.kind == doc::ParameterKind::Angle);
+    const auto parsed = isAngle ? parseAngle(text) : parseLength(text, document_->displayUnit());
     if (!parsed.millimeters)
         return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
     Status status = undoStack_->push(

@@ -70,6 +70,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Shell: return "Shell";
     case doc::FeatureKind::Move: return "Move";
     case doc::FeatureKind::Combine: return "Combine";
+    case doc::FeatureKind::Revolve: return "Revolve";
     }
     return "Add step";
 }

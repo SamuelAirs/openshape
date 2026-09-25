@@ -134,6 +134,13 @@ ApplicationWindow {
     }
 
     Menu {
+        id: planeMenu
+        MenuItem { objectName: "planeTop"; text: "Top (XY) \u2014 ground"; onTriggered: window.app.startSketch("top") }
+        MenuItem { objectName: "planeFront"; text: "Front (XZ)"; onTriggered: window.app.startSketch("front") }
+        MenuItem { objectName: "planeRight"; text: "Right (YZ)"; onTriggered: window.app.startSketch("right") }
+    }
+
+    Menu {
         id: fileMenu
         MenuItem { text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
         MenuItem { text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
@@ -167,13 +174,15 @@ ApplicationWindow {
                 ToolTip.delay: 500
             }
             ActionButton {
+                id: sketchButton
                 objectName: "sketchButton"
                 text: "Sketch"
                 Layout.fillWidth: true
                 enabled: window.app.canStartSketch
-                onClicked: window.app.startSketch()
-                ToolTip.visible: hovered
-                ToolTip.text: "Sketch on the ground plane, or on the selected flat face (K)."
+                // On a selected face: sketch right there. Otherwise pick an origin plane.
+                onClicked: window.app.faceSelected() ? window.app.startSketch() : planeMenu.popup(this, width + 6, 0)
+                ToolTip.visible: hovered && !planeMenu.visible
+                ToolTip.text: "Sketch on the selected flat face, or on an origin plane (K = ground)."
                 ToolTip.delay: 500
             }
         }

@@ -61,6 +61,30 @@ void runDemo(os::ui::AppController& app, const QString& demo)
     interaction.fitAll(false);
     if (demo == QLatin1String("empty"))
         return;
+    if (demo == QLatin1String("revolve")) {
+        using P = os::interact::InteractionController::SketchPlane;
+        (void)interaction.startSketch(P::Front);
+        interaction.skipAnimation();
+        auto screenOf = [&](os::Vec2 local) {
+            return interaction.camera().project(interaction.sketchSession()->sketch().plane().toWorld(local));
+        };
+        os::interact::PointerEvent e;
+        e.position = screenOf({6, 0});
+        interaction.pointerPress(e);
+        e.position = screenOf({10, 14});
+        interaction.pointerMove(e);
+        interaction.pointerRelease(e);
+        interaction.finishSketch();
+        interaction.setStandardView(os::StandardView::Isometric, false);
+        interaction.fitAll(false);
+        os::interact::PointerEvent pick;
+        pick.position = interaction.camera().project({8, 0, 7});
+        interaction.pointerPress(pick);
+        interaction.pointerRelease(pick);
+        (void)interaction.triggerAction("revolve");
+        interaction.setValueText("270");
+        return;
+    }
     if (demo.startsWith(QLatin1String("sketch")) || demo == QLatin1String("extrude") || demo == QLatin1String("bracket")) {
         using os::interact::Key;
         using os::interact::SketchTool;

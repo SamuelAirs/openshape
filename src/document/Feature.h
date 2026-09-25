@@ -21,7 +21,7 @@ namespace os::doc {
 class Document;
 class Body;
 
-enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine };
+enum class FeatureKind { Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve };
 
 // What a feature may consult besides its input shape.
 struct EvalContext {
@@ -264,6 +264,30 @@ public:
     // The extruded tool solid alone (before join/cut). `input` sizes
     // through-all cuts.
     Result<geom::Shape> toolSolid(const geom::Shape& input, const EvalContext& context) const;
+};
+
+// Revolves sketch profiles around the sketch's own X or Y axis (through the
+// sketch origin): new body, or joined to / cut from the body it belongs to.
+enum class SketchAxis { X, Y };
+
+class RevolveFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sketchId;
+    std::vector<ProfileRef> profiles;
+    SketchAxis axis = SketchAxis::Y;
+    double angle = 6.283185307179586; // radians
+    ExtrudeMode mode = ExtrudeMode::NewBody;
+
+    FeatureKind kind() const override { return FeatureKind::Revolve; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new RevolveFeature(*this)); }
+    bool isBaseFeature() const override { return mode == ExtrudeMode::NewBody; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sketchId}; }
 };
 
 } // namespace os::doc

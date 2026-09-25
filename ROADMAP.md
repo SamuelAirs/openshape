@@ -48,8 +48,11 @@ input mapping, animated standard views.
   export — automated in `SketchFeatures.Milestone1BracketModel`, the
   headless interaction tests, and through the real UI in `acceptance_gui`
 
+Since M1: sketches on the Front (XZ) and Right (YZ) origin planes; horizontal
+and vertical distances between any two points (position holes precisely).
+
 Not yet: arcs, polylines as a distinct tool, construction-line toggle,
-parallel/perpendicular/tangent/equal constraints, sketching on XZ/YZ planes.
+parallel/perpendicular/tangent/equal constraints.
 
 ## Milestone 2 — common modeling tools 🟡
 
@@ -60,6 +63,9 @@ parallel/perpendicular/tangent/equal constraints, sketching on XZ/YZ planes.
 - ✅ Move body (X/Y/Z arrows, typed per-axis values) as an editable history step
 - ✅ Combine bodies: union, subtract, intersect (tool body consumed and hidden;
   editing the tool updates the result; cycles refused)
+- ✅ Revolve sketch profiles around the sketch's vertical/horizontal axis
+  (typed degrees, arrow rides the arc, new body/join/cut; profiles crossing
+  the axis are refused with an explanation)
 - ⬜ Rotate body (kernel ready; needs a rotation manipulator)
 - ⬜ Mirror, linear pattern, circular pattern
 - ⬜ Offset face (push/pull of non-planar faces)

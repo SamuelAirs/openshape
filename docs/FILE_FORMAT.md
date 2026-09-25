@@ -79,8 +79,11 @@ Rules:
   `{ "translation": [x, y, z] }`. `Combine` params: `{ "tool": body uuid,
   "mode": "Union" | "Subtract" | "Intersect" }` — the tool body is usually
   hidden (consumed) but stays in the document.
+- `Revolve` params: like `Extrude` (sketch, profiles, mode) plus `"axis": "X" |
+  "Y"` (the sketch's own axes through its origin) and `"angle"` in radians
+  (0, 2π].
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
-  `Move`, `Combine`. Unknown
+  `Move`, `Combine`, `Revolve`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

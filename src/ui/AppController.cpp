@@ -201,9 +201,17 @@ bool AppController::canStartSketch() const
     return sel.empty() || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::Face);
 }
 
-void AppController::startSketch()
+bool AppController::faceSelected() const
 {
-    const Status status = interaction_->startSketch();
+    const auto& sel = interaction_->selection();
+    return sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::Face;
+}
+
+void AppController::startSketch(const QString& plane)
+{
+    using P = interact::InteractionController::SketchPlane;
+    const P p = plane == QLatin1String("front") ? P::Front : plane == QLatin1String("right") ? P::Right : P::Top;
+    const Status status = interaction_->startSketch(p);
     if (!status)
         notifyMessage(q(status.userMessage()));
 }

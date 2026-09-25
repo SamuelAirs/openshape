@@ -321,3 +321,91 @@ TEST(SketchInteraction, PositionHoleFromOrigin)
     EXPECT_NEAR(h.session().sketch().point(circle.center)->position.x, 12.0, 1e-9);
     EXPECT_NEAR(h.session().sketch().point(circle.center)->position.y, 15.0, 1e-9);
 }
+
+TEST(SketchInteraction, OriginPlanesFaceTheViewer)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Front).ok());
+    h.controller.skipAnimation();
+    const auto& front = h.session().sketch().plane();
+    EXPECT_NEAR(front.normal().y, -1.0, 1e-12);
+    EXPECT_NEAR(h.controller.camera().forward().y, 1.0, 1e-9) << "looking from the front";
+    EXPECT_NEAR(h.controller.camera().right().x, 1.0, 1e-9) << "sketch x to the right";
+    // A rectangle drawn on the front plane stands up in Z.
+    h.drag(h.sketchScreen({0, 0}), h.sketchScreen({10, 20}));
+    h.controller.finishSketch();
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+    h.click(h.controller.camera().project({5, 0, 10}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_EQ(h.controller.setValueText("-4"), ""); // toward +Y (away from the front viewer)
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto bb = geom::boundingBox(h.document.bodies().front()->shape());
+    EXPECT_NEAR(bb.size().z, 20.0, 1e-6);
+    EXPECT_NEAR(bb.min.y, 0.0, 1e-6);
+    EXPECT_NEAR(bb.max.y, 4.0, 1e-6);
+
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Right).ok());
+    h.controller.skipAnimation();
+    EXPECT_NEAR(h.session().sketch().plane().normal().x, 1.0, 1e-12);
+    EXPECT_NEAR(h.controller.camera().forward().x, -1.0, 1e-9);
+}
+
+// Maker spacer: revolve a rectangle on the front plane around the vertical axis.
+TEST(SketchInteraction, RevolveSpacer)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Front).ok());
+    h.controller.skipAnimation();
+    h.click(h.sketchScreen({5, 0}));
+    h.move(h.sketchScreen({8, 10}));
+    h.type("3");
+    h.session().focusNextInput();
+    h.type("10");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.finishSketch();
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+
+    h.click(h.controller.camera().project({6.5, 0, 5}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_TRUE(h.controller.triggerAction("revolve").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Revolve");
+    EXPECT_EQ(h.controller.operationValueText(), "360.0\xC2\xB0");
+    EXPECT_TRUE(h.controller.operation()->hasPreview());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    const doc::Body& body = *h.document.bodies().front();
+    EXPECT_NEAR(geom::volume(body.shape()), kPi * (64 - 25) * 10, 1e-3);
+    const auto bb = geom::boundingBox(body.shape());
+    EXPECT_NEAR(bb.size().z, 10.0, 1e-6);
+    EXPECT_NEAR(bb.size().x, 16.0, 1e-6);
+
+    // Half a turn through the history (typed in degrees).
+    const Uuid revolveId = body.features().front()->id();
+    ASSERT_TRUE(h.controller.setFeatureParameter(revolveId, "angle", "180").ok());
+    EXPECT_NEAR(geom::volume(body.shape()), kPi * (64 - 25) * 10 / 2, 1e-3);
+    bool listed = false;
+    for (const auto& row : h.controller.historyRows())
+        listed = listed || (row.name == "Revolve" && row.detail.find("180.0") != std::string::npos);
+    EXPECT_TRUE(listed);
+}
+
+TEST(SketchInteraction, RevolveTypedAngle)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Front).ok());
+    h.controller.skipAnimation();
+    h.drag(h.sketchScreen({4, 0}), h.sketchScreen({10, 6}));
+    h.controller.finishSketch();
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+    h.click(h.controller.camera().project({7, 0, 3}));
+    ASSERT_TRUE(h.controller.triggerAction("revolve").ok());
+    EXPECT_EQ(h.controller.setValueText("90"), "");
+    EXPECT_NE(h.controller.setValueText("400"), "") << "more than a full turn is refused";
+    EXPECT_DOUBLE_EQ(h.controller.operation()->value(), 90.0) << "a refused value keeps the previous one";
+    EXPECT_EQ(h.controller.setValueText("1rad"), "");
+    EXPECT_NEAR(h.controller.operation()->value(), 57.2957795, 1e-6);
+}
