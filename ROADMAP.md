@@ -51,10 +51,11 @@ input mapping, animated standard views.
 Since M1: sketches on the Front (XZ) and Right (YZ) origin planes; horizontal
 and vertical distances between any two points (position holes precisely).
 
-Not yet: arcs, polylines as a distinct tool, construction-line toggle,
-parallel/perpendicular/tangent/equal constraints; curves of different
-sketches on one plane splitting each other, and continuing a sketch by
-drawing on its plane (both Shapr3D behaviours the owner expected).
+Since the first hands-on session: 3-point arcs (typed radius), parallel/
+perpendicular/equal/tangent/concentric/on-line/midpoint/radius constraints,
+construction toggle, and sketching on a sketch (or its plane) continues it.
+Not yet: slot, center rectangle, polygon, offset, trim, sketch fillet,
+splines, text, constraint icons, sketch patterns.
 
 ## Milestone 2 — common modeling tools 🟡
 

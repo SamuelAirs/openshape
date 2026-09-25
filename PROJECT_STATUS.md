@@ -25,10 +25,14 @@ toolkit, transform & repeat, direct face edits, and the iPad/Pencil workflow —
   drag with zoom-aware snapping, live preview, typed unit-aware values,
   Enter/click-away commit, Esc cancel.
 - Sketching on the XY/XZ/YZ planes or a flat face: line, rectangle, circle
-  tools; endpoint/origin/midpoint snaps; horizontal/vertical inference; typed
-  dimensions; click-to-edit dimension labels; horizontal/vertical/coincident/
-  length/diameter and horizontal/vertical distance constraints; point
-  dragging; DOF status; delete. Right-click or Esc ends a line chain.
+  and 3-point **arc** tools; endpoint/origin/midpoint snaps; horizontal/
+  vertical inference; typed dimensions (incl. arc radius); click-to-edit
+  dimension labels; constraints: horizontal, vertical, coincident, length,
+  diameter, radius, horizontal/vertical distance, **parallel, perpendicular,
+  equal, tangent, concentric, on line, midpoint**; construction toggle;
+  point dragging; DOF status; delete. Right-click or Esc ends a line chain.
+  Sketching on a sketch (or on a plane that already has one) continues it,
+  so new curves split its shapes.
 - PlaneGCS solver (vendored, unmodified) with conflict detection.
 - Closed-profile detection; profile picking; extrude as new body, join or cut.
   An automatic join that would not touch the body becomes a new body.
@@ -81,9 +85,10 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
   no installer, large (~290 MB, see TD-6); **not distributable** (TD-17).
 - No thumbnails in project files.
 - CI runs on GitHub (private repo) but has not been confirmed green yet; Linux unverified.
-- Sketch: no arcs, construction toggle, parallel/perpendicular/tangent/equal.
-  Curves of different sketches on one plane do not split each other, and
-  drawing on a plane that has a sketch does not continue it (Shapr3D does both).
+- Sketch: no offset, trim, sketch fillet, slot, polygon, center rectangle,
+  spline or text yet; no sketch-level patterns/mirror; constraints have no
+  on-canvas icons yet. Separate (hidden or consumed) sketches on one plane
+  still do not interact.
 - Push/pull is prism + boolean: fillets next to a pushed face do not follow it (TD-21).
 
 ## Recent architectural decisions
@@ -109,9 +114,8 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Next concrete tasks (owner priorities)
 
-1. Sketch toolkit: arc, center rectangle, polygon, slot, offset, trim, sketch
-   fillet, construction toggle; parallel/perpendicular/tangent/equal; curves on
-   one plane interact; continue a sketch by drawing on its plane.
+1. Sketch toolkit, part 2: slot, center rectangle, polygon, offset, trim,
+   sketch fillet, constraint icons, sketch patterns.
 2. Direct face edits: move/offset face with neighbours following, delete face;
    extrude symmetric / to face / with draft.
 3. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
@@ -125,12 +129,12 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Tests currently passing
 
-187/187 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+200/200 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, document, commands, project files, sketch features, face
 attachment, camera, picking, interaction (headless M0 script, sketch
 workflows, history editing, highlight, booleans, right-click, align,
-rotate, mirror, pattern), plus `acceptance_gui`: 100 end-to-end checks
-through the real UI.
+rotate, mirror, pattern, sketch constraints, arcs), plus `acceptance_gui`:
+100 end-to-end checks through the real UI.
 
 ## Platforms verified
 

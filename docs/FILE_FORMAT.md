@@ -97,6 +97,16 @@ Rules:
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 
+## Sketch additions (2026-09-25)
+
+- Sketches may carry `"arcs": [{ "id", "center", "start", "end", "construction" }]`
+  (point ids; counterclockwise from start to end around center). Optional:
+  sketches without it load as before.
+- Constraint types added: `Parallel`, `Perpendicular`, `Equal`, `Tangent`,
+  `Concentric`, `PointOnLine`, `Midpoint` (entity ids in `a`, `b`) and
+  `Radius` (arc `a`, `value` > 0). Unknown constraint types make the file
+  unreadable with a "newer version" message.
+
 ## Versioning
 
 Version 1 is not frozen until the first public release; until then it may
