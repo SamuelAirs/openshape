@@ -27,20 +27,29 @@ Delivered beyond M0: edge fillet/chamfer with manipulator and typed radius,
 .openshape save/open, STEP and STL export, unit-aware expressions, touch/pen
 input mapping, animated standard views.
 
-## Milestone 1 — basic sketching ⬜ (next)
+## Milestone 1 — basic sketching ✅
 
-- ⬜ Choose and integrate a constraint solver (PlaneGCS preferred; see
-  docs/TECHNOLOGY_EVALUATION.md and LICENSE_PENDING.md)
-- ⬜ Sketch document object on a plane (XY/XZ/YZ or a planar face), with a
-  2D coordinate system; view aligns to the sketch plane
-- ⬜ Line, rectangle, circle tools with inference hints (horizontal/vertical,
-  endpoint/midpoint/origin snaps) shown before commitment
-- ⬜ Dimensions: rectangle width/height, circle diameter (typed, unit-aware)
-- ⬜ Constraints: horizontal, vertical, coincident
-- ⬜ Closed-profile detection; select a profile region
-- ⬜ Extrude profile (new body, join, cut) with the same arrow manipulator
-- ⬜ Acceptance model: 60 × 30 plate, 5 mm; Ø6 hole cut through; hole
-  duplicated; export STEP + STL (automated)
+- ✅ Constraint solver: FreeCAD's PlaneGCS vendored unmodified (shims only),
+  built as a shared library (LGPL-friendly)
+- ✅ Sketch objects on the XY plane or any planar face; the view turns to face
+  the sketch and returns to 3D on finish
+- ✅ Line (chained), rectangle and circle tools; click-click or drag-to-draw
+- ✅ Inference shown before commitment: endpoint, origin, midpoint snaps;
+  horizontal/vertical guides; zoom-aware grid
+- ✅ Typed dimensions while drawing (W Tab H, Ø, L) and editable dimension
+  labels (click to edit); unit-aware
+- ✅ Constraints: horizontal, vertical, coincident, length, diameter (from
+  selection); DOF / "Fully defined" / conflict status
+- ✅ Point dragging with live solving; delete with cascade
+- ✅ Closed-profile detection (nesting, crossings, dangling lines)
+- ✅ Profile selection and extrude with the arrow manipulator: new body, join,
+  cut (automatic for sketches on bodies, overridable)
+- ✅ Acceptance model: 60 × 30 plate 5 mm, two Ø6 holes cut through, STEP + STL
+  export — automated in `SketchFeatures.Milestone1BracketModel`, the
+  headless interaction tests, and through the real UI in `acceptance_gui`
+
+Not yet: arcs, polylines as a distinct tool, construction-line toggle,
+parallel/perpendicular/tangent/equal constraints, sketching on XZ/YZ planes.
 
 ## Milestone 2 — common modeling tools 🟡
 

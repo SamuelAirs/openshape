@@ -27,17 +27,22 @@ Technology choices and the alternatives considered are in
  ui/        ViewportItem (QQuickRhiItem), AppController (QObject bridge), QML
         │  PointerEvent / Key / numeric text      ▲ properties, RenderScene
         ▼                                         │
- interaction/  InteractionController ── Operation (PushPull, Fillet/Chamfer)
-        │         │  camera navigation, hover, selection, manipulators, previews
+ interaction/  InteractionController ── Operation (PushPull, Fillet/Chamfer, Extrude)
+        │         │  camera, hover, selection, manipulators, previews
+        │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ▼
-        │   selection/  picking (CPU ray/segment), SelectionSet (+signatures)
+        │   selection/  picking (CPU ray/segment/profile), SelectionSet (+signatures)
         ▼
- commands/  Command + UndoStack (CreateBody, AddFeature, SetParameter, Delete…)
+ commands/  Command + UndoStack (CreateBody, AddFeature, SetParameter, EditSketch…)
         ▼
- document/  Document → Body → Feature history (Box, PushPull, Fillet, Chamfer)
-        ▼
- geometry/  Shape (opaque handle), Modeling, Tessellation, TopoSignature, Exchange
-        ▼
+ document/  Document → Sketches + Bodies → Feature history (Box, PushPull,
+        │            Fillet, Chamfer, Extrude); SketchProfiles bridge
+        ├──────────────────────────────┐
+        ▼                              ▼
+ geometry/  Shape, Modeling,       sketch/  Sketch model (points, lines, circles,
+   Profiles, Tessellation,                  constraints) + SketchSolver
+   TopoSignature, Exchange                        ▼
+        ▼                             PlaneGCS (vendored, shared lib, Eigen)
  OpenCASCADE 7.9 (only included inside geometry/)
 
  render/    ViewportRenderer (QRhi) — consumes interaction::RenderScene
@@ -51,7 +56,9 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 |---|---|---|---|
 | `openshape_core` | – | no | logging, UUID, units, math, camera |
 | `openshape_geometry` | core, OCCT (private) | no | **only** place OCCT headers are included |
-| `openshape_document` | geometry, nlohmann_json | no | features, bodies, recompute |
+| `planegcs` (shared) | Eigen | no | vendored FreeCAD solver, C++23, unmodified |
+| `openshape_sketch` | core, planegcs (private) | no | sketch model; only `SketchSolver.cpp` sees PlaneGCS |
+| `openshape_document` | geometry, sketch, nlohmann_json | no | sketches, features, bodies, recompute |
 | `openshape_commands` | document | no | undo/redo |
 | `openshape_selection` | document | no | picking, selection sets |
 | `openshape_interaction` | commands, selection | no | controller, manipulators, operations |
@@ -114,6 +121,26 @@ Document (UUID, display unit)
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
   know when to re-tessellate and when topology indices are stale.
 
+## Sketches (`sketch/`, `document/SketchProfiles`)
+
+- A `Sketch` (UUID) lives on a `Plane` (origin + orthonormal x/y axes) and holds
+  points, lines, circles and constraints under per-sketch integer ids (id 1 is
+  the fixed origin). Positions are always the last solved state.
+- Constraints: coincident, horizontal, vertical, distance, horizontal/vertical
+  distance (signed), diameter. `solve()` / `solveDragging()` build a PlaneGCS
+  system per call (DogLeg), write positions back, and report DOF plus
+  conflicting/redundant constraints. A failed solve never changes the sketch.
+- Profiles: `geom::findRegions` splits a large face on the sketch plane with
+  all sketch curves via OCCT's General Fuse (`BRepAlgoAPI_Splitter`) and keeps
+  the bounded pieces — this handles nesting, crossings and dangling lines
+  without our own arrangement code. `ProfileRef` = an interior point (sketch
+  coordinates) plus area; it resolves to the region containing that point.
+- `ExtrudeFeature` references a sketch UUID and profile refs; mode NewBody
+  (base feature), Join or Cut. `Feature::compute` receives an `EvalContext`
+  for such lookups, `Feature::dependencies()` declares them, and
+  `Document::replaceSketch` recomputes dependent bodies. Deleting a sketch that
+  a feature uses is refused.
+
 ## Topological naming (interim strategy)
 
 See [docs/TOPOLOGICAL_NAMING.md](docs/TOPOLOGICAL_NAMING.md). In short:
@@ -159,6 +186,20 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Esc clears the value, a second Esc clears the selection.
 - **Camera:** orbit about the point under the cursor, pan and zoom keep the
   point under the cursor fixed, animated standard views and fit.
+- **Sketch mode:** `startSketch()` creates a sketch on the selected planar face
+  (host body recorded) or the XY plane, animates the view to face it, and hands
+  input to a `SketchSession`. The session edits a working copy; tools are
+  Select, Line, Rectangle, Circle. Snapping order: existing points (incl.
+  origin) → line midpoints → horizontal/vertical inference relative to the
+  shape start → zoom-dependent grid. Inferred H/V becomes a constraint only
+  when shown during drawing. Typed values (width/height, diameter, length) lock
+  the shape and become dimension constraints. Every completed action commits
+  one `EditSketchCommand` (full before/after snapshots). Dragging a point runs
+  the solver live. Undo that removes the sketch exits sketch mode.
+- **Profiles in model mode:** sketch regions are pickable (a region lying on a
+  face wins over the face); selecting profiles arms `ExtrudeOperation`, whose
+  arrow follows the plane normal. For sketches on a body, pulling out joins
+  and pushing in cuts, unless overridden (New body / Join / Cut).
 
 ## Rendering (`render/`, `ui/ViewportItem`)
 
@@ -173,7 +214,12 @@ blocked) and draws with 4× MSAA:
 2. adaptive grid + X/Y axes (depth-tested, no depth write);
 3. face highlights as **index sub-ranges of the body mesh** (no extra buffers);
 4. edges as screen-space expanded quads (constant pixel width, depth bias);
-5. manipulator arrows on top (no depth test), sized in screen pixels.
+5. sketches: profile fills (cached meshes), curves batched per style, point
+   markers as zero-length line quads; the sketch being edited draws on top;
+6. manipulator arrows on top (no depth test), sized in screen pixels.
+
+Sketch labels (dimensions, live inputs, inference hints) are QML items
+positioned from `SketchSession::labels()` screen coordinates.
 
 Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages.
 All draws share one dynamic uniform buffer with per-draw offsets.
@@ -194,12 +240,15 @@ disk. Saves are atomic (temp file + rename). See
   invariants: volumes, bounding boxes, face counts), document/commands/files,
   camera/picking/interaction including a **headless Milestone 0 script**.
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
-  the real application through Qt's platform input path and checks geometry
-  after each step, saving screenshots.
+  the real application through Qt's platform input path — including clicking
+  QML buttons found by `objectName` — and checks geometry after each step,
+  saving screenshots. It covers the Milestone 0 script and the Milestone 1
+  bracket end to end (52 checks).
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
 - Tessellation and previews run synchronously on the GUI thread.
 - Picking is brute force (no BVH).
-- Only linear per-body history; no cross-body features or sketches yet.
+- Only linear per-body history; features may depend on sketches, not on
+  other bodies. Sketch planes are stored explicitly, not linked to faces.
 - QRhi comes from `Qt6::GuiPrivate`: binaries are tied to the Qt version.

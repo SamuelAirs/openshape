@@ -15,3 +15,7 @@ Intentional shortcuts, with the milestone by which each should be resolved.
 | TD-9 | `ui/qml/Main.qml` | Text-only buttons, no icon set. | Avoids fake polish; icons need a consistent original set. | M3 |
 | TD-10 | `geometry/` | Built against OCCT 7.9.3; upstream is 8.0.1. | MSYS2 package availability. | When MSYS2/vcpkg ship 8.x |
 | TD-11 | `AppController::saveProject` | No thumbnail in project files. | Needs an offscreen render path. | M3 |
+| TD-12 | `sketch/SketchSolver.cpp` | A new PlaneGCS system is built for every solve, including every drag step. | Sketches are small; simplest correct approach. | When sketches get large |
+| TD-13 | `geometry/Profiles.cpp` | Profile regions are recomputed (General Fuse + tessellation) after every sketch edit, on the GUI thread. | A few ms for typical sketches. | With TD-1 |
+| TD-14 | `sketch/` | Sketch planes are stored explicitly; a sketch on a face does not follow the face if the body changes. | Needs face references with topological naming. | M4 |
+| TD-15 | `geometry/Profiles.cpp` `cleanFace` | A region whose *outer* wire carries a dangling edge keeps it (the splitter face is used as is). | Rare; extrusion still succeeds in tests. | M3 |

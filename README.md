@@ -8,7 +8,7 @@ OpenShape is an original open-source CAD application for makers, 3D-printing
 users and product designers, built on the OpenCASCADE exact B-rep kernel with
 a Qt Quick interface designed for mouse, touch and stylus.
 
-> Status: early development (Milestone 0 complete). Windows is the first
+> Status: early development (Milestones 0 and 1 complete). Windows is the first
 > verified platform. See [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 ## What works today
@@ -16,17 +16,25 @@ a Qt Quick interface designed for mouse, touch and stylus.
 - Create boxes; push/pull any flat face with a draggable arrow or an exact
   typed value (units and arithmetic: `25`, `1in`, `20+5`)
 - Fillet and chamfer edges (drag or type the size)
+- Sketch on the ground or on any flat face: lines, rectangles, circles with
+  snapping, horizontal/vertical inference and typed dimensions; constraint
+  status ("Fully defined"); click a dimension to change it
+- Extrude closed sketch profiles into new bodies, or join/cut into a body
 - Live previews; failures explained in plain language, never corrupting the model
 - Undo/redo for every change
 - Orbit, pan, zoom, standard views, orthographic/perspective
 - Hover highlighting, face/edge/body selection, touch-friendly tolerances
-- `.openshape` project files that reopen fully editable
+- `.openshape` project files that reopen with their full history (sketches stay editable)
 - STEP export and import (kernel), STL export
 
 ## Quick start
 
 See [BUILDING.md](BUILDING.md). In the app: **Add a box** (or press `B`),
 click the top face, drag the arrow or type a number, press **Enter**.
+
+Or sketch: press `K` (Sketch), click the origin, type `60`, `Tab`, `30`,
+`Enter`, click **Finish sketch**, click inside the rectangle, type `5`,
+`Enter` — a 60 × 30 × 5 mm plate.
 
 | Action | Mouse | Touch |
 |---|---|---|

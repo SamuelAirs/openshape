@@ -30,11 +30,13 @@ pacman -S --needed --noconfirm \
   mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-qt6-declarative \
   mingw-w64-ucrt-x86_64-qt6-shadertools mingw-w64-ucrt-x86_64-qt6-svg \
   mingw-w64-ucrt-x86_64-gtest mingw-w64-ucrt-x86_64-nlohmann-json \
-  mingw-w64-ucrt-x86_64-libzip
+  mingw-w64-ucrt-x86_64-libzip mingw-w64-ucrt-x86_64-eigen3
 ```
 
 Verified versions: GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, OCCT 7.9.3,
-Qt 6.11.2, GTest 1.18.0, nlohmann-json 3.12.0, libzip 1.11.4.
+Qt 6.11.2, GTest 1.18.0, nlohmann-json 3.12.0, libzip 1.11.4, Eigen 5.0.1.
+The PlaneGCS sketch solver is vendored in `third_party/planegcs` and built
+from source (as a C++23 shared library) automatically.
 
 ### 3. Configure, build, test (UCRT64 shell, in the repository root)
 
@@ -45,7 +47,7 @@ ctest --test-dir build/msys2-ucrt64 --output-on-failure
 ```
 
 `ctest` includes `acceptance_gui`, which opens the application window and
-drives it with synthetic input for ~5 s (it moves the mouse cursor). On a
+drives it with synthetic input for ~15 s (it moves the mouse cursor). On a
 machine without a desktop session, skip it:
 
 ```bash
@@ -67,7 +69,7 @@ From the UCRT64 shell (so Qt and OCCT DLLs are on `PATH`):
 Developer switches:
 
 ```bash
-./build/msys2-ucrt64/bin/OpenShape.exe --demo pushpull --screenshot shot.png
+./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ```
 
@@ -84,5 +86,6 @@ Running the executable outside MSYS2 is not packaged yet (needs
 
 The CMake project uses only `find_package` for OCCT (≥ 7.8 recommended),
 Qt ≥ 6.8 (Core, Gui, GuiPrivate, Qml, Quick, QuickControls2, ShaderTools),
-nlohmann_json, libzip and GTest, so Linux distribution packages and Homebrew
+nlohmann_json, libzip, Eigen3 and GTest, and needs a C++23 compiler for the
+vendored solver, so Linux distribution packages and Homebrew
 should work with the `linux` preset. This has **not** been run yet.

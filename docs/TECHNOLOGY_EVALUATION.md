@@ -61,7 +61,7 @@ API), tying binaries to the Qt minor version they were built with. Accepted.
   reproducible MSVC release builds and CI (see ROADMAP).
 - The CMake project uses only `find_package`, so it is package-manager neutral.
 
-## Constraint solver (Milestone 1) — not yet chosen
+## Constraint solver — PlaneGCS chosen (Milestone 1)
 
 | Option | License | Notes |
 |---|---|---|
@@ -69,8 +69,14 @@ API), tying binaries to the Qt minor version they were built with. Accepted.
 | SolveSpace **libslvs** | GPL-3.0 | Solid, compact C API. GPL would force OpenShape to GPL — a product-level licensing decision. |
 | Own solver (Newton / Levenberg–Marquardt on Eigen) | ours | Feasible for the M1 subset (coincident, horizontal, vertical, distance, radius), but the prompt rightly warns against writing a sophisticated solver ourselves. Possible stop-gap only. |
 
-Decision deferred to the start of M1; it interacts with the project license
-(see LICENSE_PENDING.md).
+**Decision (2026-09-25): PlaneGCS.** It is compatible with every license option
+(GPL, MPL, Apache) when linked dynamically, supports the full constraint set
+we will need (tangency, equal, symmetric, angles), and reports degrees of
+freedom and conflicting/redundant constraints. Integration cost turned out to
+be small: the upstream files are vendored **unmodified**; FreeCAD-specific
+headers (logging, export macros, precompiled header) and the tiny Boost.Graph
+subset it uses (`connected_components`) are replaced by shims. It builds as
+C++23 (upstream requirement) while OpenShape stays C++20.
 
 ## File format: own ZIP + JSON container
 

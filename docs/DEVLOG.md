@@ -55,3 +55,43 @@ exact-match edits fail silently. Normalized the tree to LF (matches
 
 **`enable_testing()` order.** Tests registered from `src/app` were ignored
 because `enable_testing()` ran after `add_subdirectory(src)`.
+
+## 2026-09-25 — Milestone 1: sketching
+
+**Solver choice made cheap.** PlaneGCS looked expensive to extract (FreeCAD
+`Base/`, Boost.Graph, a precompiled header). In practice every dependency was
+either unused or trivially shimmed; the upstream files are vendored byte for
+byte and a union-find replaces `boost::connected_components` with identical
+component numbering. Upstream now uses C++23 (`std::unreachable`), so the
+solver target alone is C++23. Built as a DLL to keep LGPL obligations simple.
+
+**Profiles via General Fuse.** Instead of writing a planar arrangement
+(minimal cycle detection, nesting, T-junctions), a large face on the sketch
+plane is split by all sketch curves with `BRepAlgoAPI_Splitter`; bounded
+pieces are the profiles. Worked first time for nesting, "#" crossings and
+dangling lines. Dangling edges end up INTERNAL inside faces and are removed
+before extrusion.
+
+**Profiles referenced by an interior point.** A region's centroid can lie
+outside it (L shapes, rings), so profile references store a point from the
+region's largest triangle plus the area.
+
+**Headless first, again.** The whole sketch workflow (typed 60 × 40 rectangle,
+finish, pick profile, extrude, fillet; circle-on-face cut) was driven through
+`InteractionController` in unit tests before any rendering existed. Two test
+failures were informative: a real bug (profile selection summary looked up a
+*body* by the sketch id) and a wrong assumption (grid snapping had rounded the
+drawn line).
+
+**QML items found from the window, not its content item.** The acceptance
+runner's `findChild` on `contentItem()` found nothing: items declared inside an
+`ApplicationWindow` are QObject children of the window itself. A runner crash
+(`front()` on an empty vector after earlier failures) was a test bug; the
+application itself did not crash.
+
+**Visual review changed behavior.** Screenshots showed consumed sketches
+shouting in blue over finished parts, point markers rendering as thin bars,
+and extrusion arrows pointing straight at the viewer after finishing a
+sketch in top view. Now: consumed sketches recede (thin grey, fills only on
+hover), zero-length segments render as squares, and finishing a sketch
+restores the previous view orientation (tilting to iso if that was top-down).

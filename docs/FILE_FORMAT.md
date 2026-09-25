@@ -19,6 +19,16 @@ A ZIP archive (deflate) with these entries:
   "angleUnit": "rad",
   "displayUnit": "mm",
   "id": "5f0c…",
+  "sketches": [
+    {
+      "id": "c21d…", "name": "Sketch 1", "visible": true, "hostBody": null, "nextId": 14,
+      "plane": { "origin": [0,0,0], "xAxis": [1,0,0], "yAxis": [0,1,0] },
+      "points": [ { "id": 1, "x": 0, "y": 0, "fixed": true }, { "id": 2, "x": 60, "y": 0, "fixed": false } ],
+      "lines": [ { "id": 6, "start": 1, "end": 2, "construction": false } ],
+      "circles": [ { "id": 12, "center": 11, "radius": 3.0, "construction": false } ],
+      "constraints": [ { "id": 10, "type": "HorizontalDistance", "a": 1, "b": 2, "value": 60.0 } ]
+    }
+  ],
   "bodies": [
     {
       "id": "8a1e…", "name": "Body 1", "visible": true,
@@ -44,14 +54,29 @@ Rules:
 - **All stored lengths are millimeters** and all angles radians, regardless of
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
-- The first feature of every body must be a base feature (`Box` today).
+- The first feature of every body must be a base feature (`Box`, or
+  `Extrude` with mode `NewBody`).
+- Sketch entity ids are integers unique within their sketch; id 1 is always
+  the fixed origin point. `nextId` is the next unused id. Sketch coordinates
+  are millimeters in the plane's (xAxis, yAxis) frame.
+- Constraint types: `Coincident`, `Horizontal`, `Vertical`, `Distance`,
+  `HorizontalDistance` and `VerticalDistance` (signed: b − a), `Diameter`.
+- `Extrude` params: `{ "sketch": uuid, "profiles": [{ "point": [x, y], "area" }],
+  "distance", "mode": "NewBody" | "Join" | "Cut" }`. Profiles are referenced by
+  a point inside the region (sketch coordinates) plus its area.
+- Sketches are stored before bodies and loaded first, because extrusions
+  look them up during the initial recompute.
 - UUIDs must be unique across the document.
 - `surface` / `curve` are enum ordinals (`geom::SurfaceKind`, `geom::CurveKind`).
   They must never be renumbered; new kinds are appended.
-- Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`. Unknown types make the
-  file unreadable with a "newer version" message (never silently dropped).
+- Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`. Unknown
+  types make the file unreadable with a "newer version" message (never
+  silently dropped).
 
 ## Versioning
+
+Version 1 is not frozen until the first public release; until then it may
+gain fields (as it did for sketches) without a version bump.
 
 - `version` is an integer. Readers refuse files with a higher version than they
   support ("created by a newer version of OpenShape").
