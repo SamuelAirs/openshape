@@ -36,7 +36,8 @@ packaging, interaction polish (M3).
   in place; suppress/delete/hide.
 - Sketches on faces follow their faces; through-all cuts.
 - Shell (enclosures), Move (X/Y/Z arrows), Union/Subtract/Intersect between
-  bodies — all as editable history steps.
+  bodies, Revolve (spacers, knobs) — all as editable history steps.
+- Sketch planes: ground (XY), front (XZ), right (YZ), or any flat face.
 
 ## Partially implemented
 
@@ -71,15 +72,16 @@ packaging, interaction polish (M3).
 ## Next concrete tasks
 
 1. Rotate (ring manipulator), mirror, linear/circular pattern.
-3. Arc tool and parallel/perpendicular/equal constraints.
-4. Off-GUI-thread tessellation and previews (TD-1).
+2. Arc tool and parallel/perpendicular/equal constraints.
+3. Off-GUI-thread tessellation and previews (TD-1).
+4. Installer and smaller package (TD-6).
 
 ## Tests currently passing
 
-150/150 (`ctest`): 149 GTest cases (core, geometry, profiles, sketch model and
+158/158 (`ctest`): 157 GTest cases (core, geometry, profiles, sketch model and
 solver, document, commands, project files, sketch features, face attachment,
 camera, picking, interaction incl. headless M0 script, sketch workflows,
-history editing, shell, move and combine) plus `acceptance_gui` (60 end-to-end checks through the
+history editing, shell, move, combine and revolve) plus `acceptance_gui` (60 end-to-end checks through the
 real UI).
 
 ## Platforms verified
