@@ -300,13 +300,17 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     if (session_) {
         if (mode == DragMode::Sketch)
             session_->pointerRelease(event, camera_);
-        else if (mode == DragMode::Pending)
+        else if (mode == DragMode::Pending && press.button == PointerButton::Right)
+            (void)session_->keyPress(Key::Escape); // right-click finishes the line chain / shape, like Esc
+        else if (mode == DragMode::Pending && press.button == PointerButton::Left)
             session_->select(sketch::kNoEntity, false); // click on empty space
         notifyState();
         notifyView();
         return;
     }
-    if (mode == DragMode::Pending)
+    // Only a left click or a tap selects (and applies a pending value); right
+    // and middle buttons orbit/pan when dragged and do nothing on a click.
+    if (mode == DragMode::Pending && press.button == PointerButton::Left)
         click(press);
     else if (mode == DragMode::Manipulator)
         notifyState();

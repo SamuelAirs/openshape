@@ -186,6 +186,38 @@ TEST(SketchInteraction, LineToolInfersHorizontalAndClosesLoop)
     EXPECT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::SketchProfile);
 }
 
+// Right-click ends a line chain like Esc (segments stay); a second right-click
+// leaves the tool. Dragging with the right button still orbits.
+TEST(SketchInteraction, RightClickEndsLineChain)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.click(h.sketchScreen({20, 15}));
+    ASSERT_TRUE(h.session().isDrawing());
+    const auto rightClick = [&](Vec2 p) {
+        h.controller.pointerPress(Harness::at(p, PointerButton::Right));
+        h.controller.pointerRelease(Harness::at(p, PointerButton::Right));
+    };
+    rightClick(h.sketchScreen({5, 10}));
+    EXPECT_FALSE(h.session().isDrawing());
+    EXPECT_EQ(h.session().sketch().lines().size(), 2u);
+    EXPECT_EQ(h.session().tool(), SketchTool::Line);
+    rightClick(h.sketchScreen({5, 10}));
+    EXPECT_EQ(h.session().tool(), SketchTool::Select);
+
+    const double yaw = h.controller.camera().yaw;
+    h.controller.pointerPress(Harness::at({600, 400}, PointerButton::Right));
+    for (int i = 1; i <= 6; ++i)
+        h.controller.pointerMove(Harness::at({600.0 + 20 * i, 400}, PointerButton::Right));
+    h.controller.pointerRelease(Harness::at({720, 400}, PointerButton::Right));
+    EXPECT_NE(h.controller.camera().yaw, yaw);
+    EXPECT_EQ(h.session().sketch().lines().size(), 2u);
+}
+
 TEST(SketchInteraction, ConstraintsFromSelectionAndDimensionEdit)
 {
     Harness h;

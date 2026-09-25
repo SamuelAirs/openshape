@@ -102,6 +102,7 @@ Rectangle {
                         rows: [
                             ["Tools", "S select · L line · R rectangle · C circle"],
                             ["Exact size while drawing", "Type, Tab to the next value, Enter"],
+                            ["Stop drawing lines", "Right-click or Esc (again: leave the tool)"],
                             ["Change a dimension", "Click its label"],
                             ["Constrain", "Select lines or points → actions below"],
                             ["Extrude / revolve", "Finish, then click inside a closed shape"]

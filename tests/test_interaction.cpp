@@ -171,6 +171,27 @@ TEST(Interaction, ClickingEmptySpaceCommitsPendingValue)
     EXPECT_TRUE(h.controller.selection().empty());
 }
 
+// A right click is not a selection click: it must neither select nor apply a
+// pending value (users right-click expecting a menu, not a commit).
+TEST(Interaction, RightClickDoesNotSelectOrCommit)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({0, 0, 20}));
+    h.controller.setValueText("5");
+    const std::size_t steps = h.stack.size();
+    h.controller.pointerPress(Harness::at({30, 30}, PointerButton::Right));
+    h.controller.pointerRelease(Harness::at({30, 30}, PointerButton::Right));
+    EXPECT_EQ(h.stack.size(), steps);
+    EXPECT_NEAR(h.height(), 20.0, 1e-6);
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_TRUE(h.controller.operation()->canCommit());
+    h.clickAt({30, 30}); // a left click elsewhere still applies it
+    EXPECT_NEAR(h.height(), 25.0, 1e-6);
+}
+
 TEST(Interaction, UnitAwareInput)
 {
     Harness h;
