@@ -44,6 +44,9 @@ toolkit, transform & repeat, direct face edits, and the iPad/Pencil workflow —
 - Sketches on faces follow their faces; through-all cuts.
 - Shell, Move (X/Y/Z arrows), Rotate (X/Y/Z rings, 15° snaps), Revolve —
   editable history steps.
+- **Mirror** a body across a flat face or an origin plane (joined), and
+  **Pattern** it in a row (X/Y/Z or along an edge) or around an axis (X/Y/Z
+  or a hole/shaft), count/spacing/angle editable later.
 - **Align**: a face/edge/circle of one body onto a face/edge/circle of another
   (touching faces, collinear edges, concentric holes/shafts), Flip, offset
   arrow, or "Onto ground" to lay a flat face on the build plate.
@@ -106,28 +109,28 @@ meets tangent fillets, 6 ms otherwise). Previews still run on the GUI thread (TD
 
 ## Next concrete tasks (owner priorities)
 
-1. Mirror (across a flat face or an origin plane) and linear/circular patterns.
-2. Align follow-ups: align a whole body by picking faces on both bodies in
-   one gesture, snap alignment while moving (Shapr3D-style).
-3. Sketch toolkit: arc, center rectangle, polygon, slot, offset, trim, sketch
+1. Sketch toolkit: arc, center rectangle, polygon, slot, offset, trim, sketch
    fillet, construction toggle; parallel/perpendicular/tangent/equal; curves on
    one plane interact; continue a sketch by drawing on its plane.
-4. Direct face edits: move/offset face with neighbours following, delete face;
+2. Direct face edits: move/offset face with neighbours following, delete face;
    extrude symmetric / to face / with draft.
-5. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
+3. Responsiveness: asynchronous previews (TD-1), split `stateChanged` and list
    models (TD-18), cache sketch/grid geometry (TD-19), BVH picking (TD-2, TD-20).
-6. Touch & Pencil: pen draws/selects, fingers navigate, two-/three-finger taps
+4. Touch & Pencil: pen draws/selects, fingers navigate, two-/three-finger taps
    undo/redo, touch-sized targets. The iPad build needs the owner's Mac.
-7. Split disconnected pieces into separate bodies (TD-22).
-8. Installer and smaller, distributable package (TD-6, TD-17).
+5. Split disconnected pieces into separate bodies (TD-22); pattern/mirror as
+   separate bodies (copies) as an option.
+6. Align follow-ups: snap alignment while moving (Shapr3D-style).
+7. Installer and smaller, distributable package (TD-6, TD-17).
 
 ## Tests currently passing
 
-181/181 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+187/187 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, document, commands, project files, sketch features, face
 attachment, camera, picking, interaction (headless M0 script, sketch
 workflows, history editing, highlight, booleans, right-click, align,
-rotate), plus `acceptance_gui`: 91 end-to-end checks through the real UI.
+rotate, mirror, pattern), plus `acceptance_gui`: 100 end-to-end checks
+through the real UI.
 
 ## Platforms verified
 

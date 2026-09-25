@@ -74,7 +74,9 @@ drawing on its plane (both Shapr3D behaviours the owner expected).
   (typed degrees, arrow rides the arc, new body/join/cut; profiles crossing
   the axis are refused with an explanation)
 - ✅ Rotate body: X/Y/Z rings (15° snaps, typed angles), editable step
-- ⬜ Mirror, linear pattern, circular pattern
+- ✅ Mirror (across a flat face or an origin plane, joined), linear and
+  circular patterns (X/Y/Z, a picked edge, or a hole/shaft axis; editable
+  count, spacing, angle)
 - ⬜ Offset face (push/pull of non-planar faces)
 
 ## Milestone 3 — interaction quality 🟡

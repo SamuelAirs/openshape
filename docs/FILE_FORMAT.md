@@ -86,8 +86,14 @@ Rules:
 - `Revolve` params: like `Extrude` (sketch, profiles, mode) plus `"axis": "X" |
   "Y"` (the sketch's own axes through its origin) and `"angle"` in radians
   (0, 2π].
+- `Mirror` params: `{ "origin": [x, y, z], "normal": [x, y, z] }` — the body
+  plus its mirror image across that plane, joined.
+- `Pattern` params: `{ "layout": "Linear", "count", "direction": [x, y, z],
+  "spacing" }` or `{ "layout": "Circular", "count", "axisOrigin": [x, y, z],
+  "axis": [x, y, z], "angle" }` (radians; 2π spaces copies evenly). `count`
+  includes the original (1–500); copies are joined.
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
-  `Move`, `Combine`, `Revolve`. Unknown
+  `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 
