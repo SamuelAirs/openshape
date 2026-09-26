@@ -72,8 +72,10 @@ Needs the paid Apple Developer Program (the owner has it).
 ## 2. Getting a new build onto the iPad
 
 Every push to `main` that changes code runs `ipad.yml` (so does a commit
-whose message contains `[testflight]` on another branch). With the secrets
-set, it uploads build number = the workflow's run number. Apple processes
+whose message contains `[testflight]` on another branch); to run it by
+hand, e.g. right after adding the secrets: GitHub → Actions → **iPad** →
+**Run workflow** (branch `main`). With the secrets set, it uploads build
+number = the workflow's run number. Apple processes
 it (usually 5–30 minutes; an e-mail says when), then TestFlight on the
 iPad offers **Install** / **Update**. TestFlight builds expire after 90
 days. The first run builds OpenCASCADE for iOS (about half an hour); later
