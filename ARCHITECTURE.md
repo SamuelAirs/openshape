@@ -205,12 +205,22 @@ Document (UUID, display unit)
 - Constraints: coincident, horizontal, vertical, distance, horizontal/vertical
   distance (signed), diameter, radius (arcs), parallel, perpendicular, equal
   (lengths or radii), tangent (line or round to round), concentric, point on
-  line, point on circle, midpoint. A line and an arc tangent at a shared end
-  are solved as a direction (angle constraint), not "line touches circle".
+  line, point on circle, midpoint, symmetric (two points across a line: the
+  only kind with a third entity, `c`), angle (between two lines: stored as
+  the signed angle between their directions, shown and edited as the angle
+  at their corner). A line and an arc tangent at a shared end
+  are solved as a direction (angle constraint), not "line touches circle";
+  two arcs tangent at a shared end likewise tie their end angles (equal, or
+  half a turn apart for an S-bend), never circle-to-circle tangency.
   `sketch/SketchEdit` holds the edits behind tools that change geometry:
   `addSlot`, `filletCorner` (keeps the corner as a reference point on both
   lines), `trimAt` / `trimPreview` (pieces between crossings; new ends kept
-  on the curves they meet). `solve()` / `solveDragging()` build a PlaneGCS
+  on the curves they meet; a construction curve that only touches — a
+  polygon's inner circle — is no crossing), `addCenterRectangle`, `addPolygon`,
+  `mirrorCurves` (copies held by `Symmetric` constraints across a line;
+  points on the axis are shared and kept on it) and `patternCurves` (linear
+  or circular copies with their shape constraints; circles and arcs keep an
+  Equal radius to the original). `solve()` / `solveDragging()` build a PlaneGCS
   system per call (DogLeg), write positions back, and report DOF plus
   conflicting/redundant constraints. A failed solve never changes the sketch.
 - Profiles: `geom::findRegions` splits a large face on the sketch plane with
@@ -298,11 +308,20 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Sketch mode:** `startSketch()` creates a sketch on the selected planar face
   (host body recorded) or the XY plane, animates the view to face it, and hands
   input to a `SketchSession`. The session edits a working copy; tools are
-  Select, Line, Rectangle, Circle, Arc (3-point: start, end, then bend; a
-  typed radius locks it), Slot (two centers, then the width) and Trim (click
-  a piece, previewed red). Selected curves offer Offset (a mode: the pointer
+  Select, Line, Rectangle, Center rectangle (the center is the midpoint of a
+  construction diagonal, so it stays centered), Polygon (regular: corners on
+  a construction circle and equal sides; an inner construction circle
+  touching one side carries the size across flats; a `SketchCounter` shows
+  the side count with -/+ buttons), Circle, Arc (3-point: start,
+  end, then bend; a typed radius locks it), Tangent arc (starts on the end
+  of a line or arc, tangent to it, and chains on from its own end), Slot
+  (two centers, then the width) and Trim (click a piece, previewed red);
+  the tools sit in a palette on the left (`tool_<id>` object names). Selected curves offer Offset (a mode: the pointer
   picks the side, a typed distance fixes it, click/Enter applies); selected
-  corner points offer Fillet. Starting a sketch on a plane where a visible sketch
+  corner points offer Fillet; selected curves also offer Mirror (the next
+  click on a line mirrors them, previewed while hovering) and Pattern (a
+  mode: Linear / Circular, clicks set the step or the center, typed
+  spacing/angle and count, a -/+ counter, Enter or Apply adds the copies). Starting a sketch on a plane where a visible sketch
   already lies (exactly coplanar), or with one of its profiles selected,
   reopens that sketch instead, so new curves split its shapes. Selecting
   sketch items offers constraint and Construction actions (`contextActions`).
@@ -391,7 +410,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   by the first pen press, or the Pen switch) makes finger presses
   navigation-only. `AppController::touchMode` (on after a touch, off after a
   real mouse click, on from the start on iOS/Android, `--touch` on the
-  command line) makes `Theme.controlHeight` 44 and shows the Pen switch.
+  command line) makes `Theme.controlHeight` 44 and shows the Pen switch. The
+  flag itself lives in `InteractionController::touchLayout()` (AppController
+  only reads and sets it), so the on-canvas targets of the sketch session and
+  the QML controls can never disagree.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -425,8 +447,22 @@ blocked) and draws with 4× MSAA:
 6. manipulator arrows and rotation rings on top (no depth test), sized in
    screen pixels.
 
-Sketch labels (dimensions, live inputs, inference hints) are QML items
-positioned from `SketchSession::labels()` screen coordinates.
+Sketch labels (dimensions, live inputs, inference hints, constraint glyphs)
+are QML items positioned from `SketchSession::labels()` screen coordinates.
+Constraint glyphs (H, V, ∥, ⊥, =, T, …; not for dimensions, and hidden while
+a shape is being drawn) sit beside their geometry, on the outer side of a
+line, and slide along it to stay clear of each other, the dimension labels
+and the points; a glyph with no clear spot nearby is left out until the view
+is zoomed in. Dimension labels count as pills (about 7.5 px per character
+plus padding, 24 px high), not points. The glyph items take no input: with
+the Select tool `SketchSession` resolves a click or tap itself — a point or
+curve within pick reach wins, and only then a glyph whose square target
+(24 px, 40 px in the touch layout) holds the pointer — so a glyph never
+steals a tap meant for the geometry beside it, and drawing tools ignore
+glyphs. A glyph's center stays out of pick reach of points and curves, so
+tapping the glyph itself always reaches it. Clicking one selects the
+constraint (`constraintIcon_<id>`), never mixed with geometry, and its
+geometry is highlighted; Delete removes it.
 
 Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages.
 All draws share one dynamic uniform buffer with per-draw offsets.

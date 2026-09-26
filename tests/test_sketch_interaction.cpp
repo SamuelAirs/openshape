@@ -987,3 +987,699 @@ TEST(SketchInteraction, GridSnapCanBeTurnedOff)
         EXPECT_EQ(h.session().gridSnap(), !snap);
     }
 }
+
+TEST(SketchInteraction, CenterRectangleTypedAndExtruded)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::CenterRectangle);
+    h.click(h.sketchScreen({0, 0})); // the center, on the origin
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({14, 7}));
+    h.type("40");
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_FALSE(h.session().isDrawing());
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 5u) << "four sides and the construction diagonal";
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Midpoint), 1u);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0);
+    EXPECT_NEAR(largestRegion(s), 800.0, 1e-6);
+    double minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    for (const auto& [id, p] : s.points()) {
+        minX = std::min(minX, p.position.x);
+        maxX = std::max(maxX, p.position.x);
+        minY = std::min(minY, p.position.y);
+        maxY = std::max(maxY, p.position.y);
+    }
+    EXPECT_NEAR(minX, -20, 1e-9);
+    EXPECT_NEAR(maxX, 20, 1e-9);
+    EXPECT_NEAR(minY, -10, 1e-9);
+    EXPECT_NEAR(maxY, 10, 1e-9);
+
+    // Editing the width keeps the rectangle centered on the origin.
+    sketch::EntityId width = sketch::kNoEntity;
+    for (const auto& [id, c] : s.constraints())
+        if (c.kind == sketch::ConstraintKind::HorizontalDistance)
+            width = id;
+    ASSERT_NE(width, sketch::kNoEntity);
+    EXPECT_EQ(h.session().setDimension(width, "60"), "");
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 1200.0, 1e-6);
+
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({5, 5, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    const auto bb = geom::boundingBox(h.document.bodies()[0]->shape());
+    EXPECT_NEAR(bb.min.x, -30, 1e-6);
+    EXPECT_NEAR(bb.max.x, 30, 1e-6);
+    EXPECT_NEAR(bb.min.y, -10, 1e-6);
+    EXPECT_NEAR(bb.max.y, 10, 1e-6);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 12000, 1e-4);
+    EXPECT_TRUE(h.messages.empty());
+}
+
+TEST(SketchInteraction, PolygonToolSidesAndAcrossFlats)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Polygon);
+    ASSERT_TRUE(h.session().counter().has_value());
+    EXPECT_EQ(h.session().counter()->value, 6) << "hexagons by default";
+    EXPECT_EQ(h.session().counter()->text, "6 sides");
+    h.click(h.sketchScreen({0, 0})); // the center, on the origin
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({12, 0.2})); // straight to the right: the first side is vertical
+    // The size label says what it measures.
+    bool captioned = false;
+    for (const auto& label : h.session().labels(h.controller.camera()))
+        captioned = captioned || (label.key == "size" && label.caption == "across flats");
+    EXPECT_TRUE(captioned);
+    h.type("10"); // across flats
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 6u);
+    EXPECT_EQ(s.circles().size(), 2u);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Vertical), 1u);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0) << "centered, sized and aligned";
+    const double hexagon = 6 * 25 * std::tan(kPi / 6);
+    EXPECT_NEAR(largestRegion(s), hexagon, 1e-6);
+    double maxX = -1e9;
+    for (const auto& [id, l] : s.lines())
+        maxX = std::max(maxX, s.point(l.start)->position.x);
+    EXPECT_NEAR(maxX, 5.0, 1e-9) << "a flat at x = 5";
+
+    // Fewer sides with -, then a typed count: an octagon 20 across flats, elsewhere.
+    EXPECT_TRUE(h.session().stepCounter(-1));
+    EXPECT_EQ(h.session().polygonSides(), 5);
+    EXPECT_TRUE(h.session().stepCounter(+1));
+    h.click(h.sketchScreen({40, 0}));
+    h.move(h.sketchScreen({47, 3}));
+    h.type("20");
+    h.session().focusNextInput();
+    EXPECT_NE(h.session().typeIntoInput("2"), "") << "too few sides";
+    h.type("8");
+    EXPECT_EQ(h.session().polygonSides(), 8);
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_EQ(h.session().sketch().lines().size(), 14u);
+    const auto regions = doc::sketchRegions(h.session().sketch());
+    ASSERT_TRUE(regions.ok());
+    ASSERT_EQ(regions.value().size(), 2u);
+    double octagon = 0;
+    for (const auto& r : regions.value())
+        if (std::abs(r.area - hexagon) > 1e-6)
+            octagon = r.area;
+    EXPECT_NEAR(octagon, 8 * 100 * std::tan(kPi / 8), 1e-6);
+    EXPECT_EQ(h.session().polygonSides(), 8) << "remembered for the next polygon";
+
+    // Extrude the hexagon 5 mm.
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({0, 1, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), hexagon * 5, 1e-4);
+    EXPECT_TRUE(h.messages.empty());
+}
+
+// A "D": a line, a tangent half circle back over it, two lines closing it.
+TEST(SketchInteraction, TangentArcContinuesALine)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.controller.keyPress(Key::Escape);
+
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({10, 10})); // not the end of a curve
+    EXPECT_FALSE(h.session().isDrawing());
+    ASSERT_FALSE(h.messages.empty());
+    h.messages.clear();
+    h.click(h.sketchScreen({20, 0})); // the line's end
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({20, 20}));
+    // Straight ahead is no arc: the preview needs the pointer off the line's direction.
+    h.click(h.sketchScreen({20, 20}));
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 1u);
+    const auto& [arcId, arc] = *s.arcs().begin();
+    EXPECT_NEAR(s.arcRadius(arcId), 10.0, 1e-9);
+    EXPECT_NEAR((s.point(arc.center)->position - Vec2{20, 10}).length(), 0.0, 1e-9);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Tangent), 1u);
+    EXPECT_TRUE(h.session().isDrawing()) << "the chain continues from the arc's end";
+    h.controller.keyPress(Key::Escape);
+    EXPECT_FALSE(h.session().isDrawing());
+
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({20, 20}));
+    h.click(h.sketchScreen({0, 20}));
+    h.click(h.sketchScreen({0, 0}));
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 400 + 50 * kPi, 1e-6);
+
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({10, 10, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), (400 + 50 * kPi) * 10, 1e-3);
+    EXPECT_TRUE(h.messages.empty());
+}
+
+// A typed radius, then an S-bend continuing the first arc.
+TEST(SketchInteraction, TangentArcTypedRadiusAndChain)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({20, 0}));
+    h.move(h.sketchScreen({27, 4})); // up and to the left of the line's direction: turns left
+    h.type("5");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.session().sketch().arcs().size(), 1u);
+    {
+        const sketch::Sketch& s = h.session().sketch();
+        const auto& [id, arc] = *s.arcs().begin();
+        EXPECT_NEAR(s.arcRadius(id), 5.0, 1e-9);
+        EXPECT_NEAR((s.point(arc.center)->position - Vec2{20, 5}).length(), 0.0, 1e-9);
+    }
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Radius), 1u);
+    // The chain goes on from the arc's end, heading along the arc: turn right now.
+    ASSERT_TRUE(h.session().isDrawing());
+    const Vec2 bendStart = h.session().sketch().point(h.session().sketch().arcs().begin()->second.end)->position;
+    const Vec2 heading = Vec2{-(bendStart.y - 5), bendStart.x - 20} * (1.0 / 5.0);
+    const Vec2 right{heading.y, -heading.x};
+    h.click(h.sketchScreen(bendStart + right * 12));
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 2u);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Tangent), 2u);
+    // The two centers lie on one line through the shared point, on opposite sides.
+    std::vector<Vec2> centers;
+    for (const auto& [id, arc] : s.arcs())
+        centers.push_back(s.point(arc.center)->position);
+    const Vec2 joint = bendStart;
+    EXPECT_NEAR((centers[0] - joint).length() + (centers[1] - joint).length(), (centers[0] - centers[1]).length(), 1e-6);
+    EXPECT_EQ(s.solveReport().conflicting.size(), 0u);
+    EXPECT_TRUE(h.messages.empty());
+}
+
+// Only a single profile curve ending at the point is continued: never a
+// construction curve ending there too, and never a corner of two sides.
+TEST(SketchInteraction, TangentArcStartsOnAProfileCurveNotAGuide)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    // A center rectangle: two of its corners also end the construction diagonal.
+    h.controller.setSketchTool(SketchTool::CenterRectangle);
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({14, 7}));
+    h.type("40");
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.session().sketch().lines().size(), 5u);
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({20, 10})); // a corner: two sides and the diagonal end there
+    EXPECT_FALSE(h.session().isDrawing()) << "which side to continue is unclear";
+    ASSERT_EQ(h.messages.size(), 1u);
+    EXPECT_NE(h.messages[0].find("free end"), std::string::npos) << h.messages[0];
+    EXPECT_TRUE(h.session().sketch().arcs().empty());
+    h.messages.clear();
+
+    // A line, then a construction line drawn on from its end (newer than the line).
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({30, -30}));
+    h.click(h.sketchScreen({50, -30}));
+    h.click(h.sketchScreen({65, -40}));
+    h.controller.keyPress(Key::Escape);
+    sketch::EntityId profileLine = sketch::kNoEntity, guide = sketch::kNoEntity;
+    for (const auto& [id, l] : h.session().sketch().lines()) {
+        const Vec2 end = h.session().sketch().point(l.end)->position;
+        if ((end - Vec2{50, -30}).length() < 1e-9)
+            profileLine = id;
+        if ((end - Vec2{65, -40}).length() < 1e-9)
+            guide = id;
+    }
+    ASSERT_NE(profileLine, sketch::kNoEntity);
+    ASSERT_NE(guide, sketch::kNoEntity);
+    ASSERT_GT(guide, profileLine);
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({57.5, -35}));
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    ASSERT_EQ(h.session().selection().front(), guide);
+    ASSERT_TRUE(h.session().triggerAction("construction").ok());
+
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({50, -30}));
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({50, -10}));
+    h.click(h.sketchScreen({50, -10}));
+    h.controller.keyPress(Key::Escape);
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 1u);
+    const auto& [arcId, arc] = *s.arcs().begin();
+    // Heading on along +x and turning left: a half circle around (50, -20).
+    EXPECT_NEAR(s.arcRadius(arcId), 10.0, 1e-9);
+    EXPECT_NEAR((s.point(arc.center)->position - Vec2{50, -20}).length(), 0.0, 1e-9);
+    bool tangentToLine = false;
+    for (const auto& [id, c] : s.constraints())
+        tangentToLine = tangentToLine || (c.kind == sketch::ConstraintKind::Tangent && c.a == profileLine && c.b == arcId);
+    EXPECT_TRUE(tangentToLine) << "tangent to the profile line, not the construction line";
+    EXPECT_TRUE(h.messages.empty());
+}
+
+namespace {
+std::vector<SketchLabel> constraintIcons(Harness& h)
+{
+    std::vector<SketchLabel> icons;
+    for (const auto& label : h.session().labels(h.controller.camera()))
+        if (label.kind == SketchLabel::Kind::Constraint)
+            icons.push_back(label);
+    return icons;
+}
+} // namespace
+
+TEST(SketchInteraction, ConstraintIconsSelectAndDelete)
+{
+    Harness h;
+    rectangle40x20(h);
+    h.session().setTool(SketchTool::Select);
+    auto icons = constraintIcons(h);
+    ASSERT_EQ(icons.size(), 4u) << "two H and two V";
+    std::size_t horizontal = 0;
+    for (const auto& icon : icons) {
+        horizontal += icon.text == "H" ? 1 : 0;
+        EXPECT_EQ(h.session().sketch().constraint(icon.constraint)->kind,
+                  icon.text == "H" ? sketch::ConstraintKind::Horizontal : sketch::ConstraintKind::Vertical);
+    }
+    EXPECT_EQ(horizontal, 2u);
+    // Beside their lines, outside the rectangle, and apart from each other.
+    for (std::size_t i = 0; i < icons.size(); ++i) {
+        const auto local = h.controller.sketchSession()->sketch().plane().intersect(h.controller.camera().rayAt(icons[i].screen));
+        ASSERT_TRUE(local.has_value());
+        EXPECT_FALSE(local->x > 0 && local->x < 40 && local->y > 0 && local->y < 20) << icons[i].text << " inside";
+        for (std::size_t j = i + 1; j < icons.size(); ++j)
+            EXPECT_GE((icons[i].screen - icons[j].screen).length(), 18.0);
+    }
+    // Clear of every line (a glyph's tap target must not hide a curve); further in the touch layout.
+    auto nearestLine = [&](Vec2 p) {
+        double best = 1e9;
+        const sketch::Sketch& sk = h.session().sketch();
+        for (const auto& [id, l] : sk.lines())
+            best = std::min(best, distanceToSegment2D(p, h.sketchScreen(sk.point(l.start)->position),
+                                                      h.sketchScreen(sk.point(l.end)->position)));
+        return best;
+    };
+    for (const auto& icon : icons)
+        EXPECT_GE(nearestLine(icon.screen), 12.0 - 1e-9);
+    h.controller.setTouchLayout(true);
+    for (const auto& icon : constraintIcons(h))
+        EXPECT_GE(nearestLine(icon.screen), 20.0 - 1e-9);
+    h.controller.setTouchLayout(false);
+
+    // Select a horizontal constraint through its icon: only Delete is offered.
+    sketch::EntityId bottom = sketch::kNoEntity;
+    double lowest = -1e9; // screen y grows downwards
+    for (const auto& icon : icons)
+        if (icon.text == "H" && icon.screen.y > lowest) {
+            lowest = icon.screen.y;
+            bottom = icon.constraint;
+        }
+    h.session().select(bottom, false);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    const auto actions = h.session().contextActions();
+    ASSERT_EQ(actions.size(), 1u);
+    EXPECT_EQ(actions[0].id, "delete");
+    bool shownSelected = false;
+    for (const auto& icon : constraintIcons(h))
+        shownSelected = shownSelected || (icon.constraint == bottom && icon.selected);
+    EXPECT_TRUE(shownSelected);
+    // Selecting geometry drops the constraint from the selection (they are never mixed).
+    const int dofBefore = h.session().sketch().solveReport().degreesOfFreedom;
+    ASSERT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.session().sketch().constraint(bottom), nullptr);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Horizontal), 1u);
+    EXPECT_EQ(h.session().sketch().lines().size(), 4u) << "the geometry stays";
+    EXPECT_EQ(h.session().sketch().solveReport().degreesOfFreedom, dofBefore + 1);
+    EXPECT_EQ(constraintIcons(h).size(), 3u);
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Horizontal), 2u);
+
+    h.session().select(icons[0].constraint, false);
+    h.click(h.sketchScreen({20, 0}), true); // a line, shift-added: replaces the constraint selection
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_NE(h.session().sketch().line(h.session().selection().front()), nullptr);
+
+    // Hidden while a shape is being drawn.
+    h.session().setTool(SketchTool::Line);
+    h.click(h.sketchScreen({60, 0}));
+    EXPECT_TRUE(constraintIcons(h).empty());
+    h.controller.keyPress(Key::Escape);
+    EXPECT_EQ(constraintIcons(h).size(), 4u);
+}
+
+namespace {
+void tap(Harness& h, Vec2 p)
+{
+    auto e = Harness::at(p);
+    e.device = PointerDevice::Touch;
+    h.controller.pointerPress(e);
+    h.controller.pointerRelease(e);
+}
+
+// The bottom side of rectangle40x20 and its H glyph.
+std::pair<sketch::EntityId, SketchLabel> bottomSideAndGlyph(Harness& h)
+{
+    sketch::EntityId bottom = sketch::kNoEntity;
+    const sketch::Sketch& s = h.session().sketch();
+    for (const auto& [id, l] : s.lines())
+        if (std::abs(s.point(l.start)->position.y) < 1e-9 && std::abs(s.point(l.end)->position.y) < 1e-9)
+            bottom = id;
+    SketchLabel glyph;
+    for (const auto& icon : constraintIcons(h))
+        if (s.constraint(icon.constraint)->kind == sketch::ConstraintKind::Horizontal && s.constraint(icon.constraint)->a == bottom)
+            glyph = icon;
+    return {bottom, glyph};
+}
+} // namespace
+
+// Glyph taps are resolved by the session: a point or curve within pick reach
+// wins, then the glyph (with its larger target); drawing tools ignore glyphs.
+TEST(SketchInteraction, ConstraintGlyphTapsNeverHideGeometry)
+{
+    Harness h;
+    rectangle40x20(h);
+    h.controller.setSketchTool(SketchTool::Select);
+    sketch::EntityId bottom = sketch::kNoEntity;
+    SketchLabel glyph;
+    std::tie(bottom, glyph) = bottomSideAndGlyph(h);
+    ASSERT_NE(bottom, sketch::kNoEntity);
+    ASSERT_NE(glyph.constraint, sketch::kNoEntity);
+    const sketch::Sketch& s = h.session().sketch();
+    auto footOnBottom = [&](Vec2 p) {
+        const Vec2 a = h.sketchScreen(s.point(s.line(bottom)->start)->position);
+        const Vec2 b = h.sketchScreen(s.point(s.line(bottom)->end)->position);
+        const Vec2 d = b - a;
+        return a + d * std::clamp((p - a).dot(d) / d.dot(d), 0.0, 1.0);
+    };
+    Vec2 foot = footOnBottom(glyph.screen);
+    Vec2 away = (glyph.screen - foot) * (1.0 / (glyph.screen - foot).length());
+    EXPECT_GE((glyph.screen - foot).length(), 12.0 - 1e-9);
+
+    // Hovering the glyph lights it; a click 6 px off the line, on the glyph's
+    // side and inside its 24 px target, still picks the line.
+    h.move(glyph.screen);
+    bool hot = false;
+    for (const auto& icon : constraintIcons(h))
+        hot = hot || (icon.constraint == glyph.constraint && icon.hot);
+    EXPECT_TRUE(hot);
+    const Vec2 nearLine = foot + away * 6;
+    ASSERT_LE(std::max(std::abs(nearLine.x - glyph.screen.x), std::abs(nearLine.y - glyph.screen.y)),
+              h.session().glyphTapHalfSize());
+    h.click(nearLine);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_EQ(h.session().selection().front(), bottom);
+    for (const auto& icon : constraintIcons(h))
+        EXPECT_FALSE(icon.constraint == glyph.constraint && icon.hot) << "the line under the pointer wins";
+    h.click(glyph.screen);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_EQ(h.session().selection().front(), glyph.constraint);
+    h.controller.keyPress(Key::Escape);
+
+    // The touch layout: a 40 px target, further out; a finger 15 px off the line still gets the line.
+    h.controller.setTouchLayout(true);
+    EXPECT_TRUE(h.session().largeTargets());
+    EXPECT_EQ(h.session().glyphTapHalfSize(), 20.0);
+    std::tie(bottom, glyph) = bottomSideAndGlyph(h);
+    ASSERT_NE(glyph.constraint, sketch::kNoEntity);
+    foot = footOnBottom(glyph.screen);
+    away = (glyph.screen - foot) * (1.0 / (glyph.screen - foot).length());
+    EXPECT_GE((glyph.screen - foot).length(), 20.0);
+    tap(h, foot + away * 15);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_EQ(h.session().selection().front(), bottom);
+    tap(h, glyph.screen + Vec2{0, 1} * (away.y > 0 ? 12.0 : -12.0)); // the far half of the glyph's target
+    ASSERT_EQ(h.session().selection().size(), 1u) << "the constraint replaces the line (never mixed)";
+    EXPECT_EQ(h.session().selection().front(), glyph.constraint);
+    ASSERT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.session().sketch().constraint(glyph.constraint), nullptr);
+    EXPECT_TRUE(h.controller.undo());
+
+    // A drawing tool ignores glyphs: the click places the line's first point.
+    h.controller.setSketchTool(SketchTool::Line);
+    const auto icons = constraintIcons(h);
+    ASSERT_FALSE(icons.empty()) << "shown while the tool waits for its first click";
+    h.click(icons.front().screen);
+    EXPECT_TRUE(h.session().isDrawing());
+    EXPECT_TRUE(h.session().selection().empty());
+    h.controller.keyPress(Key::Escape);
+    h.controller.setTouchLayout(false);
+    EXPECT_FALSE(h.session().largeTargets());
+
+    // A session started in the touch layout has it from the start (as on a tablet).
+    h.controller.finishSketch();
+    h.controller.setTouchLayout(true);
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    ASSERT_NE(h.controller.sketchSession(), nullptr);
+    EXPECT_TRUE(h.session().largeTargets());
+}
+
+// Glyphs keep clear of the dimension labels (pills about 7.5 px per
+// character plus 16 px wide, 24 px high), at every zoom.
+TEST(SketchInteraction, ConstraintGlyphsKeepClearOfDimensionLabels)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({30, 12}));
+    h.type("127.25"); // a long label
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.setSketchTool(SketchTool::Select);
+    auto characters = [](const std::string& text) {
+        return std::count_if(text.begin(), text.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; });
+    };
+    const Vec2 center = h.sketchScreen({63.6, 10});
+    h.controller.pinch(center, 0.15);
+    int close = 0, shown = 0;
+    for (int step = 0; step < 50; ++step) {
+        h.controller.pinch(center, 1.07);
+        const auto labels = h.session().labels(h.controller.camera());
+        for (const auto& glyph : labels) {
+            if (glyph.kind != SketchLabel::Kind::Constraint)
+                continue;
+            ++shown;
+            const double glyphHalf = std::max(18.0, 7.5 * double(characters(glyph.text)) + 8) / 2;
+            for (const auto& dimension : labels) {
+                if (dimension.kind != SketchLabel::Kind::Dimension)
+                    continue;
+                const double halfWidth = (7.5 * double(characters(dimension.text)) + 16) / 2;
+                const double dx = std::abs(glyph.screen.x - dimension.screen.x), dy = std::abs(glyph.screen.y - dimension.screen.y);
+                close += dx < halfWidth + glyphHalf + 20 && dy < 12 + glyphHalf + 20 ? 1 : 0;
+                EXPECT_TRUE(dx >= halfWidth + glyphHalf || dy >= 12 + glyphHalf)
+                    << "step " << step << ": glyph " << glyph.text << " on label " << dimension.text;
+            }
+        }
+    }
+    EXPECT_GT(shown, 40) << "glyphs are shown at most zooms";
+    EXPECT_GT(close, 0) << "some glyphs sit right beside a label (the check is not vacuous)";
+}
+
+namespace {
+bool offers(Harness& h, const std::string& id)
+{
+    for (const auto& action : h.session().contextActions())
+        if (action.id == id)
+            return true;
+    return false;
+}
+} // namespace
+
+// Half a 20 x 20 square against a construction center line, mirrored into a
+// closed square, extruded.
+TEST(SketchInteraction, MirrorAcrossAClickedLine)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, -5}));
+    h.click(h.sketchScreen({0, 25}));
+    h.controller.keyPress(Key::Escape);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({10, 0}));
+    h.click(h.sketchScreen({10, 20}));
+    h.click(h.sketchScreen({0, 20}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({0, 10})); // the center line (away from its points): make it construction
+    ASSERT_TRUE(h.session().triggerAction("construction").ok());
+    h.controller.keyPress(Key::Escape); // clear the selection
+    for (const Vec2 mid : {Vec2{5, 0}, Vec2{10, 10}, Vec2{5, 20}})
+        h.click(h.sketchScreen(mid), true);
+    ASSERT_EQ(h.session().selection().size(), 3u);
+    ASSERT_TRUE(offers(h, "mirror"));
+    ASSERT_TRUE(h.session().triggerAction("mirror").ok());
+    EXPECT_TRUE(h.session().isMirroring());
+    EXPECT_NE(h.session().hintText().find("line to mirror across"), std::string::npos);
+    h.move(h.sketchScreen({0, 23}));
+    bool previewed = false;
+    for (const auto& line : h.session().renderData(h.controller.camera()).lines)
+        previewed = previewed || line.style == SketchStyle::Preview;
+    EXPECT_TRUE(previewed) << "the mirror image shows before the click";
+    h.click(h.sketchScreen({0, 23}));
+    EXPECT_FALSE(h.session().isMirroring());
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 7u);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Symmetric), 2u);
+    EXPECT_NEAR(largestRegion(s), 400.0, 1e-6);
+    EXPECT_TRUE(h.messages.empty());
+
+    // The glyph of a symmetric pair sits on the axis.
+    bool glyph = false;
+    for (const auto& icon : constraintIcons(h))
+        glyph = glyph || icon.text == "\xE2\x86\x94";
+    EXPECT_TRUE(glyph);
+
+    // Esc leaves mirroring without a change.
+    h.click(h.sketchScreen({5, 0}));
+    ASSERT_TRUE(h.session().triggerAction("mirror").ok());
+    h.controller.keyPress(Key::Escape);
+    EXPECT_FALSE(h.session().isMirroring());
+    EXPECT_EQ(h.session().sketch().lines().size(), 7u);
+
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({3, 10, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 2000, 1e-4);
+}
+
+TEST(SketchInteraction, LinearAndCircularPatternOfAHole)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Circle);
+    h.click(h.sketchScreen({10, 10}));
+    h.move(h.sketchScreen({13, 10}));
+    h.type("6");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({13, 10}));
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    ASSERT_TRUE(offers(h, "pattern"));
+    ASSERT_TRUE(h.session().triggerAction("pattern").ok());
+    ASSERT_TRUE(h.session().isPatterning());
+    ASSERT_TRUE(h.session().counter().has_value());
+    EXPECT_EQ(h.session().counter()->text, "3 in total");
+    EXPECT_TRUE(h.session().stepCounter(+1));
+    // Where the next hole goes: 15 to the right (kept straight).
+    h.click(h.sketchScreen({25, 10.3}));
+    EXPECT_NEAR(h.session().patternLayout().step.x, 15.0, 1e-9);
+    EXPECT_NEAR(h.session().patternLayout().step.y, 0.0, 1e-12);
+    h.type("12"); // the spacing
+    EXPECT_NEAR(h.session().patternLayout().step.x, 12.0, 1e-9);
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_FALSE(h.session().isPatterning());
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.circles().size(), 4u);
+    std::vector<double> xs;
+    for (const auto& [id, c] : s.circles())
+        xs.push_back(s.point(c.center)->position.x);
+    std::sort(xs.begin(), xs.end());
+    EXPECT_NEAR(xs[3], 46.0, 1e-9);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Equal), 3u);
+    const auto regions = doc::sketchRegions(s);
+    ASSERT_TRUE(regions.ok());
+    EXPECT_EQ(regions.value().size(), 4u);
+    // One diameter edit resizes all four.
+    sketch::EntityId diameter = sketch::kNoEntity;
+    for (const auto& [id, c] : s.constraints())
+        if (c.kind == sketch::ConstraintKind::Diameter)
+            diameter = id;
+    ASSERT_NE(diameter, sketch::kNoEntity);
+    EXPECT_EQ(h.session().setDimension(diameter, "8"), "");
+    for (const auto& [id, c] : h.session().sketch().circles())
+        EXPECT_NEAR(c.radius, 4.0, 1e-9);
+
+    // Circular: the first hole three times over half a turn about the origin.
+    h.click(h.sketchScreen({14, 10})); // the first hole
+    ASSERT_TRUE(h.session().triggerAction("pattern").ok());
+    ASSERT_TRUE(h.session().triggerAction("pattern:circular").ok());
+    EXPECT_TRUE(h.session().patternLayout().circular);
+    EXPECT_EQ(h.session().counter()->value, 6);
+    h.click(h.sketchScreen({0, 0})); // the center: the origin
+    h.type("180");
+    h.session().focusNextInput();
+    h.type("3");
+    ASSERT_TRUE(h.session().triggerAction("apply").ok());
+    EXPECT_EQ(h.session().sketch().circles().size(), 6u);
+    bool opposite = false, above = false;
+    for (const auto& [id, c] : h.session().sketch().circles()) {
+        const Vec2 p = h.session().sketch().point(c.center)->position;
+        opposite = opposite || (p - Vec2{-10, -10}).length() < 1e-9;
+        above = above || (p - Vec2{-10, 10}).length() < 1e-9;
+    }
+    EXPECT_TRUE(above) << "90 degrees on";
+    EXPECT_TRUE(opposite) << "180 degrees on";
+    EXPECT_TRUE(h.messages.empty());
+}
+
+// A right triangle whose hypotenuse angle is dimensioned, then changed.
+TEST(SketchInteraction, AngleDimensionBetweenTwoLines)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.click(h.sketchScreen({20, 15}));
+    h.click(h.sketchScreen({0, 0})); // closes the triangle
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({10, 0}));
+    ASSERT_TRUE(h.session().triggerAction("length").ok()); // the base: 20
+    h.click(h.sketchScreen({10, 7.5}), true); // and the hypotenuse
+    ASSERT_EQ(h.session().selection().size(), 2u);
+    ASSERT_TRUE(offers(h, "angle"));
+    ASSERT_TRUE(h.session().triggerAction("angle").ok());
+    sketch::EntityId angle = sketch::kNoEntity;
+    for (const auto& [id, c] : h.session().sketch().constraints())
+        if (c.kind == sketch::ConstraintKind::Angle)
+            angle = id;
+    ASSERT_NE(angle, sketch::kNoEntity);
+    EXPECT_EQ(h.session().sketch().solveReport().degreesOfFreedom, 0);
+    std::string text;
+    for (const auto& label : h.session().labels(h.controller.camera()))
+        if (label.kind == SketchLabel::Kind::Dimension && label.constraint == angle)
+            text = label.text;
+    EXPECT_EQ(text, "36.87\xC2\xB0");
+    EXPECT_NE(h.session().setDimension(angle, "180"), "") << "not a corner";
+    EXPECT_EQ(h.session().setDimension(angle, "45"), "");
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6) << "20 x 20 / 2";
+    EXPECT_EQ(h.session().setDimension(angle, "60\xC2\xB0"), "");
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 20 * 20 * std::sqrt(3.0) / 2, 1e-6);
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6);
+    EXPECT_TRUE(h.messages.empty());
+}

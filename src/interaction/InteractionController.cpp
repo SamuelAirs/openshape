@@ -1870,6 +1870,7 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
     session_->setGridSnap(sketchGridSnap_);
     session_->onMessage = [this](const std::string& text) { message(text); };
     session_->onCommitted = [this] { afterDocumentEdit(); };
+    session_->setLargeTargets(touchLayout_);
     session_->setTool(tool);
     alignViewTo(session_->sketch().plane());
     afterDocumentEdit();
@@ -1880,6 +1881,14 @@ void InteractionController::setSketchGridSnap(bool on)
     sketchGridSnap_ = on;
     if (session_)
         session_->setGridSnap(on);
+}
+
+void InteractionController::setTouchLayout(bool on)
+{
+    touchLayout_ = on;
+    if (session_)
+        session_->setLargeTargets(on);
+    notifyView();
 }
 
 void InteractionController::finishSketch()

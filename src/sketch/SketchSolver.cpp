@@ -113,6 +113,8 @@ public:
             case ConstraintKind::Tangent:
                 if (lines_.contains(c.a) && arcs_.contains(c.b) && addEndpointTangency(c.a, c.b, tag)) {
                     // A line and an arc sharing an end: handled as a smooth join.
+                } else if (arcs_.contains(c.a) && arcs_.contains(c.b) && addArcEndpointTangency(c.a, c.b, tag)) {
+                    // Two arcs sharing an end: a smooth join too.
                 } else if (lines_.contains(c.a)) {
                     // Keep the circle on the side of the line it is on now.
                     const SketchLine& l = sketch_.lines().at(c.a);
@@ -136,6 +138,12 @@ public:
             case ConstraintKind::Midpoint:
                 // The line's endpoints are symmetric about the point.
                 system_.addConstraintP2PSymmetric(lines_.at(c.b).p1, lines_.at(c.b).p2, points_.at(c.a), tag);
+                break;
+            case ConstraintKind::Symmetric:
+                system_.addConstraintP2PSymmetric(points_.at(c.a), points_.at(c.b), lines_.at(c.c), tag);
+                break;
+            case ConstraintKind::Angle:
+                system_.addConstraintL2LAngle(lines_.at(c.a), lines_.at(c.b), param(c.value), tag);
                 break;
             }
         }
@@ -163,6 +171,44 @@ public:
             system_.addConstraintP2PAngle(line.p2, line.p1, arc.endAngle, quarter, tag);
         else
             return false;
+        return true;
+    }
+
+    // Two arcs sharing an end point join smoothly there when both centers lie
+    // on one line through that point: the angles of the point seen from the
+    // two centers are equal (the arcs turn the same way, one continuing the
+    // other counterclockwise) or half a turn apart (an S-bend, or two arcs
+    // meeting end to end). Circle-to-circle tangency plus the shared point
+    // would be degenerate, like the line case above.
+    bool addArcEndpointTangency(EntityId firstId, EntityId secondId, int tag)
+    {
+        const SketchArc& a = sketch_.arcs().at(firstId);
+        const SketchArc& b = sketch_.arcs().at(secondId);
+        GCS::Arc& first = arcs_.at(firstId);
+        GCS::Arc& second = arcs_.at(secondId);
+        double* angleA = nullptr;
+        double* angleB = nullptr;
+        double base = 0;
+        if (a.end == b.start) {
+            angleA = first.endAngle;
+            angleB = second.startAngle;
+        } else if (a.start == b.end) {
+            angleA = first.startAngle;
+            angleB = second.endAngle;
+        } else if (a.end == b.end) {
+            angleA = first.endAngle;
+            angleB = second.endAngle;
+            base = kPi;
+        } else if (a.start == b.start) {
+            angleA = first.startAngle;
+            angleB = second.startAngle;
+            base = kPi;
+        } else {
+            return false;
+        }
+        // The angle parameters are unwrapped: keep the whole turns they differ by now.
+        const double turns = std::round((*angleB - *angleA - base) / (2 * kPi));
+        system_.addConstraintDifference(angleA, angleB, param(base + 2 * kPi * turns), tag);
         return true;
     }
 

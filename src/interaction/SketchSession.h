@@ -12,6 +12,7 @@
 #include "interaction/InputEvents.h"
 #include "interaction/RenderScene.h"
 #include "sketch/Sketch.h"
+#include "sketch/SketchEdit.h"
 
 #include <functional>
 #include <memory>
@@ -21,18 +22,29 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim };
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle, Polygon, TangentArc };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
-    enum class Kind { Dimension, Input, Hint };
+    // Constraint: a small glyph near constrained geometry (tap to select it).
+    enum class Kind { Dimension, Input, Hint, Constraint };
     Kind kind = Kind::Hint;
     std::string key;                          // Input: "width", "height", "diameter", "length"
-    sketch::EntityId constraint = sketch::kNoEntity; // Dimension: constraint id
+    sketch::EntityId constraint = sketch::kNoEntity; // Dimension, Constraint: constraint id
     std::string text;
+    std::string caption; // what the value is, shown after it in muted text ("across flats", "sides")
     Vec2 screen;
     bool focused = false; // Input that receives typed digits
     bool locked = false;  // Input whose value the user typed
+    bool selected = false; // Constraint that is selected
+    bool hot = false;      // Constraint whose glyph is under the pointer (Select tool)
+};
+
+// A whole number with -/+ buttons for the active tool or mode (a polygon's
+// sides, a pattern's copies): touch needs buttons, keyboards use +/-.
+struct SketchCounter {
+    std::string text; // "6 sides", "3 in total"
+    int value = 0;
 };
 
 // Editing session for one sketch. Holds a working copy that tools modify;
@@ -60,6 +72,14 @@ public:
     // Offset (from the "Offset" action on selected curves): the pointer picks
     // the side and distance, a typed distance fixes it; click or Enter applies.
     bool isOffsetting() const { return !offsetSource_.empty(); }
+    // Mirror (from the "Mirror" action on selected curves): the next click on
+    // a line mirrors them across it.
+    bool isMirroring() const { return !mirrorSource_.empty(); }
+    // Pattern (from the "Pattern" action): clicks set where the next copy
+    // goes (linear) or the center (circular); typed spacing/angle and count;
+    // Enter or Apply adds the copies.
+    bool isPatterning() const { return !patternSource_.empty(); }
+    const sketch::PatternLayout& patternLayout() const { return pattern_; }
 
     // ---- Input (screen coordinates in logical pixels) ----
     // Returns true if the press was consumed by the sketch (tool or geometry);
@@ -70,6 +90,19 @@ public:
     void hover(const PointerEvent& event, const Camera& camera);
     void leave();
     bool keyPress(Key key);
+
+    // Polygon tool: the number of sides (kept for the next polygon).
+    int polygonSides() const { return polygonSides_; }
+    // Touch layout: constraint glyphs sit further from the geometry and each
+    // other, and their tap targets are larger.
+    bool largeTargets() const { return largeTargets_; }
+    void setLargeTargets(bool on) { largeTargets_ = on; }
+    // Half the side of a constraint glyph's square tap target, px. Taps are
+    // resolved here, not by the UI: with the Select tool a point or curve
+    // within pick reach always wins, and only then a glyph under the pointer.
+    double glyphTapHalfSize() const { return largeTargets_ ? 20.0 : 12.0; }
+    std::optional<SketchCounter> counter() const;
+    bool stepCounter(int delta);
 
     // ---- Typed values ----
     bool hasInputs() const { return !inputs_.empty(); }
@@ -132,6 +165,16 @@ private:
         bool swapped = false; // start/end exchanged to keep it counterclockwise
     };
     std::optional<ArcShape> arcShape() const;
+    // Tangent arc tool: the curve a point ends and the direction of travel
+    // leaving it (continuing that curve); the arc from the anchor, tangent to
+    // that direction, to the cursor (or with the typed radius).
+    struct TangentStart {
+        sketch::EntityId curve = sketch::kNoEntity;
+        Vec2 direction;
+    };
+    // `ambiguous`: set when several curves end there (a corner).
+    std::optional<TangentStart> tangentStartAt(sketch::EntityId point, bool* ambiguous = nullptr) const;
+    std::optional<ArcShape> tangentArcShape() const;
     struct SlotShape {
         Vec2 a, b; // centers
         double radius = 0;
@@ -143,11 +186,25 @@ private:
     void updateOffset(std::optional<Vec2> pointer);
     bool commitOffset();
     void cancelOffset();
+    void cancelModes(); // mirror and pattern
+    bool applyMirror(sketch::EntityId axis);
+    void startPattern(bool circular);
+    void updatePatternPreview();
+    bool commitPattern();
+    void patternClick(const Snap& at);
+    // The copies a mirror across `axis` or the pattern would add (drawn as a preview).
+    void updatePreview(std::function<Result<std::vector<sketch::EntityId>>(sketch::Sketch&)> edit);
     bool finishShape(const Snap& end);
     bool commit(sketch::Sketch next, const std::string& label);
     std::optional<double> input(const std::string& key) const;
     void message(const std::string& text) const;
     void regionsChanged();
+    // Glyphs for the non-dimension constraints, placed beside their geometry
+    // and nudged apart (and away from `taken`, the dimension labels).
+    void addConstraintIcons(std::vector<SketchLabel>& out, const Camera& camera) const;
+    // The constraint whose glyph's tap target holds `screen` (the nearest), or none.
+    sketch::EntityId glyphAt(Vec2 screen, const Camera& camera) const;
+    bool constraintSelected() const;
 
     doc::Document& document_;
     cmd::UndoStack& undoStack_;
@@ -162,8 +219,11 @@ private:
     std::optional<Snap> anchor_;                        // first point of the shape being drawn
     std::optional<Snap> arcEnd_;                        // Arc tool: second click (the end); the third bends it
     sketch::EntityId chainStart_ = sketch::kNoEntity;   // first point of a line chain
+    TangentStart tangentStart_;                         // Tangent arc: the curve continued from the anchor
     std::vector<Input> inputs_;
     std::size_t focusedInput_ = 0;
+    int polygonSides_ = 6;
+    bool largeTargets_ = false;
 
     // Press tracking.
     bool pressed_ = false;
@@ -175,6 +235,7 @@ private:
 
     std::vector<sketch::EntityId> selected_;
     sketch::EntityId hovered_ = sketch::kNoEntity;
+    sketch::EntityId hoveredGlyph_ = sketch::kNoEntity; // Select tool: a constraint glyph under the pointer
 
     std::optional<Vec2> trimCursor_; // Trim tool: pointer position (local) over hovered_
 
@@ -182,6 +243,14 @@ private:
     std::vector<geom::PlanarCurve> offsetPreview_;   // local coordinates (z = 0)
     std::optional<Vec2> offsetPointer_;              // decides the side (and distance when not typed)
     double offsetDistance_ = 0;                      // signed, as last previewed
+
+    std::vector<sketch::EntityId> mirrorSource_;     // curves being mirrored
+    sketch::EntityId mirrorAxis_ = sketch::kNoEntity; // the line under the pointer (previewed)
+    std::vector<sketch::EntityId> patternSource_;    // curves being repeated
+    sketch::PatternLayout pattern_;
+    Vec2 patternOrigin_;                             // the selection's middle: a linear step is measured from it
+    sketch::Sketch preview_;                         // working copy with the copies added
+    std::vector<sketch::EntityId> previewCurves_;    // the copies in preview_
 
     // Cached closed regions of the working copy.
     std::vector<geom::Region> regions_;

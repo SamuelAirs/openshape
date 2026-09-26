@@ -68,6 +68,8 @@ class AppController : public QObject {
     Q_PROPERTY(QString sketchStatus READ sketchStatus NOTIFY stateChanged)
     Q_PROPERTY(QString sketchHint READ sketchHint NOTIFY stateChanged)
     Q_PROPERTY(bool sketchDrawing READ sketchDrawing NOTIFY stateChanged)
+    Q_PROPERTY(bool sketchCounterVisible READ sketchCounterVisible NOTIFY stateChanged)
+    Q_PROPERTY(QString sketchCounterText READ sketchCounterText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList sketchLabels READ sketchLabels NOTIFY viewChanged)
     Q_PROPERTY(bool canStartSketch READ canStartSketch NOTIFY stateChanged)
     Q_PROPERTY(int sketchCount READ sketchCount NOTIFY stateChanged)
@@ -109,7 +111,7 @@ public:
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariantList axisTriad() const;
-    bool touchMode() const { return touchMode_; }
+    bool touchMode() const;
     void setTouchMode(bool on);
     bool penMode() const;
     void setPenMode(bool on);
@@ -125,6 +127,8 @@ public:
     QString sketchStatus() const;
     QString sketchHint() const;
     bool sketchDrawing() const;
+    bool sketchCounterVisible() const;
+    QString sketchCounterText() const;
     QVariantList sketchLabels() const;
     bool canStartSketch() const;
     int sketchCount() const { return int(document_->sketches().size()); }
@@ -213,6 +217,8 @@ public:
     Q_INVOKABLE QString sketchType(const QString& text);
     Q_INVOKABLE void focusNextSketchInput();
     Q_INVOKABLE void commitSketchTool();
+    // -/+ on the sketch counter (a polygon's sides, a pattern's copies).
+    Q_INVOKABLE void stepSketchCounter(int delta);
     Q_INVOKABLE QString setSketchDimension(int constraintId, const QString& text);
 
     // History panel. Ids are UUID strings. Edits return an error message or "".
@@ -269,11 +275,6 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-    bool touchMode_ = true;
-#else
-    bool touchMode_ = false;
-#endif
 };
 
 } // namespace os::ui

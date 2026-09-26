@@ -23,6 +23,17 @@ odd: a screenshot and a sentence is plenty. Starting the app with
      the R label to change the radius.
    - Offset: Shift-click the four sides of a rectangle, "Offset", move
      outside or inside, type `2`, Enter.
+   - The tools now sit on the left (Draw / Edit). Center rectangle (E):
+     click the center, then a corner. Polygon (P): click the center, move
+     out, press + or - (or the on-screen buttons) to change the sides, type
+     the size across flats. Tangent arc (G): draw a line, then click its
+     free end and swing the arc.
+   - Constraint glyphs (H, V, =, …) beside the geometry: with the Select
+     tool click one, then "Delete constraint". Check that clicking right
+     next to a line still selects the line, not the glyph.
+   - Mirror: draw half a shape against a line, select the half, "Mirror",
+     click the line. Pattern: select a hole, "Pattern", click where the next
+     one goes, + for more, Apply; try "Circular" too.
 4. **Extrude options.** Click a sketch profile, then "Symmetric" and type
    `10` (5 mm each side); or "Up to face" and click the top of another body.
 5. **Axes.** Blue Z axis through the origin and the X/Y/Z marker above the

@@ -167,7 +167,11 @@ relinking.
    **Pen** and check that a resting hand does not draw or select.
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
    Files app.
-7. Rotate the iPad: the layout follows; the tool palette scrolls when short.
+7. Rotate the iPad: the layout follows; the tool palette scrolls when short
+   (in a sketch too: Draw / Edit on the left).
+   In a sketch: tap a constraint glyph (H, V, =, …) and delete it; tap right
+   next to a line and check the line is selected, not the glyph; draw a
+   polygon and change its sides with the on-screen − / + buttons.
 8. Work is kept: add a box without saving, go to the Home Screen and swipe
    OpenShape away in the App Switcher. Start it again: it offers to restore
    the box.

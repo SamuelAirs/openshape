@@ -77,6 +77,12 @@ AppController::AppController(QObject* parent)
 
     updateRecentFiles();
     attach();
+    // Tablets and phones start in the touch layout. The flag lives in the
+    // interaction core only (touchMode() reads it), so on-canvas targets and
+    // the QML controls always agree.
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    interaction_->setTouchLayout(true);
+#endif
     interaction_->fitAll(false);
 }
 
@@ -159,11 +165,13 @@ QPointF AppController::valueLabelPosition() const
 
 bool AppController::valueLabelVisible() const { return interaction_->valueLabelPosition().has_value(); }
 
+bool AppController::touchMode() const { return interaction_->touchLayout(); }
+
 void AppController::setTouchMode(bool on)
 {
-    if (touchMode_ == on)
+    if (interaction_->touchLayout() == on)
         return;
-    touchMode_ = on;
+    interaction_->setTouchLayout(on);
     emit touchModeChanged();
 }
 
@@ -233,6 +241,9 @@ QString AppController::sketchTool() const
     case interact::SketchTool::Arc: return QStringLiteral("arc");
     case interact::SketchTool::Slot: return QStringLiteral("slot");
     case interact::SketchTool::Trim: return QStringLiteral("trim");
+    case interact::SketchTool::CenterRectangle: return QStringLiteral("centerRectangle");
+    case interact::SketchTool::Polygon: return QStringLiteral("polygon");
+    case interact::SketchTool::TangentArc: return QStringLiteral("tangentArc");
     }
     return {};
 }
@@ -252,7 +263,29 @@ QString AppController::sketchHint() const
 bool AppController::sketchDrawing() const
 {
     const auto* s = interaction_->sketchSession();
-    return s && (s->isDrawing() || s->isOffsetting()); // typed values go to the shape or the offset
+    return s && (s->isDrawing() || s->isOffsetting() || s->isPatterning()); // typed values go to the shape, offset or pattern
+}
+
+bool AppController::sketchCounterVisible() const
+{
+    const auto* s = interaction_->sketchSession();
+    return s && s->counter().has_value();
+}
+
+QString AppController::sketchCounterText() const
+{
+    const auto* s = interaction_->sketchSession();
+    const auto counter = s ? s->counter() : std::nullopt;
+    return counter ? q(counter->text) : QString();
+}
+
+void AppController::stepSketchCounter(int delta)
+{
+    if (auto* s = interaction_->sketchSession()) {
+        s->stepCounter(delta);
+        emit stateChanged();
+        emit viewChanged();
+    }
 }
 
 QVariantList AppController::sketchLabels() const
@@ -263,16 +296,24 @@ QVariantList AppController::sketchLabels() const
         return list;
     for (const auto& label : s->labels(interaction_->camera())) {
         QVariantMap map;
-        map.insert(QStringLiteral("kind"), label.kind == interact::SketchLabel::Kind::Dimension ? QStringLiteral("dimension")
-                                           : label.kind == interact::SketchLabel::Kind::Input   ? QStringLiteral("input")
-                                                                                                : QStringLiteral("hint"));
+        QString kind;
+        switch (label.kind) {
+        case interact::SketchLabel::Kind::Dimension: kind = QStringLiteral("dimension"); break;
+        case interact::SketchLabel::Kind::Input: kind = QStringLiteral("input"); break;
+        case interact::SketchLabel::Kind::Hint: kind = QStringLiteral("hint"); break;
+        case interact::SketchLabel::Kind::Constraint: kind = QStringLiteral("constraint"); break;
+        }
+        map.insert(QStringLiteral("kind"), kind);
         map.insert(QStringLiteral("key"), q(label.key));
         map.insert(QStringLiteral("constraint"), int(label.constraint));
         map.insert(QStringLiteral("text"), q(label.text));
+        map.insert(QStringLiteral("caption"), q(label.caption));
         map.insert(QStringLiteral("x"), label.screen.x);
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
         map.insert(QStringLiteral("locked"), label.locked);
+        map.insert(QStringLiteral("selected"), label.selected);
+        map.insert(QStringLiteral("hot"), label.hot);
         list.append(map);
     }
     return list;
@@ -330,6 +371,12 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::Slot);
     else if (name == QLatin1String("trim"))
         interaction_->setSketchTool(interact::SketchTool::Trim);
+    else if (name == QLatin1String("centerRectangle"))
+        interaction_->setSketchTool(interact::SketchTool::CenterRectangle);
+    else if (name == QLatin1String("polygon"))
+        interaction_->setSketchTool(interact::SketchTool::Polygon);
+    else if (name == QLatin1String("tangentArc"))
+        interaction_->setSketchTool(interact::SketchTool::TangentArc);
 }
 
 QString AppController::sketchType(const QString& text)

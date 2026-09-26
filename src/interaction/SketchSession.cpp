@@ -15,7 +15,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
+#include <string_view>
 
 namespace os::interact {
 
@@ -50,6 +52,12 @@ double sign(double v)
     return v < 0 ? -1.0 : 1.0;
 }
 
+// Characters (code points) in UTF-8 text, to estimate a label's width.
+std::size_t utf8Length(std::string_view text)
+{
+    return std::size_t(std::count_if(text.begin(), text.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
+}
+
 // Angle of `p` around `c`, and a counterclockwise sweep in [0, 2pi).
 double angleOf(Vec2 c, Vec2 p)
 {
@@ -59,6 +67,33 @@ double ccw(double from, double to)
 {
     double d = std::fmod(to - from, 2 * kPi);
     return d < 0 ? d + 2 * kPi : d;
+}
+
+// The glyph drawn for a (non-dimension) constraint; nullptr for dimensions.
+const char* constraintGlyph(sketch::ConstraintKind kind)
+{
+    using K = sketch::ConstraintKind;
+    switch (kind) {
+    case K::Horizontal: return "H";
+    case K::Vertical: return "V";
+    case K::Parallel: return "\xE2\x88\xA5";      // parallel to
+    case K::Perpendicular: return "\xE2\x8A\xA5"; // up tack
+    case K::Equal: return "=";
+    case K::Tangent: return "T";
+    case K::Concentric: return "\xE2\x97\x8E";    // bullseye
+    case K::Coincident: return "\xE2\x97\x8F";    // black circle
+    case K::Midpoint: return "M";
+    case K::PointOnLine:
+    case K::PointOnCircle: return "on";
+    case K::Symmetric: return "\xE2\x86\x94"; // left right arrow
+    case K::Distance:
+    case K::HorizontalDistance:
+    case K::VerticalDistance:
+    case K::Diameter:
+    case K::Radius:
+    case K::Angle: return nullptr;
+    }
+    return nullptr;
 }
 
 // Circle through three points; nullopt when they are (nearly) collinear.
@@ -97,6 +132,7 @@ void SketchSession::syncFromDocument()
         return;
     working_ = *current;
     syncedRevision_ = revision;
+    cancelModes(); // the curves they work on may be gone
     if (working_.solveReport().degreesOfFreedom < 0)
         (void)sketch::solve(working_); // loaded from file: compute DOF for display
     std::erase_if(selected_, [&](sketch::EntityId id) {
@@ -111,7 +147,9 @@ void SketchSession::setTool(SketchTool tool)
     tool_ = tool;
     resetShape();
     cancelOffset();
+    cancelModes();
     trimCursor_.reset();
+    hoveredGlyph_ = sketch::kNoEntity;
     if (tool != SketchTool::Select)
         selected_.clear();
 }
@@ -168,7 +206,7 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
     const double pixel = camera.pixelSize(working_.plane().toWorld(*local));
     const double step = snapIncrement(pixel, 10.0);
     Vec2 p = *local;
-    if (anchor_ && tool_ == SketchTool::Line) {
+    if (anchor_ && (tool_ == SketchTool::Line || tool_ == SketchTool::Polygon)) {
         const Vec2 d = p - anchor_->position;
         if (d.length() > 4 * pixel) {
             const double angle = std::atan2(std::abs(d.y), std::abs(d.x)) * 180.0 / kPi;
@@ -267,6 +305,7 @@ void SketchSession::beginShape(const Snap& at)
     focusedInput_ = 0;
     switch (tool_) {
     case SketchTool::Rectangle:
+    case SketchTool::CenterRectangle:
         inputs_ = {{"width", "W", "", false, 0}, {"height", "H", "", false, 0}};
         break;
     case SketchTool::Circle:
@@ -274,6 +313,12 @@ void SketchSession::beginShape(const Snap& at)
         break;
     case SketchTool::Line:
         inputs_ = {{"length", "L", "", false, 0}};
+        break;
+    case SketchTool::Polygon: // the size across flats, then (Tab) the number of sides
+        inputs_ = {{"size", "The size", "", false, 0}, {"sides", "Sides", "", false, 0}};
+        break;
+    case SketchTool::TangentArc:
+        inputs_ = {{"radius", "R", "", false, 0}};
         break;
     case SketchTool::Arc:  // the radius input appears once the end is placed
     case SketchTool::Slot: // the width input appears once the second center is placed
@@ -288,6 +333,7 @@ void SketchSession::resetShape()
     anchor_.reset();
     arcEnd_.reset();
     chainStart_ = sketch::kNoEntity;
+    tangentStart_ = {};
     inputs_.clear();
     focusedInput_ = 0;
 }
@@ -313,6 +359,12 @@ Vec2 SketchSession::constrainedCursor() const
         if (const auto h = input("height"))
             c.y = a.y + sign(c.y - a.y) * *h;
         break;
+    case SketchTool::CenterRectangle: // the anchor is the center: typed sizes are full widths
+        if (const auto w = input("width"))
+            c.x = a.x + sign(c.x - a.x) * *w / 2;
+        if (const auto h = input("height"))
+            c.y = a.y + sign(c.y - a.y) * *h / 2;
+        break;
     case SketchTool::Line:
         if (const auto len = input("length")) {
             Vec2 d = c - a;
@@ -329,13 +381,96 @@ Vec2 SketchSession::constrainedCursor() const
             c = a + d * (*dia / 2);
         }
         break;
+    case SketchTool::Polygon: // the cursor is the middle of a side: half the size across flats away
+        if (const auto size = input("size")) {
+            Vec2 d = c - a;
+            const double l = d.length();
+            d = l > 1e-9 ? d * (1.0 / l) : Vec2{1, 0};
+            c = a + d * (*size / 2);
+        }
+        break;
     case SketchTool::Arc:
     case SketchTool::Slot:
+    case SketchTool::TangentArc: // tangentArcShape() applies the typed radius
     case SketchTool::Trim:
     case SketchTool::Select:
         break;
     }
     return c;
+}
+
+std::optional<SketchSession::TangentStart> SketchSession::tangentStartAt(sketch::EntityId point, bool* ambiguous) const
+{
+    // The one curve ending at the point. Construction curves (a center
+    // rectangle's diagonal, a center line) count only when no profile curve
+    // ends there. Where two profile curves meet (a corner), which one to
+    // continue is unclear: none.
+    if (ambiguous)
+        *ambiguous = false;
+    const auto* at = working_.point(point);
+    if (!at)
+        return std::nullopt;
+    const Vec2 p = at->position;
+    std::vector<TangentStart> profile, guides;
+    for (const auto& [id, l] : working_.lines()) {
+        if (l.start != point && l.end != point)
+            continue;
+        const Vec2 d = p - working_.point(l.start == point ? l.end : l.start)->position;
+        if (d.length() > 1e-9)
+            (l.construction ? guides : profile).push_back({id, d * (1.0 / d.length())});
+    }
+    for (const auto& [id, a] : working_.arcs()) {
+        if (a.start != point && a.end != point)
+            continue;
+        const Vec2 r = p - working_.point(a.center)->position;
+        if (r.length() < 1e-9)
+            continue;
+        const Vec2 ccwTangent = Vec2{-r.y, r.x} * (1.0 / r.length());
+        // Leaving the arc's end we travel counterclockwise; leaving its start, clockwise.
+        (a.construction ? guides : profile).push_back({id, a.end == point ? ccwTangent : ccwTangent * -1.0});
+    }
+    const auto& candidates = profile.empty() ? guides : profile;
+    if (candidates.size() == 1)
+        return candidates.front();
+    if (ambiguous)
+        *ambiguous = candidates.size() > 1;
+    return std::nullopt;
+}
+
+std::optional<SketchSession::ArcShape> SketchSession::tangentArcShape() const
+{
+    if (!anchor_ || tangentStart_.curve == sketch::kNoEntity)
+        return std::nullopt;
+    const Vec2 s = anchor_->position, t = tangentStart_.direction, left{-t.y, t.x};
+    const Vec2 pointer = cursor_.position;
+    ArcShape arc;
+    Vec2 end;
+    // Which way it turns: toward the pointer's side of the tangent.
+    const double side = (pointer - s).dot(left);
+    if (const auto r = input("radius")) {
+        arc.center = s + left * (side < 0 ? -*r : *r);
+        const Vec2 out = pointer - arc.center;
+        if (out.length() < 1e-9)
+            return std::nullopt;
+        end = arc.center + out * (*r / out.length());
+        arc.radius = *r;
+    } else {
+        const Vec2 v = pointer - s;
+        if (std::abs(side) < 1e-6 * std::max(v.length(), 1e-9) || v.length() < 1e-9)
+            return std::nullopt; // straight ahead or behind: no finite arc
+        const double signedRadius = v.dot(v) / (2 * side);
+        arc.center = s + left * signedRadius;
+        arc.radius = std::abs(signedRadius);
+        end = pointer;
+    }
+    if ((end - s).length() < 1e-9)
+        return std::nullopt;
+    // Turning left is counterclockwise from the anchor; turning right is
+    // clockwise, i.e. counterclockwise from the far end back to the anchor.
+    arc.swapped = side < 0;
+    arc.start = arc.swapped ? end : s;
+    arc.end = arc.swapped ? s : end;
+    return arc;
 }
 
 std::optional<SketchSession::SlotShape> SketchSession::slotShape() const
@@ -429,6 +564,49 @@ bool SketchSession::finishShape(const Snap& endSnap)
         resetShape();
         return true;
     }
+    case SketchTool::CenterRectangle: {
+        const Vec2 center = start.position, corner = end.position;
+        if (std::abs(corner.x - center.x) < kTiny || std::abs(corner.y - center.y) < kTiny) {
+            message("Move away from the center to give the rectangle some width and height.");
+            return false;
+        }
+        const auto ids = sketch::addCenterRectangle(next, center, corner, start.point);
+        if (ids.center == sketch::kNoEntity)
+            return false;
+        const auto& corners = ids.rectangle.corners;
+        if (end.point != sketch::kNoEntity && end.point != ids.center)
+            next.addConstraint({sketch::ConstraintKind::Coincident, corners[2], end.point});
+        const Vec2 low = next.point(corners[0])->position;
+        if (input("width"))
+            next.addConstraint({sketch::ConstraintKind::HorizontalDistance, corners[0], corners[1], corner.x - low.x});
+        if (input("height"))
+            next.addConstraint({sketch::ConstraintKind::VerticalDistance, corners[1], corners[2], corner.y - low.y});
+        if (!commit(std::move(next), "Center rectangle"))
+            return false;
+        resetShape();
+        return true;
+    }
+    case SketchTool::Polygon: {
+        if ((end.position - start.position).length() < kTiny) {
+            message("Move away from the center to give the polygon a size.");
+            return false;
+        }
+        const auto ids = sketch::addPolygon(next, start.position, end.position, polygonSides_, start.point);
+        if (ids.sides.empty())
+            return false;
+        // The pointer straight beside or above the center (shown as a guide)
+        // makes the first side vertical or horizontal.
+        if (end.horizontal)
+            next.addConstraint({sketch::ConstraintKind::Vertical, ids.sides[0]});
+        else if (end.vertical)
+            next.addConstraint({sketch::ConstraintKind::Horizontal, ids.sides[0]});
+        if (const auto size = input("size"))
+            next.addConstraint({sketch::ConstraintKind::Diameter, ids.inner, sketch::kNoEntity, *size});
+        if (!commit(std::move(next), "Polygon"))
+            return false;
+        resetShape();
+        return true;
+    }
     case SketchTool::Circle: {
         const double radius = (end.position - start.position).length();
         if (radius < kTiny) {
@@ -506,6 +684,41 @@ bool SketchSession::finishShape(const Snap& endSnap)
         if (!commit(std::move(next), "Arc"))
             return false;
         resetShape();
+        return true;
+    }
+    case SketchTool::TangentArc: {
+        cursor_ = endSnap;
+        const auto arc = tangentArcShape();
+        if (!arc) {
+            message("Move to the side of the curve's direction to bend the arc.");
+            return false;
+        }
+        const Vec2 farEnd = arc->swapped ? arc->start : arc->end;
+        const bool reuseEnd = !typed && end.point != sketch::kNoEntity && end.point != start.point;
+        const sketch::EntityId s = start.point;
+        const sketch::EntityId e = reuseEnd ? end.point : next.addPoint(farEnd);
+        const sketch::EntityId center = next.addPoint(arc->center);
+        const sketch::EntityId id = next.addArc(center, arc->swapped ? e : s, arc->swapped ? s : e);
+        if (id == sketch::kNoEntity)
+            return false;
+        next.addConstraint({sketch::ConstraintKind::Tangent, tangentStart_.curve, id});
+        if (const auto r = input("radius"))
+            next.addConstraint({sketch::ConstraintKind::Radius, id, sketch::kNoEntity, *r});
+        if (!commit(std::move(next), "Tangent arc"))
+            return false;
+        // Continue from the far end, tangent to the new arc (Esc ends the chain).
+        const sketch::EntityId farPoint = e;
+        const auto continued = tangentStartAt(farPoint);
+        if (reuseEnd || !continued || !working_.point(farPoint)) {
+            resetShape();
+            return true;
+        }
+        Snap nextStart;
+        nextStart.position = working_.point(farPoint)->position;
+        nextStart.point = farPoint;
+        nextStart.kind = SnapKind::Point;
+        beginShape(nextStart);
+        tangentStart_ = *continued;
         return true;
     }
     case SketchTool::Slot: {
@@ -594,8 +807,8 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     pressEvent_ = event;
     dragPoint_ = sketch::kNoEntity;
 
-    if (isOffsetting())
-        return true; // the release applies the offset
+    if (isOffsetting() || isMirroring() || isPatterning())
+        return true; // the release applies the offset / picks the line / places the pattern
     if (tool_ == SketchTool::Trim) {
         if (pickCurve(event.position, camera, event.device) == sketch::kNoEntity) {
             pressed_ = false;
@@ -606,6 +819,10 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     if (tool_ == SketchTool::Select) {
         const sketch::EntityId hit = pickEntity(event.position, camera, event.device);
         if (hit == sketch::kNoEntity) {
+            // A constraint glyph, only when no point or curve is within reach
+            // (a glyph's tap target never hides geometry); the release selects it.
+            if (glyphAt(event.position, camera) != sketch::kNoEntity)
+                return true;
             pressed_ = false;
             return false; // let the controller orbit / clear selection
         }
@@ -619,6 +836,18 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     const Snap snap = snapAt(event.position, camera, event.device);
     cursor_ = snap;
     cursorValid_ = true;
+    if (!anchor_ && tool_ == SketchTool::TangentArc) {
+        bool ambiguous = false;
+        const auto start = snap.point != sketch::kNoEntity ? tangentStartAt(snap.point, &ambiguous) : std::nullopt;
+        if (!start) {
+            message(ambiguous ? "Curves meet there: start a tangent arc on a free end of a line or an arc."
+                              : "Start a tangent arc on the end of a line or an arc.");
+            return true;
+        }
+        beginShape(snap);
+        tangentStart_ = *start;
+        return true;
+    }
     if (!anchor_)
         beginShape(snap);
     return true;
@@ -628,6 +857,10 @@ void SketchSession::pointerMove(const PointerEvent& event, const Camera& camera)
 {
     if (isOffsetting()) {
         updateOffset(toLocal(event.position, camera));
+        return;
+    }
+    if (isMirroring() || isPatterning()) {
+        hover(event, camera);
         return;
     }
     if (!pressed_) {
@@ -667,6 +900,20 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
         dragging_ = false;
         return;
     }
+    if (isMirroring()) {
+        const sketch::EntityId axis = pickCurve(event.position, camera, event.device);
+        if (axis != sketch::kNoEntity && working_.line(axis))
+            (void)applyMirror(axis);
+        else
+            message("Click a straight line to mirror across.");
+        dragging_ = false;
+        return;
+    }
+    if (isPatterning()) {
+        patternClick(snapAt(event.position, camera, event.device));
+        dragging_ = false;
+        return;
+    }
     if (tool_ == SketchTool::Trim) {
         const double threshold = InputProfile::forDevice(event.device).dragThreshold;
         const sketch::EntityId curve = pickCurve(event.position, camera, event.device);
@@ -688,7 +935,9 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
             if (!commit(std::move(moved), "Move point"))
                 regionsChanged();
         } else {
-            const sketch::EntityId hit = pickEntity(event.position, camera, event.device);
+            sketch::EntityId hit = pickEntity(event.position, camera, event.device);
+            if (hit == sketch::kNoEntity)
+                hit = glyphAt(event.position, camera);
             const bool additive = InputProfile::forDevice(event.device).additiveSelection || event.modifiers.shift
                                || event.modifiers.control;
             select(hit, additive);
@@ -715,6 +964,26 @@ void SketchSession::hover(const PointerEvent& event, const Camera& camera)
         updateOffset(toLocal(event.position, camera));
         return;
     }
+    if (isMirroring()) {
+        const sketch::EntityId line = pickCurve(event.position, camera, event.device);
+        const bool usable = line != sketch::kNoEntity && working_.line(line)
+                         && std::find(mirrorSource_.begin(), mirrorSource_.end(), line) == mirrorSource_.end();
+        const sketch::EntityId axis = usable ? line : sketch::kNoEntity;
+        if (axis != mirrorAxis_) {
+            mirrorAxis_ = axis;
+            if (axis != sketch::kNoEntity)
+                updatePreview([&](sketch::Sketch& s) { return sketch::mirrorCurves(s, mirrorSource_, axis); });
+            else
+                previewCurves_.clear();
+        }
+        hovered_ = axis;
+        return;
+    }
+    if (isPatterning()) {
+        cursor_ = snapAt(event.position, camera, event.device);
+        cursorValid_ = true;
+        return;
+    }
     if (tool_ == SketchTool::Trim) {
         hovered_ = pickCurve(event.position, camera, event.device);
         trimCursor_ = toLocal(event.position, camera);
@@ -723,6 +992,7 @@ void SketchSession::hover(const PointerEvent& event, const Camera& camera)
     }
     if (tool_ == SketchTool::Select) {
         hovered_ = pickEntity(event.position, camera, event.device);
+        hoveredGlyph_ = hovered_ == sketch::kNoEntity ? glyphAt(event.position, camera) : sketch::kNoEntity;
         cursorValid_ = false;
         return;
     }
@@ -733,6 +1003,7 @@ void SketchSession::hover(const PointerEvent& event, const Camera& camera)
 void SketchSession::leave()
 {
     hovered_ = sketch::kNoEntity;
+    hoveredGlyph_ = sketch::kNoEntity;
     cursorValid_ = false;
 }
 
@@ -742,6 +1013,10 @@ bool SketchSession::keyPress(Key key)
     case Key::Escape:
         if (isOffsetting()) {
             cancelOffset();
+            return true;
+        }
+        if (isMirroring() || isPatterning()) {
+            cancelModes();
             return true;
         }
         if (anchor_) {
@@ -758,7 +1033,7 @@ bool SketchSession::keyPress(Key key)
         }
         return false;
     case Key::Enter:
-        if (anchor_ || isOffsetting()) {
+        if (anchor_ || isOffsetting() || isPatterning()) {
             (void)commitTool();
             return true;
         }
@@ -774,6 +1049,46 @@ bool SketchSession::keyPress(Key key)
         break;
     }
     return false;
+}
+
+// ---- Counters -------------------------------------------------------------------------------
+
+std::optional<SketchCounter> SketchSession::counter() const
+{
+    if (isPatterning())
+        return SketchCounter{std::to_string(pattern_.count) + " in total", pattern_.count};
+    if (tool_ == SketchTool::Polygon)
+        return SketchCounter{std::to_string(polygonSides_) + " sides", polygonSides_};
+    return std::nullopt;
+}
+
+bool SketchSession::stepCounter(int delta)
+{
+    if (isPatterning()) {
+        const int count = std::clamp(pattern_.count + delta, 2, sketch::kMaxPatternCount);
+        if (count == pattern_.count)
+            return false;
+        pattern_.count = count;
+        for (auto& in : inputs_)
+            if (in.key == "count") {
+                in.text.clear();
+                in.locked = false;
+            }
+        updatePatternPreview();
+        return true;
+    }
+    if (tool_ != SketchTool::Polygon)
+        return false;
+    const int sides = std::clamp(polygonSides_ + delta, sketch::kMinPolygonSides, sketch::kMaxPolygonSides);
+    if (sides == polygonSides_)
+        return false;
+    polygonSides_ = sides;
+    for (auto& in : inputs_)
+        if (in.key == "sides") { // the typed count gives way to the new one
+            in.text.clear();
+            in.locked = false;
+        }
+    return true;
 }
 
 // ---- Typed values -------------------------------------------------------------------------
@@ -797,6 +1112,43 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
             in.locked = false;
             return {};
         }
+        if (key == "sides" || key == "count") {
+            // A count, not a length.
+            const bool sides = key == "sides";
+            const long low = sides ? sketch::kMinPolygonSides : 2, high = sides ? sketch::kMaxPolygonSides : sketch::kMaxPatternCount;
+            char* rest = nullptr;
+            const long n = std::strtol(text.c_str(), &rest, 10);
+            if (rest == text.c_str() || *rest != '\0' || n < low || n > high) {
+                in.locked = false;
+                return std::string(sides ? "The number of sides" : "The count") + " must be a whole number from "
+                     + std::to_string(low) + " to " + std::to_string(high) + ".";
+            }
+            if (sides)
+                polygonSides_ = int(n);
+            else
+                pattern_.count = int(n);
+            in.locked = true;
+            in.value = double(n);
+            updatePatternPreview();
+            return {};
+        }
+        if (key == "angle") {
+            // Degrees; a whole turn spaces the copies evenly.
+            char* rest = nullptr;
+            const double degrees = std::strtod(text.c_str(), &rest);
+            while (rest && *rest == ' ')
+                ++rest;
+            if (rest == text.c_str() || (*rest != '\0' && std::string(rest) != "\xC2\xB0" && std::string(rest) != "deg")
+                || !(degrees > 0) || degrees > 360) {
+                in.locked = false;
+                return "The angle must be more than 0 and at most 360 degrees.";
+            }
+            in.locked = true;
+            in.value = degrees * kPi / 180.0;
+            pattern_.angle = degrees >= 360 - 1e-9 ? 2 * kPi : in.value;
+            updatePatternPreview();
+            return {};
+        }
         const auto parsed = parseLength(text, document_.displayUnit());
         if (!parsed.millimeters)
             return parsed.error;
@@ -806,6 +1158,10 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
         in.value = *parsed.millimeters;
         if (isOffsetting())
             updateOffset(std::nullopt); // show the typed distance
+        if (key == "spacing" && pattern_.step.length() > 1e-12) {
+            pattern_.step = pattern_.step * (in.value / pattern_.step.length());
+            updatePatternPreview();
+        }
         return {};
     }
     return "Unknown value.";
@@ -819,6 +1175,9 @@ void SketchSession::focusNextInput()
 
 Status SketchSession::commitTool()
 {
+    if (isPatterning())
+        return commitPattern() ? okStatus()
+                               : Status::failure(ErrorCode::InvalidArgument, "Unable to repeat these curves.", "commitPattern failed");
     if (isOffsetting())
         return commitOffset() ? okStatus()
                               : Status::failure(ErrorCode::InvalidArgument, "Unable to offset.", "commitOffset failed");
@@ -834,6 +1193,27 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
     const sketch::SketchConstraint* c = working_.constraint(constraintId);
     if (!c || !c->isDimension())
         return "That dimension no longer exists.";
+    if (c->kind == sketch::ConstraintKind::Angle) {
+        // Degrees, as shown.
+        std::string digits = text;
+        for (const std::string_view unit : {std::string_view("\xC2\xB0"), std::string_view("deg")})
+            if (const auto at = digits.find(unit); at != std::string::npos)
+                digits.erase(at, unit.size());
+        char* rest = nullptr;
+        const double degrees = std::strtod(digits.c_str(), &rest);
+        while (rest && *rest == ' ')
+            ++rest;
+        if (rest == digits.c_str() || *rest != '\0' || !(degrees > 0) || !(degrees < 180))
+            return "Angles must be more than 0 and less than 180 degrees.";
+        const auto value = sketch::directionAngleFor(working_, c->a, c->b, degrees * kPi / 180.0);
+        if (!value)
+            return "These lines are parallel: there is no angle to set.";
+        sketch::Sketch next = working_;
+        next.constraint(constraintId)->value = *value;
+        if (!commit(std::move(next), "Edit angle"))
+            return "The sketch cannot take that angle.";
+        return {};
+    }
     const auto parsed = parseLength(text, document_.displayUnit());
     if (!parsed.millimeters)
         return parsed.error;
@@ -856,6 +1236,10 @@ void SketchSession::select(sketch::EntityId id, bool additive)
         selected_.clear();
         return;
     }
+    // Constraints and geometry are never selected together (their actions differ).
+    const bool isConstraint = working_.constraint(id) != nullptr;
+    if (!selected_.empty() && (working_.constraint(selected_.front()) != nullptr) != isConstraint)
+        selected_.clear();
     const auto it = std::find(selected_.begin(), selected_.end(), id);
     if (additive) {
         if (it != selected_.end())
@@ -867,11 +1251,31 @@ void SketchSession::select(sketch::EntityId id, bool additive)
     }
 }
 
+bool SketchSession::constraintSelected() const
+{
+    return !selected_.empty() && working_.constraint(selected_.front()) != nullptr;
+}
+
 std::vector<ContextAction> SketchSession::contextActions() const
 {
     std::vector<ContextAction> actions;
+    if (isMirroring()) {
+        actions.push_back({"mirror", "Mirror", true}); // click again to cancel
+        return actions;
+    }
+    if (isPatterning()) {
+        actions.push_back({"pattern:linear", "Linear", !pattern_.circular});
+        actions.push_back({"pattern:circular", "Circular", pattern_.circular});
+        actions.push_back({"apply", "Apply", false});
+        actions.push_back({"pattern", "Pattern", true}); // click again to cancel
+        return actions;
+    }
     if (selected_.empty())
         return actions;
+    if (constraintSelected()) {
+        actions.push_back({"delete", selected_.size() == 1 ? "Delete constraint" : "Delete constraints", false});
+        return actions;
+    }
     std::size_t points = 0, lines = 0, circles = 0, arcs = 0;
     for (auto id : selected_) {
         points += working_.point(id) ? 1 : 0;
@@ -901,6 +1305,8 @@ std::vector<ContextAction> SketchSession::contextActions() const
             actions.push_back({"parallel", "Parallel", false});
             actions.push_back({"perpendicular", "Perpendicular", false});
             actions.push_back({"equal", "Equal", false});
+            if (sketch::lineIntersection(working_, selected_[0], selected_[1]))
+                actions.push_back({"angle", "Angle", false});
         } else if (round == 2) {
             actions.push_back({"equal", "Equal", false});
             actions.push_back({"concentric", "Concentric", false});
@@ -922,8 +1328,11 @@ std::vector<ContextAction> SketchSession::contextActions() const
         if (corners)
             actions.push_back({"fillet", "Fillet", false});
     }
-    if (lines + round > 0 && points == 0)
+    if (lines + round > 0 && points == 0) {
         actions.push_back({"offset", "Offset", isOffsetting()});
+        actions.push_back({"mirror", "Mirror", false});
+        actions.push_back({"pattern", "Pattern", false});
+    }
     if (lines + round > 0) {
         // Construction curves guide the drawing but never become profiles.
         bool allConstruction = true;
@@ -969,6 +1378,12 @@ Status SketchSession::triggerAction(const std::string& id)
         next.addConstraint({horizontal ? sketch::ConstraintKind::HorizontalDistance : sketch::ConstraintKind::VerticalDistance,
                             selected_[0], selected_[1], horizontal ? b.x - a.x : b.y - a.y});
         label = horizontal ? "Horizontal distance" : "Vertical distance";
+    } else if (id == "angle" && selected_.size() == 2 && working_.line(selected_[0]) && working_.line(selected_[1])) {
+        const auto now = sketch::lineDirectionAngle(working_, selected_[0], selected_[1]);
+        if (!now || !sketch::lineIntersection(working_, selected_[0], selected_[1]))
+            return Status::failure(ErrorCode::InvalidArgument, "Parallel lines have no angle between them.", "angle: parallel");
+        next.addConstraint({sketch::ConstraintKind::Angle, selected_[0], selected_[1], *now});
+        label = "Angle";
     } else if (id == "coincident" && selected_.size() == 2) {
         next.addConstraint({sketch::ConstraintKind::Coincident, selected_[0], selected_[1]});
         label = "Coincident";
@@ -1024,6 +1439,39 @@ Status SketchSession::triggerAction(const std::string& id)
         focusedInput_ = 0;
         updateOffset(std::nullopt);
         return okStatus();
+    } else if (id == "mirror") {
+        if (isMirroring()) {
+            cancelModes();
+            return okStatus();
+        }
+        cancelOffset();
+        for (auto e : selected_)
+            if (working_.line(e) || working_.isRound(e))
+                mirrorSource_.push_back(e);
+        if (mirrorSource_.empty())
+            return Status::failure(ErrorCode::InvalidArgument, "Select the curves to mirror.", "mirror without curves");
+        resetShape();
+        mirrorAxis_ = sketch::kNoEntity;
+        return okStatus();
+    } else if (id == "pattern" || id == "pattern:linear" || id == "pattern:circular") {
+        if (id == "pattern" && isPatterning()) {
+            cancelModes();
+            return okStatus();
+        }
+        if (!isPatterning()) {
+            cancelOffset();
+            for (auto e : selected_)
+                if (working_.line(e) || working_.isRound(e))
+                    patternSource_.push_back(e);
+            if (patternSource_.empty())
+                return Status::failure(ErrorCode::InvalidArgument, "Select the curves to repeat.", "pattern without curves");
+            resetShape();
+        }
+        startPattern(id == "pattern:circular");
+        return okStatus();
+    } else if (id == "apply" && isPatterning()) {
+        return commitPattern() ? okStatus()
+                               : Status::failure(ErrorCode::InvalidArgument, "Unable to repeat these curves.", "commitPattern failed");
     } else if (id == "radius" && selected_.size() == 1 && working_.arc(selected_.front())) {
         next.addConstraint({sketch::ConstraintKind::Radius, selected_.front(), sketch::kNoEntity,
                             working_.arcRadius(selected_.front())});
@@ -1053,6 +1501,123 @@ Status SketchSession::triggerAction(const std::string& id)
     if (id == "delete" || id == "fillet")
         selected_.clear();
     return okStatus();
+}
+
+// ---- Mirror and pattern ---------------------------------------------------------------------
+
+void SketchSession::cancelModes()
+{
+    if (mirrorSource_.empty() && patternSource_.empty())
+        return;
+    mirrorSource_.clear();
+    mirrorAxis_ = sketch::kNoEntity;
+    patternSource_.clear();
+    previewCurves_.clear();
+    if (!anchor_ && !isOffsetting())
+        inputs_.clear();
+}
+
+void SketchSession::updatePreview(std::function<Result<std::vector<sketch::EntityId>>(sketch::Sketch&)> edit)
+{
+    preview_ = working_;
+    auto made = edit(preview_);
+    previewCurves_ = made ? std::move(made.value()) : std::vector<sketch::EntityId>{};
+}
+
+bool SketchSession::applyMirror(sketch::EntityId axis)
+{
+    sketch::Sketch next = working_;
+    const auto made = sketch::mirrorCurves(next, mirrorSource_, axis);
+    if (!made) {
+        message(made.userMessage());
+        return false;
+    }
+    if (!commit(std::move(next), "Mirror"))
+        return false;
+    cancelModes();
+    selected_.clear();
+    return true;
+}
+
+void SketchSession::startPattern(bool circular)
+{
+    // The selection's extent: a linear pattern starts one width plus 5 mm
+    // apart along X; a circular one turns six times about the origin.
+    double minX = 1e300, maxX = -1e300, minY = 1e300, maxY = -1e300;
+    for (const auto id : patternSource_) {
+        std::vector<Vec2> pts;
+        if (const auto* l = working_.line(id)) {
+            pts = {working_.point(l->start)->position, working_.point(l->end)->position};
+        } else {
+            const Vec2 c = working_.circle(id) ? working_.point(working_.circle(id)->center)->position
+                                               : working_.point(working_.arc(id)->center)->position;
+            const double r = working_.circle(id) ? working_.circle(id)->radius : working_.arcRadius(id);
+            pts = {c - Vec2{r, r}, c + Vec2{r, r}};
+        }
+        for (const Vec2 p : pts) {
+            minX = std::min(minX, p.x);
+            maxX = std::max(maxX, p.x);
+            minY = std::min(minY, p.y);
+            maxY = std::max(maxY, p.y);
+        }
+    }
+    patternOrigin_ = {(minX + maxX) / 2, (minY + maxY) / 2};
+    pattern_ = {};
+    pattern_.circular = circular;
+    pattern_.count = circular ? 6 : 3;
+    pattern_.step = {std::ceil(maxX - minX + 5.0 - 1e-9), 0};
+    pattern_.center = {0, 0};
+    pattern_.angle = 2 * kPi;
+    inputs_ = {{circular ? "angle" : "spacing", circular ? "Angle" : "Spacing", "", false, 0}, {"count", "Count", "", false, 0}};
+    focusedInput_ = 0;
+    updatePatternPreview();
+}
+
+void SketchSession::updatePatternPreview()
+{
+    if (!isPatterning())
+        return;
+    updatePreview([&](sketch::Sketch& s) { return sketch::patternCurves(s, patternSource_, pattern_); });
+}
+
+void SketchSession::patternClick(const Snap& at)
+{
+    if (pattern_.circular) {
+        pattern_.center = at.position; // points (the origin, a hole's center) snap
+        updatePatternPreview();
+        return;
+    }
+    // Where the next copy goes: the step from the selection's middle, kept
+    // straight across or up when it nearly is.
+    Vec2 step = at.position - patternOrigin_;
+    if (at.point == sketch::kNoEntity) {
+        const double angle = std::atan2(std::abs(step.y), std::abs(step.x)) * 180.0 / kPi;
+        if (angle < kInferenceDegrees)
+            step.y = 0;
+        else if (angle > 90.0 - kInferenceDegrees)
+            step.x = 0;
+    }
+    if (step.length() < 1e-9)
+        return;
+    if (const auto spacing = input("spacing"))
+        step = step * (*spacing / step.length());
+    pattern_.step = step;
+    updatePatternPreview();
+}
+
+bool SketchSession::commitPattern()
+{
+    sketch::Sketch next = working_;
+    const auto made = sketch::patternCurves(next, patternSource_, pattern_);
+    if (!made) {
+        message(made.userMessage());
+        return false;
+    }
+    if (!commit(std::move(next), "Pattern"))
+        return false;
+    cancelModes();
+    selected_.clear();
+    return true;
 }
 
 // ---- Offset -------------------------------------------------------------------------------
@@ -1203,6 +1768,14 @@ std::string SketchSession::statusText() const
 
 std::string SketchSession::hintText() const
 {
+    if (isMirroring())
+        return "Click the line to mirror across (a construction line works well) \xC2\xB7 Esc cancels";
+    if (isPatterning())
+        return pattern_.circular
+                 ? "Click the center to turn around \xC2\xB7 type the total angle, Tab for the count \xC2\xB7 "
+                   "- / + change the count \xC2\xB7 Enter or Apply adds them"
+                 : "Click where the next copy goes (or type the spacing), Tab for the count \xC2\xB7 "
+                   "- / + change the count \xC2\xB7 Enter or Apply adds them";
     if (isOffsetting())
         return "Move to the side to offset to and click \xC2\xB7 or type a distance and press Enter \xC2\xB7 Esc cancels";
     switch (tool_) {
@@ -1214,10 +1787,19 @@ std::string SketchSession::hintText() const
         return "Click the piece of a curve to remove (up to where other curves cross it)";
     case SketchTool::Rectangle:
         return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle";
+    case SketchTool::CenterRectangle:
+        return anchor_ ? "Click a corner, or type width, Tab, height, Enter" : "Click the center of the rectangle";
+    case SketchTool::Polygon:
+        return anchor_ ? "The pointer sets the middle of a side \xC2\xB7 type the size across flats, Tab for the sides "
+                         "\xC2\xB7 +/- change the sides"
+                       : "Click the center of the polygon \xC2\xB7 +/- change the number of sides";
     case SketchTool::Circle:
         return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center";
     case SketchTool::Line:
         return anchor_ ? "Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line" : "Click the start point";
+    case SketchTool::TangentArc:
+        return anchor_ ? "Click where the arc ends, or type a radius and press Enter \xC2\xB7 Esc ends"
+                       : "Click the free end of a line or arc to continue it with a tangent arc";
     case SketchTool::Arc:
         if (!anchor_)
             return "Click where the arc starts";
@@ -1225,6 +1807,8 @@ std::string SketchSession::hintText() const
     case SketchTool::Select:
         break;
     }
+    if (constraintSelected())
+        return "Delete removes the constraint \xC2\xB7 click elsewhere to keep it";
     if (!selected_.empty())
         return "Add constraints below \xC2\xB7 drag points to adjust \xC2\xB7 Delete removes";
     return "Pick a tool to draw \xC2\xB7 click a dimension to edit it \xC2\xB7 drag points to move them";
@@ -1237,7 +1821,9 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
     const sketch::Plane& plane = working_.plane();
     auto screen = [&](Vec2 local) { return toScreen(local, camera); };
 
-    // Committed dimensions.
+    // Committed dimensions. Angle labels slide further into their angle
+    // (along the bisector) when another label is in the way.
+    std::vector<std::pair<std::size_t, Vec2>> angleLabels; // index in `out`, screen step along the bisector
     for (const auto& [id, c] : working_.constraints()) {
         if (!c.isDimension())
             continue;
@@ -1275,6 +1861,26 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             label.text = "\xC3\x98" + trimmed(c.value, unit);
             break;
         }
+        case sketch::ConstraintKind::Angle: {
+            // At the corner, a little way into the angle.
+            const auto corner = sketch::lineIntersection(working_, c.a, c.b);
+            const auto visible = sketch::visibleAngle(working_, c.a, c.b, c.value);
+            if (!corner || !visible)
+                continue;
+            auto towardMiddle = [&](sketch::EntityId lineId) {
+                const auto* l = working_.line(lineId);
+                Vec2 d = (working_.point(l->start)->position + working_.point(l->end)->position) * 0.5 - *corner;
+                return d.length() > 1e-12 ? d * (1.0 / d.length()) : Vec2{1, 0};
+            };
+            Vec2 bisector = towardMiddle(c.a) + towardMiddle(c.b);
+            bisector = bisector.length() > 1e-9 ? bisector * (1.0 / bisector.length()) : Vec2{0, 1};
+            label.screen = screen(*corner + bisector * (2.2 * offset));
+            angleLabels.emplace_back(out.size(), screen(*corner + bisector * (3.2 * offset)) - label.screen);
+            char text[32];
+            std::snprintf(text, sizeof text, "%.4g\xC2\xB0", *visible * 180.0 / kPi);
+            label.text = text;
+            break;
+        }
         case sketch::ConstraintKind::Radius: {
             const auto* arc = working_.arc(c.a);
             const Vec2 center = working_.point(arc->center)->position;
@@ -1290,10 +1896,25 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
         }
         out.push_back(label);
     }
+    for (const auto& [index, step] : angleLabels) {
+        auto crowded = [&](Vec2 p) {
+            for (std::size_t i = 0; i < out.size(); ++i)
+                if (i != index && std::abs(out[i].screen.x - p.x) < 40 && std::abs(out[i].screen.y - p.y) < 24)
+                    return true;
+            return false;
+        };
+        for (int k = 0; k < 4 && crowded(out[index].screen); ++k)
+            out[index].screen = out[index].screen + step;
+    }
+
+    // Constraint glyphs (not while a shape is being drawn: they would clutter it).
+    if (!anchor_ && !isOffsetting() && !isMirroring() && !isPatterning())
+        addConstraintIcons(out, camera);
 
     // Live inputs of the shape being drawn.
     if (anchor_ && cursorValid_) {
-        const Vec2 a = anchor_->position;
+        // A center rectangle spans from the corner opposite the cursor.
+        const Vec2 a = tool_ == SketchTool::CenterRectangle ? anchor_->position * 2.0 - constrainedCursor() : anchor_->position;
         const Vec2 c = constrainedCursor();
         for (std::size_t i = 0; i < inputs_.size(); ++i) {
             const Input& in = inputs_[i];
@@ -1316,13 +1937,23 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 measured = (c - a).length();
                 label.screen = screen((a + c) * 0.5) + Vec2{0, -26};
             } else if (in.key == "radius") {
-                const auto arc = arcShape();
+                const auto arc = tool_ == SketchTool::TangentArc ? tangentArcShape() : arcShape();
                 measured = arc ? arc->radius : 0;
                 label.screen = screen(cursor_.position) + Vec2{40, -18};
             } else if (in.key == "slot") {
                 const auto slot = slotShape();
                 measured = slot ? 2 * slot->radius : 0;
                 label.screen = screen(cursor_.position) + Vec2{40, -18};
+            } else if (in.key == "size") {
+                measured = 2 * (c - a).length();
+                label.caption = polygonSides_ % 2 == 0 ? "across flats" : "inner \xC3\x98";
+                label.screen = screen(c) + Vec2{56, -18};
+            } else if (in.key == "sides") {
+                label.caption = "sides";
+                label.screen = screen(a) + Vec2{0, 30};
+                label.text = in.locked ? in.text : std::to_string(polygonSides_);
+                out.push_back(label);
+                continue;
             }
             label.text = in.locked ? in.text : trimmed(measured, unit);
             out.push_back(label);
@@ -1340,6 +1971,34 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
         label.screen = screen(at) + Vec2{40, -18};
         label.text = in.locked ? in.text : trimmed(std::abs(offsetDistance_), unit);
         out.push_back(label);
+    }
+
+    // The pattern's typed values: spacing (or angle) and count.
+    if (isPatterning()) {
+        for (std::size_t i = 0; i < inputs_.size(); ++i) {
+            const Input& in = inputs_[i];
+            SketchLabel label;
+            label.kind = SketchLabel::Kind::Input;
+            label.key = in.key;
+            label.focused = i == focusedInput_;
+            label.locked = in.locked;
+            if (in.key == "spacing") {
+                label.text = in.locked ? in.text : trimmed(pattern_.step.length(), unit);
+                label.caption = "apart";
+                label.screen = screen(patternOrigin_ + pattern_.step * 0.5) + Vec2{0, -26};
+            } else if (in.key == "angle") {
+                char degrees[32];
+                std::snprintf(degrees, sizeof degrees, "%g", pattern_.angle * 180.0 / kPi);
+                label.text = (in.locked ? in.text : std::string(degrees)) + "\xC2\xB0";
+                label.caption = "in all";
+                label.screen = screen(pattern_.center) + Vec2{0, -30};
+            } else {
+                label.text = in.locked ? in.text : std::to_string(pattern_.count);
+                label.caption = "in total";
+                label.screen = screen(pattern_.circular ? pattern_.center : patternOrigin_) + Vec2{0, 30};
+            }
+            out.push_back(label);
+        }
     }
 
     // Inference hint next to the cursor.
@@ -1366,6 +2025,259 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
     return out;
 }
 
+void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Camera& camera) const
+{
+    using K = sketch::ConstraintKind;
+    auto screen = [&](Vec2 local) { return toScreen(local, camera); };
+    auto at = [&](sketch::EntityId point) { return working_.point(point)->position; };
+    // Touch: 40 px tap targets (glyphTapHalfSize), so everything sits further apart.
+    // A glyph's center stays out of pick reach of the points and curves
+    // (pickEntity: 8 px with a mouse, 20 px with a finger), so tapping the
+    // glyph itself always reaches it; geometry wins taps nearer to it.
+    const double scale = largeTargets_ ? 1.6 : 1.0;
+    const double kOffset = 14 * scale, kStep = 18 * scale, kClearance = 19 * scale, kLabelMargin = 12 * scale,
+                 kPointClearance = 15 * scale, kCurveClearance = kOffset - 2;
+
+    // Where the shape a line belongs to lies: the far ends of the curves
+    // joining it (line glyphs go on the other side, outside the shape).
+    auto neighbourhood = [&](const sketch::SketchLine& line) -> std::optional<Vec2> {
+        Vec2 sum{0, 0};
+        int count = 0;
+        for (const auto& [id, other] : working_.lines()) {
+            if (&other == &line)
+                continue;
+            for (const auto end : {line.start, line.end}) {
+                if (other.start == end || other.end == end) {
+                    sum = sum + screen(at(other.start == end ? other.end : other.start));
+                    ++count;
+                }
+            }
+        }
+        for (const auto& [id, arc] : working_.arcs())
+            for (const auto end : {line.start, line.end})
+                if (arc.start == end || arc.end == end) {
+                    sum = sum + screen(at(arc.center));
+                    ++count;
+                }
+        if (count == 0)
+            return std::nullopt;
+        return sum * (1.0 / count);
+    };
+
+    struct Icon {
+        sketch::EntityId constraint;
+        const char* glyph;
+        Vec2 position;
+        Vec2 step; // where to slide when the spot is taken
+    };
+    std::vector<Icon> icons;
+    std::vector<std::pair<sketch::EntityId, K>> shown; // one glyph per entity and kind (a polygon's equal sides)
+    auto once = [&](sketch::EntityId entity, K kind) {
+        if (std::find(shown.begin(), shown.end(), std::make_pair(entity, kind)) != shown.end())
+            return false;
+        shown.emplace_back(entity, kind);
+        return true;
+    };
+    auto onLine = [&](sketch::EntityId cid, const char* glyph, sketch::EntityId lineId, double fraction) {
+        const auto* l = working_.line(lineId);
+        const Vec2 a = screen(at(l->start)), b = screen(at(l->end)), d = b - a;
+        const double length = d.length();
+        const Vec2 u = length > 1e-9 ? d * (1.0 / length) : Vec2{1, 0};
+        Vec2 n{-u.y, u.x};
+        const auto inside = neighbourhood(*l);
+        if (inside ? (inside.value() - (a + d * 0.5)).dot(n) > 0 : n.y > 0) // else above (screen y grows down)
+            n = n * -1.0;
+        icons.push_back({cid, glyph, a + d * fraction + n * kOffset, u * kStep});
+    };
+    auto onRound = [&](sketch::EntityId cid, const char* glyph, sketch::EntityId roundId) {
+        Vec2 center;
+        double radius = 0, angle = 3 * kPi / 4;
+        if (const auto* c = working_.circle(roundId)) {
+            center = at(c->center);
+            radius = c->radius;
+        } else if (const auto* a = working_.arc(roundId)) {
+            center = at(a->center);
+            radius = working_.arcRadius(roundId);
+            const double a0 = angleOf(center, at(a->start));
+            angle = a0 + ccw(a0, angleOf(center, at(a->end))) / 2;
+        }
+        const Vec2 rim = screen(center + Vec2{std::cos(angle), std::sin(angle)} * radius);
+        Vec2 outward = rim - screen(center);
+        outward = outward.length() > 1e-9 ? outward * (1.0 / outward.length()) : Vec2{0, -1};
+        icons.push_back({cid, glyph, rim + outward * kOffset, Vec2{-outward.y, outward.x} * kStep});
+    };
+    auto nearPoint = [&](sketch::EntityId cid, const char* glyph, Vec2 local) {
+        icons.push_back({cid, glyph, screen(local) + Vec2{kOffset, -kOffset}, Vec2{kStep, 0}});
+    };
+    auto sharedEnd = [&](sketch::EntityId x, sketch::EntityId y) -> std::optional<sketch::EntityId> {
+        auto ends = [&](sketch::EntityId e) -> std::vector<sketch::EntityId> {
+            if (const auto* l = working_.line(e))
+                return {l->start, l->end};
+            if (const auto* a = working_.arc(e))
+                return {a->start, a->end};
+            return {};
+        };
+        for (const auto p : ends(x))
+            for (const auto q : ends(y))
+                if (p == q)
+                    return p;
+        return std::nullopt;
+    };
+    auto roundCenter = [&](sketch::EntityId e) {
+        if (const auto* c = working_.circle(e))
+            return at(c->center);
+        return at(working_.arc(e)->center);
+    };
+    auto roundRadius = [&](sketch::EntityId e) {
+        if (const auto* c = working_.circle(e))
+            return c->radius;
+        return working_.arcRadius(e);
+    };
+
+    for (const auto& [cid, c] : working_.constraints()) {
+        const char* glyph = constraintGlyph(c.kind);
+        if (!glyph)
+            continue;
+        switch (c.kind) {
+        case K::Horizontal:
+        case K::Vertical:
+            if (once(c.a, c.kind))
+                onLine(cid, glyph, c.a, 0.3);
+            break;
+        case K::Parallel:
+        case K::Perpendicular:
+        case K::Equal:
+            for (const sketch::EntityId e : {c.a, c.b}) {
+                if (!once(e, c.kind))
+                    continue;
+                if (working_.line(e))
+                    onLine(cid, glyph, e, 0.7);
+                else
+                    onRound(cid, glyph, e);
+            }
+            break;
+        case K::Tangent:
+            if (const auto p = sharedEnd(c.a, c.b)) {
+                nearPoint(cid, glyph, at(*p));
+            } else if (const auto* l = working_.line(c.a)) {
+                // Where the circle touches the line: the foot of the perpendicular from its center.
+                const Vec2 a = at(l->start), d = at(l->end) - a, center = roundCenter(c.b);
+                const double t = d.dot(d) > 1e-18 ? (center - a).dot(d) / d.dot(d) : 0.0;
+                nearPoint(cid, glyph, a + d * t);
+            } else {
+                const Vec2 ca = roundCenter(c.a), cb = roundCenter(c.b), d = cb - ca;
+                const double len = d.length();
+                nearPoint(cid, glyph, len > 1e-9 ? ca + d * (roundRadius(c.a) / len) : ca);
+            }
+            break;
+        case K::Concentric:
+            nearPoint(cid, glyph, roundCenter(c.a));
+            break;
+        case K::Coincident:
+        case K::Midpoint:
+        case K::PointOnLine:
+        case K::PointOnCircle:
+            nearPoint(cid, glyph, at(c.a));
+            break;
+        case K::Symmetric: // on the axis, between the pair
+            nearPoint(cid, glyph, (at(c.a) + at(c.b)) * 0.5);
+            break;
+        case K::Distance:
+        case K::HorizontalDistance:
+        case K::VerticalDistance:
+        case K::Diameter:
+        case K::Radius:
+        case K::Angle:
+            break;
+        }
+    }
+
+    // Slide each glyph along its line (or sideways) until it is clear of the
+    // glyphs placed before it, the dimension labels and the points (which
+    // must stay grabbable). A glyph with no clear spot nearby is left out:
+    // small geometry would drown in them; zooming in brings them back.
+    std::vector<std::pair<Vec2, double>> taken;
+    // The dimension labels are pills: about 7.5 px per character plus 16 px
+    // of padding wide, 24 px high (SketchOverlay.qml). A glyph (18 px) keeps
+    // clear of the whole pill, so neither covers the other.
+    struct Box {
+        Vec2 center;
+        double halfWidth = 0, halfHeight = 0;
+    };
+    std::vector<Box> labelBoxes;
+    for (const auto& label : out)
+        labelBoxes.push_back({label.screen, (7.5 * double(utf8Length(label.text)) + 16) / 2, 12});
+    for (const auto& [id, p] : working_.points())
+        taken.emplace_back(screen(p.position), kPointClearance);
+    // Curves too: a glyph's tap target must not cover a curve someone clicks.
+    std::vector<std::pair<Vec2, Vec2>> segments;
+    std::vector<std::pair<Vec2, double>> rings; // circles and arcs (as full circles: stricter)
+    for (const auto& [id, l] : working_.lines())
+        segments.emplace_back(screen(at(l.start)), screen(at(l.end)));
+    auto ringOf = [&](Vec2 center, double radius) {
+        const Vec2 c = screen(center);
+        rings.emplace_back(c, (screen(center + Vec2{radius, 0}) - c).length());
+    };
+    for (const auto& [id, c] : working_.circles())
+        ringOf(at(c.center), c.radius);
+    for (const auto& [id, a] : working_.arcs())
+        ringOf(at(a.center), working_.arcRadius(id));
+    auto clear = [&](Vec2 p) {
+        if (std::any_of(taken.begin(), taken.end(), [&](const auto& q) { return (p - q.first).length() < q.second; }))
+            return false;
+        for (const Box& box : labelBoxes)
+            if (std::abs(p.x - box.center.x) < box.halfWidth + kLabelMargin
+                && std::abs(p.y - box.center.y) < box.halfHeight + kLabelMargin)
+                return false;
+        for (const auto& [a, b] : segments)
+            if (distanceToSegment2D(p, a, b) < kCurveClearance)
+                return false;
+        for (const auto& [c, r] : rings)
+            if (std::abs((p - c).length() - r) < kCurveClearance)
+                return false;
+        return true;
+    };
+    for (const Icon& icon : icons) {
+        std::optional<Vec2> place;
+        for (const int k : {0, 1, -1, 2, -2, 3, -3}) {
+            const Vec2 candidate = icon.position + icon.step * double(k);
+            if (clear(candidate)) {
+                place = candidate;
+                break;
+            }
+        }
+        const bool selected = std::find(selected_.begin(), selected_.end(), icon.constraint) != selected_.end();
+        if (!place && !selected)
+            continue;
+        taken.emplace_back(place.value_or(icon.position), kClearance);
+        SketchLabel label;
+        label.kind = SketchLabel::Kind::Constraint;
+        label.constraint = icon.constraint;
+        label.text = icon.glyph;
+        label.screen = place.value_or(icon.position);
+        label.selected = selected;
+        label.hot = tool_ == SketchTool::Select && icon.constraint == hoveredGlyph_;
+        out.push_back(label);
+    }
+}
+
+sketch::EntityId SketchSession::glyphAt(Vec2 screen, const Camera& camera) const
+{
+    const double half = glyphTapHalfSize();
+    sketch::EntityId best = sketch::kNoEntity;
+    double bestDistance = 1e300;
+    for (const auto& label : labels(camera)) {
+        if (label.kind != SketchLabel::Kind::Constraint)
+            continue;
+        const Vec2 d = screen - label.screen;
+        if (std::abs(d.x) > half || std::abs(d.y) > half || d.length() >= bestDistance)
+            continue;
+        bestDistance = d.length();
+        best = label.constraint;
+    }
+    return best;
+}
+
 RenderSketch SketchSession::renderData(const Camera& camera) const
 {
     RenderSketch out;
@@ -1374,9 +2286,18 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
     const bool defined = working_.solveReport().ok && working_.solveReport().degreesOfFreedom == 0;
     const bool conflict = !working_.solveReport().ok;
     auto isSelected = [&](sketch::EntityId id) { return std::find(selected_.begin(), selected_.end(), id) != selected_.end(); };
+    // A selected constraint shows what it holds.
+    auto heldBySelected = [&](sketch::EntityId id) {
+        for (const auto cid : selected_)
+            if (const auto* c = working_.constraint(cid); c && (c->a == id || c->b == id || c->c == id))
+                return true;
+        return false;
+    };
     auto styleOf = [&](sketch::EntityId id, bool construction) {
         if (isSelected(id))
             return SketchStyle::Selected;
+        if (heldBySelected(id))
+            return SketchStyle::Hovered;
         if (id == hovered_)
             return SketchStyle::Hovered;
         if (construction)
@@ -1424,9 +2345,28 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                 out.lines.push_back({plane.toWorld(corners[i]), plane.toWorld(corners[(i + 1) % 4]), SketchStyle::Preview});
             break;
         }
+        case SketchTool::CenterRectangle: {
+            const Vec2 o = a * 2.0 - c; // the opposite corner
+            const Vec2 corners[4] = {o, {c.x, o.y}, c, {o.x, c.y}};
+            for (int i = 0; i < 4; ++i)
+                out.lines.push_back({plane.toWorld(corners[i]), plane.toWorld(corners[(i + 1) % 4]), SketchStyle::Preview});
+            out.lines.push_back({plane.toWorld(o), plane.toWorld(c), SketchStyle::Guide});
+            break;
+        }
         case SketchTool::Circle:
             addCircle(a, (c - a).length(), SketchStyle::Preview);
             break;
+        case SketchTool::Polygon: {
+            const auto corners = sketch::polygonCorners(a, c, polygonSides_);
+            for (std::size_t i = 0; i < corners.size(); ++i)
+                out.lines.push_back({plane.toWorld(corners[i]), plane.toWorld(corners[(i + 1) % corners.size()]),
+                                     SketchStyle::Preview});
+            if (!corners.empty()) {
+                addCircle(a, (c - a).length(), SketchStyle::Guide);
+                out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Guide});
+            }
+            break;
+        }
         case SketchTool::Line:
             out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Preview});
             break;
@@ -1440,6 +2380,14 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                 out.lines.push_back({plane.toWorld(a), plane.toWorld(arcEnd_->position), SketchStyle::Guide});
             }
             break;
+        case SketchTool::TangentArc: {
+            // The direction it continues in, and the arc.
+            const double reach = 60 * camera.pixelSize(plane.toWorld(a));
+            out.lines.push_back({plane.toWorld(a), plane.toWorld(a + tangentStart_.direction * reach), SketchStyle::Guide});
+            if (const auto arc = tangentArcShape())
+                addArc(arc->center, arc->radius, arc->start, arc->end, SketchStyle::Preview);
+            break;
+        }
         case SketchTool::Slot:
             if (!arcEnd_) {
                 out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Guide}); // the axis so far
@@ -1467,6 +2415,28 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
         const auto piece = sketch::trimPreview(working_, hovered_, *trimCursor_);
         for (std::size_t i = 1; i < piece.size(); ++i)
             out.lines.push_back({plane.toWorld(piece[i - 1]), plane.toWorld(piece[i]), SketchStyle::Conflict});
+    }
+    // Mirror / pattern: the copies they would add, and where the pattern is anchored.
+    if (!previewCurves_.empty() && (isMirroring() || isPatterning())) {
+        for (const auto id : previewCurves_) {
+            if (const auto* l = preview_.line(id))
+                out.lines.push_back({plane.toWorld(preview_.point(l->start)->position),
+                                     plane.toWorld(preview_.point(l->end)->position), SketchStyle::Preview});
+            else if (const auto* c = preview_.circle(id))
+                addCircle(preview_.point(c->center)->position, c->radius, SketchStyle::Preview);
+            else if (const auto* a = preview_.arc(id))
+                addArc(preview_.point(a->center)->position, preview_.arcRadius(id), preview_.point(a->start)->position,
+                       preview_.point(a->end)->position, SketchStyle::Preview);
+        }
+    }
+    if (isPatterning()) {
+        if (pattern_.circular)
+            out.points.push_back({plane.toWorld(pattern_.center), SketchStyle::Preview});
+        else
+            out.lines.push_back({plane.toWorld(patternOrigin_), plane.toWorld(patternOrigin_ + pattern_.step), SketchStyle::Guide});
+        if (cursorValid_)
+            out.points.push_back({plane.toWorld(cursor_.position),
+                                  cursor_.point != sketch::kNoEntity ? SketchStyle::Hovered : SketchStyle::Preview});
     }
     // Offset: the curves a click would add.
     for (const auto& curve : offsetPreview_) {

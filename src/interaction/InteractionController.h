@@ -100,6 +100,11 @@ public:
     // Preferences: whether sketch points snap to the grid (this and later sketches).
     bool sketchGridSnap() const { return sketchGridSnap_; }
     void setSketchGridSnap(bool on);
+    // The touch layout (AppController::touchMode reads and sets this, so the
+    // two never disagree): on-canvas targets (constraint glyphs) get larger
+    // tap areas and sit further apart.
+    bool touchLayout() const { return touchLayout_; }
+    void setTouchLayout(bool on);
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -245,6 +250,7 @@ private:
     int hoveredRing_ = -1;
     bool penMode_ = false;
     bool sketchGridSnap_ = true;
+    bool touchLayout_ = false;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
