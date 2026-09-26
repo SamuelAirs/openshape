@@ -150,6 +150,7 @@ Result<std::vector<Region>> findRegions(const PlaneFrame& plane, const std::vect
 
     ScopedTimer timer("findRegions");
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const Vec3 n = plane.normal().normalized();
         const gp_Ax3 axes(toPnt(plane.origin), toDir(n), toDir(plane.xAxis));
 
@@ -244,6 +245,7 @@ bool regionContains(const Shape& face, const Vec3& point)
     if (face.isNull())
         return false;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         TopExp_Explorer ex(occ(face), TopAbs_FACE);
         if (!ex.More())
             return false;

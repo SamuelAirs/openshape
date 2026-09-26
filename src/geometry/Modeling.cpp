@@ -42,6 +42,7 @@
 #include <IntCurvesFace_ShapeIntersector.hxx>
 #include <Precision.hxx>
 #include <Message_Report.hxx>
+#include <OSD.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
@@ -60,6 +61,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -67,6 +69,14 @@
 namespace os::geom {
 
 namespace detail {
+
+void installKernelSignalHandlers()
+{
+    static std::once_flag once;
+    // SetUnhandled: an application crash handler installed earlier keeps
+    // priority. No floating-point traps: kernel code relies on IEEE results.
+    std::call_once(once, [] { OSD::SetSignal(OSD_SignalMode_SetUnhandled, false); });
+}
 
 Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage)
 {
@@ -911,6 +921,7 @@ std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex)
     if (!validIndex(shape, faceIndex, shape.faceCount()))
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Face face = faceAt(shape, faceIndex);
         FaceInfo info;
         BRepAdaptor_Surface surface(face);
@@ -948,6 +959,7 @@ std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex)
     if (!validIndex(shape, edgeIndex, shape.edgeCount()))
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Edge edge = edgeAt(shape, edgeIndex);
         if (BRep_Tool::Degenerated(edge))
             return std::nullopt;
@@ -1000,6 +1012,7 @@ std::optional<Vec3> pointOnFace(const Shape& shape, int faceIndex, const Vec3& p
     if (!validIndex(shape, faceIndex, shape.faceCount()))
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Face face = faceAt(shape, faceIndex);
         BRepAdaptor_Surface surface(face);
         if (surface.GetType() != GeomAbs_Plane)
@@ -1056,6 +1069,7 @@ std::optional<FaceThickness> faceThickness(const Shape& shape, int faceIndex, co
     if (!info || !info->isPlanar())
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const Vec3 normal = info->normal.normalized();
         IntCurvesFace_ShapeIntersector intersector;
         intersector.Load(occ(shape), Precision::Confusion());
@@ -1109,6 +1123,7 @@ std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b)
     if (sa.IsNull() || sb.IsNull())
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         BRepExtrema_DistShapeShape extrema(sa, sb);
         if (!extrema.IsDone() || extrema.NbSolution() < 1)
             return std::nullopt;

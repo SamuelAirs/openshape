@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "core/Timer.h"
+#include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -58,8 +59,10 @@ Status exportStep(const std::vector<NamedShape>& shapes, const std::filesystem::
     if (shapes.empty())
         return Status::failure(ErrorCode::InvalidArgument, "There is nothing to export.", "exportStep: no shapes");
     ScopedTimer timer("exportStep");
+    // The lock stays outside the try block: a kernel crash jumps back into it.
+    std::lock_guard lock(stepMutex());
     try {
-        std::lock_guard lock(stepMutex());
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         STEPControl_Writer writer;
         Interface_Static::SetCVal("write.step.unit", "MM");
         Interface_Static::SetCVal("write.step.schema", "AP214IS");
@@ -92,8 +95,9 @@ Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path)
         return R::failure(ErrorCode::FileReadError, "The file is too large to import.",
                           "importStep: size check failed for " + pathString(path));
     ScopedTimer timer("importStep");
+    std::lock_guard lock(stepMutex());
     try {
-        std::lock_guard lock(stepMutex());
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         STEPControl_Reader reader;
         if (reader.ReadFile(pathString(path).c_str()) != IFSelect_RetDone)
             return R::failure(ErrorCode::FileFormatError, "This does not look like a valid STEP file.",
@@ -120,6 +124,7 @@ Status exportStl(const std::vector<NamedShape>& shapes, const std::filesystem::p
         return Status::failure(ErrorCode::InvalidArgument, "There is nothing to export.", "exportStl: no shapes");
     ScopedTimer timer("exportStl");
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Shape shape = combine(shapes);
         BRepMesh_IncrementalMesh mesher(shape, options.linearDeflection, false, options.angularDeflection, false);
         (void)mesher;

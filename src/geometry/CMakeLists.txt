@@ -23,5 +23,5 @@ target_link_libraries(openshape_geometry
 )
 target_include_directories(openshape_geometry SYSTEM PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 # OCCT headers use M_PI, which strict ISO mode hides on MinGW/MSVC.
-target_compile_definitions(openshape_geometry PRIVATE _USE_MATH_DEFINES)
+target_compile_definitions(openshape_geometry PRIVATE _USE_MATH_DEFINES OCC_CONVERT_SIGNALS)
 openshape_set_warnings(openshape_geometry)

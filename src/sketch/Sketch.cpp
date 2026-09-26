@@ -366,9 +366,23 @@ bool finiteNumber(const json& j, const char* key)
     return j.contains(key) && j[key].is_number() && std::isfinite(j[key].get<double>());
 }
 
+// Entity ids are 32-bit; far below the wrap-around, so that allocating new
+// ids after loading can never reach 0 (kNoEntity) or the origin again.
+constexpr std::uint64_t kMaxEntityId = 1u << 30;
+
 bool idField(const json& j, const char* key)
 {
-    return j.contains(key) && j[key].is_number_unsigned();
+    return j.contains(key) && j[key].is_number_unsigned() && j[key].get<std::uint64_t>() <= kMaxEntityId;
+}
+
+// An optional boolean flag: absent is false; present with another type is invalid.
+std::optional<bool> flagField(const json& j, const char* key)
+{
+    if (!j.contains(key))
+        return false;
+    if (!j[key].is_boolean())
+        return std::nullopt;
+    return j[key].get<bool>();
 }
 
 } // namespace
@@ -464,26 +478,29 @@ Result<Sketch> Sketch::fromJson(const json& j)
     };
     for (const auto& e : j["points"]) {
         EntityId eid{};
-        if (!e.is_object() || !takeId(e, eid) || !finiteNumber(e, "x") || !finiteNumber(e, "y"))
+        const auto fixed = e.is_object() ? flagField(e, "fixed") : std::nullopt;
+        if (!e.is_object() || !takeId(e, eid) || !finiteNumber(e, "x") || !finiteNumber(e, "y") || !fixed)
             return bad("invalid point");
-        s.points_[eid] = SketchPoint{{e["x"].get<double>(), e["y"].get<double>()}, e.value("fixed", false)};
+        s.points_[eid] = SketchPoint{{e["x"].get<double>(), e["y"].get<double>()}, *fixed};
     }
     if (!s.points_.contains(kOriginId))
         return bad("missing origin point");
     for (const auto& e : j["lines"]) {
         EntityId eid{};
-        if (!e.is_object() || !takeId(e, eid) || !idField(e, "start") || !idField(e, "end"))
+        const auto construction = e.is_object() ? flagField(e, "construction") : std::nullopt;
+        if (!e.is_object() || !takeId(e, eid) || !idField(e, "start") || !idField(e, "end") || !construction)
             return bad("invalid line");
-        SketchLine l{e["start"].get<EntityId>(), e["end"].get<EntityId>(), e.value("construction", false)};
+        SketchLine l{e["start"].get<EntityId>(), e["end"].get<EntityId>(), *construction};
         if (!s.points_.contains(l.start) || !s.points_.contains(l.end) || l.start == l.end)
             return bad("line references missing points");
         s.lines_[eid] = l;
     }
     for (const auto& e : j["circles"]) {
         EntityId eid{};
-        if (!e.is_object() || !takeId(e, eid) || !idField(e, "center") || !finiteNumber(e, "radius"))
+        const auto construction = e.is_object() ? flagField(e, "construction") : std::nullopt;
+        if (!e.is_object() || !takeId(e, eid) || !idField(e, "center") || !finiteNumber(e, "radius") || !construction)
             return bad("invalid circle");
-        SketchCircle c{e["center"].get<EntityId>(), e["radius"].get<double>(), e.value("construction", false)};
+        SketchCircle c{e["center"].get<EntityId>(), e["radius"].get<double>(), *construction};
         if (!s.points_.contains(c.center) || !(c.radius > 0))
             return bad("circle references missing center or has bad radius");
         s.circles_[eid] = c;
@@ -494,10 +511,11 @@ Result<Sketch> Sketch::fromJson(const json& j)
             return bad("invalid arcs");
         for (const auto& e : j["arcs"]) {
             EntityId eid{};
-            if (!e.is_object() || !takeId(e, eid) || !idField(e, "center") || !idField(e, "start") || !idField(e, "end"))
+            const auto construction = e.is_object() ? flagField(e, "construction") : std::nullopt;
+            if (!e.is_object() || !takeId(e, eid) || !idField(e, "center") || !idField(e, "start") || !idField(e, "end")
+                || !construction)
                 return bad("invalid arc");
-            SketchArc a{e["center"].get<EntityId>(), e["start"].get<EntityId>(), e["end"].get<EntityId>(),
-                        e.value("construction", false)};
+            SketchArc a{e["center"].get<EntityId>(), e["start"].get<EntityId>(), e["end"].get<EntityId>(), *construction};
             if (!s.points_.contains(a.center) || !s.points_.contains(a.start) || !s.points_.contains(a.end)
                 || a.center == a.start || a.center == a.end || a.start == a.end)
                 return bad("arc references missing or repeated points");

@@ -30,6 +30,8 @@ inline constexpr const char* kProjectExtension = ".openshape";
 inline constexpr std::uintmax_t kMaxProjectFileBytes = 1024ull * 1024 * 1024;
 inline constexpr std::uint64_t kMaxEntryBytes = 256ull * 1024 * 1024;
 inline constexpr std::int64_t kMaxEntries = 10000;
+// document.json nests about 8 levels; anything far deeper is hostile.
+inline constexpr std::size_t kMaxJsonDepth = 256;
 
 nlohmann::json documentToJson(const doc::Document& document);
 Result<std::unique_ptr<doc::Document>> documentFromJson(const nlohmann::json& root);

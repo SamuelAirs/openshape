@@ -11,6 +11,7 @@
 #include "core/Result.h"
 #include "geometry/Shape.h"
 
+#include <Standard_ErrorHandler.hxx>
 #include <Standard_Failure.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Dir.hxx>
@@ -48,6 +49,21 @@ std::string describeAlgoErrors(const Algo& algo)
     return out.str();
 }
 
+// Installs OpenCASCADE's signal handlers once per process (idempotent), so
+// crashes inside kernel calls made through guarded() become exceptions.
+// Many OCCT algorithms (booleans, fillets) also catch them internally and
+// report a failed build instead.
+void installKernelSignalHandlers();
+
+// The first statement of every try block around kernel calls (guarded()
+// uses it). With OCC_CONVERT_SIGNALS (how MSYS2, Homebrew and Linux builds
+// of OCCT are compiled) an access violation inside the kernel jumps back to
+// this point and is rethrown as a Standard_Failure. Keep locks and other
+// state that must be released outside the try block.
+#define OS_KERNEL_SIGNALS_TO_EXCEPTIONS                                                                                \
+    ::os::geom::detail::installKernelSignalHandlers();                                                                 \
+    OCC_CATCH_SIGNALS
+
 // Runs `fn` and converts any kernel exception into a failed Result of the
 // same type `fn` returns.
 template <typename Fn>
@@ -55,6 +71,7 @@ auto guarded(const char* operation, const char* userMessage, Fn&& fn) -> decltyp
 {
     using R = decltype(fn());
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         return fn();
     } catch (const Standard_Failure& failure) {
         const std::string dev = std::string(operation) + " threw " + describeFailure(failure);

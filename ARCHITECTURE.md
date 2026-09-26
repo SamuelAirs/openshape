@@ -101,6 +101,16 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   `Standard_Failure`) and results pass `finishSolid()` (unwraps single solids,
   rejects empty results, runs `BRepCheck_Analyzer`, and adds a `Result`
   warning when the result is in several pieces).
+- **Kernel crashes become failures.** OCCT can dereference null pointers on
+  valid input (the stress test found a General Fuse that crashed in its solid
+  classifier on blend corners with degenerate edges). The first kernel call
+  installs OCCT's signal handlers (`OSD::SetSignal`, `SetUnhandled` mode, no
+  floating-point traps); OCCT is built with `OCC_CONVERT_SIGNALS` (MSYS2,
+  Homebrew, Linux), so an access violation jumps to the nearest
+  `OCC_CATCH_SIGNALS`: OCCT's own algorithms then report a failed build, and
+  our try blocks (`guarded()`, `OS_KERNEL_SIGNALS_TO_EXCEPTIONS` in
+  `internal/KernelUtil.h`) rethrow it as a `Standard_Failure`. Locks stay
+  outside those try blocks (a jump skips destructors).
 - **Kernel "success" is verified.** OCCT sometimes reports success with an
   unchanged or wrong result, so operations check a cheap invariant of their
   intent: `shell` must remove volume; `deleteFaces` (`BRepAlgoAPI_Defeaturing`)
@@ -213,7 +223,10 @@ Document (UUID, display unit)
   (base feature), Join or Cut; cuts can be "through all". `Feature::compute` receives an `EvalContext`
   for such lookups, `Feature::dependencies()` declares them, and
   `Document::replaceSketch` recomputes dependent bodies. Deleting a sketch that
-  a feature uses is refused.
+  a feature uses is refused. `recomputeDependents` follows dependencies
+  transitively (A combines with B, B with C: editing C updates B, then A),
+  so the order of bodies in a file does not matter; a cycle from a hostile
+  file stops after a bounded number of recomputes per body.
 
 ## Topological naming (interim strategy)
 
@@ -400,7 +413,9 @@ deleted or suppressed; sketches used by features cannot be deleted.
 `geometry/<body>.brep` (cache), optional `thumbnail.png`. Versioned with a
 migration table; newer versions are refused with a clear message. Readers
 treat files as untrusted: size limits, entry-name validation (no traversal),
-strict JSON schema checks, duplicate-UUID rejection; nothing is extracted to
+a JSON nesting limit (256), strict JSON schema checks (a wrong type is an
+error, never a thrown exception; `loadProject` also catches any that slip
+through), duplicate-UUID rejection; nothing is extracted to
 disk. Saves are atomic (temp file + rename). See
 [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md).
 
@@ -409,6 +424,15 @@ disk. Saves are atomic (temp file + rename). See
 - GTest suites (`tests/`): core (units, UUID, math), geometry (measurable
   invariants: volumes, bounding boxes, face counts), document/commands/files,
   camera/picking/interaction including a **headless Milestone 0 script**.
+- Robustness suite (`test_robustness`): seeded random modeling sessions
+  (`tests/StressHarness.h`: boxes, push/pull, fillets, chamfers, shells,
+  sketches, extrusions, moves, rotations, mirrors, patterns, booleans,
+  history edits, suppression, deletions) checked for undo-all / redo-all,
+  random undo/redo/edit interleavings and save/open equality (per body:
+  volume, box, face count, history with parameters and status); a project
+  file fuzzer (truncation, bit flips, broken JSON, wrong types, hostile
+  numbers, broken references, unsafe entries: fail with a plain message or
+  load a usable document); kernel crash regressions (`tests/data/`).
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
   the real application through Qt's platform input path — including clicking
   QML buttons found by `objectName` — and checks geometry after each step,
