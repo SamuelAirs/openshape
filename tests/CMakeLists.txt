@@ -26,7 +26,7 @@ if(OPENSHAPE_OWN_OCCT)
     target_compile_definitions(test_geometry PRIVATE OPENSHAPE_OWN_OCCT_BIN="${OPENSHAPE_OCCT_PREFIX}/bin")
 endif()
 
-openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_sketch_features.cpp test_attachment.cpp test_3mf.cpp test_recovery.cpp test_holes.cpp test_extrude_draft.cpp test_import.cpp test_project_thumbnail.cpp test_home.cpp)
+openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_sketch_features.cpp test_attachment.cpp test_datums.cpp test_3mf.cpp test_recovery.cpp test_holes.cpp test_extrude_draft.cpp test_import.cpp test_project_thumbnail.cpp test_home.cpp)
 target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)
 
 openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_touch_wording.cpp test_bodies.cpp test_holes_interaction.cpp test_draft_interaction.cpp test_import_interaction.cpp test_thumbnail.cpp)

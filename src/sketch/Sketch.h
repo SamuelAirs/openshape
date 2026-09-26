@@ -153,6 +153,9 @@ public:
     void setHostBody(std::optional<Uuid> body) { hostBody_ = body; }
     const std::optional<Attachment>& attachment() const { return attachment_; }
     void setAttachment(std::optional<Attachment> attachment) { attachment_ = std::move(attachment); }
+    // A sketch on a construction plane (a datum) follows that plane.
+    const std::optional<Uuid>& datumPlane() const { return datumPlane_; }
+    void setDatumPlane(std::optional<Uuid> datum) { datumPlane_ = datum; }
 
     // ---- Entities ----
     EntityId addPoint(Vec2 position, bool fixed = false);
@@ -213,6 +216,7 @@ private:
     bool visible_ = true;
     std::optional<Uuid> hostBody_;
     std::optional<Attachment> attachment_;
+    std::optional<Uuid> datumPlane_;
     std::map<EntityId, SketchPoint> points_;
     std::map<EntityId, SketchLine> lines_;
     std::map<EntityId, SketchCircle> circles_;

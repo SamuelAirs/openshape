@@ -7,6 +7,7 @@
 #include "commands/Command.h"
 #include "core/Uuid.h"
 #include "document/Body.h"
+#include "document/Datum.h"
 #include "document/Feature.h"
 #include "sketch/Sketch.h"
 
@@ -196,6 +197,48 @@ public:
 private:
     Uuid sketchId_;
     std::unique_ptr<sketch::Sketch> removed_;
+    int index_ = -1;
+};
+
+// Adds a construction axis or plane (a datum).
+class AddDatumCommand final : public Command {
+public:
+    explicit AddDatumCommand(doc::Datum datum) : datum_(std::move(datum)) {}
+    std::string label() const override { return datum_.kind() == doc::DatumKind::Axis ? "New axis" : "New plane"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+    const Uuid& datumId() const { return datum_.id(); }
+
+private:
+    doc::Datum datum_;
+};
+
+// Changes a datum (visibility, a value) with before/after snapshots.
+class EditDatumCommand final : public Command {
+public:
+    EditDatumCommand(doc::Datum after, std::string label) : after_(std::move(after)), label_(std::move(label)) {}
+    std::string label() const override { return label_; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    doc::Datum after_;
+    std::optional<doc::Datum> before_;
+    std::string label_;
+};
+
+// Deletes a datum. Sketches placed on it stay where they are (and follow it
+// again when undo brings it back).
+class DeleteDatumCommand final : public Command {
+public:
+    explicit DeleteDatumCommand(Uuid datumId) : datumId_(datumId) {}
+    std::string label() const override { return "Delete"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    Uuid datumId_;
+    std::unique_ptr<doc::Datum> removed_;
     int index_ = -1;
 };
 

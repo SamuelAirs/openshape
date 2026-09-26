@@ -218,6 +218,102 @@ void Document::bumpSketchRevision(const Uuid& id)
     sketchRevisions_.emplace_back(id, ++counter);
 }
 
+Datum* Document::datum(const Uuid& id) const
+{
+    for (const auto& d : datums_)
+        if (d->id() == id)
+            return d.get();
+    return nullptr;
+}
+
+void Document::addDatum(std::unique_ptr<Datum> datum, int index)
+{
+    if (index < 0 || index > static_cast<int>(datums_.size()))
+        index = static_cast<int>(datums_.size());
+    datums_.insert(datums_.begin() + index, std::move(datum));
+    ++datumRevision_;
+    syncSketchAttachments(); // resolves it, and moves sketches placed on it
+    changed();
+}
+
+std::unique_ptr<Datum> Document::removeDatum(const Uuid& id, int* removedIndex)
+{
+    for (std::size_t i = 0; i < datums_.size(); ++i) {
+        if (datums_[i]->id() != id)
+            continue;
+        auto removed = std::move(datums_[i]);
+        datums_.erase(datums_.begin() + static_cast<long>(i));
+        if (removedIndex)
+            *removedIndex = static_cast<int>(i);
+        ++datumRevision_;
+        // Sketches that were on it stay where they are.
+        syncSketchAttachments();
+        changed();
+        return removed;
+    }
+    if (removedIndex)
+        *removedIndex = -1;
+    return nullptr;
+}
+
+void Document::replaceDatum(const Datum& replacement)
+{
+    for (auto& d : datums_) {
+        if (d->id() != replacement.id())
+            continue;
+        *d = replacement;
+        ++datumRevision_;
+        syncSketchAttachments();
+        changed();
+        return;
+    }
+}
+
+std::vector<Uuid> Document::sketchesOn(const Uuid& datumId) const
+{
+    std::vector<Uuid> out;
+    for (const auto& sk : sketches_)
+        if (sk->datumPlane() == datumId)
+            out.push_back(sk->id());
+    return out;
+}
+
+std::string Document::nextDatumName(DatumKind kind) const
+{
+    const std::string base = kind == DatumKind::Axis ? "Axis " : "Plane ";
+    for (int n = 1;; ++n) {
+        const std::string candidate = base + std::to_string(n);
+        const bool taken = std::any_of(datums_.begin(), datums_.end(), [&](const auto& d) { return d->name() == candidate; });
+        if (!taken)
+            return candidate;
+    }
+}
+
+void Document::syncDatums()
+{
+    for (auto& d : datums_) {
+        auto resolved = resolveDatum(*d, context());
+        if (!resolved) {
+            if (d->error() != resolved.userMessage()) {
+                d->setError(resolved.userMessage());
+                ++datumRevision_;
+                OS_LOG(Debug, Document) << "datum " << d->id().toString() << " failed: " << resolved.developerMessage();
+            }
+            continue; // keeps its last position
+        }
+        const DatumGeometry& now = resolved.value();
+        const DatumGeometry& was = d->geometry();
+        const bool same = (now.origin - was.origin).length() < 1e-9 && (now.direction - was.direction).length() < 1e-12
+                       && (now.xAxis - was.xAxis).length() < 1e-12 && (now.center - was.center).length() < 1e-9
+                       && std::abs(now.size - was.size) < 1e-9;
+        if (!same || d->failed()) {
+            d->setGeometry(now);
+            d->setError({});
+            ++datumRevision_;
+        }
+    }
+}
+
 bool Document::dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const
 {
     // Depth-first over "body uses body" edges.
@@ -378,11 +474,12 @@ std::string Document::uniqueSketchName(const std::string& base) const
 void Document::syncSketchAttachments()
 {
     // A few passes at most: moving a sketch recomputes its dependents, which
-    // may move another sketch attached downstream.
+    // may move another sketch attached downstream (and the datums on them).
     for (int pass = 0; pass < 4; ++pass) {
+        syncDatums();
         bool moved = false;
         for (auto& sk : sketches_) {
-            if (!sk->attachment())
+            if (!sk->attachment() && !sk->datumPlane())
                 continue;
             const sketch::Plane plane = effectivePlane(*sk, context());
             const sketch::Plane& stored = sk->plane();
@@ -393,7 +490,7 @@ void Document::syncSketchAttachments()
             sk->setPlane(plane);
             // Keep the attachment's signature current so the next change is
             // compared against where the face is now.
-            if (const Body* body = this->body(sk->attachment()->body)) {
+            if (const Body* body = sk->attachment() ? this->body(sk->attachment()->body) : nullptr) {
                 const int index = body->featureIndex(sk->attachment()->feature);
                 if (index >= 0) {
                     const auto& output = body->state(index).output;

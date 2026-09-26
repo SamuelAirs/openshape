@@ -8,6 +8,7 @@
 #include "core/Units.h"
 #include "core/Uuid.h"
 #include "document/Body.h"
+#include "document/Datum.h"
 #include "sketch/Sketch.h"
 
 #include <cstdint>
@@ -73,6 +74,21 @@ public:
     bool dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const;
     std::string nextSketchName() const;
 
+    // ---- Construction axes and planes (datums) ----
+    const std::vector<std::unique_ptr<Datum>>& datums() const { return datums_; }
+    Datum* datum(const Uuid& id) const;
+    // Adds a datum and resolves it (a datum whose references do not resolve
+    // is kept, failed, at the position it has).
+    void addDatum(std::unique_ptr<Datum> datum, int index = -1);
+    std::unique_ptr<Datum> removeDatum(const Uuid& id, int* removedIndex = nullptr);
+    // Replaces a datum's content (matched by id): name, visibility, values.
+    void replaceDatum(const Datum& datum);
+    // Changes whenever a datum is added, removed, changed or moved (for view caches).
+    std::uint64_t datumRevision() const { return datumRevision_; }
+    // Sketches placed on a datum plane.
+    std::vector<Uuid> sketchesOn(const Uuid& datumId) const;
+    std::string nextDatumName(DatumKind kind) const;
+
     EvalContext context() const { return EvalContext{this}; }
 
     void recomputeAll();
@@ -99,10 +115,14 @@ private:
     // Moves attached sketches onto their faces' current planes (and
     // recomputes what depends on them). Called after every recompute.
     void syncSketchAttachments();
+    // Re-resolves every datum from the current document (after every change).
+    void syncDatums();
     void bumpSketchRevision(const Uuid& id);
 
     std::vector<std::unique_ptr<Body>> bodies_;
     std::vector<std::unique_ptr<sketch::Sketch>> sketches_;
+    std::vector<std::unique_ptr<Datum>> datums_;
+    std::uint64_t datumRevision_ = 0;
     std::vector<std::pair<Uuid, std::uint64_t>> sketchRevisions_;
     std::uint64_t revision_ = 0;
     std::vector<std::pair<int, Listener>> listeners_;

@@ -455,4 +455,46 @@ void DeleteSketchCommand::undo(doc::Document& document)
         document.addSketch(std::move(removed_), index_);
 }
 
+Status AddDatumCommand::execute(doc::Document& document)
+{
+    if (document.datum(datum_.id()))
+        return Status::failure(ErrorCode::InvalidArgument, "Unable to add this axis or plane.", "datum id already exists");
+    document.addDatum(std::make_unique<doc::Datum>(datum_));
+    return okStatus();
+}
+
+void AddDatumCommand::undo(doc::Document& document)
+{
+    document.removeDatum(datum_.id());
+}
+
+Status EditDatumCommand::execute(doc::Document& document)
+{
+    const doc::Datum* current = document.datum(after_.id());
+    if (!current)
+        return Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "EditDatum: unknown");
+    before_ = *current;
+    document.replaceDatum(after_);
+    return okStatus();
+}
+
+void EditDatumCommand::undo(doc::Document& document)
+{
+    if (before_)
+        document.replaceDatum(*before_);
+}
+
+Status DeleteDatumCommand::execute(doc::Document& document)
+{
+    removed_ = document.removeDatum(datumId_, &index_);
+    return removed_ ? okStatus()
+                    : Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "DeleteDatum: unknown");
+}
+
+void DeleteDatumCommand::undo(doc::Document& document)
+{
+    if (removed_)
+        document.addDatum(std::move(removed_), index_);
+}
+
 } // namespace os::cmd

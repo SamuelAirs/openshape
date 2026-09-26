@@ -4,6 +4,7 @@
 
 add_library(openshape_document STATIC
     Body.cpp Body.h
+    Datum.cpp Datum.h
     Document.cpp Document.h
     Fasteners.cpp Fasteners.h
     Feature.cpp Feature.h
