@@ -6,6 +6,10 @@
 
 #include "document/Document.h"
 
+#include <algorithm>
+#include <functional>
+#include <map>
+
 namespace os::cmd {
 
 namespace {
@@ -102,6 +106,132 @@ Status AddFeatureCommand::execute(doc::Document& document)
 void AddFeatureCommand::undo(doc::Document& document)
 {
     document.removeFeature(prototype_->id());
+}
+
+// ---- DuplicateBody --------------------------------------------------------------
+
+Status DuplicateBodyCommand::plan(const doc::Document& document)
+{
+    const doc::Body* source = document.body(sourceId_);
+    if (!source)
+        return missingBody();
+    auto contains = [](const auto& list, const auto& value) {
+        return std::find(list.begin(), list.end(), value) != list.end();
+    };
+
+    // Bodies to copy, dependencies first: the source and, recursively, the
+    // hidden bodies its steps consumed.
+    std::vector<const doc::Body*> bodies;
+    std::vector<Uuid> seen;
+    std::function<void(const doc::Body&)> visit = [&](const doc::Body& body) {
+        seen.push_back(body.id());
+        for (const auto& f : body.features())
+            for (const Uuid& dep : f->dependencies())
+                if (const doc::Body* used = document.body(dep); used && !used->isVisible() && !contains(seen, dep))
+                    visit(*used);
+        bodies.push_back(&body);
+    };
+    visit(*source);
+
+    // The sketches their steps use, in document order.
+    std::vector<Uuid> used;
+    for (const doc::Body* b : bodies)
+        for (const auto& f : b->features())
+            for (const Uuid& dep : f->dependencies())
+                if (document.sketch(dep) && !contains(used, dep))
+                    used.push_back(dep);
+    std::vector<const sketch::Sketch*> sketches;
+    for (const auto& s : document.sketches())
+        if (contains(used, s->id()))
+            sketches.push_back(s.get());
+
+    // Fresh ids for everything copied; steps first get theirs, because a step
+    // may refer to a step of another copied body.
+    std::map<Uuid, Uuid> copies;
+    for (const doc::Body* b : bodies)
+        copies[b->id()] = b->id() == sourceId_ ? copyId_ : Uuid::generate();
+    for (const sketch::Sketch* s : sketches)
+        copies[s->id()] = Uuid::generate();
+    std::vector<std::vector<std::unique_ptr<doc::Feature>>> features(bodies.size());
+    for (std::size_t i = 0; i < bodies.size(); ++i)
+        for (const auto& f : bodies[i]->features()) {
+            auto copy = f->cloneWithNewId();
+            copies[f->id()] = copy->id();
+            features[i].push_back(std::move(copy));
+        }
+    auto mapped = [&](const Uuid& id) {
+        const auto it = copies.find(id);
+        return it == copies.end() ? id : it->second;
+    };
+
+    std::vector<std::string> names;
+    auto uniqueName = [&](const std::string& base, bool body) {
+        for (int n = 1;; ++n) {
+            const std::string candidate = n == 1 ? base : base + " " + std::to_string(n);
+            const std::string free = body ? document.uniqueBodyName(candidate) : document.uniqueSketchName(candidate);
+            if (free == candidate && !contains(names, candidate)) {
+                names.push_back(candidate);
+                return candidate;
+            }
+        }
+    };
+
+    for (const sketch::Sketch* s : sketches) {
+        sketch::Sketch copy = s->copyWithId(copies.at(s->id()));
+        copy.setName(uniqueName(s->name() + " copy", false));
+        // The copy's sketches exist for its history; drawn, they would sit
+        // exactly on the source's.
+        copy.setVisible(false);
+        if (copy.hostBody())
+            copy.setHostBody(mapped(*copy.hostBody()));
+        if (auto attachment = copy.attachment()) {
+            attachment->body = mapped(attachment->body);
+            attachment->feature = mapped(attachment->feature);
+            copy.setAttachment(attachment);
+        }
+        sketches_.push_back(std::move(copy));
+    }
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        const doc::Body& b = *bodies[i];
+        auto copy = std::make_unique<doc::Body>(copies.at(b.id()));
+        copy->setName(uniqueName(b.name() + " copy", true));
+        copy->setVisible(b.id() == sourceId_ || b.isVisible());
+        int index = 0;
+        for (auto& f : features[i]) {
+            f->remapReferences(copies);
+            copy->insertFeature(std::move(f), index++);
+        }
+        bodies_.push_back(std::move(copy));
+    }
+    return okStatus();
+}
+
+Status DuplicateBodyCommand::execute(doc::Document& document)
+{
+    if (!planned_) {
+        if (Status s = plan(document); !s)
+            return s;
+        planned_ = true;
+    }
+    for (const auto& s : sketches_)
+        document.addSketch(std::make_unique<sketch::Sketch>(s));
+    for (const auto& b : bodies_)
+        document.addBody(std::make_unique<doc::Body>(*b));
+    const doc::Body* source = document.body(sourceId_);
+    const doc::Body* copy = document.body(copyId_);
+    if (!copy || (source && !source->shape().isNull() && copy->shape().isNull())) {
+        undo(document);
+        return Status::failure(ErrorCode::KernelFailure, "Unable to duplicate this body.", "duplicate: the copy did not compute");
+    }
+    return okStatus();
+}
+
+void DuplicateBodyCommand::undo(doc::Document& document)
+{
+    for (auto it = bodies_.rbegin(); it != bodies_.rend(); ++it)
+        document.removeBody((*it)->id());
+    for (auto it = sketches_.rbegin(); it != sketches_.rend(); ++it)
+        document.removeSketch(it->id());
 }
 
 // ---- DeleteBody -----------------------------------------------------------------

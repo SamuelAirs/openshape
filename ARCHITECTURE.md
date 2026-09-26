@@ -234,6 +234,17 @@ never pointers, so they survive objects being destroyed and recreated.
 too-large fillet never enters history. `UndoStack` discards the redo branch on
 a new command, tracks the clean state for "unsaved changes", and caps depth.
 
+`DuplicateBodyCommand` makes an independent copy ("<name> copy"): the
+history is cloned with fresh ids (`Feature::cloneWithNewId`), and what
+belongs to that history alone is copied too — the sketches its steps use
+(copied hidden, so they do not sit on the source's) and the hidden bodies
+its steps consumed (Combine tools) — then every reference is re-pointed at
+the copies (`Feature::remapReferences`, sketch attachments and host bodies).
+Editing the copy (a step, its sketch, its tool) never changes the source, nor
+the other way round. Visible bodies a history builds on (the parent of a
+split-off piece, the source of a mirror copy) stay shared. The copy's id is
+fixed at construction so the UI can select it and redo recreates it.
+
 ## Interaction (`interaction/`)
 
 `InteractionController` owns the camera, the tessellation cache
@@ -307,7 +318,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
   Chamfer; a hole rim also offers the heat-set insert; one edge offers Align).
   One body (double-click, or its Model-panel row) arms Move and offers Rotate,
-  Mirror and Pattern (`BodyTool`). Two or more bodies offer Union / Subtract /
+  Mirror, Pattern and Duplicate (`BodyTool`; Duplicate is also Ctrl+D and a
+  button in the body's expanded Model-panel row; the copy comes out selected
+  with the Move arrows, ready to drag away). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
@@ -431,6 +444,7 @@ disk. Saves are atomic (temp file + rename). See
 - Tessellation and previews run synchronously on the GUI thread.
 - Picking is brute force (no BVH).
 - Only linear per-body history. Features may depend on sketches and (Combine)
-  on other bodies; `Document::recomputeDependents` propagates changes and
-  `dependsOn` prevents cycles.
+  on other bodies; `Document::recomputeDependents` propagates changes
+  transitively (a body that changed updates the bodies built on it in turn)
+  and `dependsOn` prevents cycles.
 - QRhi comes from `Qt6::GuiPrivate`: binaries are tied to the Qt version.

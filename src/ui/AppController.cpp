@@ -444,6 +444,15 @@ void AppController::selectBody(const QString& bodyId, bool additive)
         (void)interaction_->selectBody(*id, additive); // failures explain themselves via message()
 }
 
+void AppController::duplicateBody(const QString& bodyId)
+{
+    if (const auto id = uuidOf(bodyId)) {
+        const Status status = interaction_->duplicateBody(*id);
+        if (!status)
+            notifyMessage(q(status.userMessage()));
+    }
+}
+
 void AppController::runTool(const QString& id)
 {
     // Guidance for a selection that does not fit arrives through message().

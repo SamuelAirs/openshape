@@ -1027,6 +1027,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({"rotate", "Rotate", dynamic_cast<const RotateOperation*>(operation_.get()) != nullptr});
             actions.push_back({"mirror", "Mirror", dynamic_cast<const MirrorOperation*>(operation_.get()) != nullptr});
             actions.push_back({"pattern", "Pattern", dynamic_cast<const PatternOperation*>(operation_.get()) != nullptr});
+            actions.push_back({"duplicate", "Duplicate", false});
         }
         if (selection_.size() >= 2) {
             // The first body is kept; the others are the tools.
@@ -1117,6 +1118,15 @@ Status InteractionController::triggerAction(const std::string& id)
         return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
                                      : id == "subtract" ? doc::CombineMode::Subtract
                                                         : doc::CombineMode::Intersect);
+    if (id == "duplicate") {
+        // The selected body, or the body of the selected faces/edges.
+        const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) ? std::nullopt : selection_.singleBody();
+        if (!body)
+            return Status::failure(ErrorCode::InvalidArgument,
+                                   "Select one body to duplicate: double-click it, or click it in the Model panel.",
+                                   "duplicate without one body selected");
+        return duplicateBody(*body);
+    }
     if (id == "move" || id == "rotate" || id == "mirror" || id == "pattern") {
         bodyTool_ = id == "rotate" ? BodyTool::Rotate : id == "mirror" ? BodyTool::Mirror
                   : id == "pattern" ? BodyTool::Pattern : BodyTool::Move;
@@ -2054,6 +2064,33 @@ Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
     }
     operation_.reset();
     if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, target, -1))
+        selection_.set(*item);
+    afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::duplicateBody(const Uuid& bodyId)
+{
+    if (session_)
+        return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "duplicate in sketch mode");
+    if (!document_->body(bodyId))
+        return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "duplicate: unknown body");
+    // Like clicking elsewhere: a pending value is applied first.
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(bodyId);
+    const Uuid copy = command->copyId();
+    Status status = undoStack_->push(std::move(command), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    // The copy sits on the source: select it with the Move arrows to drag it away.
+    operation_.reset();
+    bodyTool_ = BodyTool::Move;
+    alignRequested_ = false;
+    if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, copy, -1))
         selection_.set(*item);
     afterDocumentEdit();
     return status;

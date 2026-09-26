@@ -155,6 +155,9 @@ public:
     // Combines the first selected body with each of the others (which are
     // hidden): union, subtract them from it, or keep only the common volume.
     Status combineSelectedBodies(doc::CombineMode mode);
+    // An independent copy of the body, in place, then selected with the Move
+    // arrows so it can be dragged away (Shapr3D's Duplicate).
+    Status duplicateBody(const Uuid& bodyId);
     // Model panel hover/expansion: highlights what a row refers to in the view
     // (a body, a sketch, or the faces a step created or modified). nullopt clears.
     void setHistoryHighlight(const std::optional<Uuid>& id);

@@ -80,6 +80,9 @@ public:
     void removeListener(int handle);
 
     std::string nextBodyName() const;
+    // `base` if no body (sketch) has that name yet, else "base 2", "base 3", ...
+    std::string uniqueBodyName(const std::string& base) const;
+    std::string uniqueSketchName(const std::string& base) const;
 
 private:
     void changed();

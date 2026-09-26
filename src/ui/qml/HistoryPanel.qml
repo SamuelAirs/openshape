@@ -57,7 +57,6 @@ Panel {
             delegate: Rectangle {
                 id: row
                 required property var modelData
-                objectName: "historyRow_" + modelData.id
                 readonly property bool isFeature: modelData.kind === "feature"
                 readonly property bool expanded: panel.expandedId === modelData.id
                 readonly property bool failed: modelData.status === "failed"
@@ -95,6 +94,10 @@ Panel {
                     spacing: 4
 
                     RowLayout {
+                        // The row's title line: what a click on the row hits
+                        // (the acceptance run clicks its center; an expanded
+                        // row's action buttons sit below it).
+                        objectName: "historyRow_" + row.modelData.id
                         Layout.fillWidth: true
                         spacing: 6
                         Rectangle {
@@ -203,6 +206,20 @@ Panel {
                             visible: row.modelData.kind === "sketch"
                             text: "Edit sketch"
                             onClicked: panel.app.editSketch(row.modelData.id)
+                        }
+                        ActionButton {
+                            compact: true
+                            objectName: "historyDuplicate_" + row.modelData.id
+                            visible: row.modelData.kind === "body"
+                            text: "Duplicate"
+                            onClicked: {
+                                // Duplicating rebuilds the rows (and this delegate): capture first.
+                                const owner = panel
+                                const id = row.modelData.id
+                                owner.expandedId = ""
+                                owner.app.duplicateBody(id)
+                                owner.finished()
+                            }
                         }
                         ActionButton {
                             compact: true

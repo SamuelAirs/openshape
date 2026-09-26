@@ -69,6 +69,8 @@ ApplicationWindow {
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
     Shortcut { sequence: "F1"; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
+    // Duplicate the selected body (the copy is selected, ready to drag away).
+    Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode; onActivated: window.app.triggerAction("duplicate") }
     Shortcut {
         sequence: "K"
         enabled: viewport.activeFocus && window.app.canStartSketch
@@ -445,7 +447,8 @@ ApplicationWindow {
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
         if (app.operationActive && app.operationTitle === "Move")
-            return "Drag an arrow or type a distance · Shift+double-click another body to combine them"
+            return "Drag an arrow or type a distance · Duplicate (Ctrl+D) makes a copy to drag away · "
+                 + "Shift+double-click another body to combine them"
         if (app.operationActive && app.operationTitle === "Rotate")
             return "Drag a ring (15° steps, Alt for 1°) or type an angle · Enter applies"
         if (app.operationActive && app.operationTitle === "Push/Pull" && app.operationValueLabel !== "Distance")

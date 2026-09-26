@@ -11,6 +11,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -94,8 +95,15 @@ public:
     virtual Status readParams(const nlohmann::json& in) = 0;
 
     // Ids of other document objects this feature depends on (beyond its own
-    // body's preceding history). Empty for all current feature kinds.
+    // body's preceding history): sketches, other bodies, their steps.
     virtual std::vector<Uuid> dependencies() const { return {}; }
+
+    // A copy with a fresh id (duplicating a body: ids stay unique).
+    std::unique_ptr<Feature> cloneWithNewId() const;
+    // Duplicating a body: references to sketches, bodies and steps that were
+    // copied along are pointed at their copies (ids found in `copies`).
+    // Every feature with dependencies() must implement it.
+    virtual void remapReferences(const std::map<Uuid, Uuid>& /*copies*/) {}
 
 protected:
     Feature(const Feature&) = default;
@@ -204,6 +212,7 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {toolBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
 // Moves the body by a translation (a history step, so it stays editable).
@@ -357,6 +366,7 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sketchId}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 
     // The extruded tool solid alone (before join/cut). `input` sizes
     // through-all cuts.
@@ -422,6 +432,7 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sketchId}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
 } // namespace os::doc

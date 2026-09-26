@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace os::cmd {
 
@@ -44,6 +45,32 @@ private:
     Uuid bodyId_;
     std::unique_ptr<doc::Feature> prototype_;
     int index_;
+};
+
+// Duplicates a body as an independent copy named "<name> copy": its history
+// with fresh ids, plus what belongs to that history alone - the sketches its
+// steps use (copied hidden) and the hidden bodies its steps consumed
+// (Combine tools, copied hidden), all re-pointed at the copies. Editing the
+// copy never changes the source, nor the other way round. Visible bodies the
+// history builds on (a piece split off another body, a mirror copy's
+// source) stay shared: the copy follows them like the source does.
+class DuplicateBodyCommand final : public Command {
+public:
+    explicit DuplicateBodyCommand(Uuid sourceId) : sourceId_(sourceId) {}
+    std::string label() const override { return "Duplicate"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+    // The new body's id, fixed at construction (redo recreates the same identity).
+    const Uuid& copyId() const { return copyId_; }
+
+private:
+    Status plan(const doc::Document& document);
+
+    Uuid sourceId_;
+    Uuid copyId_ = Uuid::generate();
+    bool planned_ = false;
+    std::vector<sketch::Sketch> sketches_;           // copies, in document order
+    std::vector<std::unique_ptr<doc::Body>> bodies_; // copies: consumed tools first, the copy last
 };
 
 class DeleteBodyCommand final : public Command {

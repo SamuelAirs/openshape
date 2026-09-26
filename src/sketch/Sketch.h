@@ -131,6 +131,13 @@ public:
     explicit Sketch(Uuid id = Uuid::generate(), Plane plane = Plane::xy());
 
     const Uuid& id() const { return id_; }
+    // The same content under another id (duplicating a body with its sketches).
+    Sketch copyWithId(const Uuid& id) const
+    {
+        Sketch copy = *this;
+        copy.id_ = id;
+        return copy;
+    }
     const std::string& name() const { return name_; }
     void setName(std::string name) { name_ = std::move(name); }
     const Plane& plane() const { return plane_; }

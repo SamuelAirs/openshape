@@ -160,6 +160,8 @@ public:
     Q_INVOKABLE void highlightHistoryItem(const QString& id);
     // Selects a body from the panel; additive (Shift) adds it, e.g. to combine.
     Q_INVOKABLE void selectBody(const QString& bodyId, bool additive);
+    // Model panel row actions for a body.
+    Q_INVOKABLE void duplicateBody(const QString& bodyId);
     // Tool palette: runs a tool if the selection fits, otherwise explains it.
     Q_INVOKABLE void runTool(const QString& id);
 

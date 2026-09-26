@@ -84,7 +84,21 @@ std::optional<double> Feature::parameter(std::string_view key) const
     return std::nullopt;
 }
 
+std::unique_ptr<Feature> Feature::cloneWithNewId() const
+{
+    auto copy = clone();
+    copy->id_ = Uuid::generate();
+    return copy;
+}
+
 namespace {
+
+// Duplicating a body: `id` becomes its copy's id when that object was copied too.
+void remap(Uuid& id, const std::map<Uuid, Uuid>& copies)
+{
+    if (const auto it = copies.find(id); it != copies.end())
+        id = it->second;
+}
 
 Status unknownParameter(std::string_view key)
 {
@@ -305,6 +319,11 @@ Result<geom::Shape> CombineFeature::compute(const geom::Shape& input, const Eval
 Status CombineFeature::setParameter(std::string_view key, double)
 {
     return unknownParameter(key);
+}
+
+void CombineFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(toolBody, copies);
 }
 
 void CombineFeature::writeParams(json& out) const
@@ -758,6 +777,11 @@ Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const Eval
     return tool;
 }
 
+void ExtrudeFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sketchId, copies);
+}
+
 std::vector<ParameterInfo> ExtrudeFeature::parameters() const
 {
     if (symmetric)
@@ -935,6 +959,11 @@ Result<geom::Shape> RevolveFeature::compute(const geom::Shape& input, const Eval
     case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
     }
     return tool;
+}
+
+void RevolveFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sketchId, copies);
 }
 
 std::vector<ParameterInfo> RevolveFeature::parameters() const

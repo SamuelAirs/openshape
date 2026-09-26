@@ -110,6 +110,7 @@ Rectangle {
                         title: "Bodies"
                         rows: [
                             ["Move / rotate", "Select the body → Move or Rotate; drag an arrow or ring, or type"],
+                            ["Duplicate", "Body → Duplicate (Ctrl+D), or Duplicate in its Model panel row; drag the copy away"],
                             ["Align", "Face or edge → Align, then click the face or edge to line it up with"],
                             ["Mirror", "Body → Mirror, then click a flat face or choose a plane"],
                             ["Pattern", "Body → Pattern: Linear or Circular, type the spacing, ± copy"],

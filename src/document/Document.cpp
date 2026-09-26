@@ -251,12 +251,27 @@ std::vector<Uuid> Document::dependentFeatures(const Uuid& objectId) const
 
 void Document::recomputeDependents(const Uuid& objectId)
 {
-    for (auto& b : bodies_) {
-        const auto& features = b->features();
-        for (std::size_t i = 0; i < features.size(); ++i) {
-            const auto deps = features[i]->dependencies();
-            if (std::find(deps.begin(), deps.end(), objectId) != deps.end()) {
+    // Transitive: a body that changed because of `objectId` updates the
+    // bodies built on it in turn (a piece split off a body whose cut uses
+    // a sketch, a copy of a body that combines with another). Each body is
+    // requeued at most once per body in the document, so a cycle (only
+    // possible in a hand-edited file) cannot loop forever.
+    std::vector<Uuid> queue{objectId};
+    std::vector<std::pair<Uuid, std::size_t>> requeued;
+    for (std::size_t next = 0; next < queue.size(); ++next) {
+        const Uuid changedId = queue[next];
+        for (auto& b : bodies_) {
+            const auto& features = b->features();
+            for (std::size_t i = 0; i < features.size(); ++i) {
+                const auto deps = features[i]->dependencies();
+                if (std::find(deps.begin(), deps.end(), changedId) == deps.end())
+                    continue;
                 b->recompute(static_cast<int>(i), context());
+                auto it = std::find_if(requeued.begin(), requeued.end(), [&](const auto& p) { return p.first == b->id(); });
+                if (it == requeued.end())
+                    it = requeued.insert(requeued.end(), {b->id(), 0});
+                if (it->second++ <= bodies_.size())
+                    queue.push_back(b->id());
                 break;
             }
         }
@@ -301,6 +316,26 @@ std::string Document::nextBodyName() const
     for (int n = 1;; ++n) {
         const std::string candidate = "Body " + std::to_string(n);
         const bool taken = std::any_of(bodies_.begin(), bodies_.end(), [&](const auto& b) { return b->name() == candidate; });
+        if (!taken)
+            return candidate;
+    }
+}
+
+std::string Document::uniqueBodyName(const std::string& base) const
+{
+    for (int n = 1;; ++n) {
+        const std::string candidate = n == 1 ? base : base + " " + std::to_string(n);
+        const bool taken = std::any_of(bodies_.begin(), bodies_.end(), [&](const auto& b) { return b->name() == candidate; });
+        if (!taken)
+            return candidate;
+    }
+}
+
+std::string Document::uniqueSketchName(const std::string& base) const
+{
+    for (int n = 1;; ++n) {
+        const std::string candidate = n == 1 ? base : base + " " + std::to_string(n);
+        const bool taken = std::any_of(sketches_.begin(), sketches_.end(), [&](const auto& s) { return s->name() == candidate; });
         if (!taken)
             return candidate;
     }
