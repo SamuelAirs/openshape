@@ -56,7 +56,7 @@ Rules:
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
 - The first feature of every body must be a base feature (`Box`,
-  `SplitPiece`, or `Extrude` / `Revolve` with mode `NewBody`).
+  `SplitPiece`, `Copy`, or `Extrude` / `Revolve` with mode `NewBody`).
 - Sketch entity ids are integers unique within their sketch; id 1 is always
   the fixed origin point. `nextId` is the next unused id. Sketch coordinates
   are millimeters in the plane's (xAxis, yAxis) frame.
@@ -125,9 +125,15 @@ Rules:
   taken from that body's shape just before the step. It fails (with a
   message) when the piece no longer exists or is no longer separate, when the
   split step is suppressed or deleted, or when the body is gone.
+- `Copy` params (a base feature: Mirror / Pattern with "Separate bodies"):
+  `{ "body": uuid, "mirror": { "origin": [x, y, z], "normal": [x, y, z] } }`
+  — the mirror image of that body's current shape — or `{ "body": uuid,
+  "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
+  (applied before the translation) — the body's shape moved. It follows
+  every change of that body and fails with a message when the body is gone.
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

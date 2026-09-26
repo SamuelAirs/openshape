@@ -321,6 +321,18 @@ std::string Document::nextBodyName() const
     }
 }
 
+std::vector<std::string> Document::nextBodyNames(std::size_t count) const
+{
+    std::vector<std::string> names;
+    for (int n = 1; names.size() < count; ++n) {
+        const std::string candidate = "Body " + std::to_string(n);
+        const bool taken = std::any_of(bodies_.begin(), bodies_.end(), [&](const auto& b) { return b->name() == candidate; });
+        if (!taken)
+            names.push_back(candidate);
+    }
+    return names;
+}
+
 std::string Document::uniqueBodyName(const std::string& base) const
 {
     for (int n = 1;; ++n) {

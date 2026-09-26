@@ -938,6 +938,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"plane:0", "Across YZ", mirror->originPlane() == 0});
         actions.push_back({"plane:1", "Across XZ", mirror->originPlane() == 1});
         actions.push_back({"plane:2", "Across XY", mirror->originPlane() == 2});
+        actions.push_back({"separate", "Separate bodies", mirror->separate()});
         if (mirror->canCommit())
             actions.push_back({"apply", "Apply", false});
         actions.push_back({"move", "Move", false});
@@ -954,6 +955,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
                                pattern->axisIndex() == axis});
         actions.push_back({"fewer", "\xE2\x88\x92 copy", false});
         actions.push_back({"more", "+ copy", false});
+        actions.push_back({"separate", "Separate bodies", pattern->separate()});
         return actions;
     }
     if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get())) {
@@ -1170,6 +1172,18 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "apply")
         return commitOperation();
+    if (id == "separate") {
+        if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get()))
+            mirror->setSeparate(!mirror->separate(), *document_);
+        else if (auto* pattern = dynamic_cast<PatternOperation*>(operation_.get()))
+            pattern->setSeparate(!pattern->separate(), *document_);
+        else
+            return Status::failure(ErrorCode::InvalidArgument, "Separate bodies is an option of Mirror and Pattern.",
+                                   "separate without mirror/pattern");
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get()); mirror && id.rfind("plane:", 0) == 0) {
         mirror->setOriginPlane(std::stoi(id.substr(6)), *document_);
         notifyState();
@@ -1782,8 +1796,34 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::OffsetFace: return "Offset face";
     case doc::FeatureKind::Split: return "Split";
     case doc::FeatureKind::SplitPiece: return "Piece";
+    case doc::FeatureKind::Copy: return static_cast<const doc::CopyFeature&>(f).mirror ? "Mirror copy" : "Copy";
     }
     return "Step";
+}
+
+// "about Z" for rotations about an axis parallel to X, Y or Z, else "turn".
+std::string rotationText(double angle, const Vec3& axisVector)
+{
+    const Vec3 a = axisVector.normalized();
+    const double c[3] = {a.x, a.y, a.z};
+    int axis = -1;
+    for (int k = 0; k < 3; ++k)
+        if (std::abs(c[k]) > 0.9999)
+            axis = k;
+    const double shown = axis >= 0 && c[axis] < 0 ? -angle : angle;
+    return formatAngle(shown) + (axis >= 0 ? std::string(" about ") + "XYZ"[axis] : std::string(" turn"));
+}
+
+// "Across YZ" for origin planes, else "Across a face".
+std::string mirrorPlaneText(const Vec3& origin, const Vec3& normal)
+{
+    const Vec3 n = normal.normalized();
+    static const char* planes[] = {"YZ", "XZ", "XY"};
+    const double c[3] = {n.x, n.y, n.z};
+    for (int k = 0; k < 3; ++k)
+        if (std::abs(c[k]) > 0.9999 && origin.length() < 1e-9)
+            return std::string("Across ") + planes[k];
+    return "Across a face";
 }
 
 std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Document& document)
@@ -1826,17 +1866,8 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     case doc::FeatureKind::Move: {
         const auto& m = static_cast<const doc::MoveFeature&>(f);
         std::string text;
-        if (m.rotates) {
-            // "90.0° about Z" for axis rotations, "37.5° turn" for Align's free axes.
-            const Vec3 a = m.rotationAxis.normalized();
-            const double c[3] = {a.x, a.y, a.z};
-            int axis = -1;
-            for (int k = 0; k < 3; ++k)
-                if (std::abs(c[k]) > 0.9999)
-                    axis = k;
-            const double shown = axis >= 0 && c[axis] < 0 ? -m.rotationAngle : m.rotationAngle;
-            text = formatAngle(shown) + (axis >= 0 ? std::string(" about ") + "XYZ"[axis] : std::string(" turn"));
-        }
+        if (m.rotates) // "90.0° about Z" for axis rotations, "37.5° turn" for Align's free axes
+            text = rotationText(m.rotationAngle, m.rotationAxis);
         const Vec3 t = m.translation;
         if (!m.rotates || t.length() > 1e-9) {
             char buf[128];
@@ -1865,13 +1896,21 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     }
     case doc::FeatureKind::Mirror: {
         const auto& m = static_cast<const doc::MirrorFeature&>(f);
-        const Vec3 n = m.planeNormal.normalized();
-        static const char* planes[] = {"YZ", "XZ", "XY"};
-        const double c[3] = {n.x, n.y, n.z};
-        for (int k = 0; k < 3; ++k)
-            if (std::abs(c[k]) > 0.9999 && m.planeOrigin.length() < 1e-9)
-                return std::string("Across ") + planes[k];
-        return "Across a face";
+        return mirrorPlaneText(m.planeOrigin, m.planeNormal);
+    }
+    case doc::FeatureKind::Copy: {
+        const auto& c = static_cast<const doc::CopyFeature&>(f);
+        const doc::Body* source = document.body(c.sourceBody);
+        const std::string of = "Of " + (source ? source->name() : std::string("a deleted body"));
+        if (c.mirror)
+            return of + dot + mirrorPlaneText(c.planeOrigin, c.planeNormal);
+        if (std::abs(c.motion.angle) > 1e-12)
+            return of + dot + rotationText(c.motion.angle, c.motion.axis);
+        const Vec3 t = c.motion.translation;
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "%.2f, %.2f, %.2f %s", fromMillimeters(t.x, unit), fromMillimeters(t.y, unit),
+                      fromMillimeters(t.z, unit), std::string(unitSymbol(unit)).c_str());
+        return of + dot + buf;
     }
     case doc::FeatureKind::Pattern: {
         const auto& pt = static_cast<const doc::PatternFeature&>(f);
@@ -2080,10 +2119,20 @@ Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
     if (selection_.size() < 2 || !selection_.allOfKind(sel::SelectionKind::Body))
         return Status::failure(ErrorCode::InvalidArgument, kSelectTwoBodies, "combine without two bodies");
     // The first selected body is the target; every other one is a tool.
-    const Uuid target = selection_.items()[0].bodyId;
+    Uuid target = selection_.items()[0].bodyId;
+    // A copy or split-off piece is built from its source, so it cannot be a
+    // tool of it. Union and intersect give the same shape either way round:
+    // then the copy keeps the result and the source becomes its tool.
+    if (selection_.size() == 2 && mode != doc::CombineMode::Subtract) {
+        const Uuid other = selection_.items()[1].bodyId;
+        if (document_->dependsOn(other, target) && !document_->dependsOn(target, other))
+            target = other;
+    }
     std::vector<std::unique_ptr<cmd::Command>> steps;
-    for (std::size_t i = 1; i < selection_.size(); ++i) {
+    for (std::size_t i = 0; i < selection_.size(); ++i) {
         const Uuid tool = selection_.items()[i].bodyId;
+        if (tool == target)
+            continue;
         if (document_->dependsOn(tool, target)) {
             const std::string text = "These bodies already depend on each other.";
             message(text);

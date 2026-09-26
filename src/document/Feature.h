@@ -28,7 +28,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece
+    Split, SplitPiece, Copy
 };
 
 // What a feature may consult besides its input shape.
@@ -352,6 +352,30 @@ public:
 
     FeatureKind kind() const override { return FeatureKind::SplitPiece; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new SplitPieceFeature(*this)); }
+    bool isBaseFeature() const override { return true; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sourceBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
+};
+
+// The first step of a body made by Mirror or Pattern with "Separate bodies":
+// the source body's current shape, mirrored across a plane or moved by a
+// rigid motion. It follows every change of the source body.
+class CopyFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sourceBody;
+    bool mirror = false;
+    Vec3 planeOrigin;             // mirror
+    Vec3 planeNormal{1, 0, 0};    // mirror
+    geom::RigidMotion motion;     // otherwise
+
+    FeatureKind kind() const override { return FeatureKind::Copy; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new CopyFeature(*this)); }
     bool isBaseFeature() const override { return true; }
     Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
     std::vector<ParameterInfo> parameters() const override { return {}; }

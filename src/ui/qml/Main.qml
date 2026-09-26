@@ -459,9 +459,11 @@ ApplicationWindow {
         if (app.operationActive && app.operationTitle === "Offset")
             return "Drag the arrow or type the new value · Enter applies · Delete removes the face instead"
         if (app.operationActive && app.operationTitle === "Mirror")
-            return "Enter or Apply mirrors it · click another flat face or choose a plane to change it"
+            return "Enter or Apply mirrors it · click another flat face or choose a plane to change it · "
+                 + "Separate bodies keeps the image as its own body"
         if (app.operationActive && app.operationTitle === "Pattern")
-            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · Enter applies"
+            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · "
+                 + "Separate bodies makes each copy a body · Enter applies"
         if (app.operationActive && (app.operationTitle === "Fillet" || app.operationTitle === "Chamfer"))
             return "Drag the arrow, or just type a value · Shift-click to add more edges"
         if (app.operationActive && app.operationTitle === "Shell")

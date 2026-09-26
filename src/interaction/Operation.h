@@ -91,6 +91,9 @@ public:
 
 protected:
     virtual std::unique_ptr<doc::Feature> makeFeature(double value) const = 0;
+    // The previewed result for `value`: by default makeFeature evaluated on
+    // the preview body (Mirror/Pattern with separate bodies show the copies instead).
+    virtual Result<geom::Shape> computePreview(double value, const doc::Document& document) const;
     // Changes the stored value without recomputing the preview.
     void setStoredValue(double value) { value_ = value; }
     // Drops the preview and error (e.g. when a needed pick is undone).
@@ -292,12 +295,20 @@ public:
     Status setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
     // normalAxis 0: across YZ (flips X), 1: across XZ (flips Y), 2: across XY (flips Z).
     void setOriginPlane(int normalAxis, const doc::Document& document);
+    // "Separate bodies": the mirror image becomes a body of its own that
+    // follows this one (a Copy step) instead of joining it.
+    bool separate() const { return separate_; }
+    void setSeparate(bool separate, const doc::Document& document);
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
     bool neutralIsIdentity() const override { return false; }
 
 private:
+    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies() const;
+    bool separate_ = false;
     MirrorOperation(Uuid bodyId, const Vec3& center) : Operation(bodyId, LinearManipulator(center, {0, 0, 1})) {}
     struct Plane {
         Vec3 origin, normal;
@@ -330,6 +341,11 @@ public:
     void setCount(int count, const doc::Document& document);
     // A straight edge (linear direction) or a round face/edge (circular axis).
     Status setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
+    // "Separate bodies": every copy becomes a body of its own that follows
+    // this one (a Copy step) instead of joining it (at most 100 copies).
+    bool separate() const { return separate_; }
+    void setSeparate(bool separate, const doc::Document& document);
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
 
     int handleCount() const override { return circular_ ? 0 : 1; }
     LinearManipulator handle(int index) const override;
@@ -339,8 +355,11 @@ public:
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
 
 private:
+    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies(double value) const;
+    bool separate_ = false;
     PatternOperation(Uuid bodyId, const Vec3& center, const Vec3& size)
         : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center), size_(size) {}
     Vec3 axisVectorFor() const;

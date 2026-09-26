@@ -169,7 +169,9 @@ Document (UUID, display unit)
   Shell, Hole (drilled at a circular rim), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
-  OffsetFace, Split and SplitPiece (below). Planes, axes and directions are stored as geometry, not as
+  OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
+  body's current shape mirrored or moved — Mirror / Pattern with "Separate
+  bodies"). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
@@ -337,6 +339,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   new pieces says so in a message). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
+  A body built from the other (a Copy or SplitPiece of it) cannot be its
+  tool: Union and Intersect then keep the result in the copy instead.
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -351,7 +355,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
   spacing (angle when circular), ± copy changes the count, and clicking an
   edge or a hole/shaft sets the direction or axis. Both commit one step with
-  the copies joined into the body.
+  the copies joined into the body — or, with the "Separate bodies" option,
+  one new body per copy (one undo step) whose base `Copy` step is the source
+  body's current shape mirrored or moved, so the copies follow every later
+  change of the source. Their preview shows the source and the copies side
+  by side, unfused (`Operation::computePreview`); at most 100 copies.
 - **Profiles in model mode:** sketch regions are pickable (a region lying on a
   face wins over the face; a consumed sketch's region only when it is
   coplanar with the body face hit, so used sketches do not steal clicks);

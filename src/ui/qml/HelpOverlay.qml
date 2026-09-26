@@ -115,6 +115,7 @@ Rectangle {
                             ["Align", "Face or edge → Align, then click the face or edge to line it up with"],
                             ["Mirror", "Body → Mirror, then click a flat face or choose a plane"],
                             ["Pattern", "Body → Pattern: Linear or Circular, type the spacing, ± copy"],
+                            ["Copies as bodies", "Mirror or Pattern → Separate bodies: each copy is its own body and follows the original when it changes"],
                             ["Union / subtract / intersect", "Select two bodies → Union, Subtract or Intersect (Swap picks which is cut)"]
                         ]
                     }

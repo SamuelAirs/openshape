@@ -38,6 +38,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::OffsetFace: return "OffsetFace";
     case FeatureKind::Split: return "Split";
     case FeatureKind::SplitPiece: return "SplitPiece";
+    case FeatureKind::Copy: return "Copy";
     }
     return "Unknown";
 }
@@ -47,7 +48,8 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
-                          FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece})
+                          FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
+                          FeatureKind::Copy})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -72,6 +74,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::OffsetFace: return std::make_unique<OffsetFaceFeature>(id);
     case FeatureKind::Split: return std::make_unique<SplitFeature>(id);
     case FeatureKind::SplitPiece: return std::make_unique<SplitPieceFeature>(id);
+    case FeatureKind::Copy: return std::make_unique<CopyFeature>(id);
     }
     return nullptr;
 }
@@ -805,6 +808,92 @@ Status SplitPieceFeature::readParams(const json& in)
     sourceBody = *body;
     splitFeature = *split;
     piece = *index;
+    return okStatus();
+}
+
+// ---- Copy (Mirror / Pattern as separate bodies) ------------------------------------
+
+Result<geom::Shape> CopyFeature::compute(const geom::Shape&, const EvalContext& context) const
+{
+    using R = Result<geom::Shape>;
+    const Body* source = context.document ? context.document->body(sourceBody) : nullptr;
+    if (!source)
+        return R::failure(ErrorCode::InvalidReference, "The body this is a copy of no longer exists.",
+                          "Copy: source body " + sourceBody.toString() + " missing");
+    const geom::Shape& shape = source->shape();
+    if (shape.isNull())
+        return R::failure(ErrorCode::InvalidReference,
+                          "This copy cannot be built because " + source->name() + " could not be built.",
+                          "Copy: source shape is null");
+    if (mirror)
+        return geom::mirrored(shape, planeOrigin, planeNormal);
+    if (motion.isIdentity())
+        return R::success(shape);
+    return geom::transformed(shape, motion);
+}
+
+Status CopyFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void CopyFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sourceBody, copies);
+}
+
+void CopyFeature::writeParams(json& out) const
+{
+    out["body"] = sourceBody.toString();
+    if (mirror) {
+        out["mirror"] = json{{"origin", vecToJson(planeOrigin)}, {"normal", vecToJson(planeNormal)}};
+        return;
+    }
+    out["translation"] = vecToJson(motion.translation);
+    if (std::abs(motion.angle) > 0)
+        out["rotation"] = json{{"center", vecToJson(motion.center)}, {"axis", vecToJson(motion.axis)}, {"angle", motion.angle}};
+}
+
+Status CopyFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid copy of a body.", std::string("Copy: ") + why);
+    };
+    const auto body = in.contains("body") && in["body"].is_string() ? Uuid::parse(in["body"].get<std::string>()) : std::nullopt;
+    if (!body)
+        return bad("body");
+    if (in.contains("mirror")) {
+        const json& m = in["mirror"];
+        const auto origin = m.is_object() ? vecFromJson(m, "origin") : std::nullopt;
+        const auto normal = m.is_object() ? vecFromJson(m, "normal") : std::nullopt;
+        if (!origin || !normal || normal->length() < 1e-9)
+            return bad("mirror plane");
+        sourceBody = *body;
+        mirror = true;
+        planeOrigin = *origin;
+        planeNormal = *normal;
+        motion = {};
+        return okStatus();
+    }
+    const auto translation = vecFromJson(in, "translation");
+    if (!translation)
+        return bad("translation");
+    geom::RigidMotion m;
+    m.translation = *translation;
+    if (in.contains("rotation")) {
+        const json& r = in["rotation"];
+        const auto center = r.is_object() ? vecFromJson(r, "center") : std::nullopt;
+        const auto axis = r.is_object() ? vecFromJson(r, "axis") : std::nullopt;
+        const auto angle = r.is_object() ? numberFrom(r, "angle") : std::nullopt;
+        if (!center || !axis || axis->length() < 1e-9 || !angle)
+            return bad("rotation");
+        m.center = *center;
+        m.axis = *axis;
+        m.angle = *angle;
+    }
+    sourceBody = *body;
+    mirror = false;
+    motion = m;
     return okStatus();
 }
 

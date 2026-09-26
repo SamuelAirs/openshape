@@ -90,6 +90,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::OffsetFace: return "Offset face";
     case doc::FeatureKind::Split: return "Split into bodies";
     case doc::FeatureKind::SplitPiece: return "Split piece";
+    case doc::FeatureKind::Copy: return "Copy";
     }
     return "Add step";
 }
@@ -270,21 +271,13 @@ Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& docum
     const Uuid splitId = split->id();
     std::vector<std::unique_ptr<Command>> steps;
     steps.push_back(std::make_unique<AddFeatureCommand>(bodyId, std::move(split)));
-    std::vector<std::string> names;
+    const std::vector<std::string> names = document.nextBodyNames(pieces.size() - 1);
     for (std::size_t k = 1; k < pieces.size(); ++k) {
-        std::string name;
-        for (int n = 1; name.empty(); ++n) {
-            const std::string candidate = "Body " + std::to_string(n);
-            if (document.uniqueBodyName(candidate) == candidate
-                && std::find(names.begin(), names.end(), candidate) == names.end())
-                name = candidate;
-        }
-        names.push_back(name);
         auto piece = std::make_unique<doc::SplitPieceFeature>();
         piece->sourceBody = bodyId;
         piece->splitFeature = splitId;
         piece->piece = static_cast<int>(k);
-        steps.push_back(std::make_unique<CreateBodyCommand>(name, std::move(piece)));
+        steps.push_back(std::make_unique<CreateBodyCommand>(names[k - 1], std::move(piece)));
     }
     return R::success(std::make_unique<CompositeCommand>("Split into bodies", std::move(steps)));
 }

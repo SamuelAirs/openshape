@@ -177,6 +177,60 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(!r.body(2).hasFailures(), "the piece has no failed step");
             r.screenshot(QStringLiteral("bodies_03_split_follows"));
         },
+
+        // ---- Mirror / Pattern as separate bodies -----------------------------------
+        [&r] {
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+            r.app().newDocument();
+            r.app().setView(QStringLiteral("iso"));
+            r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b")); // (-10,-10,0)..(10,10,20)
+        },
+        [] {}, [] {}, [] {},
+        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "copies: the box selected in the Model panel"); },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
+            r.check(r.clickItem(QStringLiteral("barAction_separate")), "Separate bodies option of Mirror");
+            const auto* mirror = dynamic_cast<const interact::MirrorOperation*>(r.app().interaction().operation());
+            r.check(mirror && mirror->separate(), "Mirror makes a separate body");
+        },
+        [&r] {
+            r.click(r.screenPoint(10, 0, 10)); // the box's +X face
+            r.check(r.app().operationCanCommit(), "clicking the +X face sets the mirror plane");
+        },
+        [&r, num] {
+            r.check(r.clickItem(QStringLiteral("barAction_apply")), "Apply the mirror");
+            r.check(r.app().bodyCount() == 2, "the mirror image is a second body", QString::number(r.app().bodyCount()));
+            if (r.app().bodyCount() != 2)
+                return;
+            const auto bb = geom::boundingBox(r.body(1).shape());
+            r.check(std::abs(bb.min.x - 10.0) < 1e-6 && std::abs(bb.max.x - 30.0) < 1e-6
+                        && std::abs(geom::volume(r.body(1).shape()) - 8000.0) < 1e-6,
+                    "beside the box, across its face", num(bb.min.x) + QStringLiteral("..") + num(bb.max.x));
+            r.check(r.body(0).features().size() == 1 && std::abs(geom::volume(r.body(0).shape()) - 8000.0) < 1e-6,
+                    "the original keeps its history and volume");
+            r.screenshot(QStringLiteral("bodies_04_mirror_separate"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().bodyCount() == 1, "undo removes the image");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_pattern")), "Pattern tool button");
+            r.check(r.clickItem(QStringLiteral("action_separate")), "Separate bodies option of Pattern");
+            const auto* pattern = dynamic_cast<const interact::PatternOperation*>(r.app().interaction().operation());
+            r.check(pattern && pattern->separate() && pattern->canCommit(), "the pattern previews separate copies");
+            r.key(Qt::Key_Return);
+        },
+        [&r, num] {
+            r.check(r.app().bodyCount() == 3, "three bodies: the box and two copies", QString::number(r.app().bodyCount()));
+            if (r.app().bodyCount() != 3)
+                return;
+            const double x1 = geom::boundingBox(r.body(1).shape()).min.x;
+            const double x2 = geom::boundingBox(r.body(2).shape()).min.x;
+            r.check(std::abs(x1 - 15.0) < 1e-6 && std::abs(x2 - 40.0) < 1e-6, "25 mm apart along X", num(x1) + QStringLiteral(", ") + num(x2));
+            r.screenshot(QStringLiteral("bodies_05_pattern_separate"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().bodyCount() == 1, "undo removes the copies");
+        },
     };
 }
 

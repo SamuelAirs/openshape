@@ -41,12 +41,9 @@ void Operation::setValue(double value, const doc::Document& document)
         return;
     }
     resetAutomaticChoices();
-    auto feature = makeFeature(value);
-    auto result = document.preview(previewBody(), *feature);
-    if (result && reconsider(result.value(), document)) {
-        feature = makeFeature(value);
-        result = document.preview(previewBody(), *feature);
-    }
+    auto result = computePreview(value, document);
+    if (result && reconsider(result.value(), document))
+        result = computePreview(value, document);
     if (!result) {
         previewMesh_.reset();
         error_ = result.userMessage();
@@ -57,10 +54,56 @@ void Operation::setValue(double value, const doc::Document& document)
     previewKey_ = nextPreviewKey();
 }
 
+Result<geom::Shape> Operation::computePreview(double value, const doc::Document& document) const
+{
+    const auto feature = makeFeature(value);
+    return document.preview(previewBody(), *feature);
+}
+
 std::unique_ptr<cmd::Command> Operation::makeCommand(const doc::Document&) const
 {
     return std::make_unique<cmd::AddFeatureCommand>(bodyId_, makeFeature(value_));
 }
+
+namespace {
+
+// More separate bodies than this would bury the Model panel (and cost a
+// recompute and a mesh each); a joined pattern has no such limit.
+constexpr std::size_t kMaxSeparateCopies = 100;
+
+// Separate bodies: the source and its copies side by side, not fused.
+Result<geom::Shape> previewCopies(const doc::Document& document, const Uuid& source,
+                                  const std::vector<std::unique_ptr<doc::CopyFeature>>& copies)
+{
+    if (copies.size() > kMaxSeparateCopies)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidArgument,
+                                            "Separate bodies work for up to " + std::to_string(kMaxSeparateCopies) + " copies.",
+                                            "separate copies: too many");
+    const doc::Body* body = document.body(source);
+    if (!body || body->shape().isNull())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "previewCopies: body");
+    std::vector<geom::Shape> shapes{body->shape()};
+    for (const auto& copy : copies) {
+        auto shape = document.preview(Uuid(), *copy);
+        if (!shape)
+            return shape;
+        shapes.push_back(shape.value());
+    }
+    return geom::gatherSolids(shapes);
+}
+
+// One new body per copy ("Body 2", "Body 3", ...), as one undo step.
+std::unique_ptr<cmd::Command> createCopyBodies(const doc::Document& document,
+                                               std::vector<std::unique_ptr<doc::CopyFeature>> copies, const char* label)
+{
+    const std::vector<std::string> names = document.nextBodyNames(copies.size());
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    for (std::size_t i = 0; i < copies.size(); ++i)
+        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(names[i], std::move(copies[i])));
+    return std::make_unique<cmd::CompositeCommand>(label, std::move(steps));
+}
+
+} // namespace
 
 // ---- Push/pull -----------------------------------------------------------------
 
@@ -367,6 +410,37 @@ std::unique_ptr<doc::Feature> MirrorOperation::makeFeature(double) const
     return feature;
 }
 
+void MirrorOperation::setSeparate(bool separate, const doc::Document& document)
+{
+    separate_ = separate;
+    if (plane_)
+        setValue(value(), document);
+}
+
+std::vector<std::unique_ptr<doc::CopyFeature>> MirrorOperation::makeCopies() const
+{
+    std::vector<std::unique_ptr<doc::CopyFeature>> copies;
+    if (!plane_)
+        return copies;
+    auto copy = std::make_unique<doc::CopyFeature>();
+    copy->sourceBody = bodyId();
+    copy->mirror = true;
+    copy->planeOrigin = plane_->origin;
+    copy->planeNormal = plane_->normal;
+    copies.push_back(std::move(copy));
+    return copies;
+}
+
+Result<geom::Shape> MirrorOperation::computePreview(double value, const doc::Document& document) const
+{
+    return separate_ ? previewCopies(document, bodyId(), makeCopies()) : Operation::computePreview(value, document);
+}
+
+std::unique_ptr<cmd::Command> MirrorOperation::makeCommand(const doc::Document& document) const
+{
+    return separate_ ? createCopyBodies(document, makeCopies(), "Mirror") : Operation::makeCommand(document);
+}
+
 // ---- Pattern -----------------------------------------------------------------------
 
 std::unique_ptr<PatternOperation> PatternOperation::create(const doc::Document& document, const Uuid& bodyId)
@@ -469,6 +543,35 @@ std::unique_ptr<doc::Feature> PatternOperation::makeFeature(double value) const
         feature->spacing = value;
     }
     return feature;
+}
+
+void PatternOperation::setSeparate(bool separate, const doc::Document& document)
+{
+    separate_ = separate;
+    setValue(value(), document);
+}
+
+std::vector<std::unique_ptr<doc::CopyFeature>> PatternOperation::makeCopies(double value) const
+{
+    std::vector<std::unique_ptr<doc::CopyFeature>> copies;
+    const auto feature = makeFeature(value);
+    for (const geom::RigidMotion& motion : static_cast<const doc::PatternFeature&>(*feature).copies()) {
+        auto copy = std::make_unique<doc::CopyFeature>();
+        copy->sourceBody = bodyId();
+        copy->motion = motion;
+        copies.push_back(std::move(copy));
+    }
+    return copies;
+}
+
+Result<geom::Shape> PatternOperation::computePreview(double value, const doc::Document& document) const
+{
+    return separate_ ? previewCopies(document, bodyId(), makeCopies(value)) : Operation::computePreview(value, document);
+}
+
+std::unique_ptr<cmd::Command> PatternOperation::makeCommand(const doc::Document& document) const
+{
+    return separate_ ? createCopyBodies(document, makeCopies(value()), "Pattern") : Operation::makeCommand(document);
 }
 
 // ---- Rotate ------------------------------------------------------------------------
