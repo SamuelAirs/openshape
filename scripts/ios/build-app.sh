@@ -34,12 +34,18 @@ mkdir -p "$BUILD"
 # Qt is linked statically: Qt's CMake scans the QML files and links the
 # plugin of every module they import. One it cannot link would stop the app
 # at startup on the iPad, so that fails the build here.
-imports=$(find "$BUILD" -path '*qml_imports*' -name '*.cmake' | head -n 1)
-if [ -n "$imports" ]; then
-    # Entries look like "CLASSNAME;QtQuick2Plugin;NAME;QtQuick;PATH;...".
-    sed -nE 's/.*[";]NAME;([^;"]*).*/\1/p' "$imports" | sort -u > "$BUILD/qml-modules.txt"
+imports="$BUILD/src/app/.qt/qml_imports/openshape_conf.cmake"
+if [ ! -f "$imports" ]; then
+    echo "error: Qt did not scan the QML imports ($imports missing): the app would start without its QML plugins"
+    ls -la "$BUILD/src/app/.qt" 2>&1 || true
+    grep -E "QmlTools_DIR|ShaderToolsTools_DIR|QT_HOST_PATH|qmlimportscanner" "$BUILD/CMakeCache.txt" || true
+    ls "$HOST_QT/lib/cmake" | grep -i -E "qml|tools" || true
+    grep -i "qmlimportscanner\|QmlTools" "$BUILD/configure.log" || true
+    exit 1
 fi
-echo "QML modules linked: $(tr '\n' ' ' < "$BUILD/qml-modules.txt" 2>/dev/null)"
+# Entries look like "CLASSNAME;QtQuick2Plugin;NAME;QtQuick;PATH;...".
+sed -nE 's/.*[";]NAME;([^;"]*).*/\1/p' "$imports" | sort -u > "$BUILD/qml-modules.txt"
+echo "QML modules linked: $(tr '\n' ' ' < "$BUILD/qml-modules.txt")"
 if grep -q "will not be linked" "$BUILD/configure.log"; then
     echo "error: a QML plugin will not be linked (see the configure output above)"
     exit 1

@@ -144,6 +144,11 @@ No installer yet, and not distributable yet (TD-17).
   shell does not convert them. Coordinates are window client pixels, as in
   the screenshots.
 
+- **`scripts/dev/ci_status.py`** — GitHub Actions results without a login:
+  runs, steps, and the annotations where failed steps put their errors
+  (`python scripts/dev/ci_status.py status`, or `watch` in the background
+  after a push). See docs/IPAD.md, "Reading CI results".
+
 - **`scripts/dev/watch_log.py`** — while someone uses the app started with
   `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
   the user, failed previews and GUI-thread stalls, one line per event

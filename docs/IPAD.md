@@ -89,13 +89,18 @@ steps put their error lines and last lines into annotations
 (`scripts/ci/run-logged.sh`); successful ones add notices (test counts,
 screenshot numbers, app size, minimum iPadOS).
 
+`scripts/dev/ci_status.py` prints all of it (`status`, `watch` in the
+background until a run finishes, `report <run id>`); by hand:
+
 ```bash
 curl -s "https://api.github.com/repos/SamuelAirs/openshape/actions/runs?head_sha=$(git rev-parse HEAD)"
 curl -s https://api.github.com/repos/SamuelAirs/openshape/actions/runs/<run id>/jobs
 curl -s https://api.github.com/repos/SamuelAirs/openshape/check-runs/<job id>/annotations
 ```
 
-Anonymous API calls are limited to 60 per hour per IP address.
+Anonymous API calls are limited to 60 per hour per IP address. A push to
+`main` cancels the CI run still in progress (not `ipad.yml`, which queues):
+wait for the macOS job (about 3 minutes) before pushing again.
 
 ## 4. Alternative: building on a Mac with Xcode
 
