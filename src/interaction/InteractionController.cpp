@@ -1632,11 +1632,19 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
     if (!cameraBeforeSketch_)
         cameraBeforeSketch_ = animation_ ? animation_->to : camera_;
     session_ = std::make_unique<SketchSession>(*document_, *undoStack_, sketchId);
+    session_->setGridSnap(sketchGridSnap_);
     session_->onMessage = [this](const std::string& text) { message(text); };
     session_->onCommitted = [this] { afterDocumentEdit(); };
     session_->setTool(tool);
     alignViewTo(session_->sketch().plane());
     afterDocumentEdit();
+}
+
+void InteractionController::setSketchGridSnap(bool on)
+{
+    sketchGridSnap_ = on;
+    if (session_)
+        session_->setGridSnap(on);
 }
 
 void InteractionController::finishSketch()

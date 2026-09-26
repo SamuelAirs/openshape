@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The .openshape project format: a ZIP container holding
@@ -37,9 +38,25 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const nlohmann::json& ro
 struct SaveOptions {
     std::vector<unsigned char> thumbnailPng; // empty = no thumbnail
     bool includeGeometryCache = true;
+    bool announce = true; // log "saved project" at Info level (recovery copies stay quiet)
 };
 
 Status saveProject(const doc::Document& document, const std::filesystem::path& path, const SaveOptions& options = {});
+
+// saveProject in three steps, so the slow parts can run elsewhere:
+// serializeProject reads the document (GUI thread; it touches shapes),
+// buildProjectArchive and writeFileAtomically only use the resulting strings
+// and are safe on a worker thread.
+struct ProjectData {
+    std::string documentJson;
+    std::string metadataJson;
+    std::vector<std::pair<std::string, std::string>> geometry; // body id, BRep text
+    std::vector<unsigned char> thumbnailPng;
+};
+ProjectData serializeProject(const doc::Document& document, const SaveOptions& options = {});
+Result<std::string> buildProjectArchive(const ProjectData& data);
+// Writes <path>.tmp, then renames it over `path`: a reader never sees half a file.
+Status writeFileAtomically(const std::filesystem::path& path, const std::string& bytes);
 Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path);
 
 // Exposed for tests: rejects absolute paths, drive letters, backslashes and
