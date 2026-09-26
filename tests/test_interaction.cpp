@@ -571,7 +571,8 @@ TEST(Interaction, EdgeSelectionAndFillet)
     // Too-large fillet: user-facing error, document unchanged.
     h.clickAt(h.screen({-10, -10, 10}));
     ASSERT_NE(h.controller.operation(), nullptr);
-    EXPECT_EQ(h.controller.setValueText("25"), "Unable to create this fillet. Try a smaller radius.");
+    EXPECT_EQ(h.controller.setValueText("25"), "The radius is too large for this edge. Try 16.5 mm or less.");
+    EXPECT_EQ(h.controller.setValueText("16.5"), "");
     EXPECT_NEAR(geom::volume(h.body().shape()), expected, 1e-3);
 }
 

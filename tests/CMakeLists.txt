@@ -28,6 +28,6 @@ target_link_libraries(test_sketch PRIVATE openshape_sketch)
 
 # Robustness: random modeling sessions (undo/redo, save/open), project-file
 # fuzzing, failure messages and picking acceleration.
-openshape_add_test(test_robustness test_stress.cpp test_kernel_crash.cpp test_project_fuzz.cpp)
+openshape_add_test(test_robustness test_stress.cpp test_kernel_crash.cpp test_project_fuzz.cpp test_failure_messages.cpp)
 target_link_libraries(test_robustness PRIVATE openshape_interaction openshape_io libzip::zip)
 target_compile_definitions(test_robustness PRIVATE OPENSHAPE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")

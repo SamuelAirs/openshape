@@ -263,7 +263,7 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
     if (vector.length() < kMinLength)
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "The extrusion distance must not be zero.",
                                       "extrudeFaces: zero vector");
-    const char* userMessage = "Unable to extrude this shape.";
+    const char* userMessage = "Unable to extrude this shape. Try a different distance.";
     return guarded("extrudeFaces", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("extrudeFaces");
         TopoDS_Shape result;
@@ -326,7 +326,7 @@ Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrig
                                           "The shape crosses the revolve axis. Draw it on one side of the axis.",
                                           "revolveFaces: profile straddles the axis");
     }
-    const char* userMessage = "Unable to revolve this shape.";
+    const char* userMessage = "Unable to revolve this shape. Try a smaller angle.";
     return guarded("revolveFaces", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("revolveFaces");
         const gp_Ax1 ax(toPnt(axisOrigin), toDir(axis));

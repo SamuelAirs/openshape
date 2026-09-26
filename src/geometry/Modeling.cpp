@@ -208,7 +208,7 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
     if (std::abs(distance) < kMinLength)
         return Result<Shape>::success(shape); // zero offset: no change
 
-    const char* userMessage = "Unable to move this face by that distance.";
+    const char* userMessage = "Unable to move this face by that distance. Try a slightly different distance.";
     return guarded("pushPullFace", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("pushPullFace");
         const TopoDS_Face face = faceAt(shape, faceIndex);
@@ -255,20 +255,117 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
     });
 }
 
-Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
-{
-    if (edgeIndices.empty())
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to fillet.", "filletEdges: no edges");
-    if (radius < kMinLength)
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The fillet radius must be greater than zero.",
-                                      "filletEdges: radius " + std::to_string(radius));
-    for (int e : edgeIndices)
-        if (!validIndex(shape, e, shape.edgeCount()))
-            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
-                                          "filletEdges: edge index " + std::to_string(e) + " out of range");
+namespace {
 
+// ---- Plain-language hints for sizes the kernel refuses --------------------------
+
+enum class SizedOperation { Fillet, Chamfer, Shell };
+
+// The largest size (fillet radius, chamfer distance, wall thickness) that
+// still works below one that failed, found by bisection within a time
+// budget: the user reads "Try 2.9 mm or less" instead of "Unable to...".
+// Feasibility is close to monotonic in the size for these operations.
+// Returns 0 when even a tiny size fails, nullopt when the budget ran out
+// before any size was known to work. The last answer is cached (a drag keeps
+// asking about the same shape and edges).
+std::optional<double> largestWorkingSize(SizedOperation operation, const Shape& shape, const std::vector<int>& items,
+                                         double failed, const std::function<bool(double)>& works)
+{
+    struct Entry {
+        SizedOperation operation;
+        Shape shape; // held, so its address cannot be reused by another shape
+        std::vector<int> items;
+        double largest;
+    };
+    static std::mutex mutex;
+    static std::optional<Entry> last;
+    {
+        std::lock_guard lock(mutex);
+        if (last && last->operation == operation && last->shape.sameAs(shape) && last->items == items && last->largest < failed)
+            return last->largest;
+    }
+    using Clock = std::chrono::steady_clock;
+    const auto start = Clock::now();
+    const auto budget = std::chrono::milliseconds(400);
+    double lo = failed * 0.02;
+    std::optional<double> largest;
+    if (!works(lo)) {
+        largest = 0.0;
+    } else {
+        double hi = failed;
+        for (int i = 0; i < 7 && Clock::now() - start < budget; ++i) {
+            const double mid = (lo + hi) / 2;
+            (works(mid) ? lo : hi) = mid;
+        }
+        largest = lo;
+    }
+    std::lock_guard lock(mutex);
+    last = Entry{operation, shape, items, *largest};
+    return largest;
+}
+
+// "2.9 mm": rounded down, so the suggested value itself works.
+std::string sizeText(double millimeters)
+{
+    const double step = millimeters >= 10 ? 0.5 : millimeters >= 1 ? 0.1 : millimeters >= 0.1 ? 0.01 : 0.001;
+    const double down = std::floor(millimeters / step + 1e-9) * step;
+    char text[32];
+    std::snprintf(text, sizeof text, step >= 0.1 ? "%.1f mm" : step >= 0.01 ? "%.2f mm" : "%.3f mm", down);
+    return text;
+}
+
+// True when the two faces along the edge meet without a crease (a tangent
+// edge, e.g. between a fillet and its neighbour): there is no corner there.
+bool isSmoothEdge(const Shape& shape, int edgeIndex)
+{
+    const std::vector<int> faces = facesOfEdge(shape, edgeIndex);
+    if (faces.size() != 2)
+        return false;
+    const TopoDS_Edge edge = edgeAt(shape, edgeIndex);
+    std::optional<gp_Dir> normals[2];
+    for (int k = 0; k < 2; ++k) {
+        const TopoDS_Face face = faceAt(shape, faces[std::size_t(k)]);
+        double first = 0, last = 0;
+        const Handle(Geom2d_Curve) onFace = BRep_Tool::CurveOnSurface(edge, face, first, last);
+        if (onFace.IsNull())
+            return false;
+        const gp_Pnt2d uv = onFace->Value((first + last) / 2);
+        normals[k] = faceNormal(face, uv.X(), uv.Y());
+        if (!normals[k])
+            return false;
+    }
+    return normals[0]->Angle(*normals[1]) < 1.0 * kPi / 180;
+}
+
+// The message for an edge fillet or chamfer the kernel refused.
+std::string edgeSizeMessage(SizedOperation operation, const Shape& shape, const std::vector<int>& edges, double size,
+                            const std::function<bool(double)>& works)
+{
+    const bool fillet = operation == SizedOperation::Fillet;
+    const bool several = edges.size() > 1;
+    try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
+        for (int e : edges)
+            if (isSmoothEdge(shape, e))
+                return std::string(several ? "One of these edges" : "This edge") + " joins two faces smoothly, so there is no corner to "
+                     + (fillet ? "round" : "bevel") + ". Select sharp edges only.";
+        const auto largest = largestWorkingSize(operation, shape, edges, size, works);
+        const std::string what = fillet ? "radius" : "distance";
+        const std::string where = several ? "these edges" : "this edge";
+        if (largest && *largest <= 0)
+            return std::string("Unable to ") + (fillet ? "round " : "bevel ") + where
+                 + " at any size. Try fewer edges at a time, or remove nearby rounded edges first.";
+        if (largest && *largest >= kMinLength)
+            return "The " + what + " is too large for " + where + ". Try " + sizeText(*largest) + " or less.";
+    } catch (const Standard_Failure&) {
+    }
+    return fillet ? "Unable to create this fillet. Try a smaller radius." : "Unable to create this chamfer. Try a smaller distance.";
+}
+
+Result<Shape> tryFillet(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
+{
     const char* userMessage = "Unable to create this fillet. Try a smaller radius.";
-    auto result = guarded("BRepFilletAPI_MakeFillet", userMessage, [&]() -> Result<Shape> {
+    return guarded("BRepFilletAPI_MakeFillet", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("filletEdges");
         BRepFilletAPI_MakeFillet maker(occ(shape));
         for (int e : edgeIndices)
@@ -282,25 +379,12 @@ Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndice
         }
         return finishSolid(maker.Shape(), "BRepFilletAPI_MakeFillet", userMessage);
     });
-    if (!result && result.error() != ErrorCode::InvalidArgument)
-        return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, userMessage, result.developerMessage());
-    return result;
 }
 
-Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance)
+Result<Shape> tryChamfer(const Shape& shape, const std::vector<int>& edgeIndices, double distance)
 {
-    if (edgeIndices.empty())
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to chamfer.", "chamferEdges: no edges");
-    if (distance < kMinLength)
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The chamfer distance must be greater than zero.",
-                                      "chamferEdges: distance " + std::to_string(distance));
-    for (int e : edgeIndices)
-        if (!validIndex(shape, e, shape.edgeCount()))
-            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
-                                          "chamferEdges: edge index " + std::to_string(e) + " out of range");
-
     const char* userMessage = "Unable to create this chamfer. Try a smaller distance.";
-    auto result = guarded("BRepFilletAPI_MakeChamfer", userMessage, [&]() -> Result<Shape> {
+    return guarded("BRepFilletAPI_MakeChamfer", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("chamferEdges");
         BRepFilletAPI_MakeChamfer maker(occ(shape));
         for (int e : edgeIndices)
@@ -311,25 +395,12 @@ Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndic
                                           "BRepFilletAPI_MakeChamfer not done: distance=" + std::to_string(distance));
         return finishSolid(maker.Shape(), "BRepFilletAPI_MakeChamfer", userMessage);
     });
-    if (!result && result.error() != ErrorCode::InvalidArgument)
-        return Result<Shape>::failure(ErrorCode::ChamferTooLarge, userMessage, result.developerMessage());
-    return result;
 }
 
-Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
+Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
 {
-    if (openFaces.empty())
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the face(s) to open.", "shell: no faces");
-    if (thickness < kMinLength)
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The wall thickness must be greater than zero.",
-                                      "shell: thickness " + std::to_string(thickness));
-    for (int f : openFaces)
-        if (!validIndex(shape, f, shape.faceCount()))
-            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
-                                          "shell: face index " + std::to_string(f) + " out of range");
-
     const char* userMessage = "Unable to shell with this wall thickness. Try thinner walls.";
-    auto result = guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
+    return guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("shell");
         TopTools_ListOfShape faces;
         for (int f : openFaces)
@@ -349,16 +420,77 @@ Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, doubl
                                           "MakeThickSolidByJoin removed no material: thickness=" + std::to_string(thickness));
         return hollow;
     });
-    if (!result && result.error() != ErrorCode::InvalidArgument)
-        return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage, result.developerMessage());
-    return result;
+}
+
+} // namespace
+
+Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
+{
+    if (edgeIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to fillet.", "filletEdges: no edges");
+    if (radius < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The fillet radius must be greater than zero.",
+                                      "filletEdges: radius " + std::to_string(radius));
+    for (int e : edgeIndices)
+        if (!validIndex(shape, e, shape.edgeCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
+                                          "filletEdges: edge index " + std::to_string(e) + " out of range");
+    auto result = tryFillet(shape, edgeIndices, radius);
+    if (result)
+        return result;
+    const std::string message = edgeSizeMessage(SizedOperation::Fillet, shape, edgeIndices, radius,
+                                                [&](double r) { return tryFillet(shape, edgeIndices, r).ok(); });
+    return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, message, result.developerMessage());
+}
+
+Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance)
+{
+    if (edgeIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to chamfer.", "chamferEdges: no edges");
+    if (distance < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The chamfer distance must be greater than zero.",
+                                      "chamferEdges: distance " + std::to_string(distance));
+    for (int e : edgeIndices)
+        if (!validIndex(shape, e, shape.edgeCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
+                                          "chamferEdges: edge index " + std::to_string(e) + " out of range");
+    auto result = tryChamfer(shape, edgeIndices, distance);
+    if (result)
+        return result;
+    const std::string message = edgeSizeMessage(SizedOperation::Chamfer, shape, edgeIndices, distance,
+                                                [&](double d) { return tryChamfer(shape, edgeIndices, d).ok(); });
+    return Result<Shape>::failure(ErrorCode::ChamferTooLarge, message, result.developerMessage());
+}
+
+Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
+{
+    if (openFaces.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the face(s) to open.", "shell: no faces");
+    if (thickness < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The wall thickness must be greater than zero.",
+                                      "shell: thickness " + std::to_string(thickness));
+    for (int f : openFaces)
+        if (!validIndex(shape, f, shape.faceCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
+                                          "shell: face index " + std::to_string(f) + " out of range");
+    auto result = tryShell(shape, openFaces, thickness);
+    if (result)
+        return result;
+    std::string message = "Unable to shell with this wall thickness. Try thinner walls.";
+    const auto largest = largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness,
+                                            [&](double t) { return tryShell(shape, openFaces, t).ok(); });
+    if (largest && *largest <= 0)
+        message = "Unable to hollow this body with these faces open. Try opening a different face.";
+    else if (largest && *largest >= kMinLength)
+        message = "The walls are too thick for this body. Try " + sizeText(*largest) + " or less.";
+    return Result<Shape>::failure(ErrorCode::ShellTooThick, message, result.developerMessage());
 }
 
 Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
 {
     if (a.isNull() || b.isNull())
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select two bodies.", "booleanOp: null operand");
-    const char* userMessage = "Unable to combine these bodies.";
+    const char* userMessage = "Unable to combine these bodies. Moving one of them slightly often helps.";
     return guarded("booleanOp", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("booleanOp");
         TopoDS_Shape out;
@@ -391,12 +523,24 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
         }
         if (!errors.empty())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Boolean failed: " + errors);
+        if (kind == BooleanKind::Intersect && !TopExp_Explorer(out, TopAbs_SOLID).More())
+            return Result<Shape>::failure(ErrorCode::EmptyResult, "These bodies do not overlap, so nothing would be left.",
+                                          "booleanOp: intersection is empty");
         if (kind != BooleanKind::Intersect) {
             ShapeUpgrade_UnifySameDomain unify(out, true, true, true);
             unify.Build();
             out = unify.Shape();
         }
-        return finishSolid(out, "booleanOp", userMessage);
+        auto result = finishSolid(out, "booleanOp", userMessage);
+        // A cut must remove material. One that misses (or only touches the
+        // surface) would silently change nothing.
+        if (result && kind == BooleanKind::Subtract) {
+            const double before = volume(a), after = volume(result.value());
+            if (after >= before - 1e-9 * std::max(before, 1.0))
+                return Result<Shape>::failure(ErrorCode::NoEffect, "The shapes do not overlap, so nothing would be cut away.",
+                                              "booleanOp: subtraction removed no volume");
+        }
+        return result;
     });
 }
 
@@ -584,10 +728,17 @@ Result<Shape> mirrorJoined(const Shape& shape, const Vec3& planeOrigin, const Ve
     auto image = mirrored(shape, planeOrigin, planeNormal);
     if (!image)
         return image;
-    const char* userMessage = "Unable to mirror the body across this plane.";
+    const char* userMessage = "Unable to mirror the body across this plane. Try another plane.";
     return guarded("mirrorJoined", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("mirrorJoined");
-        return fuseInOnePass({occ(shape), occ(image.value())}, "mirrorJoined", userMessage);
+        auto joined = fuseInOnePass({occ(shape), occ(image.value())}, "mirrorJoined", userMessage);
+        // The image of a body symmetric about the plane lands on itself.
+        if (joined && volume(joined.value()) <= volume(shape) * (1 + 1e-9))
+            return Result<Shape>::failure(ErrorCode::NoEffect,
+                                          "The body is already symmetric about this plane, so mirroring would change nothing. "
+                                          "Pick another plane.",
+                                          "mirrorJoined: volume unchanged");
+        return joined;
     });
 }
 
@@ -602,10 +753,18 @@ Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& c
             return copy;
         parts.push_back(occ(copy.value()));
     }
-    const char* userMessage = "Unable to repeat the body this way.";
+    const char* userMessage = "Unable to repeat the body this way. Try a different spacing or number of copies.";
     return guarded("repeatJoined", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("repeatJoined");
-        return fuseInOnePass(parts, "repeatJoined", userMessage);
+        auto joined = fuseInOnePass(parts, "repeatJoined", userMessage);
+        // Copies that all land on the original (no spacing, or a round body
+        // turned about its own axis) add nothing.
+        if (joined && !copies.empty() && volume(joined.value()) <= volume(shape) * (1 + 1e-9))
+            return Result<Shape>::failure(ErrorCode::NoEffect,
+                                          "The copies land on top of the original, so nothing would change. "
+                                          "Use a larger spacing or a different axis.",
+                                          "repeatJoined: volume unchanged");
+        return joined;
     });
 }
 
@@ -621,7 +780,7 @@ Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double
         return notHere("not a flat face");
     if (std::abs(distance) < kMinLength)
         return R::success(shape);
-    const char* userMessage = "Unable to move this face by that distance.";
+    const char* userMessage = "Unable to move this face by that distance. Try a slightly different distance.";
     return guarded("pushPullFaceKeepingEdges", userMessage, [&]() -> R {
         ScopedTimer timer("pushPullFaceKeepingEdges");
         const Vec3 n = info->normal.normalized();

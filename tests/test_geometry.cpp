@@ -389,7 +389,9 @@ TEST(Geometry, FilletTooLargeFailsGracefully)
     auto r = filletEdges(s, edges, 8.0);
     EXPECT_FALSE(r.ok());
     EXPECT_EQ(r.error(), ErrorCode::FilletRadiusTooLarge);
-    EXPECT_EQ(r.userMessage(), "Unable to create this fillet. Try a smaller radius.");
+    // The message names a radius that works: just under half the 10 mm side.
+    EXPECT_EQ(r.userMessage(), "The radius is too large for these edges. Try 4.9 mm or less.");
+    EXPECT_TRUE(filletEdges(s, edges, 4.9).ok());
     EXPECT_FALSE(r.developerMessage().empty());
 }
 
