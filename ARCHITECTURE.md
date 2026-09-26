@@ -419,8 +419,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   them — hand-written versions of known sentences ("Shift-click adds more" →
   "tap more to add them", "Esc ends the line" → "tap Line again to end the
   line", "Enter applies" → "✓ applies") and word rules (click → tap) —
-  via `AppController::notifyMessage` (toasts) and `touchWording()` in
-  `Main.qml`'s `hintText()`. The help card has a touch text per row
+  for messages at their source in the interaction layer
+  (`InteractionController::forInput`: tool explanations, the sketch
+  session's messages, instructions returned in a `Status`), and through
+  `touchWording()` in `Main.qml`'s `hintText()` for hints and prompts. Only
+  the app's own texts are reworded: `AppController::notifyMessage` passes
+  messages on as they are, so a file, project or body name in one ("Exported
+  Click lid.stl") is never changed. The help card has a touch text per row
   (`Theme.touch`). `tests/test_touch_wording.cpp` collects every sketch
   hint, tool explanation and operation prompt, the QML hints and the help
   rows, and fails on a mouse or keyboard word left in a touch text. No
@@ -508,7 +513,9 @@ blocked, suppressed — explanation, editable length parameters). Hovering a row
 calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
 body, other steps their new faces (`facesCreatedBy`, falling back to
 `facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
-body row calls `selectBody(id, additive)`. The QML `HistoryPanel` edits values through
+body row calls `selectBody(id, additive)` (Shift toggles); a tap on it in
+the touch layout calls `addBodyToSelection` (`BodyPick::Add`: adds, never
+takes out, so tapping the row again to fold it keeps the body selected). The QML `HistoryPanel` edits values through
 `setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
 mode: an edit that breaks a later step is kept, the step is marked failed
 with its user message, and undo restores the value. Base features cannot be
@@ -567,7 +574,10 @@ no worker thread is used.
 new documents, sketch grid snapping, recovery interval), recent files
 (`io/RecentFiles`: most recent first; the menu shows the 10 newest that
 exist, and a file that is gone never pushes an existing one out; the File
-menu rereads the list as it opens, `refreshRecentFiles()`) and the
+menu rereads the list as it opens, `refreshRecentFiles()`; with an app
+folder, entries into its old location — iOS gives an updated app a new data
+folder — follow it, `io::rebasedIntoFolder`, as does a recovery copy's
+project path) and the
 window's place (frame + client rectangle + maximized; restored by client
 area and clamped to today's screens by `fitToScreens`). `main.cpp` points
 QSettings at a temporary INI file (and recovery copies at a temporary
@@ -611,10 +621,12 @@ them on a hidden menu separator after the Open Recent sub-menu).
   symmetric and up-to-face extrusions, a fillet carried by a push, a hole
   resized by its diameter and deleted; `compact` (the window resized live to
   an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
-  Model panel, View menu, a box pushed by touch, the sketch strip; the runner
+  Model panel, View menu, a box pushed by touch, Undo / Redo with their
+  messages, a body row tapped twice, the sketch strip; the runner
   restores the run's window size for the next scenario); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
-  app folder); scenarios `recovery` (a real crash
+  app folder; the export message keeps a name with "Click" in it in the
+  touch layout); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent` and `preferences`. The whole run also passes at the CI Mac's

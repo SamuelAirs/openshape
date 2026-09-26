@@ -114,22 +114,32 @@ Steps steps(AcceptanceRunner& r)
         r.check(save && save->property("text").toString() == QStringLiteral("Replace"), "app folder: the same name says Replace",
                 save ? save->property("text").toString() : QString());
         r.screenshot(QStringLiteral("appfolder_save_as"));
-        r.type(QStringLiteral("Lid")); // the offered name is selected: typing replaces it
+        // (A name with "Click" in it: touch wording must leave names alone.)
+        r.type(QStringLiteral("Click lid")); // the offered name is selected: typing replaces it
     });
     steps.push_back([&r, s] {
         QQuickItem* save = r.findItem(QStringLiteral("saveNameSave"));
         r.check(save && save->property("text").toString() == QStringLiteral("Save"), "app folder: a new name says Save");
         r.key(Qt::Key_Return); // Enter in the name field saves
-        r.check(QFileInfo::exists(s->path(QStringLiteral("Lid.openshape"))) && r.app().documentTitle() == QStringLiteral("Lid"),
-                "app folder: Enter saved it as Lid.openshape", r.app().documentTitle());
+        r.check(QFileInfo::exists(s->path(QStringLiteral("Click lid.openshape"))) && r.app().documentTitle() == QStringLiteral("Click lid"),
+                "app folder: Enter saved it as Click lid.openshape", r.app().documentTitle());
+        // Exports as on an iPhone: the touch layout (always on there).
+        r.app().setTouchMode(true);
         r.check(QFileInfo::exists(s->path(QStringLiteral("Bracket.openshape"))), "app folder: Bracket.openshape is still there");
     });
-    // ---- Exports go into Exports, named after the project.
+    // ---- Exports go into Exports, named after the project; the message says
+    // where, with the name as it is.
     append(steps, fileMenu(r, QStringLiteral("exportStlMenuItem"), QStringLiteral("app folder: File → Export STL")));
+    steps.push_back([&r] {
+        QQuickItem* toast = r.findItem(QStringLiteral("toast"));
+        const QString text = toast ? toast->property("text").toString() : QString();
+        r.check(toast && toast->isVisible() && text == QStringLiteral("Exported Click lid.stl to OpenShape → Exports (Files app)"),
+                "app folder: the message names the exported file (in the touch layout too)", text);
+    });
     append(steps, fileMenu(r, QStringLiteral("export3mfMenuItem"), QStringLiteral("app folder: File → Export 3MF")));
     append(steps, fileMenu(r, QStringLiteral("exportStepMenuItem"), QStringLiteral("app folder: File → Export STEP")));
     steps.push_back([&r, s] {
-        for (const char* file : {"Exports/Lid.stl", "Exports/Lid.3mf", "Exports/Lid.step"}) {
+        for (const char* file : {"Exports/Click lid.stl", "Exports/Click lid.3mf", "Exports/Click lid.step"}) {
             const QFileInfo info(s->path(QString::fromLatin1(file)));
             r.check(info.exists() && info.size() > 100, QStringLiteral("app folder: %1 written").arg(QString::fromLatin1(file)),
                     QString::number(info.size()) + QStringLiteral(" bytes"));

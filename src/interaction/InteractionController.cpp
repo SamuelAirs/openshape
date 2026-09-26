@@ -9,6 +9,7 @@
 #include "core/Log.h"
 #include "core/Units.h"
 #include "geometry/Modeling.h"
+#include "interaction/TouchWording.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -635,7 +636,7 @@ void InteractionController::click(const PointerEvent& event)
             else if (edge->kind == geom::CurveKind::Circle)
                 rotate->setPivot(edge->center, *document_);
             else
-                message("Turn about a straight edge, or click a corner or a circle to move the pivot there.");
+                message(forInput("Turn about a straight edge, or click a corner or a circle to move the pivot there."));
             notifyState();
             notifyView();
             return;
@@ -1314,7 +1315,7 @@ Status InteractionController::triggerAction(const std::string& id)
         const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) ? std::nullopt : selection_.singleBody();
         if (!body)
             return Status::failure(ErrorCode::InvalidArgument,
-                                   "Select one body to duplicate: double-click it, or click it in the Model panel.",
+                                   forInput("Select one body to duplicate: double-click it, or click it in the Model panel."),
                                    "duplicate without one body selected");
         return duplicateBody(*body);
     }
@@ -1879,7 +1880,9 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
         cameraBeforeSketch_ = animation_ ? animation_->to : camera_;
     session_ = std::make_unique<SketchSession>(*document_, *undoStack_, sketchId);
     session_->setGridSnap(sketchGridSnap_);
-    session_->onMessage = [this](const std::string& text) { message(text); };
+    // The sketch's messages are instructions and complaints about the shape
+    // being drawn (no names): worded for the input in use.
+    session_->onMessage = [this](const std::string& text) { message(forInput(text)); };
     session_->onCommitted = [this] { afterDocumentEdit(); };
     session_->setLargeTargets(touchLayout_);
     session_->setTool(tool);
@@ -2347,7 +2350,7 @@ constexpr const char* kSelectTwoBodies =
 Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
 {
     if (selection_.size() < 2 || !selection_.allOfKind(sel::SelectionKind::Body))
-        return Status::failure(ErrorCode::InvalidArgument, kSelectTwoBodies, "combine without two bodies");
+        return Status::failure(ErrorCode::InvalidArgument, forInput(kSelectTwoBodies), "combine without two bodies");
     // The first selected body is the target; every other one is a tool.
     Uuid target = selection_.items()[0].bodyId;
     // A copy or split-off piece is built from its source, so it cannot be a
@@ -2491,7 +2494,7 @@ void InteractionController::refreshHistoryHighlight()
         highlightFaces_ = geom::facesChangedBy(before, state.output, body->shape());
 }
 
-Status InteractionController::selectBody(const Uuid& bodyId, bool additive)
+Status InteractionController::selectBody(const Uuid& bodyId, BodyPick how)
 {
     if (session_)
         return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "selectBody in sketch mode");
@@ -2503,6 +2506,12 @@ Status InteractionController::selectBody(const Uuid& bodyId, bool additive)
         message(text);
         return Status::failure(ErrorCode::InvalidArgument, text, "selectBody: hidden body");
     }
+    // Adding a body that is already selected changes nothing (not even a
+    // pending value: the tap was on the panel, not elsewhere in the view).
+    if (how == BodyPick::Add && selection_.allOfKind(sel::SelectionKind::Body)
+        && std::any_of(selection_.items().begin(), selection_.items().end(),
+                       [&](const sel::SelectionItem& selected) { return selected.bodyId == bodyId; }))
+        return okStatus();
     // Like clicking elsewhere in the view: a pending value is applied first.
     if (operation_ && operation_->canCommit())
         if (Status status = commitOperation(); !status)
@@ -2510,10 +2519,14 @@ Status InteractionController::selectBody(const Uuid& bodyId, bool additive)
     auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, bodyId, -1);
     if (!item)
         return Status::failure(ErrorCode::InvalidReference, "That body has no shape to select.", "selectBody: no item");
-    if (additive && selection_.allOfKind(sel::SelectionKind::Body))
-        selection_.toggle(*item);
-    else
+    if (how != BodyPick::Replace && selection_.allOfKind(sel::SelectionKind::Body)) {
+        if (how == BodyPick::Toggle)
+            selection_.toggle(*item);
+        else
+            selection_.add(*item);
+    } else {
         selection_.set(*item);
+    }
     rebuildOperation();
     notifyState();
     notifyView();
@@ -2522,7 +2535,8 @@ Status InteractionController::selectBody(const Uuid& bodyId, bool additive)
 
 Status InteractionController::runTool(const std::string& id)
 {
-    auto explain = [this](const std::string& text) {
+    auto explain = [this](const std::string& instruction) {
+        const std::string text = forInput(instruction);
         message(text);
         return Status::failure(ErrorCode::InvalidArgument, text, "runTool: selection does not fit");
     };
@@ -2658,6 +2672,11 @@ void InteractionController::notifyState()
 {
     if (onStateChanged)
         onStateChanged();
+}
+
+std::string InteractionController::forInput(std::string_view instruction) const
+{
+    return touchLayout_ ? touchWording(instruction) : std::string(instruction);
 }
 
 void InteractionController::message(const std::string& text)

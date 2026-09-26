@@ -108,8 +108,10 @@ void AppController::attach()
 
 void AppController::notifyMessage(const QString& text)
 {
-    // Messages written for mouse and keyboard speak of taps in the touch layout.
-    emit message(touchMode() ? touchWording(text) : text);
+    // Passed on as it is: the interaction layer words its instructions for
+    // touch itself, and a message may hold a file, project or body name that
+    // no rewording may touch ("Exported Click fixture.stl").
+    emit message(text);
 }
 
 QString AppController::touchWording(const QString& text) const
@@ -542,6 +544,12 @@ void AppController::selectBody(const QString& bodyId, bool additive)
         (void)interaction_->selectBody(*id, additive); // failures explain themselves via message()
 }
 
+void AppController::addBodyToSelection(const QString& bodyId)
+{
+    if (const auto id = uuidOf(bodyId))
+        (void)interaction_->selectBody(*id, interact::InteractionController::BodyPick::Add);
+}
+
 void AppController::duplicateBody(const QString& bodyId)
 {
     if (const auto id = uuidOf(bodyId)) {
@@ -684,6 +692,7 @@ void AppController::setAppFolder(const QString& folder)
     appFolder_ = cleaned;
     if (!appFolder_.isEmpty())
         QDir().mkpath(appFolder_);
+    updateRecentFiles(); // entries into the folder's old location move along
     emit appFolderChanged();
 }
 
@@ -928,7 +937,7 @@ QVariantList AppController::recoveryItems() const
 {
     QVariantList list;
     for (const auto& entry : orphans_) {
-        const QString original = QString::fromStdString(entry.info.originalPath);
+        const QString original = currentLocation(entry.info.originalPath);
         QString title = QString::fromStdString(entry.info.title);
         if (title.isEmpty())
             title = original.isEmpty() ? QStringLiteral("Untitled") : QFileInfo(original).completeBaseName();
@@ -964,7 +973,8 @@ bool AppController::restoreRecovery(const QString& sessionText)
     interaction_->setDocument(*loaded.value(), *stack);
     document_ = std::move(loaded.value());
     undoStack_ = std::move(stack);
-    path_ = QString::fromStdString(entry.info.originalPath);
+    // (Where the project is now: on iOS the app's folder moves with updates.)
+    path_ = currentLocation(entry.info.originalPath);
     documentReplaced();
     // The copy stays (now as this run's) until the document is saved or discarded.
     if (const Status adopted = recovery_->adopt(session, entry.info); adopted) {
@@ -1026,11 +1036,36 @@ std::vector<std::string> toStd(const QStringList& list)
 }
 } // namespace
 
+QString AppController::currentLocation(const std::string& storedPath) const
+{
+    return QString::fromStdString(appFolder_.isEmpty() ? storedPath : io::rebasedIntoFolder(storedPath, appFolder_.toStdString()));
+}
+
 void AppController::updateRecentFiles()
 {
     QSettings settings;
+    std::vector<std::string> stored = toStd(loadRecentFiles(settings));
+    if (!appFolder_.isEmpty()) {
+        // iPhone / iPad after an app update: the same files, in the app
+        // folder's new location (stored so, and without duplicates).
+        std::vector<std::string> moved;
+        bool changed = false;
+        for (const std::string& file : stored) {
+            const std::string now = currentLocation(file).toStdString();
+            changed = changed || now != file;
+            if (std::none_of(moved.begin(), moved.end(), [&](const std::string& m) { return io::sameRecentPath(m, now); }))
+                moved.push_back(now);
+        }
+        if (changed) {
+            QStringList files;
+            for (const std::string& file : moved)
+                files.append(QString::fromStdString(file));
+            saveRecentFiles(settings, files);
+            stored = std::move(moved);
+        }
+    }
     QVariantList list;
-    for (const std::string& file : io::existingRecentFiles(toStd(loadRecentFiles(settings)))) {
+    for (const std::string& file : io::existingRecentFiles(stored)) {
         const QFileInfo info(QString::fromStdString(file));
         QVariantMap map;
         map.insert(QStringLiteral("path"), info.absoluteFilePath());

@@ -90,10 +90,14 @@ Panel {
                         const owner = panel
                         const data = row.modelData
                         const wasExpanded = row.expanded
-                        if (data.kind === "body" && data.visible)
-                            // Shift adds a body (to combine them); so does a tap in
-                            // the touch layout, as taps in the view do.
-                            owner.app.selectBody(data.id, (mouse.modifiers & Qt.ShiftModifier) !== 0 || owner.app.touchMode)
+                        // Shift adds a body (to combine them) or takes it out
+                        // again; a tap in the touch layout adds it (as taps in
+                        // the view do) and never takes it out, so tapping the
+                        // row again to fold it keeps the body selected.
+                        if (data.kind === "body" && data.visible && owner.app.touchMode)
+                            owner.app.addBodyToSelection(data.id)
+                        else if (data.kind === "body" && data.visible)
+                            owner.app.selectBody(data.id, (mouse.modifiers & Qt.ShiftModifier) !== 0)
                         owner.expandedId = wasExpanded ? "" : data.id
                     }
                     onDoubleClicked: if (row.modelData.kind === "sketch") panel.app.editSketch(row.modelData.id)

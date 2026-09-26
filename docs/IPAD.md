@@ -185,7 +185,12 @@ OpenShape):
   say where; from the Files app they can be shared to a slicer, AirDrop or
   Mail.
 - Open Recent, recovery copies and the log (`Logs/openshape.log`) work as on
-  the desktop.
+  the desktop. iOS gives an updated app (every TestFlight build) a new data
+  folder, so remembered paths into OpenShape's folder go stale: Open Recent
+  entries and a recovery copy's project follow the folder to its new place
+  (`io::rebasedIntoFolder`). A project opened from outside OpenShape's
+  folder (iCloud Drive) drops out of Open Recent once iOS no longer lets the
+  app read it (no security-scoped bookmarks yet, TD-41).
 - Windows and macOS are unchanged (file dialogs). `--app-folder <dir>`
   tries the iOS behaviour on the desktop; the acceptance scenario
   `appfolder` checks it.
@@ -281,5 +286,7 @@ margins (BUILDING.md).
 11. File → Save: the first time it asks for a name and saves into OpenShape's
    folder (Files app → On My iPhone → OpenShape); File → Open shows the
    system file picker; Export STL/3MF/STEP writes into Exports there.
+   After the next TestFlight update, File → Open Recent still lists those
+   projects and opens them.
 12. iPhone Duo (once available): fold and unfold with a model open, and use
    the inner display's Split View: the layout changes live, no restart.

@@ -870,7 +870,10 @@ ApplicationWindow {
         id: valueChip
         objectName: "valueChip"
         app: window.app
-        z: 6 // nothing covers its field (the View menu may, while open: any choice closes it)
+        // Nothing covers its field (the View menu may, while open: any choice
+        // closes it; a message goes above it, or over it for a few seconds
+        // when there is no room: see the toast).
+        z: 6
         // The compact Model panel covers most of a phone: the chip waits until it closes.
         visible: window.app.operationActive && window.app.valueLabelVisible && !(Theme.compact && window.historyOpen)
         maximumWidth: window.width - Theme.insetLeft - Theme.insetRight
@@ -967,10 +970,20 @@ ApplicationWindow {
     // ---------------------------------------------------------------- toast
     Rectangle {
         id: toast
+        objectName: "toast"
         property alias text: toastText.text
-        // Above the hint and the tool strip in a compact window.
+        // Where it rests: above the hint and the tool strip in a compact window.
+        readonly property real restBottom: Theme.compact ? statusColumn.y - 8 : window.height - 72 - Theme.safeBottom
+        // The value chip may sit there too (its arrow tip low on the screen):
+        // then the message goes above the chip if there is room below the top
+        // bar, and is drawn over it otherwise (z), for the few seconds it shows.
+        readonly property bool chipInTheWay: valueChip.visible && valueChip.y < restBottom
+            && valueChip.y + valueChip.height > restBottom - height
+            && valueChip.x < x + width && valueChip.x + valueChip.width > x
+        readonly property bool roomAboveChip: valueChip.y - 8 - height >= topBar.y + topBar.height + 8
+        z: 6.5 // above the value chip (6), below the open View menu (7) and the overlays (100 and up)
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom
-                  bottomMargin: Theme.compact ? window.height - statusColumn.y + 8 : 72 + Theme.safeBottom }
+                  bottomMargin: window.height - (chipInTheWay && roomAboveChip ? valueChip.y - 8 : restBottom) }
         width: toastText.width + 32
         height: Math.max(38, toastText.implicitHeight + 16)
         radius: Math.min(19, height / 2)

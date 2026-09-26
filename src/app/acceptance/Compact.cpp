@@ -6,7 +6,9 @@
 // in portrait, 874x402 in landscape, with the Dynamic Island's safe-area
 // margins), switched live by resizing the window: the tool strip along the
 // bottom, the Model button's sliding panel, the View menu, the sketch's
-// strip; a box made and pushed there by touch. The window goes back to the
+// strip; a box made and pushed there by touch; Undo / Redo saying what they
+// did (touch has no tooltip); a body's row tapped twice (selects it, then
+// folds the row and keeps it selected). The window goes back to the
 // run's size at the end (and the runner's reset restores it too).
 
 #include "app/AcceptanceRunner.h"
@@ -102,8 +104,26 @@ void checkCompactLayout(AcceptanceRunner& r, const QString& where, double top, d
             rectText(status));
 }
 
+// The message toast shows `text` and nothing covers it: where the value chip
+// sits at the toast's resting place, the toast moves above the chip (or,
+// with no room there, is drawn over it).
+void checkToast(AcceptanceRunner& r, const QString& text, const QString& what)
+{
+    QQuickItem* toast = r.findItem(QStringLiteral("toast"));
+    QQuickItem* chip = r.findItem(QStringLiteral("valueChip"));
+    const QString shownText = toast ? toast->property("text").toString() : QString();
+    r.check(toast && toast->isVisible() && shownText == text, what + QStringLiteral(" says what it did"), shownText);
+    const QRectF toastRect = sceneRect(r, QStringLiteral("toast"));
+    const QRectF chipRect = sceneRect(r, QStringLiteral("valueChip"));
+    const bool room = chipRect.top() - 8 - toastRect.height() >= sceneRect(r, QStringLiteral("topBar")).bottom() + 8;
+    r.check(toast && chip && chip->isVisible() && (!toastRect.intersects(chipRect) || (!room && toast->z() > chip->z())),
+            what + QStringLiteral(": the message is clear of the value chip"),
+            rectText(toastRect) + QStringLiteral(" / ") + rectText(chipRect));
+}
+
 struct CompactState {
     double height = 0;
+    QString label; // the step Undo / Redo names
 };
 
 Steps steps(AcceptanceRunner& r)
@@ -214,6 +234,70 @@ Steps steps(AcceptanceRunner& r)
         r.check(r.clickItem(QStringLiteral("viewIso")), "compact: Iso in the View menu");
     });
     wait(steps, 4);
+    // ---- Undo / Redo: touch has no tooltip, so a message says what they did,
+    // readable even with the value chip where the message rests: the model
+    // panned down by two fingers puts the arrow tip, and so the chip, there.
+    steps.push_back([&r] {
+        r.app().interaction().twoFingerPan({200, 300}, {200, 750});
+    });
+    steps.push_back([&r, s] {
+        const QRectF chip = sceneRect(r, QStringLiteral("valueChip"));
+        const QRectF status = sceneRect(r, QStringLiteral("statusColumn"));
+        r.check(shown(r, QStringLiteral("valueChip")) && chip.bottom() > status.top() - 20,
+                "compact: panned down, the value chip sits just above the hint", rectText(chip));
+        s->label = r.app().undoText();
+        r.check(r.app().canUndo() && !s->label.isEmpty(), "compact: something to undo", s->label);
+        r.check(r.clickItem(QStringLiteral("undoButton")), "compact: Undo button");
+    });
+    steps.push_back([&r, s] {
+        const double height = bodyHeight(r);
+        r.check(std::abs(height - 20.0) < 1e-9, "compact: Undo takes the top back to 20 mm", AcceptanceRunner::num(height));
+        checkToast(r, QStringLiteral("Undo ") + s->label, QStringLiteral("compact: Undo"));
+        s->label = r.app().redoText();
+        r.check(r.clickItem(QStringLiteral("redoButton")), "compact: Redo button");
+    });
+    steps.push_back([&r, s] {
+        const double height = bodyHeight(r);
+        r.check(std::abs(height - 30.0) < 1e-9, "compact: Redo pushes the top to 30 mm again", AcceptanceRunner::num(height));
+        checkToast(r, QStringLiteral("Redo ") + s->label, QStringLiteral("compact: Redo"));
+        r.app().interaction().twoFingerPan({200, 750}, {200, 300}); // back
+        // ---- A tap on the body's row selects it; a second tap folds the row
+        // and keeps the body selected.
+        r.check(r.clickItem(QStringLiteral("modelPanelButton")), "compact: Model button again");
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        r.check(r.clickItem(QStringLiteral("historyRow_") + QString::fromStdString(r.body(0).id().toString())),
+                "compact: tap the body's row");
+    });
+    steps.push_back([&r] {
+        const auto& selection = r.app().interaction().selection();
+        const QString id = QString::fromStdString(r.body(0).id().toString());
+        QQuickItem* panel = r.findItem(QStringLiteral("historyPanel"));
+        r.check(selection.size() == 1 && selection.allOfKind(sel::SelectionKind::Body) && selection.items()[0].bodyId == r.body(0).id(),
+                "compact: the tap selects the body", QString::number(selection.size()));
+        r.check(panel && panel->property("expandedId").toString() == id, "compact: the row unfolds");
+    });
+    wait(steps, 4); // a second tap this soon would be a double-tap
+    steps.push_back([&r] {
+        r.check(r.clickItem(QStringLiteral("historyRow_") + QString::fromStdString(r.body(0).id().toString())),
+                "compact: tap the row again");
+    });
+    steps.push_back([&r] {
+        const auto& selection = r.app().interaction().selection();
+        QQuickItem* panel = r.findItem(QStringLiteral("historyPanel"));
+        r.check(selection.size() == 1 && selection.allOfKind(sel::SelectionKind::Body) && selection.items()[0].bodyId == r.body(0).id(),
+                "compact: tapping the row again keeps the body selected", QString::number(selection.size()));
+        r.check(panel && panel->property("expandedId").toString().isEmpty(), "compact: the row folds");
+        r.check(r.clickItem(QStringLiteral("historyPanelHide")), "compact: the Model panel's Close again");
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        r.key(Qt::Key_Escape);
+    });
+    steps.push_back([&r] {
+        r.check(r.app().interaction().selection().empty(), "compact: Esc clears the selection");
+    });
     // ---- Turn the phone: 874x402, the island on the side. The layout follows live.
     steps.push_back([&r] {
         r.resizeWindow(874, 402);

@@ -223,6 +223,7 @@ public:
     Q_INVOKABLE void redoWithFeedback();
     // A hint written for mouse and keyboard, worded for touch (taps, the
     // on-screen ✓ / ✕; no Shift-click, Esc, Enter, scrolling or hovering).
+    // Only for the app's own hints: a name in the text would be reworded too.
     Q_INVOKABLE QString touchWording(const QString& text) const;
     Q_INVOKABLE void commitOperation();
     Q_INVOKABLE void cancelOperation();
@@ -257,8 +258,12 @@ public:
     Q_INVOKABLE void editSketch(const QString& sketchId);
     // Highlights a row's geometry in the view while hovered/expanded ("" clears).
     Q_INVOKABLE void highlightHistoryItem(const QString& id);
-    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine.
+    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine,
+    // or takes it out again.
     Q_INVOKABLE void selectBody(const QString& bodyId, bool additive);
+    // A tap on a body's row in the touch layout: adds the body (never takes it
+    // out: tapping the row again folds it and keeps the body selected).
+    Q_INVOKABLE void addBodyToSelection(const QString& bodyId);
     // Model panel row actions for a body.
     Q_INVOKABLE void duplicateBody(const QString& bodyId);
     Q_INVOKABLE void splitBody(const QString& bodyId);
@@ -286,7 +291,12 @@ private:
     void stopRecoveryTimers();
     void rememberRecentFile(const QString& path);
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
+    // With an app folder, entries into its old location (the app's data
+    // folder moves when an iOS app is updated) are moved into the current one.
     void updateRecentFiles();
+    // A remembered path (a recovery copy's project) where the file is now:
+    // io::rebasedIntoFolder into the app folder, if there is one.
+    QString currentLocation(const std::string& storedPath) const;
     void savePreferences() const;
     // The visible bodies written as STL, 3MF or STEP (by `format`).
     Status writeExport(const QString& format, const std::filesystem::path& path);

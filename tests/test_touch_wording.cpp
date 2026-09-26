@@ -7,6 +7,7 @@
 // the sketch tools, the operations and the Modify/Combine tools produce is
 // collected here through the interaction layer and checked.
 #include "commands/Command.h"
+#include "commands/DocumentCommands.h"
 #include "document/Document.h"
 #include "interaction/InteractionController.h"
 #include "interaction/TouchWording.h"
@@ -58,6 +59,13 @@ void expectTouchReady(const std::string& text)
     const std::string touch = touchWording(text);
     EXPECT_FALSE(mentionsMouseOrKeyboard(touch)) << "mouse/keyboard words left in: \"" << touch << "\" (from \"" << text << "\")";
     EXPECT_GE(touch.size(), 8u) << text;
+}
+
+// A message from the interaction layer in the touch layout: already worded
+// for touch (AppController shows messages as they are).
+void expectTouchMessage(const std::string& message)
+{
+    EXPECT_FALSE(mentionsMouseOrKeyboard(message)) << "mouse/keyboard words in a touch message: \"" << message << "\"";
 }
 
 std::string readSource(const std::string& relative)
@@ -252,7 +260,7 @@ TEST(TouchWording, EverySketchHintIsTouchReady)
     for (const std::string& hint : hints)
         expectTouchReady(hint);
     for (const std::string& message : h.messages)
-        expectTouchReady(message);
+        expectTouchMessage(message);
 }
 
 TEST(TouchWording, EveryToolExplanationIsTouchReady)
@@ -265,7 +273,7 @@ TEST(TouchWording, EveryToolExplanationIsTouchReady)
         EXPECT_FALSE(h.controller.runTool(tool).ok()) << tool;
     EXPECT_GE(h.messages.size(), 14u);
     for (const std::string& message : h.messages)
-        expectTouchReady(message);
+        expectTouchMessage(message);
 }
 
 TEST(TouchWording, OperationPromptsAreTouchReady)
@@ -324,4 +332,49 @@ TEST(TouchWording, TappingEmptySpaceGivesUpAWaitingAlignOrMirror)
     h.controller.pointerRelease(click);
     ASSERT_NE(h.controller.operation(), nullptr);
     EXPECT_FALSE(h.controller.operation()->prompt().empty());
+}
+
+TEST(TouchWording, NamesInMessagesAreLeftAlone)
+{
+    // Only the app's own instructions are worded for touch: a body (or a
+    // project, a file) named "Click bar" keeps its name in every message.
+    Harness h;
+    h.controller.setTouchLayout(true);
+    const auto addBox = [&](const std::string& name, Vec3 origin, Vec3 size) {
+        auto box = std::make_unique<doc::BoxFeature>();
+        box->origin = origin;
+        box->size = size;
+        EXPECT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>(name, std::move(box)), h.document).ok());
+        h.controller.documentChanged();
+        return h.document.bodies().back()->id();
+    };
+    const Uuid bar = addBox("Click bar", {0, 0, 0}, {100, 10, 10});
+    const Uuid cut = addBox("Cut", {40, -1, -1}, {4, 12, 12});
+    ASSERT_TRUE(h.controller.selectBody(bar, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(cut, true).ok());
+    h.messages.clear();
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    ASSERT_EQ(h.document.body(bar)->shape().solidCount(), 2);
+    const auto pieces = std::find_if(h.messages.begin(), h.messages.end(),
+                                     [](const std::string& m) { return m.find("separate pieces") != std::string::npos; });
+    ASSERT_NE(pieces, h.messages.end());
+    EXPECT_EQ(*pieces, "Click bar is now in 2 separate pieces. To make each piece a body, select it and choose Split into bodies.");
+
+    // The instructions are worded for the input in use.
+    (void)h.controller.keyPress(Key::Escape);
+    ASSERT_TRUE(h.controller.selection().empty());
+    h.messages.clear();
+    EXPECT_FALSE(h.controller.runTool("pushpull").ok());
+    ASSERT_EQ(h.messages.size(), 1u);
+    EXPECT_EQ(h.messages.back(), "Tap a flat face, then drag its arrow or type a distance.");
+    h.controller.setTouchLayout(false);
+    const Status explained = h.controller.runTool("pushpull");
+    EXPECT_EQ(h.messages.back(), "Click a flat face, then drag its arrow or type a distance.");
+    EXPECT_EQ(explained.userMessage(), h.messages.back());
+    // A status that goes to the app as a message (Combine without two bodies).
+    h.controller.setTouchLayout(true);
+    const Status combine = h.controller.triggerAction("union");
+    EXPECT_FALSE(combine.ok());
+    expectTouchMessage(combine.userMessage());
+    EXPECT_NE(combine.userMessage().find("double-tap"), std::string::npos) << combine.userMessage();
 }
