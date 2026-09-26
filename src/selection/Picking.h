@@ -7,6 +7,7 @@
 #include "core/Camera.h"
 #include "core/Uuid.h"
 #include "geometry/Mesh.h"
+#include "selection/PickAccelerator.h"
 
 #include <memory>
 #include <vector>
@@ -18,6 +19,10 @@ enum class PickKind { None, Face, Edge, Profile };
 struct PickTarget {
     Uuid bodyId;
     std::shared_ptr<const geom::Mesh> mesh;
+    // Built once per mesh and kept with it (SceneCache). Without one, every
+    // triangle and edge segment is tested: the reference implementation the
+    // accelerated path must match exactly.
+    std::shared_ptr<const PickAccelerator> accelerator;
 };
 
 struct PickResult {
@@ -41,8 +46,8 @@ struct PickOptions {
 // CPU picking against display meshes. Faces: nearest ray/triangle hit.
 // Edges: nearest projected polyline within tolerance that is not hidden
 // behind the nearest face. Edges win over faces when within tolerance, since
-// they are the smaller target.
-// TODO(OpenShape-M3): add a per-body BVH; brute force is fine for M0-sized models.
+// they are the smaller target. Targets with an accelerator only test the
+// triangles and segments near the ray, with identical results.
 PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Vec2 screen, const PickOptions& options = {});
 
 // Faces only; returns the nearest hit under the cursor (used for orbit pivots).

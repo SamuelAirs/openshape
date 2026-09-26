@@ -1516,7 +1516,7 @@ std::vector<sel::PickTarget> InteractionController::pickTargets() const
     for (const auto& body : document_->bodies())
         if (body->isVisible())
             if (auto mesh = scene_.mesh(body->id()))
-                targets.push_back({body->id(), std::move(mesh)});
+                targets.push_back({body->id(), std::move(mesh), scene_.accelerator(body->id())});
     return targets;
 }
 

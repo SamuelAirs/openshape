@@ -23,6 +23,7 @@
 #include "document/SketchProfiles.h"
 #include "interaction/InteractionController.h"
 #include "interaction/Operation.h"
+#include "selection/PickAccelerator.h"
 #include "sketch/Sketch.h"
 
 #include <chrono>
@@ -190,6 +191,12 @@ int benchEnclosure()
     std::printf("enclosure: %d faces, %d edges, %zu history steps, volume %.0f mm^3\n", shape().faceCount(),
                 shape().edgeCount(), document.body(bodyId)->features().size(), geom::volume(shape()));
     std::printf("tessellate body: %.1f ms (%zu triangles)\n", tessellation, triangles);
+    {
+        const geom::Mesh mesh = geom::tessellate(shape());
+        std::size_t nodes = 0;
+        const double build = timeMs([&] { nodes = sel::PickAccelerator(mesh).triangleNodeCount(); });
+        std::printf("pick accelerator build (once per mesh): %.1f ms (%zu triangle nodes)\n", build, nodes);
+    }
 
     // 1. Push/pull drag on the rim (keeps the chamfer): 8 preview updates.
     const int rim = faceWhere(shape(), [](const geom::FaceInfo& f) { return f.isPlanar() && f.normal.z > 0.999 && f.centroid.z > 39.9; });

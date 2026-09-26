@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 add_library(openshape_selection STATIC
+    PickAccelerator.cpp PickAccelerator.h
     Picking.cpp Picking.h
     Selection.cpp Selection.h
 )

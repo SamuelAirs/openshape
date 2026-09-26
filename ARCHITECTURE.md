@@ -34,7 +34,7 @@ Technology choices and the alternatives considered are in
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
         │         ▼
-        │   selection/  picking (CPU ray/segment/profile), SelectionSet (+signatures)
+        │   selection/  picking (CPU ray/segment/profile, BVH per mesh), SelectionSet (+signatures)
         ▼
  commands/  Command + UndoStack (CreateBody, AddFeature, SetParameter, EditSketch…)
         ▼
@@ -275,6 +275,16 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Shift/Ctrl adds; touch and pen taps are additive by default (no modifier
   keys on tablets); tapping empty space clears. Double-click selects the body.
   `InputProfile` gives touch 3× larger pick/grab tolerances.
+- **Picking acceleration:** `SceneCache` builds a `sel::PickAccelerator`
+  with every body mesh (two bounding-volume hierarchies: triangles and edge
+  segments, median splits, 4 items per leaf; ~9 ms for 25k triangles). Face
+  picking walks the triangle tree for the nearest hit (ties go to the lowest
+  triangle index, like the linear scan); edge picking collects the segments
+  whose boxes come within the pixel tolerance of the pick line (the
+  tolerance times the pixel size at the box's far side, so the cull is
+  conservative) and runs the unchanged per-segment logic on them in mesh
+  order. Results are identical to the linear scan, which remains the path
+  for targets without an accelerator (tests compare the two).
 - **Push/pull shows the size:** `PushPullOperation` places its arrow on the
   face (`geom::pointOnFace`: a washer's centroid is in its hole) and measures
   the part behind it (`geom::faceThickness`: a line into the material must
@@ -465,7 +475,8 @@ disk. Saves are atomic (temp file + rename). See
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
 - Tessellation and previews run synchronously on the GUI thread.
-- Picking is brute force (no BVH).
+- Sketch-profile picking still runs an exact face classifier per region under
+  the cursor (TD-20; ~0.06 ms per hover on the benchmark enclosure).
 - Only linear per-body history. Features may depend on sketches and (Combine)
   on other bodies; `Document::recomputeDependents` propagates changes and
   `dependsOn` prevents cycles.
