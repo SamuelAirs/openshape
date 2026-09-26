@@ -102,7 +102,7 @@ Rectangle {
                             ["Resize a hole", "Click its wall, type the new diameter"],
                             ["Remove a hole or fillet", "Select its face(s), press Delete"],
                             ["Holes for screws", "Flat face → Hole: click or tap where each goes (snaps to the center and edge middles, lines up with the others); M2–M6 with Close fit / Normal fit (ISO 273) or Tap; Through all or a depth; Counterbore / Countersink"],
-                            ["Exact hole positions", "Hole tool: X / Y (Tab) from the face's corner, or From last hole; click a hole to pick it again"],
+                            ["Exact hole positions", "Hole tool: X / Y (Tab) from the face's corner, or From last hole; click a hole to pick it again, Remove hole drops it"],
                             ["Insert for a screw", "Hole rim → Heat-set insert"],
                             ["Seat for a screw head", "Hole rim → Counterbore or Countersink, pick M2–M6 or type the diameter; a counterbore's arrow into the hole sets its depth"],
                             ["Measure", "Select two faces or edges"],

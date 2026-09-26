@@ -23,7 +23,8 @@ struct HoleCut {
     Vec3 direction{0, 0, -1};
     double diameter = 0; // the hole
     // false: the hole is already there (only its head is cut, e.g. a
-    // counterbore on an existing hole); `diameter` is then that hole's.
+    // counterbore on an existing hole); `diameter` is then that hole's, and
+    // `depth` / `throughAll` say how deep it is (emptyDepth).
     bool drillShaft = true;
     double depth = 0;         // shaft depth from the entry surface (ignored when throughAll)
     bool throughAll = false;  // the shaft goes through everything behind the entry
@@ -46,6 +47,12 @@ double headVolume(const HoleCut& hole);
 // material): how far until the line leaves the material. nullopt when the
 // line does not start into material there (e.g. beside the part).
 std::optional<double> materialDepth(const Shape& shape, const Vec3& point, const Vec3& direction);
+// From each of `points` (e.g. across a hole's opening) straight along
+// `direction`: how far the lines run through empty space before they meet
+// the material (how deep a blind hole is), the shortest of them. 0 when one
+// starts in the material (a round edge that is not a hole's); nullopt when
+// none meets any (a hole through the part) or the query fails.
+std::optional<double> emptyDepth(const Shape& shape, const std::vector<Vec3>& points, const Vec3& direction);
 
 // A flat face seen in a frame on its plane (u along xAxis, v along yAxis):
 // its bounding rectangle, and where its straight edges' middles and its

@@ -130,6 +130,12 @@ TEST(Holes, MaterialDepthAlongAHole)
     EXPECT_NEAR(geom::materialDepth(plate.shape(), {-20, 5, 5}, {1, 0, 0}).value_or(-1), 40.0, 1e-7);
     EXPECT_FALSE(geom::materialDepth(plate.shape(), {0, 0, 10}, {0, 0, -1})) << "in the hole: no material";
     EXPECT_FALSE(geom::materialDepth(plate.shape(), {30, 0, 10}, {0, 0, -1})) << "beside the plate";
+    // How deep the empty hole is: through (none), blind 2 mm, or no hole at all.
+    const std::vector<Vec3> across{{0, 0, 10}, {1.2, 0, 10}, {0, -1.2, 10}};
+    EXPECT_FALSE(geom::emptyDepth(plate.shape(), across, {0, 0, -1})) << "through the plate";
+    HoledPlate blind(3.4, 10, 2);
+    EXPECT_NEAR(geom::emptyDepth(blind.shape(), across, {0, 0, -1}).value_or(-1), 2.0, 1e-7);
+    EXPECT_NEAR(geom::emptyDepth(blind.shape(), {{0, 0, 8}}, {0, 0, -1}).value_or(-1), 0.0, 1e-12) << "starts in the material";
 }
 
 // A counterbore on an existing hole takes away exactly the ring
@@ -190,6 +196,33 @@ TEST(Holes, CountersinkOnAHoleRemovesTheFrustum)
     plate.document.featureChanged(id);
     const double h82 = (R - r) / std::tan(41 * kPi / 180);
     EXPECT_NEAR(before - plate.volume(), frustum(R, r, h82) - kPi * r * r * h82, 1e-6);
+}
+
+// A countersink on a blind hole only a little deeper than the countersink
+// (M3: 1.66 mm deep in a 2 mm hole): the cone stops short of the hole's
+// bottom, which stays flat and whole.
+TEST(Holes, CountersinkOnABlindHole)
+{
+    HoledPlate blind(3.4, 10, 2);
+    const double before = blind.volume();
+    blind.document.insertFeature(blind.body, blind.head(doc::HoleKind::Countersink, 6.72, 0, 10));
+    const doc::Body& body = *blind.document.body(blind.body);
+    ASSERT_FALSE(body.hasFailures()) << body.state(2).userMessage;
+    const double R = 3.36, r = 1.7, h = R - r;
+    EXPECT_NEAR(before - blind.volume(), frustum(R, r, h) - kPi * r * r * h, 1e-6);
+    EXPECT_NEAR(flatAreaAt(blind.shape(), 8, 1), kPi * r * r, 1e-6) << "the hole's flat bottom";
+    EXPECT_EQ(countFaces(blind.shape(), geom::SurfaceKind::Cone), 1);
+
+    // In a 1.5 mm hole the same countersink (1.66 mm) is deeper than the hole.
+    HoledPlate shallow(3.4, 10, 1.5);
+    const auto deep = shallow.document.preview(shallow.body, *shallow.head(doc::HoleKind::Countersink, 6.72, 0, 10));
+    EXPECT_FALSE(deep.ok());
+    EXPECT_EQ(deep.userMessage(), "The countersink is deeper than the hole.");
+    // The circle at a blind hole's bottom has material inside: no hole to seat a head on.
+    HoledPlate pocket(3.4, 10, 5);
+    const auto bottom = pocket.document.preview(pocket.body, *pocket.head(doc::HoleKind::Counterbore, 6.5, 2, 5));
+    EXPECT_FALSE(bottom.ok());
+    EXPECT_EQ(bottom.userMessage(), "A counterbore goes around a hole: select the rim of a round hole.");
 }
 
 TEST(Holes, HeadsThatCannotBeMadeAreRefusedWithAReason)

@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 using namespace os;
 using namespace os::interact;
 
@@ -311,4 +313,96 @@ TEST(HoleInteraction, HoleToolNeedsAFlatFace)
     plateWithTopSelected(h);
     ASSERT_TRUE(h.controller.runTool("hole").ok());
     EXPECT_NE(holeTool(h), nullptr);
+}
+
+// Hole again (the palette or the face) keeps the holes placed so far;
+// Remove hole drops the current one and the one before it becomes current.
+TEST(HoleInteraction, HoleAgainKeepsHolesAndRemoveHoleDropsOne)
+{
+    HoleHarness h;
+    plateWithTopSelected(h);
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const HoleOperation* tool = holeTool(h);
+    ASSERT_NE(tool, nullptr);
+    EXPECT_FALSE(h.offers("removeHole")) << "no hole yet";
+    h.clickAt(h.screen({10, 10, 5}));
+    h.clickAt(h.screen({30, 15, 5}));
+    h.clickAt(h.screen({50, 20, 5}));
+    ASSERT_EQ(tool->positions().size(), 3u);
+    ASSERT_TRUE(h.controller.runTool("hole").ok());
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    EXPECT_EQ(holeTool(h), tool) << "the same tool";
+    ASSERT_EQ(tool->positions().size(), 3u) << "the holes are kept";
+
+    EXPECT_TRUE(h.offers("removeHole"));
+    ASSERT_TRUE(h.controller.triggerAction("removeHole").ok());
+    ASSERT_EQ(tool->positions().size(), 2u);
+    EXPECT_EQ(tool->current(), 1);
+    EXPECT_NEAR((tool->positions()[1] - Vec2{30, 15}).length(), 0, 1e-9);
+    // Pick the first hole with its X being typed, and remove it.
+    h.clickAt(h.screen({10, 10, 5}));
+    EXPECT_EQ(tool->current(), 0);
+    ASSERT_TRUE(h.controller.triggerAction("field:x").ok());
+    ASSERT_TRUE(h.controller.triggerAction("removeHole").ok());
+    ASSERT_EQ(tool->positions().size(), 1u);
+    EXPECT_EQ(tool->current(), 0);
+    EXPECT_NEAR((tool->positions()[0] - Vec2{30, 15}).length(), 0, 1e-9);
+    EXPECT_NEAR(tool->value(), 30.0, 1e-9) << "the remaining hole's X";
+    ASSERT_TRUE(h.controller.triggerAction("removeHole").ok());
+    EXPECT_TRUE(tool->positions().empty());
+    EXPECT_EQ(tool->current(), -1);
+    EXPECT_EQ(tool->field(), HoleOperation::Field::Diameter) << "no hole left to move";
+    EXPECT_DOUBLE_EQ(tool->value(), 3.4);
+    EXPECT_FALSE(tool->canCommit());
+    EXPECT_FALSE(h.offers("removeHole"));
+
+    h.clickAt(h.screen({50, 20, 5}));
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.volume(), 9000 - kPi * 1.7 * 1.7 * 5, 1e-6);
+    const auto box = geom::boundingBox(h.document.body(h.body)->shape());
+    EXPECT_NEAR(box.size().x, 60, 1e-7);
+}
+
+// A typed position off the face says so (and blocks Enter) until it is back on it.
+TEST(HoleInteraction, AHoleTypedOffTheFaceIsRefused)
+{
+    HoleHarness h;
+    plateWithTopSelected(h);
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const HoleOperation* tool = holeTool(h);
+    h.clickAt(h.screen({30, 15, 5}));
+    h.clickAt(h.screen({10, 10, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("field:x").ok());
+    EXPECT_EQ(h.controller.setValueText("70"), "Hole 2 is off the face: type an X / Y on it, or Remove hole.");
+    EXPECT_FALSE(tool->canCommit());
+    EXPECT_EQ(h.controller.setValueText("20"), "");
+    EXPECT_TRUE(tool->canCommit());
+    ASSERT_TRUE(h.controller.triggerAction("removeHole").ok());
+    ASSERT_TRUE(h.controller.triggerAction("field:y").ok());
+    EXPECT_EQ(h.controller.setValueText("-1"), "The hole is off the face: type an X / Y on it, or Remove hole.");
+}
+
+// Snaps that would put a hole off the face are not taken: the face's center
+// in its hole, or a line-up that crosses into the hole.
+TEST(HoleInteraction, SnapsStayOnTheFace)
+{
+    HoleHarness h;
+    h.blockWithHole(20); // 40 x 40 x 10, a 20 mm hole through the middle
+    h.clickAt(h.screen({15, 15, 10}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const HoleOperation* tool = holeTool(h);
+    ASSERT_NE(tool, nullptr);
+    // The center (0, 0) is within reach but in the hole; so are the line-ups with it.
+    auto [p, what] = tool->snap({7.2, 7.2, 10}, 10.5);
+    EXPECT_NEAR((p - Vec2{7.2, 7.2}).length(), 0, 1e-9);
+    EXPECT_EQ(what, "");
+    // In line with the center (x = 0) would be just inside the hole's rim.
+    std::tie(p, what) = tool->snap({1.4, 9.95, 10}, 1.5);
+    EXPECT_NEAR((p - Vec2{1.4, 9.95}).length(), 0, 1e-9);
+    EXPECT_EQ(what, "");
+    // Farther out the same line-up is on the face.
+    std::tie(p, what) = tool->snap({0.3, 15, 10}, 1.5);
+    EXPECT_NEAR((p - Vec2{0, 15}).length(), 0, 1e-9);
+    EXPECT_EQ(what, "aligned");
 }

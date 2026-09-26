@@ -1080,13 +1080,16 @@ void ExtrudeFeature::writeParams(json& out) const
         refs.push_back({{"point", json::array({r.interiorPoint.x, r.interiorPoint.y})}, {"area", r.area}});
     out["sketch"] = sketchId.toString();
     out["profiles"] = refs;
-    out["distance"] = distance;
+    // A drafted extrusion keeps its distance inside "draft", so builds that
+    // predate drafts refuse the file instead of extruding straight walls.
+    if (draftAngle != 0)
+        out["draft"] = {{"angle", draftAngle}, {"distance", distance}};
+    else
+        out["distance"] = distance;
     out["mode"] = std::string(toString(mode));
     out["throughAll"] = throughAll;
     if (symmetric)
         out["symmetric"] = true;
-    if (draftAngle != 0)
-        out["draft"] = draftAngle;
 }
 
 Status ExtrudeFeature::readParams(const json& in)
@@ -1097,7 +1100,17 @@ Status ExtrudeFeature::readParams(const json& in)
     if (!in.contains("sketch") || !in["sketch"].is_string())
         return bad("Extrude: missing sketch");
     const auto id = Uuid::parse(in["sketch"].get<std::string>());
-    const auto d = numberFrom(in, "distance");
+    auto d = numberFrom(in, "distance");
+    double draft = 0;
+    if (in.contains("draft")) {
+        // { "angle", "distance" }: the distance is only there.
+        const json& taper = in["draft"];
+        const auto angle = taper.is_object() ? numberFrom(taper, "angle") : std::nullopt;
+        if (d || !angle || !std::isfinite(*angle) || std::abs(*angle) > 89.0 * kPi / 180.0 + 1e-12)
+            return bad("Extrude: bad draft");
+        draft = *angle;
+        d = numberFrom(taper, "distance");
+    }
     if (!id || !d || std::abs(*d) < 1e-6 || !in.contains("profiles") || !in["profiles"].is_array()
         || !in.contains("mode") || !in["mode"].is_string())
         return bad("Extrude: bad fields");
@@ -1125,13 +1138,7 @@ Status ExtrudeFeature::readParams(const json& in)
     distance = *d;
     throughAll = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
     symmetric = in.contains("symmetric") && in["symmetric"].is_boolean() && in["symmetric"].get<bool>();
-    draftAngle = 0;
-    if (in.contains("draft")) {
-        const auto draft = numberFrom(in, "draft");
-        if (!draft || !std::isfinite(*draft) || std::abs(*draft) > 89.0 * kPi / 180.0 + 1e-12)
-            return bad("Extrude: bad draft");
-        draftAngle = *draft;
-    }
+    draftAngle = draft;
     return okStatus();
 }
 
@@ -1227,6 +1234,21 @@ Result<geom::Shape> HoleFeature::compute(const geom::Shape& input, const EvalCon
     cut.headDiameter = diameter;
     cut.headDepth = depth;
     cut.headAngle = angle;
+    // How deep the hole is: empty along its axis and across its opening
+    // (nullopt: through the part). The head must end above its bottom, and a
+    // countersink's cone stops short of it.
+    const auto [u, v] = perpendiculars(placement->direction);
+    std::vector<Vec3> across{placement->center};
+    for (int i = 0; i < 4; ++i)
+        across.push_back(placement->center
+                         + (u * std::cos(kPi / 2 * i) + v * std::sin(kPi / 2 * i)) * (0.75 * placement->rimRadius));
+    const auto holeDepth = geom::emptyDepth(input, across, placement->direction);
+    if (holeDepth && *holeDepth < 1e-6)
+        return R::failure(ErrorCode::InvalidArgument,
+                          "A " + what + " goes around a hole: select the rim of a round hole.",
+                          "Hole: no empty hole inside the rim");
+    cut.throughAll = !holeDepth;
+    cut.depth = holeDepth.value_or(0);
     if (!(diameter > cut.diameter + 1e-6))
         return R::failure(ErrorCode::InvalidArgument,
                           "The " + what + " must be wider than the hole (" + millimeters(cut.diameter) + ").",
@@ -1238,11 +1260,15 @@ Result<geom::Shape> HoleFeature::compute(const geom::Shape& input, const EvalCon
         return R::failure(ErrorCode::InvalidArgument,
                           "The " + what + " would reach through the part: it is " + millimeters(*thickness) + " thick here.",
                           "Hole: head reach " + std::to_string(reach) + " >= thickness " + std::to_string(*thickness));
+    if (holeDepth && reach >= *holeDepth - 1e-6)
+        return R::failure(ErrorCode::InvalidArgument, "The " + what + " is deeper than the hole.",
+                          "Hole: head reach " + std::to_string(reach) + " >= hole depth " + std::to_string(*holeDepth));
     auto result = geom::drillHoles(input, {cut});
     if (!result)
         return result;
     // The head takes away exactly its ring (or cone) around the hole; more
-    // means the hole was shallower than the head.
+    // means the hole was narrower or shallower than the head (e.g. a step
+    // inside it).
     const double removed = geom::volume(input) - geom::volume(result.value());
     const double expected = geom::headVolume(cut);
     if (removed > expected * (1 + 1e-6) + 1e-6)

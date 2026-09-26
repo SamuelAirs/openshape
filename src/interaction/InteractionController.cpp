@@ -1176,6 +1176,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
         if (hole->current() >= 0) {
             actions.push_back({"field:x", "X", hole->field() == Field::X});
             actions.push_back({"field:y", "Y", hole->field() == Field::Y});
+            actions.push_back({"removeHole", "Remove hole", false});
         }
         if (hole->positions().size() >= 2)
             actions.push_back({"fromLast", "From last hole", hole->fromLastHole()});
@@ -1332,7 +1333,11 @@ Status InteractionController::triggerAction(const std::string& id)
             hole->nextField(*document_);
         else if (id == "fromLast")
             hole->setFromLastHole(!hole->fromLastHole(), *document_);
-        else
+        else if (id == "removeHole")
+            hole->removeCurrent(*document_);
+        else if (id == "hole") {
+            // Hole again (palette or face): keep the holes placed so far.
+        } else
             handled = false;
         if (handled) {
             holeSettings_ = hole->settings();

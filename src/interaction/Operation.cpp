@@ -900,6 +900,7 @@ std::unique_ptr<HoleOperation> HoleOperation::create(const doc::Document& docume
     if (!frame || !signature || !info)
         return nullptr;
     auto op = std::unique_ptr<HoleOperation>(new HoleOperation(bodyId, doc::FaceRef{faceIndex, *signature}, *frame));
+    op->shape_ = shape;
     op->outline_ = geom::faceOutline(shape, faceIndex, frame->origin, frame->xAxis, frame->yAxis);
     if (!op->outline_.valid)
         return nullptr;
@@ -987,16 +988,22 @@ void HoleOperation::applyPreset()
     diameter_ = presetDiameter();
 }
 
+bool HoleOperation::onFace(Vec2 p) const
+{
+    return geom::faceContains(shape_, face_.indexHint, frame_.toWorld(p));
+}
+
 std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapDistance) const
 {
-    Vec2 p = frame_.toLocal(world);
+    const Vec2 p = frame_.toLocal(world);
     const Vec2 center{(outline_.minU + outline_.maxU) / 2, (outline_.minV + outline_.maxV) / 2};
-    // Onto a point: the center, or the middle of a straight edge.
+    // Onto a point: the center (unless it is off the face, e.g. in an
+    // L-shaped face's notch or a ring's hole), or the middle of a straight edge.
     std::optional<Vec2> best;
     std::string what;
     double bestDistance = snapDistance;
     auto consider = [&](const Vec2& q, const char* name) {
-        if (const double d = (q - p).length(); d <= bestDistance) {
+        if (const double d = (q - p).length(); d <= bestDistance && onFace(q)) {
             bestDistance = d;
             best = q;
             what = name;
@@ -1028,11 +1035,15 @@ std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapD
             v = q.y;
         }
     }
-    if (u)
-        p.x = *u;
-    if (v)
-        p.y = *v;
-    return {p, u || v ? "aligned" : ""};
+    // Lined up in both directions if that stays on the face, else in one.
+    for (const auto& [x, y] : {std::pair{u, v}, std::pair{u, std::optional<double>()}, std::pair{std::optional<double>(), v}}) {
+        if (!x && !y)
+            continue;
+        const Vec2 q{x.value_or(p.x), y.value_or(p.y)};
+        if (onFace(q))
+            return {q, "aligned"};
+    }
+    return {p, ""};
 }
 
 std::string HoleOperation::placeAt(const Vec3& world, double snapDistance, const doc::Document& document)
@@ -1127,6 +1138,19 @@ void HoleOperation::setFromLastHole(bool on, const doc::Document& document)
     setValue(value(), document);
 }
 
+void HoleOperation::removeCurrent(const doc::Document& document)
+{
+    if (current_ < 0)
+        return;
+    storeValue();
+    positions_.erase(positions_.begin() + current_);
+    current_ = positions_.empty() ? -1 : std::max(current_ - 1, 0);
+    if (current_ < 0 && (field_ == Field::X || field_ == Field::Y))
+        field_ = Field::Diameter; // no hole left to move
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+}
+
 std::unique_ptr<doc::Feature> HoleOperation::makeFeature(double value) const
 {
     auto feature = std::make_unique<doc::HolesFeature>();
@@ -1154,6 +1178,16 @@ Result<geom::Shape> HoleOperation::computePreview(double value, const doc::Docum
             return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "hole: body");
         return Result<geom::Shape>::success(body->shape());
     }
+    // A hole typed (or placed) off the face: say so here; the step's own
+    // message ("no longer lies on its face") is for upstream changes.
+    const std::vector<Vec2> live = livePositions(value);
+    for (std::size_t i = 0; i < live.size(); ++i)
+        if (!onFace(live[i]))
+            return Result<geom::Shape>::failure(
+                ErrorCode::InvalidArgument,
+                (live.size() == 1 ? std::string("The hole") : "Hole " + std::to_string(i + 1))
+                    + " is off the face: type an X / Y on it, or Remove hole.",
+                "hole: position " + std::to_string(i) + " off the face");
     return Operation::computePreview(value, document);
 }
 

@@ -162,9 +162,25 @@ TEST(ExtrudeDraft, ParameterAndRoundTrip)
     ASSERT_TRUE(again.ok()) << again.developerMessage();
     EXPECT_NEAR(geom::volume(again.value()->body(body)->shape()), expected, 1e-6);
     EXPECT_EQ(io::documentToJson(*again.value()), json);
+    // The distance of a drafted extrusion is only inside "draft": builds that
+    // predate drafts (which require "distance") refuse the file instead of
+    // extruding straight walls.
+    const auto& params = json["bodies"][0]["features"][0]["params"];
+    EXPECT_FALSE(params.contains("distance"));
+    ASSERT_TRUE(params.contains("draft") && params["draft"].is_object());
+    EXPECT_DOUBLE_EQ(params["draft"]["angle"].get<double>(), degrees(3));
+    EXPECT_DOUBLE_EQ(params["draft"]["distance"].get<double>(), 10.0);
+    auto twice = json;
+    twice["bodies"][0]["features"][0]["params"]["distance"] = 10.0;
+    EXPECT_FALSE(io::documentFromJson(twice).ok()) << "a distance in both places is refused";
     auto broken = json;
     for (auto& b : broken["bodies"])
         for (auto& step : b["features"])
-            step["params"]["draft"] = 3.0; // 172 degrees
+            step["params"]["draft"]["angle"] = 3.0; // 172 degrees
     EXPECT_FALSE(io::documentFromJson(broken).ok());
+    auto bare = json;
+    for (auto& b : bare["bodies"])
+        for (auto& step : b["features"])
+            step["params"]["draft"] = degrees(3); // a bare number (never written)
+    EXPECT_FALSE(io::documentFromJson(bare).ok());
 }

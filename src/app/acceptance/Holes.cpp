@@ -281,8 +281,145 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
     };
 }
 
+QString positionText(const interact::HoleOperation* tool, std::size_t index)
+{
+    if (!tool)
+        return QStringLiteral("no Hole tool");
+    const auto live = tool->livePositions(tool->value());
+    if (index >= live.size())
+        return QStringLiteral("%1 holes").arg(live.size());
+    return AcceptanceRunner::num(live[index].x) + QStringLiteral(", ") + AcceptanceRunner::num(live[index].y);
+}
+
+// The Hole tool from the selected face's own Hole button, with the rest of
+// its chip: a screw size, the Tap and Normal fit presets, a blind depth
+// (Through all off, the Depth field), a counterbore, a hole placed From last
+// hole, and a hole removed again. The holes are placed right to left so the
+// chip (to the right of the current hole) never covers the next click.
+std::vector<AcceptanceRunner::Step> faceToolSteps(AcceptanceRunner& r)
+{
+    return {
+        [&r] {
+            r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+            r.check(r.app().bodyCount() == 1, "hole face: a box");
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.click(r.screenPoint(3, -3, 20));
+            r.type(QStringLiteral("10"));
+            r.key(Qt::Key_Return);
+            r.check(std::abs(r.bodyHeight() - 10) < 1e-6, "hole face: a 20 x 20 x 10 plate", AcceptanceRunner::num(r.bodyHeight()));
+            r.app().interaction().fitAll(false);
+        },
+        [] {},
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_hole")), "hole face: the selected top face offers Hole");
+            r.check(holeTool(r) != nullptr, "hole face: the Hole tool on that face", r.app().operationTitle());
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_size:3")), "hole face: M4");
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->settings().screw == 3, "hole face: the M4 size is chosen");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_fit:tap")), "hole face: Tap");
+            const auto* tool = holeTool(r);
+            r.check(tool && std::abs(tool->diameter() - 3.3) < 1e-9, "hole face: M4 tap drill is 3.3 mm (ISO 2306)",
+                    tool ? AcceptanceRunner::num(tool->diameter()) : QString());
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_fit:normal")), "hole face: Normal fit");
+            const auto* tool = holeTool(r);
+            r.check(tool && std::abs(tool->diameter() - 4.5) < 1e-9, "hole face: M4 normal fit is 4.5 mm (ISO 273)",
+                    tool ? AcceptanceRunner::num(tool->diameter()) : QString());
+            r.check(tool && tool->settings().throughAll, "hole face: through all to start with");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_throughAll")), "hole face: Through all off");
+            const auto* tool = holeTool(r);
+            r.check(tool && !tool->settings().throughAll, "hole face: a blind hole");
+            r.check(r.app().operationValueLabel() == QStringLiteral("Depth"), "hole face: the chip asks for the depth",
+                    r.app().operationValueLabel());
+        },
+        [&r] { r.type(QStringLiteral("8")); },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_field:diameter")), "hole face: the diameter field");
+        },
+        [&r] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("Diameter"), "hole face: the chip shows the diameter",
+                    r.app().operationValueLabel());
+            r.check(r.clickItem(QStringLiteral("action_field:depth")), "hole face: the Depth field");
+        },
+        [&r] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("Depth") && r.app().operationValueText() == QStringLiteral("8.00 mm"),
+                    "hole face: the depth kept its typed 8 mm", r.app().operationValueText());
+            r.check(r.clickItem(QStringLiteral("action_head:counterbore")), "hole face: Counterbore");
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->settings().head == doc::HoleKind::Counterbore, "hole face: counterbored holes");
+        },
+        [&r] {
+            // Right to left: a hole, then one roughly 9 mm to its left (in line with it).
+            r.click(r.screenPoint(5, -5, 10));
+            r.click(r.screenPoint(-4, -5, 10));
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->positions().size() == 2, "hole face: two clicks, two holes", positionText(tool, 2));
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_fromLast")), "hole face: From last hole");
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->fromLastHole(), "hole face: measured from the last hole");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_field:x")), "hole face: X field");
+        },
+        [&r] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("X from last hole"), "hole face: X from the last hole",
+                    r.app().operationValueLabel());
+            r.type(QStringLiteral("-10"));
+        },
+        [&r] {
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->livePositions(tool->value()).size() == 2
+                        && (tool->livePositions(tool->value())[1] - Vec2{-5, -5}).length() < 1e-9,
+                    "hole face: 10 mm left of the first hole", positionText(tool, 1));
+            // A third hole by mistake, then removed.
+            r.click(r.screenPoint(-5, 5, 10));
+            r.check(tool && tool->positions().size() == 3, "hole face: a third hole", positionText(tool, 3));
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_removeHole")), "hole face: Remove hole");
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->positions().size() == 2 && tool->current() == 1, "hole face: back to two holes",
+                    positionText(tool, 2));
+        },
+        [&r] {
+            r.screenshot(QStringLiteral("hole_tool_face_preview"));
+            r.key(Qt::Key_Return);
+            const double rr = 2.25, R = 4.0;
+            const double oneHole = kPi * rr * rr * 8 + kPi * (R * R - rr * rr) * 4.4;
+            r.check(std::abs(r.bodyVolume() - (4000 - 2 * oneHole)) < 1e-3,
+                    "hole face: two M4 counterbored holes 8 mm deep", AcceptanceRunner::num(r.bodyVolume()));
+            const auto& features = r.body(0).features();
+            const auto* holes = features.empty() ? nullptr : dynamic_cast<const doc::HolesFeature*>(features.back().get());
+            r.check(holes && holes->positions.size() == 2 && (holes->positions[0] - Vec2{5, -5}).length() < 1e-9
+                        && (holes->positions[1] - Vec2{-5, -5}).length() < 1e-9,
+                    "hole face: the holes at (5, -5) and (-5, -5)");
+            bool listed = false;
+            for (const auto& row : r.app().interaction().historyRows())
+                listed = listed
+                      || (row.name == "Holes" && row.detail.find("8.00 mm deep") != std::string::npos
+                          && row.detail.find("Counterbore") != std::string::npos
+                          && row.detail.find("M4 normal fit") != std::string::npos);
+            r.check(listed, "hole face: the Model panel lists them");
+        },
+        [] {},
+        [&r] { r.screenshot(QStringLiteral("hole_tool_face")); },
+    };
+}
+
 const bool registered = registerAcceptanceScenario({QStringLiteral("holes"), 70, steps});
 const bool registeredTool = registerAcceptanceScenario({QStringLiteral("hole_tool"), 71, toolSteps});
+const bool registeredFaceTool = registerAcceptanceScenario({QStringLiteral("hole_tool_face"), 73, faceToolSteps});
 
 } // namespace
 } // namespace os::app

@@ -85,11 +85,13 @@ Rules:
 - `Extrude` may carry `"throughAll": true` (cuts only): the cut extends
   through the whole body in the direction of `distance`; and
   `"symmetric": true`: centered on the sketch plane, `|distance|` being the
-  total thickness; and `"draft": radians` (absent = 0, |draft| <= 89
-  degrees): the side walls lean in by that angle as they go away from the
-  sketch (both ways when symmetric; negative leans out), corners staying
-  sharp. A draft with `throughAll` is refused. Builds from before drafts
-  ignore the field and extrude straight walls.
+  total thickness; and `"draft": { "angle": radians, "distance" }` (absent
+  = no draft; |angle| <= 89 degrees): the side walls lean in by that angle
+  as they go away from the sketch (both ways when symmetric; negative leans
+  out), corners staying sharp. A drafted extrusion writes its `distance`
+  **only** inside `draft` (both places: refused), so builds that predate
+  drafts refuse the file ("invalid extrusion") instead of extruding
+  straight walls. A draft with `throughAll` is refused.
 - `PushPull` params: `{ "face": faceRef, "distance" }` plus optional
   `"keepEdges": true` (fillets and chamfers around the face move with it
   where possible; steps without it are the plain prism + boolean).

@@ -513,7 +513,7 @@ ApplicationWindow {
             return "Add a box, or start a sketch."
         if (app.operationActive && app.operationTitle === "Hole")
             return "Click to add holes (they snap to the center and edge middles and line up with each other) · "
-                 + "X / Y (Tab) type the current hole's position · click a hole to pick it · Enter applies"
+                 + "X / Y (Tab) type the current hole's position · click a hole to pick it (Remove hole drops it) · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
             return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Countersink"))

@@ -161,15 +161,17 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Holes.h`: `drillHoles` cuts any number of round holes in one boolean
   (`HoleCut`: entry point, direction, diameter, depth or through all, and a
   counterbore or countersink head; `drillShaft = false` cuts only the head
-  on an existing hole). Tools are analytic cylinders and cones (the shaft
-  starts inside the head, a countersink cone runs on past the hole's wall,
-  so no faces coincide). Checked: sizes before any kernel call, then the
+  on an existing hole, whose depth or through-all is then given). Tools are
+  analytic cylinders and cones (the shaft starts inside the head, a
+  countersink cone runs on past the hole's wall, halfway to a blind hole's
+  bottom at most, so no faces coincide). Checked: sizes before any kernel call, then the
   cut must remove something and no more than the tools hold. `headVolume`
   is the exact ring or frustum a head takes from solid material;
   `materialDepth` measures along a line how much material follows a
-  surface point (the side is read from the normal of the first face hit:
-  `BRepClass3d_SolidClassifier` crashed inside Extrema on a plain holed
-  plate).
+  surface point, `emptyDepth` how much empty space follows a point (a
+  hole's depth from its opening; 0 inside material). The side is read from
+  the normal of the first face hit: `BRepClass3d_SolidClassifier` crashed
+  inside Extrema on a plain holed plate.
 
 ## Document model (`document/`)
 
@@ -191,7 +193,8 @@ Document (UUID, display unit)
   (base features when they make a new body); PushPull, Fillet, Chamfer,
   Shell, Hole (at a circular rim: a plain cylinder such as a heat-set
   insert's pilot hole, or a counterbore / countersink for a screw head,
-  whose exact ring or frustum volume is verified; sizes from
+  whose exact ring or frustum volume is verified, and which measures the
+  existing hole's depth first (`geom::emptyDepth`); sizes from
   `document/Fasteners`, the one place for screw and insert tables with
   their sources), Holes (the Hole tool: holes at points on a flat face,
   stored in the face's frame like a sketch on it, so they follow the face;
@@ -413,8 +416,12 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `snap()` puts a click within two pick tolerances onto the face's center
   (of its outline's bounding rectangle, `geom::faceOutline`) or a straight
   edge's middle, and otherwise lines X and Y up with those, with circles on
-  the face and with the holes placed so far; hovering shows where the hole
-  would go. A click on a placed hole makes it the current one. The chip
+  the face and with the holes placed so far (a snap that lands off the
+  face, e.g. the center of a ring-shaped face, is not taken); hovering shows
+  where the hole would go. A click on a placed hole makes it the current
+  one; Remove hole drops it. A position typed off the face fails the preview
+  with "Hole N is off the face" (the step's own "no longer lies on its
+  face" is for upstream changes). Hole again keeps the placed holes. The chip
   edits one field at a time (`field:` actions, Tab = `nextField`):
   diameter, depth (when not through all) and the current hole's X / Y from
   the face's reference corner (the outline's minimum corner) or from the

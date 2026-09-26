@@ -596,11 +596,12 @@ struct HoleSettings {
 // clicks or taps (each click adds one; all of them are one step). Clicks
 // snap to the face's center (of its outline's bounding rectangle) and the
 // middles of its straight edges, and otherwise line up (in X or Y) with
-// those, with circles on the face and with the holes placed so far. The
-// value chip edits one field at a time: the diameter (screw size x fit
-// presets), the depth, or the current hole's X / Y offset from the face's
-// reference corner (the outline's minimum corner in the face frame) or from
-// the hole placed before it. Clicking a placed hole makes it the current one.
+// those, with circles on the face and with the holes placed so far; a snap
+// that would put the hole off the face is not taken. The value chip edits
+// one field at a time: the diameter (screw size x fit presets), the depth,
+// or the current hole's X / Y offset from the face's reference corner (the
+// outline's minimum corner in the face frame) or from the hole placed before
+// it. Clicking a placed hole makes it the current one; Remove hole drops it.
 class HoleOperation final : public Operation {
 public:
     enum class Field { Diameter, Depth, X, Y };
@@ -647,13 +648,16 @@ public:
     void setHead(doc::HoleKind head, const doc::Document& document);
     bool fromLastHole() const { return fromLastHole_; }
     void setFromLastHole(bool on, const doc::Document& document);
+    // Removes the current hole; the one placed before it (or the next) becomes current.
+    void removeCurrent(const doc::Document& document);
 
     // The holes' positions with the active field's `value` applied.
     std::vector<Vec2> livePositions(double value) const;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
-    // Before the first hole: the body as it is (no error, nothing to apply yet).
+    // Before the first hole: the body as it is (no error, nothing to apply
+    // yet). A hole off the face (typed there) fails with a message.
     Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
     bool neutralIsIdentity() const override { return false; }
 
@@ -665,6 +669,8 @@ private:
     double fieldValue(Field field) const;
     // Applies the screw preset to the diameter (and the head sizes).
     void applyPreset();
+    bool onFace(Vec2 p) const;
+    geom::Shape shape_; // the body as the tool started (previews never change it)
     doc::FaceRef face_;
     doc::HoleFrame frame_;
     geom::FaceOutline outline_;

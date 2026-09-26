@@ -80,9 +80,10 @@ std::string checkHole(const HoleCut& h)
     const double d = h.diameter;
     if (!(d > kMinLength) || !std::isfinite(d))
         return "The hole diameter must be greater than zero.";
-    if (h.drillShaft && !h.throughAll && (!(h.depth > kMinLength) || !std::isfinite(h.depth)))
-        return "The hole depth must be greater than zero.";
-    const bool blind = h.drillShaft && !h.throughAll;
+    if (!h.throughAll && (!(h.depth > kMinLength) || !std::isfinite(h.depth)))
+        return h.drillShaft ? "The hole depth must be greater than zero." : "There is no hole at this edge.";
+    // A blind hole (drilled now, or already there): the head must end above its bottom.
+    const bool blind = !h.throughAll;
     switch (h.head) {
     case HoleHead::None: break;
     case HoleHead::Counterbore:
@@ -126,9 +127,10 @@ Result<std::vector<Tool>> holeTools(const HoleCut& h, double throughLength)
     }
     case HoleHead::Countersink: {
         // The cone runs on past the hole's wall (into the shaft, which is
-        // empty) so the two meet in a clean circle, not edge on face.
+        // empty) so the two meet in a clean circle, not edge on face; in a
+        // blind hole (new or existing) it stops halfway to the bottom.
         const double t = std::tan(h.headAngle / 2);
-        const double past = h.drillShaft && !h.throughAll ? std::min(0.5 * r / t, 0.5 * (shaftEnd - reach)) : 0.5 * r / t;
+        const double past = h.throughAll ? 0.5 * r / t : std::min(0.5 * r / t, 0.5 * (shaftEnd - reach));
         const double end = reach + past;
         const double R0 = h.headDiameter / 2;
         auto tool = coneTool(above, dir, R0 + kLead * t, R0 - end * t, end + kLead);
@@ -177,38 +179,78 @@ double headVolume(const HoleCut& hole)
     return 0;
 }
 
+namespace {
+
+// Where a line from `point` along `direction` first meets the shape's
+// surface: how far, and whether it leaves the material there (then it
+// started in it). nullopt: it meets nothing.
+struct SurfaceHit {
+    double distance = 0;
+    bool leaving = false;
+};
+
+// (BRepClass3d_SolidClassifier crashed inside Extrema on a plain plate with
+// a hole, so the side a line starts on is read from the first face it meets
+// instead.) `intersector` is loaded with the shape.
+std::optional<SurfaceHit> firstHit(IntCurvesFace_ShapeIntersector& intersector, const Vec3& point, const Vec3& direction)
+{
+    const Vec3 d = direction.normalized();
+    constexpr double kStep = 1e-4;
+    intersector.Perform(gp_Lin(toPnt(point), toDir(d)), kStep, Precision::Infinite());
+    if (!intersector.IsDone() || intersector.NbPnt() == 0)
+        return std::nullopt;
+    intersector.SortResult();
+    const TopoDS_Face& face = intersector.Face(1);
+    BRepAdaptor_Surface surface(face);
+    gp_Pnt p;
+    gp_Vec du, dv;
+    surface.D1(intersector.UParameter(1), intersector.VParameter(1), p, du, dv);
+    gp_Vec normal = du.Crossed(dv);
+    if (normal.Magnitude() < 1e-12)
+        return std::nullopt;
+    if (face.Orientation() == TopAbs_REVERSED)
+        normal.Reverse();
+    return SurfaceHit{intersector.WParameter(1), normal.Normalized().Dot(toVec(d)) > 1e-6};
+}
+
+} // namespace
+
 std::optional<double> materialDepth(const Shape& shape, const Vec3& point, const Vec3& direction)
 {
     if (shape.isNull() || direction.length() < 1e-12)
         return std::nullopt;
     try {
-        // (BRepClass3d_SolidClassifier crashed inside Extrema on a plain
-        // plate with a hole, so the side the line starts on is read from the
-        // first face it meets instead: leaving the material means it started
-        // in it.)
-        const Vec3 d = direction.normalized();
-        constexpr double kStep = 1e-4;
         IntCurvesFace_ShapeIntersector intersector;
         intersector.Load(occ(shape), Precision::Confusion());
-        intersector.Perform(gp_Lin(toPnt(point), toDir(d)), kStep, Precision::Infinite());
-        if (!intersector.IsDone() || intersector.NbPnt() == 0)
-            return std::nullopt;
-        intersector.SortResult();
-        const TopoDS_Face& face = intersector.Face(1);
-        BRepAdaptor_Surface surface(face);
-        gp_Pnt p;
-        gp_Vec du, dv;
-        surface.D1(intersector.UParameter(1), intersector.VParameter(1), p, du, dv);
-        gp_Vec normal = du.Crossed(dv);
-        if (normal.Magnitude() < 1e-12)
-            return std::nullopt;
-        if (face.Orientation() == TopAbs_REVERSED)
-            normal.Reverse();
-        if (normal.Normalized().Dot(toVec(d)) < 1e-6)
-            return std::nullopt; // the line enters the material there: it started outside
-        return intersector.WParameter(1);
+        const auto hit = firstHit(intersector, point, direction);
+        if (!hit || !hit->leaving)
+            return std::nullopt; // nothing there, or the line enters the material: it started outside
+        return hit->distance;
     } catch (const Standard_Failure& failure) {
         OS_LOG(Warning, Kernel) << "materialDepth failed: " << describeFailure(failure);
+        return std::nullopt;
+    }
+}
+
+std::optional<double> emptyDepth(const Shape& shape, const std::vector<Vec3>& points, const Vec3& direction)
+{
+    if (shape.isNull() || direction.length() < 1e-12)
+        return std::nullopt;
+    try {
+        IntCurvesFace_ShapeIntersector intersector;
+        intersector.Load(occ(shape), Precision::Confusion());
+        std::optional<double> shortest;
+        for (const Vec3& point : points) {
+            const auto hit = firstHit(intersector, point, direction);
+            if (!hit)
+                continue;
+            const double depth = hit->leaving ? 0.0 : hit->distance;
+            if (!shortest || depth < *shortest)
+                shortest = depth;
+        }
+        return shortest;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "emptyDepth failed: " << describeFailure(failure);
         return std::nullopt;
     }
 }
