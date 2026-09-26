@@ -8,6 +8,7 @@
 #include "core/Timer.h"
 #include "geometry/internal/ShapeData.h"
 
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -19,7 +20,6 @@
 #include <IFSelect_ReturnStatus.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
-#include <BRepAdaptor_Surface.hxx>
 #include <ShapeFix_Edge.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <ShapeFix_Solid.hxx>

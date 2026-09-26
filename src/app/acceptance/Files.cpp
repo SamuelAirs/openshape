@@ -176,6 +176,9 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app, s] {
         s->projectB = s->dir + QStringLiteral("/files_b.openshape");
         QFile::remove(s->projectB);
+        // Only this scenario's projects in the list (others ran before it).
+        app.clearRecentFiles();
+        r.check(app.openProject(QUrl::fromLocalFile(s->project)), "open the imported project again (recent: A)");
         app.newDocument();
         r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
         r.check(app.saveProjectAs(QUrl::fromLocalFile(s->projectB)), "save a second project (B)");
