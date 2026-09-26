@@ -511,4 +511,36 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
     return document;
 }
 
+Result<std::vector<unsigned char>> readProjectThumbnail(const std::filesystem::path& path)
+{
+    using R = Result<std::vector<unsigned char>>;
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec))
+        return R::failure(ErrorCode::FileNotFound, "The project file could not be found.", "not a file: " + pathString(path));
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size == 0 || size > kMaxProjectFileBytes)
+        return R::failure(ErrorCode::FileFormatError, "This is not an OpenShape project.", "bad file size: " + pathString(path));
+    int error = 0;
+    ZipArchive archive;
+    archive.archive = zip_open(pathString(path).c_str(), ZIP_RDONLY, &error); // UTF-8 names on Windows too
+    if (!archive.archive)
+        return R::failure(ErrorCode::FileFormatError, "This is not an OpenShape project.",
+                          "zip_open failed (" + std::to_string(error) + "): " + pathString(path));
+    const zip_int64_t index = zip_name_locate(archive.archive, "thumbnail.png", 0);
+    if (index < 0)
+        return R::failure(ErrorCode::FileFormatError, "This project has no preview.", "no thumbnail.png");
+    zip_stat_t st;
+    zip_stat_init(&st);
+    if (zip_stat_index(archive.archive, zip_uint64_t(index), 0, &st) != 0 || !(st.valid & ZIP_STAT_SIZE)
+        || st.size > kMaxThumbnailBytes || st.size < 8)
+        return R::failure(ErrorCode::FileFormatError, "This project's preview is damaged.", "thumbnail.png size");
+    auto bytes = readEntry(archive.archive, index);
+    if (!bytes)
+        return R::failureFrom(bytes);
+    static const unsigned char kSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    if (std::memcmp(bytes.value().data(), kSignature, 8) != 0)
+        return R::failure(ErrorCode::FileFormatError, "This project's preview is damaged.", "thumbnail.png is not a PNG");
+    return R::success(std::vector<unsigned char>(bytes.value().begin(), bytes.value().end()));
+}
+
 } // namespace os::io

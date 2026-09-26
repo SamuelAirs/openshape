@@ -34,6 +34,7 @@ inline constexpr const char* kProjectExtension = ".openshape";
 inline constexpr std::uintmax_t kMaxProjectFileBytes = 1024ull * 1024 * 1024;
 inline constexpr std::uint64_t kMaxEntryBytes = 256ull * 1024 * 1024;
 inline constexpr std::int64_t kMaxEntries = 10000;
+inline constexpr std::uint64_t kMaxThumbnailBytes = 4ull * 1024 * 1024;
 
 nlohmann::json documentToJson(const doc::Document& document);
 // Reads one archive entry by name for documentFromJson (the geometry of
@@ -68,6 +69,12 @@ Result<std::string> buildProjectArchive(const ProjectData& data);
 // Writes <path>.tmp, then renames it over `path`: a reader never sees half a file.
 Status writeFileAtomically(const std::filesystem::path& path, const std::string& bytes);
 Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path);
+
+// Only the thumbnail.png of a project (the start screen shows many): reads
+// the archive's directory and that one entry, nothing else. Fails when the
+// file is not a project, has no thumbnail, or it is not a PNG of at most
+// kMaxThumbnailBytes.
+Result<std::vector<unsigned char>> readProjectThumbnail(const std::filesystem::path& path);
 
 // Exposed for tests: rejects absolute paths, drive letters, backslashes and
 // ".." components in archive entry names.

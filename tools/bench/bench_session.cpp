@@ -20,6 +20,7 @@
 #include "geometry/Modeling.h"
 #include "geometry/Tessellation.h"
 #include "geometry/TopoSignature.h"
+#include "interaction/InteractionController.h"
 #include "interaction/Operation.h"
 #include "io/ProjectFile.h"
 #include "io/Recovery.h"
@@ -191,6 +192,14 @@ int main()
     std::printf("heavy model: %zu bodies, %d faces, %zu steps in body 1 (patterns ok: %d %d)\n", document.bodies().size(),
                 faces, document.body(bodyId)->features().size(), int(linearOk), int(circularOk));
     timeSaves("heavy model");
+
+    // 6. The thumbnail a Save adds (CPU rendering of the display meshes; the
+    //    PNG encoding in the app adds a few ms, logged at debug level).
+    interact::InteractionController controller(document, stack);
+    controller.setViewportSize({1200, 800});
+    const double meshes = timeMs([&] { (void)controller.renderThumbnail(256); }); // tessellates once, as the view does
+    const double thumbnail = timeMs([&] { (void)controller.renderThumbnail(256); });
+    std::printf("heavy model thumbnail 256 px: %.1f ms (first call with tessellation %.1f ms)\n", thumbnail, meshes);
     std::filesystem::remove_all(dir);
     return 0;
 }

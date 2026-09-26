@@ -152,8 +152,8 @@ No installer yet, and not distributable yet (TD-17).
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,
   bounding boxes and recovery copies / full saves on a 21-face filleted part
-  (and saves on a 21-body, 1528-face model) (numbers in
-  PROJECT_STATUS.md):
+  (and saves and the project thumbnail on a 21-body, 1528-face model)
+  (numbers in PROJECT_STATUS.md):
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON

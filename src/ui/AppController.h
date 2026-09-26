@@ -25,6 +25,9 @@ namespace os::ui {
 
 class RecoverySession;
 
+// Pixels (square) of the preview saved in project files.
+inline constexpr int kThumbnailSize = 256;
+
 // Bridge between QML and the application core. Holds the document, undo
 // stack and interaction controller; exposes their state as properties and
 // user intents as invokables. Contains no modeling logic itself.
@@ -271,6 +274,8 @@ private:
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
     void updateRecentFiles();
     void savePreferences() const;
+    // thumbnail.png for a save: kThumbnailSize pixels square (empty without bodies).
+    std::vector<unsigned char> thumbnailPng() const;
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;

@@ -504,7 +504,14 @@ hides it).
 `.openshape` = ZIP: `document.json` (source of truth), `metadata.json`,
 `imports/<step>.brep` (the geometry of Imported steps: source of truth,
 also in recovery copies), `geometry/<body>.brep` (cache), optional
-`thumbnail.png`. `documentFromJson` takes an `EntryReader` for the imports;
+`thumbnail.png` (written on Save: `InteractionController::renderThumbnail`
+draws the visible bodies' display meshes on the CPU — `interaction/Thumbnail`,
+a z-buffered rasterizer with the viewport's lighting and edges, 2 x 2
+samples per pixel, isometric and framed, independent of the current view,
+the GPU and any window, so automated runs and iPadOS behave the same; the
+UI encodes it as PNG. Measured: 18 ms for the 21-body, 1528-face model whose
+full save takes 134 ms; `io::readProjectThumbnail` opens the ZIP directory
+and reads only that entry, for the start screen). `documentFromJson` takes an `EntryReader` for the imports;
 the loader checks each against the hash, validity and volume its step
 recorded before any modeling sees it (the BRep text is read with stream
 exceptions on: OCCT's reader looped forever on a cut-off text). Versioned with a

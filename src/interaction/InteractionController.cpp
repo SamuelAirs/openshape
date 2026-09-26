@@ -989,6 +989,17 @@ Status InteractionController::importBodies(const std::vector<geom::NamedShape>& 
     return status;
 }
 
+ThumbnailImage InteractionController::renderThumbnail(int size)
+{
+    scene_.update(*document_);
+    std::vector<std::shared_ptr<const geom::Mesh>> meshes;
+    for (const auto& body : document_->bodies())
+        if (body->isVisible() && !body->shape().isNull())
+            if (auto mesh = scene_.mesh(body->id()))
+                meshes.push_back(std::move(mesh));
+    return interact::renderThumbnail(meshes, size);
+}
+
 bool InteractionController::undo()
 {
     if (!undoStack_->undo(*document_))

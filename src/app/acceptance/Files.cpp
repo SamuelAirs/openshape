@@ -11,6 +11,7 @@
 #include "app/AcceptanceRunner.h"
 #include "geometry/Exchange.h"
 #include "geometry/Modeling.h"
+#include "io/ProjectFile.h"
 #include "interaction/InteractionController.h"
 #include "ui/AppController.h"
 #include "ui/RecoverySession.h"
@@ -19,6 +20,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QUrl>
+#include <QtGui/QImage>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
@@ -141,6 +143,21 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app, s, num] {
         const double pushed = volumeOf(r, 0);
         r.check(app.saveProjectAs(QUrl::fromLocalFile(s->project)), "save the project");
+        // The project carries a preview of the model, readable on its own.
+        auto png = io::readProjectThumbnail(toPath(s->project));
+        r.check(png.ok(), "the saved project has a thumbnail", QString::fromStdString(png.developerMessage()));
+        const QImage thumbnail = png ? QImage::fromData(png.value().data(), int(png.value().size()), "PNG") : QImage();
+        r.check(thumbnail.width() == ui::kThumbnailSize && thumbnail.height() == ui::kThumbnailSize,
+                "a 256 x 256 picture", QStringLiteral("%1 x %2").arg(thumbnail.width()).arg(thumbnail.height()));
+        if (!thumbnail.isNull()) {
+            thumbnail.save(r.outputDir() + QStringLiteral("/files_03_thumbnail.png"));
+            int opaque = 0;
+            for (int y = 0; y < thumbnail.height(); y += 4)
+                for (int x = 0; x < thumbnail.width(); x += 4)
+                    opaque += qAlpha(thumbnail.pixel(x, y)) == 255 ? 1 : 0;
+            r.check(qAlpha(thumbnail.pixel(1, 1)) == 0 && opaque > 200, "the model on a clear background",
+                    QString::number(opaque) + QStringLiteral(" opaque samples"));
+        }
         app.newDocument();
         r.check(app.openProject(QUrl::fromLocalFile(s->project)), "reopen it");
         r.check(app.bodyCount() == 4, "four bodies again", QString::number(app.bodyCount()));

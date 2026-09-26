@@ -17,7 +17,7 @@ Intentional shortcuts, with the milestone by which each should be resolved.
 | TD-8 | `io/ProjectFile.cpp` | The BRep geometry cache is written but never read. | Recompute is fast at current sizes. | When load times matter |
 | TD-9 | `ui/qml/Main.qml` | Text-only buttons, no icon set. | Avoids fake polish; icons need a consistent original set. | M3 |
 | TD-10 | `geometry/` | Built against OCCT 7.9.3; upstream is 8.0.1. | MSYS2 package availability. | When MSYS2/vcpkg ship 8.x |
-| TD-11 | `AppController::saveProject` | No thumbnail in project files. | Needs an offscreen render path. | M3 |
+| ~~TD-11~~ | `AppController::saveProject` | **Resolved**: Save writes a 256 px thumbnail.png, drawn on the CPU from the display meshes (`interaction/Thumbnail`: isometric, framed, transparent background; 18 ms on a 1528-face model). Left: recovery copies carry none; no hidden-line tricks (edges behind thin walls within 1.5 % of the model size may show). | | |
 | TD-12 | `sketch/SketchSolver.cpp` | A new PlaneGCS system is built for every solve, including every drag step. | Sketches are small; simplest correct approach. | When sketches get large |
 | TD-13 | `geometry/Profiles.cpp` | Profile regions are recomputed (General Fuse + tessellation) after every sketch edit, on the GUI thread. | A few ms for typical sketches. | With TD-1 |
 | ~~TD-14~~ | `sketch/` | ~~Sketches on faces did not follow the face.~~ **Resolved**: sketches carry an `Attachment` (body, feature, face signature); the plane is re-resolved during recompute and synced after every change. | | |

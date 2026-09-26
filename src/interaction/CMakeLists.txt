@@ -11,6 +11,7 @@ add_library(openshape_interaction STATIC
     RenderScene.h
     SceneCache.cpp SceneCache.h
     SketchSession.cpp SketchSession.h
+    Thumbnail.cpp Thumbnail.h
     TouchGestures.cpp TouchGestures.h
     ContextAction.h
 )

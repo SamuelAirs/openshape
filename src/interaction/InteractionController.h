@@ -14,6 +14,7 @@
 #include "interaction/RenderScene.h"
 #include "interaction/SceneCache.h"
 #include "interaction/SketchSession.h"
+#include "interaction/Thumbnail.h"
 #include "selection/Picking.h"
 #include "selection/Selection.h"
 
@@ -136,6 +137,9 @@ public:
     // "Imported 1", "Imported 2", ... The view fits everything afterwards.
     // `source` is the file name shown on the steps.
     Status importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source);
+    // The picture a saved project carries: the visible bodies from the
+    // isometric direction, framed (not the current view). Empty without bodies.
+    ThumbnailImage renderThumbnail(int size);
     bool undo();
     bool redo();
     // Deletes the selected bodies, as one undo step. A body that other bodies

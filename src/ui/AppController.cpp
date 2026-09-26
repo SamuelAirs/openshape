@@ -11,14 +11,17 @@
 #include "io/RecentFiles.h"
 #include "ui/RecoverySession.h"
 
+#include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
 #include <QtCore/QVariantMap>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QImage>
 
 #include <algorithm>
 #include <cmath>
@@ -600,7 +603,9 @@ bool AppController::saveProject()
 {
     if (path_.isEmpty())
         return false;
-    const Status status = io::saveProject(*document_, std::filesystem::path(path_.toStdWString()));
+    io::SaveOptions options;
+    options.thumbnailPng = thumbnailPng();
+    const Status status = io::saveProject(*document_, std::filesystem::path(path_.toStdWString()), options);
     if (!status) {
         OS_LOG(Warning, File) << status.developerMessage();
         notifyMessage(q(status.userMessage()));
@@ -616,6 +621,25 @@ bool AppController::saveProject()
     notifyMessage(QStringLiteral("Saved"));
     emit stateChanged();
     return true;
+}
+
+std::vector<unsigned char> AppController::thumbnailPng() const
+{
+    QElapsedTimer timer;
+    timer.start();
+    const interact::ThumbnailImage image = interaction_->renderThumbnail(kThumbnailSize);
+    if (image.empty())
+        return {};
+    const QImage picture(image.rgba.data(), image.width, image.height, image.width * 4, QImage::Format_RGBA8888_Premultiplied);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!picture.save(&buffer, "PNG")) {
+        OS_LOG(Warning, File) << "the project preview could not be encoded; saving without it";
+        return {};
+    }
+    OS_LOG(Debug, Performance) << "thumbnail took " << timer.elapsed() << " ms (" << bytes.size() << " bytes)";
+    return std::vector<unsigned char>(bytes.begin(), bytes.end());
 }
 
 bool AppController::saveProjectAs(const QUrl& url)

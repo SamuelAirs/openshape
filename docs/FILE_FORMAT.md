@@ -8,7 +8,7 @@ A ZIP archive (deflate) with these entries:
 | `metadata.json` | no | `{ "format", "version", "application", "applicationVersion" }` |
 | `imports/<feature-uuid>.brep` | when named | The exact geometry of an imported body (OCCT BRep text, no triangulation), named by its `Imported` step. **Part of the model**, like document.json: written on every save, recovery copies included. |
 | `geometry/<body-uuid>.brep` | no | OCCT BRep text of each body's current shape. A cache for external tools and future fast-open; ignored on load (bodies are recomputed from features). |
-| `thumbnail.png` | no | Preview image (not written yet). |
+| `thumbnail.png` | no | Preview of the model, written by every Save (not by recovery copies): 256 x 256 PNG with alpha, the visible bodies from the isometric direction framed to fill it, on a transparent background. Readers treat it as untrusted: at most 4 MiB, PNG signature checked; `io::readProjectThumbnail` reads only this entry. |
 
 ## document.json
 
