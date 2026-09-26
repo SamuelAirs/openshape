@@ -110,7 +110,7 @@ void runEnclosureDemo(os::ui::AppController& app)
     clickAt({50, -30, 12});
     clickAt({-10, -30, 12}, true);
     clickAt({50, 10, 12}, true);
-    interaction.twoFingerRotate(3.14159265 / 0.008, 0); // half a turn (Camera: 0.008 rad per pixel)
+    interaction.twoFingerRotate(os::kPi / 0.008, 0); // half a turn (Camera orbits 0.008 rad per pixel)
     clickAt({-10, 10, 12}, true);
     apply("6");
     clickAt({20, -10, 25});
@@ -131,9 +131,9 @@ void runEnclosureDemo(os::ui::AppController& app)
     interaction.fitAll(false);
     clickAt({50, -10, 12.5});
     apply("-4");
-    // The hole's wall (zoomed in to click it, as a user would): its
-    // diameter, typed with a little print clearance.
-    // The 2 mm wall must be wider than the edge pick tolerance (6 px).
+    // The hole's wall: its diameter, typed with a little print clearance.
+    // Zoomed in to click it, as a user would: the 2 mm wall must be wider
+    // than the edge pick tolerance (6 px), or the click picks a rim.
     const os::Vec3 wall{49, -10, 7.5};
     const os::Vec2 hole = interaction.camera().project(wall);
     int steps = 0;
