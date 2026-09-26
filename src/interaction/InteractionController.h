@@ -318,9 +318,12 @@ private:
     // editor keeps clear of it until the view moves).
     std::optional<Vec2> lastPress_;
     Camera lastPressCamera_;
-    // The value editor's spot, for this selection (placeValueChip).
+    // The value editor's spot, for this selection and operation
+    // (placeValueChip): kept once something has moved since it was chosen.
     mutable ChipSpot chipSpot_ = ChipSpot::None;
     mutable std::vector<sel::SelectionItem> chipSelection_;
+    mutable bool chipSettled_ = false;
+    mutable std::optional<ChipPlacementInput> chipLast_;
 
     struct Drag {
         DragMode mode = DragMode::None;

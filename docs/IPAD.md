@@ -251,7 +251,13 @@ relinking.
    window (iPadOS 26 windowed apps), check that the window's controls at
    the top left do not cover **File** (they may sit outside the safe area
    Qt reports; TD-54).
-10. Note anything slow, hard to hit, or missing — with a screenshot
+10. The value box stays out of the way: tap edges and faces on the left,
+   the right, high and low on the model (and zoomed in): the box sits next
+   to the arrow but never over what you tapped, the arrow or the selected
+   edge / face; drag the arrow and it moves along without jumping. Draw a
+   rectangle and a circle with a finger: the live width / height /
+   diameter show above the finger, not under it.
+11. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 
 ## What to test on the iPhone
@@ -290,3 +296,10 @@ margins (BUILDING.md).
    projects and opens them.
 12. iPhone Duo (once available): fold and unfold with a model open, and use
    the inner display's Split View: the layout changes live, no restart.
+13. The value box never covers what you tapped (your screen recording of
+   2026-09-26): tap an edge on the left of a body low on the screen, then
+   faces in different places: the box docks below the top bar or above the
+   hint, whichever is farther from the selection, and stays there while
+   you drag the arrow. In landscape it is one row, beside the top bar.
+   Draw a rectangle with a finger: its width and height show above the
+   finger.

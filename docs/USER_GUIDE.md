@@ -66,7 +66,10 @@ On a desktop-sized window:
 - **Model panel** (right): everything you made, step by step. It appears
   once there is something in the document; **Hide** folds it away. See
   [The Model panel](#the-model-panel).
-- **Value box** (next to the arrow or ring you are dragging): the name of
+- **Value box** (next to the arrow or ring you are dragging, never over
+  what you selected, the arrow or the spot you tapped; on a phone it sits
+  below the top bar or above the hint, on the side away from the
+  selection, and stays there while you drag): the name of
   the value (Height, Radius, Diameter …), the value itself, **✓** to apply,
   **✕** to cancel, and below it the other things you can do with the
   current selection (for example Push/Pull, Shell, Sketch, Align, Delete

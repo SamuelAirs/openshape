@@ -9,7 +9,9 @@ import OpenShape
 
 // Floating value editor that follows the manipulator: shows the live value,
 // accepts typed input (with units and arithmetic), and offers apply/cancel
-// plus the contextual alternatives for the current selection.
+// plus the contextual alternatives for the current selection. Main.qml
+// places it (interact::placeValueChip): never over the selection, the arrows
+// or the tapped point; docked as a bar in a compact window.
 Item {
     id: chip
 

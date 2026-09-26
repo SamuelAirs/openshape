@@ -1020,9 +1020,23 @@ ChipPlacement InteractionController::placeValueChip(const ChipPlacementInput& in
     if (!same) {
         chipSelection_ = items;
         chipSpot_ = ChipSpot::None;
+        chipSettled_ = false;
+        chipLast_.reset();
     }
-    const ChipPlacement placement = interact::placeValueChip(input, chipSpot_);
+    // The first placements come while the chip is still being laid out (its
+    // actions appear, it grows): until something moves (the arrow, the
+    // view), each one chooses afresh for the size it has now.
+    auto near = [](double a, double b) { return std::abs(a - b) < 0.5; };
+    auto sameRect = [&](const std::optional<ScreenRect>& a, const std::optional<ScreenRect>& b) {
+        return a.has_value() == b.has_value()
+            && (!a || (near(a->left, b->left) && near(a->top, b->top) && near(a->right, b->right) && near(a->bottom, b->bottom)));
+    };
+    if (input.frozen || (chipLast_ && (!near(input.tip.x, chipLast_->tip.x) || !near(input.tip.y, chipLast_->tip.y)
+                                       || !sameRect(input.keepClear, chipLast_->keepClear))))
+        chipSettled_ = true;
+    const ChipPlacement placement = interact::placeValueChip(input, chipSettled_ ? chipSpot_ : ChipSpot::None);
     chipSpot_ = placement.spot;
+    chipLast_ = input;
     return placement;
 }
 
@@ -3125,6 +3139,14 @@ void InteractionController::notifyView()
 
 void InteractionController::notifyState()
 {
+    // No operation, no value editor: the next one chooses its spot afresh
+    // (even on the same selection, e.g. a hole rim again after an undo).
+    if (!operation_) {
+        chipSpot_ = ChipSpot::None;
+        chipSelection_.clear();
+        chipSettled_ = false;
+        chipLast_.reset();
+    }
     if (onStateChanged)
         onStateChanged();
 }

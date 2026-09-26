@@ -194,7 +194,7 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
             r.app().setTouchMode(false);
         });
         wait(steps, 2);
-        steps.push_back([&r, c, s] {
+        steps.push_back([&r, s] {
             const auto* op = r.app().interaction().operation();
             s->chipBefore = sceneRect(r, QStringLiteral("valueChip"));
             s->dragged = false;

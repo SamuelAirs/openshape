@@ -62,14 +62,16 @@ Layout iphonePortrait()
             true};
 }
 
-// The same phone turned: 874x402, the island on the left, 21 px below.
+// The same phone turned: 874x402, the island on the left, 21 px below; the
+// chip is one row (its actions beside the field), as wide as the room beside
+// the top bar.
 Layout iphoneLandscape()
 {
     return {"iPhone landscape",
             rect(72, 10, 730, 361),
             {rect(72, 10, 250, 56), rect(730, 10, 72, 56), rect(730, 74, 72, 56), rect(738, 138, 64, 64),
              rect(72, 251, 730, 56), rect(72, 315, 730, 56)},
-            {298, 106},
+            {390, 56},
             true,
             true};
 }
@@ -540,6 +542,41 @@ TEST(KeepClear, PlacementRemembersItsSpotPerSelection)
     s.tap(s.screen({10, -10, 10}));
     ASSERT_NE(s.controller.operation(), nullptr);
     EXPECT_EQ(s.controller.placeValueChip(in).spot, other);
+}
+
+// The chip's first placements come while it is still being laid out (its
+// actions appear, it grows): the spot is chosen afresh for each size until
+// something moves, and forgotten when the operation ends.
+TEST(KeepClear, FirstPlacementWaitsForTheChipsSize)
+{
+    Scene s({1180, 820});
+    s.tap(s.screen({-10, -10, 10}));
+    ASSERT_NE(s.controller.operation(), nullptr);
+    const Vec2 tip = *s.controller.valueLabelPosition();
+    const auto keep = s.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    Layout layout = ipad();
+    // A panel right of the arrow: room between them for a small chip only.
+    layout.avoid.push_back(rect(std::max(tip.x, keep->right) + 160, 16, 20, 788));
+    auto in = input(layout, tip, keep);
+    in.size = {100, 40};
+    const ChipPlacement small = s.controller.placeValueChip(in);
+    EXPECT_EQ(small.spot, ChipSpot::Right);
+    in.size = layout.chip; // laid out: its real size
+    const ChipPlacement laidOut = s.controller.placeValueChip(in);
+    EXPECT_NE(laidOut.spot, ChipSpot::Right);
+    EXPECT_EQ(laidOut.spot, placeValueChip(in).spot) << "as if chosen afresh";
+    EXPECT_TRUE(laidOut.clear);
+    // Once the arrow moves, the spot is kept while it stays clear.
+    in.tip = tip + Vec2{1, 0};
+    in.size = {100, 40};
+    EXPECT_EQ(s.controller.placeValueChip(in).spot, laidOut.spot) << "kept: the arrow moved";
+    // The operation ends: the next one on the same edge chooses afresh.
+    EXPECT_TRUE(s.controller.keyPress(Key::Escape));
+    ASSERT_EQ(s.controller.operation(), nullptr);
+    s.tap(s.screen({-10, -10, 10}));
+    ASSERT_NE(s.controller.operation(), nullptr);
+    EXPECT_EQ(s.controller.placeValueChip(in).spot, ChipSpot::Right) << "fresh for a new operation";
 }
 
 // ---- Sketch labels under a finger ------------------------------------------------
