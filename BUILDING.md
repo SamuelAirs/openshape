@@ -73,6 +73,8 @@ Developer switches:
 
 ```bash
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
+./build/msys2-ucrt64/bin/OpenShape.exe --demo enclosure --view 150,25 --screenshot back.png   # from any angle, framed (see below)
+./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --projection orthographic --screenshot ortho.png   # start in this projection (not remembered)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch   # the tablet layout (bigger controls, Pen switch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 820x1180 --demo combine --screenshot ipad.png   # iPad portrait layout
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo bracket --screenshot phone.png   # iPhone 16 Pro, portrait
@@ -107,6 +109,14 @@ sizes): `help`, `about`, `preferences`, `savename` (the overlay open),
 and `viewmenu` (the compact View menu open on `combine`). Without
 `--screenshot` the window stays open. A normal start without a file opens on Home; automated runs
 (`--acceptance`, `--demo`, `--screenshot`) start in an empty document.
+
+**Camera for screenshots.** `--view` looks at a demo scene from a standard
+view (`iso`, `front`, `back`, `left`, `right`, `top`, `bottom`) or from
+`yaw,pitch` in degrees (yaw -90 is the front view, 0 looks from +X; pitch 90
+from above, negative from below; write `--view=-60,12` when yaw is
+negative), with everything framed. `--projection perspective|orthographic`
+starts in that projection without remembering it (automated runs start in
+perspective, the default, as their settings file is new).
 
 **Phone and Split View layouts.** Below 600 logical px wide or 500 tall the
 window gets the compact layout (tools in a strip along the bottom, Model and

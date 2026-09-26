@@ -62,15 +62,6 @@ struct RenderGrid {
     double eyeFadeEnd = 0;
 };
 
-// A soft contact shadow on the ground under a body resting on (or just
-// above) it: its footprint, blurred.
-struct RenderShadow {
-    Vec2 center;           // of the footprint, on z = 0
-    Vec2 halfSize;         // of the footprint
-    double blur = 5.0;     // mm the shadow fades out over around the footprint
-    double strength = 0.2; // opacity at the footprint
-};
-
 // ---- Sketches ----
 enum class SketchStyle {
     Normal,       // under-constrained geometry
@@ -117,7 +108,6 @@ struct RenderScene {
     std::vector<RenderRing> rings;
     ArrowStyle arrowStyle;
     RenderGrid grid;
-    std::vector<RenderShadow> shadows;
 };
 
 } // namespace os::interact

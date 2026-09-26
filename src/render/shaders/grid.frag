@@ -25,8 +25,8 @@ layout(std140, binding = 0) uniform Frame {
     vec4 light;   // xyz: unit direction towards the key light (world)
     vec4 lights;  // x: sky ambient, y: ground ambient, z: key, w: fill from the viewer (core/Lighting.h)
     vec4 gloss;   // x: specular strength, y: specular exponent
-    vec4 grid;    // xy: grid center (z = 0), z: minor step; shadows: xy center, zw half size
-    vec4 fade;    // x: grid radius, y: axis radius, z/w: eye distances where the grid starts/ends fading (0: never); shadows: x blur
+    vec4 grid;    // xy: grid center (z = 0), z: minor step
+    vec4 fade;    // x: grid radius (shadows: blur), y: axis radius, z/w: eye distances where the grid starts/ends fading (0: never)
 };
 
 // Coverage of the lines at whole values of `c` (grid cells along one axis)

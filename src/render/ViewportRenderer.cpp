@@ -6,6 +6,7 @@
 
 #include "core/Lighting.h"
 #include "core/Log.h"
+#include "interaction/ContactShadow.h"
 
 #include <QtCore/QFile>
 #include <QtQuick/QQuickRhiItem>
@@ -53,6 +54,7 @@ constexpr Color kGridLine{0.0f, 0.0f, 0.0f, 1.0f};
 constexpr float kGridMinorAlpha = 0.06f;
 constexpr float kGridMajorAlpha = 0.12f;
 constexpr Color kShadow{0.10f, 0.12f, 0.16f, 1.0f};
+constexpr quint32 kShadowLayers = 37; // shadow.vert: the center and three rings of 12
 constexpr Color kAxisX{0.86f, 0.27f, 0.27f, 0.6f};
 constexpr Color kAxisY{0.27f, 0.66f, 0.33f, 0.6f};
 constexpr Color kAxisZ{0.25f, 0.45f, 0.88f, 0.6f};
@@ -186,7 +188,7 @@ void appendArrow(std::vector<float>& pos, std::vector<float>& nrm, const Vec3& a
 } // namespace
 
 struct ViewportRenderer::Draw {
-    enum class Kind { Mesh, Lines, Arrow, Ground } kind = Kind::Mesh;
+    enum class Kind { Mesh, Lines, Arrow, Ground, Shadow } kind = Kind::Mesh;
     QRhiGraphicsPipeline* pipeline = nullptr;
     const GpuBody* body = nullptr;
     QRhiBuffer* lineBuffer = nullptr;
@@ -247,6 +249,7 @@ void ViewportRenderer::createPipelines()
     const QShader lineFs = loadShader(QStringLiteral(":/openshape/shaders/line.frag.qsb"));
     const QShader groundVs = loadShader(QStringLiteral(":/openshape/shaders/grid.vert.qsb"));
     const QShader gridFs = loadShader(QStringLiteral(":/openshape/shaders/grid.frag.qsb"));
+    const QShader shadowVs = loadShader(QStringLiteral(":/openshape/shaders/shadow.vert.qsb"));
     const QShader shadowFs = loadShader(QStringLiteral(":/openshape/shaders/shadow.frag.qsb"));
 
     using Op = QRhiGraphicsPipeline::CompareOp;
@@ -256,7 +259,7 @@ void ViewportRenderer::createPipelines()
     linePipeline_ = makePipeline(lineVs, lineFs, Layout::Line, true, false, true, Op::LessOrEqual);
     overlayLinePipeline_ = makePipeline(lineVs, lineFs, Layout::Line, false, false, true, Op::Always);
     gridPipeline_ = makePipeline(groundVs, gridFs, Layout::Ground, true, false, true, Op::LessOrEqual);
-    shadowPipeline_ = makePipeline(groundVs, shadowFs, Layout::Ground, true, false, true, Op::LessOrEqual);
+    shadowPipeline_ = makePipeline(shadowVs, shadowFs, Layout::Ground, true, false, true, Op::LessOrEqual);
 }
 
 std::unique_ptr<QRhiGraphicsPipeline> ViewportRenderer::makePipeline(const QShader& vs, const QShader& fs, Layout vertices,
@@ -313,7 +316,7 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item)
         devicePixelRatio_ = static_cast<float>(item->window()->effectiveDevicePixelRatio());
 }
 
-void ViewportRenderer::uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u)
+void ViewportRenderer::uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u, bool castsShadow)
 {
     auto makeStatic = [&](std::unique_ptr<QRhiBuffer>& buffer, QRhiBuffer::UsageFlags usage, const void* data, quint32 bytes) {
         buffer.reset();
@@ -328,6 +331,12 @@ void ViewportRenderer::uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiReso
     makeStatic(gpu.indices, QRhiBuffer::IndexBuffer, mesh.indices.data(), quint32(mesh.indices.size() * sizeof(quint32)));
     gpu.indexCount = quint32(mesh.indices.size());
     gpu.faceTriangleOffset.assign(mesh.faceTriangleOffset.begin(), mesh.faceTriangleOffset.end());
+    const interact::ContactFootprint footprint = castsShadow ? interact::contactFootprint(mesh) : interact::ContactFootprint{};
+    makeStatic(gpu.groundIndices, QRhiBuffer::IndexBuffer, footprint.indices.data(),
+               quint32(footprint.indices.size() * sizeof(quint32)));
+    gpu.groundIndexCount = quint32(footprint.indices.size());
+    gpu.shadowStrength = float(footprint.strength());
+    gpu.shadowBlur = float(footprint.blur());
 
     std::vector<float> lines;
     gpu.edgeRanges.clear();
@@ -363,7 +372,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         auto it = bodies_.find(rb.id);
         GpuBody gpu = it != bodies_.end() ? std::move(it->second) : GpuBody{};
         if (gpu.meshKey != rb.meshKey || !gpu.positions) {
-            uploadBody(gpu, *rb.mesh, u);
+            uploadBody(gpu, *rb.mesh, u, true);
             gpu.meshKey = rb.meshKey;
         }
         kept.emplace(rb.id, std::move(gpu));
@@ -379,7 +388,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             auto it = regions_.find(region.meshKey);
             GpuBody gpu = it != regions_.end() ? std::move(it->second) : GpuBody{};
             if (!gpu.positions) {
-                uploadBody(gpu, *region.mesh, u);
+                uploadBody(gpu, *region.mesh, u, false);
                 gpu.meshKey = region.meshKey;
             }
             keptRegions.emplace(region.meshKey, std::move(gpu));
@@ -464,29 +473,29 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     // ---- 2. Ground: contact shadows, the grid and the X/Y/Z axes (depth-tested so
     //         bodies hide them, no depth writes) ---------------------------------------
     if (grid.visible) {
+        // Soft shadows where bodies rest on the ground, seen from above it.
+        if ((perspective ? camera.eye().z : camera.backward().z) > 0) {
+            for (const auto& rb : scene_.bodies) {
+                const GpuBody& gpu = bodies_.at(rb.id);
+                if (!gpu.groundIndexCount || gpu.shadowStrength <= 0)
+                    continue;
+                Draw d;
+                d.kind = Draw::Kind::Shadow;
+                d.pipeline = shadowPipeline_.get();
+                d.body = &gpu;
+                d.count = gpu.groundIndexCount;
+                // Each of the layers is this faint, so together they reach the strength.
+                const float layer = 1.0f - std::pow(1.0f - gpu.shadowStrength, 1.0f / float(kShadowLayers));
+                d.uniforms = uniformsFor(withAlpha(kShadow, layer), 0, -kGroundBiasPx, 0);
+                d.uniforms.fade[0] = gpu.shadowBlur;
+                draws.push_back(d);
+            }
+        }
         std::vector<float> ground;
         appendGroundQuad(ground, {grid.center.x, grid.center.y}, {grid.radius, grid.radius});
-        std::vector<std::pair<quint32, const interact::RenderShadow*>> shadowQuads;
-        for (const auto& shadow : scene_.shadows) {
-            shadowQuads.push_back({quint32(ground.size() / 3), &shadow});
-            appendGroundQuad(ground, shadow.center, {shadow.halfSize.x + shadow.blur, shadow.halfSize.y + shadow.blur});
-        }
         const quint32 bytes = quint32(ground.size() * sizeof(float));
         ensureDynamicBuffer(groundVertices_, bytes, QRhiBuffer::VertexBuffer);
         u->updateDynamicBuffer(groundVertices_.get(), 0, bytes, ground.data());
-        for (const auto& [first, shadow] : shadowQuads) {
-            Draw d;
-            d.kind = Draw::Kind::Ground;
-            d.pipeline = shadowPipeline_.get();
-            d.first = first;
-            d.count = 6;
-            d.uniforms = uniformsFor(withAlpha(kShadow, float(shadow->strength)), 0, -kGroundBiasPx, 0);
-            const float box[4] = {float(shadow->center.x), float(shadow->center.y), float(shadow->halfSize.x),
-                                  float(shadow->halfSize.y)};
-            std::memcpy(d.uniforms.grid, box, sizeof box);
-            d.uniforms.fade[0] = float(shadow->blur);
-            draws.push_back(d);
-        }
         Draw d;
         d.kind = Draw::Kind::Ground;
         d.pipeline = gridPipeline_.get();
@@ -762,6 +771,12 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             const QRhiCommandBuffer::VertexInput input(groundVertices_.get(), 0);
             cb->setVertexInput(0, 1, &input);
             cb->draw(d.count, 1, d.first);
+            break;
+        }
+        case Draw::Kind::Shadow: {
+            const QRhiCommandBuffer::VertexInput input(d.body->positions.get(), 0);
+            cb->setVertexInput(0, 1, &input, d.body->groundIndices.get(), 0, QRhiCommandBuffer::IndexUInt32);
+            cb->drawIndexed(d.count, kShadowLayers);
             break;
         }
         }

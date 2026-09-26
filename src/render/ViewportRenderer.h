@@ -40,6 +40,12 @@ private:
         quint32 indexCount = 0;
         quint32 edgeVertexCount = 0;
         std::vector<quint32> faceTriangleOffset;
+        // The triangles it rests on the ground with (bodies only), for its
+        // contact shadow; none when it does not touch the ground.
+        std::unique_ptr<QRhiBuffer> groundIndices;
+        quint32 groundIndexCount = 0;
+        float shadowStrength = 0;
+        float shadowBlur = 0;
         // edge topology index -> [firstVertex, vertexCount) in edgeVertices
         std::unordered_map<int, std::pair<quint32, quint32>> edgeRanges;
     };
@@ -52,7 +58,7 @@ private:
     void createPipelines();
     std::unique_ptr<QRhiGraphicsPipeline> makePipeline(const QShader& vs, const QShader& fs, Layout vertices, bool depthTest,
                                                       bool depthWrite, bool blend, QRhiGraphicsPipeline::CompareOp op);
-    void uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u);
+    void uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u, bool castsShadow);
     void ensureDynamicBuffer(std::unique_ptr<QRhiBuffer>& buffer, quint32 size, QRhiBuffer::UsageFlags usage);
 
     SceneProvider provider_;

@@ -2,8 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// The perspective view (the default) and the ground grid, with real input:
-// a new window starts in perspective; Fit frames the box; the wheel zooms
+// The perspective view (the default) and the ground, with real input:
+// a new window starts in perspective; Fit frames the box, which casts a soft
+// contact shadow on the ground (darker right at the box); the wheel zooms
 // towards the face under the pointer and keeps that point in place; an orbit
 // turns about the point pressed on; a face picked in perspective pushes to
 // a typed height; the Top view looks straight down; a sketch faces its plane
@@ -58,6 +59,29 @@ double luma(const QImage& image, QPointF logical, int r, bool darkest)
         least = std::min(least, l);
     }
     return darkest ? least : sum / (2 * r + 1);
+}
+
+// The ground in front of the box's front face (y = -10, the box resting on
+// z = 0): darker right at the face (the contact shadow), plain a few
+// millimetres out. Samples sit in the middle of grid cells, off the lines.
+void checkContactShadow(AcceptanceRunner& r)
+{
+    const interact::RenderGrid grid = r.app().interaction().renderScene().grid;
+    const QImage image = r.window()->grabWindow();
+    const double minor = grid.minorStep;
+    const double x = (std::floor(4.0 / minor) + 0.5) * minor; // a cell center, off the Y axis
+    auto groundAt = [&](double gap) { return luma(image, r.screenPoint(x, -10 - gap, 0), 1, false); };
+    // At the face the grid line y = -10 coincides with the box's edge: start
+    // a few pixels out.
+    const double px = r.app().interaction().camera().pixelSize({x, -10, 0});
+    const double nearGap = 5 * px;
+    const double farGap = (std::floor((10 + 6.0) / minor) + 0.5) * minor - 10; // a cell center ~6 mm out
+    const double nearLevel = groundAt(nearGap), farLevel = groundAt(farGap);
+    OS_LOG(Info, App) << "contact shadow: ground " << nearGap << " mm from the box " << nearLevel << ", " << farGap << " mm out "
+                      << farLevel;
+    r.check(nearLevel >= 0 && farLevel >= 0 && farLevel - nearLevel >= 3, "perspective: a soft shadow where the box meets the ground",
+            AcceptanceRunner::num(farLevel - nearLevel));
+    r.check(farLevel - nearLevel <= 40, "perspective: a subtle one", AcceptanceRunner::num(farLevel - nearLevel));
 }
 
 struct State {
@@ -173,6 +197,8 @@ Steps steps(AcceptanceRunner& r)
         }
         r.check(inside, "perspective: Fit shows the whole box");
         r.check(bottom - top > 0.3 * r.window()->height(), "perspective: and large", AcceptanceRunner::num(bottom - top));
+        r.mouseMove({60, 40}); // off the view: nothing hovered
+        checkContactShadow(r);
         // Zoom with the wheel over the front face, away from the middle.
         const Vec3 onFace{6, -10, 14};
         state->zoomCursor = r.screenPoint(onFace.x, onFace.y, onFace.z);

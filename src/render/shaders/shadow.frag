@@ -3,9 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// A soft contact shadow on the ground under a body resting on it: its
-// footprint (a rounded rectangle) darkened, blurred over `fade.x` around it.
-layout(location = 0) in vec3 vWorld;
+// One faint layer of a contact shadow (shadow.vert): the layers add up.
 layout(location = 0) out vec4 fragColor;
 
 // Shared by every shader (ViewportRenderer.cpp, UniformData).
@@ -21,21 +19,11 @@ layout(std140, binding = 0) uniform Frame {
     vec4 light;   // xyz: unit direction towards the key light (world)
     vec4 lights;  // x: sky ambient, y: ground ambient, z: key, w: fill from the viewer (core/Lighting.h)
     vec4 gloss;   // x: specular strength, y: specular exponent
-    vec4 grid;    // xy: grid center (z = 0), z: minor step; shadows: xy center, zw half size
-    vec4 fade;    // x: grid radius, y: axis radius, z/w: eye distances where the grid starts/ends fading (0: never); shadows: x blur
+    vec4 grid;    // xy: grid center (z = 0), z: minor step
+    vec4 fade;    // x: grid radius (shadows: blur), y: axis radius, z/w: eye distances where the grid starts/ends fading (0: never)
 };
-
-// Signed distance to a rectangle with rounded corners (negative inside).
-float roundedBox(vec2 p, vec2 halfSize, float radius)
-{
-    vec2 q = abs(p) - halfSize + radius;
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
-}
 
 void main()
 {
-    float blur = max(fade.x, 1e-6);
-    float d = roundedBox(vWorld.xy - grid.xy, grid.zw, min(0.5 * blur, min(grid.z, grid.w)));
-    float a = 1.0 - smoothstep(-0.35 * blur, blur, d);
-    fragColor = vec4(color.rgb, color.a * a * a);
+    fragColor = color;
 }
