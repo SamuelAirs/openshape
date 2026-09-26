@@ -43,6 +43,29 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
+    <!-- The project file type, so File > Open (the system document picker,
+         filtered by Qt from the name filter *.openshape) shows projects. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>io.github.samuelairs.openshape.project</string>
+            <key>UTTypeDescription</key>
+            <string>OpenShape project</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>openshape</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
     <!-- iPhone: portrait and both landscapes (not upside down, as Apple's
          apps); iPad: all four (required for multitasking). -->
     <key>UISupportedInterfaceOrientations</key>

@@ -153,6 +153,22 @@ TEST(AppSettings, ClientAreaKeepsTheFramesBorders)
     EXPECT_EQ(clientForFrame(bordered, QRect(0, 0, 1000, 700)), QRect(8, 31, 984, 661));
 }
 
+TEST(AppSettings, ProjectNamesBecomeSafeFileNames)
+{
+    using os::ui::projectFileBaseName;
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("  Bracket  ")), QStringLiteral("Bracket"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Bracket.openshape")), QStringLiteral("Bracket"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Bracket.OPENSHAPE")), QStringLiteral("Bracket"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("a/b\\c:d*e?f\"g<h>i|j")), QStringLiteral("a-b-c-d-e-f-g-h-i-j"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Lid v2 (20 mm)")), QStringLiteral("Lid v2 (20 mm)"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Grüße 日本")), QStringLiteral("Grüße 日本"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("..")), QString());
+    EXPECT_EQ(projectFileBaseName(QStringLiteral(".hidden")), QStringLiteral("hidden"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("   ")), QString());
+    EXPECT_EQ(projectFileBaseName(QStringLiteral(".openshape")), QString());
+    EXPECT_EQ(projectFileBaseName(QString(150, QLatin1Char('x'))).size(), 100);
+}
+
 TEST(AppSettings, WindowIsNeverRestoredOffScreen)
 {
     const QSize minimum(720, 480);

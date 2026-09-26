@@ -66,4 +66,11 @@ QRect clientForFrame(const WindowPlacement& saved, const QRect& fitted);
 // (title bar included), centered; empty when the default fits.
 QRect firstWindowGeometry(QSize preferred, const QRect& available, QSize minimum, int titleBar);
 
+// iPhone / iPad: projects are saved by name into the app's folder (no save
+// dialog). The file name for what the user typed: trimmed, a typed
+// ".openshape" dropped, characters no file system takes (/ \ : * ? " < > |
+// and control characters) replaced by "-", at most 100 characters. Empty
+// when nothing usable is left (e.g. "", "  ", ".", "..").
+QString projectFileBaseName(const QString& typed);
+
 } // namespace os::ui

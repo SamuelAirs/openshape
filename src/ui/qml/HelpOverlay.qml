@@ -12,6 +12,9 @@ import OpenShape
 // closes on a click or tap, or Esc.
 Rectangle {
     id: overlay
+    // Saving as on an iPhone or iPad (Main.qml: app.savesToAppFolder).
+    property bool appFolder: false
+
     color: "#66000000"
     visible: false
     focus: visible
@@ -190,7 +193,10 @@ Rectangle {
                     }
                     HelpSection {
                         title: "Files"
-                        rows: [
+                        rows: (overlay.appFolder ? [
+                            ["Where files go", "Projects into OpenShape's folder (the Files app: On My iPhone / iPad → OpenShape), "
+                             + "by name; exports into its Exports folder. Open picks any project there"]
+                        ] : []).concat([
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S", "File → New / Open… / Save"],
                             ["Recent projects", "File → Open Recent"],
                             ["For printing", "File → Export STL or 3MF"],
@@ -198,7 +204,7 @@ Rectangle {
                             ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
                             ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies",
                              "File → Preferences…: units, grid snapping, recovery copies"]
-                        ]
+                        ])
                     }
                 }
             }

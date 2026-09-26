@@ -434,7 +434,7 @@ int main(int argc, char* argv[])
     QCommandLineOption demoOption(QStringLiteral("demo"),
                                   QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
                                                  "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
-                                                 "polygon, constraints; panels: help, about, preferences, modelpanel, viewmenu)."),
+                                                 "polygon, constraints; panels: help, about, preferences, modelpanel, viewmenu, savename)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
@@ -451,6 +451,10 @@ int main(int argc, char* argv[])
                                       QStringLiteral("Simulate a phone's safe-area insets in logical pixels, top,right,bottom,left "
                                                      "(e.g. 62,0,34,0: an iPhone 16 Pro in portrait; 0,62,21,62 in landscape)."),
                                       QStringLiteral("t,r,b,l"));
+    QCommandLineOption appFolderOption(QStringLiteral("app-folder"),
+                                       QStringLiteral("Save and export as on an iPhone or iPad: projects by name into <dir>, "
+                                                      "exports into <dir>/Exports, no save dialogs."),
+                                       QStringLiteral("dir"));
     QCommandLineOption scenarioOption(QStringLiteral("scenario"),
                                       QStringLiteral("With --acceptance: run only these scenarios (comma-separated, e.g. core,views)."),
                                       QStringLiteral("names"));
@@ -466,6 +470,7 @@ int main(int argc, char* argv[])
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
     parser.addOption(safeAreaOption);
+    parser.addOption(appFolderOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
     parser.addOption(screenshotOption);
@@ -551,6 +556,8 @@ int main(int argc, char* argv[])
     controller.startRecovery(recoveryDir);
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
+    if (parser.isSet(appFolderOption))
+        controller.setAppFolder(parser.value(appFolderOption));
     QQmlApplicationEngine engine;
     QVariantMap initialProperties{{QStringLiteral("app"), QVariant::fromValue(&controller)}};
     if (parser.isSet(safeAreaOption)) {
@@ -626,6 +633,7 @@ int main(int argc, char* argv[])
                 {QStringLiteral("preferences"), {QStringLiteral("empty"), "preferencesOverlay"}},
                 {QStringLiteral("modelpanel"), {QStringLiteral("history"), "historyOpen"}},
                 {QStringLiteral("viewmenu"), {QStringLiteral("combine"), "viewMenuOpen"}},
+                {QStringLiteral("savename"), {QStringLiteral("bracket"), "saveNamePrompt"}},
             };
             const auto panel = panels.find(demo);
             runDemo(controller, panel == panels.end() ? demo : panel->first);

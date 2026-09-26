@@ -18,6 +18,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QVariantMap>
 #include <QtGui/QGuiApplication>
 
@@ -83,6 +84,9 @@ AppController::AppController(QObject* parent)
     // the QML controls always agree.
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
     interaction_->setTouchLayout(true);
+    // No save dialog there: projects and exports go into the app's Documents
+    // folder, which the Files app shows ("On My iPhone / iPad > OpenShape").
+    setAppFolder(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
 #endif
     interaction_->fitAll(false);
 }
@@ -633,37 +637,102 @@ bool AppController::saveProjectAs(const QUrl& url)
     return saveProject();
 }
 
-bool AppController::exportStep(const QUrl& url)
+Status AppController::writeExport(const QString& format, const std::filesystem::path& path)
 {
     std::vector<geom::NamedShape> shapes;
     for (const auto& body : document_->bodies())
         if (body->isVisible() && !body->shape().isNull())
             shapes.push_back({body->name(), body->shape()});
-    const Status status = geom::exportStep(shapes, withExtension(toPath(url), ".step"));
+    if (format == QLatin1String("step"))
+        return geom::exportStep(shapes, withExtension(path, ".step"));
+    if (format == QLatin1String("stl"))
+        return geom::exportStl(shapes, withExtension(path, ".stl"));
+    if (format == QLatin1String("3mf"))
+        return io::export3mf(shapes, withExtension(path, ".3mf"));
+    return Status::failure(ErrorCode::InvalidArgument, "That export format is not available.",
+                           "writeExport: unknown format '" + format.toStdString() + "'");
+}
+
+bool AppController::exportStep(const QUrl& url)
+{
+    const Status status = writeExport(QStringLiteral("step"), toPath(url));
     notifyMessage(status ? QStringLiteral("Exported STEP") : q(status.userMessage()));
     return status.ok();
 }
 
 bool AppController::exportStl(const QUrl& url)
 {
-    std::vector<geom::NamedShape> shapes;
-    for (const auto& body : document_->bodies())
-        if (body->isVisible() && !body->shape().isNull())
-            shapes.push_back({body->name(), body->shape()});
-    const Status status = geom::exportStl(shapes, withExtension(toPath(url), ".stl"));
+    const Status status = writeExport(QStringLiteral("stl"), toPath(url));
     notifyMessage(status ? QStringLiteral("Exported STL") : q(status.userMessage()));
     return status.ok();
 }
 
 bool AppController::export3mf(const QUrl& url)
 {
-    std::vector<geom::NamedShape> shapes;
-    for (const auto& body : document_->bodies())
-        if (body->isVisible() && !body->shape().isNull())
-            shapes.push_back({body->name(), body->shape()});
-    const Status status = io::export3mf(shapes, withExtension(toPath(url), ".3mf"));
+    const Status status = writeExport(QStringLiteral("3mf"), toPath(url));
     notifyMessage(status ? QStringLiteral("Exported 3MF") : q(status.userMessage()));
     return status.ok();
+}
+
+// ---- The app folder (iPhone / iPad) ---------------------------------------------------
+
+void AppController::setAppFolder(const QString& folder)
+{
+    const QString cleaned = folder.isEmpty() ? QString() : QDir::cleanPath(QDir(folder).absolutePath());
+    if (cleaned == appFolder_)
+        return;
+    appFolder_ = cleaned;
+    if (!appFolder_.isEmpty())
+        QDir().mkpath(appFolder_);
+    emit appFolderChanged();
+}
+
+QString AppController::appFolderUrl() const
+{
+    return appFolder_.isEmpty() ? QString() : QUrl::fromLocalFile(appFolder_).toString();
+}
+
+bool AppController::appFolderHasProject(const QString& name) const
+{
+    const QString base = projectFileBaseName(name);
+    return savesToAppFolder() && !base.isEmpty()
+        && QFileInfo::exists(appFolder_ + QLatin1Char('/') + base + QStringLiteral(".openshape"));
+}
+
+bool AppController::saveInAppFolder(const QString& name)
+{
+    if (!savesToAppFolder())
+        return false;
+    const QString base = projectFileBaseName(name);
+    if (base.isEmpty()) {
+        notifyMessage(QStringLiteral("Type a name for the project."));
+        return false;
+    }
+    QDir().mkpath(appFolder_);
+    return saveProjectAs(QUrl::fromLocalFile(appFolder_ + QLatin1Char('/') + base + QStringLiteral(".openshape")));
+}
+
+bool AppController::exportToAppFolder(const QString& format)
+{
+    if (!savesToAppFolder())
+        return false;
+    const QString folder = appFolder_ + QStringLiteral("/Exports");
+    if (!QDir().mkpath(folder)) {
+        OS_LOG(Warning, File) << "cannot create " << folder.toStdString();
+        notifyMessage(QStringLiteral("Could not create the Exports folder."));
+        return false;
+    }
+    const QString base = projectFileBaseName(documentTitle());
+    const QString file = (base.isEmpty() ? QStringLiteral("Untitled") : base) + QLatin1Char('.') + format;
+    const Status status = writeExport(format, std::filesystem::path((folder + QLatin1Char('/') + file).toStdWString()));
+    if (!status) {
+        OS_LOG(Warning, File) << status.developerMessage();
+        notifyMessage(q(status.userMessage()));
+        return false;
+    }
+    // Where to find it: the Files app shows the app's folder by its name.
+    notifyMessage(QStringLiteral("Exported %1 to OpenShape \u2192 Exports (Files app)").arg(file));
+    return true;
 }
 
 // ---- Actions ----------------------------------------------------------------------------

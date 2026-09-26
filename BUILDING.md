@@ -94,7 +94,7 @@ selected), `history` (a fillet step highlighted from the Model panel),
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
 the constraint glyphs). Panels to look at (layout checks at phone sizes):
-`help`, `about`, `preferences` (the overlay open), `modelpanel` (the
+`help`, `about`, `preferences`, `savename` (the overlay open), `modelpanel` (the
 compact layout's Model panel open on the `history` scene) and `viewmenu`
 (the compact View menu open on `combine`). Without `--screenshot` the window
 stays open.
@@ -108,6 +108,10 @@ resized while it runs switches layouts live. `--safe-area top,right,bottom,left`
 (logical px) simulates a phone's safe-area insets and shades them, with the
 Dynamic Island and the home indicator drawn in: iPhone 16 Pro portrait
 `62,0,34,0`, landscape `0,62,21,62` (an iPad: `24,0,20,0`).
+`--app-folder <dir>` saves and exports as on an iPhone or iPad: Save asks for
+a name only and writes `<dir>/<name>.openshape`, exports go to
+`<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
+demo scene shows that prompt.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 

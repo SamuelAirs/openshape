@@ -42,7 +42,7 @@ ApplicationWindow {
     property var afterSave: null   // action to run once a Save As completes
     // A question the user must answer first: the window's shortcuts wait
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
-    readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible
+    readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible || saveNamePrompt.visible
 
     // ---------------------------------------------------------------- layout
     // The window's size and safe areas drive the layout (Theme.compact,
@@ -126,7 +126,7 @@ ApplicationWindow {
         onActivatedAmbiguously: window.app.redo()
     }
     Shortcut { sequences: [StandardKey.Save]; enabled: !window.modalOpen; onActivated: window.save() }
-    Shortcut { sequences: [StandardKey.SaveAs]; enabled: !window.modalOpen; onActivated: saveDialog.open() }
+    Shortcut { sequences: [StandardKey.SaveAs]; enabled: !window.modalOpen; onActivated: window.saveAs() }
     Shortcut {
         sequences: [StandardKey.Open]
         enabled: !window.modalOpen
@@ -153,7 +153,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay]
+        const panels = [saveNamePrompt, unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -167,7 +167,25 @@ ApplicationWindow {
         if (app.hasProjectPath())
             app.saveProject()
         else
+            saveAs()
+    }
+
+    // The desktop asks where with a file dialog; an iPhone or iPad only for
+    // a name (the project goes into OpenShape's folder: iOS has no save dialog).
+    function saveAs() {
+        if (app.savesToAppFolder)
+            saveNamePrompt.open(app.hasProjectPath() ? app.documentTitle : "")
+        else
             saveDialog.open()
+    }
+
+    // Exports: a file dialog on the desktop; OpenShape's Exports folder on an
+    // iPhone or iPad.
+    function exportAs(format, dialog) {
+        if (app.savesToAppFolder)
+            app.exportToAppFolder(format)
+        else
+            dialog.open()
     }
 
     // Runs `action` now if there are no unsaved changes, otherwise asks first.
@@ -260,7 +278,7 @@ ApplicationWindow {
         // Sub-menu entries are made by this delegate: name them for the acceptance run.
         delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
         MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
-        MenuItem { text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
+        MenuItem { objectName: "openMenuItem"; text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
         Menu {
             id: recentMenu
             objectName: "openRecentMenu"
@@ -290,12 +308,28 @@ ApplicationWindow {
             MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
         }
         MenuSeparator {}
-        MenuItem { text: "Save"; onTriggered: window.save() }
-        MenuItem { text: "Save As…"; onTriggered: saveDialog.open() }
+        MenuItem { objectName: "saveMenuItem"; text: "Save"; onTriggered: window.save() }
+        MenuItem { objectName: "saveAsMenuItem"; text: "Save As…"; onTriggered: window.saveAs() }
         MenuSeparator {}
-        MenuItem { text: "Export STEP…"; enabled: window.app.bodyCount > 0; onTriggered: stepDialog.open() }
-        MenuItem { text: "Export STL…"; enabled: window.app.bodyCount > 0; onTriggered: stlDialog.open() }
-        MenuItem { text: "Export 3MF…"; enabled: window.app.bodyCount > 0; onTriggered: threeMfDialog.open() }
+        // (No "…" on an iPhone or iPad: the file goes straight into Exports.)
+        MenuItem {
+            objectName: "exportStepMenuItem"
+            text: window.app.savesToAppFolder ? "Export STEP" : "Export STEP…"
+            enabled: window.app.bodyCount > 0
+            onTriggered: window.exportAs("step", stepDialog)
+        }
+        MenuItem {
+            objectName: "exportStlMenuItem"
+            text: window.app.savesToAppFolder ? "Export STL" : "Export STL…"
+            enabled: window.app.bodyCount > 0
+            onTriggered: window.exportAs("stl", stlDialog)
+        }
+        MenuItem {
+            objectName: "export3mfMenuItem"
+            text: window.app.savesToAppFolder ? "Export 3MF" : "Export 3MF…"
+            enabled: window.app.bodyCount > 0
+            onTriggered: window.exportAs("3mf", threeMfDialog)
+        }
         MenuSeparator {}
         MenuItem { objectName: "preferencesMenuItem"; text: "Preferences…"; onTriggered: preferencesOverlay.open() }
         MenuItem { objectName: "aboutMenuItem"; text: "About OpenShape"; onTriggered: aboutOverlay.open() }
@@ -852,6 +886,7 @@ ApplicationWindow {
     HelpOverlay {
         id: helpOverlay
         objectName: "helpOverlay"
+        appFolder: window.app.savesToAppFolder
         anchors.fill: parent
         z: 100
         onVisibleChanged: if (!visible) viewport.forceActiveFocus()
@@ -887,9 +922,27 @@ ApplicationWindow {
                     action()
             } else {
                 window.afterSave = action
-                saveDialog.open()
+                window.saveAs()
             }
         }
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // iPhone / iPad: Save asks for a name only (see saveAs()).
+    SaveNameOverlay {
+        id: saveNamePrompt
+        objectName: "saveNamePrompt"
+        app: window.app
+        anchors.fill: parent
+        z: 125 // above "Save changes?", whose Save may ask for the name
+        onSaved: {
+            if (window.afterSave) {
+                const action = window.afterSave
+                window.afterSave = null
+                action()
+            }
+        }
+        onCancelled: window.afterSave = null
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
@@ -975,10 +1028,12 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- dialogs
+    // On iOS Open is the system document picker (Qt's FileDialog), starting
+    // in OpenShape's folder; saving and exporting need no dialog there.
     FileDialog {
         id: openDialog
         title: "Open project"
-        currentFolder: window.app.projectFolder
+        currentFolder: window.app.projectFolder !== "" ? window.app.projectFolder : window.app.appFolderUrl
         nameFilters: ["OpenShape projects (*.openshape)"]
         onAccepted: window.app.openProject(selectedFile)
     }

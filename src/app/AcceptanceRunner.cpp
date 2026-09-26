@@ -1019,6 +1019,7 @@ void AcceptanceRunner::start()
 {
     initialSize_ = window_->size();
     initialMinimum_ = window_->minimumSize();
+    initialAppFolder_ = app_->appFolder();
     std::vector<AcceptanceScenario> scenarios = acceptanceScenarios();
     scenarios.insert(scenarios.begin(), AcceptanceScenario{QStringLiteral("core"), 0, [](AcceptanceRunner& r) {
                                                               return r.coreScenario();
@@ -1055,7 +1056,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     if (app_->sketchMode())
         app_->finishSketch();
     app_->cancelOperation();
-    for (const char* overlay : {"helpOverlay", "aboutOverlay", "preferencesOverlay", "unsavedDialog"})
+    for (const char* overlay : {"helpOverlay", "aboutOverlay", "preferencesOverlay", "unsavedDialog", "saveNamePrompt"})
         if (QQuickItem* item = findItem(QString::fromLatin1(overlay)))
             item->setVisible(false);
     if (!app_->recoveryItems().isEmpty())
@@ -1069,6 +1070,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     // The window a scenario may have made phone-sized (Compact) comes back,
     // without a simulated safe area or an open compact panel.
     window_->setProperty("simulatedSafeArea", QVariant());
+    app_->setAppFolder(initialAppFolder_); // a scenario may save as on an iPhone
     window_->setProperty("historyOpen", false);
     window_->setProperty("viewMenuOpen", false);
     if (window_->size() != initialSize_) {

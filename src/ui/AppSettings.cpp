@@ -90,6 +90,24 @@ QRect firstWindowGeometry(QSize preferred, const QRect& available, QSize minimum
     return QRect(topLeft, size);
 }
 
+QString projectFileBaseName(const QString& typed)
+{
+    QString name = typed.trimmed();
+    if (name.endsWith(QStringLiteral(".openshape"), Qt::CaseInsensitive))
+        name.chop(int(sizeof(".openshape")) - 1);
+    QString out;
+    for (qsizetype i = 0; i < name.size(); ++i) {
+        const QChar c = name.at(i);
+        const bool forbidden = c.unicode() < 0x20 || QStringLiteral("/\\:*?\"<>|").contains(c);
+        out += forbidden ? QChar(u'-') : c;
+    }
+    out = out.trimmed().left(100).trimmed();
+    // Leading dots would hide the file (and "." / ".." are folders).
+    while (out.startsWith(QLatin1Char('.')))
+        out.remove(0, 1);
+    return out.trimmed();
+}
+
 QRect fitToScreens(const QRect& frame, const QList<QRect>& availableScreens, QSize minimum)
 {
     if (!frame.isValid() || availableScreens.isEmpty())

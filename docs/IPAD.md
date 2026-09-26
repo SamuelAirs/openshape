@@ -148,11 +148,47 @@ In Xcode: the `openshape` scheme, your iPhone or iPad as the destination,
 Signing & Capabilities → your team → **Run**. On the device, the first
 time: Settings → Privacy & Security → **Developer Mode** (on, restart).
 
+## Files on iPhone and iPad
+
+What Qt 6.11 offers on iOS (read from Qt's iOS platform plugin and
+QtQuick.Dialogs): `FileDialog` in open mode shows the system document
+picker (`UIDocumentPickerViewController`, filtered by the name filter's
+extension); in save mode the native dialog refuses to show, and Qt falls
+back to its own QML file browser of the app's sandbox — no use on a phone.
+So on iOS (and Android) OpenShape saves without a dialog
+(`AppController::savesToAppFolder`, set at start to the app's Documents
+folder, which the Files app shows under On My iPhone / On My iPad →
+OpenShape):
+
+- **Save** of a new project, **Save As**, and "Save changes?" → Save ask for
+  a **name** only (`SaveNameOverlay.qml`, near the top on a phone so the
+  keyboard does not cover it); the project goes into OpenShape's folder as
+  `<name>.openshape` (characters a file system refuses become "-"; the same
+  name says **Replace**). A saved project saves in place.
+- **Open** is the system document picker, starting in OpenShape's folder;
+  `Info.plist` declares the `.openshape` type
+  (`io.github.samuelairs.openshape.project`) so the picker shows projects.
+- **Export STL / 3MF / STEP** write `Exports/<project name>.<ext>` in
+  OpenShape's folder at once (replacing an earlier export of that name) and
+  say where; from the Files app they can be shared to a slicer, AirDrop or
+  Mail.
+- Open Recent, recovery copies and the log (`Logs/openshape.log`) work as on
+  the desktop.
+- Windows and macOS are unchanged (file dialogs). `--app-folder <dir>`
+  tries the iOS behaviour on the desktop; the acceptance scenario
+  `appfolder` checks it.
+
+Not done yet: the system share sheet straight from Export (needs a few
+lines of Objective-C: `UIActivityViewController` with the file URL); opening
+a project from the Files app into OpenShape (needs `CFBundleDocumentTypes`
+and handling `QFileOpenEvent`); projects outside OpenShape's folder (iCloud
+Drive) may not open if Qt does not start security-scoped access for the
+picked file — copy them into OpenShape's folder in the Files app first.
+
 ## Expected rough edges
 
-- Open and Save: projects live in the app's Documents folder, which the
-  Files app shows under "On My iPad → OpenShape". How Qt's file dialogs
-  behave on iPadOS (especially saving) needs testing.
+- Files: see above; the Open picker for projects outside OpenShape's folder
+  needs testing on a device.
 - No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
 - Typing values: tap the value field for the on-screen keyboard (typing
   without tapping needs a hardware keyboard).

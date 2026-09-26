@@ -36,6 +36,7 @@ qt_add_qml_module(openshape_ui
         qml/RecoveryOverlay.qml
         qml/UnsavedOverlay.qml
         qml/ScrollRow.qml
+        qml/SaveNameOverlay.qml
     SOURCES
         AppController.cpp AppController.h
         ViewportItem.cpp ViewportItem.h

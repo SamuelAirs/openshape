@@ -18,6 +18,7 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -85,6 +86,13 @@ class AppController : public QObject {
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
     // Seconds; 0 = no recovery copies. One of kRecoveryIntervals.
     Q_PROPERTY(int recoveryInterval READ recoveryInterval WRITE setRecoveryInterval NOTIFY preferencesChanged)
+    // iPhone / iPad: projects are saved by name into the app's own folder
+    // (Documents, which the Files app shows) and exports go to its Exports
+    // folder: iOS has no save dialog (Qt's FileDialog opens only). False on
+    // the desktop, which uses file dialogs.
+    Q_PROPERTY(bool savesToAppFolder READ savesToAppFolder NOTIFY appFolderChanged)
+    // The app's folder as a URL (for the Open picker to start in), or "".
+    Q_PROPERTY(QString appFolderUrl READ appFolderUrl NOTIFY appFolderChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -190,6 +198,22 @@ public:
     Q_INVOKABLE bool exportStl(const QUrl& url);
     Q_INVOKABLE bool export3mf(const QUrl& url);
 
+    // ---- The app folder (iPhone / iPad; see savesToAppFolder)
+    bool savesToAppFolder() const { return !appFolder_.isEmpty(); }
+    QString appFolder() const { return appFolder_; }
+    QString appFolderUrl() const;
+    // Saving there by name (projectFileBaseName): replaces a project of that
+    // name. False, with a message, if the name is unusable or saving fails.
+    Q_INVOKABLE bool saveInAppFolder(const QString& name);
+    // Whether a project of that name is there already (Save then replaces it).
+    Q_INVOKABLE bool appFolderHasProject(const QString& name) const;
+    // Exports the visible bodies to <app folder>/Exports/<document title>.<format>
+    // ("stl", "3mf" or "step"), replacing an earlier export of that name.
+    Q_INVOKABLE bool exportToAppFolder(const QString& format);
+    // Where to save without dialogs: the Documents folder on iOS and Android
+    // (set at start), "" for file dialogs; tests and --app-folder set it.
+    void setAppFolder(const QString& folder);
+
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
@@ -250,6 +274,7 @@ signals:
     void recoveryChanged();
     void recentFilesChanged();
     void preferencesChanged();
+    void appFolderChanged();
 
 private:
     void attach();
@@ -263,6 +288,8 @@ private:
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
     void updateRecentFiles();
     void savePreferences() const;
+    // The visible bodies written as STL, 3MF or STEP (by `format`).
+    Status writeExport(const QString& format, const std::filesystem::path& path);
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
@@ -279,6 +306,7 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
+    QString appFolder_; // see savesToAppFolder
 };
 
 } // namespace os::ui

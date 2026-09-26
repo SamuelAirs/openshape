@@ -583,7 +583,13 @@ While `UnsavedOverlay` or `RecoveryOverlay` is shown (`window.modalOpen`)
 the window's shortcuts are disabled, as behind a native modal dialog, and
 `UnsavedOverlay.ask()` ignores a second request: the pending action is the
 one the user is being asked about.
-Only file choosers stay native (`FileDialog`). After a menu or overlay
+Only file choosers stay native (`FileDialog`) — on the desktop. On iOS and
+Android (`AppController::savesToAppFolder`: the app's Documents folder,
+which the Files app shows; `--app-folder` on the desktop) there is no save
+dialog: `SaveNameOverlay` asks for a name (`projectFileBaseName` makes it a
+safe file name) and `saveInAppFolder` writes `<folder>/<name>.openshape`;
+exports go to `<folder>/Exports/<title>.<ext>` (`exportToAppFolder`); Open
+stays Qt's `FileDialog` (the system document picker there). After a menu or overlay
 closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
 them on a hidden menu separator after the Open Recent sub-menu).
 
