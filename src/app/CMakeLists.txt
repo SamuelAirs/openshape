@@ -15,6 +15,11 @@ qt_add_resources(openshape "openshape_icons"
     FILES ${PROJECT_SOURCE_DIR}/resources/icons/openshape.svg
 )
 set_target_properties(openshape PROPERTIES OUTPUT_NAME "OpenShape")
+# With a static Qt (iOS), Qt scans the app's QML to link the plugins of the
+# modules it imports; the QML lives in src/ui, not beside main.cpp. Without
+# this the iPad app linked no QML plugins at all (the scan found nothing).
+set_target_properties(openshape PROPERTIES
+    QT_QML_IMPORT_SCANNER_EXTRA_ROOT_PATHS "${PROJECT_SOURCE_DIR}/src/ui/qml")
 
 # macOS / iPadOS app bundle. The identifier is the App ID registered with
 # Apple for TestFlight (docs/IPAD.md). Every TestFlight upload needs a new
