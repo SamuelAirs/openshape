@@ -98,7 +98,26 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(!overlayVisible(), "allowance: the panel closes");
             // The plate's top face is still selected (it was pushed).
             r.check(r.clickItem(QStringLiteral("tool_hole")), "allowance: Hole in the Modify palette");
+            r.check(holeTool(r) != nullptr, "allowance: the Hole tool", r.app().operationTitle());
+        },
+        // The tool remembers its last settings (an earlier scenario may have
+        // left another size, a blind depth or a head): M3, through all, no head.
+        [&r] { r.check(r.clickItem(QStringLiteral("action_size:2")), "allowance: M3"); },
+        [&r] {
+            if (const auto* tool = holeTool(r); tool && !tool->settings().throughAll)
+                r.check(r.clickItem(QStringLiteral("action_throughAll")), "allowance: Through all");
+        },
+        [&r] {
+            if (const auto* tool = holeTool(r); tool && tool->settings().head == doc::HoleKind::Counterbore)
+                r.check(r.clickItem(QStringLiteral("action_head:counterbore")), "allowance: no counterbore");
+            else if (tool && tool->settings().head == doc::HoleKind::Countersink)
+                r.check(r.clickItem(QStringLiteral("action_head:countersink")), "allowance: no countersink");
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("action_fit:normal")), "allowance: Normal fit"); },
+        [&r] {
             const auto* tool = holeTool(r);
+            r.check(tool && tool->settings().throughAll && tool->settings().head == doc::HoleKind::Plain,
+                    "allowance: plain holes through all");
             r.check(tool && std::abs(tool->diameter() - 3.65) < 1e-9, "allowance: M3 normal fit is 3.4 + 0.25 mm", diameterText(tool));
             r.check(r.app().operationValueText() == QStringLiteral("3.65 mm"), "allowance: the chip shows 3.65 mm",
                     r.app().operationValueText());

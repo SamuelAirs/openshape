@@ -1280,7 +1280,7 @@ std::string TextOperation::valueLabel() const
 
 std::string TextOperation::prompt() const
 {
-    return text_.empty() ? std::string("Type the text in the box \xC2\xB7 click or tap the face to place it "
+    return text_.empty() ? std::string("Type the text in the box \xC2\xB7 click the face to move it "
                                        "(it snaps to the center and the middles of the edges)")
                          : std::string();
 }

@@ -3068,7 +3068,7 @@ Status InteractionController::runTool(const std::string& id)
     if (id == "text") {
         if (faces && selection_.size() == 1)
             return triggerAction("text");
-        return explain("Click a flat face, then Text: type the words, click or tap where they go, and drag the arrow "
+        return explain("Click a flat face, then Text: type the words, click where they go, and drag the arrow "
                        "out to raise them or in to cut them.");
     }
     if (id == "measure")

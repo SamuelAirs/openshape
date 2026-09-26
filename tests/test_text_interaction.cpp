@@ -238,7 +238,12 @@ TEST(TextInteraction, TextNeedsAFlatFace)
     TextHarness h;
     EXPECT_FALSE(h.controller.runTool("text").ok());
     ASSERT_FALSE(h.messages.empty());
-    EXPECT_EQ(h.messages.back(), "Click a flat face, then Text: type the words, click or tap where they go, and drag the arrow "
+    EXPECT_EQ(h.messages.back(), "Click a flat face, then Text: type the words, click where they go, and drag the arrow "
+                                 "out to raise them or in to cut them.");
+    // In the touch layout it says tap.
+    h.controller.setTouchLayout(true);
+    EXPECT_FALSE(h.controller.runTool("text").ok());
+    EXPECT_EQ(h.messages.back(), "Tap a flat face, then Text: type the words, tap where they go, and drag the arrow "
                                  "out to raise them or in to cut them.");
     EXPECT_FALSE(h.controller.operationTakesText());
     EXPECT_EQ(h.controller.setOperationText("Hi"), "Select a flat face, then Text.");

@@ -239,9 +239,9 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   per font). Each glyph instance is copied (repeated letters share a cached
   shape) and its wires re-oriented by `ShapeFix_Face::FixOrientation`
   (FreeType outlines run clockwise); counters (O, A, B) are holes in the
-  faces. `embossText` extrudes the faces 0.05 mm from inside the material
-  (raised) or from above the surface (cut), so no tool face coincides with
-  the face, fuses or cuts them in one boolean, and checks the volume
+  faces. `embossText` extrudes the faces from the face's plane (as push/pull
+  does; a lead into the material would hang a sliver into a hole under
+  raised letters), fuses or cuts them in one boolean, and checks the volume
   changed the right way by no more than the letters' area x |depth|
   (tests: exactly area x depth, 1e-5 relative). `checkText` refuses, in
   plain words, empty text, line breaks, control characters, invalid UTF-8,

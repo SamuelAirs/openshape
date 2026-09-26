@@ -396,15 +396,12 @@ Result<Shape> embossText(const Shape& body, const TextSpec& spec, const TextFram
         auto faces = buildFaces(spec, frame);
         if (!faces)
             return faces;
-        // The letters start a little inside the material (a raise) or above
-        // the surface (a cut), so no tool face lies exactly on the face: the
-        // lead adds nothing and removes nothing where the face is.
-        constexpr double kLead = 0.05;
+        // The letters start exactly on the face's plane (as a push/pull's
+        // prism does): a lead into the material or above the surface would
+        // add a sliver where the letters overhang a pocket, or nick a boss
+        // standing on the face next to cut-in letters.
         const Vec3 n = frame.normal.normalized();
-        gp_Trsf lead;
-        lead.SetTranslation(toVec(n * (raise ? -kLead : kLead)));
-        BRepBuilderAPI_Transform start(occ(faces.value()), lead, Standard_True);
-        BRepPrimAPI_MakePrism prism(start.Shape(), toVec(n * (depth + (raise ? kLead : -kLead))), Standard_True);
+        BRepPrimAPI_MakePrism prism(occ(faces.value()), toVec(n * depth), Standard_True);
         prism.Build();
         if (!prism.IsDone())
             return R::failure(ErrorCode::KernelFailure, userMessage, "embossText: prism failed");

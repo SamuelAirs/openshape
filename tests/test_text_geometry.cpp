@@ -202,6 +202,27 @@ TEST(TextGeometry, DebossRemovesAreaTimesDepth)
     EXPECT_FALSE(through.warnings().empty()) << "a warning says it is in pieces";
 }
 
+// Letters over a hole in the face bridge it at the face's height: nothing
+// hangs into the hole (the letters start exactly on the face's plane).
+TEST(TextGeometry, RaisedLettersBridgeAHoleExactly)
+{
+    OS_REQUIRE_TEST_FONT(kFont);
+    const Shape holed = booleanOp(plate(), makeCylinder({0, 0, -1}, {0, 0, 1}, 3.0, 7).value(), BooleanKind::Subtract).value();
+    const TextSpec text = spec("H", 10); // its crossbar runs over the hole
+    const double area = surfaceArea(textFaces(text).value());
+    ASSERT_TRUE(faceContains(textFaces(text).value(), 0, {0, 0, 0})) << "the crossbar crosses the middle";
+    auto raised = embossText(holed, text, onTop(), 1.0);
+    ASSERT_TRUE(raised) << raised.developerMessage();
+    EXPECT_NEAR(volume(raised.value()) - volume(holed), area * 1.0, 1e-5 * area);
+    EXPECT_TRUE(isValid(raised.value()));
+    // Cut in beside a boss standing on the face: the boss is untouched.
+    const Shape boss = booleanOp(plate(), makeBox({15, -5, 5}, {10, 10, 10}).value(), BooleanKind::Union).value();
+    auto cut = embossText(boss, spec("HI", 6), onTop(5, {-10, 0, 0}), -1.0);
+    ASSERT_TRUE(cut) << cut.developerMessage();
+    EXPECT_NEAR(volume(boss) - volume(cut.value()), surfaceArea(textFaces(spec("HI", 6)).value()), 1e-4);
+    EXPECT_NEAR(boundingBox(cut.value()).max.z, 15.0, 1e-6);
+}
+
 // Turned (running along Y) and placed on a side face (normal +X).
 TEST(TextGeometry, PlacedOnAnyFlatFaceAndTurned)
 {

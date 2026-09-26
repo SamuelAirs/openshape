@@ -94,7 +94,19 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     Home comes back to it. Import STEP… with a part from another program
     (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
     size and names; push/pull a face and round an edge of it, save, reopen.
-14. **The documentation.** Follow the Quick start in README.md step by step
+14. **Print helpers.**
+    - Hole allowance: File → Preferences… → "Hole allowance for 3D
+      printing" (0.2 mm to start with). With the Hole tool, M3 close fit
+      now shows 3.40 mm (3.2 + 0.2). Print a plate with M3 close-fit and
+      normal-fit holes and try real screws; if they are tight or loose,
+      change the allowance (0.1, 0.3, or type e.g. `0.25`) and print again.
+      Tap and heat-set insert sizes do not change.
+    - Text: click a flat face, "Text", type a word (the letters appear in
+      the middle), click elsewhere on the face to move it, drag the arrow
+      up (raised) or down (cut in), try Size `5`, 90°, Deboss; Enter. In
+      the Model panel, click the Text step and change the words. Print a
+      label: are 5 mm capitals 0.6-1 mm deep readable?
+15. **The documentation.** Follow the Quick start in README.md step by step
     (the mounting plate with two holes), and skim docs/USER_GUIDE.md: does
     everything work as written? Is anything you use missing? F1 → the
     link under the first paragraph opens the guide on GitHub.
