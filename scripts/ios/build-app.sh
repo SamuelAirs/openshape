@@ -43,6 +43,11 @@ if [ ! -f "$imports" ]; then
     grep -i "qmlimportscanner\|QmlTools" "$BUILD/configure.log" || true
     exit 1
 fi
+if grep -q 'qml_import_scanner_imports_count 0)' "$imports"; then
+    echo "error: Qt's QML import scan found no imports (the app would start without its QML plugins)"
+    head -c 2000 "$imports"
+    exit 1
+fi
 # Entries look like "CLASSNAME;QtQuick2Plugin;NAME;QtQuick;PATH;...".
 sed -nE 's/.*[";]NAME;([^;"]*).*/\1/p' "$imports" | sort -u > "$BUILD/qml-modules.txt"
 echo "QML modules linked: $(tr '\n' ' ' < "$BUILD/qml-modules.txt")"

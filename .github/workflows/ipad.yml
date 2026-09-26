@@ -76,6 +76,7 @@ jobs:
           app=build/ios/OpenShape.xcarchive/Products/Applications/OpenShape.app
           echo "::notice title=iPad app::$(du -sh $app | cut -f1), build $OPENSHAPE_BUILD_NUMBER, iPadOS $(plutil -extract MinimumOSVersion raw $app/Info.plist)+, $(lipo -archs $app/OpenShape)"
           echo "::notice title=QML modules linked::$(tr '\n' ' ' < build/ios/qml-modules.txt) ."
+          echo "::notice title=QML import scan (start)::$(head -c 1500 build/ios/src/app/.qt/qml_imports/openshape_conf.cmake | tr '\n%' ' _')"
 
       - name: Upload to TestFlight
         if: env.HAS_SIGNING == 'true' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[testflight]'))
