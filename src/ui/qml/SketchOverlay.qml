@@ -259,7 +259,8 @@ Item {
             id: labelItem
             required property var modelData
             readonly property bool isConstraint: modelData.kind === "constraint"
-            objectName: isConstraint ? "constraintIcon_" + modelData.constraint : ""
+            objectName: isConstraint ? "constraintIcon_" + modelData.constraint
+                      : modelData.kind === "dimension" ? "dimensionLabel_" + modelData.constraint : ""
             x: modelData.x - width / 2
             y: modelData.y - height / 2
             width: isConstraint ? badge.width : pill.width
@@ -370,7 +371,7 @@ Item {
         }
         function open(id, text, cx, cy) {
             constraintId = id
-            this.text = text.replace("Ø", "")
+            this.text = text.replace("Ø", "").replace("°", "")
             x = cx - width / 2
             y = cy - height / 2
             dimensionError.text = ""

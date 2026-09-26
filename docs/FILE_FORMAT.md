@@ -70,7 +70,10 @@ Rules:
   circles/arcs), `Tangent`, `Concentric`, `PointOnLine` (point `a` on line
   `b`), `Midpoint` (point `a` at the middle of line `b`), `PointOnCircle`
   (point `a` on the circle of circle or arc `b`), `Symmetric` (points `a`
-  and `b` mirror images across line `c`; neither may be an end of `c`).
+  and `b` mirror images across line `c`; neither may be an end of `c`),
+  `Angle` (lines `a`, `b`; `value` = the signed angle in radians,
+  counterclockwise, from a's direction (start → end) to b's: the UI shows
+  it as the angle between the lines at their corner).
   Only constraints with a third entity write `"c"` (an entity id); readers
   treat a missing `"c"` as none and refuse it on any other type. A `Tangent`
   between a line or arc and an arc sharing an end point means a smooth join

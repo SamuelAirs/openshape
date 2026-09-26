@@ -192,7 +192,9 @@ Document (UUID, display unit)
   distance (signed), diameter, radius (arcs), parallel, perpendicular, equal
   (lengths or radii), tangent (line or round to round), concentric, point on
   line, point on circle, midpoint, symmetric (two points across a line: the
-  only kind with a third entity, `c`). A line and an arc tangent at a shared end
+  only kind with a third entity, `c`), angle (between two lines: stored as
+  the signed angle between their directions, shown and edited as the angle
+  at their corner). A line and an arc tangent at a shared end
   are solved as a direction (angle constraint), not "line touches circle";
   two arcs tangent at a shared end likewise tie their end angles (equal, or
   half a turn apart for an S-bend), never circle-to-circle tangency.

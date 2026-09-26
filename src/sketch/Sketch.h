@@ -90,6 +90,7 @@ enum class ConstraintKind {
     Radius,             // arc a; value > 0
     PointOnCircle,      // point a on the (full) circle of circle or arc b
     Symmetric,          // points a, b mirror images across the (infinite) line c
+    Angle,              // lines a, b; value = signed angle (radians, counterclockwise) from a's direction to b's
 };
 
 struct SketchConstraint {
@@ -102,7 +103,8 @@ struct SketchConstraint {
     bool isDimension() const
     {
         return kind == ConstraintKind::Distance || kind == ConstraintKind::HorizontalDistance
-            || kind == ConstraintKind::VerticalDistance || kind == ConstraintKind::Diameter || kind == ConstraintKind::Radius;
+            || kind == ConstraintKind::VerticalDistance || kind == ConstraintKind::Diameter || kind == ConstraintKind::Radius
+            || kind == ConstraintKind::Angle;
     }
 };
 
@@ -220,6 +222,18 @@ struct RectangleIds {
     EntityId edges[4]{};    // bottom, right, top, left (for an axis-aligned drag)
 };
 RectangleIds addRectangle(Sketch& sketch, Vec2 cornerA, Vec2 cornerB, EntityId reuseFirstCorner = kNoEntity);
+
+// The angle a user sees between two lines, in [0, pi]: between the rays
+// from where they meet towards the middle of each line. `directionAngle` is
+// the signed angle between the lines' own directions (an Angle constraint's
+// value); directionAngleFor converts back, keeping the configuration the
+// lines are in now. nullopt for missing or parallel lines.
+std::optional<double> visibleAngle(const Sketch& sketch, EntityId lineA, EntityId lineB, double directionAngle);
+std::optional<double> directionAngleFor(const Sketch& sketch, EntityId lineA, EntityId lineB, double visible);
+// The current signed angle from line a's direction to line b's.
+std::optional<double> lineDirectionAngle(const Sketch& sketch, EntityId lineA, EntityId lineB);
+// Where two (infinite) lines meet; nullopt when parallel.
+std::optional<Vec2> lineIntersection(const Sketch& sketch, EntityId lineA, EntityId lineB);
 
 // Solves in place. Returns the report (also stored on the sketch). On
 // failure the previous positions are kept.

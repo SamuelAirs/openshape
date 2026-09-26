@@ -83,7 +83,8 @@ const char* constraintGlyph(sketch::ConstraintKind kind)
     case K::HorizontalDistance:
     case K::VerticalDistance:
     case K::Diameter:
-    case K::Radius: return nullptr;
+    case K::Radius:
+    case K::Angle: return nullptr;
     }
     return nullptr;
 }
@@ -1162,6 +1163,27 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
     const sketch::SketchConstraint* c = working_.constraint(constraintId);
     if (!c || !c->isDimension())
         return "That dimension no longer exists.";
+    if (c->kind == sketch::ConstraintKind::Angle) {
+        // Degrees, as shown.
+        std::string digits = text;
+        for (const std::string_view unit : {std::string_view("\xC2\xB0"), std::string_view("deg")})
+            if (const auto at = digits.find(unit); at != std::string::npos)
+                digits.erase(at, unit.size());
+        char* rest = nullptr;
+        const double degrees = std::strtod(digits.c_str(), &rest);
+        while (rest && *rest == ' ')
+            ++rest;
+        if (rest == digits.c_str() || *rest != '\0' || !(degrees > 0) || !(degrees < 180))
+            return "Angles must be more than 0 and less than 180 degrees.";
+        const auto value = sketch::directionAngleFor(working_, c->a, c->b, degrees * kPi / 180.0);
+        if (!value)
+            return "These lines are parallel: there is no angle to set.";
+        sketch::Sketch next = working_;
+        next.constraint(constraintId)->value = *value;
+        if (!commit(std::move(next), "Edit angle"))
+            return "The sketch cannot take that angle.";
+        return {};
+    }
     const auto parsed = parseLength(text, document_.displayUnit());
     if (!parsed.millimeters)
         return parsed.error;
@@ -1253,6 +1275,8 @@ std::vector<ContextAction> SketchSession::contextActions() const
             actions.push_back({"parallel", "Parallel", false});
             actions.push_back({"perpendicular", "Perpendicular", false});
             actions.push_back({"equal", "Equal", false});
+            if (sketch::lineIntersection(working_, selected_[0], selected_[1]))
+                actions.push_back({"angle", "Angle", false});
         } else if (round == 2) {
             actions.push_back({"equal", "Equal", false});
             actions.push_back({"concentric", "Concentric", false});
@@ -1324,6 +1348,12 @@ Status SketchSession::triggerAction(const std::string& id)
         next.addConstraint({horizontal ? sketch::ConstraintKind::HorizontalDistance : sketch::ConstraintKind::VerticalDistance,
                             selected_[0], selected_[1], horizontal ? b.x - a.x : b.y - a.y});
         label = horizontal ? "Horizontal distance" : "Vertical distance";
+    } else if (id == "angle" && selected_.size() == 2 && working_.line(selected_[0]) && working_.line(selected_[1])) {
+        const auto now = sketch::lineDirectionAngle(working_, selected_[0], selected_[1]);
+        if (!now || !sketch::lineIntersection(working_, selected_[0], selected_[1]))
+            return Status::failure(ErrorCode::InvalidArgument, "Parallel lines have no angle between them.", "angle: parallel");
+        next.addConstraint({sketch::ConstraintKind::Angle, selected_[0], selected_[1], *now});
+        label = "Angle";
     } else if (id == "coincident" && selected_.size() == 2) {
         next.addConstraint({sketch::ConstraintKind::Coincident, selected_[0], selected_[1]});
         label = "Coincident";
@@ -1761,7 +1791,9 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
     const sketch::Plane& plane = working_.plane();
     auto screen = [&](Vec2 local) { return toScreen(local, camera); };
 
-    // Committed dimensions.
+    // Committed dimensions. Angle labels slide further into their angle
+    // (along the bisector) when another label is in the way.
+    std::vector<std::pair<std::size_t, Vec2>> angleLabels; // index in `out`, screen step along the bisector
     for (const auto& [id, c] : working_.constraints()) {
         if (!c.isDimension())
             continue;
@@ -1799,6 +1831,26 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             label.text = "\xC3\x98" + trimmed(c.value, unit);
             break;
         }
+        case sketch::ConstraintKind::Angle: {
+            // At the corner, a little way into the angle.
+            const auto corner = sketch::lineIntersection(working_, c.a, c.b);
+            const auto visible = sketch::visibleAngle(working_, c.a, c.b, c.value);
+            if (!corner || !visible)
+                continue;
+            auto towardMiddle = [&](sketch::EntityId lineId) {
+                const auto* l = working_.line(lineId);
+                Vec2 d = (working_.point(l->start)->position + working_.point(l->end)->position) * 0.5 - *corner;
+                return d.length() > 1e-12 ? d * (1.0 / d.length()) : Vec2{1, 0};
+            };
+            Vec2 bisector = towardMiddle(c.a) + towardMiddle(c.b);
+            bisector = bisector.length() > 1e-9 ? bisector * (1.0 / bisector.length()) : Vec2{0, 1};
+            label.screen = screen(*corner + bisector * (2.2 * offset));
+            angleLabels.emplace_back(out.size(), screen(*corner + bisector * (3.2 * offset)) - label.screen);
+            char text[32];
+            std::snprintf(text, sizeof text, "%.4g\xC2\xB0", *visible * 180.0 / kPi);
+            label.text = text;
+            break;
+        }
         case sketch::ConstraintKind::Radius: {
             const auto* arc = working_.arc(c.a);
             const Vec2 center = working_.point(arc->center)->position;
@@ -1813,6 +1865,16 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             continue;
         }
         out.push_back(label);
+    }
+    for (const auto& [index, step] : angleLabels) {
+        auto crowded = [&](Vec2 p) {
+            for (std::size_t i = 0; i < out.size(); ++i)
+                if (i != index && std::abs(out[i].screen.x - p.x) < 40 && std::abs(out[i].screen.y - p.y) < 24)
+                    return true;
+            return false;
+        };
+        for (int k = 0; k < 4 && crowded(out[index].screen); ++k)
+            out[index].screen = out[index].screen + step;
     }
 
     // Constraint glyphs (not while a shape is being drawn: they would clutter it).
@@ -2092,6 +2154,7 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
         case K::VerticalDistance:
         case K::Diameter:
         case K::Radius:
+        case K::Angle:
             break;
         }
     }

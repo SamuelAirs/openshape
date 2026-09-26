@@ -1388,3 +1388,42 @@ TEST(SketchInteraction, LinearAndCircularPatternOfAHole)
     EXPECT_TRUE(opposite) << "180 degrees on";
     EXPECT_TRUE(h.messages.empty());
 }
+
+// A right triangle whose hypotenuse angle is dimensioned, then changed.
+TEST(SketchInteraction, AngleDimensionBetweenTwoLines)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.click(h.sketchScreen({20, 15}));
+    h.click(h.sketchScreen({0, 0})); // closes the triangle
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({10, 0}));
+    ASSERT_TRUE(h.session().triggerAction("length").ok()); // the base: 20
+    h.click(h.sketchScreen({10, 7.5}), true); // and the hypotenuse
+    ASSERT_EQ(h.session().selection().size(), 2u);
+    ASSERT_TRUE(offers(h, "angle"));
+    ASSERT_TRUE(h.session().triggerAction("angle").ok());
+    sketch::EntityId angle = sketch::kNoEntity;
+    for (const auto& [id, c] : h.session().sketch().constraints())
+        if (c.kind == sketch::ConstraintKind::Angle)
+            angle = id;
+    ASSERT_NE(angle, sketch::kNoEntity);
+    EXPECT_EQ(h.session().sketch().solveReport().degreesOfFreedom, 0);
+    std::string text;
+    for (const auto& label : h.session().labels(h.controller.camera()))
+        if (label.kind == SketchLabel::Kind::Dimension && label.constraint == angle)
+            text = label.text;
+    EXPECT_EQ(text, "36.87\xC2\xB0");
+    EXPECT_NE(h.session().setDimension(angle, "180"), "") << "not a corner";
+    EXPECT_EQ(h.session().setDimension(angle, "45"), "");
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6) << "20 x 20 / 2";
+    EXPECT_EQ(h.session().setDimension(angle, "60\xC2\xB0"), "");
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 20 * 20 * std::sqrt(3.0) / 2, 1e-6);
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6);
+    EXPECT_TRUE(h.messages.empty());
+}

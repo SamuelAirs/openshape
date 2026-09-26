@@ -899,3 +899,37 @@ TEST(SketchEdit, CircularPatternSharesTheCenterAndSpacesEvenly)
     ASSERT_EQ(motions.size(), 2u);
     EXPECT_NEAR(motions[1].angle, kPi / 2, 1e-12);
 }
+
+TEST(Sketch, AngleBetweenTwoLines)
+{
+    // A "V" at the origin: a runs towards the corner, b away from it.
+    Sketch s;
+    const EntityId a = s.addLine(s.addPoint({10, 0}), kOriginId);
+    const EntityId b = s.addLine(kOriginId, s.addPoint({5, 8}));
+    s.addConstraint({ConstraintKind::Horizontal, a});
+    const auto now = lineDirectionAngle(s, a, b);
+    ASSERT_TRUE(now.has_value());
+    EXPECT_NEAR(*visibleAngle(s, a, b, *now), std::atan2(8.0, 5.0), 1e-12) << "the corner's own angle";
+    const auto sixty = directionAngleFor(s, a, b, kPi / 3);
+    ASSERT_TRUE(sixty.has_value());
+    const EntityId angle = s.addConstraint({ConstraintKind::Angle, a, b, *sixty});
+    ASSERT_NE(angle, kNoEntity);
+    ASSERT_TRUE(solve(s).ok) << s.solveReport().message;
+    const Vec2 tip = pos(s, s.line(b)->end);
+    EXPECT_NEAR(std::atan2(tip.y, tip.x), kPi / 3, 1e-9);
+    EXPECT_NEAR(*visibleAngle(s, a, b, s.constraint(angle)->value), kPi / 3, 1e-9);
+    // Wider than a right angle, then back.
+    s.constraint(angle)->value = *directionAngleFor(s, a, b, 2 * kPi / 3);
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_NEAR(std::atan2(pos(s, s.line(b)->end).y, pos(s, s.line(b)->end).x), 2 * kPi / 3, 1e-9);
+    // Round trip; parallel lines have no angle.
+    auto back = Sketch::fromJson(s.toJson());
+    ASSERT_TRUE(back.ok()) << back.developerMessage();
+    EXPECT_EQ(back.value().constraint(angle)->kind, ConstraintKind::Angle);
+    EXPECT_NEAR(back.value().constraint(angle)->value, s.constraint(angle)->value, 1e-15);
+    EXPECT_TRUE(back.value().constraint(angle)->isDimension());
+    const EntityId p = line(s, {0, 5}, {10, 5});
+    EXPECT_FALSE(directionAngleFor(s, a, p, 1.0).has_value());
+    EXPECT_FALSE(lineIntersection(s, a, p).has_value());
+    EXPECT_EQ(s.addConstraint({ConstraintKind::Angle, a, a, 1.0}), kNoEntity);
+}

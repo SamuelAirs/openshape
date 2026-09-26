@@ -160,6 +160,9 @@ bool Sketch::isValid(const SketchConstraint& c) const
              && (!arcs_.contains(c.b)
                  || (arcs_.at(c.b).center != c.a && arcs_.at(c.b).start != c.a && arcs_.at(c.b).end != c.a));
         break;
+    case ConstraintKind::Angle:
+        valid = lines_.contains(c.a) && lines_.contains(c.b) && c.a != c.b;
+        break;
     case ConstraintKind::Symmetric:
         // Two different points, neither an end of the line (a point on the
         // line is its own mirror image).
@@ -303,6 +306,91 @@ std::vector<EntityId> Sketch::constraintsOn(EntityId id) const
     return out;
 }
 
+namespace {
+
+struct LinePair {
+    Vec2 a0, da, b0, db; // start and direction (start -> end) of each line
+};
+
+std::optional<LinePair> linePair(const Sketch& s, EntityId lineA, EntityId lineB)
+{
+    const auto* a = s.line(lineA);
+    const auto* b = s.line(lineB);
+    if (!a || !b)
+        return std::nullopt;
+    LinePair p{s.point(a->start)->position, s.point(a->end)->position - s.point(a->start)->position,
+               s.point(b->start)->position, s.point(b->end)->position - s.point(b->start)->position};
+    if (p.da.length() < 1e-12 || p.db.length() < 1e-12)
+        return std::nullopt;
+    return p;
+}
+
+double signedAngle(Vec2 from, Vec2 to)
+{
+    return std::atan2(from.x * to.y - from.y * to.x, from.dot(to));
+}
+
+// Where they meet, as parameters along each line (0 at the start, 1 at the end).
+std::optional<std::pair<double, double>> meeting(const LinePair& p)
+{
+    const double den = p.da.x * p.db.y - p.da.y * p.db.x;
+    if (std::abs(den) < 1e-9 * p.da.length() * p.db.length())
+        return std::nullopt;
+    const Vec2 w = p.b0 - p.a0;
+    return std::make_pair((w.x * p.db.y - w.y * p.db.x) / den, (w.x * p.da.y - w.y * p.da.x) / den);
+}
+
+// Whether each line's direction points from the meeting point towards the
+// line's middle (+1) or away from it (-1). nullopt when parallel.
+std::optional<std::pair<double, double>> raySides(const LinePair& p)
+{
+    const auto m = meeting(p);
+    if (!m)
+        return std::nullopt;
+    return std::make_pair(m->first <= 0.5 ? 1.0 : -1.0, m->second <= 0.5 ? 1.0 : -1.0);
+}
+
+} // namespace
+
+std::optional<double> lineDirectionAngle(const Sketch& s, EntityId lineA, EntityId lineB)
+{
+    const auto p = linePair(s, lineA, lineB);
+    if (!p)
+        return std::nullopt;
+    return signedAngle(p->da, p->db);
+}
+
+std::optional<Vec2> lineIntersection(const Sketch& s, EntityId lineA, EntityId lineB)
+{
+    const auto p = linePair(s, lineA, lineB);
+    const auto m = p ? meeting(*p) : std::nullopt;
+    if (!m)
+        return std::nullopt;
+    return p->a0 + p->da * m->first;
+}
+
+std::optional<double> visibleAngle(const Sketch& s, EntityId lineA, EntityId lineB, double directionAngle)
+{
+    const auto p = linePair(s, lineA, lineB);
+    const auto sides = p ? raySides(*p) : std::nullopt;
+    if (!sides)
+        return std::nullopt;
+    // Turning one direction round adds half a turn.
+    return std::abs(std::remainder(directionAngle + (sides->first * sides->second < 0 ? kPi : 0.0), 2 * kPi));
+}
+
+std::optional<double> directionAngleFor(const Sketch& s, EntityId lineA, EntityId lineB, double visible)
+{
+    const auto p = linePair(s, lineA, lineB);
+    const auto sides = p ? raySides(*p) : std::nullopt;
+    if (!sides)
+        return std::nullopt;
+    // The rays keep turning the way they turn now.
+    const double raysNow = signedAngle(p->da * sides->first, p->db * sides->second);
+    const double rays = raysNow < 0 ? -visible : visible;
+    return std::remainder(rays + (sides->first * sides->second < 0 ? kPi : 0.0), 2 * kPi);
+}
+
 RectangleIds addRectangle(Sketch& sketch, Vec2 a, Vec2 b, EntityId reuseFirstCorner)
 {
     RectangleIds ids;
@@ -343,6 +431,7 @@ const char* kindName(ConstraintKind k)
     case ConstraintKind::Radius: return "Radius";
     case ConstraintKind::PointOnCircle: return "PointOnCircle";
     case ConstraintKind::Symmetric: return "Symmetric";
+    case ConstraintKind::Angle: return "Angle";
     }
     return "?";
 }
@@ -353,7 +442,8 @@ std::optional<ConstraintKind> kindFromName(const std::string& s)
                    ConstraintKind::HorizontalDistance, ConstraintKind::VerticalDistance, ConstraintKind::Diameter,
                    ConstraintKind::Parallel, ConstraintKind::Perpendicular, ConstraintKind::Equal, ConstraintKind::Tangent,
                    ConstraintKind::Concentric, ConstraintKind::PointOnLine, ConstraintKind::Midpoint,
-                   ConstraintKind::Radius, ConstraintKind::PointOnCircle, ConstraintKind::Symmetric})
+                   ConstraintKind::Radius, ConstraintKind::PointOnCircle, ConstraintKind::Symmetric,
+                   ConstraintKind::Angle})
         if (s == kindName(k))
             return k;
     return std::nullopt;

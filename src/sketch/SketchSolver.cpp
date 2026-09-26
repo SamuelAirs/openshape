@@ -142,6 +142,9 @@ public:
             case ConstraintKind::Symmetric:
                 system_.addConstraintP2PSymmetric(points_.at(c.a), points_.at(c.b), lines_.at(c.c), tag);
                 break;
+            case ConstraintKind::Angle:
+                system_.addConstraintL2LAngle(lines_.at(c.a), lines_.at(c.b), param(c.value), tag);
+                break;
             }
         }
     }

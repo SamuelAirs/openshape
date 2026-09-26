@@ -389,7 +389,53 @@ std::vector<AcceptanceRunner::Step> pattern(AcceptanceRunner& r)
     return steps;
 }
 
-const bool registeredMirror = registerAcceptanceScenario({QStringLiteral("sketch3_mirror"), 64, mirror});
+// ---- Angle dimension ------------------------------------------------------------------------
+
+// A right triangle; its hypotenuse angle is dimensioned and changed through the label.
+std::vector<AcceptanceRunner::Step> angle(AcceptanceRunner& r)
+{
+    std::vector<AcceptanceRunner::Step> steps{
+        startSketch(r),
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.key(Qt::Key_L, Qt::NoModifier, QStringLiteral("l"));
+            for (const auto& [x, y] : {std::pair{0.0, 0.0}, {20.0, 0.0}, {20.0, 15.0}, {0.0, 0.0}})
+                r.click(r.screenPoint(x, y, 0));
+            r.check(r.clickItem(QStringLiteral("tool_select")), "Select tool button");
+            r.click(r.screenPoint(10, 0, 0)); // the base
+            r.check(r.clickItem(QStringLiteral("sketchAction_length")), "Length on the base");
+        },
+        [&r] {
+            r.click(r.screenPoint(10, 0, 0));
+            r.click(r.screenPoint(16, 12, 0), Qt::ShiftModifier); // and the hypotenuse (its middle has the base's label)
+            r.check(r.clickItem(QStringLiteral("sketchAction_angle")), "Angle button on two lines");
+            r.check(countConstraints(r, sketch::ConstraintKind::Angle) == 1, "an angle dimension");
+            r.check(r.app().sketchStatus() == QStringLiteral("Fully defined"), "the triangle is fully defined",
+                    r.app().sketchStatus());
+        },
+        [&r] {
+            const auto id = firstConstraint(r, sketch::ConstraintKind::Angle);
+            r.check(r.clickItem(QStringLiteral("dimensionLabel_%1").arg(id)), "clicking the angle's label");
+        },
+        [&r] {
+            r.type(QStringLiteral("45"));
+            r.key(Qt::Key_Return);
+        },
+        [&r] {
+            double top = 0;
+            if (const auto* s = activeSketch(r))
+                for (const auto& [id, p] : s->points())
+                    top = std::max(top, p.position.y);
+            r.check(std::abs(top - 20) < 1e-6, "45 degrees: the triangle is 20 high", AcceptanceRunner::num(top));
+            r.screenshot(QStringLiteral("sketch3_angle"));
+        },
+    };
+    append(steps, finishAndExtrude(r, 14, 5, QStringLiteral("5"), 20 * 20 / 2 * 5, QStringLiteral("45 degree triangle")));
+    return steps;
+}
+
+const bool registeredAngle = registerAcceptanceScenario({QStringLiteral("sketch3_angle"), 66, angle});
+const bool registeredMirror =registerAcceptanceScenario({QStringLiteral("sketch3_mirror"), 64, mirror});
 const bool registeredPattern = registerAcceptanceScenario({QStringLiteral("sketch3_pattern"), 65, pattern});
 const bool registeredConstraintIcons =registerAcceptanceScenario({QStringLiteral("sketch3_constrainticons"), 63, constraintIcons});
 const bool registeredTangentArc =registerAcceptanceScenario({QStringLiteral("sketch3_tangentarc"), 62, tangentArc});
