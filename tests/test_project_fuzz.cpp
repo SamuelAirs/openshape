@@ -566,8 +566,7 @@ TEST(ProjectFuzz, UnsafeAndOversizedEntries)
         const Outcome o = loadChecked(bytes, what);
         EXPECT_FALSE(o.loaded) << what;
     }
-    // Extra harmless entries are ignored; a stored copy of document.json under
-    // another name does not replace it.
+    // Extra harmless entries (unknown files, a garbage geometry cache) are ignored.
     const Outcome extra = loadChecked(
         zipOf({{"document.json", documentJson}, {"notes/readme.txt", "hello"}, {"geometry/unknown.brep", "garbage"}}), "extras");
     EXPECT_TRUE(extra.loaded) << extra.message;
