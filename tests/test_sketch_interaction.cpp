@@ -1155,3 +1155,78 @@ TEST(SketchInteraction, TangentArcTypedRadiusAndChain)
     EXPECT_EQ(s.solveReport().conflicting.size(), 0u);
     EXPECT_TRUE(h.messages.empty());
 }
+
+namespace {
+std::vector<SketchLabel> constraintIcons(Harness& h)
+{
+    std::vector<SketchLabel> icons;
+    for (const auto& label : h.session().labels(h.controller.camera()))
+        if (label.kind == SketchLabel::Kind::Constraint)
+            icons.push_back(label);
+    return icons;
+}
+} // namespace
+
+TEST(SketchInteraction, ConstraintIconsSelectAndDelete)
+{
+    Harness h;
+    rectangle40x20(h);
+    h.session().setTool(SketchTool::Select);
+    auto icons = constraintIcons(h);
+    ASSERT_EQ(icons.size(), 4u) << "two H and two V";
+    std::size_t horizontal = 0;
+    for (const auto& icon : icons) {
+        horizontal += icon.text == "H" ? 1 : 0;
+        EXPECT_EQ(h.session().sketch().constraint(icon.constraint)->kind,
+                  icon.text == "H" ? sketch::ConstraintKind::Horizontal : sketch::ConstraintKind::Vertical);
+    }
+    EXPECT_EQ(horizontal, 2u);
+    // Beside their lines, outside the rectangle, and apart from each other.
+    for (std::size_t i = 0; i < icons.size(); ++i) {
+        const auto local = h.controller.sketchSession()->sketch().plane().intersect(h.controller.camera().rayAt(icons[i].screen));
+        ASSERT_TRUE(local.has_value());
+        EXPECT_FALSE(local->x > 0 && local->x < 40 && local->y > 0 && local->y < 20) << icons[i].text << " inside";
+        for (std::size_t j = i + 1; j < icons.size(); ++j)
+            EXPECT_GE((icons[i].screen - icons[j].screen).length(), 18.0);
+    }
+
+    // Select a horizontal constraint through its icon: only Delete is offered.
+    sketch::EntityId bottom = sketch::kNoEntity;
+    double lowest = -1e9; // screen y grows downwards
+    for (const auto& icon : icons)
+        if (icon.text == "H" && icon.screen.y > lowest) {
+            lowest = icon.screen.y;
+            bottom = icon.constraint;
+        }
+    h.session().select(bottom, false);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    const auto actions = h.session().contextActions();
+    ASSERT_EQ(actions.size(), 1u);
+    EXPECT_EQ(actions[0].id, "delete");
+    bool shownSelected = false;
+    for (const auto& icon : constraintIcons(h))
+        shownSelected = shownSelected || (icon.constraint == bottom && icon.selected);
+    EXPECT_TRUE(shownSelected);
+    // Selecting geometry drops the constraint from the selection (they are never mixed).
+    const int dofBefore = h.session().sketch().solveReport().degreesOfFreedom;
+    ASSERT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.session().sketch().constraint(bottom), nullptr);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Horizontal), 1u);
+    EXPECT_EQ(h.session().sketch().lines().size(), 4u) << "the geometry stays";
+    EXPECT_EQ(h.session().sketch().solveReport().degreesOfFreedom, dofBefore + 1);
+    EXPECT_EQ(constraintIcons(h).size(), 3u);
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Horizontal), 2u);
+
+    h.session().select(icons[0].constraint, false);
+    h.click(h.sketchScreen({20, 0}), true); // a line, shift-added: replaces the constraint selection
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_NE(h.session().sketch().line(h.session().selection().front()), nullptr);
+
+    // Hidden while a shape is being drawn.
+    h.session().setTool(SketchTool::Line);
+    h.click(h.sketchScreen({60, 0}));
+    EXPECT_TRUE(constraintIcons(h).empty());
+    h.controller.keyPress(Key::Escape);
+    EXPECT_EQ(constraintIcons(h).size(), 4u);
+}

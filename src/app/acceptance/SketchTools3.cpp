@@ -207,7 +207,82 @@ std::vector<AcceptanceRunner::Step> tangentArc(AcceptanceRunner& r)
     return steps;
 }
 
-const bool registeredTangentArc = registerAcceptanceScenario({QStringLiteral("sketch3_tangentarc"), 62, tangentArc});
+// ---- Constraint icons -------------------------------------------------------------------
+
+sketch::EntityId firstConstraint(AcceptanceRunner& r, sketch::ConstraintKind kind)
+{
+    if (const auto* s = activeSketch(r))
+        for (const auto& [id, c] : s->constraints())
+            if (c.kind == kind)
+                return id;
+    return sketch::kNoEntity;
+}
+
+std::size_t countConstraints(AcceptanceRunner& r, sketch::ConstraintKind kind)
+{
+    std::size_t n = 0;
+    if (const auto* s = activeSketch(r))
+        for (const auto& [id, c] : s->constraints())
+            n += c.kind == kind ? 1 : 0;
+    return n;
+}
+
+std::vector<AcceptanceRunner::Step> constraintIcons(AcceptanceRunner& r)
+{
+    using K = sketch::ConstraintKind;
+    return {
+        startSketch(r),
+        [] {}, [] {}, [] {},
+        [&r] {
+            // A free rectangle (not on the origin), then the select tool.
+            r.click(r.screenPoint(-10, -5, 0));
+            r.click(r.screenPoint(20, 10, 0));
+            r.check(r.clickItem(QStringLiteral("tool_select")), "Select tool button");
+            r.check(countConstraints(r, K::Horizontal) == 2 && countConstraints(r, K::Vertical) == 2,
+                    "a rectangle with two H and two V constraints");
+        },
+        [&r] {
+            const auto id = firstConstraint(r, K::Horizontal);
+            const QString name = QStringLiteral("constraintIcon_%1").arg(id);
+            const QQuickItem* icon = r.findItem(name);
+            r.check(icon && icon->isVisible(), "the H glyph is on the canvas");
+            r.screenshot(QStringLiteral("sketch3_constraint_icons"));
+            r.check(r.clickItem(name), "clicking the H glyph");
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(session && session->selection().size() == 1 && session->selection().front() == id,
+                    "selects that constraint");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("sketchAction_delete")), "Delete constraint button");
+            r.check(countConstraints(r, K::Horizontal) == 1, "the constraint is gone",
+                    QString::number(countConstraints(r, K::Horizontal)));
+            const auto* s = activeSketch(r);
+            r.check(s && s->lines().size() == 4, "the rectangle stays");
+            r.check(r.app().sketchStatus() == QStringLiteral("5 degrees of freedom"), "one more degree of freedom",
+                    r.app().sketchStatus());
+        },
+        [&r] {
+            // Touch layout: the glyph still selects, and the Delete key removes it.
+            r.app().setTouchMode(true);
+            const auto id = firstConstraint(r, K::Vertical);
+            r.check(r.clickItem(QStringLiteral("constraintIcon_%1").arg(id)), "clicking a V glyph (touch layout)");
+            r.screenshot(QStringLiteral("sketch3_constraint_icons_touch"));
+            r.key(Qt::Key_Delete);
+            r.check(countConstraints(r, K::Vertical) == 1, "Delete removes the selected constraint",
+                    QString::number(countConstraints(r, K::Vertical)));
+            r.app().setTouchMode(false);
+        },
+        [&r] {
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(countConstraints(r, K::Horizontal) == 2 && countConstraints(r, K::Vertical) == 2,
+                    "undo brings both constraints back");
+        },
+    };
+}
+
+const bool registeredConstraintIcons = registerAcceptanceScenario({QStringLiteral("sketch3_constrainticons"), 63, constraintIcons});
+const bool registeredTangentArc =registerAcceptanceScenario({QStringLiteral("sketch3_tangentarc"), 62, tangentArc});
 const bool registeredCenterRectangle =registerAcceptanceScenario({QStringLiteral("sketch3_centerrect"), 60, centerRectangle});
 const bool registeredPolygon = registerAcceptanceScenario({QStringLiteral("sketch3_polygon"), 61, polygon});
 

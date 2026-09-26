@@ -382,8 +382,14 @@ blocked) and draws with 4× MSAA:
 6. manipulator arrows and rotation rings on top (no depth test), sized in
    screen pixels.
 
-Sketch labels (dimensions, live inputs, inference hints) are QML items
-positioned from `SketchSession::labels()` screen coordinates.
+Sketch labels (dimensions, live inputs, inference hints, constraint glyphs)
+are QML items positioned from `SketchSession::labels()` screen coordinates.
+Constraint glyphs (H, V, ∥, ⊥, =, T, …; not for dimensions, and hidden while
+a shape is being drawn) sit beside their geometry, on the outer side of a
+line, and slide along it to stay clear of each other, the dimension labels
+and the points; a glyph with no clear spot nearby is left out until the view
+is zoomed in. Clicking one selects the constraint (`constraintIcon_<id>`),
+never mixed with geometry, and its geometry is highlighted; Delete removes it.
 
 Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages.
 All draws share one dynamic uniform buffer with per-draw offsets.

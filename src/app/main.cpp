@@ -186,8 +186,9 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, at({40, -8}), {}});
         return;
     }
-    if (demo == QLatin1String("polygon")) {
-        // A center rectangle, and a hexagon being drawn (size typed, sides shown).
+    if (demo == QLatin1String("polygon") || demo == QLatin1String("constraints")) {
+        // A center rectangle, and a hexagon being drawn (size typed, sides
+        // shown); "constraints" completes it and shows the constraint glyphs.
         using os::interact::SketchTool;
         (void)interaction.startSketch();
         interaction.skipAnimation();
@@ -215,6 +216,20 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         clickAt({45, 0});
         moveTo({55, 0});
         interaction.sketchSession()->typeIntoInput("16");
+        if (demo == QLatin1String("polygon"))
+            return;
+        interaction.keyPress(os::interact::Key::Enter);
+        interaction.setSketchTool(SketchTool::Line);
+        clickAt({-20, 25});
+        clickAt({10, 25});
+        interaction.keyPress(os::interact::Key::Escape);
+        interaction.setSketchTool(SketchTool::TangentArc);
+        clickAt({10, 25});
+        clickAt({10, 45});
+        interaction.keyPress(os::interact::Key::Escape);
+        interaction.setSketchTool(SketchTool::Select);
+        for (int i = 0; i < 3; ++i)
+            interaction.wheel(at({18, 12}), 1.0);
         return;
     }
     if (demo == QLatin1String("mirror") || demo == QLatin1String("pattern")) {

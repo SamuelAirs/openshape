@@ -25,15 +25,17 @@ enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, Center
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
-    enum class Kind { Dimension, Input, Hint };
+    // Constraint: a small glyph near constrained geometry (tap to select it).
+    enum class Kind { Dimension, Input, Hint, Constraint };
     Kind kind = Kind::Hint;
     std::string key;                          // Input: "width", "height", "diameter", "length"
-    sketch::EntityId constraint = sketch::kNoEntity; // Dimension: constraint id
+    sketch::EntityId constraint = sketch::kNoEntity; // Dimension, Constraint: constraint id
     std::string text;
     std::string caption; // what the value is, shown after it in muted text ("across flats", "sides")
     Vec2 screen;
     bool focused = false; // Input that receives typed digits
     bool locked = false;  // Input whose value the user typed
+    bool selected = false; // Constraint that is selected
 };
 
 // A whole number with -/+ buttons for the active tool or mode (a polygon's
@@ -165,6 +167,10 @@ private:
     std::optional<double> input(const std::string& key) const;
     void message(const std::string& text) const;
     void regionsChanged();
+    // Glyphs for the non-dimension constraints, placed beside their geometry
+    // and nudged apart (and away from `taken`, the dimension labels).
+    void addConstraintIcons(std::vector<SketchLabel>& out, const Camera& camera) const;
+    bool constraintSelected() const;
 
     doc::Document& document_;
     cmd::UndoStack& undoStack_;

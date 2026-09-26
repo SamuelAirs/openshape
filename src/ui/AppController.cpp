@@ -234,6 +234,15 @@ QString AppController::sketchCounterText() const
     return counter ? QStringLiteral("%1 %2").arg(counter->value).arg(q(counter->label)) : QString();
 }
 
+void AppController::selectSketchConstraint(int constraintId)
+{
+    if (auto* s = interaction_->sketchSession()) {
+        s->select(sketch::EntityId(constraintId), false);
+        emit stateChanged();
+        emit viewChanged();
+    }
+}
+
 void AppController::stepSketchCounter(int delta)
 {
     if (auto* s = interaction_->sketchSession()) {
@@ -251,9 +260,14 @@ QVariantList AppController::sketchLabels() const
         return list;
     for (const auto& label : s->labels(interaction_->camera())) {
         QVariantMap map;
-        map.insert(QStringLiteral("kind"), label.kind == interact::SketchLabel::Kind::Dimension ? QStringLiteral("dimension")
-                                           : label.kind == interact::SketchLabel::Kind::Input   ? QStringLiteral("input")
-                                                                                                : QStringLiteral("hint"));
+        QString kind;
+        switch (label.kind) {
+        case interact::SketchLabel::Kind::Dimension: kind = QStringLiteral("dimension"); break;
+        case interact::SketchLabel::Kind::Input: kind = QStringLiteral("input"); break;
+        case interact::SketchLabel::Kind::Hint: kind = QStringLiteral("hint"); break;
+        case interact::SketchLabel::Kind::Constraint: kind = QStringLiteral("constraint"); break;
+        }
+        map.insert(QStringLiteral("kind"), kind);
         map.insert(QStringLiteral("key"), q(label.key));
         map.insert(QStringLiteral("constraint"), int(label.constraint));
         map.insert(QStringLiteral("text"), q(label.text));
@@ -262,6 +276,7 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
         map.insert(QStringLiteral("locked"), label.locked);
+        map.insert(QStringLiteral("selected"), label.selected);
         list.append(map);
     }
     return list;

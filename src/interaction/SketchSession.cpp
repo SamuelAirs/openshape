@@ -62,6 +62,31 @@ double ccw(double from, double to)
     return d < 0 ? d + 2 * kPi : d;
 }
 
+// The glyph drawn for a (non-dimension) constraint; nullptr for dimensions.
+const char* constraintGlyph(sketch::ConstraintKind kind)
+{
+    using K = sketch::ConstraintKind;
+    switch (kind) {
+    case K::Horizontal: return "H";
+    case K::Vertical: return "V";
+    case K::Parallel: return "\xE2\x88\xA5";      // parallel to
+    case K::Perpendicular: return "\xE2\x8A\xA5"; // up tack
+    case K::Equal: return "=";
+    case K::Tangent: return "T";
+    case K::Concentric: return "\xE2\x97\x8E";    // bullseye
+    case K::Coincident: return "\xE2\x97\x8F";    // black circle
+    case K::Midpoint: return "M";
+    case K::PointOnLine:
+    case K::PointOnCircle: return "on";
+    case K::Distance:
+    case K::HorizontalDistance:
+    case K::VerticalDistance:
+    case K::Diameter:
+    case K::Radius: return nullptr;
+    }
+    return nullptr;
+}
+
 // Circle through three points; nullopt when they are (nearly) collinear.
 std::optional<std::pair<Vec2, double>> circleThrough(Vec2 a, Vec2 b, Vec2 c)
 {
@@ -1069,6 +1094,10 @@ void SketchSession::select(sketch::EntityId id, bool additive)
         selected_.clear();
         return;
     }
+    // Constraints and geometry are never selected together (their actions differ).
+    const bool isConstraint = working_.constraint(id) != nullptr;
+    if (!selected_.empty() && (working_.constraint(selected_.front()) != nullptr) != isConstraint)
+        selected_.clear();
     const auto it = std::find(selected_.begin(), selected_.end(), id);
     if (additive) {
         if (it != selected_.end())
@@ -1080,11 +1109,20 @@ void SketchSession::select(sketch::EntityId id, bool additive)
     }
 }
 
+bool SketchSession::constraintSelected() const
+{
+    return !selected_.empty() && working_.constraint(selected_.front()) != nullptr;
+}
+
 std::vector<ContextAction> SketchSession::contextActions() const
 {
     std::vector<ContextAction> actions;
     if (selected_.empty())
         return actions;
+    if (constraintSelected()) {
+        actions.push_back({"delete", selected_.size() == 1 ? "Delete constraint" : "Delete constraints", false});
+        return actions;
+    }
     std::size_t points = 0, lines = 0, circles = 0, arcs = 0;
     for (auto id : selected_) {
         points += working_.point(id) ? 1 : 0;
@@ -1447,6 +1485,8 @@ std::string SketchSession::hintText() const
     case SketchTool::Select:
         break;
     }
+    if (constraintSelected())
+        return "Delete removes the constraint \xC2\xB7 click elsewhere to keep it";
     if (!selected_.empty())
         return "Add constraints below \xC2\xB7 drag points to adjust \xC2\xB7 Delete removes";
     return "Pick a tool to draw \xC2\xB7 click a dimension to edit it \xC2\xB7 drag points to move them";
@@ -1512,6 +1552,10 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
         }
         out.push_back(label);
     }
+
+    // Constraint glyphs (not while a shape is being drawn: they would clutter it).
+    if (!anchor_ && !isOffsetting())
+        addConstraintIcons(out, camera);
 
     // Live inputs of the shape being drawn.
     if (anchor_ && cursorValid_) {
@@ -1599,6 +1643,198 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
     return out;
 }
 
+void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Camera& camera) const
+{
+    using K = sketch::ConstraintKind;
+    auto screen = [&](Vec2 local) { return toScreen(local, camera); };
+    auto at = [&](sketch::EntityId point) { return working_.point(point)->position; };
+    constexpr double kOffset = 14, kStep = 18, kClearance = 19, kLabelClearance = 26, kPointClearance = 15;
+
+    // Where the shape a line belongs to lies: the far ends of the curves
+    // joining it (line glyphs go on the other side, outside the shape).
+    auto neighbourhood = [&](const sketch::SketchLine& line) -> std::optional<Vec2> {
+        Vec2 sum{0, 0};
+        int count = 0;
+        for (const auto& [id, other] : working_.lines()) {
+            if (&other == &line)
+                continue;
+            for (const auto end : {line.start, line.end}) {
+                if (other.start == end || other.end == end) {
+                    sum = sum + screen(at(other.start == end ? other.end : other.start));
+                    ++count;
+                }
+            }
+        }
+        for (const auto& [id, arc] : working_.arcs())
+            for (const auto end : {line.start, line.end})
+                if (arc.start == end || arc.end == end) {
+                    sum = sum + screen(at(arc.center));
+                    ++count;
+                }
+        if (count == 0)
+            return std::nullopt;
+        return sum * (1.0 / count);
+    };
+
+    struct Icon {
+        sketch::EntityId constraint;
+        const char* glyph;
+        Vec2 position;
+        Vec2 step; // where to slide when the spot is taken
+    };
+    std::vector<Icon> icons;
+    std::vector<std::pair<sketch::EntityId, K>> shown; // one glyph per entity and kind (a polygon's equal sides)
+    auto once = [&](sketch::EntityId entity, K kind) {
+        if (std::find(shown.begin(), shown.end(), std::make_pair(entity, kind)) != shown.end())
+            return false;
+        shown.emplace_back(entity, kind);
+        return true;
+    };
+    auto onLine = [&](sketch::EntityId cid, const char* glyph, sketch::EntityId lineId, double fraction) {
+        const auto* l = working_.line(lineId);
+        const Vec2 a = screen(at(l->start)), b = screen(at(l->end)), d = b - a;
+        const double length = d.length();
+        const Vec2 u = length > 1e-9 ? d * (1.0 / length) : Vec2{1, 0};
+        Vec2 n{-u.y, u.x};
+        const auto inside = neighbourhood(*l);
+        if (inside ? (inside.value() - (a + d * 0.5)).dot(n) > 0 : n.y > 0) // else above (screen y grows down)
+            n = n * -1.0;
+        icons.push_back({cid, glyph, a + d * fraction + n * kOffset, u * kStep});
+    };
+    auto onRound = [&](sketch::EntityId cid, const char* glyph, sketch::EntityId roundId) {
+        Vec2 center;
+        double radius = 0, angle = 3 * kPi / 4;
+        if (const auto* c = working_.circle(roundId)) {
+            center = at(c->center);
+            radius = c->radius;
+        } else if (const auto* a = working_.arc(roundId)) {
+            center = at(a->center);
+            radius = working_.arcRadius(roundId);
+            const double a0 = angleOf(center, at(a->start));
+            angle = a0 + ccw(a0, angleOf(center, at(a->end))) / 2;
+        }
+        const Vec2 rim = screen(center + Vec2{std::cos(angle), std::sin(angle)} * radius);
+        Vec2 outward = rim - screen(center);
+        outward = outward.length() > 1e-9 ? outward * (1.0 / outward.length()) : Vec2{0, -1};
+        icons.push_back({cid, glyph, rim + outward * kOffset, Vec2{-outward.y, outward.x} * kStep});
+    };
+    auto nearPoint = [&](sketch::EntityId cid, const char* glyph, Vec2 local) {
+        icons.push_back({cid, glyph, screen(local) + Vec2{kOffset, -kOffset}, Vec2{kStep, 0}});
+    };
+    auto sharedEnd = [&](sketch::EntityId x, sketch::EntityId y) -> std::optional<sketch::EntityId> {
+        auto ends = [&](sketch::EntityId e) -> std::vector<sketch::EntityId> {
+            if (const auto* l = working_.line(e))
+                return {l->start, l->end};
+            if (const auto* a = working_.arc(e))
+                return {a->start, a->end};
+            return {};
+        };
+        for (const auto p : ends(x))
+            for (const auto q : ends(y))
+                if (p == q)
+                    return p;
+        return std::nullopt;
+    };
+    auto roundCenter = [&](sketch::EntityId e) {
+        if (const auto* c = working_.circle(e))
+            return at(c->center);
+        return at(working_.arc(e)->center);
+    };
+    auto roundRadius = [&](sketch::EntityId e) {
+        if (const auto* c = working_.circle(e))
+            return c->radius;
+        return working_.arcRadius(e);
+    };
+
+    for (const auto& [cid, c] : working_.constraints()) {
+        const char* glyph = constraintGlyph(c.kind);
+        if (!glyph)
+            continue;
+        switch (c.kind) {
+        case K::Horizontal:
+        case K::Vertical:
+            if (once(c.a, c.kind))
+                onLine(cid, glyph, c.a, 0.3);
+            break;
+        case K::Parallel:
+        case K::Perpendicular:
+        case K::Equal:
+            for (const sketch::EntityId e : {c.a, c.b}) {
+                if (!once(e, c.kind))
+                    continue;
+                if (working_.line(e))
+                    onLine(cid, glyph, e, 0.7);
+                else
+                    onRound(cid, glyph, e);
+            }
+            break;
+        case K::Tangent:
+            if (const auto p = sharedEnd(c.a, c.b)) {
+                nearPoint(cid, glyph, at(*p));
+            } else if (const auto* l = working_.line(c.a)) {
+                // Where the circle touches the line: the foot of the perpendicular from its center.
+                const Vec2 a = at(l->start), d = at(l->end) - a, center = roundCenter(c.b);
+                const double t = d.dot(d) > 1e-18 ? (center - a).dot(d) / d.dot(d) : 0.0;
+                nearPoint(cid, glyph, a + d * t);
+            } else {
+                const Vec2 ca = roundCenter(c.a), cb = roundCenter(c.b), d = cb - ca;
+                const double len = d.length();
+                nearPoint(cid, glyph, len > 1e-9 ? ca + d * (roundRadius(c.a) / len) : ca);
+            }
+            break;
+        case K::Concentric:
+            nearPoint(cid, glyph, roundCenter(c.a));
+            break;
+        case K::Coincident:
+        case K::Midpoint:
+        case K::PointOnLine:
+        case K::PointOnCircle:
+            nearPoint(cid, glyph, at(c.a));
+            break;
+        case K::Distance:
+        case K::HorizontalDistance:
+        case K::VerticalDistance:
+        case K::Diameter:
+        case K::Radius:
+            break;
+        }
+    }
+
+    // Slide each glyph along its line (or sideways) until it is clear of the
+    // glyphs placed before it, the dimension labels and the points (which
+    // must stay grabbable). A glyph with no clear spot nearby is left out:
+    // small geometry would drown in them; zooming in brings them back.
+    std::vector<std::pair<Vec2, double>> taken;
+    for (const auto& label : out)
+        taken.emplace_back(label.screen, kLabelClearance);
+    for (const auto& [id, p] : working_.points())
+        taken.emplace_back(screen(p.position), kPointClearance);
+    auto clear = [&](Vec2 p) {
+        return std::none_of(taken.begin(), taken.end(), [&](const auto& q) { return (p - q.first).length() < q.second; });
+    };
+    for (const Icon& icon : icons) {
+        std::optional<Vec2> place;
+        for (const int k : {0, 1, -1, 2, -2, 3, -3}) {
+            const Vec2 candidate = icon.position + icon.step * double(k);
+            if (clear(candidate)) {
+                place = candidate;
+                break;
+            }
+        }
+        const bool selected = std::find(selected_.begin(), selected_.end(), icon.constraint) != selected_.end();
+        if (!place && !selected)
+            continue;
+        taken.emplace_back(place.value_or(icon.position), kClearance);
+        SketchLabel label;
+        label.kind = SketchLabel::Kind::Constraint;
+        label.constraint = icon.constraint;
+        label.text = icon.glyph;
+        label.screen = place.value_or(icon.position);
+        label.selected = selected;
+        out.push_back(label);
+    }
+}
+
 RenderSketch SketchSession::renderData(const Camera& camera) const
 {
     RenderSketch out;
@@ -1607,9 +1843,18 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
     const bool defined = working_.solveReport().ok && working_.solveReport().degreesOfFreedom == 0;
     const bool conflict = !working_.solveReport().ok;
     auto isSelected = [&](sketch::EntityId id) { return std::find(selected_.begin(), selected_.end(), id) != selected_.end(); };
+    // A selected constraint shows what it holds.
+    auto heldBySelected = [&](sketch::EntityId id) {
+        for (const auto cid : selected_)
+            if (const auto* c = working_.constraint(cid); c && (c->a == id || c->b == id))
+                return true;
+        return false;
+    };
     auto styleOf = [&](sketch::EntityId id, bool construction) {
         if (isSelected(id))
             return SketchStyle::Selected;
+        if (heldBySelected(id))
+            return SketchStyle::Hovered;
         if (id == hovered_)
             return SketchStyle::Hovered;
         if (construction)

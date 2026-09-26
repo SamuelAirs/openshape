@@ -154,6 +154,8 @@ public:
     Q_INVOKABLE void commitSketchTool();
     // -/+ on the sketch counter (a polygon's sides, a pattern's copies).
     Q_INVOKABLE void stepSketchCounter(int delta);
+    // Selects a constraint (its glyph was tapped); Delete then removes it.
+    Q_INVOKABLE void selectSketchConstraint(int constraintId);
     Q_INVOKABLE QString setSketchDimension(int constraintId, const QString& text);
 
     // History panel. Ids are UUID strings. Edits return an error message or "".

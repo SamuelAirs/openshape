@@ -258,15 +258,49 @@ Item {
         delegate: Item {
             id: labelItem
             required property var modelData
+            readonly property bool isConstraint: modelData.kind === "constraint"
+            objectName: isConstraint ? "constraintIcon_" + modelData.constraint : ""
             x: modelData.x - width / 2
             y: modelData.y - height / 2
-            width: pill.width
-            height: pill.height
+            width: isConstraint ? badge.width : pill.width
+            height: isConstraint ? badge.height : pill.height
             visible: !(dimensionEditor.visible && dimensionEditor.constraintId === modelData.constraint
                        && modelData.kind === "dimension")
 
+            // A constraint glyph: tap or click selects the constraint (Delete removes it).
+            Rectangle {
+                id: badge
+                visible: labelItem.isConstraint
+                width: Math.max(18, glyph.implicitWidth + 8)
+                height: 18
+                radius: 5
+                color: labelItem.modelData.selected ? Theme.accent : "white"
+                border.color: labelItem.modelData.selected ? Theme.accent : Theme.panelBorder
+                opacity: labelItem.modelData.selected || iconArea.containsMouse ? 1.0 : 0.85
+                Text {
+                    id: glyph
+                    anchors.centerIn: parent
+                    text: labelItem.isConstraint ? labelItem.modelData.text : ""
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    color: labelItem.modelData.selected ? "white" : "#4A5360"
+                }
+                MouseArea {
+                    id: iconArea
+                    // Touch needs a larger target than the glyph itself.
+                    anchors.centerIn: parent
+                    width: Theme.touch ? 36 : 24
+                    height: width
+                    enabled: labelItem.isConstraint
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: overlay.app.selectSketchConstraint(labelItem.modelData.constraint)
+                }
+            }
+
             Rectangle {
                 id: pill
+                visible: !labelItem.isConstraint
                 readonly property bool isHint: labelItem.modelData.kind === "hint"
                 readonly property bool isInput: labelItem.modelData.kind === "input"
                 width: label.implicitWidth + (caption.visible ? caption.implicitWidth + 4 : 0) + (isHint ? 12 : 16)
