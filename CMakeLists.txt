@@ -37,6 +37,11 @@ endif()
 find_package(OpenCASCADE REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 find_package(libzip REQUIRED)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # OpenCASCADE's static libraries name FreeType just "freetype"; it is
+    # installed beside them (scripts/ios/build-deps.sh).
+    link_directories(${OpenCASCADE_LIBRARY_DIR})
+endif()
 
 if(OPENSHAPE_BUILD_APP)
     # The renderer uses QRhi, whose headers ship via GuiPrivate with limited
