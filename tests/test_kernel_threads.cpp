@@ -150,3 +150,49 @@ TEST(KernelThreads, InteractiveThreadWaitsAreCounted)
     other.join();
     EXPECT_EQ(geom::interactiveKernelWaits().count, 0u);
 }
+
+// Previews are meshed on a copy of their topology: a preview result shares
+// most faces and edges with the body, and meshing it in place left polygons
+// on the body's edges with every preview (a filleted cube's BRep text grew
+// from 93 KB to 1.3 MB over 40 previews). The copy's mesh is complete and
+// has the original's face ids.
+TEST(KernelThreads, IsolatedMeshingLeavesSharedEdgesAlone)
+{
+    const SharedParts parts = sharedParts();
+    (void)geom::tessellate(parts.rounded); // the body's display mesh, in place
+    int top = -1;
+    for (int i = 0; i < parts.rounded.faceCount(); ++i)
+        if (const auto info = geom::faceInfo(parts.rounded, i); info && info->isPlanar() && info->normal.z > 0.999)
+            top = i;
+    ASSERT_GE(top, 0);
+    const std::size_t before = geom::toBrepString(parts.rounded).size();
+    geom::TessellationParams isolated;
+    isolated.isolated = true;
+    for (int i = 1; i <= 12; ++i) {
+        const auto preview = geom::pushPullFace(parts.rounded, top, 0.5 * i);
+        ASSERT_TRUE(preview.ok());
+        const geom::Mesh mesh = geom::tessellate(preview.value(), isolated);
+        ASSERT_GT(mesh.triangleCount(), 0u);
+        EXPECT_NEAR(meshHeight(mesh), 40.0 + 0.5 * i, 1e-4);
+        ASSERT_EQ(mesh.faceCount(), preview.value().faceCount());
+        // Each face's triangles cover that face (the ids are the shape's).
+        for (int f = 0; f < mesh.faceCount(); ++f) {
+            double area = 0;
+            for (std::uint32_t t = mesh.faceTriangleOffset[std::size_t(f)]; t < mesh.faceTriangleOffset[std::size_t(f) + 1];
+                 ++t) {
+                const Vec3 a = mesh.vertex(mesh.indices[3 * t]);
+                const Vec3 b = mesh.vertex(mesh.indices[3 * t + 1]);
+                const Vec3 c = mesh.vertex(mesh.indices[3 * t + 2]);
+                area += (b - a).cross(c - a).length() / 2;
+            }
+            const double exact = geom::faceInfo(preview.value(), f)->area;
+            EXPECT_NEAR(area, exact, 0.02 * exact + 0.05) << "face " << f;
+        }
+    }
+    EXPECT_EQ(geom::toBrepString(parts.rounded).size(), before) << "previews left meshes on the body's edges";
+    // Meshing in place does leave them (why previews are isolated).
+    const auto preview = geom::pushPullFace(parts.rounded, top, 7.0);
+    ASSERT_TRUE(preview.ok());
+    (void)geom::tessellate(preview.value());
+    EXPECT_GT(geom::toBrepString(parts.rounded).size(), before);
+}

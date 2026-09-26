@@ -319,15 +319,21 @@ int benchEnclosure()
         doc::PushPullFeature feature;
         feature.face = {rim, *geom::captureFaceSignature(shape(), rim)};
         feature.keepEdges = true;
-        double kernel = 0, meshing = 0;
+        double kernel = 0, meshing = 0, inPlace = 0;
+        geom::TessellationParams isolated; // as previews are meshed: on a copy of the topology
+        isolated.isolated = true;
         for (int i = 1; i <= 4; ++i) {
             feature.distance = i;
             Result<geom::Shape> preview = Result<geom::Shape>::failure(ErrorCode::None, "");
             kernel += timeMs([&] { preview = document.preview(bodyId, feature); }) / 4;
-            if (preview)
-                meshing += timeMs([&] { (void)geom::tessellate(preview.value()); }) / 4;
+            if (preview) {
+                meshing += timeMs([&] { (void)geom::tessellate(preview.value(), isolated); }) / 4;
+                inPlace += timeMs([&] { (void)geom::tessellate(preview.value()); }) / 4;
+            }
         }
-        std::printf("  of which kernel (split + fuse + checks) %.1f ms, tessellation %.1f ms\n", kernel, meshing);
+        std::printf("  of which kernel (split + fuse + checks) %.1f ms, tessellation %.1f ms (in place, which leaves the "
+                    "preview's polygons on the body's edges: %.1f ms)\n",
+                    kernel, meshing, inPlace);
     }
     // 2. Fillet drag on a boss's top edge: 8 preview updates, 0.2-1.6 mm.
     const int bossEdge = [&] {

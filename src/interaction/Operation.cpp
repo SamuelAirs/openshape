@@ -118,7 +118,11 @@ PreviewOutcome Operation::computeOutcome(double value, const doc::Document& docu
             outcome.error = result.userMessage();
             outcome.developerMessage = result.developerMessage();
         } else {
-            outcome.mesh = std::make_shared<const geom::Mesh>(geom::tessellate(result.value()));
+            // Isolated: the result shares faces and edges with the document's
+            // body, which must not collect this preview's mesh.
+            geom::TessellationParams params;
+            params.isolated = true;
+            outcome.mesh = std::make_shared<const geom::Mesh>(geom::tessellate(result.value(), params));
         }
     } catch (const std::exception& e) {
         // Kernel failures come back as Results; this would be a bug (or memory).

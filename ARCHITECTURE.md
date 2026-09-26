@@ -172,6 +172,14 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Tessellation.h`: `BRepMesh_IncrementalMesh` (faces meshed in parallel) →
   `Mesh` with per-triangle face ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
   polylines taken from the triangulation (so edges sit exactly on mesh vertices).
+  Meshing stores triangulations in the faces and polygons in the edges, and
+  a preview result shares most faces and edges with its body: meshed in
+  place, every preview left its polygons on the body's edges (a filleted
+  cube's BRep text grew from 93 KB to 1.3 MB over 40 previews, and the
+  project file's geometry cache with it). Previews are therefore meshed
+  `isolated`: on a copy of the topology (`BRepBuilderAPI_Copy` without
+  geometry, with the existing meshes, which the mesher reuses): 22 ms
+  instead of 18 ms for the enclosure's rim preview.
 - `pushPullFaceKeepingEdges`: push/pull that takes fillets and chamfers
   along: split the part on a plane just below the face's non-wall
   neighbours, move the top piece, fill the gap with the extruded

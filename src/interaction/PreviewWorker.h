@@ -10,8 +10,13 @@
 #include <functional>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <vector>
+
+#if defined(_WIN32)
+#include <thread>
+#else
+#include <pthread.h>
+#endif
 
 namespace os::interact {
 
@@ -58,6 +63,9 @@ public:
 
 private:
     void run();
+#if !defined(_WIN32)
+    static void* threadMain(void* worker);
+#endif
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;         // a job to run, or stop
@@ -70,7 +78,12 @@ private:
     std::chrono::milliseconds delay_{0};
     std::uint64_t jobsRun_ = 0;
     std::uint64_t jobsReplaced_ = 0;
+#if defined(_WIN32)
     std::thread thread_;
+#else
+    pthread_t thread_{};
+    bool started_ = false;
+#endif
 };
 
 } // namespace os::interact

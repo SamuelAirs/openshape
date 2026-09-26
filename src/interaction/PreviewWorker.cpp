@@ -6,14 +6,43 @@
 
 #include "core/Log.h"
 
+#include <cstddef>
 #include <exception>
+#include <thread>
 
 namespace os::interact {
 
+namespace {
+// The kernel recurses deeply in places. Secondary threads get 512 KB of
+// stack on macOS and iOS (the main thread 8 MB and 1 MB); on Windows every
+// thread gets the executable's reserve, as the GUI thread does.
+[[maybe_unused]] constexpr std::size_t kWorkerStackBytes = 16u * 1024u * 1024u;
+} // namespace
+
 PreviewWorker::PreviewWorker(std::function<void()> notify) : notify_(std::move(notify))
 {
+#if defined(_WIN32)
     thread_ = std::thread([this] { run(); });
+#else
+    pthread_attr_t attributes;
+    pthread_attr_init(&attributes);
+    pthread_attr_setstacksize(&attributes, kWorkerStackBytes);
+    started_ = pthread_create(&thread_, &attributes, &PreviewWorker::threadMain, this) == 0;
+    pthread_attr_destroy(&attributes);
+    if (!started_) // not expected; the default stack is better than no worker
+        started_ = pthread_create(&thread_, nullptr, &PreviewWorker::threadMain, this) == 0;
+    if (!started_)
+        OS_LOG(Error, Interaction) << "the preview worker thread could not start";
+#endif
 }
+
+#if !defined(_WIN32)
+void* PreviewWorker::threadMain(void* worker)
+{
+    static_cast<PreviewWorker*>(worker)->run();
+    return nullptr;
+}
+#endif
 
 PreviewWorker::~PreviewWorker()
 {
@@ -23,8 +52,13 @@ PreviewWorker::~PreviewWorker()
         waiting_.reset();
     }
     wake_.notify_all();
+#if defined(_WIN32)
     if (thread_.joinable())
         thread_.join();
+#else
+    if (started_)
+        pthread_join(thread_, nullptr);
+#endif
 }
 
 void PreviewWorker::submit(Job job)
