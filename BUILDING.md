@@ -98,7 +98,10 @@ being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
 the constraint glyphs) and `home` (the start screen with four saved
 projects and their previews; try `--touch --size 402x874`, `874x402` and
-`1180x820` for phones and the iPad). Panels to look at (layout checks at phone
+`1180x820` for phones and the iPad) and `enclosure` (a 60 x 40 x 25 mm
+project box built from a box: sizes typed, corners rounded, shelled, a
+cable hole cut, and the hole's diameter being set to 10.4 mm; the
+README's picture). Panels to look at (layout checks at phone
 sizes): `help`, `about`, `preferences`, `savename` (the overlay open),
 `modelpanel` (the compact layout's Model panel open on the `history` scene)
 and `viewmenu` (the compact View menu open on `combine`). Without
@@ -358,6 +361,17 @@ workflow artifact. The Windows icon is made from the SVG with
   `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
   the user, failed previews and GUI-thread stalls, one line per event
   (run it in the background).
+
+- **`scripts/dev/doc_screenshots.sh`** — retakes the screenshots in
+  `docs/images/` (README.md, docs/USER_GUIDE.md) from the demo scenes
+  (1400x900; `tablet.png` with `--touch --size 1180x820`) and passes each
+  through `scripts/dev/shrink_png.py`, which drops the opaque alpha channel
+  and recompresses (13-22 % smaller, the same pixels; standard-library
+  Python). Run it from the repository root with the toolchain on `PATH`
+  after a UI change, keep the mouse pointer away from where the window
+  opens (a tooltip under it would be in the picture), and look at every
+  image; `bash scripts/dev/doc_screenshots.sh hero tablet` retakes only
+  those.
 
 ## macOS and iPad — prepared, not yet verified
 

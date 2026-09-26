@@ -835,7 +835,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   and Home, the saved thumbnail, Home's cards, menu, long press and
   buttons; then in a 402 x 874 window: Help over Home, a damaged file's
   message above Home, a long message wrapped, markup in a STEP name shown
-  as text). The whole run also passes at the CI Mac's
+  as text) and `userguide` (the help card's link to
+  docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
+  it, so no browser opens). The whole run also passes at the CI Mac's
   1024x653 (`--size 1024x653`): clicks on model points that a panel or the
   value chip may cover in a small window pick a free point of the same edge
   (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the

@@ -844,9 +844,11 @@ ApplicationWindow {
             return "Drag the arrow or type the total thickness (half on each side of the sketch) · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
             return "Drag the arrow or type a distance · \"Up to face\" ends it on a face you click · Shift-click adds profiles"
-        if (app.bodyCount === 0 && app.sketchCount > 0)
+        // An empty model's hints, unless a tool is already at work (e.g. the
+        // first extrusion, whose own hints come below).
+        if (!app.operationActive && app.bodyCount === 0 && app.sketchCount > 0)
             return "Click inside a closed sketch shape to extrude it · double-click it to edit the sketch"
-        if (app.bodyCount === 0)
+        if (!app.operationActive && app.bodyCount === 0)
             return "Add a box, start a sketch, or import a STEP file (Ctrl+I)."
         if (app.operationActive && app.operationTitle === "Hole")
             return "Click to add holes (they snap to the center and edge middles and line up with each other) · "

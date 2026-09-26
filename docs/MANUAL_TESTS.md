@@ -94,6 +94,10 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     Home comes back to it. Import STEP… with a part from another program
     (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
     size and names; push/pull a face and round an edge of it, save, reopen.
+14. **The documentation.** Follow the Quick start in README.md step by step
+    (the mounting plate with two holes), and skim docs/USER_GUIDE.md: does
+    everything work as written? Is anything you use missing? F1 → the
+    link under the first paragraph opens the guide on GitHub.
 
 ## The Windows installer (optional)
 
