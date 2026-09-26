@@ -612,10 +612,15 @@ them on a hidden menu separator after the Open Recent sub-menu).
   resized by its diameter and deleted; `compact` (the window resized live to
   an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
   Model panel, View menu, a box pushed by touch, the sketch strip; the runner
-  restores the run's window size for the next scenario); scenarios `recovery` (a real crash
+  restores the run's window size for the next scenario); `appfolder`
+  (saving by name and exporting as on an iPhone or iPad, into a temporary
+  app folder); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
-  `recent` and `preferences`. `clickItem` scrolls any Flickable around the
+  `recent` and `preferences`. The whole run also passes at the CI Mac's
+  1024x653 (`--size 1024x653`): clicks on model points that a panel or the
+  value chip may cover in a small window pick a free point of the same edge
+  (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the
   item (both directions) to bring it on screen, and lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).

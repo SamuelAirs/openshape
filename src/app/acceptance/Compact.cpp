@@ -145,6 +145,20 @@ Steps steps(AcceptanceRunner& r)
         r.check(chip.bottom() <= status.top() + 0.5, "compact: nothing below covers the value chip",
                 rectText(chip) + QStringLiteral(" / ") + rectText(status));
         r.screenshot(QStringLiteral("compact_02_pushpull"));
+        // The hint is one short line; a tap on it shows all of it.
+        QQuickItem* hint = r.findItem(QStringLiteral("hintText"));
+        r.check(hint && hint->height() < 20, "compact: the hint is one line", hint ? AcceptanceRunner::num(hint->height()) : QString());
+        r.check(r.clickItem(QStringLiteral("hintMore")), "compact: tap the hint");
+    });
+    steps.push_back([&r] {
+        QQuickItem* hint = r.findItem(QStringLiteral("hintText"));
+        r.check(hint && hint->property("expanded").toBool() && hint->height() > 20, "compact: the whole hint shows",
+                hint ? AcceptanceRunner::num(hint->height()) : QString());
+        const QString text = hint ? hint->property("text").toString() : QString();
+        r.check(text.contains(QStringLiteral("✓")) && !text.contains(QStringLiteral("Enter")),
+                "compact: the touch hint speaks of the check mark, not Enter", text);
+        r.check(r.clickItem(QStringLiteral("hintMore")), "compact: tap the hint again");
+        r.check(hint && !hint->property("expanded").toBool(), "compact: back to one line");
         r.type(QStringLiteral("30"));
     });
     steps.push_back([&r] {

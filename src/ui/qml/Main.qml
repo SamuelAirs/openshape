@@ -746,7 +746,10 @@ ApplicationWindow {
             maximumLineCount: oneLine ? 1 : 1000
             elide: oneLine ? Text.ElideRight : Text.ElideNone
             MouseArea {
-                anchors.fill: parent
+                objectName: "hintMore"
+                // Over the words only: the rest of the line is the model's.
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width: Math.min(parent.width, parent.contentWidth + parent.leftPadding + 12)
                 enabled: Theme.compact && hintLine.brief.length < hintLine.full.length
                 onClicked: hintLine.expanded = !hintLine.expanded
             }
