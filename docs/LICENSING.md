@@ -110,5 +110,10 @@ libintl, libiconv) and how the release meets them:
 - **OpenShape itself (MPL-2.0):** the About box links the repository; the
   release notes also name the release's tag. The installer shows the MPL.
 
-The installer is not code-signed yet (Windows SmartScreen shows "More info
-→ Run anyway"); signing needs a certificate (a product decision: cost).
+Each release's notes say whether it is code-signed; for an unsigned one
+Windows SmartScreen shows "More info → Run anyway". Signing through
+SignPath Foundation (free for open-source projects) is prepared in
+`release.yml` and switches on once the project is accepted and set up: see
+[CODE_SIGNING.md](CODE_SIGNING.md). SignPath Foundation's
+rules let us sign only OpenShape's own files (`OpenShape.exe`, the
+installer); the bundled libraries of other projects stay unsigned.

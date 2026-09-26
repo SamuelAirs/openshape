@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<!-- SignPath artifact configuration, slug "program" (docs/CODE_SIGNING.md).
+     The first signing request of .github/workflows/release.yml: the GitHub
+     workflow artifact (a ZIP) holds only OpenShape.exe, as built by that
+     run. It is signed if its version resource names the product OpenShape
+     and the version the workflow passes (CMakeLists.txt's, e.g. 0.2.0).
+     The bundled DLLs (Qt, OpenCASCADE, PlaneGCS, MSYS2 libraries) are other
+     projects' code: SignPath Foundation's rules keep them unsigned, so they
+     are not sent. Paste this into the SignPath project's artifact
+     configuration "program" when it changes here. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="OpenShape.exe" product-name="OpenShape" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

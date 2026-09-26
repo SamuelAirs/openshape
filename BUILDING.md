@@ -312,6 +312,35 @@ workflow artifact. The Windows icon is made from the SVG with
 `python scripts/windows/make-icon.py` (needs MSYS2's `rsvg-convert`,
 `pacman -S mingw-w64-ucrt-x86_64-librsvg`).
 
+**Code signing** happens only in `release.yml`, through SignPath Foundation
+(docs/CODE_SIGNING.md: policy, and the owner's setup steps). It switches on
+when the repository has the secret `SIGNPATH_API_TOKEN` and the variable
+`SIGNPATH_ORGANIZATION_ID` (optional: `SIGNPATH_PROJECT_SLUG`, default
+`openshape`); without them the workflow runs exactly as above, unsigned, and
+says so in a notice. With them, `OpenShape.exe` is signed between steps 3
+and 4 (so the installer and the zip contain it signed) and the installer
+after step 4; tags use SignPath's `release-signing` policy (OpenCASCADE is
+then built in the run instead of restored from the cache; the owner approves
+each request, the workflow waits up to an hour each), other runs
+`test-signing`. `scripts/windows/use-signed.sh` accepts a returned file only
+if it is the sent file plus a signature (`scripts/windows/pe-signature.py`)
+and Windows accepts the signature, then updates `SHA256SUMS.txt`; the
+installer test runs on the signed installer.
+
+Every Release run (signed or not) also checks the release notes template in
+both variants, before the build, and runs the signature check's self-test
+on the packaged `OpenShape.exe`; on Windows, ctest runs both too
+(`release_notes_template`, needs bash; `release_pe_signature_selftest`,
+needs Python 3 and the app), so a broken template or check fails on a push,
+not an hour into a tag's release. By hand:
+
+```bash
+bash scripts/ci/test-install-notes.sh                                           # the template, both variants (25 checks)
+python scripts/windows/pe-signature.py self-test dist/OpenShape/OpenShape.exe  # 14 checks on made-up signatures
+python scripts/windows/pe-signature.py info <signed.exe>                        # where its signature is
+bash scripts/ci/install-notes.sh 0.2.0 0.2.0 v0.2.0 signed                       # release notes, signed variant
+```
+
 ### 7. Developer tools
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,

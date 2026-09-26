@@ -882,6 +882,18 @@ them on a hidden menu separator after the Open Recent sub-menu).
   the dialogs, clicked by UI Automation; both only accept a test build of
   the setup, whose desktop shortcut goes to a test folder). `.github/workflows/release.yml` runs the whole chain and
   publishes tags `v*` as GitHub Releases.
+- **Code signing** (docs/CODE_SIGNING.md): when its SignPath secret and
+  variable exist, `release.yml` sends `OpenShape.exe` to SignPath after
+  packaging and the installer after `make-installer.sh` (GitHub workflow
+  artifacts; artifact configurations in `.signpath/artifact-configurations/`),
+  and `scripts/windows/use-signed.sh` puts each signed file in place only if
+  `scripts/windows/pe-signature.py` finds it byte-identical to the sent file
+  apart from the signature and Windows accepts the signature (updating
+  `SHA256SUMS.txt`). The release notes (`scripts/ci/install-notes.sh` from
+  `packaging/windows/release-notes.md`) say whether a release is signed.
+  Both scripts are also checked on every Release run and by ctest on
+  Windows (`scripts/ci/test-install-notes.sh`, `pe-signature.py self-test`),
+  since otherwise they would only run when a tag is published.
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
