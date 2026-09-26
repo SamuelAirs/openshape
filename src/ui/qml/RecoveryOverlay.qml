@@ -94,6 +94,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     text: row.modelData.title
+                                    textFormat: Text.PlainText // a project's name
                                     color: Theme.text
                                     font.pixelSize: 14
                                     font.weight: Font.DemiBold
@@ -102,6 +103,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     text: row.modelData.time + " · " + row.modelData.detail
+                                    textFormat: Text.PlainText
                                     color: Theme.mutedText
                                     font.pixelSize: 12
                                     elide: Text.ElideMiddle

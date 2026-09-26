@@ -51,6 +51,8 @@ public:
 
     QQuickWindow* window() const { return window_; }
     ui::AppController& app() const { return *app_; }
+    // Where screenshots go (files for review can go there too).
+    const QString& outputDir() const { return outputDir_; }
 
     // Input helpers (window-local logical coordinates).
     void mouseMove(QPointF p, Qt::MouseButtons held = Qt::NoButton);

@@ -42,16 +42,18 @@ Rectangle {
                 width: parent.width
                 spacing: 16
 
+                // The title wraps in a narrow window (a phone), so Close stays on screen.
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
+                        Layout.fillWidth: true
                         text: "How OpenShape works"
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: Theme.text
+                        wrapMode: Text.WordWrap
                     }
-                    Item { Layout.fillWidth: true }
-                    ActionButton { text: "Close"; onClicked: overlay.visible = false }
+                    ActionButton { objectName: "helpClose"; text: "Close"; onClicked: overlay.visible = false }
                 }
 
                 Text {
@@ -65,7 +67,7 @@ Rectangle {
 
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: 2
+                    columns: content.width < 560 ? 1 : 2 // one column on a phone
                     columnSpacing: 32
                     rowSpacing: 16
 
@@ -165,9 +167,10 @@ Rectangle {
                         title: "Files"
                         rows: [
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S"],
-                            ["Recent projects", "File → Open Recent"],
+                            ["Recent projects", "Home (at start, or File → Home): tap a project to open it; ⋯, a long press or a right click removes it from the list · File → Open Recent"],
                             ["For printing", "File → Export STL or 3MF"],
                             ["For other CAD", "File → Export STEP"],
+                            ["From other CAD", "File → Import STEP… (Ctrl+I): each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size"],
                             ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
                             ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies"]
                         ]

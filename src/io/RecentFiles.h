@@ -31,5 +31,11 @@ std::vector<std::string> withRecentFile(std::vector<std::string> list, const std
                                         const RecentFileExists& exists = recentFileExists);
 // Only the entries that still exist as files (a project moved or deleted drops out).
 std::vector<std::string> existingRecentFiles(const std::vector<std::string>& list);
+// The list without `path` (Home: "Remove from list"; the file itself stays).
+std::vector<std::string> withoutRecentFile(std::vector<std::string> list, const std::string& path);
+// What the start screen lists: the recent files, then the projects of a
+// folder the app owns (the iPad's Documents: projects put there with the
+// Files app) that are not among them, in the order given.
+std::vector<std::string> homeProjects(const std::vector<std::string>& recent, const std::vector<std::string>& folder);
 
 } // namespace os::io

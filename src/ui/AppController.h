@@ -25,6 +25,9 @@ namespace os::ui {
 
 class RecoverySession;
 
+// Pixels (square) of the preview saved in project files.
+inline constexpr int kThumbnailSize = 256;
+
 // Bridge between QML and the application core. Holds the document, undo
 // stack and interaction controller; exposes their state as properties and
 // user intents as invokables. Contains no modeling logic itself.
@@ -80,6 +83,13 @@ class AppController : public QObject {
     // File → Open Recent: {path, name, folder}, most recent first, existing
     // files only (as of the last refreshRecentFiles(), open or save).
     Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
+    // The start screen (Home): shown at launch without a file and from File ->
+    // Home; opening, New and importing as a project close it.
+    Q_PROPERTY(bool homeVisible READ homeVisible WRITE setHomeVisible NOTIFY homeChanged)
+    // What Home lists: {path, name, folder, modified, thumbnail (image source),
+    // removable}: the recent files, and on iPadOS also the projects in the
+    // app's Documents folder.
+    Q_PROPERTY(QVariantList homeProjects READ homeProjects NOTIFY recentFilesChanged)
     // File → Preferences… (stored in QSettings, applied at once).
     Q_PROPERTY(QString defaultUnit READ defaultUnit WRITE setDefaultUnit NOTIFY preferencesChanged)
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
@@ -135,6 +145,9 @@ public:
     QVariantList history() const;
     QVariantList recoveryItems() const;
     QVariantList recentFiles() const { return recentFiles_; }
+    bool homeVisible() const { return homeVisible_; }
+    void setHomeVisible(bool visible);
+    QVariantList homeProjects() const { return homeProjects_; }
     QString defaultUnit() const;
     void setDefaultUnit(const QString& symbol);
     bool sketchGridSnap() const { return preferences_.sketchGridSnap; }
@@ -177,6 +190,8 @@ public:
 
     Q_INVOKABLE bool openRecent(const QString& path);
     Q_INVOKABLE void clearRecentFiles();
+    // Home: "Remove from list" (the file stays where it is).
+    Q_INVOKABLE void removeRecentFile(const QString& path);
     // Rereads the list and drops files that are gone (e.g. deleted in
     // Explorer while the app runs); the File menu calls it as it opens.
     Q_INVOKABLE void refreshRecentFiles();
@@ -187,6 +202,18 @@ public:
     Q_INVOKABLE bool saveProjectAs(const QUrl& url);
     Q_INVOKABLE bool hasProjectPath() const { return !path_.isEmpty(); }
     Q_INVOKABLE bool exportStep(const QUrl& url);
+    // File -> Import STEP...: every closed solid in the file becomes a body
+    // (one undo step); what was skipped (open surfaces, curves) is said in
+    // the message. False (with a message) when nothing could be imported.
+    Q_INVOKABLE bool importStep(const QUrl& url);
+    // Home -> Import STEP...: the same into a new document (the current one
+    // stays when the file cannot be imported).
+    Q_INVOKABLE bool importStepAsProject(const QUrl& url);
+    // Acceptance runs cannot click native file dialogs: they give the file
+    // the next dialog would return here, and the QML takes it instead of
+    // opening the dialog (then the usual onAccepted code runs).
+    Q_INVOKABLE void setNextFileChoice(const QUrl& url) { nextFileChoice_ = url; }
+    Q_INVOKABLE QUrl takeNextFileChoice();
     Q_INVOKABLE bool exportStl(const QUrl& url);
     Q_INVOKABLE bool export3mf(const QUrl& url);
 
@@ -245,6 +272,7 @@ signals:
     void touchModeChanged();
     void recoveryChanged();
     void recentFilesChanged();
+    void homeChanged();
     void preferencesChanged();
 
 private:
@@ -259,6 +287,8 @@ private:
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
     void updateRecentFiles();
     void savePreferences() const;
+    // thumbnail.png for a save: kThumbnailSize pixels square (empty without bodies).
+    std::vector<unsigned char> thumbnailPng() const;
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
@@ -275,6 +305,9 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
+    QVariantList homeProjects_;
+    bool homeVisible_ = false;
+    QUrl nextFileChoice_;
 };
 
 } // namespace os::ui

@@ -7,12 +7,14 @@
 #include "commands/Command.h"
 #include "core/Camera.h"
 #include "document/Document.h"
+#include "geometry/Exchange.h"
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
 #include "interaction/Operation.h"
 #include "interaction/RenderScene.h"
 #include "interaction/SceneCache.h"
 #include "interaction/SketchSession.h"
+#include "interaction/Thumbnail.h"
 #include "selection/Picking.h"
 #include "selection/Selection.h"
 
@@ -130,6 +132,19 @@ public:
 
     // ---- Actions ----
     Status createBox(double size);
+    // One body per imported shape, each starting with an Imported step, as
+    // one undo step. Names stay unique ("Bracket 2"); unnamed shapes become
+    // "Imported 1", "Imported 2", ... The view fits everything afterwards.
+    // `source` is the file name shown on the steps. Refused, with a plain
+    // message and nothing changed, when the project could not keep the
+    // geometry: more than doc::kMaxImportedBodyBytes for one body, or more
+    // than `maxGeometryBytes` of imported geometry in the document with it
+    // (lower only in tests).
+    Status importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source,
+                        std::uint64_t maxGeometryBytes = doc::kMaxImportedGeometryBytes);
+    // The picture a saved project carries: the visible bodies from the
+    // isometric direction, framed (not the current view). Empty without bodies.
+    ThumbnailImage renderThumbnail(int size);
     bool undo();
     bool redo();
     // Deletes the selected bodies, as one undo step. A body that other bodies

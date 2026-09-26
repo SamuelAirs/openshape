@@ -92,6 +92,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::SplitPiece: return "Split piece";
     case doc::FeatureKind::Copy: return "Copy";
     case doc::FeatureKind::Holes: return "Hole";
+    case doc::FeatureKind::Imported: return "Import";
     }
     return "Add step";
 }

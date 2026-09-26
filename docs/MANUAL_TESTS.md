@@ -88,6 +88,12 @@ odd: a screenshot and a sentence is plenty. Starting the app with
       angle widens. A draft that would close the shape before the full
       height is refused. An existing extrusion's row in the Model panel
       offers "Draft" too.
+13. **Home and STEP.** Start OpenShape from the shortcut: Home shows your
+    recent projects with pictures (save a project once to give it one).
+    Tap a card to open it; ⋯ (or a right click) → Remove from list. File →
+    Home comes back to it. Import STEP… with a part from another program
+    (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
+    size and names; push/pull a face and round an edge of it, save, reopen.
 
 ## The Windows installer (optional)
 

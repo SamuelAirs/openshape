@@ -46,12 +46,13 @@ Rectangle {
                     Layout.fillWidth: true
                     Text {
                         objectName: "aboutVersion"
+                        Layout.fillWidth: true
                         text: "OpenShape " + Qt.application.version
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: Theme.text
+                        wrapMode: Text.WordWrap
                     }
-                    Item { Layout.fillWidth: true }
                     ActionButton { text: "Close"; onClicked: overlay.visible = false }
                 }
                 Text {

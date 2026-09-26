@@ -24,6 +24,7 @@ ApplicationWindow {
 
     property bool closeConfirmed: false
     property var afterSave: null   // action to run once a Save As completes
+    property bool importAsProject: false // the import dialog makes a new document (from Home)
     // A question the user must answer first: the window's shortcuts wait
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
     readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible
@@ -37,6 +38,8 @@ ApplicationWindow {
         focus: true
 
         Keys.onPressed: (event) => {
+            if (window.app.homeVisible)
+                return // the model is hidden: Delete must not remove what cannot be seen
             if (window.app.sketchMode) {
                 if (sketchOverlay.handleKey(event))
                     event.accepted = true
@@ -57,13 +60,14 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- shortcuts
-    Shortcut { sequences: [StandardKey.Undo]; enabled: !window.modalOpen; onActivated: window.app.undo() }
+    // Undo, redo and duplicate act on the model: not while Home covers it.
+    Shortcut { sequences: [StandardKey.Undo]; enabled: !window.modalOpen && !window.app.homeVisible; onActivated: window.app.undo() }
     // StandardKey.Redo is Ctrl+Y on Windows but Ctrl+Shift+Z elsewhere; accept
     // both everywhere. On Windows the duplicate makes Qt report the match as
     // ambiguous, so handle that signal too.
     Shortcut {
         sequences: [StandardKey.Redo, "Ctrl+Y"]
-        enabled: !window.modalOpen
+        enabled: !window.modalOpen && !window.app.homeVisible
         onActivated: window.app.redo()
         onActivatedAmbiguously: window.app.redo()
     }
@@ -80,14 +84,26 @@ ApplicationWindow {
         onActivated: window.confirmDiscard(() => window.app.newDocument())
     }
     Shortcut { sequence: "Ctrl+,"; enabled: !window.modalOpen; onActivated: preferencesOverlay.open() }
-    Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
+    // From Home, an import starts a new project (like its Import STEP button).
+    Shortcut {
+        sequence: "Ctrl+I"
+        enabled: !window.modalOpen
+        onActivated: window.app.homeVisible ? window.confirmDiscard(() => window.chooseImportFile(true))
+                                            : window.chooseImportFile(false)
+    }
+    // Keys for the view: never while Home covers it (whatever has the focus).
+    Shortcut { sequence: "F"; enabled: viewport.activeFocus && !window.app.homeVisible; onActivated: window.app.fitAll() }
     Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
-    Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
+    Shortcut {
+        sequence: "B"
+        enabled: viewport.activeFocus && !window.app.sketchMode && !window.app.homeVisible
+        onActivated: window.app.createBox(20)
+    }
     // Duplicate the selected body (the copy is selected, ready to drag away).
-    Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode; onActivated: window.app.triggerAction("duplicate") }
+    Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode && !window.app.homeVisible; onActivated: window.app.triggerAction("duplicate") }
     Shortcut {
         sequence: "K"
-        enabled: viewport.activeFocus && window.app.canStartSketch
+        enabled: viewport.activeFocus && window.app.canStartSketch && !window.app.homeVisible
         onActivated: window.app.startSketch()
     }
 
@@ -95,7 +111,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay]
+        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay, homeScreen]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -103,6 +119,27 @@ ApplicationWindow {
             }
         }
         viewport.forceActiveFocus()
+    }
+
+    // Opens a file dialog, unless an acceptance run prepared the file it
+    // would return (native dialogs cannot be clicked): then `accept` runs
+    // with it at once, as the dialog's onAccepted would.
+    function chooseFile(dialog, accept) {
+        const prepared = app.takeNextFileChoice()
+        if (prepared.toString() !== "")
+            accept(prepared)
+        else
+            dialog.open()
+    }
+    function chooseImportFile(asProject) {
+        window.importAsProject = asProject
+        chooseFile(importDialog, window.acceptImport)
+    }
+    function acceptImport(url) {
+        if (window.importAsProject)
+            app.importStepAsProject(url)
+        else
+            app.importStep(url)
     }
 
     function save() {
@@ -195,6 +232,8 @@ ApplicationWindow {
         onClosed: window.focusViewUnlessPanel()
         // Sub-menu entries are made by this delegate: name them for the acceptance run.
         delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
+        MenuItem { objectName: "homeMenuItem"; text: "Home"; onTriggered: window.app.homeVisible = true }
+        MenuSeparator {}
         MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
         MenuItem { text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
         Menu {
@@ -208,10 +247,20 @@ ApplicationWindow {
             Instantiator {
                 model: window.app.recentFiles
                 delegate: MenuItem {
+                    id: recentItem
                     required property var modelData
                     required property int index
                     objectName: "recentFile_" + index
                     text: modelData.name + "  —  " + modelData.folder
+                    // A file name is shown as it is (never as HTML).
+                    contentItem: Text {
+                        text: recentItem.text
+                        textFormat: Text.PlainText
+                        font: recentItem.font
+                        color: recentItem.palette.windowText
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
                     onTriggered: {
                         // After the menu has closed: opening rebuilds this list,
                         // and a menu whose item vanishes mid-click stays open.
@@ -224,6 +273,11 @@ ApplicationWindow {
             }
             MenuSeparator {}
             MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
+        }
+        MenuItem {
+            objectName: "importStepMenuItem"
+            text: "Import STEP…"
+            onTriggered: window.chooseImportFile(false)
         }
         MenuSeparator {}
         MenuItem { text: "Save"; onTriggered: window.save() }
@@ -441,6 +495,7 @@ ApplicationWindow {
                 Text {
                     visible: window.app.selectionSummary.length > 0
                     text: window.app.selectionSummary
+                    textFormat: Text.PlainText // may name bodies
                     color: Theme.text
                     font.pixelSize: 13
                     leftPadding: 8
@@ -478,6 +533,7 @@ ApplicationWindow {
                 id: summaryText
                 anchors.centerIn: parent
                 text: window.app.selectionSummary
+                textFormat: Text.PlainText
                 color: Theme.text
                 font.pixelSize: 13
             }
@@ -487,6 +543,7 @@ ApplicationWindow {
             // Wraps instead of running under the view buttons or the axis marker.
             width: (statusColumn.stacked ? axisTriad.x : viewPanel.x) - 2 * Theme.margin
             text: window.hintText()
+            textFormat: Text.PlainText
             color: window.operationRefused() ? Theme.error : Theme.mutedText
             font.pixelSize: 12
             leftPadding: 4
@@ -519,7 +576,7 @@ ApplicationWindow {
         if (app.bodyCount === 0 && app.sketchCount > 0)
             return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)
-            return "Add a box, or start a sketch."
+            return "Add a box, start a sketch, or import a STEP file (Ctrl+I)."
         if (app.operationActive && app.operationTitle === "Hole")
             return "Click to add holes (they snap to the center and edge middles and line up with each other) · "
                  + "X / Y (Tab) type the current hole's position · click a hole to pick it (Remove hole drops it) · Enter applies"
@@ -564,9 +621,10 @@ ApplicationWindow {
 
     // ---------------------------------------------------------------- empty state
     Column {
+        objectName: "emptyState"
         anchors.centerIn: parent
         spacing: 14
-        visible: window.app.bodyCount === 0 && window.app.sketchCount === 0 && !window.app.sketchMode
+        visible: window.app.bodyCount === 0 && window.app.sketchCount === 0 && !window.app.sketchMode && !window.app.homeVisible
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Start with a shape"
@@ -619,13 +677,30 @@ ApplicationWindow {
         onFinished: viewport.forceActiveFocus()
     }
 
+    // ---------------------------------------------------------------- home
+    // The start screen: at launch without a file, and File -> Home.
+    HomeScreen {
+        id: homeScreen
+        objectName: "homeScreen"
+        app: window.app
+        anchors.fill: parent
+        z: 90 // over the model and its panels; dialogs and the restore prompt go above
+        onNewRequested: window.confirmDiscard(() => window.app.newDocument())
+        onOpenRequested: window.confirmDiscard(() => window.chooseFile(openDialog, (url) => window.app.openProject(url)))
+        onImportRequested: window.confirmDiscard(() => window.chooseImportFile(true))
+        onProjectRequested: (path) => window.confirmDiscard(() => window.app.openRecent(path))
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
     // ---------------------------------------------------------------- help
+    // Closing Help or About gives the keys back to Home when it is shown
+    // (B or K must not edit the model hidden behind it).
     HelpOverlay {
         id: helpOverlay
         objectName: "helpOverlay"
         anchors.fill: parent
         z: 100
-        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
     AboutOverlay {
@@ -633,7 +708,7 @@ ApplicationWindow {
         objectName: "aboutOverlay"
         anchors.fill: parent
         z: 100
-        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
     PreferencesOverlay {
@@ -676,19 +751,30 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- toast
+    // Above everything, Home and the dialogs included: a message about what
+    // was just started there (a file that cannot be opened) must be seen.
+    // It takes no input, so nothing underneath stops working. In a narrow
+    // window (a phone) a long message wraps instead of running off screen.
     Rectangle {
         id: toast
+        objectName: "toast"
         property alias text: toastText.text
+        z: 130
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 72 }
-        width: toastText.implicitWidth + 32
-        height: 38
+        width: Math.min(toastText.implicitWidth + 32, window.width - 2 * Theme.margin)
+        height: Math.max(38, toastText.height + 20)
         radius: 19
         color: Theme.toast
         opacity: 0
         visible: opacity > 0
         Text {
             id: toastText
+            objectName: "toastText"
             anchors.centerIn: parent
+            width: toast.width - 32
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText // names from files are shown as they are
             color: "white"
             font.pixelSize: 13
         }
@@ -697,6 +783,8 @@ ApplicationWindow {
         function show(message) {
             text = message
             opacity = 0.94
+            // Long messages (what an import skipped) stay longer.
+            toastTimer.interval = Math.min(8000, 3200 + Math.max(0, message.length - 50) * 45)
             toastTimer.restart()
         }
     }
@@ -729,6 +817,12 @@ ApplicationWindow {
             }
         }
         onRejected: window.afterSave = null
+    }
+    FileDialog {
+        id: importDialog
+        title: "Import STEP"
+        nameFilters: ["STEP files (*.step *.stp *.STEP *.STP)"]
+        onAccepted: window.acceptImport(selectedFile)
     }
     FileDialog {
         id: stepDialog

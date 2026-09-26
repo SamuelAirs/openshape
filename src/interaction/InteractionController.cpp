@@ -974,6 +974,97 @@ Status InteractionController::createBox(double size)
     return status;
 }
 
+Status InteractionController::importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source,
+                                          std::uint64_t maxGeometryBytes)
+{
+    if (shapes.empty())
+        return Status::failure(ErrorCode::InvalidArgument, "There is nothing to import.", "importBodies: no shapes");
+    // What the project will have to store (the Imported steps' BRep text,
+    // made now once and kept for saving): refused here, before anything
+    // changes, rather than a project that cannot be saved.
+    std::uint64_t stored = 0;
+    for (const auto& body : document_->bodies())
+        for (const auto& f : body->features())
+            if (const auto* imported = dynamic_cast<const doc::ImportedFeature*>(f.get()))
+                stored += imported->brepText().size();
+    std::uint64_t adding = 0;
+    std::vector<std::unique_ptr<doc::ImportedFeature>> features;
+    for (const geom::NamedShape& shape : shapes) {
+        if (shape.shape.isNull())
+            continue;
+        auto feature = std::make_unique<doc::ImportedFeature>();
+        feature->setShape(shape.shape);
+        feature->source = source;
+        const std::uint64_t bytes = feature->brepText().size();
+        adding += bytes;
+        if (bytes > doc::kMaxImportedBodyBytes || stored + adding > maxGeometryBytes) {
+            const auto mb = [](std::uint64_t n) { return std::to_string((n + (1u << 20) - 1) >> 20); };
+            Status tooLarge = Status::failure(
+                ErrorCode::Unsupported,
+                "These parts are too large to keep in a project (at most " + mb(maxGeometryBytes) + " MB of imported geometry, "
+                    + mb(doc::kMaxImportedBodyBytes) + " MB per body). Nothing was imported.",
+                "importBodies: " + std::to_string(bytes) + " bytes for one body, " + std::to_string(stored + adding)
+                    + " in all");
+            message(tooLarge.userMessage());
+            return tooLarge;
+        }
+        features.push_back(std::move(feature));
+    }
+    if (session_)
+        finishSketch();
+    // Like clicking elsewhere: a pending value is applied first.
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    std::vector<std::string> taken;
+    for (const auto& body : document_->bodies())
+        taken.push_back(body->name());
+    auto isTaken = [&](const std::string& name) { return std::find(taken.begin(), taken.end(), name) != taken.end(); };
+    int unnamed = 1;
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    std::size_t next = 0;
+    for (const geom::NamedShape& shape : shapes) {
+        if (shape.shape.isNull())
+            continue;
+        std::string name = shape.name;
+        if (name.empty()) {
+            do
+                name = "Imported " + std::to_string(unnamed++);
+            while (isTaken(name));
+        } else {
+            const std::string base = name;
+            for (int n = 2; isTaken(name); ++n)
+                name = base + " " + std::to_string(n);
+        }
+        taken.push_back(name);
+        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(name, std::move(features[next++])));
+    }
+    if (steps.empty())
+        return Status::failure(ErrorCode::InvalidArgument, "There is nothing to import.", "importBodies: only null shapes");
+    const std::string label = steps.size() == 1 ? "Import " + taken.back() : "Import " + std::to_string(steps.size()) + " bodies";
+    Status status = undoStack_->push(std::make_unique<cmd::CompositeCommand>(label, std::move(steps)), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    operation_.reset();
+    selection_.clear();
+    afterDocumentEdit();
+    fitAll(true);
+    return status;
+}
+
+ThumbnailImage InteractionController::renderThumbnail(int size)
+{
+    scene_.update(*document_);
+    std::vector<std::shared_ptr<const geom::Mesh>> meshes;
+    for (const auto& body : document_->bodies())
+        if (body->isVisible() && !body->shape().isNull())
+            if (auto mesh = scene_.mesh(body->id()))
+                meshes.push_back(std::move(mesh));
+    return interact::renderThumbnail(meshes, size);
+}
+
 bool InteractionController::undo()
 {
     if (!undoStack_->undo(*document_))
@@ -2184,6 +2275,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::SplitPiece: return "Piece";
     case doc::FeatureKind::Copy: return static_cast<const doc::CopyFeature&>(f).mirror ? "Mirror copy" : "Copy";
     case doc::FeatureKind::Holes: return static_cast<const doc::HolesFeature&>(f).positions.size() == 1 ? "Hole" : "Holes";
+    case doc::FeatureKind::Imported: return "Import";
     }
     return "Step";
 }
@@ -2340,6 +2432,10 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         if (e.draftAngle != 0)
             extent += dot + "Draft " + formatAngle(e.draftAngle);
         return extent + dot + mode;
+    }
+    case doc::FeatureKind::Imported: {
+        const auto& imported = static_cast<const doc::ImportedFeature&>(f);
+        return imported.source.empty() ? std::string("STEP") : imported.source;
     }
     }
     return {};

@@ -12,6 +12,7 @@
 #include "geometry/Shape.h"
 
 #include <Standard_ErrorHandler.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <Standard_Failure.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Dir.hxx>
@@ -104,6 +105,8 @@ auto guarded(const char* operation, const char* userMessage, Fn&& fn) -> decltyp
 // Normalizes a kernel result: unwraps single-solid compounds, rejects empty
 // results, and runs the B-rep validity checker.
 Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage);
+// What BRepCheck rejects, for logs: "FACE: BRepCheck_UnorientableShape x3; ...".
+std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const TopoDS_Shape& shape);
 
 inline gp_Dir toDir(const Vec3& v) { return gp_Dir(v.x, v.y, v.z); }
 

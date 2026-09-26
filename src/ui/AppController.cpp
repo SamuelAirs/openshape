@@ -10,15 +10,20 @@
 #include "io/ProjectFile.h"
 #include "io/RecentFiles.h"
 #include "ui/RecoverySession.h"
+#include "ui/ThumbnailSource.h"
 
+#include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QVariantMap>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QImage>
 
 #include <algorithm>
 #include <cmath>
@@ -564,6 +569,7 @@ void AppController::newDocument()
     undoStack_ = std::move(stack);
     path_.clear();
     documentReplaced();
+    setHomeVisible(false);
     emit documentChanged();
     emit stateChanged();
     emit viewChanged();
@@ -584,6 +590,7 @@ bool AppController::openProject(const QUrl& url)
     undoStack_ = std::move(stack);
     path_ = QString::fromStdWString(path.wstring());
     documentReplaced();
+    setHomeVisible(false);
     rememberRecentFile(path_);
     for (const auto& body : document_->bodies())
         if (body->hasFailures()) {
@@ -600,7 +607,9 @@ bool AppController::saveProject()
 {
     if (path_.isEmpty())
         return false;
-    const Status status = io::saveProject(*document_, std::filesystem::path(path_.toStdWString()));
+    io::SaveOptions options;
+    options.thumbnailPng = thumbnailPng();
+    const Status status = io::saveProject(*document_, std::filesystem::path(path_.toStdWString()), options);
     if (!status) {
         OS_LOG(Warning, File) << status.developerMessage();
         notifyMessage(q(status.userMessage()));
@@ -616,6 +625,25 @@ bool AppController::saveProject()
     notifyMessage(QStringLiteral("Saved"));
     emit stateChanged();
     return true;
+}
+
+std::vector<unsigned char> AppController::thumbnailPng() const
+{
+    QElapsedTimer timer;
+    timer.start();
+    const interact::ThumbnailImage image = interaction_->renderThumbnail(kThumbnailSize);
+    if (image.empty())
+        return {};
+    const QImage picture(image.rgba.data(), image.width, image.height, image.width * 4, QImage::Format_RGBA8888_Premultiplied);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!picture.save(&buffer, "PNG")) {
+        OS_LOG(Warning, File) << "the project preview could not be encoded; saving without it";
+        return {};
+    }
+    OS_LOG(Debug, Performance) << "thumbnail took " << timer.elapsed() << " ms (" << bytes.size() << " bytes)";
+    return std::vector<unsigned char>(bytes.begin(), bytes.end());
 }
 
 bool AppController::saveProjectAs(const QUrl& url)
@@ -635,6 +663,65 @@ bool AppController::exportStep(const QUrl& url)
     const Status status = geom::exportStep(shapes, withExtension(toPath(url), ".step"));
     notifyMessage(status ? QStringLiteral("Exported STEP") : q(status.userMessage()));
     return status.ok();
+}
+
+namespace {
+
+// "Imported “Bracket”" / "Imported 3 bodies", plus what was skipped.
+QString importMessage(const std::vector<geom::NamedShape>& shapes, const std::vector<std::string>& warnings,
+                      const doc::Document& document)
+{
+    QString text = shapes.size() == 1 && !document.bodies().empty()
+                     ? QStringLiteral("Imported \u201C%1\u201D").arg(QString::fromStdString(document.bodies().back()->name()))
+                     : QStringLiteral("Imported %1 bodies").arg(shapes.size());
+    for (const std::string& warning : warnings)
+        text += QStringLiteral(". ") + QString::fromStdString(warning);
+    return text;
+}
+
+} // namespace
+
+bool AppController::importStep(const QUrl& url)
+{
+    const auto path = toPath(url);
+    auto imported = geom::importStep(path);
+    if (!imported) {
+        OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
+        notifyMessage(q(imported.userMessage()));
+        return false;
+    }
+    const std::string source = QFileInfo(QString::fromStdWString(path.wstring())).fileName().toStdString();
+    const Status status = interaction_->importBodies(imported.value(), source);
+    if (!status)
+        return false; // the controller said why
+    notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
+    return true;
+}
+
+bool AppController::importStepAsProject(const QUrl& url)
+{
+    // Read the file first: a file that cannot be imported leaves the current
+    // document alone.
+    const auto path = toPath(url);
+    auto imported = geom::importStep(path);
+    if (!imported) {
+        OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
+        notifyMessage(q(imported.userMessage()));
+        return false;
+    }
+    newDocument();
+    const std::string source = QFileInfo(QString::fromStdWString(path.wstring())).fileName().toStdString();
+    if (!interaction_->importBodies(imported.value(), source))
+        return false;
+    notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
+    return true;
+}
+
+QUrl AppController::takeNextFileChoice()
+{
+    QUrl url;
+    std::swap(url, nextFileChoice_);
+    return url;
 }
 
 bool AppController::exportStl(const QUrl& url)
@@ -890,6 +977,7 @@ bool AppController::restoreRecovery(const QString& sessionText)
     undoStack_ = std::move(stack);
     path_ = QString::fromStdString(entry.info.originalPath);
     documentReplaced();
+    setHomeVisible(false);
     // The copy stays (now as this run's) until the document is saved or discarded.
     if (const Status adopted = recovery_->adopt(session, entry.info); adopted) {
         copyRevision_ = undoStack_->revision();
@@ -954,7 +1042,8 @@ void AppController::updateRecentFiles()
 {
     QSettings settings;
     QVariantList list;
-    for (const std::string& file : io::existingRecentFiles(toStd(loadRecentFiles(settings)))) {
+    const std::vector<std::string> recent = io::existingRecentFiles(toStd(loadRecentFiles(settings)));
+    for (const std::string& file : recent) {
         const QFileInfo info(QString::fromStdString(file));
         QVariantMap map;
         map.insert(QStringLiteral("path"), info.absoluteFilePath());
@@ -962,10 +1051,53 @@ void AppController::updateRecentFiles()
         map.insert(QStringLiteral("folder"), info.absoluteDir().dirName());
         list.append(map);
     }
-    if (list == recentFiles_)
+    // Home: the same files with previews and dates, plus (iPadOS) the
+    // projects in the app's Documents folder, which the Files app shows.
+    std::vector<std::string> folder;
+#if defined(Q_OS_IOS)
+    const QDir documents(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
+    for (const QFileInfo& info : documents.entryInfoList({QStringLiteral("*.openshape")}, QDir::Files, QDir::Time))
+        folder.push_back(info.absoluteFilePath().toStdString());
+#endif
+    QVariantList home;
+    for (const std::string& file : io::homeProjects(recent, folder)) {
+        const QFileInfo info(QString::fromStdString(file));
+        const QDateTime modified = info.lastModified();
+        QVariantMap map;
+        map.insert(QStringLiteral("path"), info.absoluteFilePath());
+        map.insert(QStringLiteral("name"), info.completeBaseName());
+        map.insert(QStringLiteral("folder"), QDir::toNativeSeparators(info.absolutePath()));
+        map.insert(QStringLiteral("modified"), QLocale().toString(modified, QLocale::ShortFormat));
+        map.insert(QStringLiteral("thumbnail"), thumbnailSource(info.absoluteFilePath(), modified.toMSecsSinceEpoch()));
+        map.insert(QStringLiteral("removable"),
+                   std::any_of(recent.begin(), recent.end(), [&](const std::string& r) { return io::sameRecentPath(r, file); }));
+        home.append(map);
+    }
+    if (list == recentFiles_ && home == homeProjects_)
         return; // the menu keeps its items
     recentFiles_ = list;
+    homeProjects_ = home;
     emit recentFilesChanged();
+}
+
+void AppController::setHomeVisible(bool visible)
+{
+    if (visible)
+        updateRecentFiles(); // files saved, moved or deleted meanwhile
+    if (visible == homeVisible_)
+        return;
+    homeVisible_ = visible;
+    emit homeChanged();
+}
+
+void AppController::removeRecentFile(const QString& path)
+{
+    QSettings settings;
+    QStringList files;
+    for (const std::string& f : io::withoutRecentFile(toStd(loadRecentFiles(settings)), path.toStdString()))
+        files.append(QString::fromStdString(f));
+    saveRecentFiles(settings, files);
+    updateRecentFiles();
 }
 
 void AppController::refreshRecentFiles()

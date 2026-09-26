@@ -192,9 +192,11 @@ struct Measurement {
 std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b);
 
 // ---- Serialization ----------------------------------------------------------
-// Native OCCT BRep text. Used only as a geometry *cache* inside project files;
-// the parametric document is the source of truth.
-std::string toBrepString(const Shape& shape);
+// Native OCCT BRep text: the geometry cache inside project files, and the
+// exact geometry of imported bodies (their source of truth). Without
+// triangulation, only the exact geometry is written (the display mesh the
+// view stored in the shape is left out).
+std::string toBrepString(const Shape& shape, bool withTriangulation = true);
 Result<Shape> fromBrepString(const std::string& text);
 
 } // namespace os::geom

@@ -93,7 +93,11 @@ typed),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
-the constraint glyphs). Without `--screenshot` the window stays open.
+the constraint glyphs) and `home` (the start screen with four saved
+projects and their previews; try `--touch --size 402x874`, `874x402` and
+`1180x820` for phones and the iPad). Without `--screenshot` the window
+stays open. A normal start without a file opens on Home; automated runs
+(`--acceptance`, `--demo`, `--screenshot`) start in an empty document.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 
@@ -289,10 +293,11 @@ workflow artifact. The Windows icon is made from the SVG with
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,
   bounding boxes and recovery copies / full saves on a 21-face filleted part
-  (and saves on a 21-body, 1528-face model), then the same plus a fillet
-  drag and hover picking (1200 pointer positions over the part) on a
-  249-face enclosure (shelled, rounded, 95 vent holes with chamfers, screw
-  bosses; 25k triangles). Numbers in PROJECT_STATUS.md:
+  (and saves and the project thumbnail on a 21-body, 1528-face model),
+  then the same plus a fillet drag and hover picking (1200 pointer
+  positions over the part) on a 249-face enclosure (shelled, rounded, 95
+  vent holes with chamfers, screw bosses; 25k triangles). Numbers in
+  PROJECT_STATUS.md:
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
