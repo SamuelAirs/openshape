@@ -342,3 +342,40 @@ loop's input: 8 of 92 packages listed).
 function declaration (most vexing parse); a gtest macro inside an unbraced
 `if` trips `-Werror=dangling-else`; GCC's `-Wshadow=local` is rejected by
 Clang (now GCC-only, for the Mac build).
+
+## 2026-09-25 — The Mac and iPad builds move to GitHub's Macs
+
+**No usable Mac.** The owner's MacBook is too old for current Xcode, and
+Xcode only runs on macOS. The repository is public now, so GitHub-hosted
+Macs are free: `ci.yml` gained a macOS job and `ipad.yml` builds the iPad
+app there and (with the owner's App Store Connect API key as secrets)
+uploads it to TestFlight. Apple requires the iOS 26 SDK for uploads, so both
+jobs pick the newest released Xcode 26 (26.3 on `macos-15`), never a beta.
+
+**Reading CI without a login.** Job logs of a public repository still need
+a signed-in user (the log API answers 403 without a token), but run/job
+status and check-run annotations are public. `scripts/ci/run-logged.sh`
+therefore turns a failed step's error lines and last lines into
+annotations. A first idea, force-pushing logs to a branch, was refused by
+the permission guard as destructive — and annotations need no write access.
+
+**Apple Clang / libc++ differences.** Found on the first macOS run:
+`std::from_chars` for `double` does not exist in Apple's libc++ (number
+parsing now uses a classic-locale `istringstream`, Qt sets the C locale from
+the environment on Unix); libc++ includes less transitively (PlaneGCS used
+`std::inserter` without `<iterator>`, fixed in its force-included header
+list, not in the vendored source). Clang's follow-up error ("variable 'err'
+cannot be implicitly captured") was only a consequence of the missing
+`std::inserter`. After that: 0 warnings with `-Werror`, 239/239 tests pass.
+
+**OpenCASCADE for iOS** built on the first try with the flags of its own
+`adm/scripts/ios_build.sh` (static, no Draw; OCCT forces GLES2 on for iOS,
+harmless): 19 minutes on a 3-core `macos-15` runner, then cached.
+
+**A small screen finds layout bugs.** The runner's screen made the window
+1024x653: the acceptance run clicked Pattern and hit a button of the
+selection bar lying over the palette; the same overlap happens on an iPad
+in landscape (820 pt tall, 44 pt buttons), and in portrait the bar covered
+the axis marker. The palette now ends above the bottom-left column, which
+moves above the view buttons in narrow windows. `--size WxH` reproduces
+iPad layouts on Windows (e.g. `--touch --size 820x1180`).

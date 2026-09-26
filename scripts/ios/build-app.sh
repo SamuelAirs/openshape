@@ -11,15 +11,19 @@
 # Usage (macOS, repository root):
 #   scripts/ios/build-app.sh <qt-ios-dir> <deps-prefix> [build-dir]
 #   e.g. scripts/ios/build-app.sh ~/Qt/6.11.2/ios ~/openshape-ios-deps
-# OPENSHAPE_BUILD_NUMBER (optional) sets the bundle's build number.
+# OPENSHAPE_BUILD_NUMBER (optional) sets the bundle's build number;
+# QT_HOST_PATH the Qt for macOS whose tools the build runs (default: the
+# "macos" folder beside the iOS one, as the installers lay them out).
 set -euo pipefail
 
 QT=${1:?usage: build-app.sh <qt-ios-dir> <deps-prefix> [build-dir]}
 DEPS=${2:?usage: build-app.sh <qt-ios-dir> <deps-prefix> [build-dir]}
 BUILD=${3:-build/ios}
 DEPS=$(cd "$DEPS" && pwd)
+HOST_QT=${QT_HOST_PATH:-$(cd "$QT/.." && pwd)/macos}
 
 "$QT/bin/qt-cmake" -S . -B "$BUILD" -G Xcode \
+    -DQT_HOST_PATH="$HOST_QT" \
     -DOPENSHAPE_BUILD_TESTS=OFF \
     -DCMAKE_PREFIX_PATH="$DEPS" -DCMAKE_FIND_ROOT_PATH="$DEPS" \
     -DCMAKE_XCODE_GENERATE_SCHEME=ON \
