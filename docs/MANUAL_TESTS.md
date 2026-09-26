@@ -52,7 +52,7 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     close and start again: same place. File → Open Recent lists your last
     projects. File → Preferences… (Ctrl+,): units for new documents, grid
     snapping in sketches, how often recovery copies are kept.
-11. **The documentation.** Follow the Quick start in README.md step by step
+14. **The documentation.** Follow the Quick start in README.md step by step
     (the mounting plate with two holes), and skim docs/USER_GUIDE.md: does
     everything work as written? Is anything you use missing? F1 → the
     link under the first paragraph opens the guide on GitHub.

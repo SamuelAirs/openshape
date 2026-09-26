@@ -112,8 +112,10 @@ A 60 × 30 × 5 mm mounting plate with two 6 mm holes:
 3. **Holes.** Click the plate's top face and press `K` to sketch on it.
    Press `C` (Circle), click where a hole goes, type `6`, `Enter`; again for
    the second hole. Click **Finish sketch**.
-4. **Cut.** Click inside one circle, `Shift`-click the other, type `-5` (or
-   click **Through all**), press `Enter`: two holes through the plate.
+4. **Cut.** Click inside one circle, `Shift`-click the other, type `-5`,
+   press `Enter`: two holes through the plate. (Once the value is negative
+   the extrude is a cut, and a **Through all** button appears for cutting
+   through any thickness.)
 5. **Print.** **File → Export 3MF…** (or **Export STL…**), open the file in
    your slicer (it is in millimeters) and print. **File → Save** keeps the
    editable project.

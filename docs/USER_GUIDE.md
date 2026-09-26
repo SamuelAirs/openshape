@@ -6,6 +6,12 @@ sketching profiles to extrude, and you type exact sizes whenever you want
 them. This guide describes OpenShape 0.1 on Windows. The same summary is in
 the app: press `F1` or the **?** button.
 
+The guide lives with the source code. The copy on GitHub's `main` branch
+(the one the in-app card links to) follows the newest development version;
+the copy that matches a release is in that release's source, under its tag
+(listed on the [Releases page](https://github.com/SamuelAirs/openshape/releases)).
+**File → About OpenShape** shows which version you have.
+
 ![A project box in OpenShape](images/hero.png)
 
 ## Contents
@@ -233,9 +239,11 @@ shapes of the same sketch). An arrow appears:
   new body.
 - A sketch on a body's face joins the body when you pull out and cuts into
   it when you push in (type a negative value, e.g. `-5`). **New body**,
-  **Join** and **Cut** choose explicitly; **Through all** cuts through the
-  whole body. (A join that would not touch the body makes a new body, and a
-  cut that would remove nothing does too.)
+  **Join** and **Cut** choose explicitly. Once the extrude is a cut (a
+  negative value, or **Cut** clicked), a **Through all** button appears; it
+  cuts through the whole body whatever its thickness. (A join that would
+  not touch the body makes a new body, and a cut that would remove nothing
+  does too.)
 - **Symmetric**: the value is the total thickness, half on each side of the
   sketch.
 - **Up to face**: click a flat face parallel to the sketch; the extrusion
