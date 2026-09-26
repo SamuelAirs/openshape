@@ -84,8 +84,12 @@ first, tested version. Their follow-ups are the next tasks below.
     tall, 5.4" outer display, Split View) — possibly to sell apps. So the
     iOS app becomes universal (iPhone + iPad) with a layout that adapts to
     any window size (phone portrait/landscape, the Duo folded and open,
-    Split View halves). Assumed: the current phone is an iPhone (an Android
-    phone would be a separate port).
+    Split View halves). Their current phone is an **iPhone 16 Pro** (6.3",
+    402x874 pt, Dynamic Island). The app stays free and open source on
+    GitHub; a paid App Store build may follow — they see no licensing issue,
+    and indeed the public source and build scripts cover the LGPL relinking
+    requirement for the statically linked iOS libraries (notices and source
+    links remain; docs/LICENSING.md).
 - **CI:** Windows runs #3–#11 passed (6–11 min each). The repository is
   public now: run/job status and annotations can be read through the public
   API without a login (docs/IPAD.md, "Reading CI results"); failed steps
