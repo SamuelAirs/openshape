@@ -7,10 +7,13 @@
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
 #include <QtCore/QString>
+#include <QtCore/QStringList>
 
+#include <cstddef>
 #include <functional>
 #include <vector>
 
+class QQuickItem;
 class QQuickWindow;
 
 namespace os::ui {
@@ -28,16 +31,26 @@ namespace os::app {
 // viewport item and the interaction core are all exercised together.
 // Geometry is verified with exact measurements at each step and screenshots
 // are written for visual review. Exit code = number of failed checks.
+//
+// The run is a sequence of named scenarios (see AcceptanceScenario below):
+// "core" is the original story (Milestones 0 and 1, then most tools on one
+// growing model); every other scenario lives in its own file in
+// src/app/acceptance/ and starts from a new, empty document.
 class AcceptanceRunner : public QObject {
     Q_OBJECT
 
 public:
+    using Step = std::function<void()>;
+
     AcceptanceRunner(QQuickWindow* window, ui::AppController* app, QString outputDir, QObject* parent = nullptr);
+    // Only run these scenarios (by name; empty = all).
+    void setScenarioFilter(const QStringList& names) { filter_ = names; }
     void start();
 
-private:
-    using Step = std::function<void()>;
-    void runNext();
+    // ---- For scenarios -----------------------------------------------------------
+
+    QQuickWindow* window() const { return window_; }
+    ui::AppController& app() const { return *app_; }
 
     // Input helpers (window-local logical coordinates).
     void mouseMove(QPointF p, Qt::MouseButtons held = Qt::NoButton);
@@ -53,24 +66,65 @@ private:
     // Flickable around it (the tool palette in a short window) so it is on
     // screen, as a user would; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
+    // A QML item by objectName (declared items and generated delegates), or null.
+    QQuickItem* findItem(const QString& objectName) const;
 
     // The document's body `index`. If an earlier failure left fewer bodies,
-    // records a failure and ends the run (instead of undefined behaviour).
+    // records a failure and abandons the rest of the current scenario
+    // (instead of undefined behaviour); the next scenario still runs.
     const doc::Body& body(std::size_t index);
+    // Where a model point appears in the window.
     QPointF screenPoint(double x, double y, double z) const;
     double bodyHeight() const;
     double bodyVolume() const;
     void check(bool condition, const QString& description, const QString& actual = {});
     void screenshot(const QString& name);
+    static QString num(double v) { return QString::number(v, 'f', 6); }
+
+private:
+    struct AbortScenario {};
+    void runNext();
+    void beginScenario(const QString& name, bool reset);
+    void endScenario();
+    std::vector<Step> coreScenario();
 
     QQuickWindow* window_;
     ui::AppController* app_;
     QString outputDir_;
+    QStringList filter_;
     std::vector<Step> steps_;
+    std::vector<std::size_t> scenarioStarts_; // index of each scenario's first step
     std::size_t next_ = 0;
     int failures_ = 0;
-    double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)
     int checks_ = 0;
+    QString scenario_;
+    int scenarioChecks_ = 0;
+    int scenarioFailures_ = 0;
+    QStringList summary_;
+    double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)
 };
+
+// A named part of the acceptance run. Scenarios run by `order` (then name);
+// each one after the first starts from a new, empty document (touch and pen
+// mode off, millimeters, isometric view, no overlays open).
+//
+// To add one, create src/app/acceptance/<Name>.cpp (CMake picks it up) with
+//
+//   namespace os::app {
+//   namespace {
+//   std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r) { return { [&r] { ... }, ... }; }
+//   const bool registered = registerAcceptanceScenario({"name", 100, steps});
+//   } }
+//
+// Steps run 160 ms apart; add empty steps ([] {}) to let animations finish.
+// Keep per-scenario state in a std::shared_ptr captured by the steps.
+struct AcceptanceScenario {
+    QString name;
+    int order = 100; // "core" is 0
+    std::function<std::vector<AcceptanceRunner::Step>(AcceptanceRunner&)> steps;
+};
+bool registerAcceptanceScenario(AcceptanceScenario scenario);
+// All registered scenarios, in run order ("core" is added by the runner).
+std::vector<AcceptanceScenario> acceptanceScenarios();
 
 } // namespace os::app

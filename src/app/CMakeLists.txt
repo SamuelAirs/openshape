@@ -2,9 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+# Acceptance scenarios register themselves (one file per feature area).
+file(GLOB OPENSHAPE_ACCEPTANCE_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/*.cpp)
 qt_add_executable(openshape WIN32 MACOSX_BUNDLE
     main.cpp
     AcceptanceRunner.cpp AcceptanceRunner.h
+    ${OPENSHAPE_ACCEPTANCE_SCENARIOS}
 )
 # GuiPrivate: QWindowSystemInterface for realistic input injection in --acceptance.
 target_link_libraries(openshape PRIVATE openshape_ui openshape_uiplugin Qt6::Quick Qt6::QuickControls2 Qt6::GuiPrivate)
@@ -52,5 +55,7 @@ if(OPENSHAPE_BUILD_TESTS)
     # End-to-end GUI acceptance run (needs a desktop session; label "gui").
     add_test(NAME acceptance_gui
              COMMAND openshape --acceptance ${CMAKE_BINARY_DIR}/acceptance)
-    set_tests_properties(acceptance_gui PROPERTIES LABELS gui TIMEOUT 120)
+    # The timeout includes waiting for another automated GUI run to finish
+    # (they take turns: see the automation lock in main.cpp).
+    set_tests_properties(acceptance_gui PROPERTIES LABELS gui TIMEOUT 900)
 endif()

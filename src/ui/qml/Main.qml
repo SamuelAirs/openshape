@@ -27,6 +27,7 @@ ApplicationWindow {
     // ---------------------------------------------------------------- viewport
     Viewport {
         id: viewport
+        objectName: "viewport"
         anchors.fill: parent
         controller: window.app
         focus: true
@@ -311,14 +312,15 @@ ApplicationWindow {
             id: viewRow
             anchors.centerIn: parent
             spacing: 2
-            ActionButton { text: "Fit"; onClicked: window.app.fitAll() }
+            ActionButton { objectName: "viewFit"; text: "Fit"; onClicked: window.app.fitAll() }
             Separator {}
-            ActionButton { text: "Iso"; onClicked: window.app.setView("iso") }
-            ActionButton { text: "Top"; onClicked: window.app.setView("top") }
-            ActionButton { text: "Front"; onClicked: window.app.setView("front") }
-            ActionButton { text: "Right"; onClicked: window.app.setView("right") }
+            ActionButton { objectName: "viewIso"; text: "Iso"; onClicked: window.app.setView("iso") }
+            ActionButton { objectName: "viewTop"; text: "Top"; onClicked: window.app.setView("top") }
+            ActionButton { objectName: "viewFront"; text: "Front"; onClicked: window.app.setView("front") }
+            ActionButton { objectName: "viewRight"; text: "Right"; onClicked: window.app.setView("right") }
             Separator {}
             ActionButton {
+                objectName: "viewProjection"
                 text: window.app.perspective ? "Perspective" : "Orthographic"
                 onClicked: window.app.togglePerspective()
             }
@@ -336,6 +338,7 @@ ApplicationWindow {
             }
             Separator { visible: penButton.visible }
             ActionButton {
+                objectName: "viewUnit"
                 text: window.app.displayUnit
                 onClicked: window.app.setDisplayUnit(window.app.displayUnit === "mm" ? "in" : "mm")
                 ToolTip.visible: hovered

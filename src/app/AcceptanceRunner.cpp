@@ -144,9 +144,7 @@ bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifier
 {
     // Declared items are QObject children of the window; generated delegates
     // are only reachable through the visual tree.
-    auto* item = window_->findChild<QQuickItem*>(objectName);
-    if (!item)
-        item = findVisualItem(window_->contentItem(), objectName);
+    auto* item = findItem(objectName);
     if (!item || !item->isVisible() || !item->isEnabled()) {
         OS_LOG(Warning, App) << "clickItem: '" << objectName.toStdString() << "' "
                              << (!item ? "not found" : !item->isVisible() ? "not visible" : "disabled");
@@ -193,10 +191,10 @@ const doc::Body& AcceptanceRunner::body(std::size_t index)
 {
     const auto& bodies = app_->document().bodies();
     if (index >= bodies.size()) {
-        check(false, QStringLiteral("body %1 exists (an earlier failure changed the model; stopping)").arg(index + 1));
-        OS_LOG(Error, App) << "acceptance: " << (checks_ - failures_) << "/" << checks_ << " checks passed (stopped)";
-        std::fflush(nullptr);
-        std::_Exit(failures_);
+        check(false, QStringLiteral("body %1 exists (an earlier failure changed the model; skipping the rest of '%2')")
+                         .arg(index + 1)
+                         .arg(scenario_));
+        throw AbortScenario{};
     }
     return *bodies[index];
 }
@@ -216,8 +214,11 @@ double AcceptanceRunner::bodyVolume() const
 void AcceptanceRunner::check(bool condition, const QString& description, const QString& actual)
 {
     ++checks_;
-    if (!condition)
+    ++scenarioChecks_;
+    if (!condition) {
         ++failures_;
+        ++scenarioFailures_;
+    }
     OS_LOG(Info, App) << (condition ? "[PASS] " : "[FAIL] ") << description.toStdString()
                       << (actual.isEmpty() ? "" : " (" + actual.toStdString() + ")");
 }
@@ -231,10 +232,9 @@ void AcceptanceRunner::screenshot(const QString& name)
 
 // ---- Script -----------------------------------------------------------------------------
 
-void AcceptanceRunner::start()
+std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
 {
     auto& in = app_->interaction();
-    auto num = [](double v) { return QString::number(v, 'f', 6); };
     auto topFaceSelected = [this] {
         const auto& sel = app_->interaction().selection();
         if (sel.size() != 1 || sel.items()[0].kind != sel::SelectionKind::Face)
@@ -243,7 +243,7 @@ void AcceptanceRunner::start()
         return info && info->normal.z > 0.999;
     };
 
-    steps_ = {
+    return {
         // 1-2. Launch, create a 20 mm cube with the "B" shortcut.
         // Discoverability: the help card opens from "?" and closes with Esc.
         [=, this] {
@@ -902,16 +902,113 @@ void AcceptanceRunner::start()
             screenshot(QStringLiteral("22_face_edits"));
         },
     };
+}
+
+// ---- Scenarios ----------------------------------------------------------------------
+
+namespace {
+std::vector<AcceptanceScenario>& registry()
+{
+    static std::vector<AcceptanceScenario> scenarios;
+    return scenarios;
+}
+} // namespace
+
+bool registerAcceptanceScenario(AcceptanceScenario scenario)
+{
+    registry().push_back(std::move(scenario));
+    return true;
+}
+
+std::vector<AcceptanceScenario> acceptanceScenarios()
+{
+    std::vector<AcceptanceScenario> list = registry();
+    std::stable_sort(list.begin(), list.end(), [](const AcceptanceScenario& a, const AcceptanceScenario& b) {
+        return a.order != b.order ? a.order < b.order : a.name < b.name;
+    });
+    return list;
+}
+
+QQuickItem* AcceptanceRunner::findItem(const QString& objectName) const
+{
+    auto* item = window_->findChild<QQuickItem*>(objectName);
+    return item ? item : findVisualItem(window_->contentItem(), objectName);
+}
+
+void AcceptanceRunner::start()
+{
+    std::vector<AcceptanceScenario> scenarios = acceptanceScenarios();
+    scenarios.insert(scenarios.begin(), AcceptanceScenario{QStringLiteral("core"), 0, [](AcceptanceRunner& r) {
+                                                              return r.coreScenario();
+                                                          }});
+    QStringList unknown = filter_;
+    bool first = true;
+    for (const AcceptanceScenario& scenario : scenarios) {
+        unknown.removeAll(scenario.name);
+        if (!filter_.isEmpty() && !filter_.contains(scenario.name))
+            continue;
+        scenarioStarts_.push_back(steps_.size());
+        const bool reset = !first;
+        steps_.push_back([this, name = scenario.name, reset] { beginScenario(name, reset); });
+        if (reset)
+            steps_.insert(steps_.end(), {[] {}, [] {}, [] {}}); // the view animation after the reset
+        for (Step& step : scenario.steps(*this))
+            steps_.push_back(std::move(step));
+        first = false;
+    }
+    for (const QString& name : unknown)
+        check(false, QStringLiteral("scenario '%1' exists").arg(name));
     QTimer::singleShot(400, this, &AcceptanceRunner::runNext);
+}
+
+void AcceptanceRunner::beginScenario(const QString& name, bool reset)
+{
+    endScenario();
+    scenario_ = name;
+    OS_LOG(Info, App) << "acceptance: scenario '" << name.toStdString() << "'";
+    if (!reset)
+        return;
+    // A clean slate: no sketch, operation or overlay; a new document in
+    // millimeters, mouse layout, isometric view.
+    if (app_->sketchMode())
+        app_->finishSketch();
+    app_->cancelOperation();
+    for (const char* overlay : {"helpOverlay", "aboutOverlay"})
+        if (QQuickItem* item = findItem(QString::fromLatin1(overlay)))
+            item->setVisible(false);
+    app_->setPenMode(false);
+    app_->setTouchMode(false);
+    app_->newDocument();
+    app_->setDisplayUnit(QStringLiteral("mm"));
+    app_->setView(QStringLiteral("iso"));
+    mouseMove({window_->width() / 2.0, window_->height() / 2.0});
+    if (QQuickItem* viewport = findItem(QStringLiteral("viewport")))
+        viewport->forceActiveFocus();
+}
+
+void AcceptanceRunner::endScenario()
+{
+    if (scenario_.isEmpty())
+        return;
+    summary_ << QStringLiteral("%1: %2/%3").arg(scenario_).arg(scenarioChecks_ - scenarioFailures_).arg(scenarioChecks_);
+    scenarioChecks_ = 0;
+    scenarioFailures_ = 0;
 }
 
 void AcceptanceRunner::runNext()
 {
     if (next_ < steps_.size()) {
-        steps_[next_++]();
+        try {
+            steps_[next_++]();
+        } catch (const AbortScenario&) {
+            const auto nextStart = std::upper_bound(scenarioStarts_.begin(), scenarioStarts_.end(), next_ - 1);
+            next_ = nextStart == scenarioStarts_.end() ? steps_.size() : *nextStart;
+        }
         QTimer::singleShot(kStepDelayMs, this, &AcceptanceRunner::runNext);
         return;
     }
+    endScenario();
+    OS_LOG(Info, App) << "acceptance: scenarios " << summary_.join(QStringLiteral(", ")).toStdString();
     OS_LOG(Info, App) << "acceptance: " << (checks_ - failures_) << "/" << checks_ << " checks passed";
     QCoreApplication::exit(failures_);
 }

@@ -10,6 +10,7 @@
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QLockFile>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 #include <QtGui/QGuiApplication>
@@ -21,6 +22,7 @@
 #include <QtQuickControls2/QQuickStyle>
 
 #include <cstdio>
+#include <memory>
 #include <mutex>
 
 Q_IMPORT_QML_PLUGIN(OpenShapePlugin)
@@ -292,6 +294,10 @@ int main(int argc, char* argv[])
     QCommandLineOption sizeOption(QStringLiteral("size"),
                                   QStringLiteral("Window size in logical pixels, e.g. 1180x820 (an 11-inch iPad in landscape)."),
                                   QStringLiteral("WxH"));
+    QCommandLineOption scenarioOption(QStringLiteral("scenario"),
+                                      QStringLiteral("With --acceptance: run only these scenarios (comma-separated, e.g. core,views)."),
+                                      QStringLiteral("names"));
+    parser.addOption(scenarioOption);
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
     parser.addOption(acceptanceOption);
@@ -301,6 +307,24 @@ int main(int argc, char* argv[])
     parser.process(application);
 
     OS_LOG(Info, App) << "OpenShape 0.1.0 starting";
+
+    // Automated runs (acceptance, demos, screenshots) take turns: the
+    // acceptance run moves the real mouse and needs keyboard focus, so two
+    // at once (e.g. from parallel builds) would disturb each other. A lock
+    // left by a crashed run is detected by its dead process; age alone never
+    // makes it stale (a full acceptance run takes minutes).
+    std::unique_ptr<QLockFile> automationLock;
+    if (parser.isSet(acceptanceOption) || parser.isSet(demoOption) || parser.isSet(screenshotOption)) {
+        automationLock = std::make_unique<QLockFile>(QDir::tempPath() + QStringLiteral("/openshape-automation.lock"));
+        automationLock->setStaleLockTime(0);
+        if (!automationLock->tryLock(0)) {
+            OS_LOG(Info, App) << "waiting for another automated OpenShape run to finish";
+            if (!automationLock->tryLock(15 * 60 * 1000)) {
+                OS_LOG(Error, App) << "another automated OpenShape run is still going after 15 minutes; giving up";
+                return 3;
+            }
+        }
+    }
 
     os::ui::AppController controller;
     if (parser.isSet(touchOption))
@@ -328,6 +352,8 @@ int main(int argc, char* argv[])
 
     if (parser.isSet(acceptanceOption)) {
         auto* runner = new os::app::AcceptanceRunner(window, &controller, parser.value(acceptanceOption), &controller);
+        if (parser.isSet(scenarioOption))
+            runner->setScenarioFilter(parser.value(scenarioOption).split(QLatin1Char(','), Qt::SkipEmptyParts));
         runner->start();
     } else if (parser.isSet(demoOption) || parser.isSet(screenshotOption)) {
         const QString demo = parser.value(demoOption);

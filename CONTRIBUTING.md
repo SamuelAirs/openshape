@@ -55,9 +55,16 @@ which. Do not disable tests to get green.
 Two rules learned the hard way:
 
 - **Every user-facing action gets an acceptance check that reaches it by
-  clicking** (`src/app/AcceptanceRunner.cpp`, e.g. `clickItem("barAction_subtract")`).
-  Headless tests once passed while Union/Subtract could not be reached in
-  the UI at all.
+  clicking** (e.g. `clickItem("barAction_subtract")`). Headless tests once
+  passed while Union/Subtract could not be reached in the UI at all. The
+  acceptance run is split into scenarios: `core` (the original story in
+  `src/app/AcceptanceRunner.cpp`) and one file per feature area in
+  `src/app/acceptance/` that registers itself (see `AcceptanceScenario` in
+  `AcceptanceRunner.h`; `acceptance/Views.cpp` is a short example). Each
+  scenario starts from a new document. Run one with
+  `OpenShape.exe --acceptance <dir> --scenario <name>`. Automated runs
+  (`--acceptance`, `--demo`, `--screenshot`) take a machine-wide lock, so
+  parallel builds cannot run two at once (they wait their turn).
 - **Verify kernel results against an invariant of the intent** (volume
   change, bounding box, face count), not only `IsDone()` and `BRepCheck`:
   OCCT's shell, defeaturing and per-face offset can all report success with
