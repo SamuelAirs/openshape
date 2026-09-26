@@ -57,8 +57,14 @@ Since the first hands-on session: 3-point arcs (typed radius), parallel/
 perpendicular/equal/tangent/concentric/on-line/midpoint/radius constraints,
 construction toggle, and sketching on a sketch (or its plane) continues it.
 Later the same day: slot, trim, corner fillet, offset, "On circle".
-Not yet: center rectangle, polygon, tangent arc, splines, text, constraint
-icons, sketch patterns.
+
+Sketch toolkit part 3 (2026-09-26): ✅ center rectangle (E) · ✅ polygon (P,
+regular, sized across flats) · ✅ tangent arc (G, smooth arc-arc joins) ·
+✅ constraint glyphs on the canvas (select and delete) · ✅ sketch mirror
+(Symmetric constraint) and linear/circular pattern · ✅ angle dimension ·
+the tools moved to a palette on the left. Not yet: separate sketches on one
+plane interacting (TD-27), center-point arc and arc length constraints,
+editable pattern spacing (TD-28), splines, text.
 
 ## Milestone 2 — common modeling tools ✅
 
@@ -87,8 +93,22 @@ icons, sketch patterns.
 
 Since: ✅ extrude Symmetric and Up to face; ✅ push/pull takes fillets and
 chamfers along (TD-21, where the moved region is straight walls).
-Follow-ups: extrude with draft, mirror/pattern as separate bodies, rotation
-about a picked edge or point.
+
+Bodies and copies (2026-09-26):
+
+- ✅ Duplicate a body (Ctrl+D): an independent copy, selected with the Move
+  arrows
+- ✅ Split into bodies (TD-22): the largest piece stays, every other piece
+  becomes a body that follows upstream edits
+- ✅ Mirror / Pattern as separate bodies (TD-26): parametric copies that
+  follow the source, up to 100
+- ✅ Rotate about a picked straight edge or hole/shaft, or around a picked
+  corner or circle (TD-24)
+- ✅ Deleting a body that others are built from hides it instead
+- ✅ Extrude with draft (typed angle; see Milestone 5)
+
+Follow-ups: patterns and mirrors of individual features, draft for Revolve
+and push/pull (TD-48).
 
 ## Milestone 3 — interaction quality 🟡
 
@@ -106,10 +126,18 @@ bar, Model panel hover highlighting, automatic new body for joins that miss,
 Also done: touch-sized controls in the touch layout, a scrollable tool
 palette, the About box.
 
-Still to do: asynchronous previews and tessellation (TD-1), BVH picking
-(TD-2), finer-grained UI updates (TD-18, TD-19), box/lasso selection,
-cycling through stacked faces, snapping while moving bodies, an icon set
-(TD-9), project thumbnails (TD-11).
+Overnight 2026-09-26: ✅ BVH picking (TD-2; hover picking on a 249-face
+enclosure 2.5-3.1 ms → 0.04-0.07 ms, results identical to the linear scan)
+· ✅ failure messages that say what to try (a working size while
+previewing, a reason for operations that would change nothing) · ✅ tools
+waiting for a face pick faces only · ✅ File → Open Recent, Preferences
+(Ctrl+,), remembered window, unsaved-changes overlay.
+
+Still to do: asynchronous previews and tessellation (TD-1; a push/pull drag
+step on the 249-face enclosure takes 171-195 ms), finer-grained UI updates
+(TD-18, TD-19), box/lasso selection, cycling through stacked faces,
+snapping while moving bodies, an icon set (TD-9), project thumbnails
+(TD-11), a start screen with recent projects, first-run guidance.
 
 ## Milestone 4 — editable parametric history 🟡
 
@@ -124,6 +152,9 @@ cycling through stacked faces, snapping while moving bodies, an icon set
   edit through the real UI)
 - ✅ Model panel ↔ view: hovering a row highlights its geometry (a step's new
   faces), body rows select bodies, steps leaving several pieces are flagged
+- ✅ Changes propagate through chains of dependent bodies (transitive
+  recompute); a step that becomes a no-op after an upstream edit shows a
+  warning instead of blocking the steps after it
 - ⬜ Provenance-based topological naming (docs/TOPOLOGICAL_NAMING.md)
 - ⬜ Reordering steps; rolling back to a step
 
@@ -138,8 +169,18 @@ cycling through stacked faces, snapping while moving bodies, an icon set
 - ✅ Heat-set insert helper: select a hole's rim → "Heat-set insert" → M2–M5
   presets propose a pilot hole (typical diameter and depth, editable), drilled
   as an editable Hole step
-- ⬜ General hole tool, countersink/counterbore, magnet pockets, clearance
-  helper, draft, emboss/deboss, text, snap-fit helpers, threads, section view
+- ✅ Counterbore and countersink on a hole's rim: M2–M6 screw presets (DIN
+  974-1 / ISO 4762 counterbores, ISO 10642 countersinks), also on blind
+  holes; refused with a reason when the head does not fit
+- ✅ Hole tool: holes at clicked points on a flat face (snapping to the
+  face's center, edge middles and line-ups; typed X/Y), ISO 273 close/normal
+  clearance or tap drill, through all or a depth, counterbore/countersink;
+  one step whose holes follow the face (positions not editable afterwards,
+  TD-47)
+- ✅ Draft: extrude with a typed draft angle (tapered walls, sharp corners;
+  refused when the walls would close before the full height, TD-48)
+- ⬜ Magnet pockets, clearance helper, emboss/deboss, text, snap-fit
+  helpers, threads, section view
 
 ## Touch & pen (iPad groundwork) 🟡
 
@@ -148,24 +189,49 @@ cycling through stacked faces, snapping while moving bodies, an icon set
 - ✅ Pen mode: pen selects and draws, fingers only navigate
 - ✅ Touch layout: 44 pt controls and a Pen switch once touch is used (from
   the start on tablets; `--touch` on Windows)
-- 🟡 iPad build: settings, Info.plist and guide ready (docs/IPAD.md); needs
-  the owner's Mac
+- 🟡 iPad build: built on GitHub's Macs (`ipad.yml`; archive 47 MB since
+  only the Basic Controls style is linked, TD-36); the TestFlight upload
+  waits for the owner's Apple Developer enrollment (docs/IPAD.md)
+- ⬜ iPhone: a universal iOS app with a compact layout that adapts to phone
+  sizes, the iPhone Duo and Split View
+
+## Reliability and app shell
+
+- ✅ Recovery copies of unsaved work (after edits, periodically, when the
+  app goes to the background) and a restore prompt after a crash or any
+  exit with unsaved work the user did not discard; a one-line crash log
+  (TD-39)
+- ✅ Faults inside OpenCASCADE become failed steps with a message; crashes
+  elsewhere stay real, logged crashes (TD-41)
+- ✅ Stress tests: seeded random modeling sessions with undo/redo,
+  interleaved edits and save/open, replayed identically on Windows and
+  macOS; a project-file fuzzer. They found and fixed seven bugs, a kernel
+  crash among them
+- ✅ Booleans leave their inputs untouched (OCCT's non-destructive mode)
+- ✅ Open Recent, Preferences (units, grid snapping, recovery interval),
+  remembered window, unsaved-changes overlay
+- ⬜ Minidumps or stack traces for crash reports (TD-39)
 
 ## Platform & infrastructure
 
 - ✅ Windows 11 / MSYS2 UCRT64 / GCC 16 / Qt 6.11 / OCCT 7.9.3 (Direct3D 11)
 - ✅ CI on Windows: `.github/workflows/ci.yml` (MSYS2, warnings as errors,
-  headless tests) on every push to the private GitHub repository
-  (SamuelAirs/openshape); green as checked on 2026-09-25, 6–11 min per run.
+  headless tests) on every push to the GitHub repository
+  (SamuelAirs/openshape, public since 2026-09-25); 6–11 min per run as
+  measured on 2026-09-25.
   Pushes that only change documentation skip it
-- 🟡 macOS CI job (Apple Clang, Homebrew): written, runs once the repository
-  is public
+- 🟡 macOS CI job (Apple Clang, Homebrew): builds and passes the headless
+  tests; its acceptance run (continue-on-error, 1024x653 window) passes every
+  check since CI #32 (TD-35 resolved)
 - ⬜ Linux CI: no Linux environment was available to verify it (WSL is not
   installed and needs admin rights)
 - ✅ License: MPL-2.0 (`LICENSE`, notice in every source file; see
   docs/LICENSING.md)
-- 🟡 Windows packaging: self-contained folder verified (clean PATH, full
-  acceptance run); installer and size reduction pending
+- ✅ Windows release: OpenCASCADE built without FFmpeg/FreeImage (TD-17), a
+  license gate over every packaged file, per-user NSIS installer, portable
+  zip and checksums, icon and version resource; 269 files / 160 MB
+  (installer 40 MB, zip 59 MB); `release.yml` (tag → GitHub Release) ran
+  green once. ⬜ Code signing (TD-44); ⬜ the first tagged release
 - ⬜ MSVC + vcpkg build
 - ⬜ macOS, Linux runtime verification
 - ⬜ OCCT 8.x migration

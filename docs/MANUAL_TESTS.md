@@ -52,6 +52,42 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     close and start again: same place. File → Open Recent lists your last
     projects. File → Preferences… (Ctrl+,): units for new documents, grid
     snapping in sketches, how often recovery copies are kept.
+11. **Bodies.**
+    - Duplicate: select a body and press Ctrl+D (or "Duplicate"): a copy
+      named "… copy" appears, selected with the Move arrows; drag it aside.
+      Change a step of the copy in the Model panel: the original stays as
+      it was.
+    - Split into bodies: cut a plate in two (a sketch across it, extruded
+      as a cut through the plate): a message says it is now in pieces and
+      the row turns amber. Click "Split into bodies": each piece is its own
+      body. Now delete the bigger one: it is hidden instead, and the
+      message says which body is built from it.
+    - Separate bodies: select a body, Mirror or Pattern, switch on
+      "Separate bodies", apply: each copy is its own body (click them one
+      by one). Push/pull the original: the copies follow.
+    - Rotate about an edge: select a body, Rotate, click one of its straight
+      edges: a single ring appears around that edge; type `90`, Enter. Try
+      again clicking near a corner (the rings move there), a hole's wall
+      (turns about the hole) and "Center pivot" (back to the middle).
+12. **Holes.**
+    - Counterbore / Countersink: in a plate with a through hole, click the
+      hole's rim: next to "Heat-set insert" are "Counterbore" and
+      "Countersink". Pick a screw size (M2 … M6), drag the arrows or type
+      a size, Enter. A head that does not fit (narrower than the hole,
+      through the plate) is refused with a reason.
+    - The Hole tool: click the top face of a plate, then "Hole" (or Modify
+      → Hole). Click a few spots: holes snap to the middle of the face and
+      of its edges and line up with each other. Pick M3 and "Close fit",
+      "Normal fit" or "Tap"; switch "Through all" off to type a depth; try
+      "Counterbore" / "Countersink"; Tab through the fields to type a
+      hole's X / Y ("From last hole" measures from the previous one);
+      "Remove hole" drops the current one; Enter drills them all as one
+      step. Print a plate and try real screws.
+    - Draft: click a sketch profile, then "Draft" in the value box, type
+      `5`: the walls taper (a square becomes a pyramid stump). A negative
+      angle widens. A draft that would close the shape before the full
+      height is refused. An existing extrusion's row in the Model panel
+      offers "Draft" too.
 
 ## The Windows installer (optional)
 

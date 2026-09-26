@@ -390,3 +390,164 @@ an empty scan and lists the modules). Fixed with the target property
 `QT_QML_IMPORT_SCANNER_EXTRA_ROOT_PATHS`. Other iOS-only link details:
 OpenCASCADE's static targets name FreeType plainly (`-L` needed), and Qt
 for iOS needs `QT_HOST_PATH` (the macOS Qt beside it).
+
+## 2026-09-26 — Overnight: release pipeline, reliability, sketch toolkit 3, bodies, holes
+
+The owner asked for "an actual application": an installer, reliability,
+modeling features, onboarding. Five tracks ran at once in separate git
+worktrees (release, app shell, sketch toolkit 3, bodies, robustness), the
+holes track after them; each branch was reviewed twice and fixed before
+the merge. Headless tests went from 239 to 393, real-UI checks from 147 in
+one run to 641 in 19 scenarios.
+
+**A GPL-free Windows release.** MSYS2's OpenCASCADE pulls in FFmpeg,
+x264/x265 and FreeImage. `scripts/windows/build-occt.sh` builds OCCT 7.9.3
+from the upstream tag with MSYS2's own source patches (so geometry behaves
+as in the dev build and CI), only the toolkits OpenShape links: ~26 min
+here, 44 min on CI, then cached. The package went from 364 files / 292 MB
+to 269 / 158 MB (24 MSYS2 packages instead of 92). Pitfalls: `ntldd`
+resolves a DLL next to the scanned file first, then in its own folder
+(MSYS2's `ucrt64/bin`), and only then on `PATH`, so putting our OCCT first
+on `PATH` does nothing; the package script copies it in before scanning
+and compares every OCCT DLL byte for byte with the own build (that caught
+a mis-resolved `libTKBO.dll`). The release tests silently loaded MSYS2's
+OCCT too (same version, so nothing failed); a `TEST_LAUNCHER` now puts the
+own build first and a test checks where each toolkit was loaded from.
+CMake target compile options also reach `windres`, so warning flags are
+now C++-only.
+
+**A license gate instead of a license review.** MSYS2's license fields
+describe whole packages, tools included: Qt, xz and gettext list GPL terms
+for their tools, so a naive "contains GPL" check fails Qt.
+`scripts/windows/license-gate.sh` parses the SPDX AND/OR expressions, keeps
+a short reviewed list, traces every packaged file by content to our build,
+our OCCT or an MSYS2 package, and fails on GPL-only or untraceable files.
+The old dev package fails it with 27 problems; a release build cannot ship
+if it fails.
+
+**The installer, and an incident.** NSIS: `/D=` must come last and
+unquoted; `Uninstall.exe /S` copies itself to `%TEMP%` and returns at once
+(poll for the end); installer and zip are reproducible. UI Automation from
+PowerShell sees NSIS's Win32 controls as plain panes until the client-side
+providers are registered (after the first UIA call). While testing the
+dialogs, a setup that was meant to be a test build was not one (a variable
+set as `VAR=x bash script` did not reach MSYS2's bash from the agent's
+shell; `env VAR=x bash script` does). Its finish page replaced the owner's
+desktop `OpenShape.lnk` and the upgrade step's untick deleted it. Test
+setups now name their desktop folder in the version resource, and both
+installer tests refuse any other setup. Tests that touch per-user shell
+state must prove they run a test build.
+
+**Kernel crashes on MinGW.** A random stress session mirrored a filleted
+two-piece body; OCCT's General Fuse dereferenced a null curve and the app
+died. MSYS2's OCCT is compiled with `-DNo_Exception` (range checks become
+crashes) and `OCC_CONVERT_SIGNALS`, which its CMake config exports for
+Release builds only (our RelWithDebInfo build adds it when the package has
+it). With `OSD::SetSignal` and
+`OCC_CATCH_SIGNALS` in every kernel try block the access violation becomes
+a failed step. Integration found the other side: the MinGW runtime calls C
+signal handlers from an SEH handler around `main`, before any top-level
+filter, so with OCCT's handlers always installed every crash *outside* the
+kernel became `exit(1)`: no crash-log line, no crash report. OCCT's
+handlers are now active only while a kernel call runs (`KernelSignalScope`,
+counted across threads; TD-41). The crash reads garbage memory, so whether
+it happens varies from run to run (the part is kept as a regression test).
+
+**OCCT booleans change their inputs.** By default they widen the
+tolerances of the input shapes in place, so cached outputs of earlier steps
+changed under later ones (an interleaved undo/redo seed showed it). All
+booleans now run in non-destructive mode, at no measurable cost. The same
+hunt found a 200k-deep JSON file overflowing the stack (nesting is now
+limited to 256), a wrongly typed flag escaping as an exception, sketch ids
+near 2^32 wrapping, a body that vanished when a step after a failed one was
+edited, and dependents recomputed only one level deep (the bodies track
+found that one too).
+
+**Two more crashes to steer around.** `BRepClass3d_SolidClassifier`
+segfaulted inside `Extrema_ExtCC` on a plain plate with a Ø3.4 hole, and
+`BRepOffsetAPI_MakeOffset` in its medial-axis code on a square face with a
+1 mm hole. Both are crashes, not exceptions. Hole depths are now measured
+with rays (the first face hit), and the draft's "closes up" check is
+analytic: a line shortens by inset × tan(turn/2) at each corner, circles
+and arcs change radius. The sketch Offset action also uses `MakeOffset`
+and may hit the same crash with arcs or circles.
+
+**Draft via DraftAngle.** An extrusion with draft is the straight prism
+with its side faces tilted by `BRepOffsetAPI_DraftAngle`: planes stay
+planes, circles become exact cones, corners stay sharp, and frustum volumes
+match to 1e-6. A top that nearly closes (~0.2 mm radius) fails `BRepCheck`
+and is refused (TD-48). Older builds must not build straight walls from a
+drafted file, so its distance is written under `draft`, which they reject
+(countersinks the same way: no `depth`).
+
+**Changing nothing is a failure, for new steps only.** A cut that misses or
+a mirror of a symmetric body now fails with a reason instead of adding an
+empty step. The first version failed such steps in recompute as well,
+which would have hidden every later step in older files and after upstream
+edits that make a cut miss; in recompute it is now a warning. Working sizes
+("Try 19.5 mm or less.") are searched by bisection only while previewing
+(at most 10 attempts, 600 ms); the first version started at 2 % of the
+refused value, so a slip like 2000 mm answered "at any size".
+
+**A regular polygon needs its corners on a circle.** Equal sides around an
+inner circle let an even polygon flex like a rhombus; corners on an outer
+construction circle plus equal sides hold it regular. The inner circle only
+carries the across-flats size, but it touched every side at its midpoint
+and Trim cut sides in half: construction curves that only touch a curve no
+longer cut it.
+
+**Arc-arc tangency and signed angles.** Two arcs tangent at a shared end
+lose rank the way line-arc tangency did (circle-circle tangency plus a
+shared point). Tie the arcs' end angles instead: equal when one continues
+the other, half a turn apart for an S-bend, keeping the whole-turn offset
+of the unwrapped angles. An angle dimension stores the signed angle between
+the lines' own directions (PlaneGCS `L2LAngle`) and shows the corner angle
+only for display; derived from rays at solve time it flipped to the
+supplement when the intersection passed a line's middle.
+
+**Canvas overlays steal clicks.** Constraint glyphs with their own mouse
+areas took clicks meant for nearby lines and points (the core scenario
+caught one on a small slot). The sketch session now resolves taps itself:
+geometry within pick reach wins, a glyph only otherwise. On iOS the
+touch-mode default lived in `AppController` and never reached the
+interaction core; the flag now lives only in `InteractionController`.
+
+**Recovery and the window.** `QLockFile`'s 30 s stale time is safe for
+long-lived locks: a live owner keeps the file open (no delete sharing on
+Windows, `flock` on macOS), so an old but live lock cannot be taken. An exit
+that is not the user's close (iPadOS unwinds out of `exec()`) must keep the
+copy of unsaved work; only Don't Save discards it (a review caught the
+first version deleting it). Before a window exists, `setFramePosition` is
+taken as the client position on Windows, so a restored window crept up one
+title bar per run: save and restore the client rectangle, recorded in
+`closing` (after closing, the frame geometry equals the client geometry).
+On a dark Windows theme the Basic style's menus took the system palette and
+turned black: the app sets the light color scheme. A native `MessageDialog`
+left the window without keyboard focus in a long acceptance run, so the
+unsaved-changes question is an overlay. A menu whose item disappears in its
+own `triggered` handler stays open with focus on a hidden separator: defer
+with `Qt.callLater`.
+
+**Acceptance pitfalls.** Two clicks on the same spot less than ~500 ms
+apart (three 160 ms steps) arrive as a double-click and swallow the second:
+put empty steps between them. `clickItem("historyRow_<id>")` clicked the
+row's center, where an expanded row has its buttons; a new Duplicate button
+moved Delete there and "select the body" deleted it (the name now means the
+title line). `QStringLiteral("\xC2\xB0")` is two UTF-16 characters, not a
+degree sign: use `QString::fromUtf8`. In `--demo --screenshot` the real
+mouse position can deliver a hover. On the CI Mac's 1024x653 window, clicks
+meant for faces picked edges or sketch profiles: tools waiting for a face
+now pick faces only (127 → 135 of 144 checks there), the runner waits for
+camera animations, and a failed check logs what the last click hit.
+
+**Working in parallel.** Automated GUI runs take a machine-wide lock, so two
+never drive the mouse at once. Agents leave PROJECT_STATUS, ROADMAP and this
+log to the lead; TD numbers chosen in parallel collided and were renumbered
+at the merges (sketch glyphs TD-40, release TD-44–46, Hole tool TD-47, draft
+TD-48): give each track its own range next time. Every branch's two reviews
+found real bugs (glyph spacing never on for the iPad, deleting a split
+parent destroying its pieces, no-op steps blocking old files, recovery
+copies deleted by a system-initiated exit). The worktree sandbox refuses
+complex shell lines (heredocs with escapes, globs): write scripts with the
+Write tool and run them. The scratchpad is shared between agents: use a
+subfolder.
