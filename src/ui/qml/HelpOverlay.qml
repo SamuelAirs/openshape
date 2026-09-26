@@ -162,6 +162,8 @@ Rectangle {
                             ["Split into bodies", "A body in separate pieces (e.g. cut in two) → Split into bodies: each piece becomes a body that still follows the history"],
                             ["Align", "Face or edge → Align, then click the face or edge to line it up with",
                              "Face or edge → Align, then tap the face or edge to line it up with (empty space gives up)"],
+                            ["Align to the origin", "Align, then click an X / Y / Z axis line, or choose X axis … Origin: a hole's axis onto Z, an edge along X, a face onto the XZ plane (Flip turns it over)",
+                             "Align, then tap an X / Y / Z axis line, or choose X axis … Origin: a hole's axis onto Z, an edge along X, a face onto the XZ plane (Flip turns it over)"],
                             ["Mirror", "Body → Mirror, then click a flat face or choose a plane",
                              "Body → Mirror, then tap a flat face or choose a plane (empty space gives up)"],
                             ["Pattern", "Body → Pattern: Linear or Circular, type the spacing, ± copy"],

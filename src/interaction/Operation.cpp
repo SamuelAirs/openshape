@@ -159,12 +159,24 @@ std::unique_ptr<AlignOperation> AlignOperation::create(const doc::Document& docu
     const auto frame = geom::alignFrame(body->shape(), kind, index);
     if (!frame)
         return nullptr;
-    return std::unique_ptr<AlignOperation>(new AlignOperation(bodyId, *frame));
+    const auto box = geom::approximateBoundingBox(body->shape());
+    return std::unique_ptr<AlignOperation>(new AlignOperation(bodyId, *frame, box.valid ? box.center() : frame->point));
 }
 
 std::string AlignOperation::prompt() const
 {
-    return target_ ? std::string() : std::string("Click the face or edge to align to, on another body \xC2\xB7 Esc cancels");
+    return target_ ? std::string()
+                   : std::string("Click the face or edge to align to (on another body, or an axis line), "
+                                 "or choose an axis, a plane or the origin \xC2\xB7 Esc cancels");
+}
+
+void AlignOperation::forgetTarget()
+{
+    target_.reset();
+    targetKindOf_ = TargetOf::None;
+    targetBody_ = Uuid();
+    targetKind_ = geom::SubShapeKind::Whole;
+    targetIndex_ = -1;
 }
 
 Status AlignOperation::setTarget(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index)
@@ -177,7 +189,9 @@ Status AlignOperation::setTarget(const doc::Document& document, const Uuid& body
     if (!frame)
         return Status::failure(ErrorCode::InvalidArgument, "Align to a flat or round face, a straight edge or a circle.",
                                "align: unsupported target");
+    forgetTarget();
     target_ = *frame;
+    targetKindOf_ = TargetOf::Body;
     targetBody_ = bodyId;
     targetKind_ = kind;
     targetIndex_ = index;
@@ -191,20 +205,55 @@ Status AlignOperation::setGroundTarget(const doc::Document& document)
         return Status::failure(ErrorCode::InvalidArgument, "Only a flat face can be laid on the ground.",
                                "align: ground needs a flat source face");
     // Lay the face down where it is: straight below its centroid, facing down.
-    target_ = geom::AlignFrame{{source_.point.x, source_.point.y, 0.0}, {0, 0, 1}, true};
-    targetBody_ = Uuid();
-    targetKind_ = geom::SubShapeKind::Whole;
-    targetIndex_ = -1;
+    forgetTarget();
+    target_ = geom::AlignFrame{{source_.point.x, source_.point.y, 0.0}, {0, 0, 1}, true, geom::AlignFrame::Extent::Finite};
+    targetKindOf_ = TargetOf::Ground;
     setValue(value(), document);
+    return okStatus();
+}
+
+void AlignOperation::setEndlessTarget(Vec3 point, Vec3 direction, bool plane, const doc::Document& document)
+{
+    Vec3 d = direction.normalized();
+    geom::AlignFrame frame;
+    if (plane) {
+        // A plane has two sides: the body stays on the one it is on (a flat
+        // face then touches the plane from there; Flip turns it over).
+        if ((bodyCenter_ - point).dot(d) < -1e-9)
+            d = d * -1.0;
+        frame = {source_.point - d * (source_.point - point).dot(d), d, true, geom::AlignFrame::Extent::Plane};
+    } else {
+        frame = {point + d * (source_.point - point).dot(d), d, false, geom::AlignFrame::Extent::Line};
+    }
+    target_ = frame; // the arrow sits where the source lands
+    setValue(value(), document);
+}
+
+Status AlignOperation::setOriginTarget(OriginTarget target, const doc::Document& document)
+{
+    forgetTarget();
+    targetKindOf_ = TargetOf::Origin;
+    origin_ = target;
+    switch (target) {
+    case OriginTarget::XAxis: setEndlessTarget({}, {1, 0, 0}, false, document); break;
+    case OriginTarget::YAxis: setEndlessTarget({}, {0, 1, 0}, false, document); break;
+    case OriginTarget::ZAxis: setEndlessTarget({}, {0, 0, 1}, false, document); break;
+    case OriginTarget::XYPlane: setEndlessTarget({}, {0, 0, 1}, true, document); break;
+    case OriginTarget::XZPlane: setEndlessTarget({}, {0, 1, 0}, true, document); break;
+    case OriginTarget::YZPlane: setEndlessTarget({}, {1, 0, 0}, true, document); break;
+    case OriginTarget::Point:
+        // No turn: the source's point moves to the origin; an offset goes
+        // along the source's own direction.
+        target_ = geom::AlignFrame{{}, source_.direction.normalized(), false, geom::AlignFrame::Extent::Point};
+        setValue(value(), document);
+        break;
+    }
     return okStatus();
 }
 
 void AlignOperation::clearTarget()
 {
-    target_.reset();
-    targetBody_ = Uuid();
-    targetKind_ = geom::SubShapeKind::Whole;
-    targetIndex_ = -1;
+    forgetTarget();
     clearPreview();
 }
 

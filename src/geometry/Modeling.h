@@ -171,15 +171,23 @@ struct SubShapeRef {
 // align touching, facing each other); straight edges give midpoint +
 // direction; circles, cylinders and cones give center + axis.
 struct AlignFrame {
+    // Finite: a face or edge of a body; `point` is where it sits. Line and
+    // Plane: an axis or a plane without ends (X/Y/Z, the origin planes,
+    // construction axes and planes); `point` is any point on it and a source
+    // lands at its nearest point there. Point: the origin; `direction` is
+    // only where an offset goes.
+    enum class Extent { Finite, Line, Plane, Point };
     Vec3 point;
     Vec3 direction;
     bool sided = false;
+    Extent extent = Extent::Finite;
 };
 std::optional<AlignFrame> alignFrame(const Shape& shape, SubShapeKind kind, int index);
 // The motion that brings `source` onto `target`: directions opposite for two
 // sided frames (flush with `flip`), otherwise parallel with the smaller
-// rotation (reversed with `flip`); points coincide, then `offset` along the
-// target direction.
+// rotation (reversed with `flip`); points coincide (for a line or plane
+// target: the source point moves to its nearest point on it), then `offset`
+// along the target direction. A point target only moves (no rotation).
 RigidMotion alignMotion(const AlignFrame& source, const AlignFrame& target, bool flip, double offset);
 
 struct Measurement {

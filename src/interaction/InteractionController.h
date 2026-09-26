@@ -259,6 +259,12 @@ private:
     void updateSceneBounds();
     void startAnimation(const Camera& to);
     std::vector<sel::PickTarget> pickTargets() const;
+    // The grid (and the X/Y/Z axis lines through the origin) as drawn for
+    // the current camera.
+    RenderGrid grid() const;
+    // The origin axis line (as drawn) within pick reach of `screen`, unless
+    // `bodyHit` is nearer on screen (an edge) or in front of it (a face).
+    sel::PickResult pickOriginAxis(Vec2 screen, const InputProfile& profile, const sel::PickResult& bodyHit) const;
     void notifyView();
     void notifyState();
     void message(const std::string& text);

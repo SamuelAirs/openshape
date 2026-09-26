@@ -14,7 +14,9 @@
 
 namespace os::sel {
 
-enum class PickKind { None, Face, Edge, Profile };
+// OriginAxis: one of the X/Y/Z axis lines drawn through the origin (index
+// 0/1/2), pickable while a tool waits for a target (Align).
+enum class PickKind { None, Face, Edge, Profile, OriginAxis };
 
 struct PickTarget {
     Uuid bodyId;

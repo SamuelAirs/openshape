@@ -38,6 +38,37 @@ std::string surfaceName(geom::SurfaceKind kind)
     }
 }
 
+// Where a 3D segment passes nearest the pick ray through `screen`: the point
+// on the segment, its distance from `screen` in pixels and its view depth.
+struct SegmentHit {
+    Vec3 point;
+    double pixels = 0;
+    double depth = 0;
+};
+SegmentHit segmentHit(const Camera& camera, Vec2 screen, const Vec3& a, const Vec3& b)
+{
+    const Ray ray = camera.rayAt(screen);
+    const Vec3 u = b - a, v = ray.direction, w = a - ray.origin;
+    const double uu = u.dot(u), uv = u.dot(v), vv = v.dot(v), uw = u.dot(w), vw = v.dot(w);
+    const double denom = uu * vv - uv * uv;
+    const double t = denom > 1e-12 ? std::clamp((uv * vw - vv * uw) / denom, 0.0, 1.0) : 0.0;
+    const Vec3 p = a + u * t;
+    return {p, (camera.project(p) - screen).length(), camera.depthOf(p)};
+}
+
+// Align's origin targets: action id, button label, target.
+struct OriginTargetAction {
+    const char* id;
+    const char* label;
+    OriginTarget target;
+};
+constexpr OriginTargetAction kOriginTargets[] = {
+    {"origin:x", "X axis", OriginTarget::XAxis},     {"origin:y", "Y axis", OriginTarget::YAxis},
+    {"origin:z", "Z axis", OriginTarget::ZAxis},     {"origin:xy", "XY plane", OriginTarget::XYPlane},
+    {"origin:xz", "XZ plane", OriginTarget::XZPlane}, {"origin:yz", "YZ plane", OriginTarget::YZPlane},
+    {"origin:point", "Origin", OriginTarget::Point},
+};
+
 std::string curveName(geom::CurveKind kind)
 {
     switch (kind) {
@@ -566,7 +597,12 @@ void InteractionController::click(const PointerEvent& event)
     const bool tapGivesUp = event.device != PointerDevice::Mouse && !hit.hit();
     // Align: clicks pick (or re-pick) the target; clicking empty space applies.
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
-        if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge) {
+        if (hit.kind == sel::PickKind::OriginAxis) {
+            (void)align->setOriginTarget(hit.index == 0   ? OriginTarget::XAxis
+                                         : hit.index == 1 ? OriginTarget::YAxis
+                                                          : OriginTarget::ZAxis,
+                                         *document_);
+        } else if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge) {
             const Status status = align->setTarget(*document_, hit.bodyId,
                                                    hit.kind == sel::PickKind::Face ? geom::SubShapeKind::Face
                                                                                    : geom::SubShapeKind::Edge,
@@ -1289,6 +1325,9 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"flip", "Flip", align->flipped()});
         if (align->canUseGround())
             actions.push_back({"ground", "Onto ground", align->targetIsGround()});
+        const auto origin = align->originTarget();
+        for (const auto& [id, label, target] : kOriginTargets)
+            actions.push_back({id, label, origin == target});
         return actions;
     }
     if (const auto* revolve = dynamic_cast<const RevolveOperation*>(operation_.get())) {
@@ -1615,6 +1654,14 @@ Status InteractionController::triggerAction(const std::string& id)
             notifyView();
             return okStatus();
         }
+    }
+    if (auto* align = dynamic_cast<AlignOperation*>(operation_.get()); align && id.rfind("origin:", 0) == 0) {
+        for (const auto& [originId, label, target] : kOriginTargets)
+            if (id == originId)
+                (void)align->setOriginTarget(target, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
     }
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get()); align && (id == "flip" || id == "ground")) {
         Status status = okStatus();
@@ -1988,14 +2035,45 @@ RenderScene InteractionController::renderScene() const
     }
 
     // Grid on the XY plane, spaced for the current zoom.
-    const double minor = snapIncrement(camera_.pixelSize(camera_.target), 14.0);
-    scene.grid.minorStep = minor;
-    scene.grid.majorStep = minor * 10;
-    const double major = scene.grid.majorStep;
-    scene.grid.center = {std::round(camera_.target.x / major) * major, std::round(camera_.target.y / major) * major, 0};
-    const double visible = std::max(camera_.viewportSize.x, camera_.viewportSize.y) * camera_.pixelSize(camera_.target);
-    scene.grid.halfLines = std::clamp(static_cast<int>(std::ceil(visible / minor)), 10, 150);
-    const double gridReach = scene.grid.halfLines * minor * 1.5 + (scene.grid.center - camera_.sceneCenter).length();
+    scene.grid = grid();
+    // Align aiming at an origin axis or plane shows it, and an axis line
+    // under the pointer shows it can be clicked.
+    {
+        const double extent = scene.grid.halfLines * scene.grid.minorStep;
+        RenderSketch marks;
+        auto axisLine = [&](int axis, SketchStyle style) {
+            const Vec3 d{axis == 0 ? 1.0 : 0.0, axis == 1 ? 1.0 : 0.0, axis == 2 ? 1.0 : 0.0};
+            const Vec3 c = axis == 2 ? Vec3{} : Vec3{axis == 0 ? scene.grid.center.x : 0.0, axis == 1 ? scene.grid.center.y : 0.0, 0};
+            marks.lines.push_back({c - d * extent, c + d * extent, style});
+        };
+        if (hover_.kind == sel::PickKind::OriginAxis)
+            axisLine(hover_.index, SketchStyle::Hovered);
+        if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get()); align && align->originTarget()) {
+            switch (*align->originTarget()) {
+            case OriginTarget::XAxis: axisLine(0, SketchStyle::Selected); break;
+            case OriginTarget::YAxis: axisLine(1, SketchStyle::Selected); break;
+            case OriginTarget::ZAxis: axisLine(2, SketchStyle::Selected); break;
+            case OriginTarget::XYPlane:
+            case OriginTarget::XZPlane:
+            case OriginTarget::YZPlane: {
+                // An outline square around the origin, in the plane.
+                const auto target = *align->originTarget();
+                const Vec3 u = target == OriginTarget::YZPlane ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
+                const Vec3 v = target == OriginTarget::XYPlane ? Vec3{0, 1, 0} : Vec3{0, 0, 1};
+                const double h = std::max(camera_.sceneRadius * 0.15, 10.0);
+                const Vec3 corners[4] = {(u + v) * -h, (u - v) * h, (u + v) * h, (v - u) * h};
+                for (int i = 0; i < 4; ++i)
+                    marks.lines.push_back({corners[i], corners[(i + 1) % 4], SketchStyle::Selected});
+                break;
+            }
+            case OriginTarget::Point: marks.points.push_back({{}, SketchStyle::Selected}); break;
+            }
+            marks.editing = !marks.points.empty(); // points only draw on top
+        }
+        if (!marks.lines.empty() || !marks.points.empty())
+            scene.sketches.push_back(std::move(marks));
+    }
+    const double gridReach = scene.grid.halfLines * scene.grid.minorStep * 1.5 + (scene.grid.center - camera_.sceneCenter).length();
     scene.camera.sceneRadius = std::max(scene.camera.sceneRadius, gridReach);
     return scene;
 }
@@ -2042,9 +2120,73 @@ sel::PickResult InteractionController::operationPickAt(Vec2 screen, const InputP
     if (dynamic_cast<const AlignOperation*>(operation_.get())) {
         sel::PickOptions options;
         options.edgeTolerance = profile.pickTolerance;
-        return sel::pick(pickTargets(), camera_, screen, options);
+        const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
+        // The X/Y/Z lines drawn through the origin are targets too.
+        if (const sel::PickResult axis = pickOriginAxis(screen, profile, body); axis.hit())
+            return axis;
+        return body;
     }
     return pickAt(screen, profile);
+}
+
+RenderGrid InteractionController::grid() const
+{
+    // Spaced for the current zoom, around the point the camera looks at.
+    RenderGrid g;
+    const double minor = snapIncrement(camera_.pixelSize(camera_.target), 14.0);
+    g.minorStep = minor;
+    g.majorStep = minor * 10;
+    const double major = g.majorStep;
+    g.center = {std::round(camera_.target.x / major) * major, std::round(camera_.target.y / major) * major, 0};
+    const double visible = std::max(camera_.viewportSize.x, camera_.viewportSize.y) * camera_.pixelSize(camera_.target);
+    g.halfLines = std::clamp(static_cast<int>(std::ceil(visible / minor)), 10, 150);
+    return g;
+}
+
+sel::PickResult InteractionController::pickOriginAxis(Vec2 screen, const InputProfile& profile,
+                                                      const sel::PickResult& bodyHit) const
+{
+    // The lines exactly as the renderer draws them (ViewportRenderer, grid).
+    const RenderGrid g = grid();
+    const double extent = g.halfLines * g.minorStep;
+    sel::PickResult best;
+    double bestPixels = profile.pickTolerance;
+    for (int axis = 0; axis < 3; ++axis) {
+        Vec3 a, b;
+        if (axis == 0) {
+            if (std::abs(g.center.y) > extent)
+                continue;
+            a = {g.center.x - extent, 0, 0};
+            b = {g.center.x + extent, 0, 0};
+        } else if (axis == 1) {
+            if (std::abs(g.center.x) > extent)
+                continue;
+            a = {0, g.center.y - extent, 0};
+            b = {0, g.center.y + extent, 0};
+        } else {
+            if (std::abs(g.center.x) > extent || std::abs(g.center.y) > extent)
+                continue;
+            a = {0, 0, -extent};
+            b = {0, 0, extent};
+        }
+        const SegmentHit hit = segmentHit(camera_, screen, a, b);
+        if (hit.pixels > bestPixels)
+            continue;
+        // Bodies hide the lines (they are depth-tested); a body edge nearer
+        // on screen stays the target.
+        if (bodyHit.kind == sel::PickKind::Face && hit.depth > bodyHit.depth + camera_.pixelSize(hit.point) * 2)
+            continue;
+        if (bodyHit.kind == sel::PickKind::Edge && bodyHit.screenDistance <= hit.pixels)
+            continue;
+        bestPixels = hit.pixels;
+        best.kind = sel::PickKind::OriginAxis;
+        best.bodyId = Uuid();
+        best.index = axis;
+        best.point = hit.point;
+        best.depth = hit.depth;
+        best.screenDistance = hit.pixels;
+    }
+    return best;
 }
 
 // ---- Sketching -------------------------------------------------------------------------

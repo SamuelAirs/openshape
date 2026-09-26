@@ -126,11 +126,17 @@ private:
     std::string error_;
 };
 
+// The origin's axes, planes and point, as targets (Align) and references.
+enum class OriginTarget { XAxis, YAxis, ZAxis, XYPlane, XZPlane, YZPlane, Point };
+
 // Align: moves a body so one of its faces or edges (the source) meets a face
 // or edge of another body (the target) — flat faces touching, edges collinear,
-// circles/holes/shafts concentric. Waits for the target after creation; then
-// value() is an offset along the target (the arrow) and Flip reverses it.
-// Commits as a Move step with a rotation, named "Align".
+// circles/holes/shafts concentric. The target can also be an origin axis, an
+// origin plane or the origin itself (and construction axes and planes):
+// endless, so the source lands at its nearest point on them. Waits for the
+// target after creation; then value() is an offset along the target (the
+// arrow) and Flip reverses it. Commits as a Move step with a rotation, named
+// "Align".
 class AlignOperation final : public Operation {
 public:
     static std::unique_ptr<AlignOperation> create(const doc::Document& document, const Uuid& bodyId,
@@ -148,12 +154,21 @@ public:
     Status setTarget(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
     // The ground (XY plane): lays a flat source face down on it where it is.
     Status setGroundTarget(const doc::Document& document);
+    // An origin axis (the source becomes parallel to it, its point on it), an
+    // origin plane (a flat face touches it from the side the body is on; Flip
+    // turns it over) or the origin (the source's point moves there, no turn).
+    Status setOriginTarget(OriginTarget target, const doc::Document& document);
     void clearTarget();
     bool flipped() const { return flip_; }
     void setFlipped(bool flip, const doc::Document& document);
     // A flat source face can be laid onto the ground plane.
     bool canUseGround() const { return source_.sided; }
-    bool targetIsGround() const { return target_.has_value() && targetBody_.isNil(); }
+    bool targetIsGround() const { return targetKindOf_ == TargetOf::Ground; }
+    std::optional<OriginTarget> originTarget() const
+    {
+        return targetKindOf_ == TargetOf::Origin ? std::optional<OriginTarget>(origin_) : std::nullopt;
+    }
+
     // Target body and sub-shape, for highlighting (nil body for the ground).
     const Uuid& targetBody() const { return targetBody_; }
     geom::SubShapeKind targetKind() const { return targetKind_; }
@@ -169,13 +184,21 @@ protected:
     bool neutralIsIdentity() const override { return false; }
 
 private:
-    AlignOperation(Uuid bodyId, geom::AlignFrame source)
-        : Operation(bodyId, LinearManipulator(source.point, source.direction)), source_(source) {}
+    AlignOperation(Uuid bodyId, geom::AlignFrame source, Vec3 bodyCenter)
+        : Operation(bodyId, LinearManipulator(source.point, source.direction)), source_(source), bodyCenter_(bodyCenter) {}
+    enum class TargetOf { None, Body, Ground, Origin };
+    // An endless line or plane through `point` along/across `direction`, the
+    // arrow placed where the source lands. Planes face the side the body is on.
+    void setEndlessTarget(Vec3 point, Vec3 direction, bool plane, const doc::Document& document);
+    void forgetTarget();
     geom::AlignFrame source_;
+    Vec3 bodyCenter_;
     std::optional<geom::AlignFrame> target_;
+    TargetOf targetKindOf_ = TargetOf::None;
     Uuid targetBody_;
     geom::SubShapeKind targetKind_ = geom::SubShapeKind::Whole;
     int targetIndex_ = -1;
+    OriginTarget origin_ = OriginTarget::Point;
     bool flip_ = false;
 };
 

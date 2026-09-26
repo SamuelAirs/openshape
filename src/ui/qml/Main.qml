@@ -475,7 +475,7 @@ ApplicationWindow {
                     { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
                     { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
                     { id: "pattern", label: "Pattern", tip: "Repeat a body in a row or around an axis (holes and shafts work as axes)." },
-                    { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another (or lay a face on the ground)." }
+                    { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another, an origin axis or plane, or the origin (or lay a face on the ground)." }
                 ]
                 delegate: ActionButton {
                     required property var modelData
@@ -836,7 +836,7 @@ ApplicationWindow {
         if (app.operationPrompt.length > 0)
             return app.operationPrompt
         if (app.operationActive && app.operationTitle === "Align")
-            return "Drag the arrow or type an offset · Flip turns it around · click another face to re-aim · Enter applies"
+            return "Drag the arrow or type an offset · Flip turns it around · click another face, edge or axis line to re-aim · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Draft")
             return "Type the draft angle: positive narrows the walls away from the sketch, negative widens them · "
                  + "the arrow (or Draft again) goes back to the distance · Enter applies"
