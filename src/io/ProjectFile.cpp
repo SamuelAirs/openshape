@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "core/Timer.h"
+#include "core/Version.h"
 #include "document/JsonHelpers.h"
 #include "geometry/Modeling.h"
 
@@ -298,7 +299,7 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
     const json metadata{{"format", kProjectFormatName},
                         {"version", kProjectFormatVersion},
                         {"application", "OpenShape"},
-                        {"applicationVersion", "0.1.0"}};
+                        {"applicationVersion", kAppVersion}};
     if (Status s = addEntry(archive, "document.json", documentToJson(document).dump(2)); !s)
         return fail(s);
     if (Status s = addEntry(archive, "metadata.json", metadata.dump(2)); !s)

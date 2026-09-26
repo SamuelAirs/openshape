@@ -11,8 +11,9 @@ function(openshape_add_test name)
     gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
 endfunction()
 
-openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp)
+openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp test_version.cpp)
 target_link_libraries(test_core PRIVATE openshape_core)
+target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJECT_VERSION}")
 
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)

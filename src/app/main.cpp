@@ -4,6 +4,7 @@
 
 #include "app/AcceptanceRunner.h"
 #include "core/Log.h"
+#include "core/Version.h"
 #include "geometry/Modeling.h"
 #include "ui/AppController.h"
 
@@ -265,7 +266,7 @@ int main(int argc, char* argv[])
     QGuiApplication application(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationName(QStringLiteral("OpenShape"));
-    QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QGuiApplication::setApplicationVersion(QString::fromLatin1(os::kAppVersion));
 #if !defined(Q_OS_IOS) // iPadOS shows the bundle's icon (and would need the SVG plugin)
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
 #endif
@@ -306,7 +307,7 @@ int main(int argc, char* argv[])
     parser.addPositionalArgument(QStringLiteral("project"), QStringLiteral("Project file to open."), QStringLiteral("[project]"));
     parser.process(application);
 
-    OS_LOG(Info, App) << "OpenShape 0.1.0 starting";
+    OS_LOG(Info, App) << "OpenShape " << os::kAppVersion << " starting";
 
     // Automated runs (acceptance, demos, screenshots) take turns: the
     // acceptance run moves the real mouse and needs keyboard focus, so two

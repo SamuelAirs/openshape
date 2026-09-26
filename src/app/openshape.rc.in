@@ -1,0 +1,41 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+// Windows resources of OpenShape.exe: the application icon (Explorer, the
+// taskbar, shortcuts, the installer's uninstall entry) and the version
+// information (file Properties > Details). Configured by CMake from the
+// project version (src/app/CMakeLists.txt); compiled on Windows only.
+
+#include <winver.h>
+
+1 ICON "@OPENSHAPE_ICON_FILE@"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0x0L
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "OpenShape contributors"
+            VALUE "FileDescription", "OpenShape - direct, precise solid CAD"
+            VALUE "FileVersion", "@PROJECT_VERSION@"
+            VALUE "InternalName", "OpenShape"
+            VALUE "LegalCopyright", "Copyright (C) OpenShape contributors. Mozilla Public License 2.0."
+            VALUE "OriginalFilename", "OpenShape.exe"
+            VALUE "ProductName", "OpenShape"
+            VALUE "ProductVersion", "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
