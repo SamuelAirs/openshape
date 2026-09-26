@@ -43,3 +43,8 @@ plutil -p "$APP/Info.plist"
 for f in Assets.car PrivacyInfo.xcprivacy; do
     test -e "$APP/$f" || { echo "error: the app bundle lacks $f"; exit 1; }
 done
+# Qt is linked statically: every QML module the UI imports must have its
+# plugin imported at build time, or the app fails to start on the iPad.
+find "$BUILD" -name '*qml_plugin_import*.cpp' -exec grep -h 'Q_IMPORT_QML_PLUGIN' {} + | sort -u \
+    | sed -e 's/Q_IMPORT_QML_PLUGIN(\(.*\))/\1/' > "$BUILD/qml-plugins.txt"
+echo "QML plugins linked: $(tr '\n' ' ' < "$BUILD/qml-plugins.txt")"
