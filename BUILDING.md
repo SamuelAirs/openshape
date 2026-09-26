@@ -134,6 +134,15 @@ No installer yet, and not distributable yet (TD-17).
   ./build/msys2-ucrt64/bin/bench_session.exe
   ```
 
+- **Longer stress hunts** — the robustness suite runs a few fixed seeds;
+  `OPENSHAPE_STRESS_SEEDS=N` runs N other seeds of each random session
+  instead (undo/redo, interleaved, save/open; ~3 s each). Failures print the
+  action log and every body's steps with status:
+
+  ```bash
+  OPENSHAPE_STRESS_SEEDS=20 GTEST_FILTER='Seeds/*' ./build/msys2-ucrt64/bin/test_robustness.exe
+  ```
+
 - **`scripts/dev/drive.py`** — drives a running OpenShape window with real
   mouse and keyboard input and captures screenshots, for exploring the UI
   like a user (it takes over the mouse). Needs a Windows-native Python; the

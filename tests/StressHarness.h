@@ -48,7 +48,8 @@ struct BodySummary {
     std::string name;
     bool visible = true;
     double volume = 0;
-    geom::BoundingBox box;
+    geom::BoundingBox box; // fast box: includes tolerances and control-point hulls
+    geom::Shape shape;     // for the exact box when the fast ones differ
     int faces = 0;
     int solids = 0;
     std::vector<FeatureSummary> features;
@@ -110,6 +111,7 @@ inline Snapshot snapshotOf(const doc::Document& document, MetricsCache& cache)
         const auto& m = cache.of(*body);
         b.volume = m.volume;
         b.box = m.box;
+        b.shape = body->shape();
         b.faces = m.faces;
         b.solids = m.solids;
         for (std::size_t i = 0; i < body->features().size(); ++i) {
@@ -155,7 +157,36 @@ inline std::string describe(const doc::Document& document)
                  + statusName(body->state(int(i)).status) + " " + body->state(int(i)).developerMessage + " " + text + "\n";
         }
     }
+    for (const auto& sk : document.sketches()) {
+        char text[200];
+        const Vec3 o = sk->plane().origin, n = sk->plane().normal();
+        std::snprintf(text, sizeof text, "  %s %s: origin (%.6g %.6g %.6g) normal (%.4g %.4g %.4g), %zu curves%s\n",
+                      sk->name().c_str(), sk->id().toString().substr(0, 8).c_str(), o.x, o.y, o.z, n.x, n.y, n.z,
+                      sk->lines().size() + sk->circles().size() + sk->arcs().size(), sk->attachment() ? ", attached" : "");
+        out += text;
+    }
     return out;
+}
+
+// Internal consistency: a step that is Ok has everything it depends on (a
+// sketch, a tool body); a failed or blocked step has a message.
+inline ::testing::AssertionResult consistent(const doc::Document& document)
+{
+    for (const auto& body : document.bodies()) {
+        for (std::size_t i = 0; i < body->features().size(); ++i) {
+            const doc::Feature& f = *body->features()[i];
+            const auto& state = body->state(int(i));
+            if (state.status == doc::FeatureStatus::Ok)
+                for (const Uuid& dep : f.dependencies())
+                    if (!document.sketch(dep) && !document.body(dep))
+                        return ::testing::AssertionFailure()
+                            << body->name() << " step " << i << " (" << doc::toString(f.kind()) << ") is Ok but uses the missing "
+                            << dep.toString();
+            if (state.status == doc::FeatureStatus::Failed && state.userMessage.empty())
+                return ::testing::AssertionFailure() << body->name() << " step " << i << " failed without a message";
+        }
+    }
+    return ::testing::AssertionSuccess();
 }
 
 // Equal up to floating-point noise in derived geometry; exact for identity,
@@ -198,12 +229,20 @@ inline ::testing::AssertionResult sameState(const Snapshot& a, const Snapshot& b
                         + std::to_string(x.solids) + " vs " + std::to_string(y.solids));
         if (!near(x.volume, y.volume, 1e-7, 1e-7))
             return fail(where + "volume " + std::to_string(x.volume) + " vs " + std::to_string(y.volume));
-        if (x.box.valid != y.box.valid || (x.box.valid && (!nearVec(x.box.min, y.box.min, 1e-5) || !nearVec(x.box.max, y.box.max, 1e-5)))) {
-            char text[256];
-            std::snprintf(text, sizeof text, "(%.9g %.9g %.9g)-(%.9g %.9g %.9g) vs (%.9g %.9g %.9g)-(%.9g %.9g %.9g)", x.box.min.x,
-                          x.box.min.y, x.box.min.z, x.box.max.x, x.box.max.y, x.box.max.z, y.box.min.x, y.box.min.y, y.box.min.z,
-                          y.box.max.x, y.box.max.y, y.box.max.z);
-            return fail(where + "bounding box differs: " + text);
+        auto sameBox = [&](const geom::BoundingBox& p, const geom::BoundingBox& q, double tolerance) {
+            return p.valid == q.valid && (!p.valid || (nearVec(p.min, q.min, tolerance) && nearVec(p.max, q.max, tolerance)));
+        };
+        // The fast box depends on how surfaces are represented (control-point
+        // hulls, e.g. after face removal extends neighbours); the same
+        // geometry can give different ones. Then the exact boxes decide.
+        if (!sameBox(x.box, y.box, 1e-5)) {
+            const auto p = geom::boundingBox(x.shape), q = geom::boundingBox(y.shape);
+            if (!sameBox(p, q, 1e-4)) {
+                char text[256];
+                std::snprintf(text, sizeof text, "(%.9g %.9g %.9g)-(%.9g %.9g %.9g) vs (%.9g %.9g %.9g)-(%.9g %.9g %.9g)", p.min.x,
+                              p.min.y, p.min.z, p.max.x, p.max.y, p.max.z, q.min.x, q.min.y, q.min.z, q.max.x, q.max.y, q.max.z);
+                return fail(where + "bounding box differs: " + text);
+            }
         }
     }
     if (a.sketches.size() != b.sketches.size())
@@ -533,8 +572,16 @@ private:
         auto feature = std::make_unique<doc::MirrorFeature>();
         const int axis = integer(0, 2);
         feature->planeNormal = {axis == 0 ? 1.0 : 0.0, axis == 1 ? 1.0 : 0.0, axis == 2 ? 1.0 : 0.0};
-        // Across a side of the part (the image touches it) or through its middle.
-        feature->planeOrigin = chance(0.6) ? box.max : box.center();
+        feature->planeOrigin = box.center(); // through the middle: the image overlaps
+        // Or across one of its flat faces, as the Mirror tool does (the image
+        // touches it). Not across the bounding box side: on a round body that
+        // plane only grazes it, a degenerate contact the kernel resolves
+        // differently from run to run (see the report of 2026-09-26).
+        if (const auto faces = planarFaces(body->shape()); !faces.empty() && chance(0.6)) {
+            const auto info = geom::faceInfo(body->shape(), pickFrom(faces));
+            feature->planeOrigin = info->centroid;
+            feature->planeNormal = info->normal.normalized();
+        }
         (void)push(std::make_unique<cmd::AddFeatureCommand>(body->id(), std::move(feature)));
     }
 

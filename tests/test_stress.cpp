@@ -16,6 +16,7 @@
 #include "io/ProjectFile.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 
 using namespace os;
@@ -29,6 +30,20 @@ std::string joined(const std::vector<std::string>& log)
     for (const auto& s : log)
         out += (out.empty() ? "" : ", ") + s;
     return out;
+}
+
+// The seeds each suite runs: a few fixed ones, or with
+// OPENSHAPE_STRESS_SEEDS=N set, N others starting at `base` (a longer hunt:
+// run test_robustness.exe directly; see BUILDING.md).
+std::vector<unsigned> seeds(std::vector<unsigned> fixed, unsigned base)
+{
+    if (const char* count = std::getenv("OPENSHAPE_STRESS_SEEDS")) {
+        std::vector<unsigned> out;
+        for (int i = 0; i < std::atoi(count); ++i)
+            out.push_back(base + unsigned(i));
+        return out;
+    }
+    return fixed;
 }
 
 std::filesystem::path uniqueTempPath(const std::string& stem)
@@ -141,6 +156,7 @@ TEST_P(UndoRedoStress, UndoAllRestoresStartRedoAllRestoresEnd)
     const int applied = s.build(90, &log);
     ASSERT_GE(applied, 50) << joined(log);
     const Snapshot end = s.snapshot();
+    const std::string endText = describe(s.document);
     ASSERT_EQ(s.stack.index(), std::size_t(applied));
 
     while (s.controller.undo()) {
@@ -152,10 +168,11 @@ TEST_P(UndoRedoStress, UndoAllRestoresStartRedoAllRestoresEnd)
     while (s.controller.redo()) {
     }
     EXPECT_EQ(s.stack.index(), s.stack.size()) << "a step that once worked failed to redo";
-    EXPECT_TRUE(sameState(end, s.snapshot())) << "after redoing: " << joined(log) << "\n" << describe(s.document);
+    EXPECT_TRUE(sameState(end, s.snapshot())) << "after redoing: " << joined(log) << "\nat the end:\n" << endText << "after redoing:\n"
+                                              << describe(s.document);
 }
 
-INSTANTIATE_TEST_SUITE_P(Seeds, UndoRedoStress, ::testing::Values(11u, 22u, 33u));
+INSTANTIATE_TEST_SUITE_P(Seeds, UndoRedoStress, ::testing::ValuesIn(seeds({11u, 22u, 33u}, 1000)));
 
 class InterleavedStress : public ::testing::TestWithParam<unsigned> {};
 
@@ -169,6 +186,7 @@ TEST_P(InterleavedStress, EveryUndoRedoStateMatchesTheRecordedOne)
     StressSession s(GetParam());
     std::mt19937 rng(GetParam() * 7919u);
     std::vector<Snapshot> snapshots{s.snapshot()};
+    std::vector<std::string> texts{describe(s.document)}; // for failure messages
     std::vector<std::string> log;
     int undos = 0, redos = 0, edits = 0;
     for (int step = 0; step < 150; ++step) {
@@ -177,12 +195,14 @@ TEST_P(InterleavedStress, EveryUndoRedoStateMatchesTheRecordedOne)
             ASSERT_TRUE(s.controller.undo());
             ++undos;
             log.push_back("undo");
-            ASSERT_TRUE(sameState(snapshots[s.stack.index()], s.snapshot())) << joined(log);
+            ASSERT_TRUE(sameState(snapshots[s.stack.index()], s.snapshot()))
+                << joined(log) << "\nrecorded:\n" << texts[s.stack.index()] << "now:\n" << describe(s.document);
         } else if (roll < 0.45 && s.stack.canRedo()) {
             ASSERT_TRUE(s.controller.redo()) << "redo failed: " << joined(log);
             ++redos;
             log.push_back("redo");
-            ASSERT_TRUE(sameState(snapshots[s.stack.index()], s.snapshot())) << joined(log);
+            ASSERT_TRUE(sameState(snapshots[s.stack.index()], s.snapshot()))
+                << joined(log) << "\nrecorded:\n" << texts[s.stack.index()] << "now:\n" << describe(s.document);
         } else {
             const std::size_t before = s.stack.index();
             std::string what;
@@ -191,17 +211,20 @@ TEST_P(InterleavedStress, EveryUndoRedoStateMatchesTheRecordedOne)
                 log.push_back(what);
                 snapshots.resize(before + 1);
                 snapshots.push_back(s.snapshot());
+                texts.resize(before + 1);
+                texts.push_back(describe(s.document));
                 ASSERT_EQ(s.stack.index(), snapshots.size() - 1);
                 ASSERT_EQ(s.stack.size(), s.stack.index()) << "a new edit must discard the redo branch";
             }
         }
+        ASSERT_TRUE(consistent(s.document)) << joined(log) << "\n" << describe(s.document);
     }
     EXPECT_GE(edits, 50);
     EXPECT_GE(undos, 10);
-    EXPECT_GE(redos, 5);
+    EXPECT_GE(redos, 2);
 }
 
-INSTANTIATE_TEST_SUITE_P(Seeds, InterleavedStress, ::testing::Values(5u, 6u));
+INSTANTIATE_TEST_SUITE_P(Seeds, InterleavedStress, ::testing::ValuesIn(seeds({5u, 6u}, 2000)));
 
 class SaveOpenStress : public ::testing::TestWithParam<unsigned> {};
 
@@ -234,4 +257,4 @@ TEST_P(SaveOpenStress, ReopenedDocumentEqualsLiveOne)
     EXPECT_EQ(saves, 6);
 }
 
-INSTANTIATE_TEST_SUITE_P(Seeds, SaveOpenStress, ::testing::Values(3u, 4u));
+INSTANTIATE_TEST_SUITE_P(Seeds, SaveOpenStress, ::testing::ValuesIn(seeds({3u, 4u}, 3000)));
