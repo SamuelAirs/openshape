@@ -4,6 +4,7 @@
 
 #include "ui/AppSettings.h"
 
+#include <QtCore/QMargins>
 #include <QtCore/QSettings>
 
 #include <algorithm>
@@ -58,8 +59,8 @@ void saveRecentFiles(QSettings& settings, const QStringList& files)
 std::optional<WindowPlacement> loadWindowPlacement(QSettings& settings)
 {
     const QRect frame = settings.value(kWindowFrame).toRect();
-    const QSize client = settings.value(kWindowClient).toSize();
-    if (!frame.isValid() || !client.isValid() || client.width() > frame.width() || client.height() > frame.height())
+    const QRect client = settings.value(kWindowClient).toRect();
+    if (!frame.isValid() || !client.isValid() || !frame.contains(client))
         return std::nullopt;
     return WindowPlacement{frame, client, settings.value(kWindowMaximized).toBool()};
 }
@@ -69,6 +70,24 @@ void saveWindowPlacement(QSettings& settings, const WindowPlacement& placement)
     settings.setValue(kWindowFrame, placement.frame);
     settings.setValue(kWindowClient, placement.client);
     settings.setValue(kWindowMaximized, placement.maximized);
+}
+
+QRect clientForFrame(const WindowPlacement& saved, const QRect& fitted)
+{
+    const QMargins border(saved.client.left() - saved.frame.left(), saved.client.top() - saved.frame.top(),
+                          saved.frame.right() - saved.client.right(), saved.frame.bottom() - saved.client.bottom());
+    return fitted.marginsRemoved(border);
+}
+
+QRect firstWindowGeometry(QSize preferred, const QRect& available, QSize minimum, int titleBar)
+{
+    const QSize room(available.width(), available.height() - titleBar);
+    if (!available.isValid() || (preferred.width() <= room.width() && preferred.height() <= room.height()))
+        return {};
+    const QSize size = preferred.boundedTo(room * 0.9).expandedTo(minimum).boundedTo(room);
+    const QPoint topLeft(available.left() + (available.width() - size.width()) / 2,
+                         available.top() + titleBar + (room.height() - size.height()) / 2);
+    return QRect(topLeft, size);
 }
 
 QRect fitToScreens(const QRect& frame, const QList<QRect>& availableScreens, QSize minimum)

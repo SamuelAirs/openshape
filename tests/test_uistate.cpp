@@ -116,14 +116,41 @@ TEST(AppSettings, RecentFilesAndWindowPlacementRoundTrip)
     EXPECT_EQ(loadRecentFiles(settings), (QStringList{QStringLiteral("C:/a.openshape"), QStringLiteral("C:/b.openshape")}));
 
     EXPECT_FALSE(loadWindowPlacement(settings).has_value()) << "nothing saved yet";
-    saveWindowPlacement(settings, {QRect(100, 80, 1208, 939), QSize(1200, 900), true});
+    saveWindowPlacement(settings, {QRect(100, 80, 1208, 939), QRect(104, 111, 1200, 904), true});
     const auto placement = loadWindowPlacement(settings);
     ASSERT_TRUE(placement.has_value());
     EXPECT_EQ(placement->frame, QRect(100, 80, 1208, 939));
-    EXPECT_EQ(placement->client, QSize(1200, 900));
+    EXPECT_EQ(placement->client, QRect(104, 111, 1200, 904));
     EXPECT_TRUE(placement->maximized);
-    saveWindowPlacement(settings, {QRect(0, 0, 100, 100), QSize(300, 300), false});
-    EXPECT_FALSE(loadWindowPlacement(settings).has_value()) << "a client larger than its frame is nonsense";
+    saveWindowPlacement(settings, {QRect(0, 0, 100, 100), QRect(0, 0, 300, 300), false});
+    EXPECT_FALSE(loadWindowPlacement(settings).has_value()) << "a client area outside its frame is nonsense";
+}
+
+TEST(AppSettings, FirstWindowFitsSmallOrScaledScreens)
+{
+    const QSize preferred(1400, 900), minimum(720, 480);
+    EXPECT_TRUE(firstWindowGeometry(preferred, QRect(0, 0, 1920, 1032), minimum, 40).isNull()) << "fits: the default";
+    // 1920x1080 at 150 %: 1280x688 logical available.
+    const QRect scaled = firstWindowGeometry(preferred, QRect(0, 0, 1280, 688), minimum, 40);
+    EXPECT_EQ(scaled.size(), QSize(1152, 583));
+    EXPECT_TRUE(QRect(0, 40, 1280, 648).contains(scaled)) << "below the title bar, on the screen";
+    EXPECT_EQ(scaled.center().x(), 639);
+    // Smaller than the minimum: as large as the screen allows.
+    const QRect tiny = firstWindowGeometry(preferred, QRect(0, 0, 800, 500), minimum, 40);
+    EXPECT_EQ(tiny.size(), QSize(720, 460));
+    EXPECT_TRUE(QRect(0, 40, 800, 460).contains(tiny));
+}
+
+TEST(AppSettings, ClientAreaKeepsTheFramesBorders)
+{
+    // Windows 11: a 31 px title bar, no side borders. Restoring places the
+    // client area; saving reads the frame. The two must not drift apart.
+    const WindowPlacement saved{QRect(700, 160, 1200, 831), QRect(700, 191, 1200, 800), false};
+    EXPECT_EQ(clientForFrame(saved, saved.frame), saved.client);
+    EXPECT_EQ(clientForFrame(saved, QRect(0, 0, 1200, 831)), QRect(0, 31, 1200, 800));
+    // Windows 10 style: 8 px borders all round.
+    const WindowPlacement bordered{QRect(92, 49, 1216, 839), QRect(100, 80, 1200, 800), false};
+    EXPECT_EQ(clientForFrame(bordered, QRect(0, 0, 1000, 700)), QRect(8, 31, 984, 661));
 }
 
 TEST(AppSettings, WindowIsNeverRestoredOffScreen)

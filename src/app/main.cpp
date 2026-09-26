@@ -274,10 +274,24 @@ void runDemo(os::ui::AppController& app, const QString& demo)
 // ---- Remembered window -------------------------------------------------------------------
 
 // Tracks the window's normal (not maximized) place while it runs, so the
-// place saved on exit is the one to come back to even when it ends maximized.
+// place saved on exit is the one to come back to even when it ends
+// maximized. Read while the window still exists: once closed, its frame is
+// gone and the frame geometry is just the client area.
 struct WindowKeeper {
     QRect frame;
-    QSize client;
+    QRect client;
+    bool maximized = false;
+
+    void record(const QQuickWindow* window)
+    {
+        if (!window->isVisible())
+            return;
+        maximized = window->windowStates() & Qt::WindowMaximized;
+        if (window->windowStates() == Qt::WindowNoState) {
+            frame = window->frameGeometry();
+            client = window->geometry();
+        }
+    }
 };
 
 QList<QRect> availableScreens()
@@ -298,20 +312,28 @@ void showRemembered(QQuickWindow* window, const std::shared_ptr<WindowKeeper>& k
     const auto placement = os::ui::loadWindowPlacement(settings);
     if (placement) {
         const QRect frame = os::ui::fitToScreens(placement->frame, availableScreens(), window->minimumSize());
-        if (frame.isValid()) {
-            const QSize border = placement->frame.size() - placement->client; // title bar and edges
-            const QSize client = (frame.size() - border).expandedTo(QSize(200, 150));
-            window->setFramePosition(frame.topLeft());
-            window->resize(client);
+        const QRect client = os::ui::clientForFrame(*placement, frame);
+        if (frame.isValid() && client.isValid()) {
+            // By the client area: a frame position given before the window
+            // exists is taken as the client's (it crept up a title bar per run).
+            window->setGeometry(client);
             keeper->frame = frame;
             keeper->client = client;
-            OS_LOG(Info, App) << "window restored at " << frame.x() << "," << frame.y() << " " << client.width() << "x"
+            keeper->maximized = placement->maximized;
+            OS_LOG(Info, App) << "window restored at " << client.x() << "," << client.y() << " " << client.width() << "x"
                               << client.height() << (placement->maximized ? " (maximized)" : "");
             if (placement->maximized)
                 window->showMaximized();
             else
                 window->show();
             return;
+        }
+    }
+    if (QScreen* screen = QGuiApplication::primaryScreen()) {
+        const QRect first = os::ui::firstWindowGeometry(window->size(), screen->availableGeometry(), window->minimumSize(), 40);
+        if (first.isValid()) {
+            window->setGeometry(first);
+            OS_LOG(Info, App) << "the default window is larger than the screen; using " << first.width() << "x" << first.height();
         }
     }
     window->show();
@@ -322,31 +344,23 @@ void trackWindow(QQuickWindow* window, const std::shared_ptr<WindowKeeper>& keep
     auto* settle = new QTimer(window);
     settle->setSingleShot(true);
     settle->setInterval(300);
-    QObject::connect(settle, &QTimer::timeout, window, [window, keeper] {
-        if (window->isVisible() && window->windowStates() == Qt::WindowNoState) {
-            keeper->frame = window->frameGeometry();
-            keeper->client = window->size();
-        }
-    });
+    QObject::connect(settle, &QTimer::timeout, window, [window, keeper] { keeper->record(window); });
     auto restart = [settle] { settle->start(); };
     QObject::connect(window, &QWindow::xChanged, settle, restart);
     QObject::connect(window, &QWindow::yChanged, settle, restart);
     QObject::connect(window, &QWindow::widthChanged, settle, restart);
     QObject::connect(window, &QWindow::heightChanged, settle, restart);
     QObject::connect(window, &QWindow::windowStateChanged, settle, restart);
+    // Closing may still be refused (unsaved changes); recording is harmless.
+    QObject::connect(window, &QQuickWindow::closing, window, [window, keeper] { keeper->record(window); });
 }
 
-void saveWindow(QQuickWindow* window, const WindowKeeper& keeper)
+void saveWindow(const WindowKeeper& keeper)
 {
-    os::ui::WindowPlacement placement{keeper.frame, keeper.client, bool(window->windowStates() & Qt::WindowMaximized)};
-    if (window->windowStates() == Qt::WindowNoState) {
-        placement.frame = window->frameGeometry();
-        placement.client = window->size();
-    }
-    if (!placement.frame.isValid() || !placement.client.isValid())
+    if (!keeper.frame.isValid() || !keeper.client.isValid())
         return;
     QSettings settings;
-    os::ui::saveWindowPlacement(settings, placement);
+    os::ui::saveWindowPlacement(settings, {keeper.frame, keeper.client, keeper.maximized});
 }
 
 } // namespace
@@ -531,7 +545,7 @@ int main(int argc, char* argv[])
 
     const int result = QGuiApplication::exec();
     if (rememberWindow)
-        saveWindow(window, *keeper);
+        saveWindow(*keeper);
     OS_LOG(Info, App) << "OpenShape exits normally";
     return result;
 }

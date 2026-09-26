@@ -39,11 +39,13 @@ void savePreferences(QSettings& settings, const Preferences& preferences);
 QStringList loadRecentFiles(QSettings& settings);
 void saveRecentFiles(QSettings& settings, const QStringList& files);
 
-// The window's last place: its frame (title bar included) and client size
-// while not maximized, and whether it was maximized.
+// The window's last place while not maximized: its frame (title bar
+// included) and its client area (inside the frame), and whether it was
+// maximized. Both rectangles are kept because a window can only be placed
+// by its client area before it exists, and fitted onto a screen by its frame.
 struct WindowPlacement {
     QRect frame;
-    QSize client;
+    QRect client;
     bool maximized = false;
 };
 std::optional<WindowPlacement> loadWindowPlacement(QSettings& settings);
@@ -55,5 +57,13 @@ void saveWindowPlacement(QSettings& settings, const WindowPlacement& placement);
 // area (not below `minimum` unless the screen is smaller) and moves fully onto
 // it, so the title bar is always reachable. Empty when nothing was saved.
 QRect fitToScreens(const QRect& frame, const QList<QRect>& availableScreens, QSize minimum);
+// Where the client area goes when the frame is placed at `fitted`: the saved
+// frame's borders (title bar, edges) stay the same.
+QRect clientForFrame(const WindowPlacement& saved, const QRect& fitted);
+// The first start (nothing saved): the default client size may not fit a
+// small or strongly scaled screen (1400x900 logical is more than a 1080p
+// screen at 150 %). Then a client area of 90 % of the available area
+// (title bar included), centered; empty when the default fits.
+QRect firstWindowGeometry(QSize preferred, const QRect& available, QSize minimum, int titleBar);
 
 } // namespace os::ui
