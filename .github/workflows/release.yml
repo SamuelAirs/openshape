@@ -162,7 +162,11 @@ jobs:
           prerelease=()
           case "$version" in 0.*|*-*) prerelease=(--prerelease) ;; esac
           sed -e "s/@VERSION@/$version/g" -e "s/@APP_VERSION@/$APP_VERSION/g" -e "s/@TAG@/$tag/g" \
-              packaging/windows/release-notes.md > "$RUNNER_TEMP/notes.md"
+              packaging/windows/release-notes.md > "$RUNNER_TEMP/install.md"
+          # What is new: this version's section of CHANGELOG.md (without its
+          # heading), then the install and license notes.
+          bash scripts/ci/changelog-section.sh "$version" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/install.md" >> "$RUNNER_TEMP/notes.md"
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
               dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt
