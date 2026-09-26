@@ -80,6 +80,7 @@ Developer switches:
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-crash   # then start with --data-dir some-dir: it offers the box
+./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-quit    # ended with unsaved work: offered too
 ```
 
 Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
@@ -101,16 +102,20 @@ Where the app keeps things (Windows):
   `HKEY_CURRENT_USER\Software\OpenShape\OpenShape`.
 - **Recovery copies** of unsaved work: `%LOCALAPPDATA%\OpenShape\OpenShape\recovery\`
   (`<session>.openshape` + `.json` + `.lock` per running app; see
-  docs/FILE_FORMAT.md). They are removed on Save, New, Open and a normal exit;
-  after a crash the next start offers them.
+  docs/FILE_FORMAT.md). They are removed on Save, New, Open and when the
+  user chooses Don't Save. If the app ends while there is unsaved work the
+  user did not discard (a crash, iPadOS ending the app, logging off), the
+  next start offers it.
 - `--data-dir <dir>` puts all three into `<dir>` (`logs/`, `settings/` as an
   INI file, `recovery/`). `--acceptance`, `--demo` and `--screenshot` use a
   temporary folder for settings and recovery copies (removed at exit; the log
   still goes to the usual file), never the user's, and show no restore prompt
   and do not remember the window.
 - `--simulate-crash` (no window): adds a box, writes its recovery copy and
-  crashes with an access violation (without the Windows crash dialog); the
-  `recovery` acceptance scenario uses it.
+  crashes with an access violation (without the Windows crash dialog);
+  `--simulate-quit` adds a box and quits at once without asking (as when
+  iPadOS ends the app), which must keep the box as a recovery copy. The
+  `recovery` acceptance scenario uses both.
 
 Building from another shell (e.g. Git Bash) also works if
 `<msys64>/ucrt64/bin` is first on `PATH`.

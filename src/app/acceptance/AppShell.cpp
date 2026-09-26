@@ -19,6 +19,7 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
+#include <QtCore/QEvent>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLockFile>
@@ -217,6 +218,11 @@ Steps recoverySteps(AcceptanceRunner& r)
         r.check(app.recoveryItems().size() == 1 && recoveryItemSession(app, 0).toStdString() == s->crashed,
                 "it offers the crashed run's work only (not the running one's)", QString::number(app.recoveryItems().size()));
         r.screenshot(QStringLiteral("recovery_prompt"));
+        // The window's shortcuts wait until the question is answered.
+        r.key(Qt::Key_Comma, Qt::ControlModifier, QStringLiteral(","));
+        auto* preferences = r.findItem(QStringLiteral("preferencesOverlay"));
+        r.check(preferences && !preferences->isVisible(),
+                "Ctrl+, does not open Preferences behind the restore prompt");
         r.check(r.clickItem(QStringLiteral("recoveryRestore_") + QString::fromStdString(s->crashed)), "Restore button");
     });
     wait(steps, 3);
@@ -302,8 +308,55 @@ Steps recoverySteps(AcceptanceRunner& r)
         if (recovery)
             (void)recovery->store().remove(s->live);
     });
+#if QT_CONFIG(process)
+    // The app is ended with unsaved work the user never discarded (iPadOS
+    // ending it, Windows logging off): not a crash, but the work must stay.
+    steps.push_back([&r, s] {
+        const QString quitDir = s->outputDir + QStringLiteral("/quit-run");
+        QDir(quitDir).removeRecursively();
+        QProcess child;
+        child.start(QCoreApplication::applicationFilePath(),
+                    {QStringLiteral("--data-dir"), quitDir, QStringLiteral("--simulate-quit")});
+        const bool finished = child.waitForFinished(90000);
+        r.check(finished && child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+                "another OpenShape quits with an unsaved box, without being asked", QString::number(child.exitCode()));
+        const QDir dir(quitDir + QStringLiteral("/recovery"));
+        r.check(dir.entryList({QStringLiteral("*.lock")}, QDir::Files).isEmpty(), "it released its lock",
+                dir.entryList(QDir::Files).join(QLatin1Char(' ')));
+        QFile log(quitDir + QStringLiteral("/logs/openshape.log"));
+        const QByteArray logText = log.open(QIODevice::ReadOnly) ? log.readAll() : QByteArray();
+        r.check(logText.contains("recovery copy kept for the next start"), "its log says the copy is kept",
+                QString::fromUtf8(logText.right(300)).simplified());
+        ui::RecoverySession next(dir.path());
+        const auto orphans = next.findOrphans();
+        const auto copy = orphans.size() == 1 ? loadCopy(path(orphans[0].projectFile)) : nullptr;
+        r.check(copy && std::abs(volumeOf(copy.get()) - 8000.0) < 1e-6, "its unsaved box is offered at the next start",
+                QString::number(orphans.size()));
+    });
+#endif
     return steps;
 }
+
+// Whether a Menu (a popup, found by objectName) is open.
+bool menuOpen(AcceptanceRunner& r, const char* name)
+{
+    QObject* menu = r.window()->findChild<QObject*>(QString::fromLatin1(name));
+    return menu && menu->property("visible").toBool();
+}
+
+// Lets the first close request through (the window asks about unsaved
+// changes) and swallows the later ones (the one "Don't Save" makes), so the
+// run can check what Don't Save did without ending.
+class CloseCatcher : public QObject {
+public:
+    int closes = 0;
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() != QEvent::Close)
+            return QObject::eventFilter(watched, event);
+        return ++closes > 1;
+    }
+};
 
 // ---- Open Recent ------------------------------------------------------------------------
 
@@ -362,6 +415,11 @@ Steps recentSteps(AcceptanceRunner& r)
         auto* question = r.findItem(QStringLiteral("unsavedDialog"));
         r.check(question && question->isVisible(), "the unsaved-changes question appears");
         r.check(app.documentTitle() == QStringLiteral("recent_a") && app.bodyCount() == 2, "and B is not opened yet");
+        // Shortcuts wait while it asks: no undo behind it, no second question.
+        r.key(Qt::Key_Z, Qt::ControlModifier);
+        r.key(Qt::Key_N, Qt::ControlModifier);
+        r.check(question && question->isVisible() && app.bodyCount() == 2 && app.documentTitle() == QStringLiteral("recent_a"),
+                "Ctrl+Z and Ctrl+N do nothing behind the question", QString::number(app.bodyCount()));
         r.check(r.clickItem(QStringLiteral("unsavedCancel")), "Cancel button");
         r.check(question && !question->isVisible() && app.documentTitle() == QStringLiteral("recent_a") && app.dirty(),
                 "Cancel: A stays open, unsaved");
@@ -371,18 +429,49 @@ Steps recentSteps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("recentFile_1")), "recent file B again"); });
     wait(steps, 2);
-    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("unsavedSave")), "Save button"); });
+    steps.push_back([&r] {
+        r.key(Qt::Key_N, Qt::ControlModifier); // must not replace "open B"
+        r.check(r.clickItem(QStringLiteral("unsavedSave")), "Save button");
+    });
     wait(steps, 2);
     steps.push_back([&r, &app, s] {
         const auto savedA = loadCopy(s->a);
         r.check(savedA && savedA->bodies().size() == 2, "Save wrote A (now two boxes)");
         r.check(app.documentTitle() == QStringLiteral("recent_b") && !app.dirty(), "then B opened", app.documentTitle());
-        // A file that is gone drops out of the list.
+        // A file deleted while OpenShape runs (e.g. in Explorer) drops out of the menu.
         app.newDocument();
         QFile::remove(s->b);
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (B was deleted)");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("openRecentMenuItem")), "Open Recent (B was deleted)"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        auto* first = r.findItem(QStringLiteral("recentFile_0"));
+        auto* second = r.findItem(QStringLiteral("recentFile_1"));
+        r.check(first && first->isVisible() && first->property("text").toString().startsWith(QStringLiteral("recent_a"))
+                    && !(second && second->isVisible()),
+                "the menu no longer lists the deleted file",
+                first ? first->property("text").toString() : QStringLiteral("no entries"));
+        r.screenshot(QStringLiteral("recent_menu_after_delete"));
         const QVariantList recent = app.recentFiles();
         r.check(recent.size() == 1 && recent[0].toMap()[QStringLiteral("path")].toString() == QFileInfo(s->a).absoluteFilePath(),
-                "a deleted file is no longer listed", QString::number(recent.size()));
+                "and the list has only A", QString::number(recent.size()));
+        r.key(Qt::Key_Escape);
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        r.check(!menuOpen(r, "openRecentMenu") && menuOpen(r, "fileMenu"), "Esc closes the sub-menu",
+                QStringLiteral("file menu open: %1").arg(menuOpen(r, "fileMenu")));
+        r.key(Qt::Key_Escape);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        r.check(r.window()->findChild<QObject*>(QStringLiteral("fileMenu")) && !menuOpen(r, "fileMenu"),
+                "Esc again closes the File menu");
+        QQuickItem* focus = r.window()->activeFocusItem();
+        r.check(focus && focus->objectName() == QStringLiteral("viewport"), "and keys go to the view",
+                focus ? QString::fromLatin1(focus->metaObject()->className()) + QLatin1Char(' ') + focus->objectName()
+                      : QStringLiteral("nothing"));
         // Opening from the command line (or a double-clicked file) goes through openProject.
         app.newDocument();
         r.check(app.saveProjectAs(QUrl::fromLocalFile(s->b)), "save B again");
@@ -408,6 +497,7 @@ Steps recentSteps(AcceptanceRunner& r)
 Steps preferencesSteps(AcceptanceRunner& r)
 {
     auto& app = r.app();
+    auto catcher = std::make_shared<CloseCatcher*>(nullptr);
     Steps steps;
     auto overlayVisible = [&r] {
         auto* overlay = r.findItem(QStringLiteral("preferencesOverlay"));
@@ -506,7 +596,33 @@ Steps preferencesSteps(AcceptanceRunner& r)
         r.check(r.clickItem(QStringLiteral("unsavedCancel")), "Cancel keeps the window open");
     });
     wait(steps, 2);
-    steps.push_back([&r] { r.check(r.window()->isVisible(), "the window is still open"); });
+    steps.push_back([&r, &app, catcher] {
+        r.check(r.window()->isVisible(), "the window is still open");
+        // Don't Save when closing lets go of the work: no recovery copy is
+        // kept (the window's close is held back here so the run goes on).
+        r.check(app.dirty() && !app.recoveryCopyFile().isEmpty(), "a recovery copy of the unsaved work exists");
+        *catcher = new CloseCatcher;
+        r.window()->installEventFilter(*catcher);
+        r.window()->close();
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        auto* question = r.findItem(QStringLiteral("unsavedDialog"));
+        r.check(question && question->isVisible(), "closing asks again");
+        r.check(r.clickItem(QStringLiteral("unsavedDiscard")), "Don't Save (closing)");
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app, catcher] {
+        CloseCatcher* c = *catcher;
+        r.check(c && c->closes == 2, "Don't Save closes the window", QString::number(c ? c->closes : -1));
+        r.check(app.recoveryCopyFile().isEmpty(), "and removes the recovery copy (nothing is offered at the next start)");
+        if (c) {
+            r.window()->removeEventFilter(c);
+            delete c;
+            *catcher = nullptr;
+        }
+        r.window()->setProperty("closeConfirmed", false); // the window stays for the next scenario
+    });
     return steps;
 }
 

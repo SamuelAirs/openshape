@@ -35,7 +35,8 @@ odd: a screenshot and a sentence is plenty. Starting the app with
 9. **Work is never lost.** Add a box, wait five seconds, then kill
    OpenShape: Task Manager → Details → OpenShape.exe → End task. Start it
    again: it offers to restore the box (Restore / Discard / Decide later).
-   Restore, then Ctrl+S.
+   Restore, then Ctrl+S. Closing the window with unsaved changes and
+   choosing Don't Save must not offer anything at the next start.
 10. **The app remembers you.** Move and resize the window (or maximize it),
     close and start again: same place. File → Open Recent lists your last
     projects. File → Preferences… (Ctrl+,): units for new documents, grid

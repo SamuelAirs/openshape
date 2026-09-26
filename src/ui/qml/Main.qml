@@ -24,6 +24,9 @@ ApplicationWindow {
 
     property bool closeConfirmed: false
     property var afterSave: null   // action to run once a Save As completes
+    // A question the user must answer first: the window's shortcuts wait
+    // (Ctrl+N behind "Save changes?" would replace what it is asking about).
+    readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible
 
     // ---------------------------------------------------------------- viewport
     Viewport {
@@ -54,22 +57,31 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- shortcuts
-    Shortcut { sequences: [StandardKey.Undo]; onActivated: window.app.undo() }
+    Shortcut { sequences: [StandardKey.Undo]; enabled: !window.modalOpen; onActivated: window.app.undo() }
     // StandardKey.Redo is Ctrl+Y on Windows but Ctrl+Shift+Z elsewhere; accept
     // both everywhere. On Windows the duplicate makes Qt report the match as
     // ambiguous, so handle that signal too.
     Shortcut {
         sequences: [StandardKey.Redo, "Ctrl+Y"]
+        enabled: !window.modalOpen
         onActivated: window.app.redo()
         onActivatedAmbiguously: window.app.redo()
     }
-    Shortcut { sequences: [StandardKey.Save]; onActivated: window.save() }
-    Shortcut { sequences: [StandardKey.SaveAs]; onActivated: saveDialog.open() }
-    Shortcut { sequences: [StandardKey.Open]; onActivated: window.confirmDiscard(() => openDialog.open()) }
-    Shortcut { sequences: [StandardKey.New]; onActivated: window.confirmDiscard(() => window.app.newDocument()) }
-    Shortcut { sequence: "Ctrl+,"; onActivated: preferencesOverlay.open() }
+    Shortcut { sequences: [StandardKey.Save]; enabled: !window.modalOpen; onActivated: window.save() }
+    Shortcut { sequences: [StandardKey.SaveAs]; enabled: !window.modalOpen; onActivated: saveDialog.open() }
+    Shortcut {
+        sequences: [StandardKey.Open]
+        enabled: !window.modalOpen
+        onActivated: window.confirmDiscard(() => openDialog.open())
+    }
+    Shortcut {
+        sequences: [StandardKey.New]
+        enabled: !window.modalOpen
+        onActivated: window.confirmDiscard(() => window.app.newDocument())
+    }
+    Shortcut { sequence: "Ctrl+,"; enabled: !window.modalOpen; onActivated: preferencesOverlay.open() }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
-    Shortcut { sequence: "F1"; onActivated: helpOverlay.toggle() }
+    Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
     Shortcut {
         sequence: "K"
@@ -110,7 +122,9 @@ ApplicationWindow {
     onClosing: (close) => {
         if (app.dirty && !closeConfirmed) {
             close.accepted = false
-            confirmDiscard(() => { window.closeConfirmed = true; window.close() })
+            // Don't Save: the user lets go of the work, so no recovery copy
+            // of it is kept (any other end of the run keeps one).
+            confirmDiscard(() => { window.app.discardUnsavedWork(); window.closeConfirmed = true; window.close() })
         }
     }
 
@@ -174,6 +188,8 @@ ApplicationWindow {
 
     Menu {
         id: fileMenu
+        objectName: "fileMenu"
+        onAboutToShow: window.app.refreshRecentFiles() // a file deleted meanwhile drops out
         onClosed: window.focusViewUnlessPanel()
         // Sub-menu entries are made by this delegate: name them for the acceptance run.
         delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
@@ -182,7 +198,9 @@ ApplicationWindow {
         Menu {
             id: recentMenu
             objectName: "openRecentMenu"
-            onClosed: window.focusViewUnlessPanel()
+            // Only when the File menu closes too: Esc on this sub-menu goes
+            // back to the File menu, whose own Esc must still reach it.
+            onClosed: if (!fileMenu.opened) window.focusViewUnlessPanel()
             title: "Open Recent"
             enabled: window.app.recentFiles.length > 0
             Instantiator {

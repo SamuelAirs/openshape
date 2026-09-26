@@ -29,8 +29,11 @@ class RecoverySession {
 public:
     // Creates the folder and takes this session's lock.
     explicit RecoverySession(const QString& directory);
-    // A clean exit: removes this session's copy and lock and lets go of the
-    // other sessions' locks it took (their copies stay for the next start).
+    // The run ends: releases this session's lock and the other sessions'
+    // locks it took (their copies stay for the next start). This session's
+    // copy is removed, unless setKeepCopy(true): then it stays and the next
+    // start offers it like a crashed run's (unsaved work the user did not let
+    // go of, e.g. when iPadOS ends the app).
     ~RecoverySession();
     RecoverySession(const RecoverySession&) = delete;
     RecoverySession& operator=(const RecoverySession&) = delete;
@@ -43,6 +46,9 @@ public:
     Status write(const doc::Document& document, const io::RecoveryInfo& info);
     bool hasCopy() const { return store_.exists(session_); }
     void removeCopy();
+    // Whether the destructor leaves this session's copy for the next start.
+    void setKeepCopy(bool keep) { keepCopy_ = keep; }
+    bool keepsCopy() const { return keepCopy_; }
 
     // Copies left by sessions whose app is no longer running, newest first.
     // Their locks are taken and kept, so a second instance starting at the
@@ -50,8 +56,9 @@ public:
     // files, locks of dead sessions without a copy).
     std::vector<io::RecoveryEntry> findOrphans();
     // Restoring: the orphan's copy becomes this session's (it stays until the
-    // document is saved or discarded) and its lock is released.
-    Status adopt(const std::string& orphan);
+    // document is saved or discarded), with `info` (its sidecar as offered)
+    // as this session's sidecar, and its lock is released.
+    Status adopt(const std::string& orphan, const io::RecoveryInfo& info);
     // Deletes an orphan's copy and releases its lock.
     Status discard(const std::string& orphan);
     // "Decide later": releases the orphans' locks; their copies stay.
@@ -65,6 +72,7 @@ private:
     std::string session_;
     std::unique_ptr<QLockFile> lock_;
     std::map<std::string, std::unique_ptr<QLockFile>> orphanLocks_;
+    bool keepCopy_ = false;
 };
 
 } // namespace os::ui

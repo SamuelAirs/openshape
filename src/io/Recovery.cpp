@@ -69,6 +69,18 @@ void removeQuietly(const std::filesystem::path& path)
     std::filesystem::remove(path, ec);
 }
 
+// Shown a few seconds after an ordinary edit, with no Save pressed: it must
+// not read like the user's Save failed.
+constexpr const char* kRecoveryWriteFailed =
+    "Unable to keep a recovery copy of your unsaved work: the app's data folder is full or not writable. "
+    "Your file is not affected; save to keep your work.";
+
+Status recoveryWriteFailure(const Status& cause)
+{
+    return Status::failure(cause.error(), kRecoveryWriteFailed,
+                           "recovery copy: " + cause.developerMessage() + " (" + cause.userMessage() + ")");
+}
+
 } // namespace
 
 std::int64_t unixTimeMs()
@@ -168,16 +180,18 @@ Status RecoveryStore::write(const std::string& session, const doc::Document& doc
     std::error_code ec;
     std::filesystem::create_directories(dir_, ec);
     if (ec)
-        return Status::failure(ErrorCode::FileWriteError, "Unable to keep a recovery copy: the app's data folder is not writable.",
+        return Status::failure(ErrorCode::FileWriteError, kRecoveryWriteFailed,
                                "create_directories " + pathString(dir_) + ": " + ec.message());
     SaveOptions options;
     options.includeGeometryCache = false; // rebuilt on load; keeps copies small and quick
     options.announce = false;
     if (Status s = saveProject(document, projectFile(session), options); !s)
-        return s;
+        return recoveryWriteFailure(s);
     if (info.savedAtMs == 0)
         info.savedAtMs = unixTimeMs();
-    return writeFileAtomically(sidecarFile(session), recoverySidecarJson(info));
+    if (Status s = writeFileAtomically(sidecarFile(session), recoverySidecarJson(info)); !s)
+        return recoveryWriteFailure(s);
+    return okStatus();
 }
 
 bool RecoveryStore::exists(const std::string& session) const
@@ -247,7 +261,7 @@ Status RecoveryStore::remove(const std::string& session) const
     return result;
 }
 
-Status RecoveryStore::adopt(const std::string& from, const std::string& to) const
+Status RecoveryStore::adopt(const std::string& from, const std::string& to, const RecoveryInfo& info) const
 {
     if (!isRecoverySessionName(from) || !isRecoverySessionName(to) || from == to)
         return Status::failure(ErrorCode::InvalidArgument, "Unable to keep the recovery copy.", "bad sessions " + from + " -> " + to);
@@ -259,11 +273,16 @@ Status RecoveryStore::adopt(const std::string& from, const std::string& to) cons
     if (ec)
         return Status::failure(ErrorCode::FileWriteError, "Unable to keep the recovery copy.",
                                "rename " + pathString(projectFile(from)) + ": " + ec.message());
+    // The new sidecar is written, not moved: a rename can fail while another
+    // program holds the file, and a copy without its sidecar would lose the
+    // user's file path at the next crash.
+    if (Status s = writeFileAtomically(sidecarFile(to), recoverySidecarJson(info)); !s)
+        return Status::failure(ErrorCode::FileWriteError, "Unable to keep the recovery copy.",
+                               "sidecar of " + to + ": " + s.developerMessage());
     std::error_code sidecarError;
-    if (std::filesystem::exists(sidecarFile(from), sidecarError))
-        std::filesystem::rename(sidecarFile(from), sidecarFile(to), sidecarError);
-    if (sidecarError)
-        OS_LOG(Warning, File) << "recovery sidecar not moved: " << sidecarError.message();
+    std::filesystem::remove(sidecarFile(from), sidecarError);
+    if (sidecarError) // a leftover: removeLeftovers deletes it once it is free
+        OS_LOG(Warning, File) << "old recovery sidecar not removed yet: " << sidecarError.message();
     return okStatus();
 }
 

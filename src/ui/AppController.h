@@ -75,7 +75,8 @@ class AppController : public QObject {
     // Recovery copies left by a crashed run, offered for restoring
     // ({session, title, detail, time}); empty once each is restored or discarded.
     Q_PROPERTY(QVariantList recoveryItems READ recoveryItems NOTIFY recoveryChanged)
-    // File → Open Recent: {path, name, folder}, most recent first, existing files only.
+    // File → Open Recent: {path, name, folder}, most recent first, existing
+    // files only (as of the last refreshRecentFiles(), open or save).
     Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
     // File → Preferences… (stored in QSettings, applied at once).
     Q_PROPERTY(QString defaultUnit READ defaultUnit WRITE setDefaultUnit NOTIFY preferencesChanged)
@@ -129,7 +130,7 @@ public:
     int sketchCount() const { return int(document_->sketches().size()); }
     QVariantList history() const;
     QVariantList recoveryItems() const;
-    QVariantList recentFiles() const;
+    QVariantList recentFiles() const { return recentFiles_; }
     QString defaultUnit() const;
     void setDefaultUnit(const QString& symbol);
     bool sketchGridSnap() const { return preferences_.sketchGridSnap; }
@@ -141,7 +142,9 @@ public:
     // Starts this run's recovery session in `directory`; until then no copies
     // are written. While the document has unsaved changes, a copy is written
     // kRecoveryDebounceMs after edits settle and at least every
-    // recoveryInterval() seconds; it is removed on Save, New, Open and exit.
+    // recoveryInterval() seconds; it is removed on Save, New, Open and
+    // discardUnsavedWork(). At the end of the run (endRecovery) it stays if
+    // the document still has unsaved changes.
     void startRecovery(const QString& directory);
     RecoverySession* recoverySession() const { return recovery_.get(); }
     // Looks for copies left by crashed runs (fills recoveryItems).
@@ -155,11 +158,24 @@ public:
     Q_INVOKABLE void postponeRecovery();
     // Writes this run's copy now if there are unsaved changes not in it yet.
     void writeRecoveryCopy();
+    // "Don't Save" when closing the window: the user lets go of the unsaved
+    // work, so its copy is removed and none is kept at exit (unless there are
+    // edits after this).
+    Q_INVOKABLE void discardUnsavedWork();
+    // The run ends (QCoreApplication::aboutToQuit; the destructor for exits
+    // that skip it). Unsaved work the user did not discard stays as a
+    // recovery copy (brought up to date first) that the next start offers:
+    // iPadOS may end the app at any time, Windows when the user logs off.
+    // Otherwise the copy is removed. Runs once.
+    void endRecovery();
     // This run's copy ("" when there is none).
     QString recoveryCopyFile() const;
 
     Q_INVOKABLE bool openRecent(const QString& path);
     Q_INVOKABLE void clearRecentFiles();
+    // Rereads the list and drops files that are gone (e.g. deleted in
+    // Explorer while the app runs); the File menu calls it as it opens.
+    Q_INVOKABLE void refreshRecentFiles();
 
     Q_INVOKABLE void newDocument();
     Q_INVOKABLE bool openProject(const QUrl& url);
@@ -231,6 +247,8 @@ private:
     void noteEdits();
     void stopRecoveryTimers();
     void rememberRecentFile(const QString& path);
+    // Recomputes recentFiles_ from the settings and the disk; emits on change.
+    void updateRecentFiles();
     void savePreferences() const;
 
     std::unique_ptr<doc::Document> document_;
@@ -244,7 +262,10 @@ private:
     QTimer recoveryDeadline_; // at least this often while editing
     std::uint64_t seenRevision_ = 0;  // undo-stack revision at the last noteEdits()
     std::uint64_t copyRevision_ = ~std::uint64_t(0); // revision in this run's copy (~0: none)
+    std::uint64_t discardedRevision_ = ~std::uint64_t(0); // revision the user chose Don't Save at
     bool recoveryWarned_ = false;
+    bool recoveryEnded_ = false;
+    QVariantList recentFiles_;
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
     bool touchMode_ = true;
 #else

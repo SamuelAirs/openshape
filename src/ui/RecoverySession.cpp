@@ -38,7 +38,8 @@ RecoverySession::RecoverySession(const QString& directory)
 
 RecoverySession::~RecoverySession()
 {
-    removeCopy();
+    if (!keepCopy_)
+        removeCopy();
     releaseOrphans();
     lock_.reset(); // QLockFile's destructor unlocks, which removes the lock file
 }
@@ -100,12 +101,12 @@ std::vector<io::RecoveryEntry> RecoverySession::findOrphans()
     return orphans;
 }
 
-Status RecoverySession::adopt(const std::string& orphan)
+Status RecoverySession::adopt(const std::string& orphan, const io::RecoveryInfo& info)
 {
     if (orphan == session_ || isAlive(orphan))
         return Status::failure(ErrorCode::InvalidArgument, "That work is open in another OpenShape window.",
                                "adopt a live session " + orphan);
-    Status status = store_.adopt(orphan, session_);
+    Status status = store_.adopt(orphan, session_, info);
     if (status)
         orphanLocks_.erase(orphan);
     return status;

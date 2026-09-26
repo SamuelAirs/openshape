@@ -70,12 +70,20 @@ AppController::AppController(QObject* parent)
             if (state != Qt::ApplicationActive)
                 writeRecoveryCopy(); // no-op when the copy is current or copies are off
         });
+    // Emitted before the process ends, even when Windows ends it right after
+    // (logging off).
+    if (auto* core = QCoreApplication::instance())
+        connect(core, &QCoreApplication::aboutToQuit, this, &AppController::endRecovery);
 
+    updateRecentFiles();
     attach();
     interaction_->fitAll(false);
 }
 
-AppController::~AppController() = default;
+AppController::~AppController()
+{
+    endRecovery(); // exits that skip aboutToQuit (iPadOS unwinds out of exec())
+}
 
 void AppController::attach()
 {
@@ -685,6 +693,7 @@ void AppController::documentReplaced()
     if (recovery_)
         recovery_->removeCopy();
     copyRevision_ = ~std::uint64_t(0);
+    discardedRevision_ = ~std::uint64_t(0);
     seenRevision_ = undoStack_->revision();
 }
 
@@ -717,7 +726,9 @@ void AppController::noteEdits()
 void AppController::writeRecoveryCopy()
 {
     stopRecoveryTimers();
-    if (!recovery_ || preferences_.recoveryIntervalSeconds <= 0 || !dirty() || copyRevision_ == undoStack_->revision())
+    const std::uint64_t revision = undoStack_->revision();
+    if (!recovery_ || preferences_.recoveryIntervalSeconds <= 0 || !dirty() || copyRevision_ == revision
+        || discardedRevision_ == revision)
         return;
     io::RecoveryInfo info;
     info.originalPath = path_.toStdString();
@@ -732,6 +743,30 @@ void AppController::writeRecoveryCopy()
         return;
     }
     copyRevision_ = undoStack_->revision();
+}
+
+void AppController::discardUnsavedWork()
+{
+    stopRecoveryTimers();
+    if (recovery_)
+        recovery_->removeCopy();
+    copyRevision_ = ~std::uint64_t(0);
+    discardedRevision_ = undoStack_->revision();
+}
+
+void AppController::endRecovery()
+{
+    if (!recovery_ || recoveryEnded_)
+        return;
+    recoveryEnded_ = true;
+    stopRecoveryTimers();
+    const bool keep = preferences_.recoveryIntervalSeconds > 0 && dirty() && discardedRevision_ != undoStack_->revision();
+    if (keep)
+        writeRecoveryCopy();
+    recovery_->setKeepCopy(keep && recovery_->hasCopy());
+    if (recovery_->keepsCopy())
+        OS_LOG(Info, File) << "the run ends with unsaved changes; recovery copy kept for the next start: "
+                           << recoveryCopyFile().toStdString();
 }
 
 QString AppController::recoveryCopyFile() const
@@ -791,7 +826,7 @@ bool AppController::restoreRecovery(const QString& sessionText)
     path_ = QString::fromStdString(entry.info.originalPath);
     documentReplaced();
     // The copy stays (now as this run's) until the document is saved or discarded.
-    if (const Status adopted = recovery_->adopt(session); adopted) {
+    if (const Status adopted = recovery_->adopt(session, entry.info); adopted) {
         copyRevision_ = undoStack_->revision();
     } else {
         OS_LOG(Warning, File) << "restoring " << session << ": " << adopted.developerMessage();
@@ -850,7 +885,7 @@ std::vector<std::string> toStd(const QStringList& list)
 }
 } // namespace
 
-QVariantList AppController::recentFiles() const
+void AppController::updateRecentFiles()
 {
     QSettings settings;
     QVariantList list;
@@ -862,7 +897,15 @@ QVariantList AppController::recentFiles() const
         map.insert(QStringLiteral("folder"), info.absoluteDir().dirName());
         list.append(map);
     }
-    return list;
+    if (list == recentFiles_)
+        return; // the menu keeps its items
+    recentFiles_ = list;
+    emit recentFilesChanged();
+}
+
+void AppController::refreshRecentFiles()
+{
+    updateRecentFiles();
 }
 
 void AppController::rememberRecentFile(const QString& path)
@@ -872,14 +915,14 @@ void AppController::rememberRecentFile(const QString& path)
     for (const std::string& f : io::withRecentFile(toStd(loadRecentFiles(settings)), QFileInfo(path).absoluteFilePath().toStdString()))
         files.append(QString::fromStdString(f));
     saveRecentFiles(settings, files);
-    emit recentFilesChanged();
+    updateRecentFiles();
 }
 
 bool AppController::openRecent(const QString& path)
 {
     const bool opened = openProject(QUrl::fromLocalFile(path));
     if (!opened)
-        emit recentFilesChanged(); // a file that is gone drops out of the list
+        updateRecentFiles(); // a file that is gone drops out of the list
     return opened;
 }
 
@@ -887,7 +930,7 @@ void AppController::clearRecentFiles()
 {
     QSettings settings;
     saveRecentFiles(settings, {});
-    emit recentFilesChanged();
+    updateRecentFiles();
 }
 
 void AppController::savePreferences() const

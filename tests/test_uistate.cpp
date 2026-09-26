@@ -233,7 +233,7 @@ TEST(RecoverySession, CrashedSessionIsOfferedOnceAndCanBeRestored)
     }
 
     // Restore: the copy becomes b's and stays until saved or discarded.
-    ASSERT_TRUE(b.adopt(crashed).ok());
+    ASSERT_TRUE(b.adopt(crashed, orphans[0].info).ok());
     EXPECT_TRUE(b.hasCopy());
     EXPECT_NEAR(copyVolume(b.store().projectFile(b.session())), 8000.0, 1e-6);
     EXPECT_FALSE(b.store().exists(crashed));
@@ -242,6 +242,37 @@ TEST(RecoverySession, CrashedSessionIsOfferedOnceAndCanBeRestored)
     EXPECT_TRUE(c.findOrphans().empty()) << "b is running: the adopted copy is b's now";
     b.removeCopy(); // saved
     EXPECT_FALSE(b.hasCopy());
+}
+
+TEST(RecoverySession, KeptCopyIsOfferedAtTheNextStart)
+{
+    // The run ends with unsaved work the user did not discard (iPadOS ended
+    // the app, Windows logged off): the copy and its sidecar stay, the lock goes.
+    QTemporaryDir dir;
+    auto a = std::make_unique<RecoverySession>(dir.path());
+    ASSERT_TRUE(a->write(*cube(20), {"C:/parts/cube.openshape", "cube", 0, "0.1.0"}).ok());
+    const std::string session = a->session();
+    const QString lock = lockOf(*a, session);
+    a->setKeepCopy(true);
+    a.reset();
+    EXPECT_FALSE(QFile::exists(lock)) << "the lock is released";
+
+    RecoverySession next(dir.path());
+    const auto orphans = next.findOrphans();
+    ASSERT_EQ(orphans.size(), 1u) << "offered like a crashed run's copy";
+    EXPECT_EQ(orphans[0].session, session);
+    EXPECT_EQ(orphans[0].info.originalPath, "C:/parts/cube.openshape");
+    EXPECT_NEAR(copyVolume(orphans[0].projectFile), 8000.0, 1e-6);
+
+    // Without the flag (saved, or Don't Save) the copy goes with the session.
+    auto b = std::make_unique<RecoverySession>(dir.path());
+    ASSERT_TRUE(b->write(*cube(5), {}).ok());
+    ASSERT_TRUE(b->hasCopy());
+    const auto bCopy = b->store().projectFile(b->session());
+    b->setKeepCopy(true);
+    b->setKeepCopy(false);
+    b.reset();
+    EXPECT_FALSE(std::filesystem::exists(bCopy));
 }
 
 TEST(RecoverySession, DiscardAndDecideLater)

@@ -32,26 +32,42 @@ bool sameRecentPath(const std::string& a, const std::string& b)
     return normalized(a) == normalized(b);
 }
 
-std::vector<std::string> withRecentFile(std::vector<std::string> list, const std::string& path, std::size_t limit)
+bool recentFileExists(const std::string& path)
 {
-    if (path.empty())
+    std::error_code ec;
+    return !path.empty() && std::filesystem::is_regular_file(std::filesystem::path(std::u8string(path.begin(), path.end())), ec);
+}
+
+std::vector<std::string> withRecentFile(std::vector<std::string> list, const std::string& path, std::size_t limit,
+                                        const RecentFileExists& exists)
+{
+    if (path.empty() || limit == 0)
         return list;
-    std::erase_if(list, [&](const std::string& entry) { return entry.empty() || sameRecentPath(entry, path); });
-    list.insert(list.begin(), path);
-    if (list.size() > limit)
-        list.resize(limit);
-    return list;
+    std::vector<std::string> out{path};
+    std::size_t existing = 0, missing = 0;
+    (exists(path) ? existing : missing) += 1;
+    for (std::string& entry : list) {
+        if (existing >= limit)
+            break; // the menu is full: everything older drops out
+        if (entry.empty() || sameRecentPath(entry, path))
+            continue;
+        if (exists(entry)) {
+            out.push_back(std::move(entry));
+            ++existing;
+        } else if (missing < limit) {
+            out.push_back(std::move(entry));
+            ++missing;
+        }
+    }
+    return out;
 }
 
 std::vector<std::string> existingRecentFiles(const std::vector<std::string>& list)
 {
     std::vector<std::string> out;
-    for (const std::string& entry : list) {
-        std::error_code ec;
-        const std::filesystem::path path(std::u8string(entry.begin(), entry.end()));
-        if (!entry.empty() && std::filesystem::is_regular_file(path, ec))
+    for (const std::string& entry : list)
+        if (recentFileExists(entry))
             out.push_back(entry);
-    }
     return out;
 }
 

@@ -422,18 +422,31 @@ watches `UndoStack::revision()` (bumped by push/undo/redo/clear) on every
 at least every `recoveryInterval` (Preferences; 0 = off), and at once when
 the app stops being the active one (`applicationStateChanged`: another
 window, or the iPad home screen, after which iPadOS may end the app). Save, New,
-Open, undo back to the saved state and a clean exit (the session's
-destructor) remove it. At startup (not in automated runs)
+Open, undo back to the saved state and "Don't Save" (closing the window
+calls `discardUnsavedWork()`) remove it. **The rule at exit:** the copy is
+deleted only when the user let go of the work. `endRecovery()` (on
+`aboutToQuit`, and from the destructor for exits that skip it, such as
+iPadOS unwinding out of `exec()`) keeps it when the document still has
+unsaved changes that were not discarded: it brings the copy up to date and
+sets `RecoverySession::setKeepCopy`, so the session's destructor releases
+the lock but leaves the files, and the next start offers them like a
+crashed run's. Any exit that does not go through the window's close
+question (iPadOS ending the app, Windows logging off, `QCoreApplication::exit`)
+therefore keeps the work. At startup (not in automated runs)
 `checkForRecovery()` fills `recoveryItems`, which `RecoveryOverlay.qml`
 shows; Restore opens the copy as an unsaved document (`UndoStack::setModified`)
-with its original path and adopts the file as this session's copy.
+with its original path and adopts the file as this session's copy (the copy
+is moved; its sidecar is written anew from what the prompt showed, so a
+sidecar another program holds cannot lose the original path).
 Measured (bench_session): a copy of a 21-body, 1528-face model takes about
 8-10 ms on the GUI thread (a full save with the geometry cache: 234 ms), so
 no worker thread is used.
 
 **Settings** (`ui/AppSettings`, QSettings): preferences (default unit for
 new documents, sketch grid snapping, recovery interval), recent files
-(`io/RecentFiles`: most recent first, 10, existing files only) and the
+(`io/RecentFiles`: most recent first; the menu shows the 10 newest that
+exist, and a file that is gone never pushes an existing one out; the File
+menu rereads the list as it opens, `refreshRecentFiles()`) and the
 window's place (frame + client rectangle + maximized; restored by client
 area and clamped to today's screens by `fitToScreens`). `main.cpp` points
 QSettings at a temporary INI file (and recovery copies at a temporary
@@ -445,6 +458,10 @@ folder) for `--acceptance`, `--demo` and `--screenshot`, or at
 clickable by the acceptance run): `UnsavedOverlay` (Save / Don't Save /
 Cancel before New, Open, Open Recent, Restore and closing),
 `RecoveryOverlay`, `PreferencesOverlay`, `AboutOverlay`, `HelpOverlay`.
+While `UnsavedOverlay` or `RecoveryOverlay` is shown (`window.modalOpen`)
+the window's shortcuts are disabled, as behind a native modal dialog, and
+`UnsavedOverlay.ask()` ignores a second request: the pending action is the
+one the user is being asked about.
 Only file choosers stay native (`FileDialog`). After a menu or overlay
 closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
 them on a hidden menu separator after the Open Recent sub-menu).
@@ -466,7 +483,8 @@ them on a hidden menu separator after the Open Recent sub-menu).
   touch layout, the About box, trim/slot/fillet/offset in a sketch,
   symmetric and up-to-face extrusions, a fillet carried by a push, a hole
   resized by its diameter and deleted; scenarios `recovery` (a real crash
-  of a second OpenShape via `--simulate-crash`, the restore prompt),
+  of a second OpenShape via `--simulate-crash`, the restore prompt, and a
+  second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent` and `preferences`. `clickItem` lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).

@@ -406,6 +406,9 @@ int main(int argc, char* argv[])
                                      QStringLiteral("dir"));
     QCommandLineOption simulateCrashOption(QStringLiteral("simulate-crash"),
                                            QStringLiteral("Test crash recovery: add a box, write its recovery copy, then crash."));
+    QCommandLineOption simulateQuitOption(QStringLiteral("simulate-quit"),
+                                          QStringLiteral("Test recovery: add a box, then quit without asking (as when iPadOS ends "
+                                                         "the app); the unsaved box stays as a recovery copy."));
     parser.addOption(scenarioOption);
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
@@ -414,6 +417,7 @@ int main(int argc, char* argv[])
     parser.addOption(screenshotOption);
     parser.addOption(dataDirOption);
     parser.addOption(simulateCrashOption);
+    parser.addOption(simulateQuitOption);
     parser.addPositionalArgument(QStringLiteral("project"), QStringLiteral("Project file to open."), QStringLiteral("[project]"));
     parser.process(application);
 
@@ -458,6 +462,17 @@ int main(int argc, char* argv[])
         controller.writeRecoveryCopy();
         OS_LOG(Info, App) << "simulating a crash; recovery copy " << controller.recoveryCopyFile().toStdString();
         os::app::simulateCrash();
+    }
+    if (parser.isSet(simulateQuitOption)) {
+        // No window: an unsaved box, then the app is told to quit (no copy has
+        // been written yet: edits settle for 3 s first).
+        os::ui::AppController controller;
+        controller.startRecovery(recoveryDir);
+        controller.createBox(20);
+        QTimer::singleShot(0, &controller, [] { QCoreApplication::exit(0); });
+        const int result = QGuiApplication::exec();
+        OS_LOG(Info, App) << "OpenShape exits normally";
+        return result;
     }
 
     // Automated runs (acceptance, demos, screenshots) take turns: the

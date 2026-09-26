@@ -62,7 +62,8 @@ public:
     std::filesystem::path lockFile(const std::string& session) const;
 
     // Writes the session's copy (creating the folder), then its sidecar, each
-    // atomically. info.savedAtMs == 0 means "now".
+    // atomically. info.savedAtMs == 0 means "now". A failure says it is only
+    // the recovery copy (the user's file is not affected).
     Status write(const std::string& session, const doc::Document& document, RecoveryInfo info) const;
     bool exists(const std::string& session) const;
     // Every copy in the folder (with or without a readable sidecar), newest first.
@@ -72,9 +73,13 @@ public:
     std::vector<RecoveryEntry> orphaned(const IsAlive& isAlive, const std::string& ownSession) const;
     // Removes a session's copy and sidecar (not its lock). Missing files are fine.
     Status remove(const std::string& session) const;
-    // Moves session `from`'s copy and sidecar to session `to` (replacing
-    // `to`'s): a restored document keeps its copy under the new owner.
-    Status adopt(const std::string& from, const std::string& to) const;
+    // Moves session `from`'s copy to session `to` (replacing `to`'s) and
+    // writes `to`'s sidecar from `info` (what was read from `from`'s): a
+    // restored document keeps its copy, and its original file, under the new
+    // owner even if `from`'s sidecar cannot be moved (a virus scanner holding
+    // it); that one is removed now or later as a leftover. Fails if the new
+    // sidecar cannot be written (the caller then writes a fresh copy).
+    Status adopt(const std::string& from, const std::string& to, const RecoveryInfo& info) const;
     // Deletes half-written temporary files and sidecars without a copy that
     // belong to sessions that are not alive. Returns how many files it removed.
     int removeLeftovers(const IsAlive& isAlive, const std::string& ownSession) const;

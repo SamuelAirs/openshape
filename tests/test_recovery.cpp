@@ -230,7 +230,7 @@ TEST(Recovery, RemoveAndAdopt)
     ASSERT_TRUE(store.write(mine, *cubeDocument(20), {}).ok());
 
     // Restoring moves the crashed session's copy to ours (replacing ours).
-    ASSERT_TRUE(store.adopt(crashed, mine).ok());
+    ASSERT_TRUE(store.adopt(crashed, mine, info).ok());
     EXPECT_FALSE(store.exists(crashed));
     EXPECT_FALSE(std::filesystem::exists(store.sidecarFile(crashed)));
     ASSERT_TRUE(store.exists(mine));
@@ -242,14 +242,58 @@ TEST(Recovery, RemoveAndAdopt)
     ASSERT_TRUE(loaded.ok());
     EXPECT_NEAR(geom::volume(loaded.value()->bodies().front()->shape()), 1000.0, 1e-6);
 
-    EXPECT_FALSE(store.adopt(crashed, mine).ok()) << "nothing left to adopt";
-    EXPECT_FALSE(store.adopt(mine, mine).ok());
-    EXPECT_FALSE(store.adopt("../x", mine).ok());
+    EXPECT_FALSE(store.adopt(crashed, mine, info).ok()) << "nothing left to adopt";
+    EXPECT_FALSE(store.adopt(mine, mine, info).ok());
+    EXPECT_FALSE(store.adopt("../x", mine, info).ok());
 
     ASSERT_TRUE(store.remove(mine).ok());
     EXPECT_TRUE(store.list().empty());
     EXPECT_TRUE(store.remove(mine).ok()) << "removing twice is fine";
     EXPECT_FALSE(store.remove("..").ok());
+}
+
+TEST(Recovery, AdoptKeepsTheOriginalFileWhenTheOldSidecarIsHeld)
+{
+    // A virus scanner or the indexer holds the crashed session's sidecar: it
+    // cannot be moved or deleted (on Windows an open file cannot be). The
+    // adopted copy must still know the user's file, or a second crash would
+    // offer it as "Untitled" and Save would ask for a location.
+    TempDir dir("adoptheld");
+    const io::RecoveryStore store(dir.path);
+    const std::string crashed = session(), mine = session();
+    io::RecoveryInfo info;
+    info.title = "bracket";
+    info.originalPath = "C:/parts/bracket.openshape";
+    info.savedAtMs = 1'790'000'000'000;
+    ASSERT_TRUE(store.write(crashed, *cubeDocument(10), info).ok());
+    {
+        std::ifstream held(store.sidecarFile(crashed), std::ios::binary);
+        ASSERT_TRUE(held.is_open());
+        ASSERT_TRUE(store.adopt(crashed, mine, info).ok());
+        EXPECT_FALSE(store.exists(crashed));
+    }
+    const auto entries = store.list();
+    ASSERT_EQ(entries.size(), 1u);
+    EXPECT_EQ(entries[0].session, mine);
+    ASSERT_TRUE(entries[0].hasSidecar);
+    EXPECT_EQ(entries[0].info.originalPath, "C:/parts/bracket.openshape");
+    EXPECT_EQ(entries[0].info.title, "bracket");
+    EXPECT_EQ(entries[0].info.savedAtMs, info.savedAtMs) << "the time of the crashed work";
+    // An old sidecar left behind is cleaned up once it is free.
+    (void)store.removeLeftovers([](const std::string&) { return false; }, mine);
+    EXPECT_FALSE(std::filesystem::exists(store.sidecarFile(crashed)));
+    EXPECT_TRUE(std::filesystem::exists(store.sidecarFile(mine)));
+
+    // A copy that had no sidecar (a crash between the two writes) gets one.
+    const std::string bare = session(), next = session();
+    ASSERT_TRUE(store.write(bare, *cubeDocument(10), {}).ok());
+    std::filesystem::remove(store.sidecarFile(bare));
+    ASSERT_TRUE(store.adopt(bare, next, {}).ok());
+    const auto adopted = store.orphaned([](const std::string&) { return false; }, mine);
+    ASSERT_EQ(adopted.size(), 1u);
+    EXPECT_EQ(adopted[0].session, next);
+    EXPECT_TRUE(adopted[0].hasSidecar);
+    EXPECT_TRUE(adopted[0].info.originalPath.empty());
 }
 
 TEST(Recovery, LeftoversOfDeadSessionsAreCleanedUp)
@@ -282,8 +326,22 @@ TEST(Recovery, UnwritableFolderIsAPlainFailure)
     const auto status = store.write(session(), *cubeDocument(5), {});
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.error(), ErrorCode::FileWriteError);
-    EXPECT_FALSE(status.userMessage().empty());
+    // Shown a few seconds after an ordinary edit: it must not read like a failed Save.
+    EXPECT_NE(status.userMessage().find("recovery copy"), std::string::npos) << status.userMessage();
+    EXPECT_NE(status.userMessage().find("Your file is not affected"), std::string::npos) << status.userMessage();
+    EXPECT_FALSE(status.developerMessage().empty());
     EXPECT_FALSE(store.write("bad name", *cubeDocument(5), {}).ok());
+
+    // The folder exists but the copy cannot be written (a folder in its
+    // place): the save's own message ("Unable to save...") is not shown.
+    const io::RecoveryStore blocked(dir.path / "blocked");
+    const std::string s = session();
+    std::filesystem::create_directories(blocked.projectFile(s));
+    const auto saveFailed = blocked.write(s, *cubeDocument(5), {});
+    ASSERT_FALSE(saveFailed.ok());
+    EXPECT_NE(saveFailed.userMessage().find("recovery copy"), std::string::npos) << saveFailed.userMessage();
+    EXPECT_EQ(saveFailed.userMessage().find("Unable to save"), std::string::npos) << saveFailed.userMessage();
+    EXPECT_FALSE(saveFailed.developerMessage().empty());
 }
 
 // ---- Recent files ------------------------------------------------------------------
@@ -318,6 +376,52 @@ TEST(RecentFiles, KeepsTheLastTen)
     EXPECT_EQ(list.front(), "/p/24.openshape");
     EXPECT_EQ(list.back(), "/p/15.openshape");
     EXPECT_EQ(io::withRecentFile(list, "/p/new.openshape", 3).size(), 3u);
+}
+
+TEST(RecentFiles, FilesThatAreGoneDoNotPushExistingOnesOut)
+{
+    // Ten remembered projects, four of them deleted since: opening two more
+    // still leaves every existing one in the menu (not 7 or 8 of them).
+    std::set<std::string> gone;
+    std::vector<std::string> list;
+    for (int i = 0; i < 10; ++i)
+        list.insert(list.begin(), "/p/" + std::to_string(i) + ".openshape"); // 9 first
+    for (int i : {9, 6, 3, 1})
+        gone.insert("/p/" + std::to_string(i) + ".openshape");
+    const auto exists = [&](const std::string& p) { return !gone.contains(p); };
+    list = io::withRecentFile(list, "/p/10.openshape", io::kMaxRecentFiles, exists);
+    list = io::withRecentFile(list, "/p/11.openshape", io::kMaxRecentFiles, exists);
+    auto shownOf = [&](const std::vector<std::string>& l) {
+        std::vector<std::string> shown;
+        for (const auto& p : l)
+            if (exists(p))
+                shown.push_back(p);
+        return shown;
+    };
+    EXPECT_EQ(shownOf(list), (std::vector<std::string>{"/p/11.openshape", "/p/10.openshape", "/p/8.openshape", "/p/7.openshape",
+                                                       "/p/5.openshape", "/p/4.openshape", "/p/2.openshape", "/p/0.openshape"}))
+        << "all eight existing ones stay";
+    EXPECT_EQ(list.size(), 12u) << "the four missing ones keep their place (a USB stick may come back)";
+
+    // Four more: an existing entry drops out only once ten newer existing ones
+    // come before it (and missing ones older than that go with it).
+    for (int i = 12; i < 16; ++i)
+        list = io::withRecentFile(list, "/p/" + std::to_string(i) + ".openshape", io::kMaxRecentFiles, exists);
+    const auto shown = shownOf(list);
+    ASSERT_EQ(shown.size(), io::kMaxRecentFiles);
+    EXPECT_EQ(shown.front(), "/p/15.openshape");
+    EXPECT_EQ(shown.back(), "/p/4.openshape");
+    for (const auto& p : list) {
+        EXPECT_NE(p, "/p/2.openshape") << "older than the ten shown: dropped";
+        EXPECT_NE(p, "/p/0.openshape");
+    }
+
+    // Missing entries cannot pile up: at most `limit` of them are kept.
+    std::vector<std::string> ghosts;
+    for (int i = 0; i < 30; ++i)
+        ghosts = io::withRecentFile(ghosts, "/gone/" + std::to_string(i), 10, [](const std::string&) { return false; });
+    EXPECT_EQ(ghosts.size(), 10u);
+    EXPECT_EQ(ghosts.front(), "/gone/29");
 }
 
 TEST(RecentFiles, OnlyFilesThatStillExist)

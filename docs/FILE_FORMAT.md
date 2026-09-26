@@ -158,5 +158,8 @@ named by a lowercase UUID):
 | `<session>.lock` | A `QLockFile`: the session's app is running. A lock whose process is gone marks a crashed session, whose copy is offered for restoring. |
 
 Both files are written atomically (temp file + rename), the copy first. A
-copy without a readable sidecar is still offered (as "Untitled"). Sidecars
+copy without a readable sidecar is still offered (as "Untitled"). The copy
+stays after the app ends if the document still had unsaved changes the user
+did not discard; the next start offers it. Restoring moves the copy to the
+new session and writes that session's sidecar anew. Sidecars
 are untrusted: strict types, length limits, unknown fields ignored.

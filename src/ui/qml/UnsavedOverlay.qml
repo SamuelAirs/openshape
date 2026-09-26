@@ -21,6 +21,8 @@ Rectangle {
     property var pendingAction: null
 
     function ask(action) {
+        if (visible)
+            return // one question at a time: the pending action is the one asked about
         pendingAction = action
         visible = true
         forceActiveFocus()
