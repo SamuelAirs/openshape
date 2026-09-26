@@ -28,6 +28,11 @@ and countersinks for M2–M6 screws, a Hole tool with ISO clearance and tap
 sizes, measuring (distances, wall thickness, angles), and export to STL,
 3MF (closed, welded meshes in millimeters) and STEP.
 
+**Bring parts in, find them again.** Import STEP files from other CAD
+programs (each solid becomes a body you can push, pull, round and combine;
+inches and meters come in at the right size). A Home screen lists recent
+projects with previews saved inside each project.
+
 **Change your mind later.** Every step stays editable in the Model panel;
 undo and redo everything.
 
@@ -35,6 +40,7 @@ undo and redo everything.
 back after a crash; clear messages say what went wrong and which size
 would work.
 
-Known limitations: Windows only for now (the iPad and iPhone app is in
-development); the installer is not code-signed yet (SmartScreen warns);
-no STEP import, text or splines yet.
+Known limitations: Windows only for now (the universal iPhone and iPad
+app builds and adapts to phone, tablet and Split View windows, but waits
+for TestFlight); the installer is not code-signed yet (SmartScreen warns);
+no text or splines yet.
