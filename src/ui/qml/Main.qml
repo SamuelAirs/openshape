@@ -175,11 +175,15 @@ ApplicationWindow {
     Panel {
         id: createPanel
         visible: !window.app.sketchMode
-        anchors { left: parent.left; verticalCenter: parent.verticalCenter; margins: Theme.margin }
+        // Centered, between the top bar and whatever is at the bottom left
+        // (hints, the selection's actions); scrolls when the window is too
+        // short for every tool (touch-sized buttons on a tablet).
+        readonly property real minY: topBar.y + topBar.height + Theme.margin
+        readonly property real maxBottom: statusColumn.y - Theme.margin
+        anchors { left: parent.left; leftMargin: Theme.margin }
+        y: Math.max(minY, Math.min((window.height - height) / 2, maxBottom - height))
         width: createColumn.implicitWidth + 2 * Theme.panelPadding
-        // Scrolls when the window is too short for every tool (touch-sized
-        // buttons on a tablet): room is left for the header and the hints.
-        height: Math.min(createColumn.implicitHeight + 2 * Theme.panelPadding, window.height - 2 * Theme.margin - 150)
+        height: Math.min(createColumn.implicitHeight + 2 * Theme.panelPadding, maxBottom - minY)
 
         Flickable {
             id: createScroll
@@ -291,9 +295,10 @@ ApplicationWindow {
 
     // ---------------------------------------------------------------- view controls
     AxisTriad {
+        id: axisTriad
         objectName: "axisTriad"
         app: window.app
-        anchors { left: viewPanel.left; bottom: viewPanel.top; bottomMargin: 8 }
+        anchors { right: viewPanel.right; bottom: viewPanel.top; bottomMargin: 8 }
     }
 
     Panel {
@@ -341,23 +346,38 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- status / hints
+    // Bottom left, beside the view buttons; above them when the window is
+    // too narrow for both (e.g. an iPad in portrait).
     Column {
-        anchors { left: parent.left; bottom: parent.bottom; margins: Theme.margin }
+        id: statusColumn
+        readonly property bool stacked: viewPanel.x < window.width / 2
+            || (selectionBar.visible && Theme.margin + selectionBar.width + Theme.margin > viewPanel.x)
+        anchors { left: parent.left; bottom: stacked ? viewPanel.top : parent.bottom; margins: Theme.margin }
         spacing: 6
 
-        // What can be done with the selection when there is no manipulator
-        // (e.g. two bodies: Union / Subtract / Intersect). With a manipulator,
-        // the same actions sit in the value chip instead.
+        // What is selected and what can be done with it when there is no
+        // manipulator (e.g. two bodies: Union / Subtract / Intersect). With a
+        // manipulator, the same actions sit in the value chip instead.
         Panel {
+            id: selectionBar
             objectName: "selectionActions"
             visible: !window.app.sketchMode && window.app.contextActions.length > 0
                      && (!window.app.operationActive || !window.app.valueLabelVisible)
             width: selectionActionRow.implicitWidth + 2 * Theme.panelPadding
             height: Theme.controlHeight + 2 * Theme.panelPadding
-            Row {
+            RowLayout {
                 id: selectionActionRow
                 anchors.centerIn: parent
                 spacing: 4
+                Text {
+                    visible: window.app.selectionSummary.length > 0
+                    text: window.app.selectionSummary
+                    color: Theme.text
+                    font.pixelSize: 13
+                    leftPadding: 8
+                    rightPadding: 4
+                }
+                Separator { visible: window.app.selectionSummary.length > 0 }
                 Repeater {
                     model: window.app.contextActions
                     delegate: ActionButton {
@@ -367,19 +387,22 @@ ApplicationWindow {
                         checked: modelData.active
                         compact: true
                         onClicked: {
-                            // Triggering rebuilds this list: capture first.
+                            // Triggering rebuilds this list and destroys this
+                            // button (and its context): capture first.
                             const app = window.app
                             const id = modelData.id
+                            const view = viewport
                             app.triggerAction(id)
-                            viewport.forceActiveFocus()
+                            view.forceActiveFocus()
                         }
                     }
                 }
             }
         }
 
+        // The selection alone, while a manipulator's value chip has the actions.
         Panel {
-            visible: window.app.selectionSummary.length > 0
+            visible: window.app.selectionSummary.length > 0 && !selectionBar.visible
             width: summaryText.implicitWidth + 28
             height: 34
             Text {
@@ -391,10 +414,13 @@ ApplicationWindow {
             }
         }
         Text {
+            // Wraps instead of running under the view buttons or the axis marker.
+            width: (statusColumn.stacked ? axisTriad.x : viewPanel.x) - 2 * Theme.margin
             text: window.hintText()
             color: Theme.mutedText
             font.pixelSize: 12
             leftPadding: 4
+            wrapMode: Text.WordWrap
         }
     }
 

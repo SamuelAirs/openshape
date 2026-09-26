@@ -22,6 +22,8 @@
 #include <qpa/qwindowsysteminterface.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 namespace os::app {
@@ -158,6 +160,21 @@ bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifier
         chain.push_back(p);
     for (auto it = chain.rbegin(); it != chain.rend(); ++it)
         (*it)->ensurePolished();
+    // Scroll it into view (the tool palette scrolls in short windows).
+    for (QQuickItem* p : chain) {
+        if (p == item || !p->inherits("QQuickFlickable"))
+            continue;
+        auto* content = p->property("contentItem").value<QQuickItem*>();
+        if (!content)
+            continue;
+        const double top = item->mapToItem(content, QPointF(0, 0)).y();
+        double contentY = p->property("contentY").toDouble();
+        if (top < contentY)
+            contentY = top;
+        else if (top + item->height() > contentY + p->height())
+            contentY = top + item->height() - p->height();
+        p->setProperty("contentY", contentY);
+    }
     const QPointF center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
     OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center.x() << "," << center.y();
     click(center, mods);
@@ -170,6 +187,18 @@ QPointF AcceptanceRunner::screenPoint(double x, double y, double z) const
 {
     const Vec2 p = app_->interaction().camera().project({x, y, z});
     return {p.x, p.y};
+}
+
+const doc::Body& AcceptanceRunner::body(std::size_t index)
+{
+    const auto& bodies = app_->document().bodies();
+    if (index >= bodies.size()) {
+        check(false, QStringLiteral("body %1 exists (an earlier failure changed the model; stopping)").arg(index + 1));
+        OS_LOG(Error, App) << "acceptance: " << (checks_ - failures_) << "/" << checks_ << " checks passed (stopped)";
+        std::fflush(nullptr);
+        std::_Exit(failures_);
+    }
+    return *bodies[index];
 }
 
 double AcceptanceRunner::bodyHeight() const
@@ -486,7 +515,7 @@ void AcceptanceRunner::start()
             check(app_->bodyCount() == 2, "B adds a second body beside the plate");
         },
         [=, this] {
-            const QString box = QString::fromStdString(app_->document().bodies()[1]->id().toString());
+            const QString box = QString::fromStdString(body(1).id().toString());
             check(clickItem(QStringLiteral("historyRow_") + box), "Model panel row selects the box");
             check(app_->operationTitle() == QStringLiteral("Move"), "a selected body offers Move", app_->operationTitle());
             type(QStringLiteral("-30"));
@@ -494,13 +523,13 @@ void AcceptanceRunner::start()
         },
         [] {},
         [=, this] {
-            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            const auto bb = geom::boundingBox(body(1).shape());
             check(std::abs(bb.min.x - 40.0) < 1e-6, "typing -30 moves the box into the plate", num(bb.min.x));
-            const QString plate = QString::fromStdString(app_->document().bodies()[0]->id().toString());
+            const QString plate = QString::fromStdString(body(0).id().toString());
             check(clickItem(QStringLiteral("historyRow_") + plate), "Model panel row selects the plate");
         },
         [=, this] {
-            const QString box = QString::fromStdString(app_->document().bodies()[1]->id().toString());
+            const QString box = QString::fromStdString(body(1).id().toString());
             check(clickItem(QStringLiteral("historyRow_") + box, Qt::ShiftModifier), "Shift-click adds the box");
         },
         [=, this] {
@@ -517,10 +546,10 @@ void AcceptanceRunner::start()
             const double plate = (1800.0 - 2 * kPi * 9.0) * 5.0;
             const double overlap = (400.0 - kPi * 9.0) * 5.0;
             check(std::abs(bodyVolume() - (plate - overlap)) < 1e-3, "subtract removes the overlap", num(bodyVolume()));
-            check(!app_->document().bodies()[1]->isVisible(), "the tool body is consumed (hidden)");
+            check(!body(1).isVisible(), "the tool body is consumed (hidden)");
             screenshot(QStringLiteral("15_subtracted"));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(bodyVolume() - plate) < 1e-3 && app_->document().bodies()[1]->isVisible(),
+            check(std::abs(bodyVolume() - plate) < 1e-3 && body(1).isVisible(),
                   "undo restores both bodies", num(bodyVolume()));
         },
         // Align through the real UI: the box's front face onto the plate's top.
@@ -545,13 +574,13 @@ void AcceptanceRunner::start()
         },
         [] {},
         [=, this] {
-            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            const auto bb = geom::boundingBox(body(1).shape());
             check(std::abs(bb.min.z - 5.0) < 1e-6, "Enter: the box rests on the plate", num(bb.min.z));
             check(std::abs(bb.center().x - 30.0) < 1e-6 && std::abs(bb.center().y - 15.0) < 1e-6,
                   "centered on the plate's top face", num(bb.center().x) + "," + num(bb.center().y));
             screenshot(QStringLiteral("17_aligned"));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).min.z) < 1e-6,
+            check(std::abs(geom::boundingBox(body(1).shape()).min.z) < 1e-6,
                   "undo puts the box back");
         },
         // Rotate through the real UI: pick the box in the Model panel, Rotate,
@@ -559,7 +588,7 @@ void AcceptanceRunner::start()
         [=, this] {
             key(Qt::Key_Escape);
             key(Qt::Key_Escape);
-            const QString box = QString::fromStdString(app_->document().bodies()[1]->id().toString());
+            const QString box = QString::fromStdString(body(1).id().toString());
             check(clickItem(QStringLiteral("historyRow_") + box), "Model panel row selects the box again");
         },
         [=, this] {
@@ -588,11 +617,11 @@ void AcceptanceRunner::start()
         },
         [] {},
         [=, this] {
-            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
+            const auto bb = geom::boundingBox(body(1).shape());
             check(std::abs(bb.size().x - 20.0 * std::sqrt(2.0)) < 1e-6, "Enter: the box is turned 45 degrees",
                   num(bb.size().x));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).size().x - 20.0) < 1e-6,
+            check(std::abs(geom::boundingBox(body(1).shape()).size().x - 20.0) < 1e-6,
                   "undo turns it back");
         },
         // Pattern and Mirror through the real UI (box still selected).
@@ -604,10 +633,10 @@ void AcceptanceRunner::start()
         },
         [] {},
         [=, this] {
-            check(std::abs(geom::volume(app_->document().bodies()[1]->shape()) - 3 * 8000.0) < 1e-3,
-                  "Enter: three copies of the box", num(geom::volume(app_->document().bodies()[1]->shape())));
+            check(std::abs(geom::volume(body(1).shape()) - 3 * 8000.0) < 1e-3,
+                  "Enter: three copies of the box", num(geom::volume(body(1).shape())));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(geom::volume(app_->document().bodies()[1]->shape()) - 8000.0) < 1e-3, "undo: one box again");
+            check(std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
             check(clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
             check(app_->operationTitle() == QStringLiteral("Mirror") && !app_->operationPrompt().isEmpty(),
                   "Mirror asks for a plane", app_->operationPrompt());
@@ -621,8 +650,8 @@ void AcceptanceRunner::start()
         },
         [] {},
         [=, this] {
-            const auto bb = geom::boundingBox(app_->document().bodies()[1]->shape());
-            check(std::abs(bb.size().x - 40.0) < 1e-6 && app_->document().bodies()[1]->shape().solidCount() == 1,
+            const auto bb = geom::boundingBox(body(1).shape());
+            check(std::abs(bb.size().x - 40.0) < 1e-6 && body(1).shape().solidCount() == 1,
                   "mirrored across its face: one 40 mm block", num(bb.size().x));
             screenshot(QStringLiteral("19_mirrored"));
             key(Qt::Key_Z, Qt::ControlModifier);
@@ -780,7 +809,7 @@ void AcceptanceRunner::start()
             check(op && std::abs(op->value() - 5) < 1e-6, "the clicked top sets the distance", op ? num(op->value()) : QString());
             key(Qt::Key_Return);
             check(app_->bodyCount() == 2
-                      && std::abs(geom::boundingBox(app_->document().bodies()[1]->shape()).max.z - 5) < 1e-6,
+                      && std::abs(geom::boundingBox(body(1).shape()).max.z - 5) < 1e-6,
                   "up to face: the new block ends at z = 5");
         },
         // Round the left block's front top edge, then make the block taller: the rounding comes along.
@@ -828,7 +857,7 @@ void AcceptanceRunner::start()
         [=, this] {
             if (app_->bodyCount() < 2)
                 return; // reported by the up-to-face checks
-            holeBlockVolume_ = geom::volume(app_->document().bodies()[1]->shape());
+            holeBlockVolume_ = geom::volume(body(1).shape());
             click(screenPoint(30, 10, 5));
             type(QStringLiteral("-5"));
         },
@@ -839,7 +868,7 @@ void AcceptanceRunner::start()
             }
             check(clickItem(QStringLiteral("action_throughAll")), "through-all for the hole");
             key(Qt::Key_Return);
-            const double v = geom::volume(app_->document().bodies()[1]->shape());
+            const double v = geom::volume(body(1).shape());
             check(std::abs(holeBlockVolume_ - v - kPi * 4 * 5) < 1e-3, "a 4 mm hole through the block", num(v));
         },
         // Click the hole's wall: it offers its diameter; type a new one. (Zoomed
@@ -857,7 +886,7 @@ void AcceptanceRunner::start()
             key(Qt::Key_Return);
             if (app_->bodyCount() < 2)
                 return;
-            const double v = geom::volume(app_->document().bodies()[1]->shape());
+            const double v = geom::volume(body(1).shape());
             check(std::abs(holeBlockVolume_ - v - kPi * 6.25 * 5) < 1e-3, "the hole is now 5 mm", num(v));
         },
         // Select the wall again and press Delete: the hole is gone.
@@ -868,7 +897,7 @@ void AcceptanceRunner::start()
             key(Qt::Key_Delete);
             if (app_->bodyCount() < 2)
                 return;
-            const double v = geom::volume(app_->document().bodies()[1]->shape());
+            const double v = geom::volume(body(1).shape());
             check(std::abs(v - holeBlockVolume_) < 1e-3, "Delete removes the hole", num(v));
             screenshot(QStringLiteral("22_face_edits"));
         },

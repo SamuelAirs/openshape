@@ -289,7 +289,11 @@ int main(int argc, char* argv[])
                                         QStringLiteral("dir"));
     QCommandLineOption touchOption(QStringLiteral("touch"),
                                    QStringLiteral("Start with the touch layout (as on a tablet): larger controls, Pen switch."));
+    QCommandLineOption sizeOption(QStringLiteral("size"),
+                                  QStringLiteral("Window size in logical pixels, e.g. 1180x820 (an 11-inch iPad in landscape)."),
+                                  QStringLiteral("WxH"));
     parser.addOption(touchOption);
+    parser.addOption(sizeOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
     parser.addOption(screenshotOption);
@@ -309,6 +313,15 @@ int main(int argc, char* argv[])
         return 1;
     }
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    if (parser.isSet(sizeOption)) {
+        const QStringList wh = parser.value(sizeOption).split(QLatin1Char('x'));
+        if (wh.size() == 2 && wh[0].toInt() > 0 && wh[1].toInt() > 0) {
+            window->setMinimumSize({}); // allow phone-sized checks below the usual minimum
+            window->resize(wh[0].toInt(), wh[1].toInt());
+        } else {
+            OS_LOG(Warning, App) << "--size expects WxH, e.g. 1180x820";
+        }
+    }
 
     if (!parser.positionalArguments().isEmpty())
         controller.openProject(QUrl::fromLocalFile(parser.positionalArguments().constFirst()));

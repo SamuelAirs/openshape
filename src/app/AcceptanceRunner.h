@@ -16,6 +16,9 @@ class QQuickWindow;
 namespace os::ui {
 class AppController;
 }
+namespace os::doc {
+class Body;
+}
 
 namespace os::app {
 
@@ -46,9 +49,14 @@ private:
     void type(const QString& text);
     // A quick multi-finger tap through Qt's touch path (fingers at `points`).
     void touchTap(const QList<QPointF>& points);
-    // Clicks the center of a QML item found by objectName; false if not found/visible.
+    // Clicks the center of a QML item found by objectName, first scrolling any
+    // Flickable around it (the tool palette in a short window) so it is on
+    // screen, as a user would; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
 
+    // The document's body `index`. If an earlier failure left fewer bodies,
+    // records a failure and ends the run (instead of undefined behaviour).
+    const doc::Body& body(std::size_t index);
     QPointF screenPoint(double x, double y, double z) const;
     double bodyHeight() const;
     double bodyVolume() const;
