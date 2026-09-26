@@ -901,8 +901,9 @@ Status InteractionController::commitOperation()
                                              : "Mirrored as a separate body.";
     if (const auto* pattern = dynamic_cast<const PatternOperation*>(operation_.get()); pattern && pattern->separate()) {
         const int copies = pattern->count() - 1;
+        const char* why = copies == 1 ? ": the copy does not touch the original." : ": the copies do not touch the original.";
         done = "Patterned as " + std::to_string(copies) + (copies == 1 ? " separate body" : " separate bodies")
-             + (pattern->separateIsAutomatic() ? std::string(": the copies do not touch the original.") : std::string("."));
+             + (pattern->separateIsAutomatic() ? why : ".");
     }
     const Uuid target = operation_->bodyId();
     const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);

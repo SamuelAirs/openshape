@@ -1051,6 +1051,45 @@ TEST(Copies, CopyCanBeSubtractedFromItsSource)
     EXPECT_FALSE(h.document.body(b)->isVisible());
 }
 
+// A body with a failed step cannot be copied (the copy's own steps could not
+// be built): the mirror is refused with a message and nothing changes.
+TEST(Copies, SourceWithAFailedStepIsRefused)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {5, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(
+        h.stack.push(std::make_unique<cmd::AddFeatureCommand>(a, filletVertical(h.document.body(a)->shape(), 1.0)), h.document).ok());
+    const Uuid fillet = h.document.body(a)->features()[1]->id();
+    ASSERT_TRUE(h.controller.setFeatureParameter(fillet, "size", "20").ok()); // kept, and failing
+    ASSERT_TRUE(h.document.body(a)->hasFailures());
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok());
+    const auto* mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_TRUE(mirror && mirror->separate());
+    h.messages.clear();
+    EXPECT_FALSE(h.controller.triggerAction("apply").ok());
+    EXPECT_TRUE(h.saw("Unable to copy this body: one of its steps failed.")) << (h.messages.empty() ? "" : h.messages.back());
+    EXPECT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_EQ(h.document.sketches().size(), 0u);
+    EXPECT_EQ(h.stack.undoLabel(), "Change size");
+}
+
+// Pattern with one copy: the message speaks of one.
+TEST(Copies, PatternOfTwoSaysOneBody)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("pattern").ok());
+    ASSERT_TRUE(h.controller.triggerAction("fewer").ok());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_TRUE(h.saw("Patterned as 1 separate body: the copy does not touch the original."))
+        << (h.messages.empty() ? "" : h.messages.back());
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    expectBox(geom::boundingBox(h.document.bodies()[1]->shape()), {15, 0, 0}, {25, 10, 10});
+}
+
 TEST(Copies, TooManySeparateBodiesAreRefused)
 {
     Harness h;
