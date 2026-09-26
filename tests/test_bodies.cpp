@@ -1281,3 +1281,51 @@ TEST(RotateAbout, RingOverAShaftPicksItsAxis)
     EXPECT_NEAR(rotate->center().y, 0.0, 1e-6);
     EXPECT_EQ(rotate->ringCount(), 1);
 }
+
+// Model panel rows: a click replaces the selection, Shift-click toggles, and
+// a tap in the touch layout adds (never takes out: tapping a selected body's
+// row again, e.g. to fold the row, keeps it selected and its Move running).
+TEST(SelectBody, TapOnARowAddsAndNeverTakesOut)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    const Uuid b = h.addBox("Body 2", {30, 0, 0}, {10, 10, 10});
+    using Pick = InteractionController::BodyPick;
+    const auto selected = [&] {
+        std::vector<Uuid> ids;
+        for (const auto& item : h.controller.selection().items())
+            ids.push_back(item.bodyId);
+        return ids;
+    };
+
+    ASSERT_TRUE(h.controller.selectBody(a, Pick::Add).ok());
+    EXPECT_EQ(selected(), (std::vector<Uuid>{a}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    ASSERT_EQ(h.controller.operation()->title(), "Move");
+    const Operation* move = h.controller.operation();
+    ASSERT_TRUE(h.controller.selectBody(a, Pick::Add).ok()); // the row folds
+    EXPECT_EQ(selected(), (std::vector<Uuid>{a})) << "still selected";
+    EXPECT_EQ(h.controller.operation(), move) << "the same Move, not rebuilt";
+
+    ASSERT_TRUE(h.controller.selectBody(b, Pick::Add).ok());
+    EXPECT_EQ(selected(), (std::vector<Uuid>{a, b}));
+    ASSERT_TRUE(h.controller.selectBody(a, Pick::Add).ok());
+    EXPECT_EQ(selected(), (std::vector<Uuid>{a, b})) << "tapping either row again keeps both";
+    ASSERT_TRUE(h.hasAction("union")) << "two bodies to combine";
+
+    // Shift-click still toggles; a plain click replaces.
+    ASSERT_TRUE(h.controller.selectBody(a, Pick::Toggle).ok());
+    EXPECT_EQ(selected(), (std::vector<Uuid>{b}));
+    ASSERT_TRUE(h.controller.selectBody(a, Pick::Replace).ok());
+    EXPECT_EQ(selected(), (std::vector<Uuid>{a}));
+
+    // A face selected: the tap selects the body instead (as a click does).
+    (void)h.controller.keyPress(Key::Escape);
+    ASSERT_TRUE(h.controller.selection().empty());
+    h.controller.fitAll(false);
+    h.clickAt(h.controller.camera().project({5, 5, 10}));
+    ASSERT_TRUE(h.controller.selection().allOfKind(sel::SelectionKind::Face));
+    ASSERT_TRUE(h.controller.selectBody(a, Pick::Add).ok());
+    EXPECT_EQ(selected(), (std::vector<Uuid>{a}));
+    EXPECT_TRUE(h.controller.selection().allOfKind(sel::SelectionKind::Body));
+}

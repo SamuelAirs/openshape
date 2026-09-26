@@ -545,7 +545,45 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   command line) makes `Theme.controlHeight` 44 and shows the Pen switch. The
   flag itself lives in `InteractionController::touchLayout()` (AppController
   only reads and sets it), so the on-canvas targets of the sketch session and
-  the QML controls can never disagree.
+  the QML controls can never disagree. **Touch wording:** hints, prompts and
+  messages are written for mouse and keyboard; in the touch layout
+  `interact::touchWording()` (Qt-free, `interaction/TouchWording`) rewrites
+  them — hand-written versions of known sentences ("Shift-click adds more" →
+  "tap more to add them", "Esc ends the line" → "tap Line again to end the
+  line", "Enter applies" → "✓ applies") and word rules (click → tap) —
+  for messages at their source in the interaction layer
+  (`InteractionController::forInput`: tool explanations, the sketch
+  session's messages, instructions returned in a `Status`), and through
+  `touchWording()` in `Main.qml`'s `hintText()` for hints and prompts. Only
+  the app's own texts are reworded: `AppController::notifyMessage` passes
+  messages on as they are, so a file, project or body name in one ("Exported
+  Click lid.stl") is never changed. The help card has a touch text per row
+  (`Theme.touch`). `tests/test_touch_wording.cpp` collects every sketch
+  hint, tool explanation and operation prompt, the QML hints and the help
+  rows, and fails on a mouse or keyboard word left in a touch text. No
+  information lives only in a tooltip (tooltips are off in the touch
+  layout; what they said is on the help card). A finger or pen tap on
+  empty space gives up an Align or Mirror still waiting for its target (a
+  mouse keeps waiting).
+- **Window-size layout (phones, Split View):** the QML layout follows the
+  window, not the device. `Theme.compact` (window narrower than 600 or
+  shorter than 500 logical px, bound live from `Main.qml`) turns the
+  Create/Modify/Combine palette and the sketch's Draw/Edit palette into a
+  strip along the bottom edge that scrolls sideways (the same buttons and
+  object names: a `GridLayout` whose `flow` switches), hides the Model panel
+  behind a **Model** button (it slides in from the right; `historyOpen`),
+  folds the view buttons into a menu behind a **View** button next to the
+  axis marker (`viewMenuOpen`; the same buttons, in columns when short),
+  makes action rows scroll sideways (`ScrollRow.qml`) and the hint one line
+  (a tap shows all of it). Positions derive from the window size
+  (`Main.stripTop`, `bottomStackTop`), never from each other in a circle.
+  **Safe areas:** `Theme.safeTop/Right/Bottom/Left` come from Qt's
+  `SafeArea` attached type (Qt 6.9+: the Dynamic Island or notch, rounded
+  corners, the home indicator), or from `--safe-area` on the desktop;
+  controls keep `Theme.insetTop/...` from the window edges while the 3D view
+  fills the whole window (`ApplicationWindow` padding 0). Overlays center
+  their cards in the safe rectangle. Regular windows (desktop, iPad full
+  screen) look as before.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -607,7 +645,9 @@ blocked, suppressed — explanation, editable length parameters). Hovering a row
 calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
 body, other steps their new faces (`facesCreatedBy`, falling back to
 `facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
-body row calls `selectBody(id, additive)`. The QML `HistoryPanel` edits values through
+body row calls `selectBody(id, additive)` (Shift toggles); a tap on it in
+the touch layout calls `addBodyToSelection` (`BodyPick::Add`: adds, never
+takes out, so tapping the row again to fold it keeps the body selected). The QML `HistoryPanel` edits values through
 `setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
 mode: an edit that breaks a later step is kept, the step is marked failed
 with its user message, and undo restores the value. Base features cannot be
@@ -686,7 +726,10 @@ no worker thread is used.
 new documents, sketch grid snapping, recovery interval), recent files
 (`io/RecentFiles`: most recent first; the menu shows the 10 newest that
 exist, and a file that is gone never pushes an existing one out; the File
-menu rereads the list as it opens, `refreshRecentFiles()`) and the
+menu rereads the list as it opens, `refreshRecentFiles()`; with an app
+folder, entries into its old location — iOS gives an updated app a new data
+folder — follow it, `io::rebasedIntoFolder`, as does a recovery copy's
+project path) and the
 window's place (frame + client rectangle + maximized; restored by client
 area and clamped to today's screens by `fitToScreens`). `main.cpp` points
 QSettings at a temporary INI file (and recovery copies at a temporary
@@ -742,7 +785,13 @@ While `UnsavedOverlay` or `RecoveryOverlay` is shown (`window.modalOpen`)
 the window's shortcuts are disabled, as behind a native modal dialog, and
 `UnsavedOverlay.ask()` ignores a second request: the pending action is the
 one the user is being asked about.
-Only file choosers stay native (`FileDialog`). After a menu or overlay
+Only file choosers stay native (`FileDialog`) — on the desktop. On iOS and
+Android (`AppController::savesToAppFolder`: the app's Documents folder,
+which the Files app shows; `--app-folder` on the desktop) there is no save
+dialog: `SaveNameOverlay` asks for a name (`projectFileBaseName` makes it a
+safe file name) and `saveInAppFolder` writes `<folder>/<name>.openshape`;
+exports go to `<folder>/Exports/<title>.<ext>` (`exportToAppFolder`); Open
+stays Qt's `FileDialog` (the system document picker there). After a menu or overlay
 closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
 them on a hidden menu separator after the Open Recent sub-menu).
 
@@ -772,14 +821,25 @@ them on a hidden menu separator after the Open Recent sub-menu).
   bar, Align, Rotate rings, Pattern, Mirror, two-/three-finger taps and the
   touch layout, the About box, trim/slot/fillet/offset in a sketch,
   symmetric and up-to-face extrusions, a fillet carried by a push, a hole
-  resized by its diameter and deleted; scenarios `recovery` (a real crash
+  resized by its diameter and deleted; `compact` (the window resized live to
+  an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
+  Model panel, View menu, a box pushed by touch, Undo / Redo with their
+  messages, a body row tapped twice, the sketch strip; the runner
+  restores the run's window size for the next scenario); `appfolder`
+  (saving by name and exporting as on an iPhone or iPad, into a temporary
+  app folder; the export message keeps a name with "Click" in it in the
+  touch layout); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I
   and Home, the saved thumbnail, Home's cards, menu, long press and
   buttons; then in a 402 x 874 window: Help over Home, a damaged file's
   message above Home, a long message wrapped, markup in a STEP name shown
-  as text). `clickItem` lays out freshly created
+  as text). The whole run also passes at the CI Mac's
+  1024x653 (`--size 1024x653`): clicks on model points that a panel or the
+  value chip may cover in a small window pick a free point of the same edge
+  (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the
+  item (both directions) to bring it on screen, and lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag

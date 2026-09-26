@@ -38,4 +38,13 @@ std::vector<std::string> withoutRecentFile(std::vector<std::string> list, const 
 // Files app) that are not among them, in the order given.
 std::vector<std::string> homeProjects(const std::vector<std::string>& recent, const std::vector<std::string>& folder);
 
+// iPhone / iPad: the app's data folder moves when the app is updated (every
+// TestFlight build): `.../Application/<id>/Documents` gets a new <id>, so a
+// path remembered from before (Open Recent, a recovery copy's project) is
+// stale. If `path` is missing and lies inside a folder that is `folder` but
+// for one path component (that id; a leading "/private" is ignored), the
+// same file inside `folder` when that exists; otherwise `path` unchanged.
+std::string rebasedIntoFolder(const std::string& path, const std::string& folder,
+                              const RecentFileExists& exists = recentFileExists);
+
 } // namespace os::io

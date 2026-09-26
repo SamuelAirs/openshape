@@ -11,11 +11,12 @@ Panel {
     id: triad
 
     required property AppController app
-    readonly property real arm: 25
+    readonly property real arm: Theme.compact ? 19 : 25
     readonly property var colors: ["#D64545", "#3D9A4F", "#3F6FDC"]
 
-    width: 80
-    height: 80
+    // Smaller in a compact window (a phone).
+    width: Theme.compact ? 64 : 80
+    height: width
 
     Repeater {
         model: 3

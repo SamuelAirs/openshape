@@ -2,8 +2,8 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
      License, v. 2.0. If a copy of the MPL was not distributed with this
      file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
-<!-- iPadOS app bundle (CMake fills the ${...} values; Xcode adds the icon
-     and platform keys). See docs/IPAD.md. -->
+<!-- iOS app bundle, universal (iPhone and iPad; CMake fills the ${...}
+     values; Xcode adds the icon and platform keys). See docs/IPAD.md. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -28,15 +28,58 @@
     <!-- No encryption beyond the system's: TestFlight skips the export question. -->
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <!-- A plain launch screen in the app's background color (both devices;
+         the color is in Assets.xcassets), so it does not flash white or black. -->
     <key>UILaunchScreen</key>
-    <dict/>
-    <key>UIRequiresFullScreen</key>
-    <true/>
+    <dict>
+        <key>UIColorName</key>
+        <string>LaunchBackground</string>
+    </dict>
+    <!-- No UIRequiresFullScreen: the layout follows any window size, so the
+         app takes part in Split View and Stage Manager on the iPad and in the
+         split screen of a foldable iPhone (docs/IPAD.md). -->
     <!-- Projects saved in the app's Documents folder show up in the Files app. -->
     <key>UIFileSharingEnabled</key>
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
+    <!-- The project file type, so File > Open (the system document picker,
+         filtered by Qt from the name filter *.openshape) shows projects. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>io.github.samuelairs.openshape.project</string>
+            <key>UTTypeDescription</key>
+            <string>OpenShape project</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>openshape</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+    <!-- iPhone: portrait and both landscapes (not upside down, as Apple's
+         apps); iPad: all four (required for multitasking). -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~iphone</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
     <key>UISupportedInterfaceOrientations~ipad</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

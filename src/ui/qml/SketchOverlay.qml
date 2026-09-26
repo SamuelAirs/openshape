@@ -16,6 +16,15 @@ Item {
     required property AppController app
     signal finished()
 
+    // The top row's free room (Main.qml): the tool bar sits there, centered,
+    // or below the top bar in a compact window when it does not fit.
+    property real topRowLeft: 0
+    property real topRowRight: width
+    property real topRowBottom: 0
+    // Where this overlay's things along the bottom edge start (compact
+    // layout: the tool strip and the constraint actions above it).
+    readonly property real bottomStackTop: actionPanel.visible && Theme.compact ? actionPanel.y : toolPanel.y
+
     // Characters typed while drawing go to the focused value (e.g. width).
     property string typing: ""
     property string typingError: ""
@@ -84,9 +93,22 @@ Item {
     }
 
     // ------------------------------------------------------------ tool bar
+    Item {
+        // Where the tool bar goes: the whole top row (centered in the window),
+        // or in a compact window without room there, below the top bar.
+        id: toolbarSlot
+        readonly property bool fitsTopRow: !Theme.compact
+            || ((overlay.width - toolbar.width) / 2 >= overlay.topRowLeft
+                && (overlay.width + toolbar.width) / 2 <= overlay.topRowRight)
+        x: fitsTopRow ? 0 : Theme.insetLeft
+        y: fitsTopRow ? Theme.insetTop : overlay.topRowBottom + 8
+        width: fitsTopRow ? overlay.width : toolbar.width
+        height: toolbar.height
+    }
     Panel {
         id: toolbar
-        anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: Theme.margin }
+        objectName: "sketchToolbar"
+        anchors { horizontalCenter: toolbarSlot.horizontalCenter; top: toolbarSlot.top }
         width: toolRow.implicitWidth + 2 * Theme.panelPadding
         height: Theme.controlHeight + 2 * Theme.panelPadding
 
@@ -119,30 +141,66 @@ Item {
     // ------------------------------------------------------------ tool palette
     // On the left like the Create palette in model mode (a row of ten tools no
     // longer fits between the top bar and the Model panel); scrolls when the
-    // window is too short for touch-sized buttons.
+    // window is too short for touch-sized buttons. In a compact window (a
+    // phone): a strip along the bottom edge that scrolls sideways.
     Panel {
         id: toolPanel
         objectName: "sketchToolPanel"
-        readonly property real minY: 2 * Theme.margin + Theme.controlHeight + 2 * Theme.panelPadding
-        readonly property real maxBottom: overlay.height - 64
-        anchors { left: parent.left; leftMargin: Theme.margin }
-        y: Math.max(minY, Math.min((overlay.height - height) / 2, maxBottom - height))
-        width: toolColumn.implicitWidth + 2 * Theme.panelPadding
-        height: Math.min(toolColumn.implicitHeight + 2 * Theme.panelPadding, maxBottom - minY)
+        readonly property real minY: Theme.insetTop + Theme.margin + Theme.controlHeight + 2 * Theme.panelPadding
+        readonly property real maxBottom: overlay.height - Theme.safeBottom - 64
+        readonly property real stripWidth: overlay.width - Theme.insetLeft - Theme.insetRight
+        x: Theme.compact ? Theme.insetLeft + Math.max(0, (stripWidth - width) / 2) : Theme.insetLeft
+        y: Theme.compact ? overlay.height - Theme.insetBottom - height
+                         : Math.max(minY, Math.min((overlay.height - height) / 2, maxBottom - height))
+        width: Theme.compact ? Math.min(toolColumn.implicitWidth + 2 * Theme.panelPadding, stripWidth)
+                             : toolColumn.implicitWidth + 2 * Theme.panelPadding
+        height: Theme.compact ? Theme.controlHeight + 2 * Theme.panelPadding
+                              : Math.min(toolColumn.implicitHeight + 2 * Theme.panelPadding, maxBottom - minY)
 
         Flickable {
             id: toolScroll
+            objectName: "sketchToolScroll"
             anchors { fill: parent; margins: Theme.panelPadding }
-            contentWidth: width
-            contentHeight: toolColumn.implicitHeight
+            contentWidth: Theme.compact ? toolColumn.implicitWidth : width
+            contentHeight: Theme.compact ? height : toolColumn.implicitHeight
             clip: true
-            interactive: contentHeight > height
+            interactive: Theme.compact ? contentWidth > width : contentHeight > height
+            flickableDirection: Theme.compact ? Flickable.HorizontalFlick : Flickable.VerticalFlick
             boundsBehavior: Flickable.StopAtBounds
 
-            ColumnLayout {
+            // The active tool stays in view (a key picked it, or the layout
+            // switched between the column and the strip).
+            property Item current: null
+            function reveal(item) {
+                current = item
+                if (!item || !item.visible)
+                    return
+                const p = item.mapToItem(contentItem, 0, 0)
+                if (Theme.compact) {
+                    if (p.x < contentX)
+                        contentX = Math.max(0, p.x - 8)
+                    else if (p.x + item.width > contentX + width)
+                        contentX = Math.max(0, Math.min(contentWidth - width, p.x + item.width - width + 8))
+                } else {
+                    if (p.y < contentY)
+                        contentY = Math.max(0, p.y - 8)
+                    else if (p.y + item.height > contentY + height)
+                        contentY = Math.max(0, Math.min(contentHeight - height, p.y + item.height - height + 8))
+                }
+            }
+            Connections {
+                target: Theme
+                function onCompactChanged() { Qt.callLater(toolScroll.reveal, toolScroll.current) }
+            }
+
+            GridLayout {
                 id: toolColumn
-                width: Math.max(implicitWidth, toolScroll.width)
-                spacing: 4
+                // One column, or one row in the compact strip.
+                flow: Theme.compact ? GridLayout.LeftToRight : GridLayout.TopToBottom
+                width: Theme.compact ? implicitWidth : Math.max(implicitWidth, toolScroll.width)
+                height: Theme.compact ? toolScroll.height : implicitHeight
+                rowSpacing: 4
+                columnSpacing: 4
                 Repeater {
                     model: [
                         { section: "Draw", id: "line", label: "Line", key: "L" },
@@ -156,22 +214,30 @@ Item {
                         { section: "Edit", id: "select", label: "Select", key: "S" },
                         { id: "trim", label: "Trim", key: "T" }
                     ]
-                    delegate: ColumnLayout {
+                    delegate: GridLayout {
                         required property var modelData
-                        Layout.fillWidth: true
-                        spacing: 4
+                        readonly property bool sectionStart: modelData.section !== undefined
+                        flow: Theme.compact ? GridLayout.LeftToRight : GridLayout.TopToBottom
+                        Layout.fillWidth: !Theme.compact
+                        Layout.fillHeight: Theme.compact
+                        rowSpacing: 4
+                        columnSpacing: 4
                         SectionLabel {
-                            visible: modelData.section !== undefined
-                            text: modelData.section !== undefined ? modelData.section : ""
+                            visible: parent.sectionStart && !Theme.compact
+                            text: parent.sectionStart ? modelData.section : ""
                             Layout.topMargin: modelData.section === "Draw" ? 0 : 6
                         }
+                        // The strip has no room for section names: a line between Draw and Edit.
+                        Separator { visible: Theme.compact && parent.sectionStart && modelData.section !== "Draw" }
                         ActionButton {
                             objectName: "tool_" + modelData.id
                             text: modelData.label
-                            Layout.fillWidth: true
+                            Layout.fillWidth: !Theme.compact
                             checked: overlay.app.sketchTool === modelData.id
+                            onCheckedChanged: if (checked) Qt.callLater(toolScroll.reveal, this)
+                            Component.onCompleted: if (checked) Qt.callLater(toolScroll.reveal, this)
                             onClicked: overlay.app.setSketchTool(modelData.id)
-                            ToolTip.visible: hovered
+                            ToolTip.visible: hovered && !Theme.touch
                             ToolTip.text: modelData.label + " (" + modelData.key + ")"
                             ToolTip.delay: 500
                         }
@@ -179,15 +245,37 @@ Item {
                 }
             }
         }
-        // More tools below: a fade at the bottom edge says "scroll".
+        // More tools below (to the right in the strip): a fade at that edge says "scroll".
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
             height: 28
             radius: 12
-            visible: toolScroll.contentY + toolScroll.height < toolScroll.contentHeight - 1
+            visible: !Theme.compact && toolScroll.contentY + toolScroll.height < toolScroll.contentHeight - 1
             gradient: Gradient {
                 GradientStop { position: 0.0; color: "#00F9FAFB" }
                 GradientStop { position: 1.0; color: Theme.panel }
+            }
+        }
+        Rectangle {
+            anchors { top: parent.top; bottom: parent.bottom; right: parent.right; margins: 1 }
+            width: 32
+            radius: 12
+            visible: Theme.compact && toolScroll.contentX + toolScroll.width < toolScroll.contentWidth - 1
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#00F9FAFB" }
+                GradientStop { position: 1.0; color: Theme.panel }
+            }
+        }
+        Rectangle {
+            anchors { top: parent.top; bottom: parent.bottom; left: parent.left; margins: 1 }
+            width: 32
+            radius: 12
+            visible: Theme.compact && toolScroll.contentX > 1
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: Theme.panel }
+                GradientStop { position: 1.0; color: "#00F9FAFB" }
             }
         }
     }
@@ -228,7 +316,7 @@ Item {
                 objectName: "sketchCounterMinus"
                 text: "\u2212"
                 onClicked: overlay.app.stepSketchCounter(-1)
-                ToolTip.visible: hovered
+                ToolTip.visible: hovered && !Theme.touch
                 ToolTip.text: "Fewer (-)"
                 ToolTip.delay: 500
             }
@@ -246,7 +334,7 @@ Item {
                 objectName: "sketchCounterPlus"
                 text: "+"
                 onClicked: overlay.app.stepSketchCounter(1)
-                ToolTip.visible: hovered
+                ToolTip.visible: hovered && !Theme.touch
                 ToolTip.text: "More (+)"
                 ToolTip.delay: 500
             }
@@ -342,7 +430,8 @@ Item {
     // Typing error while drawing.
     Text {
         visible: overlay.typingError.length > 0 && overlay.app.sketchDrawing
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 100 }
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom
+                  bottomMargin: Theme.compact ? overlay.height - overlay.bottomStackTop + 30 : 100 + Theme.safeBottom }
         text: overlay.typingError
         color: Theme.error
         font.pixelSize: 12
@@ -399,14 +488,26 @@ Item {
     }
 
     // ------------------------------------------------------------ constraint actions
+    // Bottom center; in a compact window above the tool strip, scrolling
+    // sideways when there are more than fit.
+    Item {
+        id: actionSlot
+        x: Theme.compact ? Theme.insetLeft : 0
+        width: Theme.compact ? actionPanel.width : overlay.width
+        height: actionPanel.height
+        y: (Theme.compact ? toolPanel.y - 8 : overlay.height - Theme.safeBottom - 64) - height
+    }
     Panel {
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 64 }
+        id: actionPanel
+        objectName: "sketchActions"
+        anchors { horizontalCenter: actionSlot.horizontalCenter; bottom: actionSlot.bottom }
         visible: overlay.app.contextActions.length > 0
         width: actionRow.implicitWidth + 2 * Theme.panelPadding
         height: Theme.controlHeight + 2 * Theme.panelPadding
-        Row {
+        ScrollRow {
             id: actionRow
             anchors.centerIn: parent
+            maximumWidth: Theme.compact ? overlay.width - Theme.insetLeft - Theme.insetRight - 2 * Theme.panelPadding : Infinity
             spacing: 4
             Repeater {
                 model: overlay.app.contextActions

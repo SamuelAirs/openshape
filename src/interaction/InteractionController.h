@@ -23,6 +23,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace os::interact {
@@ -197,8 +198,17 @@ public:
     // (a body, a sketch, or the faces a step created or modified). nullopt clears.
     void setHistoryHighlight(const std::optional<Uuid>& id);
     const std::optional<Uuid>& historyHighlight() const { return historyHighlight_; }
-    // Selects a body from the model panel; `additive` adds it (e.g. to combine).
-    Status selectBody(const Uuid& bodyId, bool additive);
+    // How a Model panel row selects its body: Replace (a click), Toggle
+    // (Shift-click: adds it, or takes it out again) or Add (a tap in the touch
+    // layout: adds it, e.g. to combine; tapping a selected body's row again,
+    // say to fold the row, keeps it selected and its tool running).
+    enum class BodyPick { Replace, Toggle, Add };
+    Status selectBody(const Uuid& bodyId, BodyPick how);
+    // `additive`: Toggle, otherwise Replace.
+    Status selectBody(const Uuid& bodyId, bool additive)
+    {
+        return selectBody(bodyId, additive ? BodyPick::Toggle : BodyPick::Replace);
+    }
     // A tool chosen from the palette: runs it if the selection fits, otherwise
     // explains what to select. Ids: pushpull, fillet, chamfer, shell, move,
     // union, subtract, intersect, measure.
@@ -220,7 +230,10 @@ public:
     // ---- Notifications ----
     std::function<void()> onViewChanged;                 // needs redraw
     std::function<void()> onStateChanged;                // selection/operation/undo state changed
-    std::function<void(const std::string&)> onMessage;   // user-facing message
+    // User-facing message. Instructions (what to click or select) come already
+    // worded for touch in the touch layout (TouchWording); body, sketch and
+    // file names in messages are never reworded, so they are passed on as they are.
+    std::function<void(const std::string&)> onMessage;
 
 private:
     enum class DragMode { None, Pending, Orbit, Pan, Manipulator, Sketch };
@@ -249,6 +262,10 @@ private:
     void notifyView();
     void notifyState();
     void message(const std::string& text);
+    // An instruction written for mouse and keyboard ("Click a flat face ..."),
+    // worded for touch in the touch layout. Only for the app's own texts: the
+    // word rules would also change a name that happens to contain "click".
+    std::string forInput(std::string_view instruction) const;
 
     doc::Document* document_;
     cmd::UndoStack* undoStack_;

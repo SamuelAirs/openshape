@@ -15,6 +15,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QLockFile>
+#include <QtCore/QMap>
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
@@ -27,6 +28,7 @@
 #include <QtGui/QStyleHints>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlExtensionPlugin>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtQuickControls2/QQuickStyle>
 
@@ -477,7 +479,8 @@ int main(int argc, char* argv[])
     QCommandLineOption demoOption(QStringLiteral("demo"),
                                   QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
                                                  "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
-                                                 "home)."),
+                                                 "polygon, constraints, holes, home; panels: help, about, preferences, modelpanel, viewmenu, "
+                                                 "savename)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
@@ -490,6 +493,14 @@ int main(int argc, char* argv[])
     QCommandLineOption sizeOption(QStringLiteral("size"),
                                   QStringLiteral("Window size in logical pixels, e.g. 1180x820 (an 11-inch iPad in landscape)."),
                                   QStringLiteral("WxH"));
+    QCommandLineOption safeAreaOption(QStringLiteral("safe-area"),
+                                      QStringLiteral("Simulate a phone's safe-area insets in logical pixels, top,right,bottom,left "
+                                                     "(e.g. 62,0,34,0: an iPhone 16 Pro in portrait; 0,62,21,62 in landscape)."),
+                                      QStringLiteral("t,r,b,l"));
+    QCommandLineOption appFolderOption(QStringLiteral("app-folder"),
+                                       QStringLiteral("Save and export as on an iPhone or iPad: projects by name into <dir>, "
+                                                      "exports into <dir>/Exports, no save dialogs."),
+                                       QStringLiteral("dir"));
     QCommandLineOption scenarioOption(QStringLiteral("scenario"),
                                       QStringLiteral("With --acceptance: run only these scenarios (comma-separated, e.g. core,views)."),
                                       QStringLiteral("names"));
@@ -504,6 +515,8 @@ int main(int argc, char* argv[])
     parser.addOption(scenarioOption);
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
+    parser.addOption(safeAreaOption);
+    parser.addOption(appFolderOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
     parser.addOption(screenshotOption);
@@ -603,9 +616,28 @@ int main(int argc, char* argv[])
     // from an empty document; the "home" demo shows it).
     if (!automated && parser.positionalArguments().isEmpty())
         controller.setHomeVisible(true);
+    if (parser.isSet(appFolderOption))
+        controller.setAppFolder(parser.value(appFolderOption));
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("thumbnail"), new os::ui::ThumbnailProvider); // the engine owns it
-    engine.setInitialProperties({{QStringLiteral("app"), QVariant::fromValue(&controller)}});
+    QVariantMap initialProperties{{QStringLiteral("app"), QVariant::fromValue(&controller)}};
+    if (parser.isSet(safeAreaOption)) {
+        // Main.qml keeps the controls out of these insets as it does out of
+        // a real phone's (SafeArea), and shades them.
+        const QStringList parts = parser.value(safeAreaOption).split(QLatin1Char(','));
+        QVariantList insets;
+        for (const QString& part : parts) {
+            bool ok = false;
+            const double value = part.trimmed().toDouble(&ok);
+            if (ok && value >= 0)
+                insets.append(value);
+        }
+        if (parts.size() == 4 && insets.size() == 4)
+            initialProperties.insert(QStringLiteral("simulatedSafeArea"), insets);
+        else
+            OS_LOG(Warning, App) << "--safe-area expects four numbers, top,right,bottom,left, e.g. 62,0,34,0";
+    }
+    engine.setInitialProperties(initialProperties);
     engine.loadFromModule("OpenShape", "Main");
     if (engine.rootObjects().isEmpty()) {
         OS_LOG(Error, App) << "failed to load the user interface";
@@ -651,9 +683,27 @@ int main(int argc, char* argv[])
         const QString demo = parser.value(demoOption);
         const QString shot = parser.value(screenshotOption);
         // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, demo, dataDir] {
-            if (!demo.isEmpty())
-                runDemo(controller, demo, dataDir);
+        QTimer::singleShot(600, &controller, [&controller, window, demo, dataDir] {
+            if (demo.isEmpty())
+                return;
+            // Panels to look at (layout checks at phone sizes): the help card,
+            // About, Preferences; the compact layout's Model panel and View menu.
+            static const QMap<QString, QPair<QString, const char*>> panels{
+                {QStringLiteral("help"), {QStringLiteral("combine"), "helpOverlay"}},
+                {QStringLiteral("about"), {QStringLiteral("empty"), "aboutOverlay"}},
+                {QStringLiteral("preferences"), {QStringLiteral("empty"), "preferencesOverlay"}},
+                {QStringLiteral("modelpanel"), {QStringLiteral("history"), "historyOpen"}},
+                {QStringLiteral("viewmenu"), {QStringLiteral("combine"), "viewMenuOpen"}},
+                {QStringLiteral("savename"), {QStringLiteral("bracket"), "saveNamePrompt"}},
+            };
+            const auto panel = panels.find(demo);
+            runDemo(controller, panel == panels.end() ? demo : panel->first, dataDir);
+            if (panel == panels.end())
+                return;
+            if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second)))
+                item->setVisible(true);
+            else
+                window->setProperty(panel->second, true); // the compact layout's switches (Main.qml)
         });
         if (!shot.isEmpty()) {
             QTimer::singleShot(1600, window, [window, shot] {

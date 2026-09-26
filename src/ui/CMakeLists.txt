@@ -37,6 +37,8 @@ qt_add_qml_module(openshape_ui
         qml/RecoveryOverlay.qml
         qml/UnsavedOverlay.qml
         qml/HomeScreen.qml
+        qml/ScrollRow.qml
+        qml/SaveNameOverlay.qml
     SOURCES
         AppController.cpp AppController.h
         ThumbnailProvider.cpp ThumbnailProvider.h

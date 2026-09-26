@@ -118,6 +118,7 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 4. **Uninstall** from Settings → Apps → Installed apps → OpenShape. The
    Start-menu entry and the file association are gone; your projects stay.
 
-## On the iPad
+## On the iPad and iPhone
 
-See [IPAD.md](IPAD.md), "What to test on the iPad".
+See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the
+iPhone".

@@ -14,6 +14,9 @@ Item {
     id: chip
 
     required property AppController app
+    // The widest it may be (a phone's width): the actions below the field
+    // then scroll sideways.
+    property real maximumWidth: Infinity
     signal finished()
 
     width: column.implicitWidth
@@ -118,7 +121,7 @@ Item {
                         chip.app.commitOperation()
                         chip.finished()
                     }
-                    ToolTip.visible: hovered
+                    ToolTip.visible: hovered && !Theme.touch
                     ToolTip.text: "Apply (Enter)"
                     ToolTip.delay: 500
                 }
@@ -130,7 +133,7 @@ Item {
                         chip.app.cancelOperation()
                         chip.finished()
                     }
-                    ToolTip.visible: hovered
+                    ToolTip.visible: hovered && !Theme.touch
                     ToolTip.text: "Cancel (Esc)"
                     ToolTip.delay: 500
                 }
@@ -141,7 +144,7 @@ Item {
             id: errorText
             objectName: "valueChipError"
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 320
+            Layout.maximumWidth: Math.min(320, chip.maximumWidth)
             visible: text.length > 0
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
@@ -149,8 +152,10 @@ Item {
             font.pixelSize: 12
         }
 
-        // The actions' natural width, to wrap them (the Hole tool has many)
-        // at a width that still fits beside the model.
+        // The actions: in a regular window they wrap (the Hole tool has many)
+        // at a width that still fits beside the model; in a compact window
+        // (a phone) they scroll sideways. Only one of the two is visible; the
+        // acceptance run clicks the visible one.
         Row {
             id: actionMeasure
             visible: false
@@ -168,24 +173,40 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Math.min(actionMeasure.implicitWidth, 460)
             spacing: 4
-            visible: chip.app.contextActions.length > 1
+            visible: !Theme.compact && chip.app.contextActions.length > 1
             Repeater {
-                model: chip.app.contextActions
-                delegate: ActionButton {
-                    required property var modelData
-                    objectName: "action_" + modelData.id
-                    text: modelData.label
-                    checked: modelData.active
-                    compact: true
-                    onClicked: {
-                        // The action rebuilds the action list and destroys this
-                        // delegate: capture what we need first.
-                        const owner = chip
-                        const id = modelData.id
-                        owner.app.triggerAction(id)
-                        owner.finished()
-                    }
-                }
+                model: Theme.compact ? [] : chip.app.contextActions
+                delegate: chipAction
+            }
+        }
+        ScrollRow {
+            Layout.alignment: Qt.AlignHCenter
+            maximumWidth: chip.maximumWidth
+            fadeColor: Theme.background
+            spacing: 4
+            visible: Theme.compact && chip.app.contextActions.length > 1
+            Repeater {
+                model: Theme.compact ? chip.app.contextActions : []
+                delegate: chipAction
+            }
+        }
+    }
+
+    Component {
+        id: chipAction
+        ActionButton {
+            required property var modelData
+            objectName: "action_" + modelData.id
+            text: modelData.label
+            checked: modelData.active
+            compact: true
+            onClicked: {
+                // The action rebuilds the action list and destroys this
+                // delegate: capture what we need first.
+                const owner = chip
+                const id = modelData.id
+                owner.app.triggerAction(id)
+                owner.finished()
             }
         }
     }

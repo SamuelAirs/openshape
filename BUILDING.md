@@ -34,7 +34,7 @@ pacman -S --needed --noconfirm \
 ```
 
 Verified versions: GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, OCCT 7.9.3,
-Qt 6.11.2, GTest 1.18.0, nlohmann-json 3.12.0, libzip 1.11.4, Eigen 5.0.1.
+Qt 6.11.2 (6.9 or newer is required: `SafeArea`), GTest 1.18.0, nlohmann-json 3.12.0, libzip 1.11.4, Eigen 5.0.1.
 The PlaneGCS sketch solver is vendored in `third_party/planegcs` and built
 from source (as a C++23 shared library) automatically.
 
@@ -75,8 +75,11 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch   # the tablet layout (bigger controls, Pen switch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 820x1180 --demo combine --screenshot ipad.png   # iPad portrait layout
+./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo bracket --screenshot phone.png   # iPhone 16 Pro, portrait
+./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 874x402 --safe-area 0,62,21,62 --demo sketch --screenshot phone-landscape.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-crash   # then start with --data-dir some-dir: it offers the box
@@ -95,9 +98,26 @@ being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
 the constraint glyphs) and `home` (the start screen with four saved
 projects and their previews; try `--touch --size 402x874`, `874x402` and
-`1180x820` for phones and the iPad). Without `--screenshot` the window
-stays open. A normal start without a file opens on Home; automated runs
+`1180x820` for phones and the iPad). Panels to look at (layout checks at phone
+sizes): `help`, `about`, `preferences`, `savename` (the overlay open),
+`modelpanel` (the compact layout's Model panel open on the `history` scene)
+and `viewmenu` (the compact View menu open on `combine`). Without
+`--screenshot` the window stays open. A normal start without a file opens on Home; automated runs
 (`--acceptance`, `--demo`, `--screenshot`) start in an empty document.
+
+**Phone and Split View layouts.** Below 600 logical px wide or 500 tall the
+window gets the compact layout (tools in a strip along the bottom, Model and
+View buttons); `--size WxH` sets any size (also below the desktop minimum),
+e.g. 402x874 / 874x402 (iPhone 16 Pro), 375x667 (a small iPhone), 500x800
+(half an iPad in Split View), 1180x820 / 820x1180 (iPad Air 11"). A window
+resized while it runs switches layouts live. `--safe-area top,right,bottom,left`
+(logical px) simulates a phone's safe-area insets and shades them, with the
+Dynamic Island and the home indicator drawn in: iPhone 16 Pro portrait
+`62,0,34,0`, landscape `0,62,21,62` (an iPad: `24,0,20,0`).
+`--app-folder <dir>` saves and exports as on an iPhone or iPad: Save asks for
+a name only and writes `<dir>/<name>.openshape`, exports go to
+`<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
+demo scene shows that prompt.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 

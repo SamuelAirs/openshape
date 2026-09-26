@@ -315,7 +315,9 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(op && op->ringCount() == 3, "three rings through the center");
         },
         [&r] {
-            r.click(r.screenPoint(4, 0, 5)); // the top front edge, along X
+            // The top front edge, along X, away from its corners (a corner
+            // moves the pivot instead), where the value chip leaves it free.
+            r.click(r.uncoveredScreenPoint({{4, 0, 5}, {6, 0, 5}, {8, 0, 5}, {10, 0, 5}, {12, 0, 5}, {14, 0, 5}}));
             const auto* rotate = dynamic_cast<const interact::RotateOperation*>(r.app().interaction().operation());
             r.check(rotate && rotate->ringCount() == 1 && rotate->axis() && std::abs(rotate->axis()->x - 1.0) < 1e-9,
                     "clicking an edge makes it the axis: one ring around it");
@@ -337,7 +339,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         },
         [] {}, [] {}, [] {}, // the same spot clicked again now would be a double-click
         [&r] {
-            r.click(r.screenPoint(4, 0, 5));
+            r.click(r.uncoveredScreenPoint({{4, 0, 5}, {6, 0, 5}, {8, 0, 5}, {10, 0, 5}, {12, 0, 5}, {14, 0, 5}}));
             r.check(r.app().interaction().operation() && r.app().interaction().operation()->ringCount() == 1,
                     "the edge again: one ring");
             r.check(r.clickItem(QStringLiteral("action_pivotCenter")), "Center pivot button");
@@ -442,7 +444,11 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(std::abs(geom::boundingBox(r.body(0).shape()).max.x - 20) < 1e-6, "undo turns it back");
         },
         [&r, num] {
-            const QPointF rim = r.screenPoint(-10 + 4 * 0.7071, -4 * 0.7071, 6); // the hole's top rim, near side
+            // The hole's top rim: its near side, or where the chip leaves it free.
+            std::vector<Vec3> onRim;
+            for (double degrees : {-45.0, -90.0, 0.0, -135.0, 45.0, 180.0, 90.0, 135.0})
+                onRim.push_back({-10 + 4 * std::cos(degrees * kPi / 180), 4 * std::sin(degrees * kPi / 180), 6});
+            const QPointF rim = r.uncoveredScreenPoint(onRim);
             const auto picked = r.app().interaction().pickAt({rim.x(), rim.y()}, interact::InputProfile{});
             r.click(rim);
             const auto* rotate = dynamic_cast<const interact::RotateOperation*>(r.app().interaction().operation());

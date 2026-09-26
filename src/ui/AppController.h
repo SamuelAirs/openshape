@@ -18,6 +18,7 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -95,6 +96,13 @@ class AppController : public QObject {
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
     // Seconds; 0 = no recovery copies. One of kRecoveryIntervals.
     Q_PROPERTY(int recoveryInterval READ recoveryInterval WRITE setRecoveryInterval NOTIFY preferencesChanged)
+    // iPhone / iPad: projects are saved by name into the app's own folder
+    // (Documents, which the Files app shows) and exports go to its Exports
+    // folder: iOS has no save dialog (Qt's FileDialog opens only). False on
+    // the desktop, which uses file dialogs.
+    Q_PROPERTY(bool savesToAppFolder READ savesToAppFolder NOTIFY appFolderChanged)
+    // The app's folder as a URL (for the Open picker to start in), or "".
+    Q_PROPERTY(QString appFolderUrl READ appFolderUrl NOTIFY appFolderChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -217,12 +225,33 @@ public:
     Q_INVOKABLE bool exportStl(const QUrl& url);
     Q_INVOKABLE bool export3mf(const QUrl& url);
 
+    // ---- The app folder (iPhone / iPad; see savesToAppFolder)
+    bool savesToAppFolder() const { return !appFolder_.isEmpty(); }
+    QString appFolder() const { return appFolder_; }
+    QString appFolderUrl() const;
+    // Saving there by name (projectFileBaseName): replaces a project of that
+    // name. False, with a message, if the name is unusable or saving fails.
+    Q_INVOKABLE bool saveInAppFolder(const QString& name);
+    // Whether a project of that name is there already (Save then replaces it).
+    Q_INVOKABLE bool appFolderHasProject(const QString& name) const;
+    // Exports the visible bodies to <app folder>/Exports/<document title>.<format>
+    // ("stl", "3mf" or "step"), replacing an earlier export of that name.
+    Q_INVOKABLE bool exportToAppFolder(const QString& format);
+    // Where to save without dialogs: the Documents folder on iOS and Android
+    // (set at start), "" for file dialogs; tests and --app-folder set it.
+    void setAppFolder(const QString& folder);
+
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
-    // Gesture undo/redo (two/three-finger taps) say what they did.
-    void undoWithFeedback();
-    void redoWithFeedback();
+    // Gesture undo/redo (two/three-finger taps), and the Undo / Redo buttons
+    // in the touch layout (no tooltip there), say what they did.
+    Q_INVOKABLE void undoWithFeedback();
+    Q_INVOKABLE void redoWithFeedback();
+    // A hint written for mouse and keyboard, worded for touch (taps, the
+    // on-screen ✓ / ✕; no Shift-click, Esc, Enter, scrolling or hovering).
+    // Only for the app's own hints: a name in the text would be reworded too.
+    Q_INVOKABLE QString touchWording(const QString& text) const;
     Q_INVOKABLE void commitOperation();
     Q_INVOKABLE void cancelOperation();
     // Returns an error message ("" on success). Previews live as the user types.
@@ -256,8 +285,12 @@ public:
     Q_INVOKABLE void editSketch(const QString& sketchId);
     // Highlights a row's geometry in the view while hovered/expanded ("" clears).
     Q_INVOKABLE void highlightHistoryItem(const QString& id);
-    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine.
+    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine,
+    // or takes it out again.
     Q_INVOKABLE void selectBody(const QString& bodyId, bool additive);
+    // A tap on a body's row in the touch layout: adds the body (never takes it
+    // out: tapping the row again folds it and keeps the body selected).
+    Q_INVOKABLE void addBodyToSelection(const QString& bodyId);
     // Model panel row actions for a body.
     Q_INVOKABLE void duplicateBody(const QString& bodyId);
     Q_INVOKABLE void splitBody(const QString& bodyId);
@@ -274,6 +307,7 @@ signals:
     void recentFilesChanged();
     void homeChanged();
     void preferencesChanged();
+    void appFolderChanged();
 
 private:
     void attach();
@@ -285,10 +319,17 @@ private:
     void stopRecoveryTimers();
     void rememberRecentFile(const QString& path);
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
+    // With an app folder, entries into its old location (the app's data
+    // folder moves when an iOS app is updated) are moved into the current one.
     void updateRecentFiles();
+    // A remembered path (a recovery copy's project) where the file is now:
+    // io::rebasedIntoFolder into the app folder, if there is one.
+    QString currentLocation(const std::string& storedPath) const;
     void savePreferences() const;
     // thumbnail.png for a save: kThumbnailSize pixels square (empty without bodies).
     std::vector<unsigned char> thumbnailPng() const;
+    // The visible bodies written as STL, 3MF or STEP (by `format`).
+    Status writeExport(const QString& format, const std::filesystem::path& path);
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
@@ -308,6 +349,7 @@ private:
     QVariantList homeProjects_;
     bool homeVisible_ = false;
     QUrl nextFileChoice_;
+    QString appFolder_; // see savesToAppFolder
 };
 
 } // namespace os::ui
