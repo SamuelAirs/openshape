@@ -84,8 +84,11 @@ Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
 35 mm height), `committed`, `fillet`, `move`,
 `sketch`, `sketchdone`, `extrude`, `bracket`, `revolve`, `combine` (two bodies
 selected), `history` (a fillet step highlighted from the Model panel),
-`rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews) and
-`arc` (a sketch with arcs). Without `--screenshot` the window stays open.
+`rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews),
+`arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
+being drawn: size and side-count labels, the -/+ counter) and
+`constraints` (the same finished, plus a tangent arc, in the Select tool:
+the constraint glyphs). Without `--screenshot` the window stays open.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 

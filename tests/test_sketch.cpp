@@ -820,6 +820,31 @@ TEST(SketchEdit, MirrorCirclesAndArcsKeepSizeAndTurn)
     EXPECT_NEAR(copy->radius, 3.5, 1e-9);
 }
 
+// A pie slice: the arc's center is also the lines' corner, so every point of
+// the copy is mirrored (the copy's radius is then implied twice; PlaneGCS
+// sets the duplicate aside and still solves and drags).
+TEST(SketchEdit, MirrorAPieSlice)
+{
+    Sketch s;
+    const EntityId axis = line(s, {-2, -20}, {-2, 20});
+    s.addConstraint({ConstraintKind::Vertical, axis});
+    const EntityId corner = s.addPoint({5, 0}), from = s.addPoint({15, 0}), to = s.addPoint({5, 10});
+    const EntityId arc = s.addArc(corner, from, to);
+    const std::vector<EntityId> slice{s.addLine(corner, from), s.addLine(to, corner), arc};
+    ASSERT_TRUE(solve(s).ok);
+    const auto made = mirrorCurves(s, slice, axis);
+    ASSERT_TRUE(made.ok());
+    ASSERT_TRUE(solve(s).ok) << s.solveReport().message;
+    EXPECT_TRUE(s.solveReport().conflicting.empty());
+    ASSERT_TRUE(solveDragging(s, from, {18, 3}).ok);
+    const double axisX = pos(s, s.line(axis)->start).x;
+    const auto* image = s.arc(made.value()[2]);
+    ASSERT_NE(image, nullptr);
+    EXPECT_NEAR(s.arcRadius(made.value()[2]), s.arcRadius(arc), 1e-7);
+    EXPECT_NEAR(pos(s, image->center).x, 2 * axisX - pos(s, corner).x, 1e-7);
+    EXPECT_NEAR(pos(s, image->end).x, 2 * axisX - pos(s, from).x, 1e-7) << "the image of the arc's start ends it";
+}
+
 TEST(SketchEdit, LinearPatternCopiesShapesAndConstraints)
 {
     Sketch s;
