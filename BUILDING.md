@@ -91,7 +91,10 @@ selected), `history` (a fillet step highlighted from the Model panel),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
-the constraint glyphs). Without `--screenshot` the window stays open.
+the constraint glyphs) and `enclosure` (a 60 x 40 x 25 mm project box
+built from a box: sizes typed, corners rounded, shelled, a cable hole cut,
+and the hole's diameter being set to 10.4 mm; the README's picture).
+Without `--screenshot` the window stays open.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 
@@ -331,6 +334,17 @@ workflow artifact. The Windows icon is made from the SVG with
   `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
   the user, failed previews and GUI-thread stalls, one line per event
   (run it in the background).
+
+- **`scripts/dev/doc_screenshots.sh`** — retakes the screenshots in
+  `docs/images/` (README.md, docs/USER_GUIDE.md) from the demo scenes
+  (1400x900; `tablet.png` with `--touch --size 1180x820`) and passes each
+  through `scripts/dev/shrink_png.py`, which drops the opaque alpha channel
+  and recompresses (13-22 % smaller, the same pixels; standard-library
+  Python). Run it from the repository root with the toolchain on `PATH`
+  after a UI change, keep the mouse pointer away from where the window
+  opens (a tooltip under it would be in the picture), and look at every
+  image; `bash scripts/dev/doc_screenshots.sh hero tablet` retakes only
+  those.
 
 ## macOS and iPad — prepared, not yet verified
 

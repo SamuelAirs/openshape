@@ -643,7 +643,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   resized by its diameter and deleted; scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
-  `recent` and `preferences`. `clickItem` lays out freshly created
+  `recent`, `preferences` and `userguide` (the help card's link to
+  docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
+  it, so no browser opens). `clickItem` lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
