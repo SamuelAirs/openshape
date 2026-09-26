@@ -123,6 +123,49 @@ std::filesystem::path tempPath(const std::string& name)
     return std::filesystem::temp_directory_path() / ("openshape_bodies_" + name);
 }
 
+void expectBox(const geom::BoundingBox& bb, Vec3 min, Vec3 max)
+{
+    EXPECT_NEAR(bb.min.x, min.x, 1e-6);
+    EXPECT_NEAR(bb.min.y, min.y, 1e-6);
+    EXPECT_NEAR(bb.min.z, min.z, 1e-6);
+    EXPECT_NEAR(bb.max.x, max.x, 1e-6);
+    EXPECT_NEAR(bb.max.y, max.y, 1e-6);
+    EXPECT_NEAR(bb.max.z, max.z, 1e-6);
+}
+
+// Split into bodies as builds before independent pieces did it (what older
+// files hold): a Split step, plus a body per other piece whose base SplitPiece
+// step takes that piece from this body.
+std::unique_ptr<cmd::Command> legacySplitCommand(const doc::Document& document, const Uuid& bodyId)
+{
+    std::vector<geom::SolidSignature> pieces;
+    for (const geom::Shape& s : geom::solids(document.body(bodyId)->shape()))
+        pieces.push_back(geom::solidSignature(s));
+    std::sort(pieces.begin(), pieces.end(), [](const geom::SolidSignature& a, const geom::SolidSignature& b) {
+        if (std::abs(a.volume - b.volume) > 1e-6 * std::max(a.volume, b.volume))
+            return a.volume > b.volume;
+        if (std::abs(a.centroid.x - b.centroid.x) > 1e-9)
+            return a.centroid.x < b.centroid.x;
+        if (std::abs(a.centroid.y - b.centroid.y) > 1e-9)
+            return a.centroid.y < b.centroid.y;
+        return a.centroid.z < b.centroid.z;
+    });
+    auto split = std::make_unique<doc::SplitFeature>();
+    split->pieces = pieces;
+    const Uuid splitId = split->id();
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    steps.push_back(std::make_unique<cmd::AddFeatureCommand>(bodyId, std::move(split)));
+    const std::vector<std::string> names = document.nextBodyNames(pieces.size() - 1);
+    for (std::size_t k = 1; k < pieces.size(); ++k) {
+        auto piece = std::make_unique<doc::SplitPieceFeature>();
+        piece->sourceBody = bodyId;
+        piece->splitFeature = splitId;
+        piece->piece = static_cast<int>(k);
+        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(names[k - 1], std::move(piece)));
+    }
+    return std::make_unique<cmd::CompositeCommand>("Split into bodies", std::move(steps));
+}
+
 // Headless UI: the controller fed like the Qt layer feeds it.
 struct Harness {
     doc::Document document;
@@ -302,6 +345,34 @@ TEST(Duplicate, NamesStayUnique)
     EXPECT_EQ(m.document.bodies().size(), 3u);
 }
 
+// The copy takes over the source's step results instead of computing its
+// history again (the same shapes, shared); computing it anew gives the same
+// body, and editing the copy computes only the copy.
+TEST(Duplicate, CopyTakesOverTheSourceResults)
+{
+    Model m;
+    const Uuid a = m.box("Body 1", {0, 0, 0}, {30, 20, 10});
+    ASSERT_TRUE(m.push(std::make_unique<cmd::AddFeatureCommand>(a, filletVertical(m.body(a).shape(), 2.0))).ok());
+    ASSERT_TRUE(m.push(std::make_unique<cmd::AddFeatureCommand>(a, pushPull(m.body(a).shape(), {0, 0, 1}, 5))).ok());
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(a);
+    const Uuid copy = command->copyId();
+    ASSERT_TRUE(m.push(std::move(command)).ok());
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(m.body(copy).state(i).status, doc::FeatureStatus::Ok) << i;
+        EXPECT_TRUE(m.body(copy).state(i).output.sameAs(m.body(a).state(i).output)) << i;
+    }
+    EXPECT_NE(m.body(copy).shapeRevision(), m.body(a).shapeRevision()) << "its own mesh";
+    const double volume = m.volume(copy);
+    EXPECT_NEAR(volume, (30 * 20 - 4 * (4 - kPi)) * 15.0, 1e-3);
+    const int faces = m.body(copy).shape().faceCount();
+    m.document.recomputeAll();
+    EXPECT_NEAR(m.volume(copy), volume, 1e-6);
+    EXPECT_EQ(m.body(copy).shape().faceCount(), faces);
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(m.body(copy).features()[1]->id(), "size", 4.0)).ok());
+    EXPECT_NEAR(m.volume(copy), (30 * 20 - 16 * (4 - kPi)) * 15.0, 1e-3);
+    EXPECT_NEAR(m.volume(a), volume, 1e-6);
+}
+
 TEST(Duplicate, SaveAndReopen)
 {
     Model m;
@@ -374,17 +445,21 @@ TEST(Duplicate, CopyIsSelectedWithMoveArrows)
 
 // ---- Split into bodies -------------------------------------------------------------
 
-// A plate cut in two by a slot becomes two bodies; widening the slot upstream
-// updates both; undo, redo and a saved file keep it.
-TEST(Split, PlateCutInTwoBecomesTwoBodies)
+// A plate cut in two by a slot becomes two bodies. Each piece is independent:
+// a copy of the plate's history (with its own hidden copy of the slot sketch)
+// ending in a Split step that keeps that piece, so editing one never changes
+// the other. Undo, redo and a saved file keep it.
+TEST(Split, PlateCutInTwoBecomesTwoIndependentBodies)
 {
     Model m;
     const SlottedPlate p = slottedPlate(m);
     ASSERT_EQ(m.body(p.plate).shape().solidCount(), 2);
     EXPECT_NEAR(m.volume(p.plate), 2 * 2800.0, 1e-6);
 
-    auto split = cmd::makeSplitBodyCommand(m.document, p.plate);
+    int pieces = 0;
+    auto split = cmd::makeSplitBodyCommand(m.document, p.plate, &pieces);
     ASSERT_TRUE(split.ok()) << split.developerMessage();
+    EXPECT_EQ(pieces, 2);
     ASSERT_TRUE(m.push(std::move(split.value())).ok());
     EXPECT_EQ(m.stack.undoLabel(), "Split into bodies");
     ASSERT_EQ(m.document.bodies().size(), 2u);
@@ -397,29 +472,51 @@ TEST(Split, PlateCutInTwoBecomesTwoBodies)
     EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
     EXPECT_NEAR(m.bounds(p.plate).max.x, 28.0, 1e-6);
     EXPECT_NEAR(m.bounds(piece).min.x, 32.0, 1e-6);
-    EXPECT_EQ(m.body(piece).features().front()->kind(), doc::FeatureKind::SplitPiece);
+    // The piece's history: the plate's (box, cut), then its own Split step.
+    ASSERT_EQ(m.body(piece).features().size(), 3u);
+    EXPECT_EQ(m.body(piece).features()[0]->kind(), doc::FeatureKind::Box);
+    EXPECT_EQ(m.body(piece).features()[2]->kind(), doc::FeatureKind::Split);
+    EXPECT_EQ(m.body(p.plate).features().back()->kind(), doc::FeatureKind::Split);
+    const Uuid pieceBox = m.body(piece).features()[0]->id();
+    const Uuid pieceSketch = static_cast<const doc::ExtrudeFeature&>(*m.body(piece).features()[1]).sketchId;
+    ASSERT_NE(pieceSketch, p.slotSketch) << "its own copy of the slot sketch";
+    ASSERT_NE(m.document.sketch(pieceSketch), nullptr);
+    EXPECT_FALSE(m.document.sketch(pieceSketch)->isVisible());
+    EXPECT_TRUE(m.document.bodiesUsing(p.plate).empty()) << "nothing is built from the plate";
 
-    // A wider slot (the left edge stays at 28): the right piece shrinks.
-    m.setSketchDimension(p.slotSketch, p.slotWidth, 10);
+    // An 80 mm plate: the plate keeps its left piece; the piece does not grow.
+    const Uuid plateBox = m.body(p.plate).features()[0]->id();
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(plateBox, "width", 80.0)).ok());
     EXPECT_FALSE(m.body(p.plate).hasFailures());
-    EXPECT_FALSE(m.body(piece).hasFailures());
     EXPECT_NEAR(m.volume(p.plate), 2800.0, 1e-6);
-    EXPECT_NEAR(m.volume(piece), 22 * 20 * 5.0, 1e-6);
-    EXPECT_NEAR(m.bounds(piece).min.x, 38.0, 1e-6);
+    EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
+    EXPECT_NEAR(m.bounds(piece).max.x, 60.0, 1e-6);
+    // A wider slot in the plate's sketch: the piece keeps its own.
+    m.setSketchDimension(p.slotSketch, p.slotWidth, 10);
+    EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
+    EXPECT_NEAR(m.bounds(piece).min.x, 32.0, 1e-6);
+    // And the other way round: a taller piece leaves the plate alone.
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(pieceBox, "height", 8.0)).ok());
+    EXPECT_FALSE(m.body(piece).hasFailures());
+    EXPECT_NEAR(m.volume(piece), 28 * 20 * 8.0, 1e-6);
+    EXPECT_NEAR(m.volume(p.plate), 2800.0, 1e-6);
+    EXPECT_NEAR(m.bounds(p.plate).size().z, 5.0, 1e-6);
 
-    // Undo the edit, then the split; redo both.
-    ASSERT_TRUE(m.stack.undo(m.document));
+    // Undo the three edits, then the split (one step); redo it.
+    for (int i = 0; i < 3; ++i)
+        ASSERT_TRUE(m.stack.undo(m.document));
     EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
     ASSERT_TRUE(m.stack.undo(m.document));
     EXPECT_EQ(m.document.bodies().size(), 1u);
+    EXPECT_EQ(m.document.sketches().size(), 1u);
     EXPECT_EQ(m.body(p.plate).shape().solidCount(), 2);
     ASSERT_TRUE(m.stack.redo(m.document).ok());
     ASSERT_EQ(m.document.bodies().size(), 2u);
-    EXPECT_NEAR(m.volume(m.document.bodies()[1]->id()), 2800.0, 1e-6);
-    ASSERT_TRUE(m.stack.redo(m.document).ok());
-    EXPECT_NEAR(m.volume(m.document.bodies()[1]->id()), 2200.0, 1e-6);
+    ASSERT_NE(m.document.body(piece), nullptr) << "redo recreates the same identity";
+    EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
+    EXPECT_NEAR(m.volume(p.plate), 2800.0, 1e-6);
 
-    // Save and reopen: still two linked bodies.
+    // Save and reopen: still two independent bodies.
     const auto path = tempPath("split.openshape");
     ASSERT_TRUE(io::saveProject(m.document, path).ok());
     auto loaded = io::loadProject(path);
@@ -427,52 +524,26 @@ TEST(Split, PlateCutInTwoBecomesTwoBodies)
     doc::Document& d = *loaded.value();
     ASSERT_EQ(d.bodies().size(), 2u);
     EXPECT_NEAR(geom::volume(d.bodies()[0]->shape()), 2800.0, 1e-6);
-    EXPECT_NEAR(geom::volume(d.bodies()[1]->shape()), 2200.0, 1e-6);
+    EXPECT_NEAR(geom::volume(d.bodies()[1]->shape()), 2800.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(d.bodies()[1]->shape()).min.x, 32.0, 1e-6);
     EXPECT_FALSE(d.bodies()[1]->hasFailures());
     std::filesystem::remove(path);
-}
 
-// When the body is whole again (the cut is suppressed), the body keeps all of
-// it and the split-off piece says why it cannot be built.
-TEST(Split, PieceFailsClearlyWhenItNoLongerExists)
-{
-    Model m;
-    const SlottedPlate p = slottedPlate(m);
-    auto split = cmd::makeSplitBodyCommand(m.document, p.plate);
-    ASSERT_TRUE(split.ok());
-    ASSERT_TRUE(m.push(std::move(split.value())).ok());
-    const Uuid piece = m.document.bodies()[1]->id();
-    const Uuid cut = m.body(p.plate).features()[1]->id();
-    ASSERT_TRUE(m.push(std::make_unique<cmd::SetFeatureSuppressedCommand>(cut, true)).ok());
-    EXPECT_FALSE(m.body(p.plate).hasFailures());
-    EXPECT_NEAR(m.volume(p.plate), 6000.0, 1e-6);
-    ASSERT_TRUE(m.body(piece).hasFailures());
-    EXPECT_NE(m.body(piece).state(0).userMessage.find("no longer separate"), std::string::npos)
-        << m.body(piece).state(0).userMessage;
-    ASSERT_TRUE(m.stack.undo(m.document));
+    // The plate can be deleted (nothing is built from it); the piece stays.
+    ASSERT_TRUE(m.push(std::make_unique<cmd::DeleteBodyCommand>(p.plate)).ok());
     EXPECT_FALSE(m.body(piece).hasFailures());
     EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
-
-    // Suppressing the split itself puts the piece back into the body.
-    const Uuid splitStep = m.body(p.plate).features().back()->id();
-    ASSERT_TRUE(m.push(std::make_unique<cmd::SetFeatureSuppressedCommand>(splitStep, true)).ok());
-    EXPECT_NEAR(m.volume(p.plate), 5600.0, 1e-6);
-    EXPECT_TRUE(m.body(piece).hasFailures());
-    // Deleting the source body: the piece explains it.
-    ASSERT_TRUE(m.stack.undo(m.document));
-    ASSERT_TRUE(m.push(std::make_unique<cmd::DeleteBodyCommand>(p.plate)).ok());
-    EXPECT_NE(m.body(piece).state(0).userMessage.find("no longer exists"), std::string::npos);
-    ASSERT_TRUE(m.stack.undo(m.document));
-    EXPECT_FALSE(m.body(piece).hasFailures());
 
     // A body in one piece cannot be split.
     const Uuid single = m.box("Body 9", {100, 0, 0}, {5, 5, 5});
     EXPECT_FALSE(cmd::makeSplitBodyCommand(m.document, single).ok());
 }
 
-// Three pieces: the body keeps the largest, two new bodies; a new cut later
-// adds a piece, which stays in the body rather than vanishing.
-TEST(Split, ThreePiecesAndAPieceThatAppearsLater)
+// Three pieces: the body keeps the largest; two new bodies, each with hidden
+// copies of the two tool bodies it was cut by. Widening a cut of the body
+// changes only the body. A new cut before the body's Split step adds a piece,
+// which stays in the body rather than vanishing.
+TEST(Split, ThreePiecesAreIndependentBodies)
 {
     Model m;
     const Uuid bar = m.box("Body 1", {0, 0, 0}, {100, 10, 10});
@@ -489,18 +560,30 @@ TEST(Split, ThreePiecesAndAPieceThatAppearsLater)
     auto split = cmd::makeSplitBodyCommand(m.document, bar);
     ASSERT_TRUE(split.ok());
     ASSERT_TRUE(m.push(std::move(split.value())).ok());
-    ASSERT_EQ(m.document.bodies().size(), 5u);
+    // The bar and its tools, then per piece: its copies of the tools, the piece.
+    ASSERT_EQ(m.document.bodies().size(), 9u);
+    const Uuid piece2 = m.document.bodies()[5]->id();
+    const Uuid piece3 = m.document.bodies()[8]->id();
+    EXPECT_EQ(m.body(piece2).name(), "Body 2");
+    EXPECT_EQ(m.body(piece3).name(), "Body 3");
+    EXPECT_EQ(m.document.bodies()[3]->name(), "Cut A copy");
+    EXPECT_EQ(m.document.bodies()[7]->name(), "Cut B copy 2");
+    for (std::size_t i : {1u, 2u, 3u, 4u, 6u, 7u})
+        EXPECT_FALSE(m.document.bodies()[i]->isVisible()) << i;
     EXPECT_NEAR(m.volume(bar), 4800.0, 1e-6) << "keeps the largest piece";
-    EXPECT_NEAR(m.volume(m.document.bodies()[3]->id()), 2800.0, 1e-6);
-    EXPECT_NEAR(m.volume(m.document.bodies()[4]->id()), 2000.0, 1e-6);
-    EXPECT_EQ(m.document.bodies()[3]->name(), "Body 2");
-    EXPECT_EQ(m.document.bodies()[4]->name(), "Body 3");
+    EXPECT_NEAR(m.volume(piece2), 2800.0, 1e-6);
+    EXPECT_NEAR(m.volume(piece3), 2000.0, 1e-6);
+    EXPECT_TRUE(m.document.bodiesUsing(bar).empty());
 
-    // A wider cut A (its tool is upstream of the bar): the pieces follow
-    // (tool -> bar -> pieces).
+    // A wider cut A (the bar's own tool): only the bar changes; so does a
+    // shorter piece 3 (its own box) leave the bar alone.
     ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(m.body(cutA).features()[0]->id(), "width", 4.0)).ok());
     EXPECT_NEAR(m.volume(bar), 4600.0, 1e-6);
-    EXPECT_NEAR(m.volume(m.document.bodies()[4]->id()), 2000.0, 1e-6);
+    EXPECT_NEAR(m.volume(piece2), 2800.0, 1e-6);
+    EXPECT_NEAR(m.volume(piece3), 2000.0, 1e-6);
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(m.body(piece3).features()[0]->id(), "height", 5.0)).ok());
+    EXPECT_NEAR(m.volume(piece3), 1000.0, 1e-6);
+    EXPECT_NEAR(m.volume(bar), 4600.0, 1e-6);
 
     // Another cut before the split step makes a fourth piece: it stays in the body.
     const Uuid cutC = m.box("Cut C", {40, -1, -1}, {2, 12, 12});
@@ -511,6 +594,7 @@ TEST(Split, ThreePiecesAndAPieceThatAppearsLater)
     EXPECT_FALSE(m.body(bar).hasFailures());
     EXPECT_EQ(m.body(bar).shape().solidCount(), 2);
     EXPECT_NEAR(m.volume(bar), 4600.0 - 200.0, 1e-6);
+    EXPECT_NEAR(m.volume(piece2), 2800.0, 1e-6);
 }
 
 TEST(Split, FromTheSelectedBody)
@@ -528,40 +612,28 @@ TEST(Split, FromTheSelectedBody)
     for (const auto& row : h.controller.historyRows())
         flagged = flagged || (row.id == a && row.canSplit);
     EXPECT_TRUE(flagged) << "the body row offers the split";
+    h.messages.clear();
     ASSERT_TRUE(h.controller.triggerAction("split").ok());
-    ASSERT_EQ(h.document.bodies().size(), 3u);
+    // Body 1, its tool (Body 2, hidden), the piece's own hidden copy of that
+    // tool, and the piece.
+    ASSERT_EQ(h.document.bodies().size(), 4u);
+    EXPECT_TRUE(h.saw("Split into 2 bodies.")) << (h.messages.empty() ? "" : h.messages.back());
     EXPECT_EQ(h.document.body(a)->shape().solidCount(), 1);
-    EXPECT_NEAR(geom::volume(h.document.bodies().back()->shape()), 1000.0, 1e-6);
+    const doc::Body& piece = *h.document.bodies().back();
+    EXPECT_EQ(piece.name(), "Body 3");
+    EXPECT_NEAR(geom::volume(piece.shape()), 1000.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(piece.shape()).min.x, 30.0, 1e-6);
+    EXPECT_FALSE(h.document.bodies()[2]->isVisible());
     EXPECT_FALSE(h.hasAction("split"));
     bool detail = false, stillFlagged = false;
     for (const auto& row : h.controller.historyRows()) {
-        detail = detail || (row.name == "Piece" && row.detail == "Piece 2 of Body 1");
+        detail = detail || (row.parentId == piece.id() && row.name == "Split" && row.detail == "Keeps 1 of 2 pieces");
         stillFlagged = stillFlagged || row.status == HistoryRow::Status::Warning || row.canSplit;
     }
     EXPECT_TRUE(detail);
-    EXPECT_FALSE(stillFlagged) << "the split dealt with the pieces the union left";
+    EXPECT_FALSE(stillFlagged) << "the splits dealt with the pieces the union left";
     EXPECT_TRUE(h.controller.undo());
     EXPECT_EQ(h.document.bodies().size(), 2u);
-}
-
-// Duplicating a split-off piece: its source body is visible, so it stays
-// shared, and the copy follows the source's upstream edits like the piece.
-TEST(Split, DuplicatedPieceKeepsFollowingItsSource)
-{
-    Model m;
-    const SlottedPlate p = slottedPlate(m);
-    auto split = cmd::makeSplitBodyCommand(m.document, p.plate);
-    ASSERT_TRUE(split.ok());
-    ASSERT_TRUE(m.push(std::move(split.value())).ok());
-    const Uuid piece = m.document.bodies()[1]->id();
-    auto command = std::make_unique<cmd::DuplicateBodyCommand>(piece);
-    const Uuid copy = command->copyId();
-    ASSERT_TRUE(m.push(std::move(command)).ok());
-    EXPECT_EQ(m.document.bodies().size(), 3u) << "the visible source is not copied";
-    EXPECT_NEAR(m.volume(copy), 2800.0, 1e-6);
-    m.setSketchDimension(p.slotSketch, p.slotWidth, 10);
-    EXPECT_NEAR(m.volume(piece), 2200.0, 1e-6);
-    EXPECT_NEAR(m.volume(copy), 2200.0, 1e-6);
 }
 
 // Files are untrusted: malformed split params are refused.
@@ -584,7 +656,67 @@ TEST(Split, MalformedParamsAreRefused)
     EXPECT_FALSE(piece.readParams({{"body", "nope"}, {"split", step}, {"piece", 1}}).ok());
 }
 
-// ---- Mirror / Pattern as separate bodies ---------------------------------------------
+// ---- Split pieces in files from before independent pieces ----------------------------
+
+// Such a piece (a body whose base SplitPiece step follows the body it was
+// split off) still follows upstream edits, and fails with a clear message
+// when the body is whole again.
+TEST(Split, LegacyPieceFollowsAndFailsClearly)
+{
+    Model m;
+    const SlottedPlate p = slottedPlate(m);
+    ASSERT_TRUE(m.push(legacySplitCommand(m.document, p.plate)).ok());
+    ASSERT_EQ(m.document.bodies().size(), 2u);
+    const Uuid piece = m.document.bodies()[1]->id();
+    EXPECT_EQ(m.body(piece).features().front()->kind(), doc::FeatureKind::SplitPiece);
+    EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
+    m.setSketchDimension(p.slotSketch, p.slotWidth, 10);
+    EXPECT_NEAR(m.volume(piece), 22 * 20 * 5.0, 1e-6) << "follows the wider slot";
+    ASSERT_TRUE(m.stack.undo(m.document));
+
+    const Uuid cut = m.body(p.plate).features()[1]->id();
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetFeatureSuppressedCommand>(cut, true)).ok());
+    EXPECT_FALSE(m.body(p.plate).hasFailures());
+    EXPECT_NEAR(m.volume(p.plate), 6000.0, 1e-6);
+    ASSERT_TRUE(m.body(piece).hasFailures());
+    EXPECT_NE(m.body(piece).state(0).userMessage.find("no longer separate"), std::string::npos)
+        << m.body(piece).state(0).userMessage;
+    ASSERT_TRUE(m.stack.undo(m.document));
+    EXPECT_FALSE(m.body(piece).hasFailures());
+    EXPECT_NEAR(m.volume(piece), 2800.0, 1e-6);
+
+    // Suppressing the split itself puts the piece back into the body.
+    const Uuid splitStep = m.body(p.plate).features().back()->id();
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetFeatureSuppressedCommand>(splitStep, true)).ok());
+    EXPECT_NEAR(m.volume(p.plate), 5600.0, 1e-6);
+    EXPECT_TRUE(m.body(piece).hasFailures());
+    // Deleting the source body: the piece explains it.
+    ASSERT_TRUE(m.stack.undo(m.document));
+    ASSERT_TRUE(m.push(std::make_unique<cmd::DeleteBodyCommand>(p.plate)).ok());
+    EXPECT_NE(m.body(piece).state(0).userMessage.find("no longer exists"), std::string::npos);
+    ASSERT_TRUE(m.stack.undo(m.document));
+    EXPECT_FALSE(m.body(piece).hasFailures());
+}
+
+// Duplicating such a piece: its source body stays shared, and the copy
+// follows the source's upstream edits like the piece.
+TEST(Split, DuplicatedLegacyPieceKeepsFollowingItsSource)
+{
+    Model m;
+    const SlottedPlate p = slottedPlate(m);
+    ASSERT_TRUE(m.push(legacySplitCommand(m.document, p.plate)).ok());
+    const Uuid piece = m.document.bodies()[1]->id();
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(piece);
+    const Uuid copy = command->copyId();
+    ASSERT_TRUE(m.push(std::move(command)).ok());
+    EXPECT_EQ(m.document.bodies().size(), 3u) << "the visible source is not copied";
+    EXPECT_NEAR(m.volume(copy), 2800.0, 1e-6);
+    m.setSketchDimension(p.slotSketch, p.slotWidth, 10);
+    EXPECT_NEAR(m.volume(piece), 2200.0, 1e-6);
+    EXPECT_NEAR(m.volume(copy), 2200.0, 1e-6);
+}
+
+// ---- Mirror / Pattern: separate, independent bodies ----------------------------------
 
 namespace {
 const HistoryRow* rowNamed(const std::vector<HistoryRow>& rows, const std::string& name)
@@ -594,98 +726,272 @@ const HistoryRow* rowNamed(const std::vector<HistoryRow>& rows, const std::strin
             return &r;
     return nullptr;
 }
+
+bool separateShown(const InteractionController& controller)
+{
+    for (const auto& action : controller.contextActions())
+        if (action.id == "separate")
+            return action.active;
+    return false;
+}
 } // namespace
 
-// "Separate bodies": the mirror image is a body of its own that follows the
-// original when it changes.
-TEST(Copies, MirrorAsSeparateBody)
+// A mirror image that would not touch the body becomes a body of its own (as
+// in Shapr3D): a copy of the body's history ending in a Mirror step that keeps
+// only the image. Pushing or moving the original afterwards leaves the image
+// as it is, and the other way round.
+TEST(Copies, MirrorAwayFromTheBodyMakesAnIndependentBody)
 {
     Harness h;
     const Uuid a = h.addBox("Body 1", {5, 0, 0}, {10, 10, 10});
     ASSERT_TRUE(h.controller.selectBody(a, false).ok());
     ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
     ASSERT_TRUE(h.hasAction("separate"));
-    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // across YZ
-    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
+    EXPECT_FALSE(separateShown(h.controller)) << "no plane yet: nothing decided";
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // across YZ, 5 mm away
     const auto* mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
     ASSERT_NE(mirror, nullptr);
     EXPECT_TRUE(mirror->separate());
+    EXPECT_TRUE(mirror->separateIsAutomatic());
+    EXPECT_TRUE(separateShown(h.controller)) << "the toggle shows the automatic choice";
     EXPECT_TRUE(mirror->canCommit()) << mirror->error();
     ASSERT_TRUE(h.controller.triggerAction("apply").ok());
     EXPECT_EQ(h.stack.undoLabel(), "Mirror");
+    EXPECT_TRUE(h.saw("Mirrored as a separate body: the image does not touch the original."))
+        << (h.messages.empty() ? "" : h.messages.back());
     ASSERT_EQ(h.document.bodies().size(), 2u);
-    const doc::Body& source = *h.document.body(a);
-    const doc::Body& image = *h.document.bodies().back();
-    EXPECT_EQ(source.features().size(), 1u) << "the original gets no step";
-    EXPECT_NEAR(geom::volume(source.shape()), 1000.0, 1e-6);
-    EXPECT_NEAR(geom::volume(image.shape()), 1000.0, 1e-6);
-    EXPECT_EQ(image.name(), "Body 2");
-    EXPECT_NEAR(geom::boundingBox(image.shape()).min.x, -15.0, 1e-6);
-    EXPECT_NEAR(geom::boundingBox(image.shape()).max.x, -5.0, 1e-6);
-    const auto rows = h.controller.historyRows();
-    const HistoryRow* copyRow = rowNamed(rows, "Mirror copy");
-    ASSERT_NE(copyRow, nullptr);
-    EXPECT_EQ(copyRow->detail, "Of Body 1 \xC2\xB7 Across YZ");
+    const Uuid b = h.document.bodies().back()->id();
+    EXPECT_EQ(h.document.body(b)->name(), "Body 2");
+    EXPECT_EQ(h.document.body(a)->features().size(), 1u) << "the original gets no step";
+    ASSERT_EQ(h.document.body(b)->features().size(), 2u);
+    EXPECT_EQ(h.document.body(b)->features()[0]->kind(), doc::FeatureKind::Box);
+    const auto* step = dynamic_cast<const doc::MirrorFeature*>(h.document.body(b)->features()[1].get());
+    ASSERT_NE(step, nullptr);
+    EXPECT_FALSE(step->keepOriginal);
+    expectBox(geom::boundingBox(h.document.body(b)->shape()), {-15, 0, 0}, {-5, 10, 10});
+    EXPECT_NEAR(geom::volume(h.document.body(b)->shape()), 1000.0, 1e-6);
+    EXPECT_TRUE(h.document.bodiesUsing(a).empty()) << "the image is not built from the original";
+    const HistoryRow* stepRow = h.row(step->id());
+    ASSERT_NE(stepRow, nullptr);
+    EXPECT_EQ(stepRow->name, "Mirror image");
+    EXPECT_EQ(stepRow->detail, "Across YZ");
 
-    // The original gets wider: the image follows.
-    ASSERT_TRUE(h.controller.setFeatureParameter(source.features()[0]->id(), "width", "20").ok());
-    EXPECT_NEAR(geom::boundingBox(image.shape()).min.x, -25.0, 1e-6);
-    EXPECT_NEAR(geom::volume(image.shape()), 2000.0, 1e-6);
+    // Push the original's +X face 10 mm, then move it up 30: the image stays.
+    const doc::Body* source = h.document.body(a);
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(a, pushPull(source->shape(), {1, 0, 0}, 10)), h.document).ok());
+    auto up = std::make_unique<doc::MoveFeature>();
+    up->translation = {0, 0, 30};
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(a, std::move(up)), h.document).ok());
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {5, 0, 30}, {25, 10, 40});
+    expectBox(geom::boundingBox(h.document.body(b)->shape()), {-15, 0, 0}, {-5, 10, 10});
+    EXPECT_NEAR(geom::volume(h.document.body(b)->shape()), 1000.0, 1e-6);
+    // The image's own box made taller: the original stays.
+    ASSERT_TRUE(h.controller.setFeatureParameter(h.document.body(b)->features()[0]->id(), "height", "25").ok());
+    expectBox(geom::boundingBox(h.document.body(b)->shape()), {-15, 0, 0}, {-5, 10, 25});
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {5, 0, 30}, {25, 10, 40});
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 2000.0, 1e-6);
 
-    EXPECT_TRUE(h.controller.undo());
+    // The mirror is one undo step; redo brings the same body back.
+    for (int i = 0; i < 3; ++i)
+        EXPECT_TRUE(h.controller.undo());
+    EXPECT_EQ(h.document.bodies().size(), 2u);
     EXPECT_TRUE(h.controller.undo());
     EXPECT_EQ(h.document.bodies().size(), 1u);
+    ASSERT_TRUE(h.controller.redo());
+    ASSERT_NE(h.document.body(b), nullptr);
+    expectBox(geom::boundingBox(h.document.body(b)->shape()), {-15, 0, 0}, {-5, 10, 10});
+    // A save keeps the image step (the plane under "plane", keepOriginal false).
+    const auto path = tempPath("mirror_image.openshape");
+    ASSERT_TRUE(io::saveProject(h.document, path).ok());
+    auto loaded = io::loadProject(path);
+    ASSERT_TRUE(loaded.ok()) << loaded.developerMessage();
+    const doc::Body* reread = loaded.value()->body(b);
+    ASSERT_NE(reread, nullptr);
+    const auto* rereadStep = dynamic_cast<const doc::MirrorFeature*>(reread->features().back().get());
+    ASSERT_NE(rereadStep, nullptr);
+    EXPECT_FALSE(rereadStep->keepOriginal);
+    expectBox(geom::boundingBox(reread->shape()), {-15, 0, 0}, {-5, 10, 10});
+    std::filesystem::remove(path);
 }
 
-TEST(Copies, PatternAsSeparateBodies)
+// Across a plane the body touches (its own face): the image joins the body,
+// one symmetric solid (as before).
+TEST(Copies, MirrorAcrossItsOwnFaceJoins)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // YZ: the box's -X face
+    const auto* mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_NE(mirror, nullptr);
+    EXPECT_FALSE(mirror->separate());
+    EXPECT_FALSE(separateShown(h.controller));
+    h.messages.clear();
+    ASSERT_TRUE(h.controller.triggerAction("apply").ok());
+    EXPECT_FALSE(h.saw("separate body"));
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {-10, 0, 0}, {10, 10, 10});
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 2000.0, 1e-6);
+    EXPECT_EQ(h.document.body(a)->shape().solidCount(), 1);
+    const auto* step = dynamic_cast<const doc::MirrorFeature*>(h.document.body(a)->features().back().get());
+    ASSERT_NE(step, nullptr);
+    EXPECT_TRUE(step->keepOriginal);
+}
+
+// The toggle wins over the automatic choice both ways: an image touching the
+// body made a separate body, an image apart from it joined (one body in two
+// pieces, with the hint to split it).
+TEST(Copies, ToggleForcesSeparateOrJoined)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok());
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok()); // joined -> separate
+    const auto* mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_NE(mirror, nullptr);
+    EXPECT_TRUE(mirror->separate());
+    EXPECT_FALSE(mirror->separateIsAutomatic());
+    // Chosen, it stays so when the plane changes.
+    ASSERT_TRUE(h.controller.triggerAction("plane:2").ok()); // XY: the bottom face
+    mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_NE(mirror, nullptr);
+    EXPECT_TRUE(mirror->separate());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok());
+    ASSERT_TRUE(h.controller.triggerAction("apply").ok());
+    EXPECT_TRUE(h.saw("Mirrored as a separate body."));
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    expectBox(geom::boundingBox(h.document.bodies()[1]->shape()), {-10, 0, 0}, {0, 10, 10});
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 1000.0, 1e-6);
+    EXPECT_TRUE(h.controller.undo());
+
+    // Apart from the body, turned off: joined into one body in two pieces.
+    const Uuid far = h.addBox("Body 3", {50, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(far, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok());
+    mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_TRUE(mirror && mirror->separateIsAutomatic());
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok()); // separate -> joined
+    mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_NE(mirror, nullptr);
+    EXPECT_FALSE(mirror->separate());
+    EXPECT_FALSE(separateShown(h.controller));
+    h.messages.clear();
+    ASSERT_TRUE(h.controller.triggerAction("apply").ok());
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    EXPECT_EQ(h.document.body(far)->shape().solidCount(), 2);
+    EXPECT_NEAR(geom::volume(h.document.body(far)->shape()), 2000.0, 1e-6);
+    EXPECT_TRUE(h.saw("Split into bodies")) << (h.messages.empty() ? "" : h.messages.back());
+}
+
+// Pattern: three copies 5 mm apart do not touch, so they are three bodies;
+// each copy is the box's history plus a Move step. Editing or moving the
+// original leaves the copies alone, and the other way round.
+TEST(Copies, PatternWithGapsGivesIndependentBodies)
 {
     Harness h;
     ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0)..(10,10,20)
     const Uuid a = h.document.bodies().front()->id();
     ASSERT_TRUE(h.controller.selectBody(a, false).ok());
     ASSERT_TRUE(h.controller.runTool("pattern").ok());
-    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
     const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
     ASSERT_NE(pattern, nullptr);
     EXPECT_TRUE(pattern->separate());
+    EXPECT_TRUE(pattern->separateIsAutomatic());
     EXPECT_TRUE(pattern->hasPreview());
+    EXPECT_TRUE(separateShown(h.controller));
     EXPECT_TRUE(h.controller.keyPress(Key::Enter));
     EXPECT_EQ(h.stack.undoLabel(), "Pattern");
+    EXPECT_TRUE(h.saw("Patterned as 2 separate bodies: the copies do not touch the original."))
+        << (h.messages.empty() ? "" : h.messages.back());
     ASSERT_EQ(h.document.bodies().size(), 3u);
     EXPECT_EQ(h.document.body(a)->features().size(), 1u);
     for (std::size_t i = 0; i < 3; ++i) {
-        const auto bb = geom::boundingBox(h.document.bodies()[i]->shape());
-        EXPECT_NEAR(bb.min.x, -10.0 + 25.0 * double(i), 1e-6) << i;
-        EXPECT_NEAR(geom::volume(h.document.bodies()[i]->shape()), 8000.0, 1e-6) << i;
+        const doc::Body& body = *h.document.bodies()[i];
+        expectBox(geom::boundingBox(body.shape()), {-10.0 + 25.0 * double(i), -10, 0}, {10.0 + 25.0 * double(i), 10, 20});
+        EXPECT_NEAR(geom::volume(body.shape()), 8000.0, 1e-6) << i;
+        if (i > 0) {
+            EXPECT_EQ(body.name(), "Body " + std::to_string(i + 1));
+            ASSERT_EQ(body.features().size(), 2u);
+            EXPECT_EQ(body.features()[1]->kind(), doc::FeatureKind::Move);
+            EXPECT_EQ(body.features()[1]->name(), "Pattern copy");
+        }
     }
+    EXPECT_TRUE(h.document.bodiesUsing(a).empty());
     // The source stays selected (with plain Move arrows).
     ASSERT_EQ(h.controller.selection().size(), 1u);
     EXPECT_EQ(h.controller.selection().items()[0].bodyId, a);
     ASSERT_NE(h.controller.operation(), nullptr);
     EXPECT_EQ(h.controller.operation()->title(), "Move");
 
-    // The original gets taller: every copy follows.
+    // The original taller, then pushed and moved: every copy stays.
+    const Uuid copy1 = h.document.bodies()[1]->id(), copy2 = h.document.bodies()[2]->id();
     ASSERT_TRUE(h.controller.setFeatureParameter(h.document.body(a)->features()[0]->id(), "height", "30").ok());
-    for (std::size_t i = 1; i < 3; ++i)
-        EXPECT_NEAR(geom::boundingBox(h.document.bodies()[i]->shape()).size().z, 30.0, 1e-6) << i;
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(a, pushPull(h.document.body(a)->shape(), {0, 1, 0}, 5)),
+                             h.document)
+                    .ok());
+    auto away = std::make_unique<doc::MoveFeature>();
+    away->translation = {0, 100, 0};
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(a, std::move(away)), h.document).ok());
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {-10, 90, 0}, {10, 115, 30});
+    expectBox(geom::boundingBox(h.document.body(copy1)->shape()), {15, -10, 0}, {35, 10, 20});
+    expectBox(geom::boundingBox(h.document.body(copy2)->shape()), {40, -10, 0}, {60, 10, 20});
+    // A copy's own Move step edited: only that copy moves.
+    ASSERT_TRUE(h.controller.setFeatureParameter(h.document.body(copy2)->features()[1]->id(), "x", "80").ok());
+    expectBox(geom::boundingBox(h.document.body(copy2)->shape()), {70, -10, 0}, {90, 10, 20});
+    expectBox(geom::boundingBox(h.document.body(copy1)->shape()), {15, -10, 0}, {35, 10, 20});
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 20 * 25 * 30.0, 1e-6);
 
-    // Save and reopen.
+    // Save and reopen: the copies are still independent.
     const auto path = tempPath("copies.openshape");
     ASSERT_TRUE(io::saveProject(h.document, path).ok());
     auto loaded = io::loadProject(path);
     ASSERT_TRUE(loaded.ok()) << loaded.developerMessage();
-    ASSERT_EQ(loaded.value()->bodies().size(), 3u);
-    EXPECT_NEAR(geom::boundingBox(loaded.value()->bodies()[2]->shape()).min.x, 40.0, 1e-6);
-    EXPECT_NEAR(geom::volume(loaded.value()->bodies()[2]->shape()), 12000.0, 1e-6);
+    doc::Document& d = *loaded.value();
+    ASSERT_EQ(d.bodies().size(), 3u);
+    expectBox(geom::boundingBox(d.body(copy2)->shape()), {70, -10, 0}, {90, 10, 20});
+    const Uuid loadedBox = d.body(a)->features()[0]->id();
+    ASSERT_TRUE(d.body(a)->feature(loadedBox)->setParameter("width", 40.0).ok());
+    d.featureChanged(loadedBox);
+    EXPECT_NEAR(geom::volume(d.body(copy1)->shape()), 8000.0, 1e-6);
     std::filesystem::remove(path);
 
-    EXPECT_TRUE(h.controller.undo());
+    // The pattern is one undo step.
+    for (int i = 0; i < 4; ++i)
+        EXPECT_TRUE(h.controller.undo());
+    EXPECT_EQ(h.document.bodies().size(), 3u);
     EXPECT_TRUE(h.controller.undo());
     EXPECT_EQ(h.document.bodies().size(), 1u);
+    ASSERT_TRUE(h.controller.redo());
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+    expectBox(geom::boundingBox(h.document.body(copy2)->shape()), {40, -10, 0}, {60, 10, 20});
 }
 
-// A circular pattern as separate bodies: turned copies, stored with their
-// rotation; a file round trip keeps them.
+// Copies that touch (spacing = the body's size) join into one body, as before.
+TEST(Copies, PatternTouchingJoins)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    const Uuid a = h.document.bodies().front()->id();
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("pattern").ok());
+    EXPECT_EQ(h.controller.setValueText("20"), "");
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    EXPECT_FALSE(pattern->separate());
+    EXPECT_FALSE(separateShown(h.controller));
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {-10, -10, 0}, {50, 10, 20});
+    EXPECT_EQ(h.document.body(a)->shape().solidCount(), 1);
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 3 * 8000.0, 1e-3);
+}
+
+// A circular pattern as separate bodies (chosen: the turned copies overlap
+// the original): each copy's Move step turns it; a file round trip keeps them.
 TEST(Copies, CircularPatternAsSeparateBodies)
 {
     Harness h;
@@ -695,31 +1001,143 @@ TEST(Copies, CircularPatternAsSeparateBodies)
     ASSERT_TRUE(h.controller.triggerAction("layout:circular").ok());
     ASSERT_TRUE(h.controller.triggerAction("fewer").ok());
     ASSERT_TRUE(h.controller.triggerAction("fewer").ok()); // 4 in total, 90 degrees apart
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_TRUE(pattern && !pattern->separate()) << "turned about its own center, the copies overlap it";
     ASSERT_TRUE(h.controller.triggerAction("separate").ok());
     ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_TRUE(h.saw("Patterned as 3 separate bodies."));
     ASSERT_EQ(h.document.bodies().size(), 4u);
-    const auto* copy = dynamic_cast<const doc::CopyFeature*>(h.document.bodies()[2]->features()[0].get());
-    ASSERT_NE(copy, nullptr);
-    EXPECT_NEAR(std::abs(copy->motion.angle), kPi, 1e-9);
+    const auto* move = dynamic_cast<const doc::MoveFeature*>(h.document.bodies()[2]->features().back().get());
+    ASSERT_NE(move, nullptr);
+    EXPECT_TRUE(move->rotates);
+    EXPECT_NEAR(std::abs(move->rotationAngle), kPi, 1e-9);
     for (std::size_t i = 1; i < 4; ++i)
         EXPECT_NEAR(geom::volume(h.document.bodies()[i]->shape()), 40.0, 1e-6);
+    // Half a turn about the bar's center (10, 0): it lands on itself.
+    expectBox(geom::boundingBox(h.document.bodies()[2]->shape()), {5, -1, 0}, {15, 1, 2});
     const auto path = tempPath("circular.openshape");
     ASSERT_TRUE(io::saveProject(h.document, path).ok());
     auto loaded = io::loadProject(path);
     ASSERT_TRUE(loaded.ok()) << loaded.developerMessage();
-    const auto* reread = dynamic_cast<const doc::CopyFeature*>(loaded.value()->bodies()[2]->features()[0].get());
+    const auto* reread = dynamic_cast<const doc::MoveFeature*>(loaded.value()->bodies()[1]->features().back().get());
     ASSERT_NE(reread, nullptr);
-    EXPECT_NEAR(reread->motion.angle, copy->motion.angle, 1e-12);
-    EXPECT_EQ(reread->sourceBody, bar);
-    const auto a = geom::boundingBox(h.document.bodies()[2]->shape());
-    const auto b = geom::boundingBox(loaded.value()->bodies()[2]->shape());
-    EXPECT_NEAR((a.min - b.min).length() + (a.max - b.max).length(), 0.0, 1e-9);
+    EXPECT_NEAR(reread->rotationAngle, kPi / 2, 1e-12);
+    const auto x = geom::boundingBox(h.document.bodies()[1]->shape());
+    const auto y = geom::boundingBox(loaded.value()->bodies()[1]->shape());
+    EXPECT_NEAR((x.min - y.min).length() + (x.max - y.max).length(), 0.0, 1e-9);
+    expectBox(y, {9, -5, 0}, {11, 5, 2});
     std::filesystem::remove(path);
+}
+
+// Independent copies can be subtracted from their source (no dependency).
+TEST(Copies, CopyCanBeSubtractedFromItsSource)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok());
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
+    ASSERT_TRUE(h.controller.triggerAction("apply").ok());
+    const Uuid b = h.document.bodies().back()->id();
+    auto move = std::make_unique<doc::MoveFeature>();
+    move->translation = {5, 0, 5}; // halfway into the original
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::AddFeatureCommand>(b, std::move(move)), h.document).ok());
+    h.controller.documentChanged();
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(b, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 1000.0 - 5 * 10 * 5.0, 1e-6);
+    EXPECT_FALSE(h.document.body(b)->isVisible());
+}
+
+TEST(Copies, TooManySeparateBodiesAreRefused)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {1, 1, 1});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("pattern").ok());
+    auto* pattern = const_cast<PatternOperation*>(dynamic_cast<const PatternOperation*>(h.controller.operation()));
+    ASSERT_NE(pattern, nullptr);
+    ASSERT_TRUE(pattern->separateIsAutomatic());
+    // More copies than separate bodies allow: automatically joined instead.
+    pattern->setCount(102, h.document);
+    EXPECT_FALSE(pattern->separate());
+    EXPECT_TRUE(pattern->canCommit()) << pattern->error();
+    // Chosen, they are refused.
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
+    pattern = const_cast<PatternOperation*>(dynamic_cast<const PatternOperation*>(h.controller.operation()));
+    ASSERT_TRUE(pattern && pattern->separate());
+    EXPECT_FALSE(pattern->canCommit());
+    EXPECT_NE(pattern->error().find("up to 100"), std::string::npos) << pattern->error();
+    pattern->setCount(101, h.document);
+    EXPECT_TRUE(pattern->canCommit()) << pattern->error();
+}
+
+// Files are untrusted: malformed Copy and Mirror params are refused.
+TEST(Copies, MalformedParamsAreRefused)
+{
+    doc::CopyFeature copy;
+    const std::string body = Uuid::generate().toString();
+    EXPECT_TRUE(copy.readParams({{"body", body}, {"translation", {1, 2, 3}}}).ok());
+    EXPECT_FALSE(copy.mirror);
+    EXPECT_TRUE(copy.readParams({{"body", body}, {"mirror", {{"origin", {0, 0, 0}}, {"normal", {1, 0, 0}}}}}).ok());
+    EXPECT_TRUE(copy.mirror);
+    EXPECT_FALSE(copy.readParams({{"body", body}, {"mirror", {{"origin", {0, 0, 0}}, {"normal", {0, 0, 0}}}}}).ok());
+    EXPECT_FALSE(copy.readParams({{"body", body}}).ok());
+    EXPECT_FALSE(copy.readParams({{"body", body}, {"translation", {0, 0, 0}}, {"rotation", {{"center", {0, 0, 0}}, {"angle", 1.0}}}})
+                     .ok())
+        << "a rotation needs an axis";
+
+    using nlohmann::json;
+    doc::MirrorFeature mirror;
+    const json plane{{"origin", {1, 2, 3}}, {"normal", {0, 0, 1}}};
+    ASSERT_TRUE(mirror.readParams(plane).ok());
+    EXPECT_TRUE(mirror.keepOriginal) << "files without the field join";
+    ASSERT_TRUE(mirror.readParams({{"keepOriginal", false}, {"plane", plane}}).ok());
+    EXPECT_FALSE(mirror.keepOriginal);
+    EXPECT_NEAR(mirror.planeOrigin.z, 3.0, 1e-12);
+    json written;
+    mirror.writeParams(written);
+    EXPECT_FALSE(written.contains("origin")) << "older builds must refuse it, not join";
+    EXPECT_EQ(written["keepOriginal"], false);
+    ASSERT_TRUE(mirror.readParams(plane).ok());
+    EXPECT_TRUE(mirror.keepOriginal);
+    EXPECT_FALSE(mirror.readParams({{"keepOriginal", "no"}, {"plane", plane}}).ok());
+    EXPECT_FALSE(mirror.readParams({{"keepOriginal", false}}).ok()) << "no plane";
+    EXPECT_FALSE(mirror.readParams({{"keepOriginal", false}, {"origin", {0, 0, 0}}, {"normal", {1, 0, 0}}}).ok())
+        << "the image's plane goes under \"plane\"";
+    EXPECT_FALSE(mirror.readParams({{"keepOriginal", false}, {"plane", {{"origin", {0, 0, 0}}, {"normal", {0, 0, 0}}}}}).ok());
+    EXPECT_FALSE(mirror.readParams({{"origin", {0, 0, 0}}, {"normal", {1, 0, 0}}, {"plane", plane}}).ok());
+}
+
+// ---- Separate copies in files from before independent copies --------------------------
+
+// A copy whose base Copy step follows its source (the "Separate bodies"
+// option before copies became independent): it still follows the source.
+TEST(Copies, LegacyCopyFollowsItsSource)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {5, 0, 0}, {10, 10, 10});
+    auto mirror = std::make_unique<doc::CopyFeature>();
+    mirror->sourceBody = a;
+    mirror->mirror = true;
+    mirror->planeOrigin = {0, 0, 0};
+    mirror->planeNormal = {1, 0, 0};
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>("Body 2", std::move(mirror)), h.document).ok());
+    h.controller.documentChanged();
+    const Uuid b = h.document.bodies().back()->id();
+    const HistoryRow* copyRow = rowNamed(h.controller.historyRows(), "Mirror copy");
+    ASSERT_NE(copyRow, nullptr);
+    EXPECT_EQ(copyRow->detail, "Of Body 1 \xC2\xB7 Across YZ");
+    ASSERT_TRUE(h.controller.setFeatureParameter(h.document.body(a)->features()[0]->id(), "width", "20").ok());
+    EXPECT_NEAR(geom::boundingBox(h.document.body(b)->shape()).min.x, -25.0, 1e-6);
+    EXPECT_NEAR(geom::volume(h.document.body(b)->shape()), 2000.0, 1e-6);
 }
 
 // A copy is built from its source, so the source cannot take it as a tool;
 // a union of the two still works (the copy keeps the result).
-TEST(Copies, UnionOfACopyWithItsSource)
+TEST(Copies, UnionOfALegacyCopyWithItsSource)
 {
     Harness h;
     const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
@@ -741,50 +1159,52 @@ TEST(Copies, UnionOfACopyWithItsSource)
     EXPECT_FALSE(h.document.body(b)->hasFailures());
 }
 
-TEST(Copies, TooManySeparateBodiesAreRefused)
+// tests/data/legacy-copies-and-pieces.openshape was saved by the build before
+// independent copies (2026-09-26, feee7aa): Split into bodies (a SplitPiece
+// body) and Mirror / Pattern with Separate bodies (Copy bodies, one more with
+// a rotation). It loads with the same volumes and boxes, and the old links
+// still work: the copies follow their source.
+TEST(Copies, LegacyFileLoadsAsBefore)
 {
-    Harness h;
-    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {1, 1, 1});
-    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
-    ASSERT_TRUE(h.controller.triggerAction("pattern").ok());
-    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
-    auto* pattern = const_cast<PatternOperation*>(dynamic_cast<const PatternOperation*>(h.controller.operation()));
-    ASSERT_NE(pattern, nullptr);
-    pattern->setCount(102, h.document);
-    EXPECT_FALSE(pattern->canCommit());
-    EXPECT_NE(pattern->error().find("up to 100"), std::string::npos) << pattern->error();
-    pattern->setCount(101, h.document);
-    EXPECT_TRUE(pattern->canCommit()) << pattern->error();
-}
-
-TEST(Copies, MalformedParamsAreRefused)
-{
-    doc::CopyFeature copy;
-    const std::string body = Uuid::generate().toString();
-    EXPECT_TRUE(copy.readParams({{"body", body}, {"translation", {1, 2, 3}}}).ok());
-    EXPECT_FALSE(copy.mirror);
-    EXPECT_TRUE(copy.readParams({{"body", body}, {"mirror", {{"origin", {0, 0, 0}}, {"normal", {1, 0, 0}}}}}).ok());
-    EXPECT_TRUE(copy.mirror);
-    EXPECT_FALSE(copy.readParams({{"body", body}, {"mirror", {{"origin", {0, 0, 0}}, {"normal", {0, 0, 0}}}}}).ok());
-    EXPECT_FALSE(copy.readParams({{"body", body}}).ok());
-    EXPECT_FALSE(copy.readParams({{"body", body}, {"translation", {0, 0, 0}}, {"rotation", {{"center", {0, 0, 0}}, {"angle", 1.0}}}})
-                     .ok())
-        << "a rotation needs an axis";
+    auto loaded = io::loadProject(std::filesystem::path(OPENSHAPE_TEST_DATA_DIR) / "legacy-copies-and-pieces.openshape");
+    ASSERT_TRUE(loaded.ok()) << loaded.developerMessage();
+    doc::Document& d = *loaded.value();
+    ASSERT_EQ(d.bodies().size(), 7u);
+    struct Expected {
+        const char* name;
+        doc::FeatureKind base;
+        double volume;
+        Vec3 min, max;
+    };
+    const Expected expected[] = {
+        {"Body 1", doc::FeatureKind::Box, 3600, {24, 0, 0}, {60, 20, 5}},
+        {"Body 2", doc::FeatureKind::SplitPiece, 2000, {0, 0, 0}, {20, 20, 5}},
+        {"Body 3", doc::FeatureKind::Box, 1500, {100, 0, 0}, {110, 10, 15}},
+        {"Body 4", doc::FeatureKind::Copy, 1500, {-110, 0, 0}, {-100, 10, 15}},
+        {"Body 5", doc::FeatureKind::Copy, 1500, {115, 0, 0}, {125, 10, 15}},
+        {"Body 6", doc::FeatureKind::Copy, 1500, {130, 0, 0}, {140, 10, 15}},
+        {"Body 7", doc::FeatureKind::Copy, 1500, {90, -30, 0}, {100, -20, 15}},
+    };
+    for (std::size_t i = 0; i < 7; ++i) {
+        const doc::Body& body = *d.bodies()[i];
+        EXPECT_EQ(body.name(), expected[i].name);
+        EXPECT_EQ(body.features().front()->kind(), expected[i].base) << body.name();
+        EXPECT_FALSE(body.hasFailures()) << body.name();
+        EXPECT_NEAR(geom::volume(body.shape()), expected[i].volume, 1e-6) << body.name();
+        expectBox(geom::boundingBox(body.shape()), expected[i].min, expected[i].max);
+    }
+    // The old links: a taller Body 3 makes every copy taller; a wider slot
+    // (the plate's sketch) makes the split-off piece shorter.
+    const Uuid box = d.bodies()[2]->features()[0]->id();
+    ASSERT_TRUE(d.body(d.bodies()[2]->id())->feature(box)->setParameter("height", 25.0).ok());
+    d.featureChanged(box);
+    for (std::size_t i = 3; i < 7; ++i)
+        EXPECT_NEAR(geom::volume(d.bodies()[i]->shape()), 2500.0, 1e-6) << d.bodies()[i]->name();
+    EXPECT_TRUE(d.bodiesUsing(d.bodies()[2]->id()).size() == 4u);
+    EXPECT_EQ(d.bodiesUsing(d.bodies()[0]->id()).size(), 1u);
 }
 
 // ---- Rotate about a picked edge or point ------------------------------------------
-
-namespace {
-void expectBox(const geom::BoundingBox& bb, Vec3 min, Vec3 max)
-{
-    EXPECT_NEAR(bb.min.x, min.x, 1e-6);
-    EXPECT_NEAR(bb.min.y, min.y, 1e-6);
-    EXPECT_NEAR(bb.min.z, min.z, 1e-6);
-    EXPECT_NEAR(bb.max.x, max.x, 1e-6);
-    EXPECT_NEAR(bb.max.y, max.y, 1e-6);
-    EXPECT_NEAR(bb.max.z, max.z, 1e-6);
-}
-} // namespace
 
 // Clicking a straight edge makes it the axis: a 20 x 10 x 5 box turned 90
 // degrees about its top front edge stands up on that edge.
@@ -905,7 +1325,8 @@ TEST(RotateAbout, CircleCenterAndBackToTheBodyCenter)
     EXPECT_NEAR(rotate->center().z, 5.0, 1e-3) << "the body's center again";
 }
 
-// A step that leaves the body in pieces says how to split it.
+// A step that leaves the body in pieces says how to split it (a mirror image
+// apart from the body, joined because Separate bodies was turned off).
 TEST(Split, MirrorThatLeavesPiecesSuggestsTheSplit)
 {
     Harness h;
@@ -913,7 +1334,9 @@ TEST(Split, MirrorThatLeavesPiecesSuggestsTheSplit)
     ASSERT_TRUE(h.controller.selectBody(a, false).ok());
     ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
     ASSERT_TRUE(h.controller.triggerAction("plane:0").ok());
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok()); // off: join
     ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
     ASSERT_FALSE(h.messages.empty());
     EXPECT_NE(h.messages.back().find("Split into bodies"), std::string::npos) << h.messages.back();
 }
@@ -966,10 +1389,10 @@ TEST(Split, InSketchModeSaysWhy)
 
 // ---- Deleting a body others are built from ------------------------------------------
 
-// Deleting the body a piece was split off would break the piece: the body is
-// hidden instead (one undo step) and the piece stays exactly as it was.
-// Deleting both at once deletes both.
-TEST(Delete, SplitParentIsHiddenNotDeleted)
+// In a file from before independent pieces, deleting the body a piece was
+// split off would break the piece: the body is hidden instead (one undo step)
+// and the piece stays exactly as it was. Deleting both at once deletes both.
+TEST(Delete, LegacySplitParentIsHiddenNotDeleted)
 {
     Harness h;
     const Uuid plate = h.addBox("Body 1", {0, 0, 0}, {60, 20, 5});
@@ -977,8 +1400,8 @@ TEST(Delete, SplitParentIsHiddenNotDeleted)
     ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
     ASSERT_TRUE(h.controller.selectBody(slot, true).ok());
     ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
-    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
-    ASSERT_TRUE(h.controller.triggerAction("split").ok());
+    ASSERT_TRUE(h.stack.push(legacySplitCommand(h.document, plate), h.document).ok());
+    h.controller.documentChanged();
     ASSERT_EQ(h.document.bodies().size(), 3u);
     const Uuid piece = h.document.bodies().back()->id();
     ASSERT_EQ(h.document.body(piece)->name(), "Body 2");
@@ -1042,10 +1465,10 @@ TEST(Delete, SplitParentIsHiddenNotDeleted)
     EXPECT_EQ(h.stack.undoLabel(), "Delete body");
 }
 
-// Of a body and one of its two split-off pieces, the piece is deleted and the
-// body hidden (the other piece is built from it); the message names only the
-// body that stays.
-TEST(Delete, ParentAndOneOfTwoPieces)
+// Of a body and one of its two split-off pieces (a file from before
+// independent pieces), the piece is deleted and the body hidden (the other
+// piece is built from it); the message names only the body that stays.
+TEST(Delete, LegacyParentAndOneOfTwoPieces)
 {
     Harness h;
     const Uuid bar = h.addBox("Body 1", {0, 0, 0}, {100, 10, 10});
@@ -1057,8 +1480,8 @@ TEST(Delete, ParentAndOneOfTwoPieces)
     ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
     ASSERT_EQ(h.document.body(bar)->shape().solidCount(), 3);
     EXPECT_TRUE(h.saw("Body 1 is now in 3 separate pieces"));
-    ASSERT_TRUE(h.controller.selectBody(bar, false).ok());
-    ASSERT_TRUE(h.controller.triggerAction("split").ok());
+    ASSERT_TRUE(h.stack.push(legacySplitCommand(h.document, bar), h.document).ok());
+    h.controller.documentChanged();
     ASSERT_EQ(h.document.bodies().size(), 5u);
     const Uuid pieceA = h.document.bodies()[3]->id(); // "Body 2", 28 mm
     const Uuid pieceB = h.document.bodies()[4]->id(); // "Body 3", 20 mm
@@ -1081,16 +1504,21 @@ TEST(Delete, ParentAndOneOfTwoPieces)
     EXPECT_NEAR(geom::volume(h.document.body(pieceA)->shape()), 2800.0, 1e-6);
 }
 
-// The same for the source of separate copies (Pattern -> Separate bodies).
-TEST(Delete, CopySourceIsHiddenNotDeleted)
+// The same for the source of separate copies in a file from before
+// independent copies (bodies whose base Copy step follows it).
+TEST(Delete, LegacyCopySourceIsHiddenNotDeleted)
 {
     Harness h;
     ASSERT_TRUE(h.controller.createBox(20).ok());
     const Uuid a = h.document.bodies().front()->id();
-    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
-    ASSERT_TRUE(h.controller.runTool("pattern").ok());
-    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
-    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    for (int i = 1; i < 3; ++i) {
+        auto copy = std::make_unique<doc::CopyFeature>();
+        copy->sourceBody = a;
+        copy->motion.translation = {25.0 * i, 0, 0};
+        ASSERT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>(h.document.nextBodyName(), std::move(copy)), h.document)
+                        .ok());
+    }
+    h.controller.documentChanged();
     ASSERT_EQ(h.document.bodies().size(), 3u);
 
     ASSERT_TRUE(h.controller.selectBody(a, false).ok());
@@ -1112,6 +1540,52 @@ TEST(Delete, CopySourceIsHiddenNotDeleted)
     ASSERT_TRUE(h.controller.deleteBody(a).ok());
     EXPECT_FALSE(h.document.body(a)->isVisible());
     EXPECT_EQ(h.document.bodies().size(), 3u);
+}
+
+// Copies made by Pattern and pieces made by Split into bodies are independent:
+// the body they came from is deleted like any other, and they stay.
+TEST(Delete, SourceOfIndependentCopiesAndPiecesIsDeleted)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    const Uuid a = h.document.bodies().front()->id();
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("pattern").ok());
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+    const HistoryRow* r = h.row(a);
+    ASSERT_NE(r, nullptr);
+    EXPECT_TRUE(r->canDelete);
+    EXPECT_TRUE(r->message.empty()) << r->message;
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.document.body(a), nullptr);
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    for (std::size_t i = 0; i < 2; ++i) {
+        EXPECT_FALSE(h.document.bodies()[i]->hasFailures()) << i;
+        EXPECT_NEAR(geom::volume(h.document.bodies()[i]->shape()), 8000.0, 1e-6) << i;
+        EXPECT_NEAR(geom::boundingBox(h.document.bodies()[i]->shape()).min.x, 15.0 + 25.0 * double(i), 1e-6) << i;
+    }
+    EXPECT_EQ(h.stack.undoLabel(), "Delete body");
+    EXPECT_TRUE(h.controller.undo());
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+
+    // A plate cut in two, split: the plate is deleted, the piece stays.
+    const Uuid plate = h.addBox("Plate", {0, 100, 0}, {60, 20, 5});
+    const Uuid slot = h.addBox("Slot", {28, 95, -5}, {4, 30, 15});
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(slot, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("split").ok());
+    const Uuid piece = h.document.bodies().back()->id();
+    EXPECT_NEAR(geom::volume(h.document.body(piece)->shape()), 2800.0, 1e-6);
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.document.body(plate), nullptr);
+    EXPECT_FALSE(h.document.body(piece)->hasFailures());
+    EXPECT_NEAR(geom::volume(h.document.body(piece)->shape()), 2800.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(h.document.body(piece)->shape()).min.x, 32.0, 1e-6);
 }
 
 // ---- Duplicate: what is copied depends on the kind of reference ----------------------

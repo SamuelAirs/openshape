@@ -39,7 +39,9 @@ public:
     // Finds the body owning a feature.
     Body* bodyOfFeature(const Uuid& featureId) const;
 
-    Body& addBody(std::unique_ptr<Body> body, int index = -1);
+    // Adds a body and computes its steps from `computeFrom` on (earlier ones
+    // hold results already: Body::adoptResults).
+    Body& addBody(std::unique_ptr<Body> body, int index = -1, int computeFrom = 0);
     std::unique_ptr<Body> removeBody(const Uuid& id, int* removedIndex = nullptr);
     void setBodyVisible(const Uuid& id, bool visible);
 

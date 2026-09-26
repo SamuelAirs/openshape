@@ -281,6 +281,8 @@ private:
 
 // Mirror: keeps the body and joins its mirror image. The plane comes from a
 // clicked flat face (on any body) or an origin plane (across YZ, XZ or XY).
+// An image that would not touch the body becomes a separate, independent
+// body instead (as in Shapr3D); the "Separate bodies" toggle overrides that.
 class MirrorOperation final : public Operation {
 public:
     static std::unique_ptr<MirrorOperation> create(const doc::Document& document, const Uuid& bodyId);
@@ -299,9 +301,13 @@ public:
     Status setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
     // normalAxis 0: across YZ (flips X), 1: across XZ (flips Y), 2: across XY (flips Z).
     void setOriginPlane(int normalAxis, const doc::Document& document);
-    // "Separate bodies": the mirror image becomes a body of its own that
-    // follows this one (a Copy step) instead of joining it.
-    bool separate() const { return separate_; }
+    // "Separate bodies": the mirror image becomes an independent body (a copy
+    // of this body's history ending in a Mirror step that keeps only the
+    // image) instead of joining it. Chosen automatically when the image would
+    // not touch the body; setSeparate is the user's choice and wins.
+    bool separate() const { return separateChoice_.value_or(autoSeparate_); }
+    // Separate because the image would not touch the body (not chosen).
+    bool separateIsAutomatic() const { return !separateChoice_ && autoSeparate_; }
     void setSeparate(bool separate, const doc::Document& document);
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
 
@@ -309,10 +315,13 @@ protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
     bool neutralIsIdentity() const override { return false; }
+    void resetAutomaticChoices() override { autoSeparate_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
 
 private:
-    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies() const;
-    bool separate_ = false;
+    std::vector<std::unique_ptr<doc::Feature>> makeCopySteps() const;
+    std::optional<bool> separateChoice_; // the toggle, once used
+    bool autoSeparate_ = false;          // the joined image would be a separate piece
     MirrorOperation(Uuid bodyId, const Vec3& center) : Operation(bodyId, LinearManipulator(center, {0, 0, 1})) {}
     struct Plane {
         Vec3 origin, normal;
@@ -324,7 +333,9 @@ private:
 // Pattern: repeats the body, copies joined. Linear: `count` copies along X/Y/Z
 // (or a clicked straight edge), the arrow sets the spacing (it sits on the last
 // copy). Circular: copies turn around X/Y/Z through the body center (or a
-// clicked hole/shaft/circle), value() = total angle in degrees.
+// clicked hole/shaft/circle), value() = total angle in degrees. Copies that
+// would not touch the body become separate, independent bodies instead (as
+// in Shapr3D; up to 100 copies); the "Separate bodies" toggle overrides that.
 class PatternOperation final : public Operation {
 public:
     static std::unique_ptr<PatternOperation> create(const doc::Document& document, const Uuid& bodyId);
@@ -345,9 +356,13 @@ public:
     void setCount(int count, const doc::Document& document);
     // A straight edge (linear direction) or a round face/edge (circular axis).
     Status setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
-    // "Separate bodies": every copy becomes a body of its own that follows
-    // this one (a Copy step) instead of joining it (at most 100 copies).
-    bool separate() const { return separate_; }
+    // "Separate bodies": every copy becomes an independent body (a copy of
+    // this body's history ending in a Move step) instead of joining it (at
+    // most 100 copies). Chosen automatically when the copies would not touch
+    // the body; setSeparate is the user's choice and wins.
+    bool separate() const { return separateChoice_.value_or(autoSeparate_); }
+    // Separate because the copies would not touch the body (not chosen).
+    bool separateIsAutomatic() const { return !separateChoice_ && autoSeparate_; }
     void setSeparate(bool separate, const doc::Document& document);
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
 
@@ -360,10 +375,13 @@ public:
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
+    void resetAutomaticChoices() override { autoSeparate_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
 
 private:
-    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies(double value) const;
-    bool separate_ = false;
+    std::vector<std::unique_ptr<doc::Feature>> makeCopySteps(double value) const;
+    std::optional<bool> separateChoice_; // the toggle, once used
+    bool autoSeparate_ = false;          // the joined copies would be separate pieces
     PatternOperation(Uuid bodyId, const Vec3& center, const Vec3& size)
         : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center), size_(size) {}
     Vec3 axisVectorFor() const;

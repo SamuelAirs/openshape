@@ -46,13 +46,13 @@ Body* Document::bodyOfFeature(const Uuid& featureId) const
     return nullptr;
 }
 
-Body& Document::addBody(std::unique_ptr<Body> body, int index)
+Body& Document::addBody(std::unique_ptr<Body> body, int index, int computeFrom)
 {
     if (index < 0 || index > static_cast<int>(bodies_.size()))
         index = static_cast<int>(bodies_.size());
     Body& ref = *body;
     bodies_.insert(bodies_.begin() + index, std::move(body));
-    ref.recompute(0, context());
+    ref.recompute(std::max(computeFrom, 0), context());
     recomputeDependents(ref.id()); // bodies that combine with this one
     OS_LOG(Debug, Document) << "added body " << ref.id().toString() << " '" << ref.name() << "'";
     syncSketchAttachments();

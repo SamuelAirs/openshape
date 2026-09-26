@@ -31,8 +31,10 @@ target_link_libraries(test_document PRIVATE openshape_commands openshape_io libz
 
 openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_touch_wording.cpp test_bodies.cpp test_holes_interaction.cpp test_draft_interaction.cpp test_import_interaction.cpp test_thumbnail.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
-# test_touch_wording reads the QML hints and the help card.
-target_compile_definitions(test_interaction PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+# test_touch_wording reads the QML hints and the help card; test_bodies a
+# project saved by an older build (tests/data).
+target_compile_definitions(test_interaction PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    OPENSHAPE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 openshape_add_test(test_sketch test_sketch.cpp)
 target_link_libraries(test_sketch PRIVATE openshape_sketch)

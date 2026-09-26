@@ -119,6 +119,12 @@ void AddFeatureCommand::undo(doc::Document& document)
 
 // ---- DuplicateBody --------------------------------------------------------------
 
+DuplicateBodyCommand::DuplicateBodyCommand(Uuid sourceId, std::string name, std::unique_ptr<doc::Feature> lastStep,
+                                           std::string label)
+    : sourceId_(sourceId), name_(std::move(name)), lastStep_(std::move(lastStep)), label_(std::move(label))
+{
+}
+
 Status DuplicateBodyCommand::plan(const doc::Document& document)
 {
     const doc::Body* source = document.body(sourceId_);
@@ -204,15 +210,19 @@ Status DuplicateBodyCommand::plan(const doc::Document& document)
     }
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const doc::Body& b = *bodies[i];
+        const bool isCopy = b.id() == sourceId_;
         auto copy = std::make_unique<doc::Body>(copies.at(b.id()));
-        copy->setName(uniqueName(b.name() + " copy", true));
-        copy->setVisible(b.id() == sourceId_); // copied tools are consumed by the copy: hidden
+        copy->setName(isCopy && !name_.empty() ? name_ : uniqueName(b.name() + " copy", true));
+        copy->setVisible(isCopy); // copied tools are consumed by the copy: hidden
         int index = 0;
         for (auto& f : features[i]) {
             f->remapReferences(copies);
             copy->insertFeature(std::move(f), index++);
         }
+        if (isCopy && lastStep_)
+            copy->insertFeature(lastStep_->clone(), index);
         bodies_.push_back(std::move(copy));
+        originals_.push_back(b.id());
     }
     return okStatus();
 }
@@ -226,13 +236,33 @@ Status DuplicateBodyCommand::execute(doc::Document& document)
     }
     for (const auto& s : sketches_)
         document.addSketch(std::make_unique<sketch::Sketch>(s));
-    for (const auto& b : bodies_)
-        document.addBody(std::make_unique<doc::Body>(*b));
+    for (std::size_t i = 0; i < bodies_.size(); ++i) {
+        // The cloned steps give what the original's give: take its results
+        // over rather than computing the whole history again (a pattern of
+        // many copies, or pieces of a long history, would pay it per copy).
+        auto copy = std::make_unique<doc::Body>(*bodies_[i]);
+        const doc::Body* original = document.body(originals_[i]);
+        const int computed = original ? copy->adoptResults(*original) : 0;
+        document.addBody(std::move(copy), -1, computed);
+    }
     const doc::Body* source = document.body(sourceId_);
     const doc::Body* copy = document.body(copyId_);
     if (!copy || (source && !source->shape().isNull() && copy->shape().isNull())) {
         undo(document);
         return Status::failure(ErrorCode::KernelFailure, "Unable to duplicate this body.", "duplicate: the copy did not compute");
+    }
+    if (lastStep_) {
+        // The step that places or trims the copy must work and change something.
+        const doc::FeatureState& state = copy->state(static_cast<int>(copy->features().size()) - 1);
+        if (state.status != doc::FeatureStatus::Ok || state.error == ErrorCode::NoEffect) {
+            Status failure = state.status == doc::FeatureStatus::NotComputed
+                               ? Status::failure(ErrorCode::InvalidArgument,
+                                                 "Unable to copy this body: one of its steps failed. Fix or delete that step first.",
+                                                 "duplicate: a step of the source failed")
+                               : failureFrom(state);
+            undo(document);
+            return failure;
+        }
     }
     return okStatus();
 }
@@ -245,9 +275,19 @@ void DuplicateBodyCommand::undo(doc::Document& document)
         document.removeSketch(it->id());
 }
 
+std::unique_ptr<Command> makeCopyBodiesCommand(const Uuid& sourceId, std::vector<std::unique_ptr<doc::Feature>> lastSteps,
+                                               const std::vector<std::string>& names, const std::string& label)
+{
+    std::vector<std::unique_ptr<Command>> steps;
+    for (std::size_t i = 0; i < lastSteps.size(); ++i)
+        steps.push_back(std::make_unique<DuplicateBodyCommand>(sourceId, i < names.size() ? names[i] : std::string(),
+                                                               std::move(lastSteps[i]), label));
+    return std::make_unique<CompositeCommand>(label, std::move(steps));
+}
+
 // ---- Split into bodies ------------------------------------------------------------
 
-Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId)
+Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId, int* pieceCount)
 {
     using R = Result<std::unique_ptr<Command>>;
     const doc::Body* body = document.body(bodyId);
@@ -272,19 +312,25 @@ Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& docum
         return a.centroid.z < b.centroid.z;
     });
 
-    auto split = std::make_unique<doc::SplitFeature>();
-    split->pieces = pieces;
-    const Uuid splitId = split->id();
+    // Every other piece first: an independent copy of the body's history as
+    // it is now (before its own Split step), ending in a Split step that
+    // keeps that piece (listed first; the others are recorded so they go).
     std::vector<std::unique_ptr<Command>> steps;
-    steps.push_back(std::make_unique<AddFeatureCommand>(bodyId, std::move(split)));
     const std::vector<std::string> names = document.nextBodyNames(pieces.size() - 1);
     for (std::size_t k = 1; k < pieces.size(); ++k) {
-        auto piece = std::make_unique<doc::SplitPieceFeature>();
-        piece->sourceBody = bodyId;
-        piece->splitFeature = splitId;
-        piece->piece = static_cast<int>(k);
-        steps.push_back(std::make_unique<CreateBodyCommand>(names[k - 1], std::move(piece)));
+        auto keep = std::make_unique<doc::SplitFeature>();
+        keep->pieces.push_back(pieces[k]);
+        for (std::size_t j = 0; j < pieces.size(); ++j)
+            if (j != k)
+                keep->pieces.push_back(pieces[j]);
+        steps.push_back(std::make_unique<DuplicateBodyCommand>(bodyId, names[k - 1], std::move(keep), "Split into bodies"));
     }
+    // Then the body keeps its largest piece.
+    auto split = std::make_unique<doc::SplitFeature>();
+    split->pieces = pieces;
+    steps.push_back(std::make_unique<AddFeatureCommand>(bodyId, std::move(split)));
+    if (pieceCount)
+        *pieceCount = static_cast<int>(pieces.size());
     return R::success(std::make_unique<CompositeCommand>("Split into bodies", std::move(steps)));
 }
 
