@@ -140,6 +140,18 @@ QQuickItem* findVisualItem(QQuickItem* root, const QString& objectName)
             return found;
     return nullptr;
 }
+
+QQuickItem* findVisibleVisualItem(QQuickItem* root, const QString& objectName)
+{
+    if (!root || !root->isVisible())
+        return nullptr;
+    if (root->objectName() == objectName)
+        return root;
+    for (QQuickItem* child : root->childItems())
+        if (QQuickItem* found = findVisibleVisualItem(child, objectName))
+            return found;
+    return nullptr;
+}
 } // namespace
 
 bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifiers mods)
@@ -160,20 +172,27 @@ bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifier
         chain.push_back(p);
     for (auto it = chain.rbegin(); it != chain.rend(); ++it)
         (*it)->ensurePolished();
-    // Scroll it into view (the tool palette scrolls in short windows).
+    // Scroll it into view (the tool palette scrolls in short windows; the
+    // compact layout's tool strip and action rows scroll sideways).
     for (QQuickItem* p : chain) {
         if (p == item || !p->inherits("QQuickFlickable"))
             continue;
         auto* content = p->property("contentItem").value<QQuickItem*>();
         if (!content)
             continue;
-        const double top = item->mapToItem(content, QPointF(0, 0)).y();
+        const QPointF topLeft = item->mapToItem(content, QPointF(0, 0));
         double contentY = p->property("contentY").toDouble();
-        if (top < contentY)
-            contentY = top;
-        else if (top + item->height() > contentY + p->height())
-            contentY = top + item->height() - p->height();
+        if (topLeft.y() < contentY)
+            contentY = topLeft.y();
+        else if (topLeft.y() + item->height() > contentY + p->height())
+            contentY = topLeft.y() + item->height() - p->height();
         p->setProperty("contentY", contentY);
+        double contentX = p->property("contentX").toDouble();
+        if (topLeft.x() < contentX)
+            contentX = topLeft.x();
+        else if (topLeft.x() + item->width() > contentX + p->width())
+            contentX = topLeft.x() + item->width() - p->width();
+        p->setProperty("contentX", contentX);
     }
     const QPointF center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
     OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center.x() << "," << center.y();
@@ -234,7 +253,9 @@ QString AcceptanceRunner::describeClick() const
 {
     // The topmost visible item under the point that takes mouse buttons.
     std::function<QQuickItem*(QQuickItem*)> itemAt = [&](QQuickItem* item) -> QQuickItem* {
-        const QList<QQuickItem*> children = item->childItems();
+        // Paint order: by z, then declaration order (the last is on top).
+        QList<QQuickItem*> children = item->childItems();
+        std::stable_sort(children.begin(), children.end(), [](const QQuickItem* a, const QQuickItem* b) { return a->z() < b->z(); });
         for (auto it = children.rbegin(); it != children.rend(); ++it) {
             QQuickItem* child = *it;
             if (!child->isVisible() || child->opacity() <= 0.0)
@@ -974,11 +995,30 @@ std::vector<AcceptanceScenario> acceptanceScenarios()
 QQuickItem* AcceptanceRunner::findItem(const QString& objectName) const
 {
     auto* item = window_->findChild<QQuickItem*>(objectName);
-    return item ? item : findVisualItem(window_->contentItem(), objectName);
+    if (!item)
+        item = findVisualItem(window_->contentItem(), objectName);
+    // Two items may share a name (one per layout, or a delegate being
+    // replaced): prefer the one on screen.
+    if (item && !item->isVisible())
+        if (QQuickItem* shown = findVisibleVisualItem(window_->contentItem(), objectName))
+            return shown;
+    return item;
+}
+
+void AcceptanceRunner::resizeWindow(int width, int height)
+{
+    // Phone-sized windows are below the desktop minimum (Main.qml).
+    window_->setMinimumSize(QSize(std::min(width, initialMinimum_.width()), std::min(height, initialMinimum_.height())));
+    window_->resize(width, height);
+    QCoreApplication::processEvents();
+    OS_LOG(Info, App) << "acceptance: window resized to " << width << "x" << height << " (it is " << window_->width() << "x"
+                      << window_->height() << ")";
 }
 
 void AcceptanceRunner::start()
 {
+    initialSize_ = window_->size();
+    initialMinimum_ = window_->minimumSize();
     std::vector<AcceptanceScenario> scenarios = acceptanceScenarios();
     scenarios.insert(scenarios.begin(), AcceptanceScenario{QStringLiteral("core"), 0, [](AcceptanceRunner& r) {
                                                               return r.coreScenario();
@@ -1026,6 +1066,15 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     app_->setRecoveryInterval(60);
     app_->setPenMode(false);
     app_->setTouchMode(false);
+    // The window a scenario may have made phone-sized (Compact) comes back,
+    // without a simulated safe area or an open compact panel.
+    window_->setProperty("simulatedSafeArea", QVariant());
+    window_->setProperty("historyOpen", false);
+    window_->setProperty("viewMenuOpen", false);
+    if (window_->size() != initialSize_) {
+        window_->resize(initialSize_);
+        window_->setMinimumSize(initialMinimum_);
+    }
     app_->newDocument();
     app_->setDisplayUnit(QStringLiteral("mm"));
     app_->setView(QStringLiteral("iso"));

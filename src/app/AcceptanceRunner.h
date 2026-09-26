@@ -6,6 +6,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
+#include <QtCore/QSize>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
@@ -66,8 +67,13 @@ public:
     // Flickable around it (the tool palette in a short window) so it is on
     // screen, as a user would; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
-    // A QML item by objectName (declared items and generated delegates), or null.
+    // A QML item by objectName (declared items and generated delegates; a
+    // visible one when two share the name), or null.
     QQuickItem* findItem(const QString& objectName) const;
+    // Resizes the window (logical px; below the desktop minimum too, e.g. a
+    // phone). The next scenario starts at the size the run started with.
+    void resizeWindow(int width, int height);
+    QSize initialWindowSize() const { return initialSize_; }
 
     // The document's body `index`. If an earlier failure left fewer bodies,
     // records a failure and abandons the rest of the current scenario
@@ -103,6 +109,8 @@ private:
     int scenarioFailures_ = 0;
     QStringList summary_;
     int waitedMs_ = 0; // for a camera animation to end before the next step
+    QSize initialSize_;
+    QSize initialMinimum_;
     QPointF lastClick_;
     bool hasLastClick_ = false;
     double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)
@@ -110,7 +118,8 @@ private:
 
 // A named part of the acceptance run. Scenarios run by `order` (then name);
 // each one after the first starts from a new, empty document (touch and pen
-// mode off, millimeters, isometric view, no overlays open).
+// mode off, millimeters, isometric view, no overlays open, the window at the
+// size the run started with).
 //
 // To add one, create src/app/acceptance/<Name>.cpp (CMake picks it up) with
 //

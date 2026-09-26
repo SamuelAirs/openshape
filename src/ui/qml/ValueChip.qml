@@ -14,6 +14,9 @@ Item {
     id: chip
 
     required property AppController app
+    // The widest it may be (a phone's width): the actions below the field
+    // then scroll sideways.
+    property real maximumWidth: Infinity
     signal finished()
 
     width: column.implicitWidth
@@ -104,7 +107,7 @@ Item {
                         chip.app.commitOperation()
                         chip.finished()
                     }
-                    ToolTip.visible: hovered
+                    ToolTip.visible: hovered && !Theme.touch
                     ToolTip.text: "Apply (Enter)"
                     ToolTip.delay: 500
                 }
@@ -116,7 +119,7 @@ Item {
                         chip.app.cancelOperation()
                         chip.finished()
                     }
-                    ToolTip.visible: hovered
+                    ToolTip.visible: hovered && !Theme.touch
                     ToolTip.text: "Cancel (Esc)"
                     ToolTip.delay: 500
                 }
@@ -126,7 +129,7 @@ Item {
         Text {
             id: errorText
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 320
+            Layout.maximumWidth: Math.min(320, chip.maximumWidth)
             visible: text.length > 0
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
@@ -134,8 +137,10 @@ Item {
             font.pixelSize: 12
         }
 
-        Row {
+        ScrollRow {
             Layout.alignment: Qt.AlignHCenter
+            maximumWidth: chip.maximumWidth
+            fadeColor: Theme.background
             spacing: 4
             visible: chip.app.contextActions.length > 1
             Repeater {

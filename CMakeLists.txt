@@ -48,8 +48,8 @@ if(OPENSHAPE_BUILD_APP)
     # compatibility guarantees: builds are tied to the exact Qt version they
     # were compiled against. Accepted deliberately (see ARCHITECTURE.md).
     set(QT_NO_PRIVATE_MODULE_WARNING ON)
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui GuiPrivate Qml Quick QuickControls2 ShaderTools)
-    qt_standard_project_setup(REQUIRES 6.8)
+    find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui GuiPrivate Qml Quick QuickControls2 ShaderTools)
+    qt_standard_project_setup(REQUIRES 6.9) # SafeArea, ApplicationWindow padding
 endif()
 
 if(OPENSHAPE_BUILD_TESTS)

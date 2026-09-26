@@ -414,6 +414,25 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   flag itself lives in `InteractionController::touchLayout()` (AppController
   only reads and sets it), so the on-canvas targets of the sketch session and
   the QML controls can never disagree.
+- **Window-size layout (phones, Split View):** the QML layout follows the
+  window, not the device. `Theme.compact` (window narrower than 600 or
+  shorter than 500 logical px, bound live from `Main.qml`) turns the
+  Create/Modify/Combine palette and the sketch's Draw/Edit palette into a
+  strip along the bottom edge that scrolls sideways (the same buttons and
+  object names: a `GridLayout` whose `flow` switches), hides the Model panel
+  behind a **Model** button (it slides in from the right; `historyOpen`),
+  folds the view buttons into a menu behind a **View** button next to the
+  axis marker (`viewMenuOpen`; the same buttons, in columns when short),
+  makes action rows scroll sideways (`ScrollRow.qml`) and the hint one line
+  (a tap shows all of it). Positions derive from the window size
+  (`Main.stripTop`, `bottomStackTop`), never from each other in a circle.
+  **Safe areas:** `Theme.safeTop/Right/Bottom/Left` come from Qt's
+  `SafeArea` attached type (Qt 6.9+: the Dynamic Island or notch, rounded
+  corners, the home indicator), or from `--safe-area` on the desktop;
+  controls keep `Theme.insetTop/...` from the window edges while the 3D view
+  fills the whole window (`ApplicationWindow` padding 0). Overlays center
+  their cards in the safe rectangle. Regular windows (desktop, iPad full
+  screen) look as before.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -570,10 +589,14 @@ them on a hidden menu separator after the Open Recent sub-menu).
   bar, Align, Rotate rings, Pattern, Mirror, two-/three-finger taps and the
   touch layout, the About box, trim/slot/fillet/offset in a sketch,
   symmetric and up-to-face extrusions, a fillet carried by a push, a hole
-  resized by its diameter and deleted; scenarios `recovery` (a real crash
+  resized by its diameter and deleted; `compact` (the window resized live to
+  an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
+  Model panel, View menu, a box pushed by touch, the sketch strip; the runner
+  restores the run's window size for the next scenario); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
-  `recent` and `preferences`. `clickItem` lays out freshly created
+  `recent` and `preferences`. `clickItem` scrolls any Flickable around the
+  item (both directions) to bring it on screen, and lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
