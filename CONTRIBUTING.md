@@ -94,7 +94,13 @@ field (`-Wmissing-field-initializers`) fails CI.
 **A new operation or tool**
 1. `interaction/Operation.h/.cpp`: an `Operation` subclass (`makeFeature`,
    `title`, `valueLabel`; hooks such as `prompt()`, `neutralValue()`,
-   `labelAnchor()` as needed).
+   `labelAnchor()` as needed). Give it `clone()` (one line, like the
+   others) or its previews stay on the GUI thread; `canCommit()` uses
+   `previewUsable()` (a pending preview counts); an automatic choice made
+   from the preview needs `adoptAutomaticChoices()` and
+   `commitNeedsPreview()`. Everything its preview reads must come from the
+   operation's own members and the document passed in (a snapshot on the
+   worker), never from the controller.
 2. `InteractionController`: arm it in `rebuildOperation()`, offer it in
    `contextActions()`, handle its id in `triggerAction()`, and in `runTool()`
    when it belongs in the palette.

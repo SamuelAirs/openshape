@@ -34,6 +34,7 @@ struct HistoryRow {
         std::string key;
         std::string label;
         std::string valueText; // formatted in the display unit
+        bool operator==(const Parameter&) const = default;
     };
 
     Kind kind = Kind::Body;
@@ -50,6 +51,8 @@ struct HistoryRow {
     // "Split into bodies" (for the body `id`, or `parentId` for a step).
     bool canSplit = false;
     std::vector<Parameter> parameters;
+    // The UI rebuilds the Model panel only when a row changed (TD-18).
+    bool operator==(const HistoryRow&) const = default;
 };
 
 // Turns application-level input into navigation, selection, previews and

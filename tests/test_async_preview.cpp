@@ -466,3 +466,44 @@ TEST(AsyncPreview, CommitWaitsWhenAnAutomaticChoiceDependsOnThePreview)
     EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 8000.0, 1e-3);
     EXPECT_NEAR(geom::volume(h.document.bodies()[1]->shape()), 500.0, 1e-3);
 }
+
+// While the newest value computes, an older one that finished is shown if
+// it worked (the preview keeps up with a drag), but the failure of a value
+// the user has left is not.
+TEST(AsyncPreview, OlderResultsKeepUpButTheirErrorsDoNot)
+{
+    AsyncHarness h;
+    const PushPullOperation* op = h.selectTop();
+    ASSERT_NE(op, nullptr);
+    h.worker().setJobDelayForTesting(100ms);
+    EXPECT_EQ(h.controller.setValueText("25"), "");
+    h.untilRunning();
+    EXPECT_EQ(h.controller.setValueText("35"), "");
+    // The 25 mm preview finishes first.
+    const auto t0 = std::chrono::steady_clock::now();
+    while (!h.controller.deliverPreviews() && msSince(t0) < 5000)
+        std::this_thread::yield();
+    EXPECT_TRUE(op->previewPending()) << "35 still computes";
+    ASSERT_TRUE(op->hasPreview());
+    EXPECT_NEAR(meshHeight(*op->previewMesh()), 25.0, 1e-4) << "the finished older value is shown meanwhile";
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_FALSE(op->previewPending());
+    EXPECT_NEAR(meshHeight(*op->previewMesh()), 35.0, 1e-4);
+
+    // A fillet too large for the edge fails on the worker while a size that
+    // works is already requested: that error never shows.
+    h.controller.cancelOperation();
+    h.controller.cancelOperation();
+    h.clickAt(h.screen({10, -10, 10}));
+    const Operation* fillet = h.controller.operation();
+    ASSERT_NE(fillet, nullptr);
+    ASSERT_EQ(fillet->title(), "Fillet");
+    const std::uint64_t dropped = h.controller.previewsDropped();
+    EXPECT_EQ(h.controller.setValueText("50"), "");
+    h.untilRunning();
+    EXPECT_EQ(h.controller.setValueText("2"), "");
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_TRUE(fillet->error().empty()) << "the error of the value the user left showed: " << fillet->error();
+    EXPECT_TRUE(fillet->hasPreview());
+    EXPECT_EQ(h.controller.previewsDropped(), dropped + 1);
+}

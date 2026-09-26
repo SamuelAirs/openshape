@@ -96,7 +96,9 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   for that Shape instance**. Booleans run non-destructive (`runBoolean`):
   by default OCCT widens tolerances of its inputs' sub-shapes in place, which
   changed cached step outputs under later steps (found by the undo/redo
-  stress test). Meshing still writes triangulations into shapes (TD-4).
+  stress test). Meshing still writes triangulations into shapes, which
+  other shapes share (a preview result shares most faces with its body):
+  hence the kernel lock (see Threads).
 - `Modeling.h`: box, cylinder, push/pull of a planar face (prism + fuse/cut +
   `ShapeUpgrade_UnifySameDomain`), fillet, chamfer, shell, booleans,
   transforms, direct face edits, measurements (volume, area, optimal bounding
@@ -233,7 +235,10 @@ Document (UUID, display unit)
   parent body, so `recomputeDependents` (transitive) carries upstream edits
   — a sketch dimension, a tool body — through the parent to every piece.
 - `Document::preview(body, feature)` evaluates a feature without mutating
-  anything; interactive previews use it.
+  anything; interactive previews use it. `Document::snapshot()` copies the
+  bodies (histories, cached step results, shapes shared: they are
+  immutable) and sketches for the preview worker (0.04 ms for a 21-body
+  model).
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
   know when to re-tessellate and when topology indices are stale.
 
@@ -401,6 +406,35 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   A ring is grabbed only once the pointer moves: a click on a ring activates
   it, except over an edge in Rotate, where it picks the edge (the rings
   cover edges near the body's center).
+- **Previews off the GUI thread** (`Operation::setValue`, `PreviewWorker`):
+  `setValue` checks the value at once (`checkValue`, the neutral value),
+  then - when the operation has a `PreviewScheduler` (the app; headless
+  tests stay synchronous) - hands the worker a self-contained job: a
+  `clone()` of the operation and a `Document::snapshot()` (cached per
+  document and undo revision), and returns. The job runs on the single
+  preview worker thread exactly what the synchronous path runs:
+  `resetAutomaticChoices`, `computePreview` (`makeFeature` +
+  `Document::preview`), `reconsider`/`reconsiderRefusal`, `tessellate`.
+  The latest request wins: a newer value replaces a job that has not
+  started; a running one finishes. Its result comes back as a queued call
+  (`InteractionController::deliverPreviews`, which the UI calls when the
+  worker's notify arrives) and `Operation::acceptPreview` decides: another
+  operation's, or older than the shown one or than a reset (Esc, a sync
+  refusal) - dropped; the newest request's - shown with its error and
+  automatic choices (`adoptAutomaticChoices`); a superseded value's - shown
+  if it worked (the preview keeps up during a drag), its error dropped. The
+  last good preview stays on screen meanwhile; `previewMeshBody()` says
+  which body it stands in for. `canCommit()` counts a pending preview as
+  committable (`previewUsable()`): the command computes the step again;
+  commit waits for it only when an automatic choice depends on it
+  (`commitNeedsPreview`: an extrusion that becomes a new body). Operations
+  created while previews are asynchronous get the scheduler
+  (`PreviewSchedulerScope` in `rebuildOperation`), so Pattern's and the
+  insert's first previews are computed on the worker too. An operation
+  without `clone()` keeps synchronous previews. The UI reads selection
+  facts (`selectionSummary`, which face actions to offer) from a cache
+  keyed by the selection and its bodies' shape revisions, so a drag step
+  makes no kernel call on the GUI thread (a test counts them).
 - **Operation hooks** (`Operation.h`): `prompt()` while a further pick is
   needed (Align's target, Mirror's plane); `labelAnchor()` for a value editor
   without an arrow; `neutralValue()` (what Esc returns to, e.g. a hole's
@@ -483,6 +517,45 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 
+## Threads
+
+- **GUI thread:** Qt events, QML, the interaction core, commands and
+  recompute, meshing of changed bodies (`SceneCache`), file I/O.
+- **Render thread** (Qt Quick's threaded render loop): `ViewportRenderer`
+  copies the `RenderScene` in `synchronize()` while the GUI thread waits.
+- **Preview worker** (`interaction/PreviewWorker`, one `std::thread`, owned
+  by `InteractionController` after `enableAsyncPreviews`, which the app
+  calls): computes and meshes previews on document snapshots. Its log
+  lines start with `[worker] `.
+- **OpenCASCADE's own threads:** `BRepMesh` meshes faces in parallel inside
+  one call.
+- **The kernel lock** (`geometry/internal/KernelUtil.h`, TD-4): one thread
+  at a time runs OpenCASCADE code. Every kernel entry takes it: the
+  `OS_KERNEL_SIGNALS_TO_EXCEPTIONS` scope (so `guarded()`), and a
+  `KernelLock` in the functions without one (volume, bounding boxes,
+  `solids`, `isValid`, ...). It is recursive, and a scope releases at its
+  end the locks a kernel fault jumped over. Meshing writes triangulations
+  into faces and polygons into edges that other shapes share, and nearly
+  every algorithm reads edges' lists of representations, so a lock around
+  meshing alone would not do. With the lock held, OCCT's signal handlers
+  are installed and removed by the thread that runs the kernel code (the
+  Windows C runtime keeps them per thread): a fault on the worker becomes
+  a failed preview like one on the GUI thread (tested). The tight
+  bounding-box cache in `ShapeData` is guarded by it too (a
+  `std::call_once` would stay blocked after a fault jumped out of it).
+  While a preview computes, a GUI-thread kernel call (a click on another
+  face, a commit's recompute) waits for the worker's current kernel call;
+  `geom::interactiveKernelWaits()` counts these waits and the log shows
+  them ("gui: waiting for the kernel ... took N ms"). During a drag the GUI
+  thread makes none.
+- **Where the time goes** (bench_session, a 20-step push/pull drag on the
+  249-face enclosure's rim): with previews on the GUI thread each pointer
+  move blocked it for 133 ms on average, 259 ms at most; on the worker,
+  0.1 ms at most. In the real window (acceptance scenario `previews`, a
+  119-face tray) the longest pointer move went from 90 ms to 0.6 ms.
+  `ViewportItem` times each pointer move (controller plus the QML updates
+  it causes) and `AppController` logs slow ones and each drag's longest.
+
 ## Rendering (`render/`, `ui/ViewportItem`)
 
 `ViewportItem` is a `QQuickRhiItem`, so the viewport is part of the Qt Quick
@@ -529,7 +602,11 @@ All draws share one dynamic uniform buffer with per-draw offsets.
 
 `InteractionController::historyRows()` flattens sketches, bodies and each
 body's features into rows (name, detail, status — ok, warning, failed,
-blocked, suppressed — explanation, editable length parameters). Hovering a row
+blocked, suppressed — explanation, editable length parameters).
+`AppController` gives QML new rows (`historyChanged`) and a new action list
+(`contextActionsChanged`) only when they differ from the last ones: a new
+list rebuilds the panel's delegates, and most state changes (a drag step, a
+preview arriving) change neither (TD-18). Hovering a row
 calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
 body, other steps their new faces (`facesCreatedBy`, falling back to
 `facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
@@ -645,9 +722,16 @@ them on a hidden menu separator after the Open Recent sub-menu).
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent` and `preferences`. `clickItem` lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
-  still sat where Fillet was about to go).
+  still sat where Fillet was about to go). Before each step the runner
+  waits until camera animations end and previews (computed on the worker)
+  are shown; scenario `previews` drags on a 119-face tray and checks that
+  no pointer move blocks the window for 50 ms, that Ctrl+Z and Enter work
+  while a preview computes, that a refusal arrives from the worker, and a
+  drag with 81 Model panel rows.
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
-  previews, tessellation, recompute and bounding boxes on a filleted part;
+  previews, tessellation, recompute and bounding boxes on a filleted part,
+  and the GUI thread during a push/pull drag on the enclosure (previews on
+  the GUI thread and on the worker);
   `scripts/dev/` has a Win32 input driver and a live log watcher (see
   BUILDING.md, "Developer tools").
 
@@ -687,7 +771,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
-- Tessellation and previews run synchronously on the GUI thread.
+- Previews run on the preview worker; commits (the command's recompute),
+  undo/redo and meshing of changed bodies still run on the GUI thread, and
+  a running kernel call cannot be interrupted (TD-1).
 - Sketch-profile picking still runs an exact face classifier per region under
   the cursor (TD-20; ~0.06 ms per hover on the benchmark enclosure).
 - Only linear per-body history. Features may depend on sketches and (Combine)

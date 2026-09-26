@@ -358,7 +358,10 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             drag(from, from + QPointF(0, -90));
             check(in.operation() && in.operation()->value() > 21.0, "dragging the arrow makes it taller",
                   in.operation() ? num(in.operation()->value()) : QStringLiteral("no operation"));
-            check(in.operation() && in.operation()->hasPreview(), "the preview updates while dragging");
+        },
+        // (Previews compute on a worker thread; the runner waited for this one.)
+        [=, this, &in] {
+            check(in.operation() && in.operation()->hasPreview(), "the drag's preview is shown");
             check(std::abs(bodyHeight() - 20.0) < 1e-9, "preview does not modify the document", num(bodyHeight()));
             screenshot(QStringLiteral("04_drag_preview"));
         },

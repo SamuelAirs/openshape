@@ -131,8 +131,8 @@ void InteractionController::schedulePreview(std::function<PreviewOutcome()> comp
     }
     previewWorker_->submit([this, compute = std::move(compute)]() -> PreviewWorker::Delivery {
         auto outcome = std::make_shared<const PreviewOutcome>(compute());
-        // "preview worker:" - off the GUI thread (scripts/dev/watch_log.py tells them apart).
-        OS_LOG(Debug, Performance) << "preview worker: preview took " << outcome->milliseconds << " ms";
+        // Logged as "[worker] preview took" (off the GUI thread; scripts/dev/watch_log.py tells them apart).
+        OS_LOG(Debug, Performance) << "preview took " << outcome->milliseconds << " ms";
         return [this, outcome] { receivePreview(*outcome); };
     });
 }

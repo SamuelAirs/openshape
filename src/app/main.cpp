@@ -604,6 +604,8 @@ int main(int argc, char* argv[])
         QTimer::singleShot(600, &controller, [&controller, demo] {
             if (!demo.isEmpty())
                 runDemo(controller, demo);
+            // Previews compute on a worker thread: show the scene's before the screenshot.
+            (void)controller.interaction().waitForPreview();
         });
         if (!shot.isEmpty()) {
             QTimer::singleShot(1600, window, [window, shot] {

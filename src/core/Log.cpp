@@ -85,15 +85,25 @@ bool isLogEnabled(LogLevel level)
     return static_cast<int>(level) >= minimumLevel().load();
 }
 
+namespace {
+thread_local std::string t_prefix;
+} // namespace
+
+void setThreadLogPrefix(std::string prefix)
+{
+    t_prefix = std::move(prefix);
+}
+
 void log(LogLevel level, LogCategory category, const std::string& message)
 {
     if (!isLogEnabled(level))
         return;
+    const std::string& text = t_prefix.empty() ? message : t_prefix + message;
     std::lock_guard lock(sinkMutex());
     if (sinkStorage())
-        sinkStorage()(level, category, message);
+        sinkStorage()(level, category, text);
     else
-        defaultSink(level, category, message);
+        defaultSink(level, category, text);
 }
 
 } // namespace os

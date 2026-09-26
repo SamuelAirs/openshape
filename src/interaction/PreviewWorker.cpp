@@ -110,6 +110,8 @@ std::uint64_t PreviewWorker::jobsReplaced() const
 
 void PreviewWorker::run()
 {
+    // Kernel timings logged from here are off the GUI thread.
+    setThreadLogPrefix("[worker] ");
     for (;;) {
         Job job;
         std::chrono::milliseconds delay{0};

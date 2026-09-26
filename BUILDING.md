@@ -93,7 +93,13 @@ being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
 the constraint glyphs). Without `--screenshot` the window stays open.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
-tessellation, recompute, kernel operations) to the log.
+tessellation, recompute, kernel operations) to the log; those computed on
+the preview worker thread start with `[worker]`, and GUI-thread blocks
+start with `gui:` (a pointer move of 16 ms or more, the longest move of
+each drag, a wait for the kernel while the worker held it).
+`OPENSHAPE_SYNC_PREVIEWS=1` computes previews on the GUI thread again, as
+before 2026-09-26 (to compare).
+
 
 Where the app keeps things (Windows):
 
@@ -290,7 +296,11 @@ workflow artifact. The Windows icon is made from the SVG with
   (and saves on a 21-body, 1528-face model), then the same plus a fillet
   drag and hover picking (1200 pointer positions over the part) on a
   249-face enclosure (shelled, rounded, 95 vent holes with chamfers, screw
-  bosses; 25k triangles). Numbers in PROJECT_STATUS.md:
+  bosses; 25k triangles). Last, the GUI thread during a 20-step push/pull
+  drag on the enclosure's rim (pointer moves 16 ms apart: per move the
+  controller plus what the UI reads back, and delivering finished previews
+  between moves), once with previews on the GUI thread and once on the
+  preview worker. Numbers in PROJECT_STATUS.md:
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
@@ -330,7 +340,10 @@ workflow artifact. The Windows icon is made from the SVG with
 - **`scripts/dev/watch_log.py`** — while someone uses the app started with
   `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
   the user, failed previews and GUI-thread stalls, one line per event
-  (run it in the background).
+  (run it in the background). `GUI` lines are what froze the window
+  (pointer moves, drags, waits for the kernel), `SLOW` kernel work on the
+  GUI thread (commits, undo), `WORKER` slow previews on the worker thread
+  (the window stays responsive meanwhile).
 
 ## macOS and iPad — prepared, not yet verified
 
