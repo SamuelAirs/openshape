@@ -172,12 +172,16 @@ bool benchGuiDrag(interact::InteractionController& controller, int face, bool as
     const double settle = since(released);
     const double after = controller.operation() ? controller.operation()->value() : before;
     const geom::KernelWaits waits = geom::interactiveKernelWaits();
-    std::printf("GUI thread, 20-step push/pull drag on the rim (%s previews): per pointer move avg %.1f ms, longest %.1f ms; "
-                "delivering a preview longest %.1f ms; GUI waits for the kernel %llu (longest %.1f ms); %llu previews shown "
-                "during the %.0f ms drag, the last %.0f ms after release (height %.0f -> %.0f mm)\n",
-                async ? "worker" : "GUI-thread", total / steps, worstMove, worstDelivery,
-                static_cast<unsigned long long>(waits.count), waits.longestMs, static_cast<unsigned long long>(shownDuring),
-                dragMs, settle, before, after);
+    if (async)
+        std::printf("GUI thread, 20-step push/pull drag on the rim (previews on the worker): per pointer move avg %.1f ms, "
+                    "longest %.1f ms; delivering a preview longest %.1f ms; GUI waits for the kernel %llu (longest %.1f ms); "
+                    "%llu previews shown during the %.0f ms drag, the last %.0f ms after release (height %.0f -> %.0f mm)\n",
+                    total / steps, worstMove, worstDelivery, static_cast<unsigned long long>(waits.count), waits.longestMs,
+                    static_cast<unsigned long long>(shownDuring), dragMs, settle, before, after);
+    else
+        std::printf("GUI thread, 20-step push/pull drag on the rim (previews on the GUI thread): per pointer move avg %.1f ms, "
+                    "longest %.1f ms (each move that changes the value computes its preview; height %.0f -> %.0f mm)\n",
+                    total / steps, worstMove, before, after);
     controller.cancelOperation();
     controller.cancelOperation();
     controller.disableAsyncPreviews();

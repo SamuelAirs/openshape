@@ -507,3 +507,39 @@ TEST(AsyncPreview, OlderResultsKeepUpButTheirErrorsDoNot)
     EXPECT_TRUE(fillet->hasPreview());
     EXPECT_EQ(h.controller.previewsDropped(), dropped + 1);
 }
+
+// Hovering sketch profiles while a preview computes: the pick tests the
+// profile's mesh, so the GUI thread makes no kernel call (it would wait for
+// the worker's).
+TEST(AsyncPreview, HoveringProfilesMakesNoKernelCall)
+{
+    AsyncHarness h;
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Top).ok());
+    h.controller.skipAnimation();
+    SketchSession& session = *h.controller.sketchSession();
+    auto sketchScreen = [&](Vec2 local) { return h.screen(session.sketch().plane().toWorld(local)); };
+    h.controller.setSketchTool(SketchTool::Circle);
+    h.clickAt(sketchScreen({30, 0}));
+    h.controller.pointerMove(AsyncHarness::at(sketchScreen({33, 0}), PointerButton::None));
+    EXPECT_EQ(session.typeIntoInput("8"), ""); // diameter
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.finishSketch();
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+
+    ASSERT_NE(h.selectTop(), nullptr);
+    h.worker().setJobDelayForTesting(200ms);
+    EXPECT_EQ(h.controller.setValueText("30"), "");
+    ASSERT_TRUE(h.controller.operation()->previewPending());
+    const std::uint64_t kernelCalls = geom::kernelCallsOnThisThread();
+    const auto inside = h.controller.pickAt(h.screen({32.5, 0, 0}), InputProfile{});
+    const auto rim = h.controller.pickAt(h.screen({33.8, 0, 0}), InputProfile{});
+    const auto outside = h.controller.pickAt(h.screen({34.5, 0, 0}), InputProfile{});
+    h.controller.pointerMove(AsyncHarness::at(h.screen({30, 1, 0}), PointerButton::None));
+    EXPECT_EQ(geom::kernelCallsOnThisThread(), kernelCalls) << "hovering a profile called the kernel";
+    EXPECT_EQ(inside.kind, sel::PickKind::Profile);
+    EXPECT_EQ(rim.kind, sel::PickKind::Profile);
+    EXPECT_NE(outside.kind, sel::PickKind::Profile);
+    EXPECT_EQ(h.controller.hover().kind, sel::PickKind::Profile);
+    ASSERT_TRUE(h.controller.waitForPreview());
+}

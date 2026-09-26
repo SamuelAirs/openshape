@@ -26,6 +26,26 @@ bool sameHover(const sel::PickResult& a, const sel::PickResult& b)
     return a.kind == b.kind && a.bodyId == b.bodyId && a.index == b.index;
 }
 
+// Whether `p` (on the sketch plane) lies in a profile region, tested on the
+// region's display mesh: hovering makes no kernel call, so it never waits
+// for the preview worker (the kernel lock) - and it is cheaper than OCCT's
+// face classifier (TD-20). Near a curved edge the mesh is off by its
+// deflection (0.1% of the region's size), far below a pointer's reach.
+bool meshContains(const geom::Mesh& mesh, const sketch::Plane& plane, const Vec3& p)
+{
+    const Vec2 q = plane.toLocal(p);
+    auto cross = [](Vec2 u, Vec2 v) { return u.x * v.y - u.y * v.x; };
+    for (std::size_t t = 0; t < mesh.triangleCount(); ++t) {
+        const Vec2 a = plane.toLocal(mesh.vertex(mesh.indices[3 * t]));
+        const Vec2 b = plane.toLocal(mesh.vertex(mesh.indices[3 * t + 1]));
+        const Vec2 c = plane.toLocal(mesh.vertex(mesh.indices[3 * t + 2]));
+        const double d1 = cross(b - a, q - a), d2 = cross(c - b, q - b), d3 = cross(a - c, q - c);
+        if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))
+            return true;
+    }
+    return false;
+}
+
 std::string surfaceName(geom::SurfaceKind kind)
 {
     switch (kind) {
@@ -2126,8 +2146,8 @@ sel::PickResult InteractionController::pickProfile(Vec2 screen) const
         const double depth = camera_.depthOf(p);
         if (best.hit() && depth >= best.depth)
             continue;
-        for (std::size_t i = 0; i < entry->regions.size(); ++i) {
-            if (geom::regionContains(entry->regions[i].face, p)) {
+        for (std::size_t i = 0; i < entry->regions.size() && i < entry->meshes.size(); ++i) {
+            if (entry->meshes[i] && meshContains(*entry->meshes[i], sk->plane(), p)) {
                 best.kind = sel::PickKind::Profile;
                 best.bodyId = sk->id();
                 best.index = static_cast<int>(i);

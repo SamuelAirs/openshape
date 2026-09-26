@@ -484,7 +484,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   body's current shape mirrored or moved, so the copies follow every later
   change of the source. Their preview shows the source and the copies side
   by side, unfused (`Operation::computePreview`); at most 100 copies.
-- **Profiles in model mode:** sketch regions are pickable (a region lying on a
+- **Profiles in model mode:** sketch regions are pickable, tested on their
+  display meshes (no kernel call while hovering; TD-20) (a region lying on a
   face wins over the face; a consumed sketch's region only when it is
   coplanar with the body face hit, so used sketches do not steal clicks);
   selecting profiles arms `ExtrudeOperation`, whose
@@ -774,8 +775,6 @@ them on a hidden menu separator after the Open Recent sub-menu).
 - Previews run on the preview worker; commits (the command's recompute),
   undo/redo and meshing of changed bodies still run on the GUI thread, and
   a running kernel call cannot be interrupted (TD-1).
-- Sketch-profile picking still runs an exact face classifier per region under
-  the cursor (TD-20; ~0.06 ms per hover on the benchmark enclosure).
 - Only linear per-body history. Features may depend on sketches and (Combine)
   on other bodies; `Document::recomputeDependents` propagates changes
   transitively (a body that changed updates the bodies built on it in turn)
