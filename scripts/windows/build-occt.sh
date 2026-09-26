@@ -171,6 +171,6 @@ prefix_win=$(cygpath -w "$PREFIX" | tr '\\' '/')
 if grep -iE '^\s*libTK[A-Za-z0-9]+\.dll' <<<"$deps" | tr '\\' '/' | grep -viF "$prefix_win/bin/"; then
     echo "libTKDESTEP.dll resolved OCCT toolkits outside $PREFIX (above)"; exit 1
 fi
-echo "libTKDESTEP.dll dependencies:"
-awk '{print "  " $1}' <<<"$deps" | sort -u
+echo "libTKDESTEP.dll dependencies (besides Windows):"
+grep -viE '=> [a-z]:.windows.|not found' <<<"$deps" | awk 'NF >= 3 { print "  " $1 }' | sort -u
 echo "== done: $PREFIX ($(du -sh "$PREFIX" | cut -f1)); work dir $WORK ($(du -sh "$WORK" | cut -f1))"

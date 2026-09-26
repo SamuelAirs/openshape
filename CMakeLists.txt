@@ -54,6 +54,11 @@ if(OPENSHAPE_OWN_OCCT)
     endif()
     file(TO_CMAKE_PATH "${openshape_occt_default}" openshape_occt_default)
     set(OPENSHAPE_OCCT_PREFIX "${openshape_occt_default}" CACHE PATH "Install prefix of scripts/windows/build-occt.sh")
+    if(NOT EXISTS "${OPENSHAPE_OCCT_PREFIX}/lib/cmake/opencascade/OpenCASCADEConfig.cmake")
+        message(FATAL_ERROR "OpenShape's OpenCASCADE build is not in '${OPENSHAPE_OCCT_PREFIX}': "
+            "run scripts/windows/build-occt.sh <prefix>, then set OPENSHAPE_OCCT_PREFIX to that prefix "
+            "(environment or -D) if it is not %USERPROFILE%/opt/occt-7.9.3-openshape.")
+    endif()
     find_package(OpenCASCADE REQUIRED CONFIG
         PATHS "${OPENSHAPE_OCCT_PREFIX}/lib/cmake/opencascade" NO_DEFAULT_PATH)
     message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: OpenShape's own build in ${OPENSHAPE_OCCT_PREFIX}")
