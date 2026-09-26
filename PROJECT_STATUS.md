@@ -78,6 +78,14 @@ first, tested version. Their follow-ups are the next tasks below.
   - Apple Developer enrollment: **still pending**. Polish the iPad build
     anyway (what can be checked without a device).
   - Bugs: nothing new; they have not used the app since the last session.
+  - **Later the same night:** the owner wants OpenShape on their phone —
+    their current iPhone and the new foldable **iPhone Duo** (announced
+    2026-09-09, ships 2026-10-23 with iOS 27: 7.6" inner display wider than
+    tall, 5.4" outer display, Split View) — possibly to sell apps. So the
+    iOS app becomes universal (iPhone + iPad) with a layout that adapts to
+    any window size (phone portrait/landscape, the Duo folded and open,
+    Split View halves). Assumed: the current phone is an iPhone (an Android
+    phone would be a separate port).
 - **CI:** Windows runs #3–#11 passed (6–11 min each). The repository is
   public now: run/job status and annotations can be read through the public
   API without a login (docs/IPAD.md, "Reading CI results"); failed steps
@@ -120,8 +128,10 @@ commit, push, CI green before the next risky change.
 - **Batch 2:** holes & print helpers (counterbore/countersink, extrude with
   draft, text emboss); STEP import in the UI, thumbnails, start screen with
   recent projects; responsiveness (previews on a worker thread TD-1/TD-4,
-  TD-18, TD-19; measured before/after); iPad (TD-35, TD-36, safe areas,
-  Files open/save, touch-aware hints).
+  TD-18, TD-19; measured before/after); **iPhone + iPad** (universal iOS
+  app; a compact layout for phone-sized and Split View windows that adapts
+  live when the iPhone Duo folds or unfolds; safe areas; Files open/save;
+  touch-aware hints; TD-35).
 - **Batch 3:** first-run guidance, help card and shortcut reference; README
   with screenshots and `docs/USER_GUIDE.md`; v0.1.0 tag → GitHub Release
   (pre-release); final package; morning report.
