@@ -21,6 +21,7 @@
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
 #include <QtGui/QScreen>
+#include <QtGui/QStyleHints>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlExtensionPlugin>
 #include <QtQuick/QQuickWindow>
@@ -360,6 +361,9 @@ int main(int argc, char* argv[])
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
 #endif
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+    // The UI is light only; without this a dark Windows theme turned the
+    // menus black (they take the system palette).
+    QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("OpenShape - direct solid modeling"));

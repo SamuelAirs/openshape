@@ -77,6 +77,14 @@ ApplicationWindow {
         onActivated: window.app.startSketch()
     }
 
+    // After a menu closes, keys go back to the view (B, K, F, typed values;
+    // Qt leaves them nowhere after a sub-menu), unless the menu opened a
+    // panel that takes them.
+    function focusViewUnlessPanel() {
+        if (!helpOverlay.visible && !aboutOverlay.visible && !preferencesOverlay.visible && !recoveryOverlay.visible)
+            viewport.forceActiveFocus()
+    }
+
     function save() {
         if (app.hasProjectPath())
             app.saveProject()
@@ -161,6 +169,7 @@ ApplicationWindow {
 
     Menu {
         id: fileMenu
+        onClosed: window.focusViewUnlessPanel()
         // Sub-menu entries are made by this delegate: name them for the acceptance run.
         delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
         MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
@@ -168,6 +177,7 @@ ApplicationWindow {
         Menu {
             id: recentMenu
             objectName: "openRecentMenu"
+            onClosed: window.focusViewUnlessPanel()
             title: "Open Recent"
             enabled: window.app.recentFiles.length > 0
             Instantiator {
@@ -178,15 +188,17 @@ ApplicationWindow {
                     objectName: "recentFile_" + index
                     text: modelData.name + "  —  " + modelData.folder
                     onTriggered: {
+                        // After the menu has closed: opening rebuilds this list,
+                        // and a menu whose item vanishes mid-click stays open.
                         const path = modelData.path
-                        window.confirmDiscard(() => window.app.openRecent(path))
+                        Qt.callLater(() => window.confirmDiscard(() => window.app.openRecent(path)))
                     }
                 }
                 onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
                 onObjectRemoved: (index, object) => recentMenu.removeItem(object)
             }
             MenuSeparator {}
-            MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: window.app.clearRecentFiles() }
+            MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
         }
         MenuSeparator {}
         MenuItem { text: "Save"; onTriggered: window.save() }

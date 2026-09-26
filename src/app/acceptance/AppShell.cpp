@@ -327,7 +327,12 @@ Steps recentSteps(AcceptanceRunner& r)
         r.check(!recent.isEmpty() && recent[0].toMap()[QStringLiteral("name")] == QStringLiteral("recent_a"),
                 "opening moves it to the top");
         // Unsaved changes: Open Recent asks first, like Open.
+        QQuickItem* focus = r.window()->activeFocusItem();
+        r.check(focus && focus->objectName() == QStringLiteral("viewport"), "after the menu, keys go to the view",
+                focus ? QString::fromLatin1(focus->metaObject()->className()) + QLatin1Char(' ') + focus->objectName()
+                      : QStringLiteral("nothing"));
         r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+        r.check(app.dirty() && app.bodyCount() == 2, "B adds a box: unsaved changes");
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (unsaved changes)");
     });
     steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("openRecentMenuItem")), "Open Recent (unsaved changes)"); });
