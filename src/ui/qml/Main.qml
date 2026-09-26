@@ -217,7 +217,8 @@ ApplicationWindow {
                 objectName: "undoButton"
                 text: "Undo"
                 enabled: window.app.canUndo
-                onClicked: window.app.undo()
+                // Touch has no tooltip: a message says what was undone.
+                onClicked: Theme.touch ? window.app.undoWithFeedback() : window.app.undo()
                 ToolTip.visible: hovered && window.app.canUndo && !Theme.touch
                 ToolTip.text: "Undo " + window.app.undoText + "  (Ctrl+Z)"
                 ToolTip.delay: 500
@@ -226,7 +227,7 @@ ApplicationWindow {
                 objectName: "redoButton"
                 text: "Redo"
                 enabled: window.app.canRedo
-                onClicked: window.app.redo()
+                onClicked: Theme.touch ? window.app.redoWithFeedback() : window.app.redo()
                 ToolTip.visible: hovered && window.app.canRedo && !Theme.touch
                 ToolTip.text: "Redo " + window.app.redoText + "  (Ctrl+Y)"
                 ToolTip.delay: 500
@@ -714,7 +715,15 @@ ApplicationWindow {
         }
     }
 
+    // What to do next, worded for the input in use: in the touch layout taps,
+    // the on-screen ✓ / ✕ and two-finger gestures instead of clicks, Enter,
+    // Esc, Shift and the scroll wheel (AppController::touchWording).
     function hintText() {
+        const text = mouseHintText()
+        return app.touchMode ? app.touchWording(text) : text
+    }
+
+    function mouseHintText() {
         if (app.sketchMode)
             return app.sketchHint
         if (app.operationPrompt.length > 0)

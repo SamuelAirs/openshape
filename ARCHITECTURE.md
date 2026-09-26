@@ -413,7 +413,21 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   command line) makes `Theme.controlHeight` 44 and shows the Pen switch. The
   flag itself lives in `InteractionController::touchLayout()` (AppController
   only reads and sets it), so the on-canvas targets of the sketch session and
-  the QML controls can never disagree.
+  the QML controls can never disagree. **Touch wording:** hints, prompts and
+  messages are written for mouse and keyboard; in the touch layout
+  `interact::touchWording()` (Qt-free, `interaction/TouchWording`) rewrites
+  them — hand-written versions of known sentences ("Shift-click adds more" →
+  "tap more to add them", "Esc ends the line" → "tap Line again to end the
+  line", "Enter applies" → "✓ applies") and word rules (click → tap) —
+  via `AppController::notifyMessage` (toasts) and `touchWording()` in
+  `Main.qml`'s `hintText()`. The help card has a touch text per row
+  (`Theme.touch`). `tests/test_touch_wording.cpp` collects every sketch
+  hint, tool explanation and operation prompt, the QML hints and the help
+  rows, and fails on a mouse or keyboard word left in a touch text. No
+  information lives only in a tooltip (tooltips are off in the touch
+  layout; what they said is on the help card). A finger or pen tap on
+  empty space gives up an Align or Mirror still waiting for its target (a
+  mouse keeps waiting).
 - **Window-size layout (phones, Split View):** the QML layout follows the
   window, not the device. `Theme.compact` (window narrower than 600 or
   shorter than 500 logical px, bound live from `Main.qml`) turns the

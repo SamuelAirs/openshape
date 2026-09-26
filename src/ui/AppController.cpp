@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "geometry/Exchange.h"
+#include "interaction/TouchWording.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
 #include "io/RecentFiles.h"
@@ -103,7 +104,13 @@ void AppController::attach()
 
 void AppController::notifyMessage(const QString& text)
 {
-    emit message(text);
+    // Messages written for mouse and keyboard speak of taps in the touch layout.
+    emit message(touchMode() ? touchWording(text) : text);
+}
+
+QString AppController::touchWording(const QString& text) const
+{
+    return q(interact::touchWording(text.toStdString()));
 }
 
 // ---- Properties ----------------------------------------------------------------------

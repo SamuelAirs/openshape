@@ -544,6 +544,10 @@ void InteractionController::click(const PointerEvent& event)
     bool additive = profile.additiveSelection || event.modifiers.shift || event.modifiers.control;
     sel::PickResult hit = operationPickAt(event.position, profile);
 
+    // A finger or pen has no Esc: tapping empty space while an operation
+    // still waits for its target gives up, as a tap there does elsewhere
+    // (clears the selection). A mouse keeps waiting (a near miss is common).
+    const bool tapGivesUp = event.device != PointerDevice::Mouse && !hit.hit();
     // Align: clicks pick (or re-pick) the target; clicking empty space applies.
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
         if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge) {
@@ -555,6 +559,10 @@ void InteractionController::click(const PointerEvent& event)
                 message(status.userMessage());
         } else if (!hit.hit() && align->canCommit()) {
             (void)commitOperation();
+        } else if (tapGivesUp) {
+            alignRequested_ = false;
+            selection_.clear();
+            rebuildOperation();
         }
         notifyState();
         notifyView();
@@ -579,6 +587,9 @@ void InteractionController::click(const PointerEvent& event)
                 message(status.userMessage());
         } else if (!hit.hit() && mirror->canCommit()) {
             (void)commitOperation();
+        } else if (tapGivesUp) {
+            selection_.clear();
+            rebuildOperation();
         }
         notifyState();
         notifyView();

@@ -12,6 +12,7 @@ add_library(openshape_interaction STATIC
     SceneCache.cpp SceneCache.h
     SketchSession.cpp SketchSession.h
     TouchGestures.cpp TouchGestures.h
+    TouchWording.cpp TouchWording.h
     ContextAction.h
 )
 target_link_libraries(openshape_interaction PUBLIC openshape_commands openshape_selection)

@@ -193,9 +193,13 @@ public:
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
-    // Gesture undo/redo (two/three-finger taps) say what they did.
-    void undoWithFeedback();
-    void redoWithFeedback();
+    // Gesture undo/redo (two/three-finger taps), and the Undo / Redo buttons
+    // in the touch layout (no tooltip there), say what they did.
+    Q_INVOKABLE void undoWithFeedback();
+    Q_INVOKABLE void redoWithFeedback();
+    // A hint written for mouse and keyboard, worded for touch (taps, the
+    // on-screen ✓ / ✕; no Shift-click, Esc, Enter, scrolling or hovering).
+    Q_INVOKABLE QString touchWording(const QString& text) const;
     Q_INVOKABLE void commitOperation();
     Q_INVOKABLE void cancelOperation();
     // Returns an error message ("" on success). Previews live as the user types.
