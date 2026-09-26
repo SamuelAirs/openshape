@@ -970,6 +970,15 @@ std::string InteractionController::setValueText(const std::string& text)
     return operation_->previewPending() ? std::string() : operation_->error();
 }
 
+std::string InteractionController::confirmValueText(const std::string& text)
+{
+    const std::string error = setValueText(text);
+    if (!error.empty() || !operation_ || !operation_->previewPending())
+        return error;
+    (void)waitForPreview();
+    return operation_ ? operation_->error() : std::string();
+}
+
 std::string InteractionController::operationValueText() const
 {
     if (!operation_)
@@ -1033,12 +1042,14 @@ Status InteractionController::commitOperation()
     const doc::FeatureKind kind = operation_->featureKind();
     const bool clearSelection = kind != doc::FeatureKind::PushPull && kind != doc::FeatureKind::Move
                              && kind != doc::FeatureKind::Mirror && kind != doc::FeatureKind::Pattern;
-    if (dynamic_cast<const AlignOperation*>(operation_.get()))
-        alignRequested_ = false; // done: the source face/edge offers its usual tools again
-    if (kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern)
-        bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    // One-shot tool resets, applied only once the command is accepted: a
+    // refused apply (possible while a preview is still pending) keeps the
+    // tool - Align, Pattern, Mirror - for the next rebuild.
+    const bool isAlign = dynamic_cast<const AlignOperation*>(operation_.get()) != nullptr;
+    const bool isOneShotBodyTool = kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern;
+    std::optional<HoleSettings> appliedHoleSettings;
     if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get()))
-        holeSettings_ = hole->settings();
+        appliedHoleSettings = hole->settings();
     const Uuid target = operation_->bodyId();
     const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
     const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
@@ -1057,6 +1068,12 @@ Status InteractionController::commitOperation()
         notifyView();
         return status;
     }
+    if (isAlign)
+        alignRequested_ = false; // done: the source face/edge offers its usual tools again
+    if (isOneShotBodyTool)
+        bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    if (appliedHoleSettings)
+        holeSettings_ = *appliedHoleSettings;
     operation_.reset();
     suggestSplit(target, piecesBefore);
     // Edges consumed by a fillet/chamfer no longer exist; a face that was

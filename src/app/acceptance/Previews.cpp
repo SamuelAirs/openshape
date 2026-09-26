@@ -9,7 +9,8 @@
 // OPENSHAPE_SYNC_PREVIEWS=1, the longest took 90 ms), the preview arrives
 // afterwards and Enter applies it. Then Ctrl+Z and Enter while a preview is
 // still being computed, a refused fillet whose message comes back from the
-// worker, and a Move drag with 81 Model panel rows, which a drag step does
+// worker (and Enter on it before that: the value chip keeps the keyboard and
+// shows the command's refusal), and a Move drag with 81 Model panel rows, which a drag step does
 // not rebuild (TD-18).
 
 #include "app/AcceptanceRunner.h"
@@ -225,6 +226,32 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     "the refusal comes back from the worker to the value chip", error);
             r.check(!r.app().operationCanCommit(), "and there is nothing to apply");
             r.screenshot(QStringLiteral("previews_02_refused"));
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+        },
+        // The same fillet with Enter at once, before its preview's verdict:
+        // the command refuses it, and the value chip keeps the keyboard and
+        // says why (as for a refusal that came with the preview).
+        [&r] {
+            r.click(r.screenPoint(0, -40, 43));
+            r.check(r.app().operationTitle() == QStringLiteral("Fillet"), "the rim's outer edge again",
+                    r.app().operationTitle());
+            const std::string lastStep = r.app().interaction().undoStack().undoLabel();
+            r.type(QStringLiteral("5"));
+            const auto* op = r.app().interaction().operation();
+            r.check(op && op->previewPending(), "the 5 mm fillet is still being previewed");
+            r.key(Qt::Key_Return);
+            r.check(r.app().operationTitle() == QStringLiteral("Fillet"), "Enter on the refused fillet keeps the fillet",
+                    r.app().operationTitle());
+            r.check(r.app().interaction().undoStack().undoLabel() == lastStep && std::abs(height(r) - 43.0) < 1e-6,
+                    "and adds no step", AcceptanceRunner::num(height(r)));
+            const QString error = itemText(r, QStringLiteral("valueChipError"));
+            r.check(!error.isEmpty(), "the value chip says why", error);
+            const QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+            r.check(field && field->hasActiveFocus(), "and the value field keeps the keyboard");
+        },
+        [&r] {
+            r.check(!r.app().operationCanCommit(), "the refused value is not applied later");
             r.key(Qt::Key_Escape);
             r.key(Qt::Key_Escape);
         },

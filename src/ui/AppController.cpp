@@ -906,11 +906,12 @@ void AppController::redoWithFeedback()
         notifyMessage(QStringLiteral("Redo ") + label);
 }
 
-void AppController::commitOperation()
+bool AppController::commitOperation()
 {
     const Status status = interaction_->commitOperation();
     if (!status)
         notifyMessage(q(status.userMessage()));
+    return status.ok();
 }
 
 void AppController::cancelOperation() { interaction_->cancelOperation(); }
@@ -918,6 +919,11 @@ void AppController::cancelOperation() { interaction_->cancelOperation(); }
 QString AppController::setValueText(const QString& text)
 {
     return q(interaction_->setValueText(text.toStdString()));
+}
+
+QString AppController::confirmValueText(const QString& text)
+{
+    return q(interaction_->confirmValueText(text.toStdString()));
 }
 
 void AppController::triggerAction(const QString& id)

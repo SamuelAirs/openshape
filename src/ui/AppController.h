@@ -265,10 +265,16 @@ public:
     // on-screen ✓ / ✕; no Shift-click, Esc, Enter, scrolling or hovering).
     // Only for the app's own hints: a name in the text would be reworded too.
     Q_INVOKABLE QString touchWording(const QString& text) const;
-    Q_INVOKABLE void commitOperation();
+    // False when the operation was not applied (the reason is shown).
+    Q_INVOKABLE bool commitOperation();
     Q_INVOKABLE void cancelOperation();
-    // Returns an error message ("" on success). Previews live as the user types.
+    // Returns an error message ("" on success, or while the value's preview
+    // still computes: its verdict comes with a state change). Previews live
+    // as the user types.
     Q_INVOKABLE QString setValueText(const QString& text);
+    // The same, waiting for the verdict of a preview still computing: Tab to
+    // the next field moves on only with a usable value.
+    Q_INVOKABLE QString confirmValueText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
     Q_INVOKABLE void setView(const QString& name);
     Q_INVOKABLE void fitAll();

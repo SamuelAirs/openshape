@@ -124,6 +124,10 @@ public:
     // For a measured value (a push/pull showing the thickness) a leading + or
     // - changes it by that much.
     std::string setValueText(const std::string& text);
+    // setValueText, then waits for the value's verdict when its preview is
+    // still computing: for a key that moves on only with a usable value (Tab
+    // to the next field). Keystrokes use setValueText and never wait.
+    std::string confirmValueText(const std::string& text);
     std::string operationValueText() const;
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;

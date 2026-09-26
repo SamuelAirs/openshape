@@ -491,7 +491,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   command refuses a value whose preview had not come back, that refusal
   becomes the value's verdict (`refusePendingValue`: the message in the
   value chip, no preview, nothing left pending), as a refused preview's
-  would be. A click elsewhere first takes a finished preview's verdict
+  would be; the tool stays as it was (one-shot resets - Align, Mirror and
+  Pattern back to Move, the Hole tool's remembered settings - happen only
+  once the command is accepted), and the value chip keeps the keyboard
+  (`AppController::commitOperation` returns whether it applied). Tab to
+  the next field (the Hole tool's X, Y) waits for the typed value's verdict
+  (`confirmValueText`), so a hole typed off the face keeps its field; a
+  keystroke never waits. A click elsewhere first takes a finished preview's verdict
   (`deliverPreviews`); when the command refuses a value whose preview had
   not come back yet, the click goes on to select, as it does when the
   refusal is shown (`applyBeforeSelecting`); Import, Duplicate, Split and a

@@ -660,6 +660,80 @@ TEST(AsyncPreview, ActionsGoOnWhenThePendingValueIsRefused)
     ASSERT_TRUE(h.controller.waitForPreview());
 }
 
+// Apply refused while the preview is still pending (Mirror does not wait for
+// its preview; the command finds that the box lands on itself): the tool
+// stays Mirror, so the next rebuild (the body picked again) opens Mirror, not
+// Move - as with synchronous previews, where the refused preview keeps Apply
+// off. An accepted mirror still ends the tool (one-shot).
+TEST(AsyncPreview, RefusedApplyKeepsTheBodyTool)
+{
+    AsyncHarness h; // a 20 mm box, (-10,-10,0) .. (10,10,20): symmetric about YZ
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
+    const auto* mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_NE(mirror, nullptr);
+    h.worker().setJobDelayForTesting(300ms);
+    ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // across YZ
+    ASSERT_TRUE(mirror->previewPending());
+    ASSERT_TRUE(mirror->canCommit()) << "a pending preview counts as committable";
+    ASSERT_FALSE(mirror->commitNeedsPreview());
+    const std::string lastStep = h.stack.undoLabel();
+    EXPECT_FALSE(h.controller.triggerAction("apply").ok());
+    EXPECT_EQ(h.stack.undoLabel(), lastStep) << "the mirror that changes nothing was applied";
+    ASSERT_EQ(h.controller.operation(), mirror) << "the refused mirror ended";
+    EXPECT_FALSE(mirror->error().empty());
+    ASSERT_TRUE(h.controller.waitForPreview());
+    h.worker().setJobDelayForTesting(0ms);
+
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    mirror = dynamic_cast<const MirrorOperation*>(h.controller.operation());
+    ASSERT_NE(mirror, nullptr) << "the refused apply switched the tool to "
+                               << (h.controller.operation() ? h.controller.operation()->title() : std::string("nothing"));
+
+    ASSERT_TRUE(h.controller.triggerAction("plane:2").ok()); // across XY: doubles the box downwards
+    EXPECT_TRUE(h.controller.triggerAction("apply").ok());
+    EXPECT_EQ(h.stack.undoLabel(), "Mirror");
+    EXPECT_NEAR(geom::volume(h.body().shape()), 16000.0, 1e-6);
+    EXPECT_NE(dynamic_cast<const MoveOperation*>(h.controller.operation()), nullptr) << "Mirror stayed after it was applied";
+    ASSERT_TRUE(h.controller.waitForPreview());
+}
+
+// Tab to the next field confirms the typed value (confirmValueText): it waits
+// for the verdict of a preview still computing, so a hole typed off the face
+// keeps the X field with the message, as with synchronous previews. A
+// keystroke (setValueText) never waits.
+TEST(AsyncPreview, ConfirmingAValueWaitsForItsVerdict)
+{
+    AsyncHarness h; // a 20 mm box, (-10,-10,0) .. (10,10,20)
+    h.clickAt(h.screen({0, 0, 20}));
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const auto* hole = dynamic_cast<const HoleOperation*>(h.controller.operation());
+    ASSERT_NE(hole, nullptr);
+    h.clickAt(h.screen({0.3, 0.2, 20})); // snaps to the face's center
+    ASSERT_EQ(hole->positions().size(), 1u);
+    ASSERT_TRUE(h.controller.triggerAction("field:x").ok());
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_EQ(hole->field(), HoleOperation::Field::X);
+
+    h.worker().setJobDelayForTesting(200ms);
+    const auto t0 = std::chrono::steady_clock::now();
+    EXPECT_EQ(h.controller.setValueText("40"), "");
+    EXPECT_LT(msSince(t0), 150.0) << "a keystroke waited for the preview";
+    ASSERT_TRUE(hole->previewPending());
+    const std::string error = h.controller.confirmValueText("40");
+    EXPECT_NE(error.find("off the face"), std::string::npos) << error;
+    EXPECT_FALSE(hole->previewPending());
+    EXPECT_EQ(hole->error(), error);
+    EXPECT_EQ(hole->field(), HoleOperation::Field::X);
+
+    EXPECT_EQ(h.controller.confirmValueText("12"), "");
+    EXPECT_FALSE(hole->previewPending());
+    EXPECT_TRUE(hole->hasPreview());
+    ASSERT_TRUE(h.controller.triggerAction("nextField").ok());
+    EXPECT_EQ(hole->field(), HoleOperation::Field::Y);
+    ASSERT_TRUE(h.controller.waitForPreview());
+}
+
 // The Hole tool previews on the worker. Its Apply waits for a pending
 // preview, which says which hole is off the face (the step's own refusal is
 // worded for upstream changes). A counterbore on the hole's rim previews on
