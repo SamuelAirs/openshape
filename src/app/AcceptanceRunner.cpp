@@ -973,7 +973,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     if (app_->sketchMode())
         app_->finishSketch();
     app_->cancelOperation();
-    for (const char* overlay : {"helpOverlay", "aboutOverlay", "preferencesOverlay"})
+    for (const char* overlay : {"helpOverlay", "aboutOverlay", "preferencesOverlay", "unsavedDialog"})
         if (QQuickItem* item = findItem(QString::fromLatin1(overlay)))
             item->setVisible(false);
     if (!app_->recoveryItems().isEmpty())

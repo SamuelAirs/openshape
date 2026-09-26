@@ -22,7 +22,9 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLockFile>
+#if QT_CONFIG(process)
 #include <QtCore/QProcess>
+#endif
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QSysInfo>
@@ -152,14 +154,25 @@ Steps recoverySteps(AcceptanceRunner& r)
     wait(steps, kDebounceSteps);
     steps.push_back([&r, &app] {
         r.check(!app.recoveryCopyFile().isEmpty(), "an edit after saving: copied again");
-        app.newDocument();
-        r.check(app.recoveryCopyFile().isEmpty(), "New (after the unsaved-changes question) removes the copy");
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("newMenuItem")), "File → New with unsaved changes"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        auto* question = r.findItem(QStringLiteral("unsavedDialog"));
+        r.check(question && question->isVisible() && app.bodyCount() == 2, "it asks about saving first");
+        r.screenshot(QStringLiteral("recovery_unsaved_question"));
+        r.check(r.clickItem(QStringLiteral("unsavedDiscard")), "Don't Save button");
+        r.check(app.bodyCount() == 0 && !app.dirty(), "Don't Save: a new document");
+        r.check(app.recoveryCopyFile().isEmpty(), "a confirmed discard removes the copy");
     });
     // A real crash: another OpenShape adds a box, writes its copy and crashes.
+    // (No second process on iPadOS: there the crashed run's files are made here.)
     steps.push_back([&r, &app, s] {
         ui::RecoverySession* recovery = app.recoverySession();
         if (!recovery)
             return;
+#if QT_CONFIG(process)
         const QString crashDir = s->outputDir + QStringLiteral("/crashed-run");
         QDir(crashDir).removeRecursively();
         QProcess child;
@@ -184,6 +197,9 @@ Steps recoverySteps(AcceptanceRunner& r)
             QFile::copy(from.filePath(name), recovery->directory() + QLatin1Char('/') + name);
         }
         r.check(QFile::exists(path(recovery->store().lockFile(s->crashed))), "with the dead run's lock file");
+#else
+        s->crashed = crashedCopy(*recovery, 20, "", "");
+#endif
         // Another running OpenShape's copy must not be offered.
         s->live = Uuid::generate().toString();
         (void)recovery->store().write(s->live, *cube(5), {"", "Live", 0, "0.1.0"});
@@ -224,7 +240,7 @@ Steps recoverySteps(AcceptanceRunner& r)
         app.checkForRecovery();
     });
     wait(steps, 2);
-    steps.push_back([&r, &app, s] {
+    steps.push_back([&r, s] {
         r.check(r.clickItem(QStringLiteral("recoveryRestore_") + QString::fromStdString(s->original)), "Restore (a saved document)");
     });
     wait(steps, 2);
@@ -339,14 +355,27 @@ Steps recentSteps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("recentFile_1")), "recent file B with unsaved changes"); });
     wait(steps, 2);
-    steps.push_back([&r, &app, s] {
-        QObject* dialog = r.window()->findChild<QObject*>(QStringLiteral("unsavedDialog"));
-        r.check(dialog && dialog->property("visible").toBool(), "the unsaved-changes question appears");
+    steps.push_back([&r, &app] {
+        auto* question = r.findItem(QStringLiteral("unsavedDialog"));
+        r.check(question && question->isVisible(), "the unsaved-changes question appears");
         r.check(app.documentTitle() == QStringLiteral("recent_a") && app.bodyCount() == 2, "and B is not opened yet");
-        if (dialog)
-            QMetaObject::invokeMethod(dialog, "reject");
-        app.undo();
+        r.check(r.clickItem(QStringLiteral("unsavedCancel")), "Cancel button");
+        r.check(question && !question->isVisible() && app.documentTitle() == QStringLiteral("recent_a") && app.dirty(),
+                "Cancel: A stays open, unsaved");
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (save first)");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("openRecentMenuItem")), "Open Recent (save first)"); });
+    wait(steps, 2);
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("recentFile_1")), "recent file B again"); });
+    wait(steps, 2);
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("unsavedSave")), "Save button"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        const auto savedA = loadCopy(s->a);
+        r.check(savedA && savedA->bodies().size() == 2, "Save wrote A (now two boxes)");
+        r.check(app.documentTitle() == QStringLiteral("recent_b") && !app.dirty(), "then B opened", app.documentTitle());
         // A file that is gone drops out of the list.
+        app.newDocument();
         QFile::remove(s->b);
         const QVariantList recent = app.recentFiles();
         r.check(recent.size() == 1 && recent[0].toMap()[QStringLiteral("path")].toString() == QFileInfo(s->a).absoluteFilePath(),
@@ -399,17 +428,11 @@ Steps preferencesSteps(AcceptanceRunner& r)
     });
     steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("newMenuItem")), "File → New"); });
     wait(steps, 2);
-    steps.push_back([&r, &app, overlayVisible] {
-        // New asked about the unsaved box first.
-        if (QObject* dialog = r.window()->findChild<QObject*>(QStringLiteral("unsavedDialog"))) {
-            r.check(dialog->property("visible").toBool(), "New asks about the unsaved box");
-            QMetaObject::invokeMethod(dialog, "reject");
-        }
-        app.undo();
-        r.check(!app.dirty(), "the box undone");
+    steps.push_back([&r] {
+        auto* question = r.findItem(QStringLiteral("unsavedDialog"));
+        r.check(question && question->isVisible(), "New asks about the unsaved box");
+        r.check(r.clickItem(QStringLiteral("unsavedDiscard")), "Don't Save");
     });
-    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (New, clean)"); });
-    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("newMenuItem")), "File → New (clean)"); });
     wait(steps, 2);
     steps.push_back([&r, &app, overlayVisible] {
         r.check(app.bodyCount() == 0 && app.displayUnit() == QStringLiteral("in"), "a new document is in inches", app.displayUnit());
@@ -468,6 +491,19 @@ Steps preferencesSteps(AcceptanceRunner& r)
         r.screenshot(QStringLiteral("preferences_after"));
         r.key(Qt::Key_Escape);
     });
+    // Closing the window with unsaved changes asks too; Cancel keeps it open.
+    steps.push_back([&r, &app] {
+        r.check(app.dirty(), "unsaved changes before closing");
+        r.window()->close();
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        auto* question = r.findItem(QStringLiteral("unsavedDialog"));
+        r.check(r.window()->isVisible() && question && question->isVisible(), "closing the window asks first");
+        r.check(r.clickItem(QStringLiteral("unsavedCancel")), "Cancel keeps the window open");
+    });
+    wait(steps, 2);
+    steps.push_back([&r] { r.check(r.window()->isVisible(), "the window is still open"); });
     return steps;
 }
 

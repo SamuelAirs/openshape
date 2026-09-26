@@ -20,7 +20,11 @@ namespace os::ui {
 // This app instance's recovery session (see io/Recovery.h): a QLockFile in the
 // recovery folder says the session's owner is running, so another running
 // instance never offers its copy. A lock left by a crashed app belongs to a
-// process that no longer exists; QLockFile then treats it as stale.
+// process that no longer exists; QLockFile then treats it as stale. The
+// default stale time (30 s) is kept on purpose: it also frees a crashed
+// session's lock whose process id was reused (or whose lock file is
+// unreadable), and it never takes a live lock, because the owner holds the
+// file open (Windows: no delete sharing; elsewhere: flock).
 class RecoverySession {
 public:
     // Creates the folder and takes this session's lock.

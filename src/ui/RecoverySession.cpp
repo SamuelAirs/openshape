@@ -95,7 +95,8 @@ std::vector<io::RecoveryEntry> RecoverySession::findOrphans()
         it = offered ? std::next(it) : orphanLocks_.erase(it);
     }
     if (!orphans.empty())
-        OS_LOG(Info, File) << "recovery: " << orphans.size() << " recovery copies from an earlier run can be restored";
+        OS_LOG(Info, File) << "recovery: " << orphans.size() << (orphans.size() == 1 ? " copy" : " copies")
+                           << " from an earlier run can be restored";
     return orphans;
 }
 

@@ -81,8 +81,14 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        if (!helpOverlay.visible && !aboutOverlay.visible && !preferencesOverlay.visible && !recoveryOverlay.visible)
-            viewport.forceActiveFocus()
+        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay]
+        for (const panel of panels) {
+            if (panel.visible) {
+                panel.forceActiveFocus()
+                return
+            }
+        }
+        viewport.forceActiveFocus()
     }
 
     function save() {
@@ -98,8 +104,7 @@ ApplicationWindow {
             action()
             return
         }
-        unsavedDialog.pendingAction = action
-        unsavedDialog.open()
+        unsavedDialog.ask(action)
     }
 
     onClosing: (close) => {
@@ -589,7 +594,26 @@ ApplicationWindow {
         app: window.app
         anchors.fill: parent
         z: 100
-        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // "Save changes?" before New, Open, Open Recent, Restore or closing.
+    UnsavedOverlay {
+        id: unsavedDialog
+        objectName: "unsavedDialog"
+        app: window.app
+        anchors.fill: parent
+        z: 120 // above the restore prompt, whose Restore asks it
+        onSaveRequested: (action) => {
+            if (window.app.hasProjectPath()) {
+                if (window.app.saveProject())
+                    action()
+            } else {
+                window.afterSave = action
+                saveDialog.open()
+            }
+        }
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
     // After a crash: restore or discard the work that was not saved.
@@ -600,7 +624,7 @@ ApplicationWindow {
         anchors.fill: parent
         z: 110
         onRestoreRequested: (session) => window.confirmDiscard(() => window.app.restoreRecovery(session))
-        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
     // ---------------------------------------------------------------- toast
@@ -681,28 +705,5 @@ ApplicationWindow {
         defaultSuffix: "3mf"
         nameFilters: ["3MF files (*.3mf)"]
         onAccepted: window.app.export3mf(selectedFile)
-    }
-    MessageDialog {
-        id: unsavedDialog
-        objectName: "unsavedDialog"
-        property var pendingAction: null
-        title: "Unsaved changes"
-        text: "Save changes to “" + window.app.documentTitle + "”?"
-        buttons: MessageDialog.Save | MessageDialog.Discard | MessageDialog.Cancel
-        onButtonClicked: (button, role) => {
-            const action = pendingAction
-            pendingAction = null
-            if (button === MessageDialog.Discard) {
-                action()
-            } else if (button === MessageDialog.Save) {
-                if (window.app.hasProjectPath()) {
-                    if (window.app.saveProject())
-                        action()
-                } else {
-                    window.afterSave = action
-                    saveDialog.open()
-                }
-            }
-        }
     }
 }
