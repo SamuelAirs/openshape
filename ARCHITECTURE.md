@@ -238,8 +238,9 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   height**: the em size is `size` / (an "H"'s height per em, measured once
   per font). Each glyph instance is copied (repeated letters share a cached
   shape) and its wires re-oriented by `ShapeFix_Face::FixOrientation`
-  (FreeType outlines run clockwise); counters (O, A, B) are holes in the
-  faces. `embossText` extrudes the faces from the face's plane (as push/pull
+  (OCCT's glyph builder leaves the outline's direction to "ShapeFix", as
+  its source says; a face still of negative area is reversed); counters
+  (O, A, B) are holes in the faces. `embossText` extrudes the faces from the face's plane (as push/pull
   does; a lead into the material would hang a sliver into a hole under
   raised letters), fuses or cuts them in one boolean, and checks the volume
   changed the right way by no more than the letters' area x |depth|
