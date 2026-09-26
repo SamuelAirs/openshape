@@ -28,9 +28,10 @@ target_include_directories(planegcs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shim-publ
 target_compile_definitions(planegcs PRIVATE _USE_MATH_DEFINES)
 # FreeCAD builds these files with a precompiled header that pulls in common
 # standard headers; the sources rely on it. Reproduce it (force-included).
+# <iterator> etc.: libc++ (Apple) includes less transitively than libstdc++.
 target_precompile_headers(planegcs PRIVATE
-    <algorithm> <cassert> <cmath> <cstdlib> <iostream> <limits> <map> <memory> <numbers>
-    <set> <sstream> <string> <utility> <vector>)
+    <algorithm> <cassert> <cmath> <cstdlib> <fstream> <future> <iostream> <iterator> <limits>
+    <map> <memory> <numbers> <optional> <set> <sstream> <string> <utility> <vector>)
 target_link_libraries(planegcs PUBLIC Eigen3::Eigen)
 # Third-party code: do not apply the project warning policy.
 if(NOT MSVC)

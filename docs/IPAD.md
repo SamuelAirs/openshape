@@ -125,6 +125,11 @@ Capabilities → your team → **Run**. On the iPad, the first time: Settings
   without tapping needs a hardware keyboard).
 - Not measured yet: speed and memory with bigger parts.
 
+The app's log is in the Files app: On My iPad → OpenShape → Logs →
+`openshape.log` (share it with the Share button when reporting a problem).
+TestFlight also collects crash reports and screenshot feedback in App Store
+Connect.
+
 ## Licenses
 
 For your own iPad there is nothing to do. For the App Store see

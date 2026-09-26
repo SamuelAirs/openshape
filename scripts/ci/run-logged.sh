@@ -32,9 +32,14 @@ annotate() { # <title> <text>
 }
 clean() { LC_ALL=C sed -e $'s/\e\\[[0-9;]*[A-Za-z]//g' | cut -c1-500; } # no colors, short lines
 
-errors=$(clean < "$log" | grep -n -E -A4 \
+# The error lines with some context, in chunks (GitHub keeps 10 error
+# annotations per step), then the end of the output.
+clean < "$log" | grep -n -E -A3 \
     'error:|Error:|error [A-Z]+[0-9]+|CMake Error|Undefined symbols|ld: |FAILED|Failed|Failure|fatal|No such file|not found' \
-    | head -n 90)
-[ -n "$errors" ] && annotate "$name failed: error lines" "$errors"
+    | head -n 490 > "$log.errors" || true
+chunks=$(( ($(wc -l < "$log.errors") + 69) / 70 ))
+for ((i = 0; i < chunks; i++)); do
+    annotate "$name failed: error lines ($((i + 1))/$chunks)" "$(sed -n "$((i * 70 + 1)),$((i * 70 + 70))p" "$log.errors")"
+done
 annotate "$name failed (exit $status): last lines" "$(clean < "$log" | tail -n 60)"
 exit "$status"

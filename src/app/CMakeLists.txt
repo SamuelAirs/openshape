@@ -28,9 +28,11 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION "${OPENSHAPE_BUILD_NUMBER}")
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    # App icon: one 1024 px image; Xcode derives the other sizes.
-    target_sources(openshape PRIVATE ios/Assets.xcassets)
-    set_source_files_properties(ios/Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    # App icon (one 1024 px image; Xcode derives the other sizes) and the
+    # privacy manifest App Store Connect requires.
+    target_sources(openshape PRIVATE ios/Assets.xcassets ios/PrivacyInfo.xcprivacy)
+    set_source_files_properties(ios/Assets.xcassets ios/PrivacyInfo.xcprivacy
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     set_target_properties(openshape PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "io.github.samuelairs.openshape"

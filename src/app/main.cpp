@@ -27,10 +27,15 @@ Q_IMPORT_QML_PLUGIN(OpenShapePlugin)
 
 namespace {
 
-// Log sink: stderr plus a rolling file in the user's app-data folder.
+// Log sink: stderr plus a rolling file in the user's app-data folder (on
+// iPadOS in Documents, which the Files app shows, so testers can send it).
 void installLogging()
 {
+#if defined(Q_OS_IOS)
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/Logs");
+#else
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/logs");
+#endif
     QDir().mkpath(dir);
     static QFile file(dir + QStringLiteral("/openshape.log"));
     if (file.size() > 4 * 1024 * 1024)
@@ -259,7 +264,9 @@ int main(int argc, char* argv[])
     QGuiApplication::setOrganizationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+#if !defined(Q_OS_IOS) // iPadOS shows the bundle's icon (and would need the SVG plugin)
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
+#endif
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     installLogging();
     // OPENSHAPE_LOG=debug shows kernel/tessellation/recompute timings (PERFORMANCE).

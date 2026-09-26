@@ -67,7 +67,7 @@ jobs:
       - name: Configure
         run: bash scripts/ci/run-logged.sh configure cmake --preset macos -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
       - name: Build
-        run: bash scripts/ci/run-logged.sh build cmake --build build/macos
+        run: bash scripts/ci/run-logged.sh build cmake --build build/macos -- -k 0 # all errors at once
       - name: Test (headless)
         run: |
           bash scripts/ci/run-logged.sh test ctest --test-dir build/macos -LE gui --output-on-failure

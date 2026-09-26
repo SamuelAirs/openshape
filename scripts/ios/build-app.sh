@@ -33,5 +33,9 @@ xcodebuild -project "$BUILD/OpenShape.xcodeproj" -scheme openshape -configuratio
 APP="$BUILD/OpenShape.xcarchive/Products/Applications/OpenShape.app"
 test -d "$APP" || { echo "error: the archive has no app (Products/Applications/OpenShape.app)"; exit 1; }
 du -sh "$APP"
+ls "$APP"
 lipo -info "$APP/OpenShape"
 plutil -p "$APP/Info.plist"
+for f in Assets.car PrivacyInfo.xcprivacy; do
+    test -e "$APP/$f" || { echo "error: the app bundle lacks $f"; exit 1; }
+done
