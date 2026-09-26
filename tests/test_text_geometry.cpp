@@ -171,6 +171,48 @@ TEST(TextGeometry, EmbossAddsAreaTimesDepth)
     EXPECT_NEAR(*empty, 2.5, 1e-6) << "the counter is open down to the plate";
 }
 
+// Accented and composite letters (a base letter plus a mark, built from
+// components in most fonts, Noto Sans included) and letters whose parts
+// cross (the slash of an O-slash): valid, upward faces that do not overlap,
+// so the raised volume is still exactly area x depth.
+TEST(TextGeometry, AccentedAndCompositeLetters)
+{
+    OS_REQUIRE_TEST_FONT(kFont);
+    const Shape body = plate();
+    const double v0 = volume(body);
+    for (const char* word : {"\xC3\xA9",                  // e acute
+                             "\xC3\x98",                  // O slash
+                             "\xC3\x9F",                  // sharp s
+                             "\xC3\x85",                  // A ring
+                             "\xC3\xB1\xC3\xA7\xC3\xBC", // n tilde, c cedilla, u diaeresis
+                             "\xC5\x81\xC4\x85\xC5\x91", // L stroke, a ogonek, o double acute
+                             "\xC3\x86\xC5\x93"}) {       // AE, oe
+        const TextSpec text = spec(word, 12);
+        ASSERT_EQ(checkText(text), "") << word;
+        auto faces = textFaces(text);
+        ASSERT_TRUE(faces) << word << ": " << faces.developerMessage();
+        EXPECT_TRUE(isValid(faces.value())) << word;
+        for (int f = 0; f < faces.value().faceCount(); ++f) {
+            const auto info = faceInfo(faces.value(), f);
+            ASSERT_TRUE(info && info->isPlanar()) << word;
+            EXPECT_GT(info->normal.z, 0.9999) << word << " face " << f;
+        }
+        const double area = surfaceArea(faces.value());
+        ASSERT_GT(area, 5) << word;
+        auto raised = embossText(body, text, onTop(), 1.0);
+        ASSERT_TRUE(raised) << word << ": " << raised.developerMessage();
+        EXPECT_TRUE(isValid(raised.value())) << word;
+        EXPECT_NEAR(volume(raised.value()) - v0, area * 1.0, 1e-5 * area) << word << ": no overlapping parts";
+        auto cut = embossText(body, text, onTop(), -1.0);
+        ASSERT_TRUE(cut) << word << ": " << cut.developerMessage();
+        EXPECT_NEAR(v0 - volume(cut.value()), area * 1.0, 1e-5 * area) << word;
+    }
+    // The accent is a piece of its own, above the letter.
+    auto e = textFaces(spec("\xC3\xA9", 12));
+    ASSERT_TRUE(e);
+    EXPECT_EQ(e.value().faceCount(), 2) << "e and its accent";
+}
+
 // Cut in: the body loses exactly area x depth; a cut deeper than the plate
 // takes out only what is there, and leaves an O's middle as a loose piece.
 TEST(TextGeometry, DebossRemovesAreaTimesDepth)

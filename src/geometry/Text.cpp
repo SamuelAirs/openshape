@@ -9,10 +9,12 @@
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_Builder.hxx>
@@ -251,6 +253,126 @@ gp_Trsf frameTransform(const TextFrame& frame)
     return trsf;
 }
 
+double faceArea(const TopoDS_Face& face)
+{
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(face, props);
+    return std::abs(props.Mass());
+}
+
+// `face` (on the text's plane, z = 0) turned to face +Z if it faces -Z.
+TopoDS_Face facingUp(TopoDS_Face face)
+{
+    BRepAdaptor_Surface surface(face);
+    gp_Pnt p;
+    gp_Vec du, dv;
+    surface.D1((surface.FirstUParameter() + surface.LastUParameter()) / 2,
+               (surface.FirstVParameter() + surface.LastVParameter()) / 2, p, du, dv);
+    gp_Vec normal = du.Crossed(dv);
+    if (face.Orientation() == TopAbs_REVERSED)
+        normal.Reverse();
+    if (normal.Z() < 0)
+        face.Reverse();
+    return face;
+}
+
+// Letters whose parts overlap become one face per piece of ink. A letter
+// with a mark (an A's ring, a c's cedilla, an a's ogonek) is drawn from
+// overlapping outlines in most fonts, Noto Sans included, and FreeType fills
+// their union; as separate faces the overlap would count twice (in the
+// letters' area, and as overlapping solids in the boolean). Faces whose
+// boxes meet are fused (a planar boolean) and merged; a group that does not
+// merge cleanly (the union's area must lie between the largest face's and
+// the sum of them) keeps its faces, which the boolean still unites.
+std::vector<TopoDS_Face> mergeOverlapping(std::vector<TopoDS_Face> faces)
+{
+    const std::size_t n = faces.size();
+    if (n < 2)
+        return faces;
+    struct Box {
+        double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    };
+    std::vector<Box> boxes(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        Bnd_Box box;
+        BRepBndLib::AddOptimal(faces[i], box, Standard_False, Standard_False);
+        double z0, z1;
+        box.Get(boxes[i].x0, boxes[i].y0, z0, boxes[i].x1, boxes[i].y1, z1);
+    }
+    std::vector<std::size_t> parent(n);
+    for (std::size_t i = 0; i < n; ++i)
+        parent[i] = i;
+    auto root = [&parent](std::size_t i) {
+        while (parent[i] != i)
+            i = parent[i] = parent[parent[i]];
+        return i;
+    };
+    // Sorted by left edge: a face can only meet those starting before it ends.
+    std::vector<std::size_t> order(parent);
+    std::sort(order.begin(), order.end(), [&boxes](std::size_t a, std::size_t b) { return boxes[a].x0 < boxes[b].x0; });
+    constexpr double touch = 1e-6; // mm
+    bool any = false;
+    for (std::size_t a = 0; a < n; ++a)
+        for (std::size_t b = a + 1; b < n; ++b) {
+            const Box& p = boxes[order[a]];
+            const Box& q = boxes[order[b]];
+            if (q.x0 > p.x1 + touch)
+                break;
+            if (q.y0 <= p.y1 + touch && p.y0 <= q.y1 + touch) {
+                parent[root(order[b])] = root(order[a]);
+                any = true;
+            }
+        }
+    if (!any)
+        return faces;
+    std::map<std::size_t, std::vector<std::size_t>> groups;
+    for (std::size_t i = 0; i < n; ++i)
+        groups[root(i)].push_back(i);
+    std::vector<TopoDS_Face> out;
+    for (const auto& [first, members] : groups) {
+        if (members.size() == 1) {
+            out.push_back(faces[members.front()]);
+            continue;
+        }
+        double sum = 0, largest = 0;
+        TopTools_ListOfShape arguments, tools;
+        for (std::size_t i : members) {
+            const double area = faceArea(faces[i]);
+            sum += area;
+            largest = std::max(largest, area);
+            (i == members.front() ? arguments : tools).Append(faces[i]);
+        }
+        std::vector<TopoDS_Face> merged;
+        BRepAlgoAPI_Fuse fuse;
+        fuse.SetArguments(arguments);
+        fuse.SetTools(tools);
+        fuse.SetNonDestructive(Standard_True);
+        fuse.Build();
+        if (fuse.IsDone() && !fuse.HasErrors()) {
+            ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_False, Standard_True, Standard_False);
+            unify.Build();
+            double area = 0;
+            for (TopExp_Explorer it(unify.Shape(), TopAbs_FACE); it.More(); it.Next()) {
+                merged.push_back(facingUp(TopoDS::Face(it.Current())));
+                area += faceArea(merged.back());
+            }
+            const double tolerance = 1e-7 * sum + 1e-9;
+            bool valid = !merged.empty() && area >= largest - tolerance && area <= sum + tolerance;
+            for (std::size_t k = 0; valid && k < merged.size(); ++k)
+                valid = BRepCheck_Analyzer(merged[k]).IsValid();
+            if (!valid) {
+                OS_LOG(Debug, Geometry) << "text: overlapping letter parts not merged (area " << area << " of " << sum << ")";
+                merged.clear();
+            }
+        }
+        if (merged.empty())
+            for (std::size_t i : members)
+                merged.push_back(faces[i]);
+        out.insert(out.end(), merged.begin(), merged.end());
+    }
+    return out;
+}
+
 // The letters as faces placed in `frame`, each face's wires oriented for an
 // outward normal along frame.normal (FreeType outlines run the other way
 // round; ShapeFix puts outer wires counter-clockwise and holes clockwise).
@@ -260,17 +382,14 @@ Result<Shape> buildFaces(const TextSpec& spec, const TextFrame& frame)
     auto layout = layOut(spec);
     if (!layout)
         return R::failureFrom(layout);
-    const gp_Trsf place = frameTransform(frame);
     const double cx = (layout.value().minX + layout.value().maxX) / 2, cy = spec.capHeight / 2;
-    BRep_Builder builder;
-    TopoDS_Compound faces;
-    builder.MakeCompound(faces);
-    int count = 0;
+    // On the text's own plane first (z = 0, centered), then placed.
+    std::vector<TopoDS_Face> letters;
     for (const Glyph& g : layout.value().glyphs) {
         gp_Trsf shift;
         shift.SetTranslation(gp_Vec(g.pen - cx, -cy, 0));
         // A copy per letter: repeated letters share one cached glyph.
-        BRepBuilderAPI_Transform moved(g.shape, place * shift, Standard_True);
+        BRepBuilderAPI_Transform moved(g.shape, shift, Standard_True);
         for (TopExp_Explorer it(moved.Shape(), TopAbs_FACE); it.More(); it.Next()) {
             ShapeFix_Face fix(TopoDS::Face(it.Current()));
             fix.FixOrientation();
@@ -279,13 +398,19 @@ Result<Shape> buildFaces(const TextSpec& spec, const TextFrame& frame)
             BRepGProp::SurfaceProperties(face, props);
             if (props.Mass() < 0)
                 face.Reverse();
-            builder.Add(faces, face);
-            ++count;
+            letters.push_back(face);
         }
     }
-    if (count == 0)
+    if (letters.empty())
         return R::failure(ErrorCode::InvalidArgument, "Type some letters: spaces alone make nothing.", "text: no faces");
-    return R::success(makeShape(faces));
+    letters = mergeOverlapping(std::move(letters));
+    BRep_Builder builder;
+    TopoDS_Compound faces;
+    builder.MakeCompound(faces);
+    for (const TopoDS_Face& face : letters)
+        builder.Add(faces, face);
+    BRepBuilderAPI_Transform placed(faces, frameTransform(frame), Standard_True);
+    return R::success(makeShape(placed.Shape()));
 }
 
 } // namespace

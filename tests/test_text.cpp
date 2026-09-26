@@ -168,7 +168,9 @@ TEST(Text, ParametersAndTheWordsCanBeEdited)
     ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::SetParameterCommand>(id, "depth", -0.5), plate.document).ok());
     EXPECT_NEAR(v0 - plate.volume(), letterArea("ABBA", 8) * 0.5, 1e-5 * letterArea("ABBA", 8));
     ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::SetParameterCommand>(id, "angle", kPi / 2), plate.document).ok());
-    const auto box = geom::boundingBox(geom::placedTextFaces({"ABBA", doc::kTextFontRegular, 8},
+    // Flat-topped capitals span exactly the capital height (round and pointed
+    // ones overshoot it a little in most fonts, Noto Sans included).
+    const auto box = geom::boundingBox(geom::placedTextFaces({"HEH", doc::kTextFontRegular, 8},
                                                              {{30, 15, 5}, {0, 1, 0}, {0, 0, 1}}).value());
     EXPECT_NEAR(box.size().x, 8.0, 1e-6) << "turned: the capitals run along Y";
     EXPECT_NEAR(v0 - plate.volume(), letterArea("ABBA", 8) * 0.5, 1e-5 * letterArea("ABBA", 8));
