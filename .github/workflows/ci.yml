@@ -77,8 +77,11 @@ jobs:
           bash scripts/ci/run-logged.sh screenshot perl -e 'alarm 120; exec @ARGV' \
             build/macos/bin/OpenShape.app/Contents/MacOS/OpenShape --demo bracket --screenshot "$LOGS/macos-bracket.png"
           python3 scripts/ci/png_stats.py "$LOGS/macos-bracket.png" --github
+      # Passes in full at 1024x653 since run #29 (TD-35); still allowed to fail
+      # until the newer scenarios (compact, appfolder) have passed here too.
+      # -V keeps the run's own output, so the notice shows its check counts.
       - name: GUI acceptance run (real UI, synthetic input)
         continue-on-error: true
         run: |
-          bash scripts/ci/run-logged.sh acceptance ctest --test-dir build/macos -L gui --output-on-failure
-          grep -E "tests passed|checks|passed" "$LOGS/acceptance.log" | tail -n 3 | sed 's/^/::notice title=macOS acceptance::/'
+          bash scripts/ci/run-logged.sh acceptance ctest --test-dir build/macos -L gui -V
+          grep -E "acceptance: scenarios|checks passed|tests passed" "$LOGS/acceptance.log" | tail -n 3 | sed 's/^/::notice title=macOS acceptance::/'

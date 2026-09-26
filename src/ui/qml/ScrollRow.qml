@@ -3,13 +3,13 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import QtQuick
-import QtQuick.Layouts
 import OpenShape
 
 // A row of controls that scrolls sideways when it is wider than
 // `maximumWidth` (the compact layout of a phone), with a fade at the edge
-// that has more. As wide as its content otherwise, so a regular window sees
-// no difference.
+// that has more. As wide as its content otherwise, and laid out by a plain
+// Row, so a regular window sees exactly what it did before (put a RowLayout
+// inside for Layout properties).
 Item {
     id: scrollRow
 
@@ -33,10 +33,8 @@ Item {
         flickableDirection: Flickable.HorizontalFlick
         boundsBehavior: Flickable.StopAtBounds
 
-        RowLayout {
+        Row {
             id: row
-            height: flick.height
-            spacing: 4
         }
     }
 

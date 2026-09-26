@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "core/Math.h"
+
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
 #include <QtCore/QSize>
@@ -81,6 +83,13 @@ public:
     const doc::Body& body(std::size_t index);
     // Where a model point appears in the window.
     QPointF screenPoint(double x, double y, double z) const;
+    // The first of these model points (e.g. along one edge) that a click
+    // reaches in the 3D view, not under a panel or the value chip; the first
+    // if none does. Small windows (the CI Mac's 1024x653, TD-35) put the chip
+    // over the point a large window leaves free.
+    QPointF uncoveredScreenPoint(const std::vector<Vec3>& candidates) const;
+    // The item a click at `p` reaches (topmost visible, taking mouse buttons).
+    QQuickItem* itemAt(QPointF p) const;
     double bodyHeight() const;
     double bodyVolume() const;
     void check(bool condition, const QString& description, const QString& actual = {});

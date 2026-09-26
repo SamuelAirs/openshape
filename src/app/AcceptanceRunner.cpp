@@ -249,10 +249,11 @@ void AcceptanceRunner::check(bool condition, const QString& description, const Q
 // Where the last click went: the UI item under it and what the 3D view
 // picks there, so a failure on another machine (e.g. the CI Mac's small
 // window, TD-35) can be diagnosed from the log alone.
-QString AcceptanceRunner::describeClick() const
+// The topmost visible item under a window point that takes mouse buttons
+// (where a click there goes), or null.
+QQuickItem* AcceptanceRunner::itemAt(QPointF p) const
 {
-    // The topmost visible item under the point that takes mouse buttons.
-    std::function<QQuickItem*(QQuickItem*)> itemAt = [&](QQuickItem* item) -> QQuickItem* {
+    std::function<QQuickItem*(QQuickItem*)> find = [&](QQuickItem* item) -> QQuickItem* {
         // Paint order: by z, then declaration order (the last is on top).
         QList<QQuickItem*> children = item->childItems();
         std::stable_sort(children.begin(), children.end(), [](const QQuickItem* a, const QQuickItem* b) { return a->z() < b->z(); });
@@ -260,14 +261,31 @@ QString AcceptanceRunner::describeClick() const
             QQuickItem* child = *it;
             if (!child->isVisible() || child->opacity() <= 0.0)
                 continue;
-            if (!child->clip() || child->contains(child->mapFromScene(lastClick_)))
-                if (QQuickItem* hit = itemAt(child))
+            if (!child->clip() || child->contains(child->mapFromScene(p)))
+                if (QQuickItem* hit = find(child))
                     return hit;
         }
-        return item->acceptedMouseButtons() != Qt::NoButton && item->contains(item->mapFromScene(lastClick_)) ? item : nullptr;
+        return item->acceptedMouseButtons() != Qt::NoButton && item->contains(item->mapFromScene(p)) ? item : nullptr;
     };
+    return find(window_->contentItem());
+}
+
+QPointF AcceptanceRunner::uncoveredScreenPoint(const std::vector<Vec3>& candidates) const
+{
+    for (const Vec3& c : candidates) {
+        const QPointF p = screenPoint(c.x, c.y, c.z);
+        const bool inside = p.x() >= 0 && p.y() >= 0 && p.x() < window_->width() && p.y() < window_->height();
+        const QQuickItem* top = inside ? itemAt(p) : nullptr;
+        if (top && top->objectName() == QLatin1String("viewport"))
+            return p;
+    }
+    return candidates.empty() ? QPointF() : screenPoint(candidates.front().x, candidates.front().y, candidates.front().z);
+}
+
+QString AcceptanceRunner::describeClick() const
+{
     QString path;
-    for (QQuickItem* item = itemAt(window_->contentItem()); item && item != window_->contentItem(); item = item->parentItem()) {
+    for (QQuickItem* item = itemAt(lastClick_); item && item != window_->contentItem(); item = item->parentItem()) {
         const QString name = item->objectName().isEmpty() ? QString::fromLatin1(item->metaObject()->className()) : item->objectName();
         path = path.isEmpty() ? name : name + QLatin1Char('>') + path;
     }

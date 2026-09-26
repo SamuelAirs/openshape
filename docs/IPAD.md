@@ -12,7 +12,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Step | State |
 |---|---|
 | Mac app (Xcode 26.3, Apple Clang 17, `-Werror`) | ✅ builds; 239/239 tests; Metal screenshot renders |
-| Mac real-UI acceptance run (1024x653 window) | 🟡 127/144 checks (small-window failures being fixed) |
+| Mac real-UI acceptance run (1024x653 window) | ✅ all checks since CI run #29 (TD-35 resolved); the step stays allowed to fail until the new `compact` and `appfolder` scenarios have passed there |
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
 | iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ⬜ not yet built on CI |
@@ -42,8 +42,20 @@ What is ready:
   wide or 500 tall (an iPhone either way up, a Split View half, the Duo's
   outer display) the tools become a strip along the bottom, the Model panel
   slides in behind a **Model** button and the view buttons fold into one
-  **View** menu. Try it on Windows with
+  **View** menu. It changes live when the window changes (rotation, Split
+  View, folding). Try it on Windows with
   `OpenShape.exe --touch --size 402x874` (see BUILDING.md).
+- Safe areas: panels and buttons stay clear of the Dynamic Island or notch,
+  the rounded corners and the home indicator (Qt's `SafeArea`, in portrait
+  and landscape); the model fills the whole screen behind them. Preview with
+  `--safe-area 62,0,34,0` (iPhone 16 Pro portrait) or `0,62,21,62`
+  (landscape).
+- Touch wording: hints, messages and the help card speak of taps, two
+  fingers and the on-screen ✓ / ✕ (never Shift-click, Esc, Enter, the scroll
+  wheel or hovering); tooltips are off on touch (the help card has what
+  they said).
+- Files without dialogs where iOS has none: see "Files on iPhone and iPad"
+  below.
 - CI (`.github/workflows/`):
   - `ci.yml`, job `macos`: the Mac app with Apple Clang and Homebrew
     packages, the headless tests, one Metal screenshot (summarized as
@@ -230,7 +242,10 @@ relinking.
    the box.
 9. Split View / Stage Manager: put OpenShape beside another app and drag
    the divider: at about half the width the compact layout appears (tools
-   along the bottom, **Model** and **View** buttons), and back again.
+   along the bottom, **Model** and **View** buttons), and back again. In a
+   window (iPadOS 26 windowed apps), check that the window's controls at
+   the top left do not cover **File** (they may sit outside the safe area
+   Qt reports; TD-42).
 10. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 

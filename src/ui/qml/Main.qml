@@ -500,6 +500,7 @@ ApplicationWindow {
         id: modelButtonPanel
         objectName: "modelButtonPanel"
         visible: Theme.compact && window.app.history.length > 0
+        onVisibleChanged: if (!visible) window.historyOpen = false // (a new, empty document)
         x: window.width - Theme.insetRight - width
         y: window.rightColumnY
         width: modelButton.implicitWidth + 2 * Theme.panelPadding
@@ -544,7 +545,7 @@ ApplicationWindow {
         x: Theme.compact && !window.historyOpen ? window.width + 8 : window.width - Theme.insetRight - width
         y: Theme.compact ? modelButtonPanel.y + modelButtonPanel.height + 8 : Theme.insetTop
         visible: window.app.history.length > 0 && (!Theme.compact || window.historyOpen || x < window.width)
-        maximumHeight: Theme.compact ? window.bottomStackTop - 8 - y : window.height - 2 * Theme.margin - 80
+        maximumHeight: Theme.compact ? window.bottomStackTop - 8 - y : window.height - Theme.insetTop - Theme.insetBottom - 80
         onFinished: viewport.forceActiveFocus()
         onCloseRequested: window.historyOpen = false
         Behavior on x {
@@ -669,38 +670,41 @@ ApplicationWindow {
             objectName: "selectionActions"
             visible: !window.app.sketchMode && window.app.contextActions.length > 0
                      && (!window.app.operationActive || !window.app.valueLabelVisible)
-            width: selectionActionRow.implicitWidth + 2 * Theme.panelPadding
+            width: selectionScroll.implicitWidth + 2 * Theme.panelPadding
             height: Theme.controlHeight + 2 * Theme.panelPadding
             ScrollRow {
-                id: selectionActionRow
+                id: selectionScroll
                 anchors.centerIn: parent
                 maximumWidth: Theme.compact ? statusColumn.fullWidth - 2 * Theme.panelPadding : Infinity
-                spacing: 4
-                Text {
-                    visible: window.app.selectionSummary.length > 0
-                    text: window.app.selectionSummary
-                    color: Theme.text
-                    font.pixelSize: 13
-                    leftPadding: 8
-                    rightPadding: 4
-                }
-                Separator { visible: window.app.selectionSummary.length > 0 }
-                Repeater {
-                    model: window.app.contextActions
-                    delegate: ActionButton {
-                        required property var modelData
-                        objectName: "barAction_" + modelData.id
-                        text: modelData.label
-                        checked: modelData.active
-                        compact: true
-                        onClicked: {
-                            // Triggering rebuilds this list and destroys this
-                            // button (and its context): capture first.
-                            const app = window.app
-                            const id = modelData.id
-                            const view = viewport
-                            app.triggerAction(id)
-                            view.forceActiveFocus()
+                RowLayout {
+                    id: selectionActionRow
+                    spacing: 4
+                    Text {
+                        visible: window.app.selectionSummary.length > 0
+                        text: window.app.selectionSummary
+                        color: Theme.text
+                        font.pixelSize: 13
+                        leftPadding: 8
+                        rightPadding: 4
+                    }
+                    Separator { visible: window.app.selectionSummary.length > 0 }
+                    Repeater {
+                        model: window.app.contextActions
+                        delegate: ActionButton {
+                            required property var modelData
+                            objectName: "barAction_" + modelData.id
+                            text: modelData.label
+                            checked: modelData.active
+                            compact: true
+                            onClicked: {
+                                // Triggering rebuilds this list and destroys this
+                                // button (and its context): capture first.
+                                const app = window.app
+                                const id = modelData.id
+                                const view = viewport
+                                app.triggerAction(id)
+                                view.forceActiveFocus()
+                            }
                         }
                     }
                 }
