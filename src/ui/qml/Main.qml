@@ -17,7 +17,8 @@ ApplicationWindow {
     height: 900
     minimumWidth: 720
     minimumHeight: 480
-    visible: true
+    // Shown by main.cpp once it has put the window where it was last time.
+    visible: false
     title: (app.dirty ? "• " : "") + app.documentTitle + " — OpenShape"
     color: Theme.background
 
@@ -66,6 +67,7 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.SaveAs]; onActivated: saveDialog.open() }
     Shortcut { sequences: [StandardKey.Open]; onActivated: window.confirmDiscard(() => openDialog.open()) }
     Shortcut { sequences: [StandardKey.New]; onActivated: window.confirmDiscard(() => window.app.newDocument()) }
+    Shortcut { sequence: "Ctrl+,"; onActivated: preferencesOverlay.open() }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
     Shortcut { sequence: "F1"; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
@@ -159,8 +161,33 @@ ApplicationWindow {
 
     Menu {
         id: fileMenu
-        MenuItem { text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
+        // Sub-menu entries are made by this delegate: name them for the acceptance run.
+        delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
+        MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
         MenuItem { text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
+        Menu {
+            id: recentMenu
+            objectName: "openRecentMenu"
+            title: "Open Recent"
+            enabled: window.app.recentFiles.length > 0
+            Instantiator {
+                model: window.app.recentFiles
+                delegate: MenuItem {
+                    required property var modelData
+                    required property int index
+                    objectName: "recentFile_" + index
+                    text: modelData.name + "  —  " + modelData.folder
+                    onTriggered: {
+                        const path = modelData.path
+                        window.confirmDiscard(() => window.app.openRecent(path))
+                    }
+                }
+                onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => recentMenu.removeItem(object)
+            }
+            MenuSeparator {}
+            MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: window.app.clearRecentFiles() }
+        }
         MenuSeparator {}
         MenuItem { text: "Save"; onTriggered: window.save() }
         MenuItem { text: "Save As…"; onTriggered: saveDialog.open() }
@@ -169,6 +196,7 @@ ApplicationWindow {
         MenuItem { text: "Export STL…"; enabled: window.app.bodyCount > 0; onTriggered: stlDialog.open() }
         MenuItem { text: "Export 3MF…"; enabled: window.app.bodyCount > 0; onTriggered: threeMfDialog.open() }
         MenuSeparator {}
+        MenuItem { objectName: "preferencesMenuItem"; text: "Preferences…"; onTriggered: preferencesOverlay.open() }
         MenuItem { objectName: "aboutMenuItem"; text: "About OpenShape"; onTriggered: aboutOverlay.open() }
     }
 
@@ -543,6 +571,26 @@ ApplicationWindow {
         onVisibleChanged: if (!visible) viewport.forceActiveFocus()
     }
 
+    PreferencesOverlay {
+        id: preferencesOverlay
+        objectName: "preferencesOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 100
+        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+    }
+
+    // After a crash: restore or discard the work that was not saved.
+    RecoveryOverlay {
+        id: recoveryOverlay
+        objectName: "recoveryOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 110
+        onRestoreRequested: (session) => window.confirmDiscard(() => window.app.restoreRecovery(session))
+        onVisibleChanged: if (!visible) viewport.forceActiveFocus()
+    }
+
     // ---------------------------------------------------------------- toast
     Rectangle {
         id: toast
@@ -624,6 +672,7 @@ ApplicationWindow {
     }
     MessageDialog {
         id: unsavedDialog
+        objectName: "unsavedDialog"
         property var pendingAction: null
         title: "Unsaved changes"
         text: "Save changes to “" + window.app.documentTitle + "”?"

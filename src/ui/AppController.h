@@ -7,16 +7,23 @@
 #include "commands/Command.h"
 #include "document/Document.h"
 #include "interaction/InteractionController.h"
+#include "io/Recovery.h"
+#include "ui/AppSettings.h"
 
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
+#include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QVariantList>
 #include <QtQml/qqmlregistration.h>
 
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace os::ui {
+
+class RecoverySession;
 
 // Bridge between QML and the application core. Holds the document, undo
 // stack and interaction controller; exposes their state as properties and
@@ -65,6 +72,16 @@ class AppController : public QObject {
     Q_PROPERTY(bool canStartSketch READ canStartSketch NOTIFY stateChanged)
     Q_PROPERTY(int sketchCount READ sketchCount NOTIFY stateChanged)
     Q_PROPERTY(QVariantList history READ history NOTIFY stateChanged)
+    // Recovery copies left by a crashed run, offered for restoring
+    // ({session, title, detail, time}); empty once each is restored or discarded.
+    Q_PROPERTY(QVariantList recoveryItems READ recoveryItems NOTIFY recoveryChanged)
+    // File → Open Recent: {path, name, folder}, most recent first, existing files only.
+    Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
+    // File → Preferences… (stored in QSettings, applied at once).
+    Q_PROPERTY(QString defaultUnit READ defaultUnit WRITE setDefaultUnit NOTIFY preferencesChanged)
+    Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
+    // Seconds; 0 = no recovery copies. One of kRecoveryIntervals.
+    Q_PROPERTY(int recoveryInterval READ recoveryInterval WRITE setRecoveryInterval NOTIFY preferencesChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -111,6 +128,38 @@ public:
     bool canStartSketch() const;
     int sketchCount() const { return int(document_->sketches().size()); }
     QVariantList history() const;
+    QVariantList recoveryItems() const;
+    QVariantList recentFiles() const;
+    QString defaultUnit() const;
+    void setDefaultUnit(const QString& symbol);
+    bool sketchGridSnap() const { return preferences_.sketchGridSnap; }
+    void setSketchGridSnap(bool on);
+    int recoveryInterval() const { return preferences_.recoveryIntervalSeconds; }
+    void setRecoveryInterval(int seconds);
+
+    // ---- Recovery copies (see io/Recovery.h) ----
+    // Starts this run's recovery session in `directory`; until then no copies
+    // are written. While the document has unsaved changes, a copy is written
+    // kRecoveryDebounceMs after edits settle and at least every
+    // recoveryInterval() seconds; it is removed on Save, New, Open and exit.
+    void startRecovery(const QString& directory);
+    RecoverySession* recoverySession() const { return recovery_.get(); }
+    // Looks for copies left by crashed runs (fills recoveryItems).
+    Q_INVOKABLE void checkForRecovery();
+    // Opens a crashed run's copy in place of the current document: unsaved,
+    // with its original file remembered; its copy becomes this run's.
+    Q_INVOKABLE bool restoreRecovery(const QString& session);
+    Q_INVOKABLE void discardRecovery(const QString& session);
+    Q_INVOKABLE void discardAllRecovery();
+    // "Decide later": the copies stay and are offered at the next start.
+    Q_INVOKABLE void postponeRecovery();
+    // Writes this run's copy now if there are unsaved changes not in it yet.
+    void writeRecoveryCopy();
+    // This run's copy ("" when there is none).
+    QString recoveryCopyFile() const;
+
+    Q_INVOKABLE bool openRecent(const QString& path);
+    Q_INVOKABLE void clearRecentFiles();
 
     Q_INVOKABLE void newDocument();
     Q_INVOKABLE bool openProject(const QUrl& url);
@@ -169,15 +218,33 @@ signals:
     void documentChanged();
     void message(const QString& text);
     void touchModeChanged();
+    void recoveryChanged();
+    void recentFilesChanged();
+    void preferencesChanged();
 
 private:
     void attach();
     void notifyMessage(const QString& text);
+    // The document was replaced (New, Open, restore): no unsaved edits to copy yet.
+    void documentReplaced();
+    // Called on every state change: (re)arms the recovery timers after an edit.
+    void noteEdits();
+    void stopRecoveryTimers();
+    void rememberRecentFile(const QString& path);
+    void savePreferences() const;
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
     std::unique_ptr<interact::InteractionController> interaction_;
     QString path_;
+    Preferences preferences_;
+    std::unique_ptr<RecoverySession> recovery_;
+    std::vector<io::RecoveryEntry> orphans_; // offered for restoring
+    QTimer recoveryDebounce_; // edits settled
+    QTimer recoveryDeadline_; // at least this often while editing
+    std::uint64_t seenRevision_ = 0;  // undo-stack revision at the last noteEdits()
+    std::uint64_t copyRevision_ = ~std::uint64_t(0); // revision in this run's copy (~0: none)
+    bool recoveryWarned_ = false;
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
     bool touchMode_ = true;
 #else

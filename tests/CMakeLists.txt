@@ -25,3 +25,9 @@ target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_i
 
 openshape_add_test(test_sketch test_sketch.cpp)
 target_link_libraries(test_sketch PRIVATE openshape_sketch)
+
+if(OPENSHAPE_BUILD_APP)
+    # Settings, recent files, window placement and recovery sessions (Qt Core).
+    openshape_add_test(test_uistate test_uistate.cpp)
+    target_link_libraries(test_uistate PRIVATE openshape_uistate)
+endif()

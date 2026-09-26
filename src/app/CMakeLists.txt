@@ -7,6 +7,7 @@ file(GLOB OPENSHAPE_ACCEPTANCE_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURC
 qt_add_executable(openshape WIN32 MACOSX_BUNDLE
     main.cpp
     AcceptanceRunner.cpp AcceptanceRunner.h
+    CrashLog.cpp CrashLog.h
     ${OPENSHAPE_ACCEPTANCE_SCENARIOS}
 )
 # GuiPrivate: QWindowSystemInterface for realistic input injection in --acceptance.

@@ -973,9 +973,15 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     if (app_->sketchMode())
         app_->finishSketch();
     app_->cancelOperation();
-    for (const char* overlay : {"helpOverlay", "aboutOverlay"})
+    for (const char* overlay : {"helpOverlay", "aboutOverlay", "preferencesOverlay"})
         if (QQuickItem* item = findItem(QString::fromLatin1(overlay)))
             item->setVisible(false);
+    if (!app_->recoveryItems().isEmpty())
+        app_->postponeRecovery();
+    // Default preferences (a scenario may have changed them).
+    app_->setDefaultUnit(QStringLiteral("mm"));
+    app_->setSketchGridSnap(true);
+    app_->setRecoveryInterval(60);
     app_->setPenMode(false);
     app_->setTouchMode(false);
     app_->newDocument();

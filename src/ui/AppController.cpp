@@ -8,10 +8,18 @@
 #include "geometry/Exchange.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
+#include "io/RecentFiles.h"
+#include "ui/RecoverySession.h"
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
+#include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QLocale>
+#include <QtCore/QSettings>
 #include <QtCore/QVariantMap>
 
+#include <algorithm>
 #include <cmath>
 
 namespace os::ui {
@@ -42,6 +50,19 @@ AppController::AppController(QObject* parent)
     : QObject(parent), document_(std::make_unique<doc::Document>()), undoStack_(std::make_unique<cmd::UndoStack>()),
       interaction_(std::make_unique<interact::InteractionController>(*document_, *undoStack_))
 {
+    QSettings settings;
+    preferences_ = loadPreferences(settings);
+    document_->setDisplayUnit(preferences_.defaultUnit);
+    interaction_->setSketchGridSnap(preferences_.sketchGridSnap);
+
+    recoveryDebounce_.setSingleShot(true);
+    recoveryDebounce_.setInterval(kRecoveryDebounceMs);
+    recoveryDeadline_.setSingleShot(true);
+    connect(&recoveryDebounce_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
+    connect(&recoveryDeadline_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
+    // Every path that changes the document ends in stateChanged.
+    connect(this, &AppController::stateChanged, this, &AppController::noteEdits);
+
     attach();
     interaction_->fitAll(false);
 }
@@ -455,11 +476,13 @@ void AppController::runTool(const QString& id)
 void AppController::newDocument()
 {
     auto document = std::make_unique<doc::Document>();
+    document->setDisplayUnit(preferences_.defaultUnit);
     auto stack = std::make_unique<cmd::UndoStack>();
     interaction_->setDocument(*document, *stack);
     document_ = std::move(document);
     undoStack_ = std::move(stack);
     path_.clear();
+    documentReplaced();
     emit documentChanged();
     emit stateChanged();
     emit viewChanged();
@@ -479,6 +502,8 @@ bool AppController::openProject(const QUrl& url)
     document_ = std::move(loaded.value());
     undoStack_ = std::move(stack);
     path_ = QString::fromStdWString(path.wstring());
+    documentReplaced();
+    rememberRecentFile(path_);
     for (const auto& body : document_->bodies())
         if (body->hasFailures()) {
             notifyMessage(QStringLiteral("Some steps could not be rebuilt. The last good shape is shown."));
@@ -501,6 +526,12 @@ bool AppController::saveProject()
         return false;
     }
     undoStack_->setClean();
+    // The user's file has the work now: no recovery copy needed.
+    stopRecoveryTimers();
+    if (recovery_)
+        recovery_->removeCopy();
+    copyRevision_ = ~std::uint64_t(0);
+    rememberRecentFile(path_);
     notifyMessage(QStringLiteral("Saved"));
     emit stateChanged();
     return true;
@@ -629,6 +660,281 @@ bool AppController::handleKey(int key)
     case Qt::Key_Backspace: return interaction_->keyPress(interact::Key::Backspace);
     default: return false;
     }
+}
+
+// ---- Recovery copies ------------------------------------------------------------------------
+
+void AppController::startRecovery(const QString& directory)
+{
+    recovery_ = std::make_unique<RecoverySession>(directory);
+    OS_LOG(Info, File) << "recovery copies go to " << QDir::toNativeSeparators(directory).toStdString();
+    documentReplaced();
+}
+
+void AppController::documentReplaced()
+{
+    stopRecoveryTimers();
+    if (recovery_)
+        recovery_->removeCopy();
+    copyRevision_ = ~std::uint64_t(0);
+    seenRevision_ = undoStack_->revision();
+}
+
+void AppController::stopRecoveryTimers()
+{
+    recoveryDebounce_.stop();
+    recoveryDeadline_.stop();
+}
+
+void AppController::noteEdits()
+{
+    const std::uint64_t revision = undoStack_->revision();
+    if (revision == seenRevision_)
+        return;
+    seenRevision_ = revision;
+    if (!recovery_ || preferences_.recoveryIntervalSeconds <= 0)
+        return;
+    if (!dirty()) {
+        // Undone back to what is saved: nothing to recover.
+        stopRecoveryTimers();
+        recovery_->removeCopy();
+        copyRevision_ = ~std::uint64_t(0);
+        return;
+    }
+    recoveryDebounce_.start();
+    if (!recoveryDeadline_.isActive())
+        recoveryDeadline_.start(preferences_.recoveryIntervalSeconds * 1000);
+}
+
+void AppController::writeRecoveryCopy()
+{
+    stopRecoveryTimers();
+    if (!recovery_ || preferences_.recoveryIntervalSeconds <= 0 || !dirty() || copyRevision_ == undoStack_->revision())
+        return;
+    io::RecoveryInfo info;
+    info.originalPath = path_.toStdString();
+    info.title = documentTitle().toStdString();
+    info.appVersion = QCoreApplication::applicationVersion().toStdString();
+    const Status status = recovery_->write(*document_, info);
+    if (!status) {
+        OS_LOG(Warning, File) << "recovery copy failed: " << status.developerMessage();
+        if (!recoveryWarned_) // once per run: it would repeat after every edit
+            notifyMessage(q(status.userMessage()));
+        recoveryWarned_ = true;
+        return;
+    }
+    copyRevision_ = undoStack_->revision();
+}
+
+QString AppController::recoveryCopyFile() const
+{
+    return recovery_ && recovery_->hasCopy() ? QString::fromStdWString(recovery_->store().projectFile(recovery_->session()).wstring())
+                                             : QString();
+}
+
+void AppController::checkForRecovery()
+{
+    if (!recovery_)
+        return;
+    orphans_ = recovery_->findOrphans();
+    emit recoveryChanged();
+}
+
+QVariantList AppController::recoveryItems() const
+{
+    QVariantList list;
+    for (const auto& entry : orphans_) {
+        const QString original = QString::fromStdString(entry.info.originalPath);
+        QString title = QString::fromStdString(entry.info.title);
+        if (title.isEmpty())
+            title = original.isEmpty() ? QStringLiteral("Untitled") : QFileInfo(original).completeBaseName();
+        QVariantMap map;
+        map.insert(QStringLiteral("session"), QString::fromStdString(entry.session));
+        map.insert(QStringLiteral("title"), title);
+        map.insert(QStringLiteral("detail"), original.isEmpty() ? QStringLiteral("Never saved") : QDir::toNativeSeparators(original));
+        map.insert(QStringLiteral("time"),
+                   entry.info.savedAtMs > 0
+                       ? QLocale().toString(QDateTime::fromMSecsSinceEpoch(entry.info.savedAtMs), QLocale::ShortFormat)
+                       : QStringLiteral("Time unknown"));
+        list.append(map);
+    }
+    return list;
+}
+
+bool AppController::restoreRecovery(const QString& sessionText)
+{
+    const std::string session = sessionText.toStdString();
+    const auto it = std::find_if(orphans_.begin(), orphans_.end(), [&](const io::RecoveryEntry& e) { return e.session == session; });
+    if (!recovery_ || it == orphans_.end())
+        return false;
+    auto loaded = io::loadProject(it->projectFile);
+    if (!loaded) {
+        OS_LOG(Warning, File) << "restoring " << session << ": " << loaded.developerMessage();
+        notifyMessage(QStringLiteral("This recovery copy could not be opened. ") + q(loaded.userMessage()));
+        return false;
+    }
+    const io::RecoveryEntry entry = *it;
+    orphans_.erase(it);
+    auto stack = std::make_unique<cmd::UndoStack>();
+    stack->setModified(); // not saved anywhere yet
+    interaction_->setDocument(*loaded.value(), *stack);
+    document_ = std::move(loaded.value());
+    undoStack_ = std::move(stack);
+    path_ = QString::fromStdString(entry.info.originalPath);
+    documentReplaced();
+    // The copy stays (now as this run's) until the document is saved or discarded.
+    if (const Status adopted = recovery_->adopt(session); adopted) {
+        copyRevision_ = undoStack_->revision();
+    } else {
+        OS_LOG(Warning, File) << "restoring " << session << ": " << adopted.developerMessage();
+        writeRecoveryCopy();
+    }
+    OS_LOG(Info, File) << "restored recovery copy " << session << " (" << documentTitle().toStdString() << ")";
+    notifyMessage(QStringLiteral("Restored “%1”. Save to keep it.").arg(documentTitle()));
+    emit recoveryChanged();
+    emit documentChanged();
+    emit stateChanged();
+    emit viewChanged();
+    return true;
+}
+
+void AppController::discardRecovery(const QString& sessionText)
+{
+    const std::string session = sessionText.toStdString();
+    const auto it = std::find_if(orphans_.begin(), orphans_.end(), [&](const io::RecoveryEntry& e) { return e.session == session; });
+    if (!recovery_ || it == orphans_.end())
+        return;
+    if (const Status status = recovery_->discard(session); !status) {
+        OS_LOG(Warning, File) << "discarding " << session << ": " << status.developerMessage();
+        notifyMessage(q(status.userMessage()));
+        return;
+    }
+    orphans_.erase(it);
+    emit recoveryChanged();
+}
+
+void AppController::discardAllRecovery()
+{
+    std::vector<std::string> sessions;
+    for (const auto& e : orphans_)
+        sessions.push_back(e.session);
+    for (const auto& s : sessions)
+        discardRecovery(QString::fromStdString(s));
+}
+
+void AppController::postponeRecovery()
+{
+    if (recovery_)
+        recovery_->releaseOrphans();
+    orphans_.clear();
+    emit recoveryChanged();
+}
+
+// ---- Recent files and preferences -----------------------------------------------------------
+
+namespace {
+std::vector<std::string> toStd(const QStringList& list)
+{
+    std::vector<std::string> out;
+    for (const QString& s : list)
+        out.push_back(s.toStdString());
+    return out;
+}
+} // namespace
+
+QVariantList AppController::recentFiles() const
+{
+    QSettings settings;
+    QVariantList list;
+    for (const std::string& file : io::existingRecentFiles(toStd(loadRecentFiles(settings)))) {
+        const QFileInfo info(QString::fromStdString(file));
+        QVariantMap map;
+        map.insert(QStringLiteral("path"), info.absoluteFilePath());
+        map.insert(QStringLiteral("name"), info.completeBaseName());
+        map.insert(QStringLiteral("folder"), info.absoluteDir().dirName());
+        list.append(map);
+    }
+    return list;
+}
+
+void AppController::rememberRecentFile(const QString& path)
+{
+    QSettings settings;
+    QStringList files;
+    for (const std::string& f : io::withRecentFile(toStd(loadRecentFiles(settings)), QFileInfo(path).absoluteFilePath().toStdString()))
+        files.append(QString::fromStdString(f));
+    saveRecentFiles(settings, files);
+    emit recentFilesChanged();
+}
+
+bool AppController::openRecent(const QString& path)
+{
+    const bool opened = openProject(QUrl::fromLocalFile(path));
+    if (!opened)
+        emit recentFilesChanged(); // a file that is gone drops out of the list
+    return opened;
+}
+
+void AppController::clearRecentFiles()
+{
+    QSettings settings;
+    saveRecentFiles(settings, {});
+    emit recentFilesChanged();
+}
+
+void AppController::savePreferences() const
+{
+    QSettings settings;
+    ui::savePreferences(settings, preferences_);
+}
+
+QString AppController::defaultUnit() const
+{
+    return q(std::string(unitSymbol(preferences_.defaultUnit)));
+}
+
+void AppController::setDefaultUnit(const QString& symbol)
+{
+    const LengthUnit unit = symbol == QLatin1String("in") ? LengthUnit::Inch : LengthUnit::Millimeter;
+    if (unit == preferences_.defaultUnit)
+        return;
+    preferences_.defaultUnit = unit;
+    savePreferences();
+    // An untouched new document follows the choice right away.
+    if (path_.isEmpty() && document_->bodies().empty() && document_->sketches().empty() && !undoStack_->canUndo()
+        && !undoStack_->canRedo())
+        document_->setDisplayUnit(unit);
+    emit preferencesChanged();
+    emit stateChanged();
+}
+
+void AppController::setSketchGridSnap(bool on)
+{
+    if (on == preferences_.sketchGridSnap)
+        return;
+    preferences_.sketchGridSnap = on;
+    interaction_->setSketchGridSnap(on);
+    savePreferences();
+    emit preferencesChanged();
+}
+
+void AppController::setRecoveryInterval(int seconds)
+{
+    if (std::find(kRecoveryIntervals.begin(), kRecoveryIntervals.end(), seconds) == kRecoveryIntervals.end()
+        || seconds == preferences_.recoveryIntervalSeconds)
+        return;
+    preferences_.recoveryIntervalSeconds = seconds;
+    savePreferences();
+    stopRecoveryTimers();
+    if (seconds == 0) {
+        if (recovery_)
+            recovery_->removeCopy(); // turned off: keep nothing around
+        copyRevision_ = ~std::uint64_t(0);
+    } else if (dirty() && copyRevision_ != undoStack_->revision()) {
+        recoveryDebounce_.start();
+        recoveryDeadline_.start(seconds * 1000);
+    }
+    emit preferencesChanged();
 }
 
 } // namespace os::ui

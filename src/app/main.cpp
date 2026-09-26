@@ -3,19 +3,24 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "app/AcceptanceRunner.h"
+#include "app/CrashLog.h"
 #include "core/Log.h"
 #include "geometry/Modeling.h"
 #include "ui/AppController.h"
+#include "ui/AppSettings.h"
 
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QLockFile>
+#include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
+#include <QtGui/QScreen>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlExtensionPlugin>
 #include <QtQuick/QQuickWindow>
@@ -29,15 +34,22 @@ Q_IMPORT_QML_PLUGIN(OpenShapePlugin)
 
 namespace {
 
-// Log sink: stderr plus a rolling file in the user's app-data folder (on
-// iPadOS in Documents, which the Files app shows, so testers can send it).
-void installLogging()
+// The log folder: in the user's app-data folder (on iPadOS in Documents,
+// which the Files app shows, so testers can send it), or <data-dir>/logs.
+QString logDirectory(const QString& dataDir)
 {
+    if (!dataDir.isEmpty())
+        return dataDir + QStringLiteral("/logs");
 #if defined(Q_OS_IOS)
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/Logs");
+    return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/Logs");
 #else
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/logs");
+    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/logs");
 #endif
+}
+
+// Log sink: stderr plus a rolling file (openshape.log in `dir`).
+void installLogging(const QString& dir)
+{
     QDir().mkpath(dir);
     static QFile file(dir + QStringLiteral("/openshape.log"));
     if (file.size() > 4 * 1024 * 1024)
@@ -258,6 +270,84 @@ void runDemo(os::ui::AppController& app, const QString& demo)
     }
 }
 
+// ---- Remembered window -------------------------------------------------------------------
+
+// Tracks the window's normal (not maximized) place while it runs, so the
+// place saved on exit is the one to come back to even when it ends maximized.
+struct WindowKeeper {
+    QRect frame;
+    QSize client;
+};
+
+QList<QRect> availableScreens()
+{
+    QList<QRect> screens;
+    if (QScreen* primary = QGuiApplication::primaryScreen())
+        screens.append(primary->availableGeometry());
+    for (QScreen* screen : QGuiApplication::screens())
+        if (screen != QGuiApplication::primaryScreen())
+            screens.append(screen->availableGeometry());
+    return screens;
+}
+
+// Shows the window where it was last time (clamped to today's screens).
+void showRemembered(QQuickWindow* window, const std::shared_ptr<WindowKeeper>& keeper)
+{
+    QSettings settings;
+    const auto placement = os::ui::loadWindowPlacement(settings);
+    if (placement) {
+        const QRect frame = os::ui::fitToScreens(placement->frame, availableScreens(), window->minimumSize());
+        if (frame.isValid()) {
+            const QSize border = placement->frame.size() - placement->client; // title bar and edges
+            const QSize client = (frame.size() - border).expandedTo(QSize(200, 150));
+            window->setFramePosition(frame.topLeft());
+            window->resize(client);
+            keeper->frame = frame;
+            keeper->client = client;
+            OS_LOG(Info, App) << "window restored at " << frame.x() << "," << frame.y() << " " << client.width() << "x"
+                              << client.height() << (placement->maximized ? " (maximized)" : "");
+            if (placement->maximized)
+                window->showMaximized();
+            else
+                window->show();
+            return;
+        }
+    }
+    window->show();
+}
+
+void trackWindow(QQuickWindow* window, const std::shared_ptr<WindowKeeper>& keeper)
+{
+    auto* settle = new QTimer(window);
+    settle->setSingleShot(true);
+    settle->setInterval(300);
+    QObject::connect(settle, &QTimer::timeout, window, [window, keeper] {
+        if (window->isVisible() && window->windowStates() == Qt::WindowNoState) {
+            keeper->frame = window->frameGeometry();
+            keeper->client = window->size();
+        }
+    });
+    auto restart = [settle] { settle->start(); };
+    QObject::connect(window, &QWindow::xChanged, settle, restart);
+    QObject::connect(window, &QWindow::yChanged, settle, restart);
+    QObject::connect(window, &QWindow::widthChanged, settle, restart);
+    QObject::connect(window, &QWindow::heightChanged, settle, restart);
+    QObject::connect(window, &QWindow::windowStateChanged, settle, restart);
+}
+
+void saveWindow(QQuickWindow* window, const WindowKeeper& keeper)
+{
+    os::ui::WindowPlacement placement{keeper.frame, keeper.client, bool(window->windowStates() & Qt::WindowMaximized)};
+    if (window->windowStates() == Qt::WindowNoState) {
+        placement.frame = window->frameGeometry();
+        placement.client = window->size();
+    }
+    if (!placement.frame.isValid() || !placement.client.isValid())
+        return;
+    QSettings settings;
+    os::ui::saveWindowPlacement(settings, placement);
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -270,10 +360,6 @@ int main(int argc, char* argv[])
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
 #endif
     QQuickStyle::setStyle(QStringLiteral("Basic"));
-    installLogging();
-    // OPENSHAPE_LOG=debug shows kernel/tessellation/recompute timings (PERFORMANCE).
-    if (qEnvironmentVariable("OPENSHAPE_LOG").compare(QLatin1String("debug"), Qt::CaseInsensitive) == 0)
-        os::setMinimumLogLevel(os::LogLevel::Debug);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("OpenShape - direct solid modeling"));
@@ -297,16 +383,63 @@ int main(int argc, char* argv[])
     QCommandLineOption scenarioOption(QStringLiteral("scenario"),
                                       QStringLiteral("With --acceptance: run only these scenarios (comma-separated, e.g. core,views)."),
                                       QStringLiteral("names"));
+    QCommandLineOption dataDirOption(QStringLiteral("data-dir"),
+                                     QStringLiteral("Keep settings, recovery copies and the log in <dir> instead of the user's folders."),
+                                     QStringLiteral("dir"));
+    QCommandLineOption simulateCrashOption(QStringLiteral("simulate-crash"),
+                                           QStringLiteral("Test crash recovery: add a box, write its recovery copy, then crash."));
     parser.addOption(scenarioOption);
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
     parser.addOption(screenshotOption);
+    parser.addOption(dataDirOption);
+    parser.addOption(simulateCrashOption);
     parser.addPositionalArgument(QStringLiteral("project"), QStringLiteral("Project file to open."), QStringLiteral("[project]"));
     parser.process(application);
 
+    // Automated runs (acceptance, demos, screenshots) never touch the user's
+    // settings, recent files, window place or recovery copies: they get a
+    // throw-away folder, removed when they end.
+    const bool automated = parser.isSet(acceptanceOption) || parser.isSet(demoOption) || parser.isSet(screenshotOption);
+    QString dataDir = parser.isSet(dataDirOption) ? QDir(parser.value(dataDirOption)).absolutePath() : QString();
+    std::unique_ptr<QTemporaryDir> scratch;
+    if (automated && dataDir.isEmpty()) {
+        scratch = std::make_unique<QTemporaryDir>(QDir::tempPath() + QStringLiteral("/openshape-run-XXXXXX"));
+        if (scratch->isValid())
+            dataDir = scratch->path();
+    }
+    if (!dataDir.isEmpty()) {
+        QDir().mkpath(dataDir);
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dataDir + QStringLiteral("/settings"));
+    }
+    const QString recoveryDir = (dataDir.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) : dataDir)
+                              + QStringLiteral("/recovery");
+
+    // Logs go to the user's log file even in automated runs (so they can be
+    // read afterwards), except with --data-dir.
+    const QString logDir = logDirectory(parser.isSet(dataDirOption) ? dataDir : QString());
+    installLogging(logDir);
+    os::app::installCrashLogging(logDir + QStringLiteral("/openshape.log"));
+    // OPENSHAPE_LOG=debug shows kernel/tessellation/recompute timings (PERFORMANCE).
+    if (qEnvironmentVariable("OPENSHAPE_LOG").compare(QLatin1String("debug"), Qt::CaseInsensitive) == 0)
+        os::setMinimumLogLevel(os::LogLevel::Debug);
+
     OS_LOG(Info, App) << "OpenShape 0.1.0 starting";
+    if (!dataDir.isEmpty())
+        OS_LOG(Info, App) << "settings and recovery copies in " << QDir::toNativeSeparators(dataDir).toStdString();
+
+    if (parser.isSet(simulateCrashOption)) {
+        // No window: an unsaved box, its recovery copy, then a real crash.
+        os::ui::AppController controller;
+        controller.startRecovery(recoveryDir);
+        controller.createBox(20);
+        controller.writeRecoveryCopy();
+        OS_LOG(Info, App) << "simulating a crash; recovery copy " << controller.recoveryCopyFile().toStdString();
+        os::app::simulateCrash();
+    }
 
     // Automated runs (acceptance, demos, screenshots) take turns: the
     // acceptance run moves the real mouse and needs keyboard focus, so two
@@ -314,7 +447,7 @@ int main(int argc, char* argv[])
     // left by a crashed run is detected by its dead process; age alone never
     // makes it stale (a full acceptance run takes minutes).
     std::unique_ptr<QLockFile> automationLock;
-    if (parser.isSet(acceptanceOption) || parser.isSet(demoOption) || parser.isSet(screenshotOption)) {
+    if (automated) {
         automationLock = std::make_unique<QLockFile>(QDir::tempPath() + QStringLiteral("/openshape-automation.lock"));
         automationLock->setStaleLockTime(0);
         if (!automationLock->tryLock(0)) {
@@ -327,6 +460,7 @@ int main(int argc, char* argv[])
     }
 
     os::ui::AppController controller;
+    controller.startRecovery(recoveryDir);
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
     QQmlApplicationEngine engine;
@@ -337,6 +471,14 @@ int main(int argc, char* argv[])
         return 1;
     }
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    // The window comes back where it was, except in automated runs, with
+    // --size, and on tablets (always full screen).
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    const bool rememberWindow = false;
+#else
+    const bool rememberWindow = !automated && !parser.isSet(sizeOption);
+#endif
+    auto keeper = std::make_shared<WindowKeeper>();
     if (parser.isSet(sizeOption)) {
         const QStringList wh = parser.value(sizeOption).split(QLatin1Char('x'));
         if (wh.size() == 2 && wh[0].toInt() > 0 && wh[1].toInt() > 0) {
@@ -346,9 +488,18 @@ int main(int argc, char* argv[])
             OS_LOG(Warning, App) << "--size expects WxH, e.g. 1180x820";
         }
     }
+    if (rememberWindow) {
+        showRemembered(window, keeper);
+        trackWindow(window, keeper);
+    } else {
+        window->show();
+    }
 
     if (!parser.positionalArguments().isEmpty())
         controller.openProject(QUrl::fromLocalFile(parser.positionalArguments().constFirst()));
+    // Work left by a crash: offered in a dialog (not in automated runs).
+    if (!automated)
+        controller.checkForRecovery();
 
     if (parser.isSet(acceptanceOption)) {
         auto* runner = new os::app::AcceptanceRunner(window, &controller, parser.value(acceptanceOption), &controller);
@@ -374,5 +525,9 @@ int main(int argc, char* argv[])
         }
     }
 
-    return QGuiApplication::exec();
+    const int result = QGuiApplication::exec();
+    if (rememberWindow)
+        saveWindow(window, *keeper);
+    OS_LOG(Info, App) << "OpenShape exits normally";
+    return result;
 }
