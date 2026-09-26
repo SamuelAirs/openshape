@@ -75,6 +75,12 @@ public:
 
     EvalContext context() const { return EvalContext{this}; }
 
+    // A copy another thread may read while this one keeps changing: every
+    // body (its history, cached step results and shape; shapes are immutable
+    // and shared, not copied) and sketch, the display unit, no listeners.
+    // Interactive previews are computed on one (Operation::setValue).
+    std::shared_ptr<const Document> snapshot() const;
+
     void recomputeAll();
 
     // Monotonic change counter plus listeners, so views can refresh.

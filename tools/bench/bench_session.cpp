@@ -3,7 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // Interaction-level benchmark: builds a small filleted part through the real
-// document/command/operation code and times what a user feels. Used for the
+// document/command/operation code and times what a user feels, including
+// what the GUI thread does while a push/pull arrow is dragged on a 249-face
+// enclosure, with previews on the GUI thread and on the preview worker. Used for the
 // performance table in PROJECT_STATUS.md; rerun before and after any change
 // that might affect previews, tessellation or recompute.
 //
@@ -17,6 +19,7 @@
 #include "core/Log.h"
 #include "document/Document.h"
 #include "document/Feature.h"
+#include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
 #include "geometry/Tessellation.h"
 #include "geometry/TopoSignature.h"
@@ -36,6 +39,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <thread>
 
 using namespace os;
 
@@ -78,6 +82,106 @@ Stats timeEach(int count, const std::function<void(int)>& f)
         s.worst = std::max(s.worst, t);
     }
     return s;
+}
+
+// What the GUI thread does during a 20-step drag of the push/pull arrow on
+// `face`, pointer moves 16 ms apart (a 60 Hz mouse): per move the
+// controller's pointerMove, then what the UI reads back after a state change
+// (Model panel rows, actions, selection summary) and the render scene;
+// between moves, as the event loop would, finished previews are delivered
+// (and the UI reads again). Selects the face by clicking it, as a user does.
+// `async`: previews on the worker thread (the app) or on the GUI thread
+// (OPENSHAPE_SYNC_PREVIEWS=1, and everything before 2026-09-26).
+bool benchGuiDrag(interact::InteractionController& controller, int face, bool async)
+{
+    using interact::PointerButton;
+    using interact::PointerEvent;
+    using Clock = std::chrono::steady_clock;
+    auto at = [](Vec2 p, PointerButton button) {
+        PointerEvent e;
+        e.position = p;
+        e.button = button;
+        return e;
+    };
+    auto since = [](Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); };
+    auto uiReads = [&controller] {
+        (void)controller.historyRows();
+        (void)controller.contextActions();
+        (void)controller.selectionSummary();
+        (void)controller.operationValueText();
+        (void)controller.renderScene();
+    };
+    if (async)
+        controller.enableAsyncPreviews({});
+    else
+        controller.disableAsyncPreviews();
+    // The middle of the rim's front side (2 mm wall, 0.6 mm chamfer outside).
+    const Vec3 onFace{0, -38.7, 40};
+    controller.setStandardView(StandardView::Isometric, false);
+    controller.fitAll(false);
+    controller.wheel(controller.camera().project(onFace), 12); // zoom in on the thin rim
+    const Vec2 p = controller.camera().project(onFace);
+    controller.pointerPress(at(p, PointerButton::Left));
+    controller.pointerRelease(at(p, PointerButton::Left));
+    const auto* op = dynamic_cast<const interact::PushPullOperation*>(controller.operation());
+    if (!op || op->faceIndex() != face) {
+        const auto hit = controller.pickAt(p, interact::InputProfile{});
+        std::printf("GUI drag: could not select the rim face %d (selection %zu, op %s, pick kind %d index %d)\n", face,
+                    controller.selection().size(), controller.operation() ? controller.operation()->title().c_str() : "none",
+                    int(hit.kind), hit.index);
+        return false;
+    }
+    uiReads(); // the UI shows the new selection
+    // Grab the arrow near its tip and drag it upward on screen, 20 moves of 6 px.
+    const interact::LinearManipulator handle = op->handle(0);
+    const Vec3 anchor = handle.anchor(op->handleOffset(0));
+    const double px = controller.camera().pixelSize(anchor);
+    const Vec2 grab = controller.camera().project(anchor + handle.direction() * (interact::ArrowStyle{}.totalPx() * 0.8 * px));
+    Vec2 up = controller.camera().project(anchor + handle.direction()) - controller.camera().project(anchor);
+    up = up * (1.0 / up.length());
+    const double before = op->value();
+    geom::resetInteractiveKernelWaits();
+    const std::uint64_t shownBefore = controller.previewsShown();
+    controller.pointerPress(at(grab, PointerButton::Left));
+    double total = 0, worstMove = 0, worstDelivery = 0;
+    const int steps = 20;
+    const auto dragStart = Clock::now();
+    for (int i = 1; i <= steps; ++i) {
+        const auto t0 = Clock::now();
+        controller.pointerMove(at(grab + up * (6.0 * i), PointerButton::Left));
+        uiReads();
+        const double move = since(t0);
+        total += move;
+        worstMove = std::max(worstMove, move);
+        // Until the next pointer event the event loop delivers finished previews.
+        while (since(t0) < 16.0) {
+            if (controller.previewBusy()) {
+                const auto t1 = Clock::now();
+                if (controller.deliverPreviews())
+                    uiReads();
+                worstDelivery = std::max(worstDelivery, since(t1));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+    const double dragMs = since(dragStart);
+    const std::uint64_t shownDuring = controller.previewsShown() - shownBefore;
+    controller.pointerRelease(at(grab + up * (6.0 * steps), PointerButton::Left));
+    const auto released = Clock::now();
+    (void)controller.waitForPreview();
+    const double settle = since(released);
+    const double after = controller.operation() ? controller.operation()->value() : before;
+    const geom::KernelWaits waits = geom::interactiveKernelWaits();
+    std::printf("GUI thread, 20-step push/pull drag on the rim (%s previews): per pointer move avg %.1f ms, longest %.1f ms; "
+                "delivering a preview longest %.1f ms; GUI waits for the kernel %llu (longest %.1f ms); %llu previews shown "
+                "during the %.0f ms drag, the last %.0f ms after release (height %.0f -> %.0f mm)\n",
+                async ? "worker" : "GUI-thread", total / steps, worstMove, worstDelivery,
+                static_cast<unsigned long long>(waits.count), waits.longestMs, static_cast<unsigned long long>(shownDuring),
+                dragMs, settle, before, after);
+    controller.cancelOperation();
+    controller.cancelOperation();
+    controller.disableAsyncPreviews();
+    return true;
 }
 
 // A realistic maker part: a 120 x 80 x 40 mm enclosure with rounded corners,
@@ -273,7 +377,19 @@ int benchEnclosure()
         (void)controller.pickAt(points[std::size_t(i)], interact::InputProfile{});
     });
     std::printf("hover pick (body mesh only): avg %.3f ms, max %.3f ms\n", meshOnly.average, meshOnly.worst);
-    return 0;
+
+    // 5. The GUI thread while dragging: a 20-step push/pull drag on the rim,
+    //    through the controller as the viewport feeds it. Per pointer move:
+    //    pointerMove itself, then what the UI reads back after a state change
+    //    (Model panel rows, actions, selection summary) and the render scene.
+    // (The undo above recomputed the body: face indices may have changed.)
+    const int rimNow = faceWhere(shape(), [](const geom::FaceInfo& f) { return f.isPlanar() && f.normal.z > 0.999 && f.centroid.z > 39.9; });
+    geom::setInteractiveThread();
+    const bool syncOk = benchGuiDrag(controller, rimNow, false);
+    const bool asyncOk = benchGuiDrag(controller, rimNow, true);
+    const double snapshot = timeMs([&] { (void)document.snapshot(); });
+    std::printf("document snapshot for the worker (once per document state): %.3f ms\n", snapshot);
+    return syncOk && asyncOk ? 0 : 1;
 }
 
 } // namespace
@@ -407,6 +523,8 @@ int main()
     std::printf("heavy model: %zu bodies, %d faces, %zu steps in body 1 (patterns ok: %d %d)\n", document.bodies().size(),
                 faces, document.body(bodyId)->features().size(), int(linearOk), int(circularOk));
     timeSaves("heavy model");
+    const double heavySnapshot = timeMs([&] { (void)document.snapshot(); });
+    std::printf("heavy model: document snapshot for the preview worker %.3f ms\n", heavySnapshot);
     std::filesystem::remove_all(dir);
     return benchEnclosure();
 }

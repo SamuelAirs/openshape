@@ -77,6 +77,13 @@ AppController::AppController(QObject* parent)
 
     updateRecentFiles();
     attach();
+    // Previews compute on a worker thread (TD-1); a finished one comes back
+    // as a queued call on this (the GUI) thread. OPENSHAPE_SYNC_PREVIEWS=1
+    // computes them on the GUI thread as before (to compare).
+    if (qEnvironmentVariableIntValue("OPENSHAPE_SYNC_PREVIEWS") == 0)
+        interaction_->enableAsyncPreviews([this] {
+            QMetaObject::invokeMethod(this, [this] { interaction_->deliverPreviews(); }, Qt::QueuedConnection);
+        });
     // Tablets and phones start in the touch layout. The flag lives in the
     // interaction core only (touchMode() reads it), so on-canvas targets and
     // the QML controls always agree.
@@ -104,6 +111,31 @@ void AppController::attach()
 void AppController::notifyMessage(const QString& text)
 {
     emit message(text);
+}
+
+void AppController::notePointerMove(double milliseconds, bool dragging)
+{
+    // "took": scripts/dev/watch_log.py counts these among the slow steps.
+    if (milliseconds >= 16.0)
+        OS_LOG(Debug, Performance) << "gui: pointer move took " << milliseconds << " ms";
+    if (!dragging)
+        return;
+    ++dragMoves_;
+    dragTotalMs_ += milliseconds;
+    dragLongestMs_ = std::max(dragLongestMs_, milliseconds);
+}
+
+void AppController::notePointerRelease()
+{
+    if (dragMoves_ == 0)
+        return;
+    OS_LOG(Debug, Performance) << "gui: longest pointer move of a drag (" << dragMoves_ << " moves, average "
+                               << dragTotalMs_ / dragMoves_ << " ms) took " << dragLongestMs_ << " ms";
+    lastDragMoves_ = dragMoves_;
+    lastDragLongestMs_ = dragLongestMs_;
+    dragMoves_ = 0;
+    dragTotalMs_ = 0;
+    dragLongestMs_ = 0;
 }
 
 // ---- Properties ----------------------------------------------------------------------

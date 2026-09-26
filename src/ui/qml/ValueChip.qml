@@ -19,16 +19,30 @@ Item {
     width: column.implicitWidth
     height: column.implicitHeight
 
+    // The typed text itself is refused (not a length, out of range): its
+    // message stays while typing. Otherwise the preview's verdict shows, which
+    // may arrive after the keystroke (previews compute off the GUI thread).
+    property bool typedTextRefused: false
+
+    function typeValue(text) {
+        const error = app.setValueText(text)
+        typedTextRefused = error.length > 0 && error !== app.operationError
+        errorText.text = error
+        return error
+    }
+
     function beginTyping(firstChar) {
         field.text = firstChar
         field.forceActiveFocus()
         field.cursorPosition = field.text.length
-        errorText.text = app.setValueText(field.text)
+        typeValue(field.text)
     }
 
     function syncFromModel() {
         if (!field.activeFocus) {
             field.text = app.operationValueText
+            errorText.text = app.operationError
+        } else if (!typedTextRefused) {
             errorText.text = app.operationError
         }
     }
@@ -74,7 +88,7 @@ Item {
                         border.color: field.activeFocus ? Theme.accent : "transparent"
                         border.width: 1.5
                     }
-                    onTextEdited: errorText.text = chip.app.setValueText(text)
+                    onTextEdited: chip.typeValue(text)
                     onActiveFocusChanged: if (activeFocus) selectAll()
                     Keys.onReturnPressed: apply()
                     Keys.onEnterPressed: apply()
@@ -84,8 +98,7 @@ Item {
                         chip.syncFromModel()
                     }
                     function apply() {
-                        const error = chip.app.setValueText(text)
-                        errorText.text = error
+                        const error = chip.typeValue(text)
                         if (error.length === 0) {
                             field.focus = false
                             chip.app.commitOperation()

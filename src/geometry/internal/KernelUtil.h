@@ -62,12 +62,41 @@ void installKernelSignalHandlers();
 // operating system (OCCT's handlers would end the app with exit(1)). On
 // Windows the MinGW runtime calls these C signal handlers from an SEH
 // handler around main, before any top-level exception filter.
+//
+// It also holds the kernel lock (see KernelLock below) for its lifetime.
 class KernelSignalScope {
 public:
     KernelSignalScope();
     ~KernelSignalScope();
     KernelSignalScope(const KernelSignalScope&) = delete;
     KernelSignalScope& operator=(const KernelSignalScope&) = delete;
+
+private:
+    int entryDepth_; // the kernel lock depth before this scope; restored at its end
+};
+
+// The kernel lock: one thread at a time runs OpenCASCADE code (TD-4). Meshing
+// writes triangulations into faces and edges that other shapes share (a
+// preview result shares most faces with the body it came from), and nearly
+// every kernel algorithm reads those edges' lists of representations, so a
+// lock around meshing alone would not do. Recursive. Every kernel call takes
+// it: the OS_KERNEL_SIGNALS_TO_EXCEPTIONS scope (and so guarded()) does, and
+// functions that touch kernel data without one hold a KernelLock. When a
+// kernel fault jumps back to a scope, that scope's end also releases the
+// KernelLocks the jump skipped.
+int kernelLockDepth(); // the calling thread's depth (0 = it does not hold the lock)
+void lockKernel();
+void unlockKernelTo(int depth);
+
+class KernelLock {
+public:
+    KernelLock() : entryDepth_(kernelLockDepth()) { lockKernel(); }
+    ~KernelLock() { unlockKernelTo(entryDepth_); }
+    KernelLock(const KernelLock&) = delete;
+    KernelLock& operator=(const KernelLock&) = delete;
+
+private:
+    int entryDepth_;
 };
 
 // The first statement of every try block around kernel calls (guarded()

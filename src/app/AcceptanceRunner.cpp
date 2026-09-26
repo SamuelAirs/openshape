@@ -1048,12 +1048,21 @@ void AcceptanceRunner::runNext()
     // A slow machine (the CI Mac) may still be animating the view after the
     // fixed step delay; clicks computed from a moving camera miss. Wait for
     // the animation to end (up to 3 s) before the next step (TD-31, TD-35).
-    if (app_->interaction().isAnimating() && waitedMs_ < 3000) {
-        waitedMs_ += 20;
-        QTimer::singleShot(20, this, &AcceptanceRunner::runNext);
+    // Previews compute on a worker thread: wait until the last one is shown
+    // (up to 30 s), so a step sees the preview (or the error) of what the
+    // step before it typed or dragged. The event loop runs meanwhile: the
+    // result arrives as the app would get it.
+    const bool animating = app_->interaction().isAnimating() && animationWaitMs_ < 3000;
+    const bool previewing = app_->interaction().previewBusy() && previewWaitMs_ < 30000;
+    if (animating || previewing) {
+        (animating ? animationWaitMs_ : previewWaitMs_) += 10;
+        QTimer::singleShot(10, this, &AcceptanceRunner::runNext);
         return;
     }
-    waitedMs_ = 0;
+    if (previewWaitMs_ >= 30000)
+        check(false, QStringLiteral("previews finish within 30 s"));
+    animationWaitMs_ = 0;
+    previewWaitMs_ = 0;
     if (next_ < steps_.size()) {
         try {
             steps_[next_++]();

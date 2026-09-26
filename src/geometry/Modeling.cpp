@@ -64,8 +64,10 @@
 #include <chrono>
 #include <csignal>
 #include <cmath>
+#include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <iterator>
 #include <limits>
 #include <set>
@@ -90,7 +92,96 @@ struct sigaction g_outsideActions[std::size(kKernelSignals)];
 std::mutex g_signalMutex;
 int g_kernelCalls = 0; // kernel calls running now, on all threads
 
+// The kernel lock: recursive, and its owner's depth can be set back (a
+// kernel fault jumps over the release of locks taken after the catch point).
+struct KernelMutex {
+    std::mutex mutex;
+    std::condition_variable released;
+    std::thread::id owner;
+    int depth = 0;
+};
+
+KernelMutex& kernelMutex()
+{
+    static KernelMutex m;
+    return m;
+}
+
+thread_local std::uint64_t t_kernelCalls = 0;
+
+// The interactive (GUI) thread and how long it waited for the kernel.
+struct InteractiveWaits {
+    std::mutex mutex;
+    std::thread::id thread;
+    KernelWaits waits;
+};
+
+InteractiveWaits& interactiveWaits()
+{
+    static InteractiveWaits w;
+    return w;
+}
+
+void noteWait(double ms)
+{
+    auto& w = interactiveWaits();
+    {
+        const std::lock_guard lock(w.mutex);
+        if (w.thread != std::this_thread::get_id())
+            return;
+        ++w.waits.count;
+        w.waits.totalMs += ms;
+        w.waits.longestMs = std::max(w.waits.longestMs, ms);
+    }
+    // "took" so scripts/dev/watch_log.py counts it among the slow steps.
+    if (ms >= 1.0)
+        OS_LOG(Debug, Performance) << "gui: waiting for the kernel (preview worker) took " << ms << " ms";
+}
+
 } // namespace
+
+int kernelLockDepth()
+{
+    auto& k = kernelMutex();
+    const std::lock_guard lock(k.mutex);
+    return k.owner == std::this_thread::get_id() ? k.depth : 0;
+}
+
+void lockKernel()
+{
+    auto& k = kernelMutex();
+    const auto self = std::this_thread::get_id();
+    std::unique_lock lock(k.mutex);
+    ++t_kernelCalls;
+    if (k.owner == self) {
+        ++k.depth;
+        return;
+    }
+    double waitedMs = -1;
+    if (k.depth != 0) {
+        const auto start = std::chrono::steady_clock::now();
+        k.released.wait(lock, [&k] { return k.depth == 0; });
+        waitedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    }
+    k.owner = self;
+    k.depth = 1;
+    lock.unlock();
+    if (waitedMs >= 0)
+        noteWait(waitedMs);
+}
+
+void unlockKernelTo(int depth)
+{
+    auto& k = kernelMutex();
+    const std::lock_guard lock(k.mutex);
+    if (k.owner != std::this_thread::get_id() || depth >= k.depth)
+        return;
+    k.depth = std::max(depth, 0);
+    if (k.depth == 0) {
+        k.owner = std::thread::id();
+        k.released.notify_all();
+    }
+}
 
 void installKernelSignalHandlers()
 {
@@ -119,9 +210,13 @@ void installKernelSignalHandlers()
     });
 }
 
-KernelSignalScope::KernelSignalScope()
+KernelSignalScope::KernelSignalScope() : entryDepth_(kernelLockDepth())
 {
     installKernelSignalHandlers();
+    // One thread in the kernel at a time: then the handlers below are also
+    // installed and removed by the thread that runs the kernel code (on
+    // Windows the C runtime keeps them per thread).
+    lockKernel();
     const std::lock_guard lock(g_signalMutex);
     if (g_kernelCalls++ > 0)
         return;
@@ -136,16 +231,21 @@ KernelSignalScope::KernelSignalScope()
 
 KernelSignalScope::~KernelSignalScope()
 {
-    const std::lock_guard lock(g_signalMutex);
-    if (--g_kernelCalls > 0)
-        return;
-    for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
+    {
+        const std::lock_guard lock(g_signalMutex);
+        if (--g_kernelCalls == 0) {
+            for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
 #if defined(_WIN32)
-        std::signal(kKernelSignals[i], g_outsideHandlers[i]);
+                std::signal(kKernelSignals[i], g_outsideHandlers[i]);
 #else
-        sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
+                sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
 #endif
+            }
+        }
     }
+    // Also releases kernel locks taken inside this scope whose release a
+    // kernel fault jumped over.
+    unlockKernelTo(entryDepth_);
 }
 
 } // namespace detail
@@ -153,6 +253,32 @@ KernelSignalScope::~KernelSignalScope()
 void installKernelSignalHandling()
 {
     detail::installKernelSignalHandlers();
+}
+
+void setInteractiveThread()
+{
+    auto& w = detail::interactiveWaits();
+    const std::lock_guard lock(w.mutex);
+    w.thread = std::this_thread::get_id();
+}
+
+KernelWaits interactiveKernelWaits()
+{
+    auto& w = detail::interactiveWaits();
+    const std::lock_guard lock(w.mutex);
+    return w.waits;
+}
+
+void resetInteractiveKernelWaits()
+{
+    auto& w = detail::interactiveWaits();
+    const std::lock_guard lock(w.mutex);
+    w.waits = {};
+}
+
+std::uint64_t kernelCallsOnThisThread()
+{
+    return detail::t_kernelCalls;
 }
 
 bool insideKernelCall()
@@ -927,6 +1053,7 @@ std::vector<Shape> solids(const Shape& shape)
     std::vector<Shape> out;
     if (shape.isNull())
         return out;
+    const KernelLock lock;
     const auto& map = shape.data()->solids;
     for (int i = 1; i <= map.Extent(); ++i)
         out.push_back(makeShape(map(i)));
@@ -938,6 +1065,7 @@ SolidSignature solidSignature(const Shape& solid)
     SolidSignature signature;
     if (solid.isNull())
         return signature;
+    const KernelLock lock;
     GProp_GProps props;
     BRepGProp::VolumeProperties(occ(solid), props);
     signature.volume = props.Mass();
@@ -1160,6 +1288,7 @@ double volume(const Shape& shape)
 {
     if (shape.isNull())
         return 0.0;
+    const KernelLock lock;
     GProp_GProps props;
     BRepGProp::VolumeProperties(occ(shape), props);
     return props.Mass();
@@ -1169,6 +1298,7 @@ double surfaceArea(const Shape& shape)
 {
     if (shape.isNull())
         return 0.0;
+    const KernelLock lock;
     GProp_GProps props;
     BRepGProp::SurfaceProperties(occ(shape), props);
     return props.Mass();
@@ -1195,12 +1325,16 @@ BoundingBox boundingBox(const Shape& shape)
         return {};
     // AddOptimal optimizes over every face and edge (~40 ms for a filleted
     // cube), so it runs once per shape; callers ask for the same shape often.
+    // The kernel lock also guards the cached box (not a std::call_once: a
+    // kernel fault jumping out of one would leave it blocked for good).
     const ShapeData& data = *shape.data();
-    std::call_once(data.tightBoxOnce, [&data] {
+    const KernelLock lock;
+    if (!data.tightBoxDone) {
         Bnd_Box box;
         BRepBndLib::AddOptimal(data.shape, box, false, false);
         data.tightBox = toBoundingBox(box);
-    });
+        data.tightBoxDone = true;
+    }
     return data.tightBox;
 }
 
@@ -1210,6 +1344,7 @@ BoundingBox approximateBoundingBox(const Shape& shape)
         return {};
     // Geometry bounds (control-point hulls for B-splines), independent of any
     // triangulation, so the result does not depend on what was meshed before.
+    const KernelLock lock;
     Bnd_Box box;
     BRepBndLib::Add(occ(shape), box, false);
     return toBoundingBox(box);
@@ -1220,6 +1355,7 @@ std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const S
     std::vector<int> out;
     if (after.isNull() || current.isNull())
         return out;
+    const KernelLock lock;
     // TopTools_MapOfShape compares with IsSame (same TShape and location), so a
     // moved face counts as changed while an untouched one does not.
     TopTools_MapOfShape old;
@@ -1241,6 +1377,7 @@ std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const S
     std::vector<int> out;
     if (after.isNull() || current.isNull())
         return out;
+    const KernelLock lock;
     // Trimmed or split faces are rebuilt on the input face's surface object;
     // genuinely new faces get new surfaces.
     std::set<const Geom_Surface*> oldSurfaces;
@@ -1269,6 +1406,7 @@ bool isValid(const Shape& shape)
 {
     if (shape.isNull())
         return false;
+    const KernelLock lock;
     BRepCheck_Analyzer analyzer(occ(shape));
     return analyzer.IsValid();
 }
@@ -1351,6 +1489,7 @@ std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex)
     std::vector<int> result;
     if (!validIndex(shape, edgeIndex, shape.edgeCount()))
         return result;
+    const KernelLock lock;
     TopTools_IndexedDataMapOfShapeListOfShape map;
     TopExp::MapShapesAndAncestors(occ(shape), TopAbs_EDGE, TopAbs_FACE, map);
     const TopoDS_Shape& edge = shape.data()->edges.FindKey(edgeIndex + 1);
@@ -1516,6 +1655,7 @@ std::string toBrepString(const Shape& shape)
 {
     if (shape.isNull())
         return {};
+    const KernelLock lock; // also writes triangulations, which meshing changes
     std::ostringstream out;
     BRepTools::Write(occ(shape), out);
     return out.str();

@@ -8,11 +8,14 @@ add_library(openshape_interaction STATIC
     InteractionController.cpp InteractionController.h
     Manipulator.cpp Manipulator.h
     Operation.cpp Operation.h
+    PreviewWorker.cpp PreviewWorker.h
     RenderScene.h
     SceneCache.cpp SceneCache.h
     SketchSession.cpp SketchSession.h
     TouchGestures.cpp TouchGestures.h
     ContextAction.h
 )
-target_link_libraries(openshape_interaction PUBLIC openshape_commands openshape_selection)
+# The preview worker thread (PreviewWorker).
+find_package(Threads REQUIRED)
+target_link_libraries(openshape_interaction PUBLIC openshape_commands openshape_selection Threads::Threads)
 openshape_set_warnings(openshape_interaction)

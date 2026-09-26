@@ -175,6 +175,16 @@ public:
     // This run's copy ("" when there is none).
     QString recoveryCopyFile() const;
 
+    // ---- GUI-thread time per pointer move (the viewport reports each) ----
+    // A slow move is logged at debug level ("gui: pointer move took N ms");
+    // each drag ends with one line for its longest move. The watch_log
+    // script reports both.
+    void notePointerMove(double milliseconds, bool dragging);
+    void notePointerRelease();
+    // The last finished drag: its longest pointer move (ms) and its moves.
+    double lastDragLongestMs() const { return lastDragLongestMs_; }
+    int lastDragMoves() const { return lastDragMoves_; }
+
     Q_INVOKABLE bool openRecent(const QString& path);
     Q_INVOKABLE void clearRecentFiles();
     // Rereads the list and drops files that are gone (e.g. deleted in
@@ -275,6 +285,11 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
+    int dragMoves_ = 0;
+    double dragLongestMs_ = 0;
+    double dragTotalMs_ = 0;
+    int lastDragMoves_ = 0;
+    double lastDragLongestMs_ = 0;
 };
 
 } // namespace os::ui

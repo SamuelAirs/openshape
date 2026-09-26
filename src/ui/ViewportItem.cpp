@@ -9,6 +9,8 @@
 
 #include <QtGui/QPointingDevice>
 
+#include <chrono>
+
 namespace os::ui {
 
 namespace {
@@ -36,6 +38,11 @@ interact::PointerButton buttonOf(Qt::MouseButton button)
 interact::Modifiers modifiersOf(Qt::KeyboardModifiers m)
 {
     return {m.testFlag(Qt::ShiftModifier), m.testFlag(Qt::ControlModifier), m.testFlag(Qt::AltModifier)};
+}
+
+double millisecondsSince(std::chrono::steady_clock::time_point start)
+{
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
 
 interact::PointerEvent toPointer(const QSinglePointEvent* event, Qt::MouseButton button)
@@ -121,15 +128,21 @@ void ViewportItem::mouseMoveEvent(QMouseEvent* event)
             : event->buttons().testFlag(Qt::RightButton)                      ? Qt::RightButton
             : event->buttons().testFlag(Qt::MiddleButton)                     ? Qt::MiddleButton
                                                                               : Qt::NoButton;
+        // The GUI thread's whole cost of a move: the controller and the QML
+        // bindings its state change re-evaluates (synchronously).
+        const auto start = std::chrono::steady_clock::now();
         controller_->interaction().pointerMove(toPointer(event, held));
+        controller_->notePointerMove(millisecondsSince(start), held != Qt::NoButton);
     }
     event->accept();
 }
 
 void ViewportItem::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (controller_)
+    if (controller_) {
         controller_->interaction().pointerRelease(toPointer(event, event->button()));
+        controller_->notePointerRelease();
+    }
     event->accept();
 }
 
@@ -202,8 +215,16 @@ void ViewportItem::touchEvent(QTouchEvent* event)
             forceActiveFocus(Qt::MouseFocusReason);
             interaction.pointerPress(e);
             break;
-        case Kind::PointerMove: interaction.pointerMove(e); break;
-        case Kind::PointerRelease: interaction.pointerRelease(e); break;
+        case Kind::PointerMove: {
+            const auto start = std::chrono::steady_clock::now();
+            interaction.pointerMove(e);
+            controller_->notePointerMove(millisecondsSince(start), true);
+            break;
+        }
+        case Kind::PointerRelease:
+            interaction.pointerRelease(e);
+            controller_->notePointerRelease();
+            break;
         case Kind::PointerCancel: interaction.cancelPointer(); break;
         case Kind::DoubleTap: interaction.pointerDoubleClick(e); break;
         case Kind::Pan: interaction.twoFingerPan(intent.from, intent.to); break;

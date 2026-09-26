@@ -8,6 +8,7 @@
 #include "document/SketchProfiles.h"
 #include "core/Log.h"
 #include "core/Units.h"
+#include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
 
 #include <algorithm>
@@ -54,6 +55,105 @@ InteractionController::InteractionController(doc::Document& document, cmd::UndoS
     afterDocumentEdit();
 }
 
+InteractionController::~InteractionController()
+{
+    // The worker first (it is also the last member): a running preview finishes, its result is dropped.
+    previewWorker_.reset();
+}
+
+// ---- Previews off the GUI thread ----------------------------------------------------
+
+void InteractionController::enableAsyncPreviews(std::function<void()> notify)
+{
+    geom::setInteractiveThread();
+    previewWorker_ = std::make_unique<PreviewWorker>(std::move(notify));
+    if (operation_)
+        operation_->setPreviewScheduler(this);
+}
+
+void InteractionController::disableAsyncPreviews()
+{
+    if (!previewWorker_)
+        return;
+    (void)waitForPreview();
+    if (operation_)
+        operation_->setPreviewScheduler(nullptr);
+    previewWorker_.reset();
+}
+
+bool InteractionController::deliverPreviews()
+{
+    if (!previewWorker_)
+        return false;
+    const std::uint64_t before = previewsShown_;
+    previewWorker_->deliver();
+    return previewsShown_ != before;
+}
+
+bool InteractionController::previewBusy() const
+{
+    return previewWorker_ && previewWorker_->busy();
+}
+
+bool InteractionController::waitForPreview(std::chrono::milliseconds timeout)
+{
+    if (!previewWorker_)
+        return true;
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (previewWorker_ && previewWorker_->busy()) {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (left.count() <= 0)
+            return false;
+        (void)previewWorker_->waitUntilIdle(left);
+        previewWorker_->deliver();
+    }
+    return true;
+}
+
+std::shared_ptr<const doc::Document> InteractionController::previewSnapshot(const doc::Document& document)
+{
+    // One copy per document state: a drag previews many values of one state.
+    if (!snapshot_ || snapshotOf_ != &document || snapshotRevision_ != document.revision()
+        || snapshotUndoRevision_ != undoStack_->revision()) {
+        snapshot_ = document.snapshot();
+        snapshotOf_ = &document;
+        snapshotRevision_ = document.revision();
+        snapshotUndoRevision_ = undoStack_->revision();
+    }
+    return snapshot_;
+}
+
+void InteractionController::schedulePreview(std::function<PreviewOutcome()> compute)
+{
+    if (!previewWorker_) {
+        receivePreview(compute());
+        return;
+    }
+    previewWorker_->submit([this, compute = std::move(compute)]() -> PreviewWorker::Delivery {
+        auto outcome = std::make_shared<const PreviewOutcome>(compute());
+        // "preview worker:" - off the GUI thread (scripts/dev/watch_log.py tells them apart).
+        OS_LOG(Debug, Performance) << "preview worker: preview took " << outcome->milliseconds << " ms";
+        return [this, outcome] { receivePreview(*outcome); };
+    });
+}
+
+void InteractionController::dropScheduledPreview()
+{
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
+}
+
+void InteractionController::receivePreview(const PreviewOutcome& outcome)
+{
+    if (!operation_ || !operation_->acceptPreview(outcome)) {
+        ++previewsDropped_;
+        return;
+    }
+    ++previewsShown_;
+    notifyState();
+    notifyView();
+}
+
 void InteractionController::setDocument(doc::Document& document, cmd::UndoStack& undoStack)
 {
     document_ = &document;
@@ -62,6 +162,10 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
     cameraBeforeSketch_.reset();
     selection_.clear();
     operation_.reset();
+    snapshot_.reset();
+    snapshotOf_ = nullptr;
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
     hover_ = {};
     drag_ = {};
     historyHighlight_.reset();
@@ -689,6 +793,12 @@ void InteractionController::click(const PointerEvent& event)
 void InteractionController::rebuildOperation()
 {
     operation_.reset();
+    // A preview of the previous operation that has not started is of no use.
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
+    // The new operation computes its previews (also one while it is created)
+    // on the worker when previews are asynchronous.
+    const PreviewSchedulerScope scheduler(previewWorker_ ? static_cast<PreviewScheduler*>(this) : nullptr);
     if (selection_.empty()) {
         faceOperationKind_ = doc::FeatureKind::PushPull;
         if (edgeOperationKind_ == doc::FeatureKind::Hole)
@@ -780,10 +890,16 @@ std::string InteractionController::setValueText(const std::string& text)
         return "The angle must be between 0° and 360°.";
     if (!operation_->allowsNegative() && value <= 0)
         return operation_->valueLabel() + " must be greater than zero.";
-    operation_->setValue(value, *document_);
+    // The same value again (Enter after typing it) keeps the preview that is
+    // shown or still computing, and its verdict.
+    const bool known = value == operation_->value()
+                    && (operation_->previewPending() || operation_->hasPreview() || !operation_->error().empty());
+    if (!known)
+        operation_->setValue(value, *document_);
     notifyState();
     notifyView();
-    return operation_->error();
+    // A preview still computing has no verdict yet (it arrives with a state change).
+    return operation_->previewPending() ? std::string() : operation_->error();
 }
 
 std::string InteractionController::operationValueText() const
@@ -834,6 +950,12 @@ Status InteractionController::commitOperation()
 {
     if (!operation_)
         return Status::failure(ErrorCode::InvalidArgument, "Nothing to apply.", "commit without operation");
+    // The command computes the step again, so a pending preview is not waited
+    // for - unless an automatic choice (join or new body) depends on it.
+    if (operation_->previewPending() && (operation_->commitNeedsPreview() || !operation_->canCommit()))
+        (void)waitForPreview();
+    if (!operation_)
+        return Status::failure(ErrorCode::InvalidArgument, "Nothing to apply.", "commit without operation");
     if (!operation_->canCommit()) {
         const std::string text = operation_->error().empty() ? "Drag the arrow or type a value first." : operation_->error();
         return Status::failure(ErrorCode::InvalidArgument, text, "commit of non-committable operation");
@@ -850,6 +972,9 @@ Status InteractionController::commitOperation()
     const Uuid target = operation_->bodyId();
     const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
     const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
+    // A preview still waiting to start would only delay the command's recompute.
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
@@ -1163,11 +1288,14 @@ std::vector<ContextAction> InteractionController::contextActions() const
                        || operation_->featureKind() == doc::FeatureKind::Shell
                        || operation_->featureKind() == doc::FeatureKind::OffsetFace)) {
         const bool single = selection_.size() == 1;
-        bool planar = false;
-        if (single)
+        SelectionMemo& memo = selectionMemo();
+        if (single && !memo.planarFace) {
+            memo.planarFace = false;
             if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
                 if (const auto info = geom::faceInfo(body->shape(), selection_.items().front().index))
-                    planar = info->isPlanar();
+                    memo.planarFace = info->isPlanar();
+        }
+        const bool planar = single && *memo.planarFace;
         if (single && planar)
             actions.push_back({"pushpull", "Push/Pull", operation_->featureKind() == doc::FeatureKind::PushPull});
         actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
@@ -1182,10 +1310,14 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
         // A hole's rim: offer the heat-set insert helper.
-        bool rim = false;
-        if (selection_.size() == 1)
-            if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
-                rim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
+        SelectionMemo& memo = selectionMemo();
+        if (!memo.holeRim) {
+            memo.holeRim = false;
+            if (selection_.size() == 1)
+                if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
+                    memo.holeRim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
+        }
+        const bool rim = *memo.holeRim;
         if (rim)
             actions.push_back({"insert", "Heat-set insert", edgeOperationKind_ == doc::FeatureKind::Hole});
         if (selection_.size() == 1)
@@ -1462,7 +1594,32 @@ Status InteractionController::triggerAction(const std::string& id)
 
 // ---- State -----------------------------------------------------------------------
 
+InteractionController::SelectionMemo& InteractionController::selectionMemo() const
+{
+    // What the cached facts depend on: the items, their bodies' shapes (or
+    // sketches), the display unit.
+    std::string key = std::to_string(static_cast<int>(document_->displayUnit()));
+    for (const auto& item : selection_.items()) {
+        key += '|' + std::to_string(static_cast<int>(item.kind)) + ':' + item.bodyId.toString() + ':' + std::to_string(item.index);
+        const doc::Body* body = document_->body(item.bodyId);
+        key += ':' + std::to_string(body ? body->shapeRevision() : document_->sketchRevision(item.bodyId));
+        if (body)
+            key += ':' + body->name(); // a summary of several bodies names them
+    }
+    if (key != selectionMemo_.key)
+        selectionMemo_ = SelectionMemo{std::move(key), std::nullopt, std::nullopt, std::nullopt};
+    return selectionMemo_;
+}
+
 std::string InteractionController::selectionSummary() const
+{
+    SelectionMemo& memo = selectionMemo();
+    if (!memo.summary)
+        memo.summary = computeSelectionSummary();
+    return *memo.summary;
+}
+
+std::string InteractionController::computeSelectionSummary() const
 {
     if (selection_.empty())
         return {};
@@ -1559,7 +1716,8 @@ RenderScene InteractionController::renderScene() const
             continue;
         RenderBody rb;
         rb.id = body->id();
-        if (operation_ && !operation_->previewBody().isNil() && operation_->previewBody() == body->id() && operation_->hasPreview()) {
+        if (operation_ && operation_->hasPreview() && !operation_->previewMeshBody().isNil()
+            && operation_->previewMeshBody() == body->id()) {
             rb.mesh = operation_->previewMesh();
             rb.meshKey = operation_->previewKey();
             rb.isPreview = true;
@@ -1598,7 +1756,7 @@ RenderScene InteractionController::renderScene() const
     }
 
     // A new-body preview has no document body to stand in for.
-    if (operation_ && operation_->previewBody().isNil() && operation_->hasPreview()) {
+    if (operation_ && operation_->hasPreview() && operation_->previewMeshBody().isNil()) {
         RenderBody rb;
         rb.mesh = operation_->previewMesh();
         rb.meshKey = operation_->previewKey();
