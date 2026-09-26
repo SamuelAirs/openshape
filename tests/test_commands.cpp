@@ -165,6 +165,51 @@ TEST(Commands, CleanStateTracking)
     EXPECT_FALSE(f.stack.isClean());
 }
 
+TEST(Commands, RevisionChangesWithEveryEdit)
+{
+    Fixture f;
+    std::uint64_t last = f.stack.revision();
+    auto changed = [&] {
+        const bool c = f.stack.revision() != last;
+        last = f.stack.revision();
+        return c;
+    };
+    f.createCube(5);
+    EXPECT_TRUE(changed()) << "push";
+    f.stack.undo(f.document);
+    EXPECT_TRUE(changed()) << "undo";
+    ASSERT_TRUE(f.stack.redo(f.document).ok());
+    EXPECT_TRUE(changed()) << "redo";
+    // Undo then a new edit ends at the same index and size as before: still a change.
+    f.stack.undo(f.document);
+    changed();
+    f.createCube(7);
+    EXPECT_TRUE(changed()) << "push after undo";
+    while (f.stack.undo(f.document)) {
+    }
+    changed();
+    EXPECT_FALSE(f.stack.undo(f.document)) << "nothing left to undo";
+    EXPECT_FALSE(changed()) << "a failed undo is not an edit";
+    auto failing = std::make_unique<cmd::SetBodyVisibilityCommand>(Uuid::generate(), false);
+    EXPECT_FALSE(f.stack.push(std::move(failing), f.document).ok());
+    EXPECT_FALSE(changed()) << "a failed command is not an edit";
+    f.stack.setClean();
+    EXPECT_FALSE(changed()) << "saving is not an edit";
+}
+
+TEST(Commands, SetModifiedMeansUnsavedUntilSaved)
+{
+    Fixture f;
+    ASSERT_TRUE(f.stack.isClean());
+    f.stack.setModified(); // e.g. a document restored from a recovery copy
+    EXPECT_FALSE(f.stack.isClean());
+    f.createCube(5);
+    f.stack.undo(f.document);
+    EXPECT_FALSE(f.stack.isClean()) << "no state of the stack is the saved one";
+    f.stack.setClean();
+    EXPECT_TRUE(f.stack.isClean());
+}
+
 TEST(Commands, MaxDepthDropsOldest)
 {
     doc::Document document;

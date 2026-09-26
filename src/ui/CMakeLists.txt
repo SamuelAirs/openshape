@@ -4,6 +4,16 @@
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
+# What the app remembers (settings, recent files, window place) and recovery
+# sessions: Qt Core only, so tests/test_uistate needs no GUI.
+add_library(openshape_uistate STATIC
+    AppSettings.cpp AppSettings.h
+    RecoverySession.cpp RecoverySession.h
+)
+target_link_libraries(openshape_uistate PUBLIC openshape_io Qt6::Core)
+target_include_directories(openshape_uistate PUBLIC ${PROJECT_SOURCE_DIR}/src)
+openshape_set_warnings(openshape_uistate)
+
 qt_add_library(openshape_ui STATIC)
 qt_add_qml_module(openshape_ui
     URI OpenShape
@@ -22,10 +32,13 @@ qt_add_qml_module(openshape_ui
         qml/Theme.qml
         qml/AxisTriad.qml
         qml/AboutOverlay.qml
+        qml/PreferencesOverlay.qml
+        qml/RecoveryOverlay.qml
+        qml/UnsavedOverlay.qml
     SOURCES
         AppController.cpp AppController.h
         ViewportItem.cpp ViewportItem.h
 )
-target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io Qt6::Quick Qt6::QuickControls2)
+target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)
 target_include_directories(openshape_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_ui)

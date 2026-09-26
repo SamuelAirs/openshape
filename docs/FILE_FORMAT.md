@@ -143,3 +143,23 @@ Project files are untrusted input:
 - nothing is extracted to disk — entries are read into memory only;
 - JSON is parsed without exceptions and validated field by field;
 - nothing in a project file is ever executed.
+
+## Recovery copies (not user files)
+
+While a document has unsaved changes, the app keeps a recovery copy in its
+own data folder (`<AppLocalData>/recovery/`, see `io/Recovery.h`); the
+user's file changes only on Save. Per running app instance (a *session*,
+named by a lowercase UUID):
+
+| File | Content |
+|---|---|
+| `<session>.openshape` | A normal project file as above, written without the `geometry/` cache. |
+| `<session>.json` | Sidecar: `{ "format": "OpenShapeRecovery", "version": 1, "originalPath", "title", "savedAt" (Unix ms), "appVersion" }`. `originalPath` is the user's file (UTF-8, empty if never saved). |
+| `<session>.lock` | A `QLockFile`: the session's app is running. A lock whose process is gone marks a crashed session, whose copy is offered for restoring. |
+
+Both files are written atomically (temp file + rename), the copy first. A
+copy without a readable sidecar is still offered (as "Untitled"). The copy
+stays after the app ends if the document still had unsaved changes the user
+did not discard; the next start offers it. Restoring moves the copy to the
+new session and writes that session's sidecar anew. Sidecars
+are untrusted: strict types, length limits, unknown fields ignored.

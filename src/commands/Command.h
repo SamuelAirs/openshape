@@ -7,6 +7,7 @@
 #include "core/Result.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -71,12 +72,20 @@ public:
     // Clean-state tracking for "unsaved changes".
     void setClean() { cleanIndex_ = static_cast<long long>(index_); }
     bool isClean() const { return cleanIndex_ == static_cast<long long>(index_); }
+    // No state of this stack matches the saved file (e.g. a document restored
+    // from a recovery copy): unsaved until the next setClean().
+    void setModified() { cleanIndex_ = -1; }
+
+    // Changes whenever the document changes through this stack (push, undo,
+    // redo, clear); lets observers (recovery copies) notice edits cheaply.
+    std::uint64_t revision() const { return revision_; }
 
 private:
     std::vector<std::unique_ptr<Command>> commands_;
     std::size_t index_ = 0; // number of applied commands
     std::size_t maxDepth_;
     long long cleanIndex_ = 0; // -1 when the clean state was discarded
+    std::uint64_t revision_ = 0;
 };
 
 } // namespace os::cmd

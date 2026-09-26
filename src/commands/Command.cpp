@@ -43,6 +43,7 @@ Status UndoStack::push(std::unique_ptr<Command> command, doc::Document& document
     commands_.resize(index_);
     commands_.push_back(std::move(command));
     ++index_;
+    ++revision_;
     if (commands_.size() > maxDepth_) {
         commands_.erase(commands_.begin());
         --index_;
@@ -69,6 +70,7 @@ bool UndoStack::undo(doc::Document& document)
         return false;
     --index_;
     commands_[index_]->undo(document);
+    ++revision_;
     OS_LOG(Debug, Command) << "undid '" << commands_[index_]->label() << "'";
     return true;
 }
@@ -86,6 +88,7 @@ Status UndoStack::redo(doc::Document& document)
     }
     OS_LOG(Debug, Command) << "redid '" << commands_[index_]->label() << "'";
     ++index_;
+    ++revision_;
     return status;
 }
 
@@ -94,6 +97,7 @@ void UndoStack::clear()
     commands_.clear();
     index_ = 0;
     cleanIndex_ = 0;
+    ++revision_;
 }
 
 } // namespace os::cmd

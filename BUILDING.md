@@ -78,6 +78,9 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
+./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
+./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-crash   # then start with --data-dir some-dir: it offers the box
+./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-quit    # ended with unsaved work: offered too
 ```
 
 Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
@@ -89,8 +92,30 @@ selected), `history` (a fillet step highlighted from the Model panel),
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 
-Logs are written to stderr and to
-`%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log`.
+Where the app keeps things (Windows):
+
+- **Log:** stderr and `%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log`
+  (4 MB, then it starts over). An unexpected termination adds one line
+  ("OpenShape closed unexpectedly: exception 0xC0000005 (access violation)
+  at Module.dll+0x…"); map the offset with `addr2line -e <module>`.
+- **Settings** (preferences, recent files, window place): the registry,
+  `HKEY_CURRENT_USER\Software\OpenShape\OpenShape`.
+- **Recovery copies** of unsaved work: `%LOCALAPPDATA%\OpenShape\OpenShape\recovery\`
+  (`<session>.openshape` + `.json` + `.lock` per running app; see
+  docs/FILE_FORMAT.md). They are removed on Save, New, Open and when the
+  user chooses Don't Save. If the app ends while there is unsaved work the
+  user did not discard (a crash, iPadOS ending the app, logging off), the
+  next start offers it.
+- `--data-dir <dir>` puts all three into `<dir>` (`logs/`, `settings/` as an
+  INI file, `recovery/`). `--acceptance`, `--demo` and `--screenshot` use a
+  temporary folder for settings and recovery copies (removed at exit; the log
+  still goes to the usual file), never the user's, and show no restore prompt
+  and do not remember the window.
+- `--simulate-crash` (no window): adds a box, writes its recovery copy and
+  crashes with an access violation (without the Windows crash dialog);
+  `--simulate-quit` adds a box and quits at once without asking (as when
+  iPadOS ends the app), which must keep the box as a recovery copy. The
+  `recovery` acceptance scenario uses both.
 
 Building from another shell (e.g. Git Bash) also works if
 `<msys64>/ucrt64/bin` is first on `PATH`.
@@ -122,8 +147,9 @@ No installer yet, and not distributable yet (TD-17).
 
 ### 6. Developer tools
 
-- **Benchmark** — times a push/pull drag preview, tessellation, recompute
-  and bounding boxes on a 21-face filleted part (numbers in
+- **Benchmark** — times a push/pull drag preview, tessellation, recompute,
+  bounding boxes and recovery copies / full saves on a 21-face filleted part
+  (and saves on a 21-body, 1528-face model) (numbers in
   PROJECT_STATUS.md):
 
   ```bash

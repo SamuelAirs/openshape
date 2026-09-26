@@ -168,5 +168,8 @@ relinking.
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
    Files app.
 7. Rotate the iPad: the layout follows; the tool palette scrolls when short.
-8. Note anything slow, hard to hit, or missing — with a screenshot
+8. Work is kept: add a box without saving, go to the Home Screen and swipe
+   OpenShape away in the App Switcher. Start it again: it offers to restore
+   the box.
+9. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).

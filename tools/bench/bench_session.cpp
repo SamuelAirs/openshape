@@ -21,11 +21,14 @@
 #include "geometry/Tessellation.h"
 #include "geometry/TopoSignature.h"
 #include "interaction/Operation.h"
+#include "io/ProjectFile.h"
+#include "io/Recovery.h"
 
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <string>
 
@@ -131,5 +134,63 @@ int main()
             (void)geom::boundingBox(s);
     });
     std::printf("boundingBox: first %.2f ms, next 10 calls %.3f ms\n", first, repeats);
+
+    // 5. Recovery copy (written on the GUI thread a few seconds after edits
+    //    settle) and a full Save, on this part and on a heavy one: the part
+    //    patterned 8 x 6 (48 filleted blocks), plus 20 more filleted bodies.
+    const auto dir = std::filesystem::temp_directory_path() / "openshape_bench_recovery";
+    std::filesystem::create_directories(dir);
+    const io::RecoveryStore store(dir);
+    const std::string session = Uuid::generate().toString();
+    auto timeSaves = [&](const char* what) {
+        io::SaveOptions noCache;
+        noCache.includeGeometryCache = false;
+        double serialize = 0, archive = 0, write = 0;
+        std::size_t bytes = 0;
+        const int n = 5;
+        for (int i = 0; i < n; ++i) {
+            io::ProjectData data;
+            serialize += timeMs([&] { data = io::serializeProject(document, noCache); });
+            Result<std::string> zip = Result<std::string>::failure(ErrorCode::None, "");
+            archive += timeMs([&] { zip = io::buildProjectArchive(data); });
+            bytes = zip ? zip.value().size() : 0;
+            write += timeMs([&] { (void)io::writeFileAtomically(dir / "copy.openshape", zip ? zip.value() : std::string()); });
+        }
+        const double storeWrite = timeMs([&] { (void)store.write(session, document, {}); });
+        const double full = timeMs([&] { (void)io::saveProject(document, dir / "full.openshape"); });
+        std::printf("%s: recovery copy %.2f ms (serialize %.2f + zip %.2f + write %.2f; %zu bytes), store.write %.2f ms; "
+                    "full save with geometry cache %.1f ms (%ju bytes)\n",
+                    what, (serialize + archive + write) / n, serialize / n, archive / n, write / n, bytes, storeWrite, full,
+                    std::uintmax_t(std::filesystem::file_size(dir / "full.openshape")));
+    };
+    timeSaves("filleted part");
+
+    auto pattern = [&](doc::PatternFeature::Layout layout, int count) {
+        auto p = std::make_unique<doc::PatternFeature>();
+        p->layout = layout;
+        p->count = count;
+        p->spacing = 30;
+        p->axisOrigin = {0, -60, 0};
+        return stack.push(std::make_unique<cmd::AddFeatureCommand>(bodyId, std::move(p)), document).ok();
+    };
+    const bool linearOk = pattern(doc::PatternFeature::Layout::Linear, 8);
+    const bool circularOk = pattern(doc::PatternFeature::Layout::Circular, 6);
+    for (int i = 0; i < 20; ++i) {
+        auto cube = std::make_unique<doc::BoxFeature>();
+        cube->size = {10, 10, 10};
+        (void)stack.push(std::make_unique<cmd::CreateBodyCommand>("Body " + std::to_string(i + 2), std::move(cube)), document);
+        const Uuid extra = document.bodies().back()->id();
+        auto f = std::make_unique<doc::FilletFeature>();
+        f->size = 1;
+        f->edges = edgesWhere(document.body(extra)->shape(), [](const geom::EdgeInfo&) { return true; });
+        (void)stack.push(std::make_unique<cmd::AddFeatureCommand>(extra, std::move(f)), document);
+    }
+    int faces = 0;
+    for (const auto& b : document.bodies())
+        faces += b->shape().faceCount();
+    std::printf("heavy model: %zu bodies, %d faces, %zu steps in body 1 (patterns ok: %d %d)\n", document.bodies().size(),
+                faces, document.body(bodyId)->features().size(), int(linearOk), int(circularOk));
+    timeSaves("heavy model");
+    std::filesystem::remove_all(dir);
     return 0;
 }

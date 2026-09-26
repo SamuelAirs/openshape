@@ -94,6 +94,9 @@ public:
     // fingers only move the view. Turned on by the first pen press.
     bool penMode() const { return penMode_; }
     void setPenMode(bool on) { penMode_ = on; }
+    // Preferences: whether sketch points snap to the grid (this and later sketches).
+    bool sketchGridSnap() const { return sketchGridSnap_; }
+    void setSketchGridSnap(bool on);
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -221,6 +224,7 @@ private:
     BodyTool bodyTool_ = BodyTool::Move;
     int hoveredRing_ = -1;
     bool penMode_ = false;
+    bool sketchGridSnap_ = true;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;

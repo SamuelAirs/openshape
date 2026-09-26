@@ -269,13 +269,31 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input)
 
 // ---- Container -------------------------------------------------------------------
 
-Status saveProject(const doc::Document& document, const std::filesystem::path& path, const SaveOptions& options)
+ProjectData serializeProject(const doc::Document& document, const SaveOptions& options)
 {
-    ScopedTimer timer("saveProject");
+    ProjectData data;
+    data.documentJson = documentToJson(document).dump(2);
+    data.metadataJson = json{{"format", kProjectFormatName},
+                             {"version", kProjectFormatVersion},
+                             {"application", "OpenShape"},
+                             {"applicationVersion", "0.1.0"}}
+                            .dump(2);
+    if (options.includeGeometryCache) {
+        for (const auto& body : document.bodies())
+            if (!body->shape().isNull())
+                data.geometry.emplace_back(body->id().toString(), geom::toBrepString(body->shape()));
+    }
+    data.thumbnailPng = options.thumbnailPng;
+    return data;
+}
+
+Result<std::string> buildProjectArchive(const ProjectData& data)
+{
+    using R = Result<std::string>;
     int errorCode = 0;
     zip_source_t* memory = zip_source_buffer_create(nullptr, 0, 0, nullptr);
     if (!memory)
-        return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.", "zip_source_buffer_create failed");
+        return R::failure(ErrorCode::FileWriteError, "Unable to save the project.", "zip_source_buffer_create failed");
     zip_error_t zerr;
     zip_error_init(&zerr);
     zip_t* archive = zip_open_from_source(memory, ZIP_TRUNCATE, &zerr);
@@ -283,38 +301,27 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
         zip_source_free(memory);
         errorCode = zip_error_code_zip(&zerr);
         zip_error_fini(&zerr);
-        return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.",
-                               "zip_open_from_source failed: " + std::to_string(errorCode));
+        return R::failure(ErrorCode::FileWriteError, "Unable to save the project.",
+                          "zip_open_from_source failed: " + std::to_string(errorCode));
     }
     zip_error_fini(&zerr);
     zip_source_keep(memory); // keep the buffer alive after zip_close
 
-    auto fail = [&](Status s) {
+    auto fail = [&](const Status& s) {
         zip_discard(archive);
         zip_source_free(memory);
-        return s;
+        return R::failureFrom(s);
     };
 
-    const json metadata{{"format", kProjectFormatName},
-                        {"version", kProjectFormatVersion},
-                        {"application", "OpenShape"},
-                        {"applicationVersion", "0.1.0"}};
-    if (Status s = addEntry(archive, "document.json", documentToJson(document).dump(2)); !s)
+    if (Status s = addEntry(archive, "document.json", data.documentJson); !s)
         return fail(s);
-    if (Status s = addEntry(archive, "metadata.json", metadata.dump(2)); !s)
+    if (Status s = addEntry(archive, "metadata.json", data.metadataJson); !s)
         return fail(s);
-    if (options.includeGeometryCache) {
-        for (const auto& body : document.bodies()) {
-            if (body->shape().isNull())
-                continue;
-            if (Status s = addEntry(archive, "geometry/" + body->id().toString() + ".brep", geom::toBrepString(body->shape())); !s)
-                return fail(s);
-        }
-    }
-    if (!options.thumbnailPng.empty()) {
-        if (Status s = addEntry(archive, "thumbnail.png",
-                                std::string(options.thumbnailPng.begin(), options.thumbnailPng.end()));
-            !s)
+    for (const auto& [bodyId, brep] : data.geometry)
+        if (Status s = addEntry(archive, "geometry/" + bodyId + ".brep", brep); !s)
+            return fail(s);
+    if (!data.thumbnailPng.empty()) {
+        if (Status s = addEntry(archive, "thumbnail.png", std::string(data.thumbnailPng.begin(), data.thumbnailPng.end())); !s)
             return fail(s);
     }
 
@@ -322,10 +329,10 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
         const std::string dev = std::string("zip_close failed: ") + zip_strerror(archive);
         zip_discard(archive);
         zip_source_free(memory);
-        return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.", dev);
+        return R::failure(ErrorCode::FileWriteError, "Unable to save the project.", dev);
     }
 
-    // Copy the in-memory archive out, then write atomically via a temp file.
+    // Copy the in-memory archive out.
     std::string bytes;
     if (zip_source_open(memory) == 0) {
         zip_source_seek(memory, 0, SEEK_END);
@@ -339,8 +346,12 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
     }
     zip_source_free(memory);
     if (bytes.empty())
-        return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.", "empty archive buffer");
+        return R::failure(ErrorCode::FileWriteError, "Unable to save the project.", "empty archive buffer");
+    return R::success(std::move(bytes));
+}
 
+Status writeFileAtomically(const std::filesystem::path& path, const std::string& bytes)
+{
     std::filesystem::path tmp = path;
     tmp += ".tmp";
     {
@@ -349,18 +360,35 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
             return Status::failure(ErrorCode::FileWriteError, "Unable to save here. Check that the folder is writable.",
                                    "cannot open " + pathString(tmp));
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-        if (!out)
+        out.close();
+        if (!out) {
+            std::error_code ignored;
+            std::filesystem::remove(tmp, ignored);
             return Status::failure(ErrorCode::FileWriteError, "Unable to save the project. The disk may be full.",
                                    "write failed " + pathString(tmp));
+        }
     }
     std::error_code ec;
     std::filesystem::rename(tmp, path, ec);
     if (ec) {
-        std::filesystem::remove(tmp, ec);
+        std::error_code ignored;
+        std::filesystem::remove(tmp, ignored);
         return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.",
                                "rename to " + pathString(path) + " failed: " + ec.message());
     }
-    OS_LOG(Info, File) << "saved project " << pathString(path) << " (" << bytes.size() << " bytes)";
+    return okStatus();
+}
+
+Status saveProject(const doc::Document& document, const std::filesystem::path& path, const SaveOptions& options)
+{
+    ScopedTimer timer("saveProject");
+    auto bytes = buildProjectArchive(serializeProject(document, options));
+    if (!bytes)
+        return Status::failureFrom(bytes);
+    if (Status s = writeFileAtomically(path, bytes.value()); !s)
+        return s;
+    if (options.announce)
+        OS_LOG(Info, File) << "saved project " << pathString(path) << " (" << bytes.value().size() << " bytes)";
     return okStatus();
 }
 

@@ -32,6 +32,15 @@ odd: a screenshot and a sentence is plenty. Starting the app with
    shortcut's Properties → Target: bigger buttons and a Pen switch.
 8. **A real part.** Design something you need, export STL or 3MF, print it
    and measure: do sizes and hole diameters come out as typed?
+9. **Work is never lost.** Add a box, wait five seconds, then kill
+   OpenShape: Task Manager → Details → OpenShape.exe → End task. Start it
+   again: it offers to restore the box (Restore / Discard / Decide later).
+   Restore, then Ctrl+S. Closing the window with unsaved changes and
+   choosing Don't Save must not offer anything at the next start.
+10. **The app remembers you.** Move and resize the window (or maximize it),
+    close and start again: same place. File → Open Recent lists your last
+    projects. File → Preferences… (Ctrl+,): units for new documents, grid
+    snapping in sketches, how often recovery copies are kept.
 
 ## On the iPad
 

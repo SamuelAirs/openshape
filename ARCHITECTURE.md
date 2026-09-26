@@ -51,7 +51,7 @@ Technology choices and the alternatives considered are in
  OpenCASCADE 7.9 (only included inside geometry/)
 
  render/    ViewportRenderer (QRhi) — consumes interaction::RenderScene
- io/        .openshape project container (ZIP + JSON)
+ io/        .openshape project container (ZIP + JSON), recovery copies, recent-files list
  core/      Result, Log, Uuid, Units, Math, Camera, Timer
 ```
 
@@ -67,9 +67,10 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 | `openshape_commands` | document | no | undo/redo |
 | `openshape_selection` | document | no | picking, selection sets |
 | `openshape_interaction` | commands, selection | no | controller, manipulators, operations |
-| `openshape_io` | document, libzip (private) | no | project files |
+| `openshape_io` | document, libzip (private) | no | project files, recovery store, recent-files list |
 | `openshape_render` | interaction, Qt Gui/GuiPrivate/Quick | yes | QRhi renderer + shaders |
-| `openshape_ui` | render, io, Qt Quick/Controls | yes | QML module `OpenShape` |
+| `openshape_uistate` | io, Qt Core | yes | settings (`AppSettings`), recovery sessions (`RecoverySession`) |
+| `openshape_ui` | render, io, uistate, Qt Quick/Controls | yes | QML module `OpenShape` |
 | `openshape` (exe) | ui | yes | `OpenShape.exe` |
 
 ## Core types
@@ -402,13 +403,76 @@ migration table; newer versions are refused with a clear message. Readers
 treat files as untrusted: size limits, entry-name validation (no traversal),
 strict JSON schema checks, duplicate-UUID rejection; nothing is extracted to
 disk. Saves are atomic (temp file + rename). See
-[docs/FILE_FORMAT.md](docs/FILE_FORMAT.md).
+[docs/FILE_FORMAT.md](docs/FILE_FORMAT.md). `saveProject` is three steps
+(`serializeProject` reads the document on the GUI thread;
+`buildProjectArchive` and `writeFileAtomically` only use strings), so the
+slow parts could move to a worker thread.
+
+**Recovery copies** (the owner's choice: the user's file changes only on
+Save). `io/Recovery` (Qt-free) stores, per running app instance (a
+*session*), `<session>.openshape` (a project file without the geometry
+cache) and a JSON sidecar (original path, title, time, app version) in
+`<AppLocalData>/recovery/`; it lists copies, finds orphans through a
+caller-supplied "is this session alive?" check, adopts and removes them.
+`ui/RecoverySession` answers that check with `QLockFile`s: each instance
+holds `<session>.lock`; a lock whose process is gone is stale, and taking it
+also stops a second instance from offering the same copy. `AppController`
+watches `UndoStack::revision()` (bumped by push/undo/redo/clear) on every
+`stateChanged`: while `dirty()`, a copy is written 3 s after the last edit,
+at least every `recoveryInterval` (Preferences; 0 = off), and at once when
+the app stops being the active one (`applicationStateChanged`: another
+window, or the iPad home screen, after which iPadOS may end the app). Save, New,
+Open, undo back to the saved state and "Don't Save" (closing the window
+calls `discardUnsavedWork()`) remove it. **The rule at exit:** the copy is
+deleted only when the user let go of the work. `endRecovery()` (on
+`aboutToQuit`, and from the destructor for exits that skip it, such as
+iPadOS unwinding out of `exec()`) keeps it when the document still has
+unsaved changes that were not discarded: it brings the copy up to date and
+sets `RecoverySession::setKeepCopy`, so the session's destructor releases
+the lock but leaves the files, and the next start offers them like a
+crashed run's. Any exit that does not go through the window's close
+question (iPadOS ending the app, Windows logging off, `QCoreApplication::exit`)
+therefore keeps the work. At startup (not in automated runs)
+`checkForRecovery()` fills `recoveryItems`, which `RecoveryOverlay.qml`
+shows; Restore opens the copy as an unsaved document (`UndoStack::setModified`)
+with its original path and adopts the file as this session's copy (the copy
+is moved; its sidecar is written anew from what the prompt showed, so a
+sidecar another program holds cannot lose the original path).
+Measured (bench_session): a copy of a 21-body, 1528-face model takes about
+8-10 ms on the GUI thread (a full save with the geometry cache: 234 ms), so
+no worker thread is used.
+
+**Settings** (`ui/AppSettings`, QSettings): preferences (default unit for
+new documents, sketch grid snapping, recovery interval), recent files
+(`io/RecentFiles`: most recent first; the menu shows the 10 newest that
+exist, and a file that is gone never pushes an existing one out; the File
+menu rereads the list as it opens, `refreshRecentFiles()`) and the
+window's place (frame + client rectangle + maximized; restored by client
+area and clamped to today's screens by `fitToScreens`). `main.cpp` points
+QSettings at a temporary INI file (and recovery copies at a temporary
+folder) for `--acceptance`, `--demo` and `--screenshot`, or at
+`--data-dir`. `app/CrashLog` writes one log line on an unhandled exception
+(Windows, with module + offset) or `std::terminate`.
+
+**Dialogs are overlays** in the window, not native message boxes (touch-sized,
+clickable by the acceptance run): `UnsavedOverlay` (Save / Don't Save /
+Cancel before New, Open, Open Recent, Restore and closing),
+`RecoveryOverlay`, `PreferencesOverlay`, `AboutOverlay`, `HelpOverlay`.
+While `UnsavedOverlay` or `RecoveryOverlay` is shown (`window.modalOpen`)
+the window's shortcuts are disabled, as behind a native modal dialog, and
+`UnsavedOverlay.ask()` ignores a second request: the pending action is the
+one the user is being asked about.
+Only file choosers stay native (`FileDialog`). After a menu or overlay
+closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
+them on a hidden menu separator after the Open Recent sub-menu).
 
 ## Testing
 
 - GTest suites (`tests/`): core (units, UUID, math), geometry (measurable
   invariants: volumes, bounding boxes, face counts), document/commands/files,
-  camera/picking/interaction including a **headless Milestone 0 script**.
+  camera/picking/interaction including a **headless Milestone 0 script**;
+  `test_uistate` (Qt Core, no window): settings, window placement and
+  recovery sessions with real lock files.
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
   the real application through Qt's platform input path — including clicking
   QML buttons found by `objectName` — and checks geometry after each step,
@@ -418,7 +482,10 @@ disk. Saves are atomic (temp file + rename). See
   bar, Align, Rotate rings, Pattern, Mirror, two-/three-finger taps and the
   touch layout, the About box, trim/slot/fillet/offset in a sketch,
   symmetric and up-to-face extrusions, a fillet carried by a push, a hole
-  resized by its diameter and deleted. `clickItem` lays out freshly created
+  resized by its diameter and deleted; scenarios `recovery` (a real crash
+  of a second OpenShape via `--simulate-crash`, the restore prompt, and a
+  second OpenShape ended with unsaved work via `--simulate-quit`),
+  `recent` and `preferences`. `clickItem` lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag

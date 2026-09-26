@@ -181,17 +181,19 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
             }
         }
     }
-    // 4. Round free coordinates to a zoom-dependent grid.
-    if (!snap.horizontal)
-        p.y = snapValue(p.y, step);
-    if (!snap.vertical)
-        p.x = snapValue(p.x, step);
-    if (snap.horizontal)
-        p.x = snapValue(p.x, step);
-    if (snap.vertical)
-        p.y = snapValue(p.y, step);
+    // 4. Round free coordinates to a zoom-dependent grid (unless turned off).
+    if (gridSnap_) {
+        if (!snap.horizontal)
+            p.y = snapValue(p.y, step);
+        if (!snap.vertical)
+            p.x = snapValue(p.x, step);
+        if (snap.horizontal)
+            p.x = snapValue(p.x, step);
+        if (snap.vertical)
+            p.y = snapValue(p.y, step);
+    }
     snap.position = p;
-    snap.kind = SnapKind::Grid;
+    snap.kind = gridSnap_ ? SnapKind::Grid : SnapKind::None;
     return snap;
 }
 

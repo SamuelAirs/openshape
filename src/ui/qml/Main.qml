@@ -17,12 +17,16 @@ ApplicationWindow {
     height: 900
     minimumWidth: 720
     minimumHeight: 480
-    visible: true
+    // Shown by main.cpp once it has put the window where it was last time.
+    visible: false
     title: (app.dirty ? "• " : "") + app.documentTitle + " — OpenShape"
     color: Theme.background
 
     property bool closeConfirmed: false
     property var afterSave: null   // action to run once a Save As completes
+    // A question the user must answer first: the window's shortcuts wait
+    // (Ctrl+N behind "Save changes?" would replace what it is asking about).
+    readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible
 
     // ---------------------------------------------------------------- viewport
     Viewport {
@@ -53,26 +57,50 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- shortcuts
-    Shortcut { sequences: [StandardKey.Undo]; onActivated: window.app.undo() }
+    Shortcut { sequences: [StandardKey.Undo]; enabled: !window.modalOpen; onActivated: window.app.undo() }
     // StandardKey.Redo is Ctrl+Y on Windows but Ctrl+Shift+Z elsewhere; accept
     // both everywhere. On Windows the duplicate makes Qt report the match as
     // ambiguous, so handle that signal too.
     Shortcut {
         sequences: [StandardKey.Redo, "Ctrl+Y"]
+        enabled: !window.modalOpen
         onActivated: window.app.redo()
         onActivatedAmbiguously: window.app.redo()
     }
-    Shortcut { sequences: [StandardKey.Save]; onActivated: window.save() }
-    Shortcut { sequences: [StandardKey.SaveAs]; onActivated: saveDialog.open() }
-    Shortcut { sequences: [StandardKey.Open]; onActivated: window.confirmDiscard(() => openDialog.open()) }
-    Shortcut { sequences: [StandardKey.New]; onActivated: window.confirmDiscard(() => window.app.newDocument()) }
+    Shortcut { sequences: [StandardKey.Save]; enabled: !window.modalOpen; onActivated: window.save() }
+    Shortcut { sequences: [StandardKey.SaveAs]; enabled: !window.modalOpen; onActivated: saveDialog.open() }
+    Shortcut {
+        sequences: [StandardKey.Open]
+        enabled: !window.modalOpen
+        onActivated: window.confirmDiscard(() => openDialog.open())
+    }
+    Shortcut {
+        sequences: [StandardKey.New]
+        enabled: !window.modalOpen
+        onActivated: window.confirmDiscard(() => window.app.newDocument())
+    }
+    Shortcut { sequence: "Ctrl+,"; enabled: !window.modalOpen; onActivated: preferencesOverlay.open() }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
-    Shortcut { sequence: "F1"; onActivated: helpOverlay.toggle() }
+    Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
     Shortcut {
         sequence: "K"
         enabled: viewport.activeFocus && window.app.canStartSketch
         onActivated: window.app.startSketch()
+    }
+
+    // After a menu closes, keys go back to the view (B, K, F, typed values;
+    // Qt leaves them nowhere after a sub-menu), unless the menu opened a
+    // panel that takes them.
+    function focusViewUnlessPanel() {
+        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay]
+        for (const panel of panels) {
+            if (panel.visible) {
+                panel.forceActiveFocus()
+                return
+            }
+        }
+        viewport.forceActiveFocus()
     }
 
     function save() {
@@ -88,14 +116,15 @@ ApplicationWindow {
             action()
             return
         }
-        unsavedDialog.pendingAction = action
-        unsavedDialog.open()
+        unsavedDialog.ask(action)
     }
 
     onClosing: (close) => {
         if (app.dirty && !closeConfirmed) {
             close.accepted = false
-            confirmDiscard(() => { window.closeConfirmed = true; window.close() })
+            // Don't Save: the user lets go of the work, so no recovery copy
+            // of it is kept (any other end of the run keeps one).
+            confirmDiscard(() => { window.app.discardUnsavedWork(); window.closeConfirmed = true; window.close() })
         }
     }
 
@@ -159,8 +188,41 @@ ApplicationWindow {
 
     Menu {
         id: fileMenu
-        MenuItem { text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
+        objectName: "fileMenu"
+        onAboutToShow: window.app.refreshRecentFiles() // a file deleted meanwhile drops out
+        onClosed: window.focusViewUnlessPanel()
+        // Sub-menu entries are made by this delegate: name them for the acceptance run.
+        delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
+        MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
         MenuItem { text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
+        Menu {
+            id: recentMenu
+            objectName: "openRecentMenu"
+            // Only when the File menu closes too: Esc on this sub-menu goes
+            // back to the File menu, whose own Esc must still reach it.
+            onClosed: if (!fileMenu.opened) window.focusViewUnlessPanel()
+            title: "Open Recent"
+            enabled: window.app.recentFiles.length > 0
+            Instantiator {
+                model: window.app.recentFiles
+                delegate: MenuItem {
+                    required property var modelData
+                    required property int index
+                    objectName: "recentFile_" + index
+                    text: modelData.name + "  —  " + modelData.folder
+                    onTriggered: {
+                        // After the menu has closed: opening rebuilds this list,
+                        // and a menu whose item vanishes mid-click stays open.
+                        const path = modelData.path
+                        Qt.callLater(() => window.confirmDiscard(() => window.app.openRecent(path)))
+                    }
+                }
+                onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => recentMenu.removeItem(object)
+            }
+            MenuSeparator {}
+            MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
+        }
         MenuSeparator {}
         MenuItem { text: "Save"; onTriggered: window.save() }
         MenuItem { text: "Save As…"; onTriggered: saveDialog.open() }
@@ -169,6 +231,7 @@ ApplicationWindow {
         MenuItem { text: "Export STL…"; enabled: window.app.bodyCount > 0; onTriggered: stlDialog.open() }
         MenuItem { text: "Export 3MF…"; enabled: window.app.bodyCount > 0; onTriggered: threeMfDialog.open() }
         MenuSeparator {}
+        MenuItem { objectName: "preferencesMenuItem"; text: "Preferences…"; onTriggered: preferencesOverlay.open() }
         MenuItem { objectName: "aboutMenuItem"; text: "About OpenShape"; onTriggered: aboutOverlay.open() }
     }
 
@@ -543,6 +606,45 @@ ApplicationWindow {
         onVisibleChanged: if (!visible) viewport.forceActiveFocus()
     }
 
+    PreferencesOverlay {
+        id: preferencesOverlay
+        objectName: "preferencesOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 100
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // "Save changes?" before New, Open, Open Recent, Restore or closing.
+    UnsavedOverlay {
+        id: unsavedDialog
+        objectName: "unsavedDialog"
+        app: window.app
+        anchors.fill: parent
+        z: 120 // above the restore prompt, whose Restore asks it
+        onSaveRequested: (action) => {
+            if (window.app.hasProjectPath()) {
+                if (window.app.saveProject())
+                    action()
+            } else {
+                window.afterSave = action
+                saveDialog.open()
+            }
+        }
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // After a crash: restore or discard the work that was not saved.
+    RecoveryOverlay {
+        id: recoveryOverlay
+        objectName: "recoveryOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 110
+        onRestoreRequested: (session) => window.confirmDiscard(() => window.app.restoreRecovery(session))
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
     // ---------------------------------------------------------------- toast
     Rectangle {
         id: toast
@@ -621,27 +723,5 @@ ApplicationWindow {
         defaultSuffix: "3mf"
         nameFilters: ["3MF files (*.3mf)"]
         onAccepted: window.app.export3mf(selectedFile)
-    }
-    MessageDialog {
-        id: unsavedDialog
-        property var pendingAction: null
-        title: "Unsaved changes"
-        text: "Save changes to “" + window.app.documentTitle + "”?"
-        buttons: MessageDialog.Save | MessageDialog.Discard | MessageDialog.Cancel
-        onButtonClicked: (button, role) => {
-            const action = pendingAction
-            pendingAction = null
-            if (button === MessageDialog.Discard) {
-                action()
-            } else if (button === MessageDialog.Save) {
-                if (window.app.hasProjectPath()) {
-                    if (window.app.saveProject())
-                        action()
-                } else {
-                    window.afterSave = action
-                    saveDialog.open()
-                }
-            }
-        }
     }
 }

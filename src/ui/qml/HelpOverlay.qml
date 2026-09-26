@@ -148,8 +148,11 @@ Rectangle {
                         title: "Files"
                         rows: [
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S"],
+                            ["Recent projects", "File → Open Recent"],
                             ["For printing", "File → Export STL or 3MF"],
-                            ["For other CAD", "File → Export STEP"]
+                            ["For other CAD", "File → Export STEP"],
+                            ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
+                            ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies"]
                         ]
                     }
                 }

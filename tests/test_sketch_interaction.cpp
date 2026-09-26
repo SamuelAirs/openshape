@@ -946,3 +946,44 @@ TEST(SketchInteraction, OffsetSelectedCurves)
     EXPECT_FALSE(h.session().isOffsetting());
     EXPECT_EQ(h.session().sketch().lines().size(), 8u);
 }
+
+// Preferences: "Snap sketches to the grid". On (the default), free points
+// round to the zoom-dependent grid; off, they land exactly under the pointer.
+TEST(SketchInteraction, GridSnapCanBeTurnedOff)
+{
+    for (const bool snap : {true, false}) {
+        Harness h;
+        h.controller.setSketchGridSnap(snap);
+        ASSERT_TRUE(h.controller.startSketch().ok());
+        h.controller.skipAnimation();
+        EXPECT_EQ(h.session().gridSnap(), snap) << "a new sketch takes the setting";
+        h.controller.setSketchTool(SketchTool::Line);
+        const Vec2 a{3.37, 7.21}, b{13.53, 19.87}; // 51 degrees: no horizontal/vertical inference
+        h.click(h.sketchScreen(a));
+        h.click(h.sketchScreen(b));
+        EXPECT_TRUE(h.controller.keyPress(Key::Escape));
+        const sketch::Sketch& s = h.session().sketch();
+        ASSERT_EQ(s.lines().size(), 1u);
+        const auto& line = s.lines().begin()->second;
+        const Vec2 p = s.point(line.start)->position, q = s.point(line.end)->position;
+        if (snap) {
+            for (double v : {p.x, p.y, q.x, q.y})
+                EXPECT_NEAR(v * 10, std::round(v * 10), 1e-9) << v << " is on the grid";
+            EXPECT_GT(std::abs(p.x - a.x) + std::abs(p.y - a.y), 1e-3) << "rounded, not where clicked";
+        } else {
+            EXPECT_NEAR(p.x, a.x, 1e-6);
+            EXPECT_NEAR(p.y, a.y, 1e-6);
+            EXPECT_NEAR(q.x, b.x, 1e-6);
+            EXPECT_NEAR(q.y, b.y, 1e-6);
+        }
+        // Existing points still snap with the grid off: a line from near the end point.
+        h.click(h.sketchScreen(q + Vec2{0.05, -0.04}));
+        h.click(h.sketchScreen({25.31, 4.12}));
+        EXPECT_TRUE(h.controller.keyPress(Key::Escape));
+        EXPECT_EQ(s.lines().size(), 2u);
+        EXPECT_EQ(s.points().size(), 4u) << "origin + 3 points: the second line starts on the first one's end";
+        // Changing the setting applies to the open sketch at once.
+        h.controller.setSketchGridSnap(!snap);
+        EXPECT_EQ(h.session().gridSnap(), !snap);
+    }
+}

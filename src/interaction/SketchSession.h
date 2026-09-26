@@ -51,6 +51,11 @@ public:
 
     SketchTool tool() const { return tool_; }
     void setTool(SketchTool tool);
+    // Points drawn away from existing geometry round to a zoom-dependent grid
+    // (Preferences: "Snap to grid"). Off: they land exactly under the pointer;
+    // points, midpoints and horizontal/vertical inference still snap.
+    bool gridSnap() const { return gridSnap_; }
+    void setGridSnap(bool on) { gridSnap_ = on; }
     bool isDrawing() const { return anchor_.has_value(); }
     // Offset (from the "Offset" action on selected curves): the pointer picks
     // the side and distance, a typed distance fixes it; click or Enter applies.
@@ -151,6 +156,7 @@ private:
     std::uint64_t syncedRevision_ = 0;
 
     SketchTool tool_ = SketchTool::Select;
+    bool gridSnap_ = true;
     Snap cursor_;
     bool cursorValid_ = false;
     std::optional<Snap> anchor_;                        // first point of the shape being drawn
