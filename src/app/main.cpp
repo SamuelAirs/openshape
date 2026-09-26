@@ -425,8 +425,9 @@ int main(int argc, char* argv[])
     std::unique_ptr<QTemporaryDir> scratch;
     if (automated && dataDir.isEmpty()) {
         scratch = std::make_unique<QTemporaryDir>(QDir::tempPath() + QStringLiteral("/openshape-run-XXXXXX"));
-        if (scratch->isValid())
-            dataDir = scratch->path();
+        // Never fall back to the user's folders.
+        dataDir = scratch->isValid() ? scratch->path()
+                                     : QDir::tempPath() + QStringLiteral("/openshape-run-%1").arg(QCoreApplication::applicationPid());
     }
     if (!dataDir.isEmpty()) {
         QDir().mkpath(dataDir);
