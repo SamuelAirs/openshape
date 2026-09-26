@@ -11,7 +11,7 @@ iPad Air 11-inch (M2), iPadOS 26.6.1.
 | Mac real-UI acceptance run (1024x653 window) | 🟡 127/144 checks (small-window failures being fixed) |
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
-| iPad app archive (`build-app.sh`) | ✅ 43 MB, arm64, iPadOS 17+, icon and privacy manifest |
+| iPad app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build) |
 | Signing + TestFlight upload (`testflight.sh`) | ⬜ waits for the owner's Apple Developer enrollment and the secrets |
 | Running on the iPad | ⬜ |
 

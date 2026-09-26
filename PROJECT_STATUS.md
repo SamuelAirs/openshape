@@ -44,7 +44,8 @@ first, tested version. Their follow-ups are the next tasks below.
   CI job (build, tests, Metal screenshot, acceptance run), `ipad.yml` and
   `scripts/ios/*` (iOS libraries, Qt for iOS, unsigned archive, cloud-signed
   TestFlight upload), an App Store icon. Verified on CI: the Mac app
-  builds and passes all tests; the iPad app archive builds (43 MB).
+  builds and passes all tests; the iPad app archive builds (50 MB) with
+  its QML plugins linked (the first archives had none: see DEVLOG).
   Signing/TestFlight waits for the owner's Apple Developer enrollment
   (pending since 2026-09-25) and the secrets (docs/IPAD.md).
 - **Waiting on the owner:** the Apple-side setup in docs/IPAD.md section 1

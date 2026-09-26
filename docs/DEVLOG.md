@@ -379,3 +379,14 @@ in landscape (820 pt tall, 44 pt buttons), and in portrait the bar covered
 the axis marker. The palette now ends above the bottom-left column, which
 moves above the view buttons in narrow windows. `--size WxH` reproduces
 iPad layouts on Windows (e.g. `--touch --size 820x1180`).
+
+**Static QML plugins on iOS.** Qt 6.11 links the QML plugins of a static
+build from a configure-time `qmlimportscanner` run over the *app target's*
+source dir (no `*_qml_plugin_imports.cpp` any more). OpenShape's QML lives
+in `src/ui`, so the scan found no imports: the iPad app linked and archived
+fine but would have started without QtQuick, Controls, Dialogs or Layouts.
+Only a build-time check caught it (`scripts/ios/build-app.sh` now fails on
+an empty scan and lists the modules). Fixed with the target property
+`QT_QML_IMPORT_SCANNER_EXTRA_ROOT_PATHS`. Other iOS-only link details:
+OpenCASCADE's static targets name FreeType plainly (`-L` needed), and Qt
+for iOS needs `QT_HOST_PATH` (the macOS Qt beside it).
