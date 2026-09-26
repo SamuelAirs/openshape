@@ -152,6 +152,18 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(r.clickItem(QStringLiteral("historySplit_") + idOf(r.body(0))),
                     "Split into bodies right under the body's warning in the Model panel");
             r.check(r.app().bodyCount() == 3, "it splits too", QString::number(r.app().bodyCount()));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().bodyCount() == 2, "undo: in two pieces again");
+        },
+        [&r] {
+            // The step that left the pieces (the Combine) offers it while expanded.
+            const QString step = QString::fromStdString(r.body(0).features().back()->id().toString());
+            r.check(r.clickItem(QStringLiteral("historyRow_") + step), "the Combine step's row");
+        },
+        [&r] {
+            const QString step = QString::fromStdString(r.body(0).features().back()->id().toString());
+            r.check(r.clickItem(QStringLiteral("historySplit_") + step), "Split into bodies on the step that left the pieces");
+            r.check(r.app().bodyCount() == 3, "that splits it as well", QString::number(r.app().bodyCount()));
         },
         [&r] {
             // An upstream edit through the Model panel: both pieces follow.
