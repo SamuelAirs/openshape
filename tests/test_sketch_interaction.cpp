@@ -1066,3 +1066,92 @@ TEST(SketchInteraction, PolygonToolSidesAndAcrossFlats)
     EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), hexagon * 5, 1e-4);
     EXPECT_TRUE(h.messages.empty());
 }
+
+// A "D": a line, a tangent half circle back over it, two lines closing it.
+TEST(SketchInteraction, TangentArcContinuesALine)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.controller.keyPress(Key::Escape);
+
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({10, 10})); // not the end of a curve
+    EXPECT_FALSE(h.session().isDrawing());
+    ASSERT_FALSE(h.messages.empty());
+    h.messages.clear();
+    h.click(h.sketchScreen({20, 0})); // the line's end
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({20, 20}));
+    // Straight ahead is no arc: the preview needs the pointer off the line's direction.
+    h.click(h.sketchScreen({20, 20}));
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 1u);
+    const auto& [arcId, arc] = *s.arcs().begin();
+    EXPECT_NEAR(s.arcRadius(arcId), 10.0, 1e-9);
+    EXPECT_NEAR((s.point(arc.center)->position - Vec2{20, 10}).length(), 0.0, 1e-9);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Tangent), 1u);
+    EXPECT_TRUE(h.session().isDrawing()) << "the chain continues from the arc's end";
+    h.controller.keyPress(Key::Escape);
+    EXPECT_FALSE(h.session().isDrawing());
+
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({20, 20}));
+    h.click(h.sketchScreen({0, 20}));
+    h.click(h.sketchScreen({0, 0}));
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 400 + 50 * kPi, 1e-6);
+
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({10, 10, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), (400 + 50 * kPi) * 10, 1e-3);
+    EXPECT_TRUE(h.messages.empty());
+}
+
+// A typed radius, then an S-bend continuing the first arc.
+TEST(SketchInteraction, TangentArcTypedRadiusAndChain)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({20, 0}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({20, 0}));
+    h.move(h.sketchScreen({27, 4})); // up and to the left of the line's direction: turns left
+    h.type("5");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.session().sketch().arcs().size(), 1u);
+    {
+        const sketch::Sketch& s = h.session().sketch();
+        const auto& [id, arc] = *s.arcs().begin();
+        EXPECT_NEAR(s.arcRadius(id), 5.0, 1e-9);
+        EXPECT_NEAR((s.point(arc.center)->position - Vec2{20, 5}).length(), 0.0, 1e-9);
+    }
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Radius), 1u);
+    // The chain goes on from the arc's end, heading along the arc: turn right now.
+    ASSERT_TRUE(h.session().isDrawing());
+    const Vec2 bendStart = h.session().sketch().point(h.session().sketch().arcs().begin()->second.end)->position;
+    const Vec2 heading = Vec2{-(bendStart.y - 5), bendStart.x - 20} * (1.0 / 5.0);
+    const Vec2 right{heading.y, -heading.x};
+    h.click(h.sketchScreen(bendStart + right * 12));
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 2u);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Tangent), 2u);
+    // The two centers lie on one line through the shared point, on opposite sides.
+    std::vector<Vec2> centers;
+    for (const auto& [id, arc] : s.arcs())
+        centers.push_back(s.point(arc.center)->position);
+    const Vec2 joint = bendStart;
+    EXPECT_NEAR((centers[0] - joint).length() + (centers[1] - joint).length(), (centers[0] - centers[1]).length(), 1e-6);
+    EXPECT_EQ(s.solveReport().conflicting.size(), 0u);
+    EXPECT_TRUE(h.messages.empty());
+}

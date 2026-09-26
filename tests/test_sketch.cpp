@@ -648,3 +648,57 @@ TEST(SketchEdit, PolygonOddCountsAndLimits)
     EXPECT_TRUE(addPolygon(s, {0, 0}, {0, 0}, 6).sides.empty());
     EXPECT_EQ(polygonCorners({0, 0}, {1, 0}, 64).size(), 64u);
 }
+
+namespace {
+// |cross| of (p - c1) and (p - c2): zero when both centers are on one line through p.
+double offLine(Vec2 p, Vec2 c1, Vec2 c2)
+{
+    return std::abs(cross(p - c1, p - c2)) / std::max((p - c1).length() * (p - c2).length(), 1e-12);
+}
+} // namespace
+
+TEST(Sketch, ArcsTangentAtASharedEndJoinSmoothly)
+{
+    // Arc 1 counterclockwise from (10, 0) to (0, 10) around the origin; arc 2
+    // continues it from (0, 10), turning the same way around (0, 5).
+    Sketch s;
+    const EntityId p = s.addPoint({0, 10});
+    const EntityId a1 = s.addArc(kOriginId, s.addPoint({10, 0}), p);
+    const EntityId c2 = s.addPoint({0, 5});
+    const EntityId a2 = s.addArc(c2, p, s.addPoint({-5, 5}));
+    ASSERT_NE(s.addConstraint({ConstraintKind::Tangent, a1, a2}), kNoEntity);
+    s.addConstraint({ConstraintKind::Radius, a2, kNoEntity, 3.0});
+    ASSERT_TRUE(solve(s).ok) << s.solveReport().message;
+    EXPECT_NEAR(s.arcRadius(a2), 3.0, 1e-9);
+    EXPECT_NEAR(offLine(pos(s, p), pos(s, kOriginId), pos(s, c2)), 0.0, 1e-9);
+    // Same side: the smaller arc's center lies between the point and the big center.
+    EXPECT_NEAR((pos(s, c2) - pos(s, p)).length() + (pos(s, c2) - pos(s, kOriginId)).length(),
+                (pos(s, p) - pos(s, kOriginId)).length(), 1e-9);
+    // Dragging the shared point keeps the join smooth.
+    ASSERT_TRUE(solveDragging(s, p, {-3, 9}).ok);
+    EXPECT_NEAR(offLine(pos(s, p), pos(s, kOriginId), pos(s, c2)), 0.0, 1e-7);
+    EXPECT_EQ(s.solveReport().conflicting.size(), 0u);
+    EXPECT_EQ(s.solveReport().redundant.size(), 0u);
+}
+
+TEST(Sketch, ArcsMeetingEndToEndMakeAnSBend)
+{
+    // Arc 1 ends at (0, 10) going left; arc 2 (counterclockwise from (-5, 15)
+    // to (0, 10) around (0, 15)) is traversed backwards: an S-bend.
+    Sketch s;
+    const EntityId p = s.addPoint({0, 10});
+    const EntityId a1 = s.addArc(kOriginId, s.addPoint({10, 0}), p);
+    const EntityId c2 = s.addPoint({0, 15});
+    const EntityId a2 = s.addArc(c2, s.addPoint({-5, 15}), p);
+    ASSERT_NE(s.addConstraint({ConstraintKind::Tangent, a1, a2}), kNoEntity);
+    s.addConstraint({ConstraintKind::Radius, a2, kNoEntity, 8.0});
+    ASSERT_TRUE(solve(s).ok) << s.solveReport().message;
+    EXPECT_NEAR(s.arcRadius(a2), 8.0, 1e-9);
+    // Opposite sides: the point lies between the two centers.
+    EXPECT_NEAR((pos(s, c2) - pos(s, p)).length() + (pos(s, p) - pos(s, kOriginId)).length(),
+                (pos(s, c2) - pos(s, kOriginId)).length(), 1e-9);
+    auto back = Sketch::fromJson(s.toJson());
+    ASSERT_TRUE(back.ok());
+    ASSERT_TRUE(solve(back.value()).ok);
+    EXPECT_NEAR((pos(back.value(), c2) - pos(back.value(), p)).length(), 8.0, 1e-9);
+}

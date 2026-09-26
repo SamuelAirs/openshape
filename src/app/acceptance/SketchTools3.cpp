@@ -163,7 +163,52 @@ std::vector<AcceptanceRunner::Step> polygon(AcceptanceRunner& r)
     return steps;
 }
 
-const bool registeredCenterRectangle = registerAcceptanceScenario({QStringLiteral("sketch3_centerrect"), 60, centerRectangle});
+// ---- Tangent arc -------------------------------------------------------------------------
+
+// A "D": a line, a tangent half circle back over it, two lines to close it.
+std::vector<AcceptanceRunner::Step> tangentArc(AcceptanceRunner& r)
+{
+    std::vector<AcceptanceRunner::Step> steps{
+        startSketch(r),
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_line")), "Line tool button");
+            r.click(r.screenPoint(0, 0, 0));
+            r.click(r.screenPoint(20, 0, 0));
+            r.key(Qt::Key_Escape);
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_tangentArc")), "Tangent arc tool button");
+            r.check(r.app().sketchTool() == QStringLiteral("tangentArc"), "the tangent arc tool is active", r.app().sketchTool());
+            r.click(r.screenPoint(20, 0, 0)); // the line's end
+            r.check(r.app().sketchDrawing(), "the arc starts on the line's end");
+            r.mouseMove(r.screenPoint(24, 12, 0));
+            r.click(r.screenPoint(20, 20, 0));
+            r.key(Qt::Key_Escape); // end the chain
+            const auto* s = activeSketch(r);
+            bool half = false;
+            if (s && s->arcs().size() == 1) {
+                const auto& [id, arc] = *s->arcs().begin();
+                half = std::abs(s->arcRadius(id) - 10) < 1e-6 && (s->point(arc.center)->position - Vec2{20, 10}).length() < 1e-6;
+            }
+            r.check(half, "a tangent half circle of radius 10 around (20, 10)");
+        },
+        [&r] {
+            r.key(Qt::Key_L, Qt::NoModifier, QStringLiteral("l"));
+            r.click(r.screenPoint(20, 20, 0));
+            r.click(r.screenPoint(0, 20, 0));
+            r.click(r.screenPoint(0, 0, 0));
+            const auto* s = activeSketch(r);
+            r.check(s && s->lines().size() == 3, "three lines and the arc", s ? QString::number(s->lines().size()) : QString());
+            r.screenshot(QStringLiteral("sketch3_tangent_arc"));
+        },
+    };
+    append(steps, finishAndExtrude(r, 10, 10, QStringLiteral("10"), (400 + 50 * kPi) * 10, QStringLiteral("D shape")));
+    return steps;
+}
+
+const bool registeredTangentArc = registerAcceptanceScenario({QStringLiteral("sketch3_tangentarc"), 62, tangentArc});
+const bool registeredCenterRectangle =registerAcceptanceScenario({QStringLiteral("sketch3_centerrect"), 60, centerRectangle});
 const bool registeredPolygon = registerAcceptanceScenario({QStringLiteral("sketch3_polygon"), 61, polygon});
 
 } // namespace

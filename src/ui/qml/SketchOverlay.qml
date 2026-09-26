@@ -61,7 +61,7 @@ Item {
         }
         if (!(event.modifiers & Qt.ControlModifier)) {
             const tools = { "l": "line", "r": "rectangle", "e": "centerRectangle", "p": "polygon", "c": "circle",
-                            "a": "arc", "o": "slot", "t": "trim", "s": "select" }
+                            "a": "arc", "g": "tangentArc", "o": "slot", "t": "trim", "s": "select" }
             const tool = tools[event.text.toLowerCase()]
             if (tool !== undefined && !app.sketchDrawing) {
                 app.setSketchTool(tool)
@@ -103,30 +103,6 @@ Item {
                 Layout.rightMargin: 6
             }
             Separator {}
-            Repeater {
-                model: [
-                    { id: "select", label: "Select", key: "S" },
-                    { id: "line", label: "Line", key: "L" },
-                    { id: "rectangle", label: "Rectangle", key: "R" },
-                    { id: "centerRectangle", label: "Center rect", key: "E" },
-                    { id: "polygon", label: "Polygon", key: "P" },
-                    { id: "circle", label: "Circle", key: "C" },
-                    { id: "arc", label: "Arc", key: "A" },
-                    { id: "slot", label: "Slot", key: "O" },
-                    { id: "trim", label: "Trim", key: "T" }
-                ]
-                delegate: ActionButton {
-                    required property var modelData
-                    objectName: "tool_" + modelData.id
-                    text: modelData.label
-                    checked: overlay.app.sketchTool === modelData.id
-                    onClicked: overlay.app.setSketchTool(modelData.id)
-                    ToolTip.visible: hovered
-                    ToolTip.text: modelData.label + " (" + modelData.key + ")"
-                    ToolTip.delay: 500
-                }
-            }
-            Separator {}
             ActionButton {
                 objectName: "finishSketchButton"
                 text: "Finish sketch"
@@ -135,6 +111,82 @@ Item {
                     overlay.app.finishSketch()
                     overlay.finished()
                 }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ tool palette
+    // On the left like the Create palette in model mode (a row of ten tools no
+    // longer fits between the top bar and the Model panel); scrolls when the
+    // window is too short for touch-sized buttons.
+    Panel {
+        id: toolPanel
+        objectName: "sketchToolPanel"
+        readonly property real minY: 2 * Theme.margin + Theme.controlHeight + 2 * Theme.panelPadding
+        readonly property real maxBottom: overlay.height - 64
+        anchors { left: parent.left; leftMargin: Theme.margin }
+        y: Math.max(minY, Math.min((overlay.height - height) / 2, maxBottom - height))
+        width: toolColumn.implicitWidth + 2 * Theme.panelPadding
+        height: Math.min(toolColumn.implicitHeight + 2 * Theme.panelPadding, maxBottom - minY)
+
+        Flickable {
+            id: toolScroll
+            anchors { fill: parent; margins: Theme.panelPadding }
+            contentWidth: width
+            contentHeight: toolColumn.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+
+            ColumnLayout {
+                id: toolColumn
+                width: Math.max(implicitWidth, toolScroll.width)
+                spacing: 4
+                Repeater {
+                    model: [
+                        { section: "Draw", id: "line", label: "Line", key: "L" },
+                        { id: "rectangle", label: "Rectangle", key: "R" },
+                        { id: "centerRectangle", label: "Center rectangle", key: "E" },
+                        { id: "polygon", label: "Polygon", key: "P" },
+                        { id: "circle", label: "Circle", key: "C" },
+                        { id: "arc", label: "Arc", key: "A" },
+                        { id: "tangentArc", label: "Tangent arc", key: "G" },
+                        { id: "slot", label: "Slot", key: "O" },
+                        { section: "Edit", id: "select", label: "Select", key: "S" },
+                        { id: "trim", label: "Trim", key: "T" }
+                    ]
+                    delegate: ColumnLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        spacing: 4
+                        SectionLabel {
+                            visible: modelData.section !== undefined
+                            text: modelData.section !== undefined ? modelData.section : ""
+                            Layout.topMargin: modelData.section === "Draw" ? 0 : 6
+                        }
+                        ActionButton {
+                            objectName: "tool_" + modelData.id
+                            text: modelData.label
+                            Layout.fillWidth: true
+                            checked: overlay.app.sketchTool === modelData.id
+                            onClicked: overlay.app.setSketchTool(modelData.id)
+                            ToolTip.visible: hovered
+                            ToolTip.text: modelData.label + " (" + modelData.key + ")"
+                            ToolTip.delay: 500
+                        }
+                    }
+                }
+            }
+        }
+        // More tools below: a fade at the bottom edge says "scroll".
+        Rectangle {
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
+            height: 28
+            radius: 12
+            visible: toolScroll.contentY + toolScroll.height < toolScroll.contentHeight - 1
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#00F9FAFB" }
+                GradientStop { position: 1.0; color: Theme.panel }
             }
         }
     }

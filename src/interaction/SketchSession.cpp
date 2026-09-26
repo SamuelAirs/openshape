@@ -278,6 +278,9 @@ void SketchSession::beginShape(const Snap& at)
     case SketchTool::Polygon: // the size across flats, then (Tab) the number of sides
         inputs_ = {{"size", "The size", "", false, 0}, {"sides", "Sides", "", false, 0}};
         break;
+    case SketchTool::TangentArc:
+        inputs_ = {{"radius", "R", "", false, 0}};
+        break;
     case SketchTool::Arc:  // the radius input appears once the end is placed
     case SketchTool::Slot: // the width input appears once the second center is placed
     case SketchTool::Trim:
@@ -291,6 +294,7 @@ void SketchSession::resetShape()
     anchor_.reset();
     arcEnd_.reset();
     chainStart_ = sketch::kNoEntity;
+    tangentStart_ = {};
     inputs_.clear();
     focusedInput_ = 0;
 }
@@ -348,11 +352,76 @@ Vec2 SketchSession::constrainedCursor() const
         break;
     case SketchTool::Arc:
     case SketchTool::Slot:
+    case SketchTool::TangentArc: // tangentArcShape() applies the typed radius
     case SketchTool::Trim:
     case SketchTool::Select:
         break;
     }
     return c;
+}
+
+std::optional<SketchSession::TangentStart> SketchSession::tangentStartAt(sketch::EntityId point) const
+{
+    // The curve ending at the point; the most recent one when several do.
+    TangentStart best;
+    const Vec2 p = working_.point(point) ? working_.point(point)->position : Vec2{};
+    for (const auto& [id, l] : working_.lines()) {
+        if (l.start != point && l.end != point)
+            continue;
+        const Vec2 other = working_.point(l.start == point ? l.end : l.start)->position;
+        const Vec2 d = p - other;
+        if (d.length() > 1e-9 && id > best.curve)
+            best = {id, d * (1.0 / d.length())};
+    }
+    for (const auto& [id, a] : working_.arcs()) {
+        if ((a.start != point && a.end != point) || id < best.curve)
+            continue;
+        const Vec2 r = p - working_.point(a.center)->position;
+        if (r.length() < 1e-9)
+            continue;
+        const Vec2 ccwTangent = Vec2{-r.y, r.x} * (1.0 / r.length());
+        // Leaving the arc's end we travel counterclockwise; leaving its start, clockwise.
+        best = {id, a.end == point ? ccwTangent : ccwTangent * -1.0};
+    }
+    if (best.curve == sketch::kNoEntity)
+        return std::nullopt;
+    return best;
+}
+
+std::optional<SketchSession::ArcShape> SketchSession::tangentArcShape() const
+{
+    if (!anchor_ || tangentStart_.curve == sketch::kNoEntity)
+        return std::nullopt;
+    const Vec2 s = anchor_->position, t = tangentStart_.direction, left{-t.y, t.x};
+    const Vec2 pointer = cursor_.position;
+    ArcShape arc;
+    Vec2 end;
+    // Which way it turns: toward the pointer's side of the tangent.
+    const double side = (pointer - s).dot(left);
+    if (const auto r = input("radius")) {
+        arc.center = s + left * (side < 0 ? -*r : *r);
+        const Vec2 out = pointer - arc.center;
+        if (out.length() < 1e-9)
+            return std::nullopt;
+        end = arc.center + out * (*r / out.length());
+        arc.radius = *r;
+    } else {
+        const Vec2 v = pointer - s;
+        if (std::abs(side) < 1e-6 * std::max(v.length(), 1e-9) || v.length() < 1e-9)
+            return std::nullopt; // straight ahead or behind: no finite arc
+        const double signedRadius = v.dot(v) / (2 * side);
+        arc.center = s + left * signedRadius;
+        arc.radius = std::abs(signedRadius);
+        end = pointer;
+    }
+    if ((end - s).length() < 1e-9)
+        return std::nullopt;
+    // Turning left is counterclockwise from the anchor; turning right is
+    // clockwise, i.e. counterclockwise from the far end back to the anchor.
+    arc.swapped = side < 0;
+    arc.start = arc.swapped ? end : s;
+    arc.end = arc.swapped ? s : end;
+    return arc;
 }
 
 std::optional<SketchSession::SlotShape> SketchSession::slotShape() const
@@ -568,6 +637,41 @@ bool SketchSession::finishShape(const Snap& endSnap)
         resetShape();
         return true;
     }
+    case SketchTool::TangentArc: {
+        cursor_ = endSnap;
+        const auto arc = tangentArcShape();
+        if (!arc) {
+            message("Move to the side of the curve's direction to bend the arc.");
+            return false;
+        }
+        const Vec2 farEnd = arc->swapped ? arc->start : arc->end;
+        const bool reuseEnd = !typed && end.point != sketch::kNoEntity && end.point != start.point;
+        const sketch::EntityId s = start.point;
+        const sketch::EntityId e = reuseEnd ? end.point : next.addPoint(farEnd);
+        const sketch::EntityId center = next.addPoint(arc->center);
+        const sketch::EntityId id = next.addArc(center, arc->swapped ? e : s, arc->swapped ? s : e);
+        if (id == sketch::kNoEntity)
+            return false;
+        next.addConstraint({sketch::ConstraintKind::Tangent, tangentStart_.curve, id});
+        if (const auto r = input("radius"))
+            next.addConstraint({sketch::ConstraintKind::Radius, id, sketch::kNoEntity, *r});
+        if (!commit(std::move(next), "Tangent arc"))
+            return false;
+        // Continue from the far end, tangent to the new arc (Esc ends the chain).
+        const sketch::EntityId farPoint = e;
+        const auto continued = tangentStartAt(farPoint);
+        if (reuseEnd || !continued || !working_.point(farPoint)) {
+            resetShape();
+            return true;
+        }
+        Snap nextStart;
+        nextStart.position = working_.point(farPoint)->position;
+        nextStart.point = farPoint;
+        nextStart.kind = SnapKind::Point;
+        beginShape(nextStart);
+        tangentStart_ = *continued;
+        return true;
+    }
     case SketchTool::Slot: {
         if (!arcEnd_) {
             // Second click: the other center. The pointer (or a typed width)
@@ -679,6 +783,16 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     const Snap snap = snapAt(event.position, camera, event.device);
     cursor_ = snap;
     cursorValid_ = true;
+    if (!anchor_ && tool_ == SketchTool::TangentArc) {
+        const auto start = snap.point != sketch::kNoEntity ? tangentStartAt(snap.point) : std::nullopt;
+        if (!start) {
+            message("Start a tangent arc on the end of a line or an arc.");
+            return true;
+        }
+        beginShape(snap);
+        tangentStart_ = *start;
+        return true;
+    }
     if (!anchor_)
         beginShape(snap);
     return true;
@@ -1323,6 +1437,9 @@ std::string SketchSession::hintText() const
         return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center";
     case SketchTool::Line:
         return anchor_ ? "Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line" : "Click the start point";
+    case SketchTool::TangentArc:
+        return anchor_ ? "Click where the arc ends, or type a radius and press Enter \xC2\xB7 Esc ends"
+                       : "Click the end of a line or arc to continue it with a tangent arc";
     case SketchTool::Arc:
         if (!anchor_)
             return "Click where the arc starts";
@@ -1422,7 +1539,7 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 measured = (c - a).length();
                 label.screen = screen((a + c) * 0.5) + Vec2{0, -26};
             } else if (in.key == "radius") {
-                const auto arc = arcShape();
+                const auto arc = tool_ == SketchTool::TangentArc ? tangentArcShape() : arcShape();
                 measured = arc ? arc->radius : 0;
                 label.screen = screen(cursor_.position) + Vec2{40, -18};
             } else if (in.key == "slot") {
@@ -1575,6 +1692,14 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                 out.lines.push_back({plane.toWorld(a), plane.toWorld(arcEnd_->position), SketchStyle::Guide});
             }
             break;
+        case SketchTool::TangentArc: {
+            // The direction it continues in, and the arc.
+            const double reach = 60 * camera.pixelSize(plane.toWorld(a));
+            out.lines.push_back({plane.toWorld(a), plane.toWorld(a + tangentStart_.direction * reach), SketchStyle::Guide});
+            if (const auto arc = tangentArcShape())
+                addArc(arc->center, arc->radius, arc->start, arc->end, SketchStyle::Preview);
+            break;
+        }
         case SketchTool::Slot:
             if (!arcEnd_) {
                 out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Guide}); // the axis so far

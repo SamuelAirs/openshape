@@ -198,6 +198,7 @@ QString AppController::sketchTool() const
     case interact::SketchTool::Trim: return QStringLiteral("trim");
     case interact::SketchTool::CenterRectangle: return QStringLiteral("centerRectangle");
     case interact::SketchTool::Polygon: return QStringLiteral("polygon");
+    case interact::SketchTool::TangentArc: return QStringLiteral("tangentArc");
     }
     return {};
 }
@@ -322,6 +323,8 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::CenterRectangle);
     else if (name == QLatin1String("polygon"))
         interaction_->setSketchTool(interact::SketchTool::Polygon);
+    else if (name == QLatin1String("tangentArc"))
+        interaction_->setSketchTool(interact::SketchTool::TangentArc);
 }
 
 QString AppController::sketchType(const QString& text)

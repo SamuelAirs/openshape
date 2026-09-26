@@ -119,7 +119,7 @@ Rectangle {
                     HelpSection {
                         title: "Sketch"
                         rows: [
-                            ["Tools", "S select · L line · R rectangle · E center rectangle · P polygon · C circle · A arc · O slot · T trim"],
+                            ["Tools", "On the left · S select · L line · R rectangle · E center rectangle · P polygon · C circle · A arc · G tangent arc · O slot · T trim"],
                             ["Center rectangle", "Click the center, then a corner (or type width, Tab, height): it stays centered"],
                             ["Polygon", "Click the center, move to the middle of a side; type the size across flats, Tab for the number of sides; − / + (or the - / + keys) change the sides"],
                             ["Slot", "Click both centers, then move or type the width"],
@@ -127,6 +127,7 @@ Rectangle {
                             ["Round a corner", "Select the corner point → Fillet, then click R to change it"],
                             ["Offset", "Select curves → Offset, move to a side, click or type a distance"],
                             ["Arc", "Click start, click end, then bend it (or type a radius)"],
+                            ["Tangent arc", "Click the end of a line or arc, then where the arc ends (or type a radius); it keeps going from there until Esc"],
                             ["Exact size while drawing", "Type, Tab to the next value, Enter"],
                             ["Stop drawing lines", "Right-click or Esc (again: leave the tool)"],
                             ["Change a dimension", "Click its label"],

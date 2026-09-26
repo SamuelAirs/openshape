@@ -192,7 +192,9 @@ Document (UUID, display unit)
   distance (signed), diameter, radius (arcs), parallel, perpendicular, equal
   (lengths or radii), tangent (line or round to round), concentric, point on
   line, point on circle, midpoint. A line and an arc tangent at a shared end
-  are solved as a direction (angle constraint), not "line touches circle".
+  are solved as a direction (angle constraint), not "line touches circle";
+  two arcs tangent at a shared end likewise tie their end angles (equal, or
+  half a turn apart for an S-bend), never circle-to-circle tangency.
   `sketch/SketchEdit` holds the edits behind tools that change geometry:
   `addSlot`, `filletCorner` (keeps the corner as a reference point on both
   lines), `trimAt` / `trimPreview` (pieces between crossings; new ends kept
@@ -276,8 +278,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   a construction circle and equal sides; an inner construction circle
   touching one side carries the size across flats; a `SketchCounter` shows
   the side count with -/+ buttons), Circle, Arc (3-point: start,
-  end, then bend; a typed radius locks it), Slot (two centers, then the
-  width) and Trim (click a piece, previewed red). Selected curves offer Offset (a mode: the pointer
+  end, then bend; a typed radius locks it), Tangent arc (starts on the end
+  of a line or arc, tangent to it, and chains on from its own end), Slot
+  (two centers, then the width) and Trim (click a piece, previewed red);
+  the tools sit in a palette on the left (`tool_<id>` object names). Selected curves offer Offset (a mode: the pointer
   picks the side, a typed distance fixes it, click/Enter applies); selected
   corner points offer Fillet. Starting a sketch on a plane where a visible sketch
   already lies (exactly coplanar), or with one of its profiles selected,

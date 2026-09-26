@@ -21,7 +21,7 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle, Polygon };
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle, Polygon, TangentArc };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
@@ -140,6 +140,15 @@ private:
         bool swapped = false; // start/end exchanged to keep it counterclockwise
     };
     std::optional<ArcShape> arcShape() const;
+    // Tangent arc tool: the curve a point ends and the direction of travel
+    // leaving it (continuing that curve); the arc from the anchor, tangent to
+    // that direction, to the cursor (or with the typed radius).
+    struct TangentStart {
+        sketch::EntityId curve = sketch::kNoEntity;
+        Vec2 direction;
+    };
+    std::optional<TangentStart> tangentStartAt(sketch::EntityId point) const;
+    std::optional<ArcShape> tangentArcShape() const;
     struct SlotShape {
         Vec2 a, b; // centers
         double radius = 0;
@@ -169,6 +178,7 @@ private:
     std::optional<Snap> anchor_;                        // first point of the shape being drawn
     std::optional<Snap> arcEnd_;                        // Arc tool: second click (the end); the third bends it
     sketch::EntityId chainStart_ = sketch::kNoEntity;   // first point of a line chain
+    TangentStart tangentStart_;                         // Tangent arc: the curve continued from the anchor
     std::vector<Input> inputs_;
     std::size_t focusedInput_ = 0;
     int polygonSides_ = 6;
