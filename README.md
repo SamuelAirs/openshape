@@ -95,9 +95,19 @@ it has been tested with simulated touch input, not yet on a real tablet.
    to run it without installing).
 2. Run the installer. It installs for your user only (no administrator
    rights needed) and adds OpenShape to the Start menu.
-3. The installer is **not code-signed yet**, so Windows SmartScreen may say
-   "Windows protected your PC": click **More info**, then **Run anyway**.
-   `SHA256SUMS.txt` on the release lets you check the download.
+3. Releases are **not code-signed yet** (each release's notes say whether it
+   is), so Windows SmartScreen may say "Windows protected your PC": click
+   **More info**, then **Run anyway**. `SHA256SUMS.txt` on the release lets
+   you check the download.
+
+## Code signing policy
+
+Signed Windows releases: free code signing provided by
+[SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/). What is signed, how releases
+are built and approved, the team roles and the privacy policy (OpenShape
+does not transfer any information to other networked systems unless you
+ask it to) are in [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md).
 
 ## Quick start: your first printed part
 
@@ -132,6 +142,8 @@ card.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the code is organized
 - [ROADMAP.md](ROADMAP.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md):
   where the project stands
+- [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md): code signing policy and
+  privacy
 - [docs/](docs/): file format, licensing, technical debt, development log
 
 ## License

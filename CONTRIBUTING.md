@@ -21,6 +21,11 @@ UI for features that don't work yet — no buttons that lead to "TODO".
 - Touch must remain a first-class input: no workflow may require hover,
   right-click, tiny targets or keyboard modifiers.
 - Imported files (projects, STEP, STL) are untrusted input.
+- Release builds decide what gets code-signed (`.github/workflows/release.yml`,
+  `scripts/windows/`, `packaging/`, `.signpath/`): they follow the code
+  signing policy in `docs/CODE_SIGNING.md` — signed files come only from CI
+  builds of this repository, other projects' binaries are never signed —
+  and the policy is updated with them.
 
 ## Code style
 

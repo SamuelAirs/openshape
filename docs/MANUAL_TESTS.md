@@ -107,8 +107,13 @@ check the installer automatically; this is the real thing, once, by hand.
 Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 `dist/` after BUILDING.md, "Release").
 
-1. **Install.** Windows SmartScreen warns (the installer is not signed yet):
-   "More info" → "Run anyway". No administrator prompt should appear. Click
+1. **Install.** An unsigned release: Windows SmartScreen warns
+   ("More info" → "Run anyway"). A signed one (its release notes say so,
+   docs/CODE_SIGNING.md): right-click the setup → Properties → Digital
+   Signatures shows **SignPath Foundation** and "This digital signature is
+   OK"; the same for the installed `OpenShape.exe`; if SmartScreen still
+   asks, it names SignPath Foundation as the publisher, not "Unknown
+   publisher". No administrator prompt should appear. Click
    through: the license page shows the MPL-2.0, the folder is
    `%LOCALAPPDATA%\Programs\OpenShape`. On the last page "Create a desktop
    shortcut" is off. **Leave it off** if you want to keep your current

@@ -312,6 +312,27 @@ workflow artifact. The Windows icon is made from the SVG with
 `python scripts/windows/make-icon.py` (needs MSYS2's `rsvg-convert`,
 `pacman -S mingw-w64-ucrt-x86_64-librsvg`).
 
+**Code signing** happens only in `release.yml`, through SignPath Foundation
+(docs/CODE_SIGNING.md: policy, and the owner's setup steps). It switches on
+when the repository has the secret `SIGNPATH_API_TOKEN` and the variable
+`SIGNPATH_ORGANIZATION_ID` (optional: `SIGNPATH_PROJECT_SLUG`, default
+`openshape`); without them the workflow runs exactly as above, unsigned, and
+says so in a notice. With them, `OpenShape.exe` is signed between steps 3
+and 4 (so the installer and the zip contain it signed) and the installer
+after step 4; tags use SignPath's `release-signing` policy (OpenCASCADE is
+then built in the run instead of restored from the cache; the owner approves
+each request, the workflow waits up to an hour each), other runs
+`test-signing`. `scripts/windows/use-signed.sh` accepts a returned file only
+if it is the sent file plus a signature (`scripts/windows/pe-signature.py`)
+and Windows accepts the signature, then updates `SHA256SUMS.txt`; the
+installer test runs on the signed installer. Checks you can run locally:
+
+```bash
+python scripts/windows/pe-signature.py self-test dist/OpenShape/OpenShape.exe  # 9 checks on made-up signatures
+python scripts/windows/pe-signature.py info <signed.exe>                        # where its signature is
+bash scripts/ci/install-notes.sh 0.2.0 0.2.0 v0.2.0 signed                       # release notes, signed variant
+```
+
 ### 7. Developer tools
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,

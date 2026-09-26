@@ -39,9 +39,9 @@ the copy that matches a release is in that release's source, under its tag
    [Releases page](https://github.com/SamuelAirs/openshape/releases). There
    is also a `.zip`: extract it anywhere and run `OpenShape.exe` inside, no
    installation needed.
-2. Run the installer. The installer is not code-signed yet, so Windows
-   SmartScreen may say "Windows protected your PC": click **More info**,
-   then **Run anyway**.
+2. Run the installer. Releases are not code-signed yet (each release's
+   notes say whether it is), so Windows SmartScreen may say "Windows
+   protected your PC": click **More info**, then **Run anyway**.
 3. It installs for your user only, without administrator rights, into
    `%LOCALAPPDATA%\Programs\OpenShape`, adds OpenShape to the Start menu
    (and, if you tick the box on the last page, to the desktop) and opens
@@ -628,7 +628,8 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
 ## Troubleshooting and bug reports
 
 - **"Windows protected your PC" when installing:** the installer is not
-  code-signed yet. Click **More info**, then **Run anyway**.
+  code-signed (the release notes say whether a release is). Click **More
+  info**, then **Run anyway**.
 - **The installer says OpenShape is running:** close OpenShape, then click
   **Retry**.
 - **A tool does nothing:** read the hint line (bottom left) and the red text
