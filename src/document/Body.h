@@ -24,6 +24,9 @@ enum class FeatureStatus {
 struct FeatureState {
     FeatureStatus status = FeatureStatus::NotComputed;
     geom::Shape output;      // body shape after this feature (valid when Ok/Suppressed)
+    // Why the step failed; or ErrorCode::NoEffect on an Ok step that changed
+    // nothing (its output is its input, and `note` says why). History
+    // recompute lets such a step through; adding one is refused.
     ErrorCode error = ErrorCode::None;
     std::string userMessage;
     std::string developerMessage;

@@ -60,7 +60,9 @@
 #include <gp_Trsf.hxx>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <functional>
 #include <mutex>
 #include <limits>
 #include <set>
@@ -274,62 +276,94 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
     });
 }
 
+namespace detail {
+
+std::optional<double> largestWorkingSize(double failed, std::chrono::steady_clock::duration firstAttempt,
+                                         const std::function<bool(double)>& works)
+{
+    using Clock = std::chrono::steady_clock;
+    const auto start = Clock::now();
+    Clock::duration slowest = firstAttempt;
+    int attempts = 0;
+    const auto affordable = [&] {
+        return attempts < kMaxSizeAttempts && Clock::now() - start + slowest <= kSizeBudget;
+    };
+    const auto attempt = [&](double size) {
+        const auto t0 = Clock::now();
+        const bool ok = works(size);
+        slowest = std::max(slowest, Clock::now() - t0);
+        ++attempts;
+        return ok;
+    };
+
+    std::optional<double> largest;
+    double lo = std::min(kTinySize, failed * 0.02);
+    double hi = failed;
+    if (affordable()) {
+        if (!attempt(lo)) {
+            largest = 0.0;
+        } else {
+            while (hi / lo > 1.02 && affordable()) {
+                const double mid = hi / lo > 2 ? std::sqrt(lo * hi) : (lo + hi) / 2;
+                (attempt(mid) ? lo : hi) = mid;
+            }
+            if (hi / lo <= 1.5)
+                largest = lo;
+        }
+    }
+    OS_LOG(Debug, Geometry) << "largestWorkingSize: " << attempts << " attempts, "
+                            << std::chrono::duration<double, std::milli>(Clock::now() - start).count() << " ms, "
+                            << (largest ? std::to_string(*largest) : std::string("unknown"));
+    return largest;
+}
+
+} // namespace detail
+
 namespace {
 
 // ---- Plain-language hints for sizes the kernel refuses --------------------------
 
 enum class SizedOperation { Fillet, Chamfer, Shell };
 
-// The largest size (fillet radius, chamfer distance, wall thickness) that
-// still works below one that failed, found by bisection within a time
-// budget: the user reads "Try 2.9 mm or less" instead of "Unable to...".
-// Feasibility is close to monotonic in the size for these operations.
-// Returns 0 when even a tiny size fails, nullopt when the budget ran out
-// before any size was known to work. The last answer is cached (a drag keeps
-// asking about the same shape and edges).
+using Clock = std::chrono::steady_clock;
+
+// detail::largestWorkingSize for one operation on one shape and items. The
+// last answer is cached, "unknown" included: a drag keeps asking about the
+// same shape and items, and should not wait for the search again.
 std::optional<double> largestWorkingSize(SizedOperation operation, const Shape& shape, const std::vector<int>& items,
-                                         double failed, const std::function<bool(double)>& works)
+                                         double failed, Clock::duration firstAttempt,
+                                         const std::function<bool(double)>& works)
 {
     struct Entry {
         SizedOperation operation;
         Shape shape; // held, so its address cannot be reused by another shape
         std::vector<int> items;
-        double largest;
+        std::optional<double> largest;
     };
     static std::mutex mutex;
     static std::optional<Entry> last;
     {
         std::lock_guard lock(mutex);
-        if (last && last->operation == operation && last->shape.sameAs(shape) && last->items == items && last->largest < failed)
+        if (last && last->operation == operation && last->shape.sameAs(shape) && last->items == items
+            && (!last->largest || *last->largest < failed))
             return last->largest;
     }
-    using Clock = std::chrono::steady_clock;
-    const auto start = Clock::now();
-    const auto budget = std::chrono::milliseconds(600);
-    double lo = failed * 0.02;
-    std::optional<double> largest;
-    if (!works(lo)) {
-        largest = 0.0;
-    } else {
-        double hi = failed;
-        for (int i = 0; i < 7 && Clock::now() - start < budget; ++i) {
-            const double mid = (lo + hi) / 2;
-            (works(mid) ? lo : hi) = mid;
-        }
-        largest = lo;
-    }
+    const std::optional<double> largest = detail::largestWorkingSize(failed, firstAttempt, works);
     std::lock_guard lock(mutex);
-    last = Entry{operation, shape, items, *largest};
+    last = Entry{operation, shape, items, largest};
     return largest;
 }
 
-// "2.9 mm": rounded down, so the suggested value itself works.
-std::string sizeText(double millimeters)
+// "2.9 mm", "0.11 in": two significant digits (half units from 10 up),
+// rounded down so the suggested value itself works.
+std::string sizeText(double millimeters, LengthUnit unit)
 {
-    const double step = millimeters >= 10 ? 0.5 : millimeters >= 1 ? 0.1 : millimeters >= 0.1 ? 0.01 : 0.001;
-    const double down = std::floor(millimeters / step + 1e-9) * step;
-    char text[32];
-    std::snprintf(text, sizeof text, step >= 0.1 ? "%.1f mm" : step >= 0.01 ? "%.2f mm" : "%.3f mm", down);
+    const double value = fromMillimeters(millimeters, unit);
+    const double step = value >= 10 ? 0.5 : std::pow(10.0, std::floor(std::log10(value)) - 1);
+    const double down = std::floor(value / step + 1e-9) * step;
+    const int decimals = std::max(1, static_cast<int>(std::lround(-std::log10(step))));
+    char text[48];
+    std::snprintf(text, sizeof text, "%.*f %s", decimals, down, std::string(unitSymbol(unit)).c_str());
     return text;
 }
 
@@ -356,9 +390,10 @@ bool isSmoothEdge(const Shape& shape, int edgeIndex)
     return normals[0]->Angle(*normals[1]) < 1.0 * kPi / 180;
 }
 
-// The message for an edge fillet or chamfer the kernel refused.
+// The message for an edge fillet or chamfer the kernel refused (the failed
+// attempt took `attempt`).
 std::string edgeSizeMessage(SizedOperation operation, const Shape& shape, const std::vector<int>& edges, double size,
-                            const std::function<bool(double)>& works)
+                            const SizeAdvice& advice, Clock::duration attempt, const std::function<bool(double)>& works)
 {
     const bool fillet = operation == SizedOperation::Fillet;
     const bool several = edges.size() > 1;
@@ -368,14 +403,14 @@ std::string edgeSizeMessage(SizedOperation operation, const Shape& shape, const 
             if (isSmoothEdge(shape, e))
                 return std::string(several ? "One of these edges" : "This edge") + " joins two faces smoothly, so there is no corner to "
                      + (fillet ? "round" : "bevel") + ". Select sharp edges only.";
-        const auto largest = largestWorkingSize(operation, shape, edges, size, works);
+        const auto largest = advice.suggest ? largestWorkingSize(operation, shape, edges, size, attempt, works) : std::nullopt;
         const std::string what = fillet ? "radius" : "distance";
         const std::string where = several ? "these edges" : "this edge";
         if (largest && *largest <= 0)
             return std::string("Unable to ") + (fillet ? "round " : "bevel ") + where
                  + " at any size. Try fewer edges at a time, or remove nearby rounded edges first.";
         if (largest && *largest >= kMinLength)
-            return "The " + what + " is too large for " + where + ". Try " + sizeText(*largest) + " or less.";
+            return "The " + what + " is too large for " + where + ". Try " + sizeText(*largest, advice.unit) + " or less.";
     } catch (const Standard_Failure&) {
     }
     return fillet ? "Unable to create this fillet. Try a smaller radius." : "Unable to create this chamfer. Try a smaller distance.";
@@ -443,7 +478,7 @@ Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, do
 
 } // namespace
 
-Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
+Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius, const SizeAdvice& advice)
 {
     if (edgeIndices.empty())
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to fillet.", "filletEdges: no edges");
@@ -454,15 +489,16 @@ Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndice
         if (!validIndex(shape, e, shape.edgeCount()))
             return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
                                           "filletEdges: edge index " + std::to_string(e) + " out of range");
+    const auto start = Clock::now();
     auto result = tryFillet(shape, edgeIndices, radius);
     if (result)
         return result;
-    const std::string message = edgeSizeMessage(SizedOperation::Fillet, shape, edgeIndices, radius,
+    const std::string message = edgeSizeMessage(SizedOperation::Fillet, shape, edgeIndices, radius, advice, Clock::now() - start,
                                                 [&](double r) { return tryFillet(shape, edgeIndices, r).ok(); });
     return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, message, result.developerMessage());
 }
 
-Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance)
+Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance, const SizeAdvice& advice)
 {
     if (edgeIndices.empty())
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to chamfer.", "chamferEdges: no edges");
@@ -473,15 +509,16 @@ Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndic
         if (!validIndex(shape, e, shape.edgeCount()))
             return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
                                           "chamferEdges: edge index " + std::to_string(e) + " out of range");
+    const auto start = Clock::now();
     auto result = tryChamfer(shape, edgeIndices, distance);
     if (result)
         return result;
-    const std::string message = edgeSizeMessage(SizedOperation::Chamfer, shape, edgeIndices, distance,
+    const std::string message = edgeSizeMessage(SizedOperation::Chamfer, shape, edgeIndices, distance, advice, Clock::now() - start,
                                                 [&](double d) { return tryChamfer(shape, edgeIndices, d).ok(); });
     return Result<Shape>::failure(ErrorCode::ChamferTooLarge, message, result.developerMessage());
 }
 
-Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
+Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness, const SizeAdvice& advice)
 {
     if (openFaces.empty())
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the face(s) to open.", "shell: no faces");
@@ -492,16 +529,18 @@ Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, doubl
         if (!validIndex(shape, f, shape.faceCount()))
             return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
                                           "shell: face index " + std::to_string(f) + " out of range");
+    const auto start = Clock::now();
     auto result = tryShell(shape, openFaces, thickness);
     if (result)
         return result;
     std::string message = "Unable to shell with this wall thickness. Try thinner walls.";
-    const auto largest = largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness,
-                                            [&](double t) { return tryShell(shape, openFaces, t).ok(); });
+    const auto largest = advice.suggest ? largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness, Clock::now() - start,
+                                                             [&](double t) { return tryShell(shape, openFaces, t).ok(); })
+                                        : std::nullopt;
     if (largest && *largest <= 0)
         message = "Unable to hollow this body with these faces open. Try opening a different face.";
     else if (largest && *largest >= kMinLength)
-        message = "The walls are too thick for this body. Try " + sizeText(*largest) + " or less.";
+        message = "The walls are too thick for this body. Try " + sizeText(*largest, advice.unit) + " or less.";
     return Result<Shape>::failure(ErrorCode::ShellTooThick, message, result.developerMessage());
 }
 

@@ -91,7 +91,9 @@ Status AddFeatureCommand::execute(doc::Document& document)
     if (!document.body(bodyId_))
         return missingBody();
     const doc::FeatureState& state = document.insertFeature(bodyId_, prototype_->clone(), index_);
-    if (state.status != doc::FeatureStatus::Ok) {
+    // A new step that would change nothing is refused (the recompute lets it
+    // through as a warning so that existing histories keep building).
+    if (state.status != doc::FeatureStatus::Ok || state.error == ErrorCode::NoEffect) {
         Status failure = failureFrom(state);
         document.removeFeature(prototype_->id());
         return failure;
@@ -161,7 +163,7 @@ Status SetParameterCommand::execute(doc::Document& document)
     document.featureChanged(featureId_);
 
     const doc::FeatureState& state = body->state(body->featureIndex(featureId_));
-    if (rejectIfFeatureFails_ && state.status == doc::FeatureStatus::Failed) {
+    if (rejectIfFeatureFails_ && (state.status == doc::FeatureStatus::Failed || state.error == ErrorCode::NoEffect)) {
         Status failure = failureFrom(state);
         (void)feature->setParameter(key_, oldValue_);
         document.featureChanged(featureId_);

@@ -135,12 +135,14 @@ void Document::featureChanged(const Uuid& featureId)
 
 Result<geom::Shape> Document::preview(const Uuid& bodyId, const Feature& feature) const
 {
+    EvalContext interactive = context();
+    interactive.interactive = true; // refusals may name a size that works
     if (bodyId.isNil())
-        return feature.compute({}, context());
+        return feature.compute({}, interactive);
     const Body* b = body(bodyId);
     if (!b)
         return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "preview: unknown body");
-    return feature.compute(b->shape(), context());
+    return feature.compute(b->shape(), interactive);
 }
 
 sketch::Sketch* Document::sketch(const Uuid& id) const

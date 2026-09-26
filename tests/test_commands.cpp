@@ -63,7 +63,9 @@ TEST(Commands, FailedCommandLeavesNoTrace)
     auto status = f.stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(fillet)), f.document);
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.error(), ErrorCode::FilletRadiusTooLarge);
-    EXPECT_TRUE(status.userMessage().starts_with("The radius is too large for these edges. Try ")) << status.userMessage();
+    // Committed without a preview, the message is the general one (naming a
+    // size that works costs extra kernel attempts: previews do it).
+    EXPECT_EQ(status.userMessage(), "Unable to create this fillet. Try a smaller radius.");
     EXPECT_EQ(f.stack.size(), 1u);
     EXPECT_EQ(f.document.body(id)->features().size(), 1u);
     EXPECT_NEAR(geom::volume(f.document.body(id)->shape()), 1000.0, 1e-6);

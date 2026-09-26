@@ -19,6 +19,8 @@
 #include "interaction/InteractionController.h"
 #include "sketch/Sketch.h"
 
+#include "PortableRandom.h"
+
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
@@ -292,11 +294,9 @@ public:
         return after == before + 1;
     }
 
-    std::mt19937& rng() { return rng_; }
-
 private:
-    double uniform(double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng_); }
-    int integer(int lo, int hi) { return std::uniform_int_distribution<int>(lo, hi)(rng_); }
+    double uniform(double lo, double hi) { return rng_.uniform(lo, hi); }
+    int integer(int lo, int hi) { return rng_.integer(lo, hi); }
     bool chance(double p) { return uniform(0, 1) < p; }
     template <typename T>
     const T& pickFrom(const std::vector<T>& v) { return v[std::size_t(integer(0, int(v.size()) - 1))]; }
@@ -431,7 +431,7 @@ private:
                 lines.push_back(e);
         if (lines.empty())
             return;
-        std::shuffle(lines.begin(), lines.end(), rng_);
+        rng_.shuffle(lines);
         lines.resize(std::min<std::size_t>(lines.size(), std::size_t(integer(1, 3))));
         std::unique_ptr<doc::EdgeTreatmentFeature> feature;
         if (fillet)
@@ -618,7 +618,7 @@ private:
                 visible.push_back(b);
         if (visible.size() < 2)
             return;
-        std::shuffle(visible.begin(), visible.end(), rng_);
+        rng_.shuffle(visible);
         const doc::CombineMode mode = std::array{doc::CombineMode::Union, doc::CombineMode::Subtract,
                                                  doc::CombineMode::Intersect}[std::size_t(integer(0, 2))];
         if (!controller_.selectBody(visible[0]->id(), false) || !controller_.selectBody(visible[1]->id(), true))
@@ -747,7 +747,7 @@ private:
     doc::Document& document_;
     cmd::UndoStack& stack_;
     interact::InteractionController& controller_;
-    std::mt19937 rng_;
+    PortableRandom rng_; // the same sessions with every standard library
 };
 
 // A document, undo stack and controller, as the application has them.

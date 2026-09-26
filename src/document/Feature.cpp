@@ -102,6 +102,12 @@ Result<geom::Shape> reworded(Result<geom::Shape> result, ErrorCode code, const c
     return result;
 }
 
+// Previews name a size that works, in the document's unit; recompute does not.
+geom::SizeAdvice sizeAdvice(const EvalContext& context)
+{
+    return {context.interactive, context.document ? context.document->displayUnit() : LengthUnit::Millimeter};
+}
+
 Status requirePositive(double value, const char* what)
 {
     if (!(value > 0.0) || !std::isfinite(value))
@@ -272,20 +278,20 @@ Status EdgeTreatmentFeature::readParams(const json& in)
     return okStatus();
 }
 
-Result<geom::Shape> FilletFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> FilletFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     auto indices = resolveEdges(input);
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
-    return geom::filletEdges(input, indices.value(), size);
+    return geom::filletEdges(input, indices.value(), size, sizeAdvice(context));
 }
 
-Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     auto indices = resolveEdges(input);
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
-    return geom::chamferEdges(input, indices.value(), size);
+    return geom::chamferEdges(input, indices.value(), size, sizeAdvice(context));
 }
 
 // ---- Combine --------------------------------------------------------------------
@@ -652,7 +658,7 @@ Status PatternFeature::readParams(const json& in)
 
 // ---- Shell ----------------------------------------------------------------------
 
-Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     std::vector<int> indices;
     for (const FaceRef& ref : faces) {
@@ -662,7 +668,7 @@ Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalCo
                                                 "A face this shell opens no longer exists.", "Shell face unresolved");
         indices.push_back(*index);
     }
-    return geom::shell(input, indices, thickness);
+    return geom::shell(input, indices, thickness, sizeAdvice(context));
 }
 
 std::vector<ParameterInfo> ShellFeature::parameters() const
@@ -885,8 +891,13 @@ Result<geom::Shape> HoleFeature::compute(const geom::Shape& input, const EvalCon
                                     depth + kLead);
     if (!drill)
         return drill;
+    // Drilled from the rim of a hole at least as wide and deep, the drill
+    // only meets air: the insert fits the hole as it is.
+    const bool fitsAlready = diameter / 2 <= placement->rimRadius + 1e-6;
     return reworded(geom::booleanOp(input, drill.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
-                    "The hole does not reach into the body.");
+                    fitsAlready ? "This hole is already wide and deep enough for the insert, so nothing would change. "
+                                  "Pick a smaller hole, or a larger insert."
+                                : "The hole does not reach into the body. Pick the rim of a hole on a flat face.");
 }
 
 std::vector<ParameterInfo> HoleFeature::parameters() const

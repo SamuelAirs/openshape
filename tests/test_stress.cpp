@@ -184,13 +184,13 @@ class InterleavedStress : public ::testing::TestWithParam<unsigned> {};
 TEST_P(InterleavedStress, EveryUndoRedoStateMatchesTheRecordedOne)
 {
     StressSession s(GetParam());
-    std::mt19937 rng(GetParam() * 7919u);
+    PortableRandom rng(GetParam() * 7919u);
     std::vector<Snapshot> snapshots{s.snapshot()};
     std::vector<std::string> texts{describe(s.document)}; // for failure messages
     std::vector<std::string> log;
     int undos = 0, redos = 0, edits = 0;
     for (int step = 0; step < 150; ++step) {
-        const double roll = std::uniform_real_distribution<double>(0, 1)(rng);
+        const double roll = rng.unit();
         if (roll < 0.25 && s.stack.canUndo()) {
             ASSERT_TRUE(s.controller.undo());
             ++undos;
@@ -232,11 +232,11 @@ class SaveOpenStress : public ::testing::TestWithParam<unsigned> {};
 TEST_P(SaveOpenStress, ReopenedDocumentEqualsLiveOne)
 {
     StressSession s(GetParam());
-    std::mt19937 rng(GetParam() * 104729u);
+    PortableRandom rng(GetParam() * 104729u);
     std::vector<std::string> log;
     int saves = 0;
     for (int round = 0; round < 6; ++round) {
-        s.build(std::uniform_int_distribution<int>(6, 14)(rng), &log);
+        s.build(rng.integer(6, 14), &log);
         const Snapshot live = s.snapshot();
         const auto path = uniqueTempPath("stress");
         ASSERT_TRUE(io::saveProject(s.document, path).ok());

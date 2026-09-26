@@ -283,7 +283,7 @@ TEST(ProjectFuzz, CorpusIsValid)
 
 TEST(ProjectFuzz, TruncatedAndBitFlippedArchives)
 {
-    std::mt19937 rng(1234);
+    PortableRandom rng(1234);
     int loaded = 0, refused = 0;
     for (const std::string& valid : corpus().archives) {
         // Truncation at the edges and inside every structure.
@@ -293,10 +293,10 @@ TEST(ProjectFuzz, TruncatedAndBitFlippedArchives)
         // Random byte flips (1 to 8 bytes).
         for (int round = 0; round < 24; ++round) {
             std::string bytes = valid;
-            const int flips = std::uniform_int_distribution<int>(1, 8)(rng);
+            const int flips = rng.integer(1, 8);
             for (int f = 0; f < flips; ++f) {
-                const std::size_t at = std::uniform_int_distribution<std::size_t>(0, bytes.size() - 1)(rng);
-                bytes[at] = char(bytes[at] ^ (1 << std::uniform_int_distribution<int>(0, 7)(rng)));
+                const std::size_t at = rng.index(0, bytes.size() - 1);
+                bytes[at] = char(bytes[at] ^ (1 << rng.integer(0, 7)));
             }
             (loadChecked(bytes, "flipped " + std::to_string(flips) + " bytes, round " + std::to_string(round)).loaded ? loaded
                                                                                                                   : refused)++;
@@ -312,7 +312,7 @@ TEST(ProjectFuzz, TruncatedAndBitFlippedArchives)
 
 TEST(ProjectFuzz, BrokenJsonText)
 {
-    std::mt19937 rng(99);
+    PortableRandom rng(99);
     const std::string& text = corpus().documents[0];
     std::vector<std::pair<std::string, std::string>> cases{
         {"empty", ""},
@@ -340,9 +340,9 @@ TEST(ProjectFuzz, BrokenJsonText)
     };
     for (int round = 0; round < 30; ++round) {
         std::string s = text;
-        const std::size_t at = std::uniform_int_distribution<std::size_t>(0, s.size() - 1)(rng);
+        const std::size_t at = rng.index(0, s.size() - 1);
         const char junk[] = {'{', '}', '[', ']', ',', ':', '"', '\\', '0', 'e', '-'};
-        s.insert(s.begin() + std::ptrdiff_t(at), junk[std::uniform_int_distribution<int>(0, 10)(rng)]);
+        s.insert(s.begin() + std::ptrdiff_t(at), junk[rng.integer(0, 10)]);
         cases.push_back({"junk character at " + std::to_string(at), s});
     }
     for (const auto& [what, documentJson] : cases)
@@ -353,7 +353,7 @@ TEST(ProjectFuzz, BrokenJsonText)
 // hostile number; keys removed; arrays emptied.
 TEST(ProjectFuzz, WrongTypesAndHostileValues)
 {
-    std::mt19937 rng(4242);
+    PortableRandom rng(4242);
     const std::vector<json> replacements{
         json(), json(true), json("text"), json::array(), json::object(), json::array({1, 2}), json(0), json(-1),
         json(1e308), json(-1e308), json(1e-300), json(std::uint64_t(1) << 63), json(-2147483648LL), json(4294967296LL),
@@ -368,12 +368,12 @@ TEST(ProjectFuzz, WrongTypesAndHostileValues)
         const int rounds = doc == 0 ? 120 : 40;
         for (int round = 0; round < rounds; ++round) {
             json j = valid;
-            const auto& target = pointers[std::uniform_int_distribution<std::size_t>(1, pointers.size() - 1)(rng)];
+            const auto& target = pointers[rng.index(1, pointers.size() - 1)];
             std::string what = target.to_string();
             // Pattern counts only get small values: a valid 500-copy pattern
             // is slow, not wrong.
             const bool isCount = what.ends_with("/count");
-            const int kind = std::uniform_int_distribution<int>(0, 9)(rng);
+            const int kind = rng.integer(0, 9);
             if (kind == 0) {
                 // Remove the key or element.
                 const auto parent = target.parent_pointer();
@@ -383,7 +383,7 @@ TEST(ProjectFuzz, WrongTypesAndHostileValues)
                     j.at(parent).erase(std::stoul(target.back()));
                 what += " removed";
             } else {
-                const json& value = replacements[std::uniform_int_distribution<std::size_t>(0, replacements.size() - 1)(rng)];
+                const json& value = replacements[rng.index(0, replacements.size() - 1)];
                 if (isCount && value.is_number() && std::abs(value.get<double>()) > 600)
                     continue;
                 j.at(target) = value;

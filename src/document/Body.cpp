@@ -122,7 +122,21 @@ void Body::recompute(int fromIndex, const EvalContext& context)
         local.body = this;
         local.featureIndex = static_cast<int>(i);
         auto result = feature.compute(current, local);
-        if (result) {
+        if (!result && result.error() == ErrorCode::NoEffect) {
+            // A step that no longer changes anything (a cut an upstream edit
+            // moved off the body, or one saved by an older version that
+            // allowed it) passes its input on with a warning: the steps after
+            // it still build. New steps that would do nothing are refused
+            // when they are added (AddFeatureCommand checks `error`).
+            state.status = FeatureStatus::Ok;
+            state.output = current;
+            state.error = ErrorCode::NoEffect;
+            state.userMessage = result.userMessage();
+            state.developerMessage = result.developerMessage();
+            state.note = result.userMessage();
+            OS_LOG(Info, Document) << "feature " << feature.id().toString() << " (" << toString(feature.kind())
+                                   << ") changes nothing: " << result.developerMessage();
+        } else if (result) {
             state.status = FeatureStatus::Ok;
             state.output = result.value();
             current = result.value();

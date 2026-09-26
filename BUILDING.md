@@ -136,8 +136,10 @@ No installer yet, and not distributable yet (TD-17).
 
 - **Longer stress hunts** — the robustness suite runs a few fixed seeds;
   `OPENSHAPE_STRESS_SEEDS=N` runs N other seeds of each random session
-  instead (undo/redo, interleaved, save/open; ~3 s each). Failures print the
-  action log and every body's steps with status:
+  instead (undo/redo, interleaved, save/open; ~3 s each). A seed replays the
+  same session on Windows and macOS (`tests/PortableRandom.h`: no standard
+  distributions, whose output differs between libstdc++ and libc++).
+  Failures print the action log and every body's steps with status:
 
   ```bash
   OPENSHAPE_STRESS_SEEDS=20 GTEST_FILTER='Seeds/*' ./build/msys2-ucrt64/bin/test_robustness.exe

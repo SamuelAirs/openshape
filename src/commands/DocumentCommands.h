@@ -31,7 +31,8 @@ private:
 };
 
 // Appends (or inserts) a feature into a body's history. Fails, leaving the
-// document untouched, if the feature itself cannot be computed.
+// document untouched, if the feature itself cannot be computed or would
+// change nothing (ErrorCode::NoEffect: a cut that misses the body).
 class AddFeatureCommand final : public Command {
 public:
     AddFeatureCommand(Uuid bodyId, std::unique_ptr<doc::Feature> feature, int index = -1);
@@ -74,9 +75,10 @@ private:
 };
 
 // Changes one scalar parameter of a feature. Downstream features recompute.
-// With rejectIfFeatureFails, an edit that makes this feature fail is refused
-// (used by direct manipulation); otherwise it is kept and the failure shown
-// in the history (used by history editing).
+// With rejectIfFeatureFails, an edit that makes this feature fail, or change
+// nothing (ErrorCode::NoEffect), is refused (used by direct manipulation);
+// otherwise it is kept and the failure shown in the history (used by history
+// editing).
 class SetParameterCommand final : public Command {
 public:
     SetParameterCommand(Uuid featureId, std::string key, double value, bool rejectIfFeatureFails = true);

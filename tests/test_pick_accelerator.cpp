@@ -12,6 +12,8 @@
 #include "selection/PickAccelerator.h"
 #include "selection/Picking.h"
 
+#include "PortableRandom.h"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -125,8 +127,8 @@ TEST(PickAccelerator, TreeCoversEveryTriangleAndSegment)
 
 TEST(PickAccelerator, NearestHitMatchesLinearScanForRandomRays)
 {
-    std::mt19937 rng(7);
-    std::uniform_real_distribution<double> unit(-1, 1);
+    test::PortableRandom rng(7);
+    const auto unit = [](test::PortableRandom& r) { return r.uniform(-1, 1); };
     for (const Model& m : models()) {
         const geom::Mesh& mesh = *m.accelerated.front().mesh;
         const auto& acc = *m.accelerated.front().accelerator;
@@ -190,8 +192,8 @@ TEST(PickAccelerator, TiesGoToTheFirstTriangle)
 
 TEST(PickAccelerator, PickingMatchesTheLinearScan)
 {
-    std::mt19937 rng(2024);
-    std::uniform_real_distribution<double> unit(0, 1);
+    test::PortableRandom rng(2024);
+    const auto unit = [](test::PortableRandom& r) { return r.unit(); };
     int compared = 0, edgeHits = 0, faceHits = 0;
     double slowMs = 0, fastMs = 0;
     for (const Model& m : models()) {

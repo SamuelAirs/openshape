@@ -5,12 +5,14 @@
 // Robustness in the real window: hover and click picking (through the
 // pick accelerator), a refused fillet whose message names a radius that
 // works, a mirror that would change nothing saying why in the hint line,
-// and a damaged project file refused with a plain message.
+// a damaged project file refused with a plain message, and a circle
+// beside a body pushed in becoming a new body instead of an empty cut.
 
 #include "app/AcceptanceRunner.h"
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "interaction/Operation.h"
 #include "io/ProjectFile.h"
 #include "ui/AppController.h"
 
@@ -137,6 +139,75 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(!state->messages.isEmpty() && state->messages.back().contains(QStringLiteral("damaged")),
                     "the user is told the file is damaged", state->messages.isEmpty() ? QString() : state->messages.back());
             QFile::remove(path);
+        },
+        // A circle beside the box, pushed in: the automatic cut would remove
+        // nothing, so it becomes a new body (as a join that misses does).
+        [&r] {
+            r.app().newDocument();
+            r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+            r.check(r.app().bodyCount() == 1, "a new 20 mm box to sketch beside");
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.click(r.screenPoint(0, 0, 20));
+            r.key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+            r.check(r.app().sketchMode(), "K on the top face starts a sketch on it");
+        },
+        [] {}, [] {}, [] {}, [] {}, // camera turns to face the sketch plane
+        [&r] {
+            r.key(Qt::Key_C, Qt::NoModifier, QStringLiteral("c"));
+            const QPointF center = r.screenPoint(17, 0, 20);
+            r.check(r.window()->contentItem()->contains(center), "the point beside the box is on screen",
+                    QStringLiteral("%1, %2").arg(center.x()).arg(center.y()));
+            r.click(center);
+            r.mouseMove(r.screenPoint(19, 0, 20));
+            r.type(QStringLiteral("6"));
+            r.key(Qt::Key_Return);
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(session && session->sketch().circles().size() == 1, "a 6 mm circle beside the box");
+            r.check(r.clickItem(QStringLiteral("finishSketchButton")), "Finish sketch button");
+        },
+        [] {}, [] {}, [] {},
+        [&r] { r.check(r.clickItem(QStringLiteral("viewIso")), "Iso view button"); },
+        [] {}, [] {}, [] {}, [] {},
+        [&r] {
+            r.click(r.screenPoint(17, 0, 20));
+            r.check(r.app().operationTitle() == QStringLiteral("Extrude"), "clicking the circle offers extrude",
+                    r.app().operationTitle());
+        },
+        // Drag the arrow down, beside the box.
+        [&r, &in] {
+            const auto* op = in.operation();
+            r.check(op != nullptr, "an extrude to drag");
+            if (!op)
+                return;
+            const Vec3 anchor = op->anchor();
+            const double px = in.camera().pixelSize(anchor);
+            const interact::ArrowStyle style;
+            const Vec3 grab = anchor + op->manipulator().direction() * ((style.gapPx + style.shaftPx * 0.6) * px);
+            const QPointF from = r.screenPoint(grab.x, grab.y, grab.z);
+            r.drag(from, from + QPointF(0, 80));
+            const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(in.operation());
+            r.check(extrude && extrude->value() < -1.0, "dragging the arrow down pushes the circle in",
+                    extrude ? AcceptanceRunner::num(extrude->value()) : QStringLiteral("no extrude"));
+            r.check(extrude && extrude->mode() == doc::ExtrudeMode::NewBody,
+                    "a cut that would remove nothing becomes a new body");
+            r.check(r.app().operationCanCommit(), "it can be applied");
+            r.check(r.app().bodyCount() == 1, "the drag only previews");
+            r.screenshot(QStringLiteral("robustness_cut_beside_becomes_body"));
+        },
+        [&r] {
+            r.key(Qt::Key_Return);
+            r.check(r.app().bodyCount() == 2, "Enter adds a second body");
+            if (r.app().bodyCount() != 2)
+                return;
+            const auto pin = geom::boundingBox(r.body(1).shape());
+            r.check(std::abs(pin.max.z - 20) < 1e-6 && pin.min.z < 19, "the new body hangs below the sketch plane",
+                    AcceptanceRunner::num(pin.min.z) + QStringLiteral(" .. ") + AcceptanceRunner::num(pin.max.z));
+            r.check(std::abs(pin.min.x - 14) < 1e-6 && std::abs(pin.max.x - 20) < 1e-6, "beside the box",
+                    AcceptanceRunner::num(pin.min.x) + QStringLiteral(" .. ") + AcceptanceRunner::num(pin.max.x));
+            r.check(std::abs(geom::volume(r.body(0).shape()) - 8000.0) < 1e-6, "the box is untouched",
+                    AcceptanceRunner::num(geom::volume(r.body(0).shape())));
         },
     };
 }

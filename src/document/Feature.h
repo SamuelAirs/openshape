@@ -36,6 +36,10 @@ struct EvalContext {
     // feature being evaluated (earlier features' results are current).
     const Body* body = nullptr;
     int featureIndex = -1;
+    // Set for interactive previews (Document::preview): a refused fillet,
+    // chamfer or shell may then spend a few more kernel attempts to name a
+    // size that works (geom::SizeAdvice). Not during history recompute.
+    bool interactive = false;
     const sketch::Sketch* sketch(const Uuid& id) const;
 };
 

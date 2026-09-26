@@ -123,16 +123,29 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   neighbours could not follow (e.g. tangent fillets) and the edit is refused.
 - **Nothing fails silently or does nothing silently.** A subtraction must
   remove volume, a mirror or pattern must add some, an intersection must
-  leave some: otherwise the step fails with `ErrorCode::NoEffect` (or
+  leave some: otherwise the operation fails with `ErrorCode::NoEffect` (or
   `EmptyResult`) and a message saying why ("This cut does not reach the
   body…", "The copies land on top of the original…"); features reword the
   kernel layer's generic text for their context (`reworded()` in
-  `Feature.cpp`). A fillet, chamfer or shell the kernel refuses is retried
-  by bisection (≤ 8 attempts, 600 ms budget, last answer cached for drags)
-  to name a size that works ("The radius is too large for this edge. Try
-  2.9 mm or less."); an edge between tangent faces is reported as having no
-  corner to round. Suggested sizes are in mm (the kernel layer does not
-  know the display unit).
+  `Feature.cpp`). A **new** step that would change nothing is refused
+  (previews, `AddFeatureCommand`, a direct-manipulation `SetParameterCommand`);
+  during history recompute such a step passes its input on as an `Ok` step
+  with a warning note, so an upstream edit that moves a cut off the body, or
+  a file from an older version, does not block the steps after it.
+- **Refused sizes name one that works** (`geom::SizeAdvice`). Only
+  interactive previews ask for it (`EvalContext::interactive`, set by
+  `Document::preview`): a fillet, chamfer or shell the kernel refuses is then
+  retried to find the largest size that works, and the message names it in
+  the document's display unit ("The radius is too large for this edge. Try
+  2.9 mm or less."). The search (`geom::detail::largestWorkingSize`) tries
+  0.1 mm first (fails: "at any size"), then bisects geometrically while the
+  bounds are far apart (a value typed 100x too large) and arithmetically
+  after; at most 10 attempts, none that would end past 600 ms judged by the
+  slowest attempt so far; if it stops before the bounds are within 1.5x it
+  keeps the general wording. The last answer is cached for drags. History
+  recompute and file loading use the general wording ("Try a smaller
+  radius."), so a failing step costs no extra kernel attempts per rebuild.
+  An edge between tangent faces is reported as having no corner to round.
 - Rigid motions: `RigidMotion` (`Shape.h`: rotate about the axis through
   `center`, then translate) and `transformed`; `mirrored`; `mirrorJoined`
   and `repeatJoined` fuse the original and all copies in one General Fuse
@@ -188,7 +201,9 @@ Document (UUID, display unit)
   the failed feature is `Failed` (with user/developer messages), later ones are
   `NotComputed`, and the body shows the last good shape. Nothing is deleted.
   A recompute that starts after a failed step (editing a blocked step) keeps
-  that last good shape too (it once left the body empty).
+  that last good shape too (it once left the body empty). A step that
+  changes nothing (`ErrorCode::NoEffect`) is not a failure here: it is `Ok`
+  with its input as output, `error` set and a `note` shown as a warning.
 - Features expose editable scalar `parameters()` (e.g. box width, push/pull
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
@@ -457,7 +472,8 @@ disk. Saves are atomic (temp file + rename). See
 - Robustness suite (`test_robustness`): seeded random modeling sessions
   (`tests/StressHarness.h`: boxes, push/pull, fillets, chamfers, shells,
   sketches, extrusions, moves, rotations, mirrors, patterns, booleans,
-  history edits, suppression, deletions) checked for undo-all / redo-all,
+  history edits, suppression, deletions; `tests/PortableRandom.h` makes a
+  seed replay the same session with every standard library) checked for undo-all / redo-all,
   random undo/redo/edit interleavings and save/open equality (per body:
   volume, box, face count, history with parameters and status); a project
   file fuzzer (truncation, bit flips, broken JSON, wrong types, hostile

@@ -121,7 +121,8 @@ TEST(History, BreakingEditIsKeptMarkedAndUndoable)
     const HistoryRow* fillet = row(rows, filletId);
     ASSERT_NE(fillet, nullptr);
     EXPECT_EQ(fillet->status, HistoryRow::Status::Failed);
-    EXPECT_TRUE(fillet->message.starts_with("The radius is too large for these edges. Try ")) << fillet->message;
+    // Recompute does not search for a size that works (previews do).
+    EXPECT_EQ(fillet->message, "Unable to create this fillet. Try a smaller radius.");
     EXPECT_EQ(row(rows, d->bodies().front()->id())->status, HistoryRow::Status::Failed);
     EXPECT_FALSE(messages.empty());
     // The body shows the last good shape: the plain extrusion.

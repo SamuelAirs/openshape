@@ -150,4 +150,7 @@ Project files are untrusted input:
 - references that do not resolve (a missing sketch, tool body or face)
   load as failed steps with a message; dependency cycles between bodies
   stop after a bounded number of recomputes;
+- a step that changes nothing (a cut beside the body or a subtraction of a
+  body that does not touch, which older versions could save) loads as a
+  step with a warning, and the steps after it still build;
 - nothing in a project file is ever executed.

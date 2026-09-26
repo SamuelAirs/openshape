@@ -387,10 +387,15 @@ TEST(Geometry, FilletTooLargeFailsGracefully)
 {
     const Shape s = box(10, 10, 10);
     const auto edges = verticalEdges(s);
-    auto r = filletEdges(s, edges, 8.0);
+    // Without advice (history recompute) the message is the general one.
+    auto plain = filletEdges(s, edges, 8.0);
+    EXPECT_FALSE(plain.ok());
+    EXPECT_EQ(plain.error(), ErrorCode::FilletRadiusTooLarge);
+    EXPECT_EQ(plain.userMessage(), "Unable to create this fillet. Try a smaller radius.");
+    auto r = filletEdges(s, edges, 8.0, SizeAdvice{true});
     EXPECT_FALSE(r.ok());
     EXPECT_EQ(r.error(), ErrorCode::FilletRadiusTooLarge);
-    // The message names a radius that works: just under half the 10 mm side.
+    // With it (a preview), the message names a radius that works: just under half the 10 mm side.
     double suggested = 0;
     ASSERT_EQ(std::sscanf(r.userMessage().c_str(), "The radius is too large for these edges. Try %lf mm or less.", &suggested), 1)
         << r.userMessage();
