@@ -42,6 +42,14 @@ struct TessellationParams {
     // Display meshes pick the deflection from the body size; exports use a
     // fixed, fine `linearDeflection` instead.
     bool adaptive = true;
+    // Mesh a copy of the shape's topology (geometry and existing meshes are
+    // shared, not copied), so the shape - and the shapes it shares faces and
+    // edges with - get no triangulations or edge polygons. For previews: a
+    // preview result shares most faces and edges with the document's body,
+    // and meshing it in place piled up polygons on the body's edges with
+    // every preview (40 previews of a pushed face made a filleted cube's
+    // BRep text 14 times larger, and the project file's geometry cache with it).
+    bool isolated = false;
 };
 
 } // namespace os::geom

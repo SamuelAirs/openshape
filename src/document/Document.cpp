@@ -145,6 +145,22 @@ Result<geom::Shape> Document::preview(const Uuid& bodyId, const Feature& feature
     return feature.compute(b->shape(), interactive);
 }
 
+std::shared_ptr<const Document> Document::snapshot() const
+{
+    auto copy = std::make_shared<Document>();
+    copy->id_ = id_;
+    copy->displayUnit_ = displayUnit_;
+    copy->bodies_.reserve(bodies_.size());
+    for (const auto& b : bodies_)
+        copy->bodies_.push_back(std::make_unique<Body>(*b));
+    copy->sketches_.reserve(sketches_.size());
+    for (const auto& s : sketches_)
+        copy->sketches_.push_back(std::make_unique<sketch::Sketch>(*s));
+    copy->sketchRevisions_ = sketchRevisions_;
+    copy->revision_ = revision_;
+    return copy;
+}
+
 sketch::Sketch* Document::sketch(const Uuid& id) const
 {
     for (const auto& s : sketches_)

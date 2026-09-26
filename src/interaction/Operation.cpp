@@ -11,7 +11,10 @@
 #include "geometry/Tessellation.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <exception>
 
 namespace os::interact {
 
@@ -23,35 +26,172 @@ std::uint64_t nextPreviewKey()
     static std::uint64_t counter = 1ull << 62;
     return ++counter;
 }
+
+// Preview requests, numbered across all operations (0 = none).
+std::atomic<std::uint64_t> g_previewSerial{0};
+std::uint64_t nextPreviewSerial()
+{
+    return ++g_previewSerial;
+}
+
+std::atomic<std::uint64_t> g_operationInstances{0};
+thread_local PreviewScheduler* t_creationScheduler = nullptr;
 } // namespace
 
-void Operation::setValue(double value, const doc::Document& document)
+Operation::Operation(Uuid bodyId, LinearManipulator manipulator)
+    : bodyId_(bodyId), manipulator_(std::move(manipulator)), instance_(++g_operationInstances),
+      scheduler_(t_creationScheduler), floorSerial_(g_previewSerial.load() + 1)
+{
+}
+
+PreviewSchedulerScope::PreviewSchedulerScope(PreviewScheduler* scheduler) : previous_(t_creationScheduler)
+{
+    t_creationScheduler = scheduler;
+}
+
+PreviewSchedulerScope::~PreviewSchedulerScope()
+{
+    t_creationScheduler = previous_;
+}
+
+void Operation::setValue(double value, const doc::Document& document, Change change)
 {
     if (!allowsNegative() && value < 0)
         value = 0;
     value_ = value;
-    error_.clear();
     if (std::string why = checkValue(value); !why.empty()) {
-        previewMesh_.reset();
+        dropPreviews();
         error_ = std::move(why);
         return;
     }
     if (std::abs(value - neutralValue()) < 1e-12 && handleCount() == 1 && neutralIsIdentity()) {
-        previewMesh_.reset();
+        dropPreviews();
+        error_.clear();
         return;
     }
-    resetAutomaticChoices();
-    auto result = computePreview(value, document);
-    if (result ? reconsider(result.value(), document) : reconsiderRefusal(result.error()))
-        result = computePreview(value, document);
-    if (!result) {
-        previewMesh_.reset();
-        error_ = result.userMessage();
-        OS_LOG(Debug, Interaction) << title() << " preview failed at " << value << ": " << result.developerMessage();
-        return;
+    if (scheduler_) {
+        if (std::shared_ptr<Operation> copy = clone()) {
+            // The worker gets everything it reads: this operation as it is now
+            // and the document as it is now. The shown preview stays until
+            // the result arrives (acceptPreview).
+            copy->scheduler_ = nullptr;
+            std::shared_ptr<const doc::Document> snapshot = scheduler_->previewSnapshot(document);
+            const std::uint64_t serial = nextPreviewSerial();
+            pendingSerial_ = serial;
+            // Earlier requests computed other parameters: none of them may
+            // show any more (the shown preview stays until this one arrives).
+            if (change == Change::Parameters)
+                floorSerial_ = serial;
+            scheduler_->schedulePreview([copy, snapshot, value, serial]() {
+                PreviewOutcome outcome = copy->computeOutcome(value, *snapshot);
+                outcome.serial = serial;
+                outcome.computedBy = copy;
+                return outcome;
+            });
+            return;
+        }
     }
-    previewMesh_ = std::make_shared<const geom::Mesh>(geom::tessellate(result.value()));
-    previewKey_ = nextPreviewKey();
+    error_.clear();
+    PreviewOutcome outcome = computeOutcome(value, document);
+    // Anything still coming from the worker is older than this.
+    outcome.serial = nextPreviewSerial();
+    if (pendingSerial_ != 0 && scheduler_)
+        scheduler_->dropScheduledPreview();
+    pendingSerial_ = 0;
+    floorSerial_ = outcome.serial;
+    resolvedSerial_ = outcome.serial;
+    if (!outcome.error.empty())
+        OS_LOG(Debug, Interaction) << title() << " preview failed at " << value << ": " << outcome.developerMessage;
+    error_ = outcome.error;
+    showOutcome(outcome);
+}
+
+PreviewOutcome Operation::computeOutcome(double value, const doc::Document& document)
+{
+    const auto start = std::chrono::steady_clock::now();
+    PreviewOutcome outcome;
+    outcome.operation = instance_;
+    outcome.value = value;
+    try {
+        resetAutomaticChoices();
+        auto result = computePreview(value, document);
+        if (result ? reconsider(result.value(), document) : reconsiderRefusal(result.error()))
+            result = computePreview(value, document);
+        outcome.meshBody = previewBody();
+        if (!result) {
+            outcome.error = result.userMessage();
+            outcome.developerMessage = result.developerMessage();
+        } else {
+            // Isolated: the result shares faces and edges with the document's
+            // body, which must not collect this preview's mesh.
+            geom::TessellationParams params;
+            params.isolated = true;
+            outcome.mesh = std::make_shared<const geom::Mesh>(geom::tessellate(result.value(), params));
+        }
+    } catch (const std::exception& e) {
+        // Kernel failures come back as Results; this would be a bug (or memory).
+        outcome.mesh.reset();
+        outcome.error = "Unable to preview this.";
+        outcome.developerMessage = std::string("preview threw: ") + e.what();
+        OS_LOG(Error, Interaction) << title() << " " << outcome.developerMessage;
+    } catch (...) {
+        // E.g. a kernel exception outside guarded(). Still an outcome: the
+        // operation awaits one for every request it made.
+        outcome.mesh.reset();
+        outcome.error = "Unable to preview this.";
+        outcome.developerMessage = "preview threw an unknown exception";
+        OS_LOG(Error, Interaction) << title() << " " << outcome.developerMessage;
+    }
+    outcome.milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    return outcome;
+}
+
+void Operation::showOutcome(const PreviewOutcome& outcome)
+{
+    previewMesh_ = outcome.mesh;
+    previewMeshBody_ = outcome.meshBody;
+    if (previewMesh_)
+        previewKey_ = nextPreviewKey();
+}
+
+bool Operation::acceptPreview(const PreviewOutcome& outcome)
+{
+    if (outcome.operation != instance_ || outcome.serial < floorSerial_ || outcome.serial <= resolvedSerial_)
+        return false;
+    const bool latest = outcome.serial == pendingSerial_;
+    if (!latest && (!outcome.mesh || pendingSerial_ == 0))
+        return false; // a value the user has left: its failure is no news
+    resolvedSerial_ = outcome.serial;
+    if (latest) {
+        pendingSerial_ = 0;
+        if (outcome.computedBy)
+            adoptAutomaticChoices(*outcome.computedBy);
+        error_ = outcome.error;
+        if (!outcome.error.empty())
+            OS_LOG(Debug, Interaction) << title() << " preview failed at " << outcome.value << ": "
+                                       << outcome.developerMessage;
+    } else {
+        error_.clear(); // an older value that works, shown while the newest computes
+    }
+    showOutcome(outcome);
+    return true;
+}
+
+void Operation::refusePendingValue(std::string message)
+{
+    // As a synchronous preview's refusal: the message, and no preview of
+    // another value left on screen.
+    dropPreviews();
+    error_ = std::move(message);
+}
+
+void Operation::dropPreviews()
+{
+    previewMesh_.reset();
+    floorSerial_ = nextPreviewSerial();
+    if (pendingSerial_ != 0 && scheduler_)
+        scheduler_->dropScheduledPreview();
+    pendingSerial_ = 0;
 }
 
 Result<geom::Shape> Operation::computePreview(double value, const doc::Document& document) const
@@ -287,7 +427,7 @@ Vec3 MoveOperation::translation() const
 
 bool MoveOperation::canCommit() const
 {
-    return translation().length() > 1e-9 && error().empty() && hasPreview();
+    return translation().length() > 1e-9 && previewUsable();
 }
 
 LinearManipulator MoveOperation::handle(int index) const
@@ -993,6 +1133,12 @@ bool HoleOperation::onFace(Vec2 p) const
     return geom::faceContains(shape_, face_.indexHint, frame_.toWorld(p));
 }
 
+bool HoleOperation::onOutline(Vec2 p) const
+{
+    const double size = std::max({outline_.maxU - outline_.minU, outline_.maxV - outline_.minV, 1.0});
+    return geom::outlineContains(outline_, p, 1e-7 * size);
+}
+
 std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapDistance) const
 {
     const Vec2 p = frame_.toLocal(world);
@@ -1003,7 +1149,7 @@ std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapD
     std::string what;
     double bestDistance = snapDistance;
     auto consider = [&](const Vec2& q, const char* name) {
-        if (const double d = (q - p).length(); d <= bestDistance && onFace(q)) {
+        if (const double d = (q - p).length(); d <= bestDistance && onOutline(q)) {
             bestDistance = d;
             best = q;
             what = name;
@@ -1040,7 +1186,7 @@ std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapD
         if (!x && !y)
             continue;
         const Vec2 q{x.value_or(p.x), y.value_or(p.y)};
-        if (onFace(q))
+        if (onOutline(q))
             return {q, "aligned"};
     }
     return {p, ""};
