@@ -631,6 +631,77 @@ TEST(SketchEdit, PolygonStaysRegular)
     EXPECT_EQ(back.value().constraints().size(), s.constraints().size());
 }
 
+// The polygon's inner construction circle touches every side at its middle:
+// trimming a side removes the whole side, not half of it.
+TEST(SketchEdit, TrimPolygonSideIgnoresTheTouchingInnerCircle)
+{
+    Sketch s;
+    const auto ids = addPolygon(s, {0, 0}, {5, 0}, 6, kOriginId);
+    s.addConstraint({ConstraintKind::Diameter, ids.inner, kNoEntity, 10.0});
+    s.addConstraint({ConstraintKind::Vertical, ids.sides[0]});
+    ASSERT_TRUE(solve(s).ok);
+    const double side = 10 / std::sqrt(3.0);
+    // Side 0 runs up along x = 5, from y = -side/2 to side/2; its middle touches the inner circle.
+    const auto preview = trimPreview(s, ids.sides[0], {5, side / 4});
+    ASSERT_EQ(preview.size(), 2u);
+    EXPECT_NEAR((preview[1] - preview[0]).length(), side, 1e-9) << "the whole side, not up to the middle";
+    ASSERT_TRUE(trimAt(s, ids.sides[0], {5, side / 4}).ok());
+    EXPECT_EQ(s.line(ids.sides[0]), nullptr);
+    EXPECT_EQ(s.lines().size(), 5u) << "the other five sides stay, whole";
+    for (std::size_t i = 1; i < ids.sides.size(); ++i) {
+        const auto* l = s.line(ids.sides[i]);
+        ASSERT_NE(l, nullptr);
+        EXPECT_NEAR((pos(s, l->end) - pos(s, l->start)).length(), side, 1e-9);
+    }
+    EXPECT_EQ(s.circles().size(), 2u) << "the construction circles stay";
+    EXPECT_TRUE(solve(s).ok);
+
+    // Trimming the inner circle itself: nothing crosses it, so it goes entirely.
+    Sketch t;
+    const auto hex = addPolygon(t, {0, 0}, {5, 0}, 6, kOriginId);
+    ASSERT_TRUE(solve(t).ok);
+    ASSERT_TRUE(trimAt(t, hex.inner, {0, 5}).ok());
+    EXPECT_EQ(t.circle(hex.inner), nullptr);
+    EXPECT_TRUE(t.arcs().empty());
+    EXPECT_EQ(t.lines().size(), 6u);
+}
+
+// Touching construction curves are no cuts; crossing ones and touching
+// profile curves still are.
+TEST(SketchEdit, TrimAgainstConstructionCurves)
+{
+    auto build = [](bool construction, double circleY) {
+        Sketch s;
+        const EntityId line = s.addLine(s.addPoint({-10, 0}), s.addPoint({10, 0}));
+        s.addCircle(s.addPoint({0, circleY}), 5.0, construction);
+        return std::make_pair(s, line);
+    };
+    {
+        auto [s, line] = build(true, 5.0); // a construction circle touching the line at (0, 0)
+        const auto preview = trimPreview(s, line, {5, 0});
+        ASSERT_EQ(preview.size(), 2u);
+        EXPECT_NEAR((preview[1] - preview[0]).length(), 20.0, 1e-9) << "nothing cuts it: the whole line";
+        ASSERT_TRUE(trimAt(s, line, {5, 0}).ok());
+        EXPECT_TRUE(s.lines().empty());
+    }
+    {
+        auto [s, line] = build(false, 5.0); // a profile circle touching it: a cut at (0, 0)
+        ASSERT_TRUE(trimAt(s, line, {5, 0}).ok());
+        ASSERT_EQ(s.lines().size(), 1u);
+        const auto* l = s.line(line);
+        ASSERT_NE(l, nullptr);
+        EXPECT_NEAR((pos(s, l->start) - Vec2{-10, 0}).length(), 0.0, 1e-9);
+        EXPECT_NEAR((pos(s, l->end) - Vec2{0, 0}).length(), 0.0, 1e-9);
+    }
+    {
+        auto [s, line] = build(true, 3.0); // a construction circle crossing it at x = +-4: cuts
+        ASSERT_TRUE(trimAt(s, line, {7, 0}).ok());
+        const auto* l = s.line(line);
+        ASSERT_NE(l, nullptr);
+        EXPECT_NEAR((pos(s, l->end) - Vec2{4, 0}).length(), 0.0, 1e-9);
+    }
+}
+
 TEST(SketchEdit, PolygonOddCountsAndLimits)
 {
     Sketch s;

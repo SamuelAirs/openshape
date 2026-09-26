@@ -201,7 +201,8 @@ Document (UUID, display unit)
   `sketch/SketchEdit` holds the edits behind tools that change geometry:
   `addSlot`, `filletCorner` (keeps the corner as a reference point on both
   lines), `trimAt` / `trimPreview` (pieces between crossings; new ends kept
-  on the curves they meet), `addCenterRectangle`, `addPolygon`,
+  on the curves they meet; a construction curve that only touches — a
+  polygon's inner circle — is no crossing), `addCenterRectangle`, `addPolygon`,
   `mirrorCurves` (copies held by `Symmetric` constraints across a line;
   points on the axis are shared and kept on it) and `patternCurves` (linear
   or circular copies with their shape constraints; circles and arcs keep an
@@ -358,7 +359,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   by the first pen press, or the Pen switch) makes finger presses
   navigation-only. `AppController::touchMode` (on after a touch, off after a
   real mouse click, on from the start on iOS/Android, `--touch` on the
-  command line) makes `Theme.controlHeight` 44 and shows the Pen switch.
+  command line) makes `Theme.controlHeight` 44 and shows the Pen switch. The
+  flag itself lives in `InteractionController::touchLayout()` (AppController
+  only reads and sets it), so the on-canvas targets of the sketch session and
+  the QML controls can never disagree.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -398,8 +402,16 @@ Constraint glyphs (H, V, ∥, ⊥, =, T, …; not for dimensions, and hidden whi
 a shape is being drawn) sit beside their geometry, on the outer side of a
 line, and slide along it to stay clear of each other, the dimension labels
 and the points; a glyph with no clear spot nearby is left out until the view
-is zoomed in. Clicking one selects the constraint (`constraintIcon_<id>`),
-never mixed with geometry, and its geometry is highlighted; Delete removes it.
+is zoomed in. Dimension labels count as pills (about 7.5 px per character
+plus padding, 24 px high), not points. The glyph items take no input: with
+the Select tool `SketchSession` resolves a click or tap itself — a point or
+curve within pick reach wins, and only then a glyph whose square target
+(24 px, 40 px in the touch layout) holds the pointer — so a glyph never
+steals a tap meant for the geometry beside it, and drawing tools ignore
+glyphs. A glyph's center stays out of pick reach of points and curves, so
+tapping the glyph itself always reaches it. Clicking one selects the
+constraint (`constraintIcon_<id>`), never mixed with geometry, and its
+geometry is highlighted; Delete removes it.
 
 Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages.
 All draws share one dynamic uniform buffer with per-draw offsets.

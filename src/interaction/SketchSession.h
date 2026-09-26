@@ -37,6 +37,7 @@ struct SketchLabel {
     bool focused = false; // Input that receives typed digits
     bool locked = false;  // Input whose value the user typed
     bool selected = false; // Constraint that is selected
+    bool hot = false;      // Constraint whose glyph is under the pointer (Select tool)
 };
 
 // A whole number with -/+ buttons for the active tool or mode (a polygon's
@@ -88,8 +89,13 @@ public:
     // Polygon tool: the number of sides (kept for the next polygon).
     int polygonSides() const { return polygonSides_; }
     // Touch layout: constraint glyphs sit further from the geometry and each
-    // other (their tap targets are larger).
+    // other, and their tap targets are larger.
+    bool largeTargets() const { return largeTargets_; }
     void setLargeTargets(bool on) { largeTargets_ = on; }
+    // Half the side of a constraint glyph's square tap target, px. Taps are
+    // resolved here, not by the UI: with the Select tool a point or curve
+    // within pick reach always wins, and only then a glyph under the pointer.
+    double glyphTapHalfSize() const { return largeTargets_ ? 20.0 : 12.0; }
     std::optional<SketchCounter> counter() const;
     bool stepCounter(int delta);
 
@@ -161,7 +167,8 @@ private:
         sketch::EntityId curve = sketch::kNoEntity;
         Vec2 direction;
     };
-    std::optional<TangentStart> tangentStartAt(sketch::EntityId point) const;
+    // `ambiguous`: set when several curves end there (a corner).
+    std::optional<TangentStart> tangentStartAt(sketch::EntityId point, bool* ambiguous = nullptr) const;
     std::optional<ArcShape> tangentArcShape() const;
     struct SlotShape {
         Vec2 a, b; // centers
@@ -190,6 +197,8 @@ private:
     // Glyphs for the non-dimension constraints, placed beside their geometry
     // and nudged apart (and away from `taken`, the dimension labels).
     void addConstraintIcons(std::vector<SketchLabel>& out, const Camera& camera) const;
+    // The constraint whose glyph's tap target holds `screen` (the nearest), or none.
+    sketch::EntityId glyphAt(Vec2 screen, const Camera& camera) const;
     bool constraintSelected() const;
 
     doc::Document& document_;
@@ -220,6 +229,7 @@ private:
 
     std::vector<sketch::EntityId> selected_;
     sketch::EntityId hovered_ = sketch::kNoEntity;
+    sketch::EntityId hoveredGlyph_ = sketch::kNoEntity; // Select tool: a constraint glyph under the pointer
 
     std::optional<Vec2> trimCursor_; // Trim tool: pointer position (local) over hovered_
 

@@ -268,34 +268,28 @@ Item {
             visible: !(dimensionEditor.visible && dimensionEditor.constraintId === modelData.constraint
                        && modelData.kind === "dimension")
 
-            // A constraint glyph: tap or click selects the constraint (Delete removes it).
+            // A constraint glyph: tap or click it with the Select tool to select the
+            // constraint (Delete removes it). It takes no input itself: the sketch
+            // session resolves the tap (a point or curve within reach wins, then the
+            // glyph, with a 24 px or, in the touch layout, 40 px target), so a
+            // glyph never steals a tap meant for the geometry beside it.
             Rectangle {
                 id: badge
                 visible: labelItem.isConstraint
                 width: Math.max(18, glyph.implicitWidth + 8)
                 height: 18
                 radius: 5
+                readonly property bool hot: labelItem.modelData.hot === true
                 color: labelItem.modelData.selected ? Theme.accent : "white"
-                border.color: labelItem.modelData.selected ? Theme.accent : Theme.panelBorder
-                opacity: labelItem.modelData.selected || iconArea.containsMouse ? 1.0 : 0.85
+                border.color: labelItem.modelData.selected || hot ? Theme.accent : Theme.panelBorder
+                opacity: labelItem.modelData.selected || hot ? 1.0 : 0.85
                 Text {
                     id: glyph
                     anchors.centerIn: parent
                     text: labelItem.isConstraint ? labelItem.modelData.text : ""
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
-                    color: labelItem.modelData.selected ? "white" : "#4A5360"
-                }
-                MouseArea {
-                    id: iconArea
-                    // Touch needs a larger target than the glyph itself.
-                    anchors.centerIn: parent
-                    width: Theme.touch ? 40 : 24
-                    height: width
-                    enabled: labelItem.isConstraint
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: overlay.app.selectSketchConstraint(labelItem.modelData.constraint)
+                    color: labelItem.modelData.selected ? "white" : badge.hot ? Theme.accent : "#4A5360"
                 }
             }
 

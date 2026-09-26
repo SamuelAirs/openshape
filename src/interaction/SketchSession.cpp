@@ -52,6 +52,12 @@ double sign(double v)
     return v < 0 ? -1.0 : 1.0;
 }
 
+// Characters (code points) in UTF-8 text, to estimate a label's width.
+std::size_t utf8Length(std::string_view text)
+{
+    return std::size_t(std::count_if(text.begin(), text.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
+}
+
 // Angle of `p` around `c`, and a counterclockwise sweep in [0, 2pi).
 double angleOf(Vec2 c, Vec2 p)
 {
@@ -143,6 +149,7 @@ void SketchSession::setTool(SketchTool tool)
     cancelOffset();
     cancelModes();
     trimCursor_.reset();
+    hoveredGlyph_ = sketch::kNoEntity;
     if (tool != SketchTool::Select)
         selected_.clear();
 }
@@ -390,32 +397,42 @@ Vec2 SketchSession::constrainedCursor() const
     return c;
 }
 
-std::optional<SketchSession::TangentStart> SketchSession::tangentStartAt(sketch::EntityId point) const
+std::optional<SketchSession::TangentStart> SketchSession::tangentStartAt(sketch::EntityId point, bool* ambiguous) const
 {
-    // The curve ending at the point; the most recent one when several do.
-    TangentStart best;
-    const Vec2 p = working_.point(point) ? working_.point(point)->position : Vec2{};
+    // The one curve ending at the point. Construction curves (a center
+    // rectangle's diagonal, a center line) count only when no profile curve
+    // ends there. Where two profile curves meet (a corner), which one to
+    // continue is unclear: none.
+    if (ambiguous)
+        *ambiguous = false;
+    const auto* at = working_.point(point);
+    if (!at)
+        return std::nullopt;
+    const Vec2 p = at->position;
+    std::vector<TangentStart> profile, guides;
     for (const auto& [id, l] : working_.lines()) {
         if (l.start != point && l.end != point)
             continue;
-        const Vec2 other = working_.point(l.start == point ? l.end : l.start)->position;
-        const Vec2 d = p - other;
-        if (d.length() > 1e-9 && id > best.curve)
-            best = {id, d * (1.0 / d.length())};
+        const Vec2 d = p - working_.point(l.start == point ? l.end : l.start)->position;
+        if (d.length() > 1e-9)
+            (l.construction ? guides : profile).push_back({id, d * (1.0 / d.length())});
     }
     for (const auto& [id, a] : working_.arcs()) {
-        if ((a.start != point && a.end != point) || id < best.curve)
+        if (a.start != point && a.end != point)
             continue;
         const Vec2 r = p - working_.point(a.center)->position;
         if (r.length() < 1e-9)
             continue;
         const Vec2 ccwTangent = Vec2{-r.y, r.x} * (1.0 / r.length());
         // Leaving the arc's end we travel counterclockwise; leaving its start, clockwise.
-        best = {id, a.end == point ? ccwTangent : ccwTangent * -1.0};
+        (a.construction ? guides : profile).push_back({id, a.end == point ? ccwTangent : ccwTangent * -1.0});
     }
-    if (best.curve == sketch::kNoEntity)
-        return std::nullopt;
-    return best;
+    const auto& candidates = profile.empty() ? guides : profile;
+    if (candidates.size() == 1)
+        return candidates.front();
+    if (ambiguous)
+        *ambiguous = candidates.size() > 1;
+    return std::nullopt;
 }
 
 std::optional<SketchSession::ArcShape> SketchSession::tangentArcShape() const
@@ -800,6 +817,10 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     if (tool_ == SketchTool::Select) {
         const sketch::EntityId hit = pickEntity(event.position, camera, event.device);
         if (hit == sketch::kNoEntity) {
+            // A constraint glyph, only when no point or curve is within reach
+            // (a glyph's tap target never hides geometry); the release selects it.
+            if (glyphAt(event.position, camera) != sketch::kNoEntity)
+                return true;
             pressed_ = false;
             return false; // let the controller orbit / clear selection
         }
@@ -814,9 +835,11 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     cursor_ = snap;
     cursorValid_ = true;
     if (!anchor_ && tool_ == SketchTool::TangentArc) {
-        const auto start = snap.point != sketch::kNoEntity ? tangentStartAt(snap.point) : std::nullopt;
+        bool ambiguous = false;
+        const auto start = snap.point != sketch::kNoEntity ? tangentStartAt(snap.point, &ambiguous) : std::nullopt;
         if (!start) {
-            message("Start a tangent arc on the end of a line or an arc.");
+            message(ambiguous ? "Curves meet there: start a tangent arc on a free end of a line or an arc."
+                              : "Start a tangent arc on the end of a line or an arc.");
             return true;
         }
         beginShape(snap);
@@ -910,7 +933,9 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
             if (!commit(std::move(moved), "Move point"))
                 regionsChanged();
         } else {
-            const sketch::EntityId hit = pickEntity(event.position, camera, event.device);
+            sketch::EntityId hit = pickEntity(event.position, camera, event.device);
+            if (hit == sketch::kNoEntity)
+                hit = glyphAt(event.position, camera);
             const bool additive = InputProfile::forDevice(event.device).additiveSelection || event.modifiers.shift
                                || event.modifiers.control;
             select(hit, additive);
@@ -965,6 +990,7 @@ void SketchSession::hover(const PointerEvent& event, const Camera& camera)
     }
     if (tool_ == SketchTool::Select) {
         hovered_ = pickEntity(event.position, camera, event.device);
+        hoveredGlyph_ = hovered_ == sketch::kNoEntity ? glyphAt(event.position, camera) : sketch::kNoEntity;
         cursorValid_ = false;
         return;
     }
@@ -975,6 +1001,7 @@ void SketchSession::hover(const PointerEvent& event, const Camera& camera)
 void SketchSession::leave()
 {
     hovered_ = sketch::kNoEntity;
+    hoveredGlyph_ = sketch::kNoEntity;
     cursorValid_ = false;
 }
 
@@ -1770,7 +1797,7 @@ std::string SketchSession::hintText() const
         return anchor_ ? "Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line" : "Click the start point";
     case SketchTool::TangentArc:
         return anchor_ ? "Click where the arc ends, or type a radius and press Enter \xC2\xB7 Esc ends"
-                       : "Click the end of a line or arc to continue it with a tangent arc";
+                       : "Click the free end of a line or arc to continue it with a tangent arc";
     case SketchTool::Arc:
         if (!anchor_)
             return "Click where the arc starts";
@@ -2001,9 +2028,12 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
     using K = sketch::ConstraintKind;
     auto screen = [&](Vec2 local) { return toScreen(local, camera); };
     auto at = [&](sketch::EntityId point) { return working_.point(point)->position; };
-    // Touch: 40 px tap targets (the QML side), so everything sits further apart.
+    // Touch: 40 px tap targets (glyphTapHalfSize), so everything sits further apart.
+    // A glyph's center stays out of pick reach of the points and curves
+    // (pickEntity: 8 px with a mouse, 20 px with a finger), so tapping the
+    // glyph itself always reaches it; geometry wins taps nearer to it.
     const double scale = largeTargets_ ? 1.6 : 1.0;
-    const double kOffset = 14 * scale, kStep = 18 * scale, kClearance = 19 * scale, kLabelClearance = 26 * scale,
+    const double kOffset = 14 * scale, kStep = 18 * scale, kClearance = 19 * scale, kLabelMargin = 12 * scale,
                  kPointClearance = 15 * scale, kCurveClearance = kOffset - 2;
 
     // Where the shape a line belongs to lies: the far ends of the curves
@@ -2165,8 +2195,16 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
     // must stay grabbable). A glyph with no clear spot nearby is left out:
     // small geometry would drown in them; zooming in brings them back.
     std::vector<std::pair<Vec2, double>> taken;
+    // The dimension labels are pills: about 7.5 px per character plus 16 px
+    // of padding wide, 24 px high (SketchOverlay.qml). A glyph (18 px) keeps
+    // clear of the whole pill, so neither covers the other.
+    struct Box {
+        Vec2 center;
+        double halfWidth = 0, halfHeight = 0;
+    };
+    std::vector<Box> labelBoxes;
     for (const auto& label : out)
-        taken.emplace_back(label.screen, kLabelClearance);
+        labelBoxes.push_back({label.screen, (7.5 * double(utf8Length(label.text)) + 16) / 2, 12});
     for (const auto& [id, p] : working_.points())
         taken.emplace_back(screen(p.position), kPointClearance);
     // Curves too: a glyph's tap target must not cover a curve someone clicks.
@@ -2185,6 +2223,10 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
     auto clear = [&](Vec2 p) {
         if (std::any_of(taken.begin(), taken.end(), [&](const auto& q) { return (p - q.first).length() < q.second; }))
             return false;
+        for (const Box& box : labelBoxes)
+            if (std::abs(p.x - box.center.x) < box.halfWidth + kLabelMargin
+                && std::abs(p.y - box.center.y) < box.halfHeight + kLabelMargin)
+                return false;
         for (const auto& [a, b] : segments)
             if (distanceToSegment2D(p, a, b) < kCurveClearance)
                 return false;
@@ -2212,8 +2254,26 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
         label.text = icon.glyph;
         label.screen = place.value_or(icon.position);
         label.selected = selected;
+        label.hot = tool_ == SketchTool::Select && icon.constraint == hoveredGlyph_;
         out.push_back(label);
     }
+}
+
+sketch::EntityId SketchSession::glyphAt(Vec2 screen, const Camera& camera) const
+{
+    const double half = glyphTapHalfSize();
+    sketch::EntityId best = sketch::kNoEntity;
+    double bestDistance = 1e300;
+    for (const auto& label : labels(camera)) {
+        if (label.kind != SketchLabel::Kind::Constraint)
+            continue;
+        const Vec2 d = screen - label.screen;
+        if (std::abs(d.x) > half || std::abs(d.y) > half || d.length() >= bestDistance)
+            continue;
+        bestDistance = d.length();
+        best = label.constraint;
+    }
+    return best;
 }
 
 RenderSketch SketchSession::renderData(const Camera& camera) const

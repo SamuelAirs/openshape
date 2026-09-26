@@ -17,6 +17,7 @@
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
+#include <algorithm>
 #include <cmath>
 
 namespace os::app {
@@ -262,10 +263,24 @@ std::vector<AcceptanceRunner::Step> constraintIcons(AcceptanceRunner& r)
                     r.app().sketchStatus());
         },
         [&r] {
-            // Touch layout: the glyph still selects, and the Delete key removes it.
+            // The touch layout: the glyphs move further out, with larger tap targets.
             r.app().setTouchMode(true);
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.app().interaction().touchLayout() && session && session->largeTargets(),
+                    "the sketch session uses the touch layout's glyph spacing");
+        },
+        [&r] {
+            // A finger tap on a glyph selects it; the Delete key removes it.
             const auto id = firstConstraint(r, K::Vertical);
-            r.check(r.clickItem(QStringLiteral("constraintIcon_%1").arg(id)), "clicking a V glyph (touch layout)");
+            const QQuickItem* icon = r.findItem(QStringLiteral("constraintIcon_%1").arg(id));
+            r.check(icon && icon->isVisible(), "the V glyph is on the canvas (touch layout)");
+            if (!icon)
+                return;
+            r.touchTap({icon->mapToScene(QPointF(icon->width() / 2, icon->height() / 2))});
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(session && session->selection().size() == 1 && session->selection().front() == id,
+                    "a finger tap on the V glyph selects that constraint");
+            r.check(r.app().touchMode(), "still in the touch layout after the tap");
             r.screenshot(QStringLiteral("sketch3_constraint_icons_touch"));
             r.key(Qt::Key_Delete);
             r.check(countConstraints(r, K::Vertical) == 1, "Delete removes the selected constraint",
@@ -277,6 +292,28 @@ std::vector<AcceptanceRunner::Step> constraintIcons(AcceptanceRunner& r)
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(countConstraints(r, K::Horizontal) == 2 && countConstraints(r, K::Vertical) == 2,
                     "undo brings both constraints back");
+        },
+        [&r] {
+            // A click just beside a line, on its glyph's side, still picks the line.
+            const auto id = firstConstraint(r, K::Horizontal);
+            const auto* s = activeSketch(r);
+            const auto* c = s ? s->constraint(id) : nullptr;
+            const auto* line = c ? s->line(c->a) : nullptr;
+            const QQuickItem* icon = r.findItem(QStringLiteral("constraintIcon_%1").arg(id));
+            r.check(line && icon && icon->isVisible(), "an H glyph beside its line");
+            if (!line || !icon)
+                return;
+            const QPointF g = icon->mapToScene(QPointF(icon->width() / 2, icon->height() / 2));
+            const Vec2 pa = s->point(line->start)->position, pb = s->point(line->end)->position;
+            const QPointF a = r.screenPoint(pa.x, pa.y, 0), b = r.screenPoint(pb.x, pb.y, 0), d = b - a;
+            const double t = std::clamp(QPointF::dotProduct(g - a, d) / QPointF::dotProduct(d, d), 0.0, 1.0);
+            const QPointF foot = a + d * t, out = g - foot;
+            const double gap = std::hypot(out.x(), out.y());
+            r.check(gap >= 12, "the glyph sits clear of the line", AcceptanceRunner::num(gap));
+            r.click(foot + out * (5 / std::max(gap, 1e-9)));
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(session && session->selection().size() == 1 && session->selection().front() == c->a,
+                    "a click 5 px from the line, toward its glyph, selects the line");
         },
     };
 }
@@ -311,6 +348,18 @@ std::vector<AcceptanceRunner::Step> mirror(AcceptanceRunner& r)
                     session ? QString::number(session->selection().size()) : QString());
             r.check(r.clickItem(QStringLiteral("sketchAction_mirror")), "Mirror button");
             r.check(session && session->isMirroring(), "waits for the line to mirror across");
+        },
+        [&r] {
+            // The active Mirror button cancels (touch has no Esc); the selection stays.
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.clickItem(QStringLiteral("sketchAction_mirror")), "the active Mirror button");
+            r.check(session && !session->isMirroring() && session->selection().size() == 3,
+                    "cancels mirroring and keeps the selection");
+        },
+        [&r] {
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.clickItem(QStringLiteral("sketchAction_mirror")), "Mirror button again");
+            r.check(session && session->isMirroring(), "mirroring again");
         },
         [&r] {
             r.mouseMove(r.screenPoint(0, 12, 0));
@@ -348,6 +397,30 @@ std::vector<AcceptanceRunner::Step> pattern(AcceptanceRunner& r)
             r.check(r.clickItem(QStringLiteral("sketchAction_pattern")), "Pattern button");
             r.check(r.app().sketchCounterText() == QStringLiteral("3 in total"), "three in a row by default",
                     r.app().sketchCounterText());
+        },
+        [&r] {
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern:circular")), "Circular button");
+            r.check(session && session->patternLayout().circular, "a circular pattern");
+        },
+        [&r] {
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern:linear")), "Linear button");
+            r.check(session && session->isPatterning() && !session->patternLayout().circular, "back to a linear pattern");
+            r.check(r.app().sketchCounterText() == QStringLiteral("3 in total"), "three in a row again",
+                    r.app().sketchCounterText());
+        },
+        [&r] {
+            // The active Pattern button cancels (touch has no Esc); the selection stays.
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern")), "the active Pattern button");
+            r.check(session && !session->isPatterning() && session->selection().size() == 1,
+                    "cancels the pattern and keeps the selection");
+        },
+        [&r] {
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern")), "Pattern button again");
+            r.check(session && session->isPatterning() && !session->patternLayout().circular, "patterning again (linear)");
         },
         [&r] {
             r.check(r.clickItem(QStringLiteral("sketchCounterPlus")), "+ button");

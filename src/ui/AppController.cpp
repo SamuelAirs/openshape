@@ -43,6 +43,12 @@ AppController::AppController(QObject* parent)
       interaction_(std::make_unique<interact::InteractionController>(*document_, *undoStack_))
 {
     attach();
+    // Tablets and phones start in the touch layout. The flag lives in the
+    // interaction core only (touchMode() reads it), so on-canvas targets and
+    // the QML controls always agree.
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    interaction_->setTouchLayout(true);
+#endif
     interaction_->fitAll(false);
 }
 
@@ -122,12 +128,13 @@ QPointF AppController::valueLabelPosition() const
 
 bool AppController::valueLabelVisible() const { return interaction_->valueLabelPosition().has_value(); }
 
+bool AppController::touchMode() const { return interaction_->touchLayout(); }
+
 void AppController::setTouchMode(bool on)
 {
-    if (touchMode_ == on)
+    if (interaction_->touchLayout() == on)
         return;
-    touchMode_ = on;
-    interaction_->setLargeTargets(on);
+    interaction_->setTouchLayout(on);
     emit touchModeChanged();
 }
 
@@ -235,15 +242,6 @@ QString AppController::sketchCounterText() const
     return counter ? q(counter->text) : QString();
 }
 
-void AppController::selectSketchConstraint(int constraintId)
-{
-    if (auto* s = interaction_->sketchSession()) {
-        s->select(sketch::EntityId(constraintId), false);
-        emit stateChanged();
-        emit viewChanged();
-    }
-}
-
 void AppController::stepSketchCounter(int delta)
 {
     if (auto* s = interaction_->sketchSession()) {
@@ -278,6 +276,7 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("focused"), label.focused);
         map.insert(QStringLiteral("locked"), label.locked);
         map.insert(QStringLiteral("selected"), label.selected);
+        map.insert(QStringLiteral("hot"), label.hot);
         list.append(map);
     }
     return list;

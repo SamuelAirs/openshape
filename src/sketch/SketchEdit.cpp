@@ -41,6 +41,17 @@ struct Curve {
     double end() const { return kind == Kind::Line ? 1.0 : sweep; }
 };
 
+bool isConstruction(const Sketch& s, EntityId curve)
+{
+    if (const auto* l = s.line(curve))
+        return l->construction;
+    if (const auto* c = s.circle(curve))
+        return c->construction;
+    if (const auto* a = s.arc(curve))
+        return a->construction;
+    return false;
+}
+
 std::optional<Curve> curveOf(const Sketch& s, EntityId id)
 {
     Curve c;
@@ -142,6 +153,27 @@ std::vector<Vec2> meetings(const Curve& x, const Curve& y)
     return out;
 }
 
+// Whether the full line/circle geometry of two curves only touches (is
+// tangent) instead of crossing.
+bool touching(const Curve& x, const Curve& y)
+{
+    using K = Curve::Kind;
+    if (x.kind == K::Line && y.kind == K::Line)
+        return false;
+    if (x.kind != K::Line && y.kind == K::Line)
+        return touching(y, x);
+    const double tol = 1e-6 * std::max({1.0, x.radius, y.radius});
+    if (x.kind == K::Line) {
+        const Vec2 d = x.b - x.a;
+        const double distance = std::abs(cross(d, y.center - x.a)) / d.length();
+        return std::abs(distance - y.radius) < tol;
+    }
+    const double d = (y.center - x.center).length();
+    if (d < kEps)
+        return false; // concentric: no meeting at all (or the same circle)
+    return std::abs(d - (x.radius + y.radius)) < tol || std::abs(d - std::abs(x.radius - y.radius)) < tol;
+}
+
 bool usedByGeometry(const Sketch& s, EntityId point)
 {
     for (const auto& [id, l] : s.lines())
@@ -186,6 +218,10 @@ std::optional<TrimPlan> planTrim(const Sketch& s, EntityId id, Vec2 at)
             return;
         const auto curve = curveOf(s, other);
         if (!curve)
+            return;
+        // Construction curves are guides: where one only touches a curve (a
+        // polygon's inner circle at the middle of every side) it cuts nothing.
+        if ((isConstruction(s, id) || isConstruction(s, other)) && touching(*target, *curve))
             return;
         for (const Vec2 p : meetings(*target, *curve))
             if (onExtent(*target, p) && onExtent(*curve, p))
@@ -358,17 +394,6 @@ std::vector<EntityId> curvePoints(const Sketch& s, EntityId curve)
     if (const auto* a = s.arc(curve))
         return {a->center, a->start, a->end};
     return {};
-}
-
-bool isConstruction(const Sketch& s, EntityId curve)
-{
-    if (const auto* l = s.line(curve))
-        return l->construction;
-    if (const auto* c = s.circle(curve))
-        return c->construction;
-    if (const auto* a = s.arc(curve))
-        return a->construction;
-    return false;
 }
 
 // The distinct curves of a selection, in order, without `except`.

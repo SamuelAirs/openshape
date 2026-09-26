@@ -94,9 +94,11 @@ public:
     // fingers only move the view. Turned on by the first pen press.
     bool penMode() const { return penMode_; }
     void setPenMode(bool on) { penMode_ = on; }
-    // The touch layout: on-canvas targets (constraint glyphs) sit further apart.
-    bool largeTargets() const { return largeTargets_; }
-    void setLargeTargets(bool on);
+    // The touch layout (AppController::touchMode reads and sets this, so the
+    // two never disagree): on-canvas targets (constraint glyphs) get larger
+    // tap areas and sit further apart.
+    bool touchLayout() const { return touchLayout_; }
+    void setTouchLayout(bool on);
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -222,7 +224,7 @@ private:
     BodyTool bodyTool_ = BodyTool::Move;
     int hoveredRing_ = -1;
     bool penMode_ = false;
-    bool largeTargets_ = false;
+    bool touchLayout_ = false;
     std::size_t insertPreset_ = 2; // M3
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;

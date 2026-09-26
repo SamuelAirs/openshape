@@ -1156,6 +1156,72 @@ TEST(SketchInteraction, TangentArcTypedRadiusAndChain)
     EXPECT_TRUE(h.messages.empty());
 }
 
+// Only a single profile curve ending at the point is continued: never a
+// construction curve ending there too, and never a corner of two sides.
+TEST(SketchInteraction, TangentArcStartsOnAProfileCurveNotAGuide)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    // A center rectangle: two of its corners also end the construction diagonal.
+    h.controller.setSketchTool(SketchTool::CenterRectangle);
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({14, 7}));
+    h.type("40");
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.session().sketch().lines().size(), 5u);
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({20, 10})); // a corner: two sides and the diagonal end there
+    EXPECT_FALSE(h.session().isDrawing()) << "which side to continue is unclear";
+    ASSERT_EQ(h.messages.size(), 1u);
+    EXPECT_NE(h.messages[0].find("free end"), std::string::npos) << h.messages[0];
+    EXPECT_TRUE(h.session().sketch().arcs().empty());
+    h.messages.clear();
+
+    // A line, then a construction line drawn on from its end (newer than the line).
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({30, -30}));
+    h.click(h.sketchScreen({50, -30}));
+    h.click(h.sketchScreen({65, -40}));
+    h.controller.keyPress(Key::Escape);
+    sketch::EntityId profileLine = sketch::kNoEntity, guide = sketch::kNoEntity;
+    for (const auto& [id, l] : h.session().sketch().lines()) {
+        const Vec2 end = h.session().sketch().point(l.end)->position;
+        if ((end - Vec2{50, -30}).length() < 1e-9)
+            profileLine = id;
+        if ((end - Vec2{65, -40}).length() < 1e-9)
+            guide = id;
+    }
+    ASSERT_NE(profileLine, sketch::kNoEntity);
+    ASSERT_NE(guide, sketch::kNoEntity);
+    ASSERT_GT(guide, profileLine);
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({57.5, -35}));
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    ASSERT_EQ(h.session().selection().front(), guide);
+    ASSERT_TRUE(h.session().triggerAction("construction").ok());
+
+    h.controller.setSketchTool(SketchTool::TangentArc);
+    h.click(h.sketchScreen({50, -30}));
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({50, -10}));
+    h.click(h.sketchScreen({50, -10}));
+    h.controller.keyPress(Key::Escape);
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.arcs().size(), 1u);
+    const auto& [arcId, arc] = *s.arcs().begin();
+    // Heading on along +x and turning left: a half circle around (50, -20).
+    EXPECT_NEAR(s.arcRadius(arcId), 10.0, 1e-9);
+    EXPECT_NEAR((s.point(arc.center)->position - Vec2{50, -20}).length(), 0.0, 1e-9);
+    bool tangentToLine = false;
+    for (const auto& [id, c] : s.constraints())
+        tangentToLine = tangentToLine || (c.kind == sketch::ConstraintKind::Tangent && c.a == profileLine && c.b == arcId);
+    EXPECT_TRUE(tangentToLine) << "tangent to the profile line, not the construction line";
+    EXPECT_TRUE(h.messages.empty());
+}
+
 namespace {
 std::vector<SketchLabel> constraintIcons(Harness& h)
 {
@@ -1200,10 +1266,10 @@ TEST(SketchInteraction, ConstraintIconsSelectAndDelete)
     };
     for (const auto& icon : icons)
         EXPECT_GE(nearestLine(icon.screen), 12.0 - 1e-9);
-    h.controller.setLargeTargets(true);
+    h.controller.setTouchLayout(true);
     for (const auto& icon : constraintIcons(h))
         EXPECT_GE(nearestLine(icon.screen), 20.0 - 1e-9);
-    h.controller.setLargeTargets(false);
+    h.controller.setTouchLayout(false);
 
     // Select a horizontal constraint through its icon: only Delete is offered.
     sketch::EntityId bottom = sketch::kNoEntity;
@@ -1244,6 +1310,155 @@ TEST(SketchInteraction, ConstraintIconsSelectAndDelete)
     EXPECT_TRUE(constraintIcons(h).empty());
     h.controller.keyPress(Key::Escape);
     EXPECT_EQ(constraintIcons(h).size(), 4u);
+}
+
+namespace {
+void tap(Harness& h, Vec2 p)
+{
+    auto e = Harness::at(p);
+    e.device = PointerDevice::Touch;
+    h.controller.pointerPress(e);
+    h.controller.pointerRelease(e);
+}
+
+// The bottom side of rectangle40x20 and its H glyph.
+std::pair<sketch::EntityId, SketchLabel> bottomSideAndGlyph(Harness& h)
+{
+    sketch::EntityId bottom = sketch::kNoEntity;
+    const sketch::Sketch& s = h.session().sketch();
+    for (const auto& [id, l] : s.lines())
+        if (std::abs(s.point(l.start)->position.y) < 1e-9 && std::abs(s.point(l.end)->position.y) < 1e-9)
+            bottom = id;
+    SketchLabel glyph;
+    for (const auto& icon : constraintIcons(h))
+        if (s.constraint(icon.constraint)->kind == sketch::ConstraintKind::Horizontal && s.constraint(icon.constraint)->a == bottom)
+            glyph = icon;
+    return {bottom, glyph};
+}
+} // namespace
+
+// Glyph taps are resolved by the session: a point or curve within pick reach
+// wins, then the glyph (with its larger target); drawing tools ignore glyphs.
+TEST(SketchInteraction, ConstraintGlyphTapsNeverHideGeometry)
+{
+    Harness h;
+    rectangle40x20(h);
+    h.controller.setSketchTool(SketchTool::Select);
+    sketch::EntityId bottom = sketch::kNoEntity;
+    SketchLabel glyph;
+    std::tie(bottom, glyph) = bottomSideAndGlyph(h);
+    ASSERT_NE(bottom, sketch::kNoEntity);
+    ASSERT_NE(glyph.constraint, sketch::kNoEntity);
+    const sketch::Sketch& s = h.session().sketch();
+    auto footOnBottom = [&](Vec2 p) {
+        const Vec2 a = h.sketchScreen(s.point(s.line(bottom)->start)->position);
+        const Vec2 b = h.sketchScreen(s.point(s.line(bottom)->end)->position);
+        const Vec2 d = b - a;
+        return a + d * std::clamp((p - a).dot(d) / d.dot(d), 0.0, 1.0);
+    };
+    Vec2 foot = footOnBottom(glyph.screen);
+    Vec2 away = (glyph.screen - foot) * (1.0 / (glyph.screen - foot).length());
+    EXPECT_GE((glyph.screen - foot).length(), 12.0 - 1e-9);
+
+    // Hovering the glyph lights it; a click 6 px off the line, on the glyph's
+    // side and inside its 24 px target, still picks the line.
+    h.move(glyph.screen);
+    bool hot = false;
+    for (const auto& icon : constraintIcons(h))
+        hot = hot || (icon.constraint == glyph.constraint && icon.hot);
+    EXPECT_TRUE(hot);
+    const Vec2 nearLine = foot + away * 6;
+    ASSERT_LE(std::max(std::abs(nearLine.x - glyph.screen.x), std::abs(nearLine.y - glyph.screen.y)),
+              h.session().glyphTapHalfSize());
+    h.click(nearLine);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_EQ(h.session().selection().front(), bottom);
+    for (const auto& icon : constraintIcons(h))
+        EXPECT_FALSE(icon.constraint == glyph.constraint && icon.hot) << "the line under the pointer wins";
+    h.click(glyph.screen);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_EQ(h.session().selection().front(), glyph.constraint);
+    h.controller.keyPress(Key::Escape);
+
+    // The touch layout: a 40 px target, further out; a finger 15 px off the line still gets the line.
+    h.controller.setTouchLayout(true);
+    EXPECT_TRUE(h.session().largeTargets());
+    EXPECT_EQ(h.session().glyphTapHalfSize(), 20.0);
+    std::tie(bottom, glyph) = bottomSideAndGlyph(h);
+    ASSERT_NE(glyph.constraint, sketch::kNoEntity);
+    foot = footOnBottom(glyph.screen);
+    away = (glyph.screen - foot) * (1.0 / (glyph.screen - foot).length());
+    EXPECT_GE((glyph.screen - foot).length(), 20.0);
+    tap(h, foot + away * 15);
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    EXPECT_EQ(h.session().selection().front(), bottom);
+    tap(h, glyph.screen + Vec2{0, 1} * (away.y > 0 ? 12.0 : -12.0)); // the far half of the glyph's target
+    ASSERT_EQ(h.session().selection().size(), 1u) << "the constraint replaces the line (never mixed)";
+    EXPECT_EQ(h.session().selection().front(), glyph.constraint);
+    ASSERT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.session().sketch().constraint(glyph.constraint), nullptr);
+    EXPECT_TRUE(h.controller.undo());
+
+    // A drawing tool ignores glyphs: the click places the line's first point.
+    h.controller.setSketchTool(SketchTool::Line);
+    const auto icons = constraintIcons(h);
+    ASSERT_FALSE(icons.empty()) << "shown while the tool waits for its first click";
+    h.click(icons.front().screen);
+    EXPECT_TRUE(h.session().isDrawing());
+    EXPECT_TRUE(h.session().selection().empty());
+    h.controller.keyPress(Key::Escape);
+    h.controller.setTouchLayout(false);
+    EXPECT_FALSE(h.session().largeTargets());
+
+    // A session started in the touch layout has it from the start (as on a tablet).
+    h.controller.finishSketch();
+    h.controller.setTouchLayout(true);
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    ASSERT_NE(h.controller.sketchSession(), nullptr);
+    EXPECT_TRUE(h.session().largeTargets());
+}
+
+// Glyphs keep clear of the dimension labels (pills about 7.5 px per
+// character plus 16 px wide, 24 px high), at every zoom.
+TEST(SketchInteraction, ConstraintGlyphsKeepClearOfDimensionLabels)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.click(h.sketchScreen({0, 0}));
+    h.move(h.sketchScreen({30, 12}));
+    h.type("127.25"); // a long label
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.setSketchTool(SketchTool::Select);
+    auto characters = [](const std::string& text) {
+        return std::count_if(text.begin(), text.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; });
+    };
+    const Vec2 center = h.sketchScreen({63.6, 10});
+    h.controller.pinch(center, 0.15);
+    int close = 0, shown = 0;
+    for (int step = 0; step < 50; ++step) {
+        h.controller.pinch(center, 1.07);
+        const auto labels = h.session().labels(h.controller.camera());
+        for (const auto& glyph : labels) {
+            if (glyph.kind != SketchLabel::Kind::Constraint)
+                continue;
+            ++shown;
+            const double glyphHalf = std::max(18.0, 7.5 * double(characters(glyph.text)) + 8) / 2;
+            for (const auto& dimension : labels) {
+                if (dimension.kind != SketchLabel::Kind::Dimension)
+                    continue;
+                const double halfWidth = (7.5 * double(characters(dimension.text)) + 16) / 2;
+                const double dx = std::abs(glyph.screen.x - dimension.screen.x), dy = std::abs(glyph.screen.y - dimension.screen.y);
+                close += dx < halfWidth + glyphHalf + 20 && dy < 12 + glyphHalf + 20 ? 1 : 0;
+                EXPECT_TRUE(dx >= halfWidth + glyphHalf || dy >= 12 + glyphHalf)
+                    << "step " << step << ": glyph " << glyph.text << " on label " << dimension.text;
+            }
+        }
+    }
+    EXPECT_GT(shown, 40) << "glyphs are shown at most zooms";
+    EXPECT_GT(close, 0) << "some glyphs sit right beside a label (the check is not vacuous)";
 }
 
 namespace {

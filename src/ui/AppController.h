@@ -93,7 +93,7 @@ public:
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariantList axisTriad() const;
-    bool touchMode() const { return touchMode_; }
+    bool touchMode() const;
     void setTouchMode(bool on);
     bool penMode() const;
     void setPenMode(bool on);
@@ -154,8 +154,6 @@ public:
     Q_INVOKABLE void commitSketchTool();
     // -/+ on the sketch counter (a polygon's sides, a pattern's copies).
     Q_INVOKABLE void stepSketchCounter(int delta);
-    // Selects a constraint (its glyph was tapped); Delete then removes it.
-    Q_INVOKABLE void selectSketchConstraint(int constraintId);
     Q_INVOKABLE QString setSketchDimension(int constraintId, const QString& text);
 
     // History panel. Ids are UUID strings. Edits return an error message or "".
@@ -186,11 +184,6 @@ private:
     std::unique_ptr<cmd::UndoStack> undoStack_;
     std::unique_ptr<interact::InteractionController> interaction_;
     QString path_;
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-    bool touchMode_ = true;
-#else
-    bool touchMode_ = false;
-#endif
 };
 
 } // namespace os::ui

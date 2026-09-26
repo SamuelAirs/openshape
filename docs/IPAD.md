@@ -167,6 +167,10 @@ relinking.
    **Pen** and check that a resting hand does not draw or select.
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
    Files app.
-7. Rotate the iPad: the layout follows; the tool palette scrolls when short.
+7. Rotate the iPad: the layout follows; the tool palette scrolls when short
+   (in a sketch too: Draw / Edit on the left).
+   In a sketch: tap a constraint glyph (H, V, =, …) and delete it; tap right
+   next to a line and check the line is selected, not the glyph; draw a
+   polygon and change its sides with the on-screen − / + buttons.
 8. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).

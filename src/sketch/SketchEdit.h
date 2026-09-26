@@ -98,7 +98,9 @@ std::vector<Motion2D> patternMotions(const PatternLayout& layout);
 // Removes the piece of a line, circle or arc around `at` that lies between
 // its nearest crossings with other curves (or its own ends): a circle
 // becomes an arc, a line or arc may split in two. New ends are kept on the
-// curves they meet (point-on-line / point-on-circle constraints).
+// curves they meet (point-on-line / point-on-circle constraints). A
+// construction curve that only touches another one (tangent, like a
+// polygon's inner circle) is no crossing; one that crosses it is.
 Status trimAt(Sketch& sketch, EntityId curve, Vec2 at);
 // The piece trimAt would remove, as a polyline (empty when it cannot trim).
 std::vector<Vec2> trimPreview(const Sketch& sketch, EntityId curve, Vec2 at);
