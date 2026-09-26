@@ -240,6 +240,18 @@ Preferences, the installer).
     and indeed the public source and build scripts cover the LGPL relinking
     requirement for the statically linked iOS libraries (notices and source
     links remain; docs/LICENSING.md).
+- **Owner decisions and feedback, 2026-09-26 late morning:** Apple
+  Developer access approved and the TestFlight secrets set: the app ran on
+  their iPhone 16 Pro and iPad. Feedback: (1) the value box (input field
+  and its buttons) often covers what they tapped — seen in a screen
+  recording on the iPhone, a fillet's Radius box beside the arrow over the
+  tapped edge; (2) after mirroring into two objects, the geometry stays
+  linked (the copy follows the original) — they expect independent bodies.
+  Decisions: publish v0.1.0 (tagged); code signing through **SignPath
+  Foundation** (free for open source; the owner applies, then two GitHub
+  secrets); add a default **FDM clearance allowance (+0.2 mm)** for screw
+  holes; **Noto Sans** (SIL OFL) for text emboss/deboss; real-UI tests may
+  run while they are away from the PC.
 - **CI:** every push runs Windows and macOS (`ci.yml`, free since the
   repository is public; documentation-only pushes skip it). The macOS
   acceptance run (`continue-on-error`, a 1024x653 window) passed completely
