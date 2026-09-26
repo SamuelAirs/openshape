@@ -435,7 +435,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   which body it stands in for. `canCommit()` counts a pending preview as
   committable (`previewUsable()`): the command computes the step again;
   commit waits for it only when an automatic choice depends on it
-  (`commitNeedsPreview`: an extrusion that becomes a new body). Operations
+  (`commitNeedsPreview`: an extrusion that becomes a new body). A click
+  elsewhere first takes a finished preview's verdict (`deliverPreviews`);
+  when the command refuses a value whose preview had not come back yet,
+  the click goes on to select, as it does when the refusal is shown
+  (`applyBeforeSelecting`). Random sessions through these entry points give
+  the same documents and operations with and without the worker
+  (`AsyncPreview.RandomSessionsMatchSynchronousOnes`). Operations
   created while previews are asynchronous get the scheduler
   (`PreviewSchedulerScope` in `rebuildOperation`), so Pattern's and the
   insert's first previews are computed on the worker too. An operation

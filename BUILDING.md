@@ -310,7 +310,9 @@ workflow artifact. The Windows icon is made from the SVG with
 
 - **Longer stress hunts** — the robustness suite runs a few fixed seeds;
   `OPENSHAPE_STRESS_SEEDS=N` runs N other seeds of each random session
-  instead (undo/redo, interleaved, save/open; ~3 s each). A seed replays the
+  instead (undo/redo, interleaved, save/open; ~3 s each), and as many random
+  UI sessions with previews on the worker against synchronous ones
+  (`test_interaction.exe`, `AsyncPreview.RandomSessionsMatchSynchronousOnes`). A seed replays the
   same session on Windows and macOS (`tests/PortableRandom.h`: no standard
   distributions, whose output differs between libstdc++ and libc++).
   Failures print the action log and every body's steps with status:

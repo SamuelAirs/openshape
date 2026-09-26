@@ -13,11 +13,14 @@
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
 #include "interaction/PreviewWorker.h"
+#include "PortableRandom.h"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <future>
 #include <thread>
 
@@ -542,4 +545,120 @@ TEST(AsyncPreview, HoveringProfilesMakesNoKernelCall)
     EXPECT_NE(outside.kind, sel::PickKind::Profile);
     EXPECT_EQ(h.controller.hover().kind, sel::PickKind::Profile);
     ASSERT_TRUE(h.controller.waitForPreview());
+}
+
+namespace {
+
+// One side of a random session: the same UI actions with previews on the
+// worker or on the calling thread.
+struct Session {
+    doc::Document document;
+    cmd::UndoStack stack;
+    InteractionController controller{document, stack};
+
+    explicit Session(bool async)
+    {
+        controller.setViewportSize({1200, 800});
+        if (async)
+            controller.enableAsyncPreviews({});
+        EXPECT_TRUE(controller.createBox(20).ok());
+        controller.fitAll(false);
+    }
+    Vec2 screen(const Vec3& p) const { return controller.camera().project(p); }
+    void clickAt(Vec2 p)
+    {
+        PointerEvent e;
+        e.position = p;
+        e.button = PointerButton::Left;
+        controller.pointerPress(e);
+        controller.pointerRelease(e);
+    }
+    // The first body's box (undo may have removed it: then an empty one at the origin).
+    geom::BoundingBox box() const
+    {
+        return document.bodies().empty() ? geom::BoundingBox{} : geom::boundingBox(document.bodies().front()->shape());
+    }
+};
+
+// What must be the same on both sides.
+std::string describe(const Session& s)
+{
+    std::string text = std::to_string(s.document.bodies().size()) + " bodies;";
+    for (const auto& body : s.document.bodies()) {
+        const geom::BoundingBox box = geom::boundingBox(body->shape());
+        char line[160];
+        std::snprintf(line, sizeof line, " %zu steps, %.6f mm3, z %.6f..%.6f;", body->features().size(),
+                      geom::volume(body->shape()), box.min.z, box.max.z);
+        text += line;
+    }
+    text += " undo " + s.stack.undoLabel() + " / redo " + s.stack.redoLabel();
+    text += s.controller.operation() ? " / " + s.controller.operation()->title() : std::string(" / no operation");
+    return text;
+}
+
+} // namespace
+
+// Random sessions through the UI entry points (clicks on the top face and an
+// edge, typed values, Enter, Esc, undo, redo, a click elsewhere that applies),
+// once with previews on the worker - random kernel delays, results delivered
+// at random moments - and once synchronously: the documents and operations
+// are the same after every step, and so are the previews once the worker is
+// done. (A click after a refused value whose preview had not come back yet
+// selects, as with the refusal shown: the command refuses the value first.)
+TEST(AsyncPreview, RandomSessionsMatchSynchronousOnes)
+{
+    // OPENSHAPE_STRESS_SEEDS=N: N other seeds instead (a longer hunt).
+    std::vector<std::uint32_t> seeds{11, 12, 13, 14};
+    if (const char* count = std::getenv("OPENSHAPE_STRESS_SEEDS")) {
+        seeds.clear();
+        for (int i = 0; i < std::atoi(count); ++i)
+            seeds.push_back(5000u + std::uint32_t(i));
+    }
+    for (const std::uint32_t seed : seeds) {
+        SCOPED_TRACE("seed " + std::to_string(seed));
+        Session sync(false), async(true);
+        test::PortableRandom rng(seed);
+        std::vector<std::string> log;
+        for (int step = 0; step < 36; ++step) {
+            const int action = rng.integer(0, 7);
+            char text[32];
+            std::snprintf(text, sizeof text, "%.1f", action == 1 ? rng.uniform(4, 40) : rng.uniform(0.5, 1.5));
+            if (rng.unit() < 0.3)
+                async.controller.previewWorker()->setJobDelayForTesting(std::chrono::milliseconds(rng.integer(0, 25)));
+            log.push_back(std::to_string(action) + (action == 1 || action == 6 ? std::string(" ") + text : std::string()));
+            for (Session* s : {&sync, &async}) {
+                const geom::BoundingBox box = s->box();
+                switch (action) {
+                case 0: s->clickAt(s->screen({box.center().x, box.center().y, box.max.z})); break;
+                case 1:
+                case 6:
+                    if (action == 6)
+                        s->clickAt(s->screen({box.max.x, box.min.y, box.center().z})); // a vertical edge: a fillet
+                    (void)s->controller.setValueText(text);
+                    break;
+                case 2: (void)s->controller.keyPress(Key::Enter); break;
+                case 3: (void)s->controller.keyPress(Key::Escape); break;
+                case 4: (void)s->controller.undo(); break;
+                case 5: (void)s->controller.redo(); break;
+                case 7: s->clickAt({30, 30}); break;
+                }
+            }
+            if (rng.unit() < 0.5)
+                (void)async.controller.deliverPreviews();
+            else if (rng.unit() < 0.3)
+                std::this_thread::sleep_for(std::chrono::milliseconds(rng.integer(1, 20)));
+            ASSERT_EQ(describe(async), describe(sync)) << "after steps " << ::testing::PrintToString(log);
+        }
+        ASSERT_TRUE(async.controller.waitForPreview());
+        const Operation* a = async.controller.operation();
+        const Operation* b = sync.controller.operation();
+        ASSERT_EQ(a != nullptr, b != nullptr);
+        if (a && b) {
+            EXPECT_EQ(a->error(), b->error());
+            EXPECT_EQ(a->hasPreview(), b->hasPreview());
+            if (a->hasPreview() && b->hasPreview()) {
+                EXPECT_EQ(a->previewMesh()->triangleCount(), b->previewMesh()->triangleCount());
+            }
+        }
+    }
 }

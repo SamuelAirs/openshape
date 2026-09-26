@@ -5,9 +5,12 @@
 // Previews off the GUI thread (TD-1) in the real window: on a vented tray
 // (119 faces, where a push/pull preview keeps the kernel busy for a while)
 // the push/pull arrow is dragged through the window's input path;
-// no pointer move waits for the kernel, the preview arrives afterwards and
-// Enter applies it. Then Ctrl+Z and Enter while a preview is still being
-// computed, and a refused fillet whose message comes back from the worker.
+// no pointer move waits for the kernel (with previews on the GUI thread,
+// OPENSHAPE_SYNC_PREVIEWS=1, the longest took 90 ms), the preview arrives
+// afterwards and Enter applies it. Then Ctrl+Z and Enter while a preview is
+// still being computed, a refused fillet whose message comes back from the
+// worker, and a Move drag with 81 Model panel rows, which a drag step does
+// not rebuild (TD-18).
 
 #include "app/AcceptanceRunner.h"
 #include "commands/DocumentCommands.h"

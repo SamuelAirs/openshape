@@ -261,6 +261,12 @@ private:
     std::string computeSelectionSummary() const;
 
     void click(const PointerEvent& event);
+    // A click elsewhere (or on a Model panel row) applies the operation first.
+    // Applied; Refused: the operation stays (its message says why), the click
+    // stops; Dropped: nothing to apply, or the command refused a value whose
+    // preview had not come back yet - the click goes on to select.
+    enum class ApplyResult { Applied, Refused, Dropped };
+    ApplyResult applyBeforeSelecting();
     sel::PickResult pickProfile(Vec2 screen) const;
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);

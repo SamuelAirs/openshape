@@ -768,10 +768,13 @@ void InteractionController::click(const PointerEvent& event)
     if (operation_ && operation_->canCommit()) {
         // Clicking anywhere else accepts the pending operation (direct-manipulation
         // convention); then the click selects against the updated geometry.
-        if (!commitOperation())
+        const ApplyResult applied = applyBeforeSelecting();
+        if (applied == ApplyResult::Refused)
             return;
-        hit = pickAt(event.position, profile);
-        additive = false;
+        if (applied == ApplyResult::Applied) {
+            hit = pickAt(event.position, profile);
+            additive = false;
+        }
     }
 
     if (!hit.hit()) {
@@ -1008,6 +1011,22 @@ Status InteractionController::commitOperation()
         selection_.clear();
     afterDocumentEdit();
     return status;
+}
+
+InteractionController::ApplyResult InteractionController::applyBeforeSelecting()
+{
+    // A finished preview's verdict first (its delivery may still be queued).
+    if (previewWorker_)
+        (void)deliverPreviews();
+    if (!operation_ || !operation_->canCommit())
+        return ApplyResult::Dropped;
+    // Without a verdict yet (the preview still computes) the command decides.
+    // Refused, the click goes on, as it would have with the refusal shown:
+    // a click never applies a refused value, it selects.
+    const bool verdictKnown = !operation_->previewPending();
+    if (commitOperation())
+        return ApplyResult::Applied;
+    return verdictKnown ? ApplyResult::Refused : ApplyResult::Dropped;
 }
 
 void InteractionController::suggestSplit(const Uuid& bodyId, int piecesBefore)
@@ -2671,9 +2690,10 @@ Status InteractionController::selectBody(const Uuid& bodyId, bool additive)
         return Status::failure(ErrorCode::InvalidArgument, text, "selectBody: hidden body");
     }
     // Like clicking elsewhere in the view: a pending value is applied first.
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (operation_ && operation_->canCommit() && applyBeforeSelecting() == ApplyResult::Refused)
+        return Status::failure(ErrorCode::InvalidArgument,
+                               operation_ && !operation_->error().empty() ? operation_->error() : "The value could not be applied.",
+                               "selectBody: the pending operation was refused");
     auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, bodyId, -1);
     if (!item)
         return Status::failure(ErrorCode::InvalidReference, "That body has no shape to select.", "selectBody: no item");
