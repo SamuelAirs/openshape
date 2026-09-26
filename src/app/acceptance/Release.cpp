@@ -78,10 +78,22 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             const QString text = title ? title->property("text").toString() : QString();
             r.check(title && title->isVisible() && text == QStringLiteral("OpenShape ") + version,
                     "release: the About card names the version", text);
+            // Only the Windows package carries the license files
+            // (scripts/package-windows.sh); elsewhere the card links the list
+            // in the repository and must not name files that are not there.
             QQuickItem* files = r.findItem(QStringLiteral("aboutLicenseFiles"));
             const QString filesText = files ? files->property("text").toString() : QString();
-            r.check(filesText.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt")),
+#if defined(Q_OS_WIN)
+            r.check(filesText.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt"))
+                        && filesText.contains(QStringLiteral("OpenShape.exe")),
                     "release: the About card points to the bundled license texts", filesText);
+#else
+            r.check(filesText.contains(QStringLiteral("THIRD_PARTY.md"))
+                        && filesText.contains(QStringLiteral("github.com/SamuelAirs/openshape"))
+                        && !filesText.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt"))
+                        && !filesText.contains(QStringLiteral("OpenShape.exe")),
+                    "release: the About card links the license list in the repository", filesText);
+#endif
             r.screenshot(QStringLiteral("release_about"));
             r.key(Qt::Key_Escape);
         },
