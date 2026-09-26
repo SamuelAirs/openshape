@@ -285,6 +285,9 @@ Document (UUID, display unit)
   before independent pieces hold `SplitPiece` bodies (piece *k* of the
   parent's shape just before its Split step, following every upstream edit
   through `recomputeDependents`); they still load and compute as before.
+  Each piece of an imported body stores its geometry again, so a split that
+  would take the project beyond `Document::importedGeometryLimit` is
+  refused before anything changes (see `DuplicateBodyCommand`).
 - `Document::preview(body, feature)` evaluates a feature without mutating
   anything; interactive previews use it.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
@@ -363,9 +366,13 @@ belongs to that history alone is copied too — the sketches its steps use
 Combine steps consumed (copied hidden, recursively) — then every reference is
 re-pointed at the copies (`Feature::remapReferences`, sketch attachments and
 host bodies). Editing the copy (a step, its sketch, its tool) never changes
-the source, nor the other way round. The other bodies a history builds on
-(in files from before independent copies: the parent of a split-off piece,
-the source of a mirror copy) stay shared.
+the source, nor the other way round. A body from before independent copies
+whose base step follows another body (a `Copy`, a `SplitPiece`) is copied
+without that link: the base step is replaced by the other body's history
+(resolved the same way; up to its Split step for a piece) and the step that
+made it (a Mirror keeping the image, a Move, a Split keeping the piece), so
+the copy follows nothing; only when that body cannot be built up to there
+does the copy keep the old step (shared, like before).
 What is copied depends on the kind of reference, never on visibility (a tool
 shown again is still consumed; a hidden source is still shared). The copy's
 id is fixed at construction so the UI can select it and redo recreates it.
@@ -376,7 +383,14 @@ into one undo step) and refuses when that step fails or changes nothing.
 The cloned steps **take over the source's results** (`Body::adoptResults`,
 `Document::addBody`'s `computeFrom`: the shapes are shared, only the added
 step is computed): 10 pattern copies of a 14-step body took 18 ms instead of
-about 3.3 s (333 ms per recompute of that history).
+about 3.3 s (333 ms per recompute of that history). A resolved legacy
+history differs from the source's, so it is computed in full.
+Each copied Imported step is one more `imports/` entry in the project: the
+command refuses (plainly, changing nothing) a copy that would take the
+document beyond `Document::importedGeometryLimit` (512 MiB, what a project
+can save; lower only in tests), and `cmd::checkImportedCopiesFit` /
+`DuplicateBodyCommand::importedBytesOfCopy` let Mirror, Pattern and Split
+check before they start.
 
 ## Interaction (`interaction/`)
 
@@ -539,9 +553,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   edge or a hole/shaft sets the direction or axis. Copies that touch or
   overlap the body are joined into it (one Mirror or Pattern step: a half
   part mirrored across its own face becomes one symmetric body). Copies
-  that would not touch it (the joined preview has more pieces than the
-  body: `reconsider`, as for an extrusion's new body) become **separate,
-  independent bodies** as in Shapr3D, unless there would be more than 100;
+  that touch neither the body nor each other (the joined preview has
+  (copies + 1) times the body's pieces: `reconsider`, as for an extrusion's
+  new body; a body in pieces mirrored across one piece's face joins) become
+  **separate, independent bodies** as in Shapr3D, unless there would be
+  more than 100 or their imported geometry would not fit in the project;
   the "Separate bodies" option shows the choice and overrides it both ways
   (`separateIsAutomatic()` tells which). Each separate copy is a new body
   (one undo step for all, named like new bodies) made by

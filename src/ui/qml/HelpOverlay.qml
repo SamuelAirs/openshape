@@ -165,7 +165,7 @@ Rectangle {
                             ["Mirror", "Body → Mirror, then click a flat face or choose a plane",
                              "Body → Mirror, then tap a flat face or choose a plane (empty space gives up)"],
                             ["Pattern", "Body → Pattern: Linear or Circular, type the spacing, ± copy"],
-                            ["Copies as bodies", "Mirror or Pattern: copies that don't touch the original become bodies of their own (independent: changing one changes no other); Separate bodies switches it"],
+                            ["Copies as bodies", "Mirror or Pattern: copies that touch neither the original nor each other become bodies of their own (independent: changing one changes no other); Separate bodies switches it"],
                             ["Delete a body", "Double-click it, press Delete; a body another body is built from is hidden instead",
                              "Double-tap it → Delete; a body another body is built from is hidden instead"],
                             ["Union / subtract / intersect", "Select two bodies → Union, Subtract or Intersect (Swap picks which is cut)"]

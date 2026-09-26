@@ -292,10 +292,13 @@ face flat on the ground (the build plate). `Enter` applies.
   evenly). **+ copy** and **− copy** change how many (the number after ×
   counts the original too).
 - Copies that touch or overlap the original join it (a half part mirrored
-  across its own face becomes one symmetric body). Copies that would not
-  touch it become **separate bodies**, each independent: changing or moving
-  the original later changes no copy, and the other way round. The
-  **Separate bodies** button shows which it will be; click it to switch.
+  across its own face becomes one symmetric body). Copies that touch
+  neither the original nor each other become **separate bodies**, each
+  independent: changing or moving the original later changes no copy, and
+  the other way round. The **Separate bodies** button shows which it will
+  be; click it to switch. (Each copy of an imported STEP body stores its
+  geometry again, and a project holds at most 512 MB of it: copies that
+  would not fit stay joined, and Separate bodies says why.)
 
 ### Duplicate and split
 

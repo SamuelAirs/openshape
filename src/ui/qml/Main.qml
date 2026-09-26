@@ -866,7 +866,8 @@ ApplicationWindow {
         if (app.operationActive && app.operationTitle.startsWith("Heat-set insert"))
             return "Pick the insert size · drag the arrow or type the pilot hole's depth · Enter applies"
         // Mirror and Pattern join copies that touch the body; copies apart
-        // from it become separate bodies (the toggle shows and overrides it).
+        // from it and from each other become separate bodies (the toggle
+        // shows and overrides it).
         // Before the general hint: a pattern previews with a value at once.
         if (app.operationActive && app.operationTitle === "Mirror" && separateCopies())
             return "Enter or Apply mirrors it as a separate body · click another flat face or choose a plane to change it · "

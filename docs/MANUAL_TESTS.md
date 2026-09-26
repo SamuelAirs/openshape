@@ -68,7 +68,9 @@ odd: a screenshot and a sentence is plenty. Starting the app with
       Apply, then push/pull the original's top face: the image stays as it
       was (and the other way round). Pattern the box: 5 mm apart the copies
       are separate bodies; type the box's width as the spacing and they
-      join. Mirror a box across its own face: one body.
+      join. Mirror a box across its own face: one body. Open a project from
+      version 0.1.0 with a mirrored or patterned copy, mirror that copy:
+      changing the 0.1.0 original moves its old copy but not the new one.
     - Rotate about an edge: select a body, Rotate, click one of its straight
       edges: a single ring appears around that edge; type `90`, Enter. Try
       again clicking near a corner (the rings move there), a hole's wall

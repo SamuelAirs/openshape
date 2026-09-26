@@ -162,7 +162,9 @@ Rules:
   message) when the piece no longer exists or is no longer separate, when the
   split step is suppressed or deleted, or when the body is gone. Written by
   builds before independent pieces (2026-09-26); still read and computed
-  exactly as before, no longer written.
+  exactly as before, no longer written. A copy of such a body (Duplicate,
+  Mirror, Pattern, Split into bodies) is written without it: the parent's
+  steps up to its Split step, then a Split step that lists this piece first.
 - `Copy` params (a base feature: Mirror / Pattern with "Separate bodies" in
   builds before independent copies, 2026-09-26; still read and computed
   exactly as before, no longer written — copies are now bodies with a copy
@@ -173,6 +175,10 @@ Rules:
   "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
   (applied before the translation) — the body's shape moved. It follows
   every change of that body and fails with a message when the body is gone.
+  A copy of such a body (Duplicate, Mirror, Pattern, Split into bodies) is
+  written without it: the source's steps, then a `Mirror` step with
+  `keepOriginal` false or a `Move` step named "Pattern copy" (none for a
+  copy that did not move).
 - `Holes` params: `{ "face": faceRef, "positions": [[x, y], ...],
   "diameter", "throughAll", "depth"?, "head"?, "headDiameter"?,
   "headDepth"?, "headAngle"?, "preset" }` — round holes drilled into a flat

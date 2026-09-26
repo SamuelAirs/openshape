@@ -291,17 +291,22 @@ Status DuplicateBodyCommand::plan(const doc::Document& document)
             copies[f->id()] = copy->id();
             features[i].push_back(std::move(copy));
         }
-    // What referred to a resolved legacy step or its body (a sketch drawn on
-    // the copy) refers to the step standing for it and to the copy.
+    // A sketch drawn on a resolved legacy step, or on the body whose history
+    // replaced it, goes with the step standing for it and with the copy
+    // (steps never refer to those bodies: only sketch attachments do).
     for (const auto& [legacy, standIn] : replaced)
         if (const auto it = copies.find(standIn); it != copies.end())
             copies[legacy] = it->second;
+    std::map<Uuid, Uuid> inlinedInto;
     for (const Planned& p : planned)
         for (const Uuid& from : p.inlined)
-            copies.emplace(from, copies.at(p.body->id())); // unless copied itself
+            if (!copies.count(from)) // unless copied itself
+                inlinedInto.emplace(from, copies.at(p.body->id()));
     auto mapped = [&](const Uuid& id) {
-        const auto it = copies.find(id);
-        return it == copies.end() ? id : it->second;
+        if (const auto it = copies.find(id); it != copies.end())
+            return it->second;
+        const auto it = inlinedInto.find(id);
+        return it == inlinedInto.end() ? id : it->second;
     };
 
     std::vector<std::string> names;
@@ -366,10 +371,10 @@ std::uint64_t DuplicateBodyCommand::importedBytesOfCopy(const doc::Document& doc
 
 Status checkImportedCopiesFit(const doc::Document& document, const Uuid& sourceId, std::size_t copies)
 {
-    const std::uint64_t each = DuplicateBodyCommand::importedBytesOfCopy(document, sourceId);
-    if (each == 0 || copies == 0)
-        return okStatus();
     const std::uint64_t stored = document.importedGeometryBytes();
+    if (stored == 0 || copies == 0)
+        return okStatus(); // nothing imported: nothing to copy
+    const std::uint64_t each = DuplicateBodyCommand::importedBytesOfCopy(document, sourceId);
     const std::uint64_t limit = document.importedGeometryLimit();
     if (stored <= limit && each <= (limit - stored) / copies)
         return okStatus();
