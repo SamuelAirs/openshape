@@ -44,6 +44,9 @@
 #include <Precision.hxx>
 #include <Message_Report.hxx>
 #include <OSD.hxx>
+#include <OSD_Exception_ACCESS_VIOLATION.hxx>
+#include <OSD_Exception_ILLEGAL_INSTRUCTION.hxx>
+#include <Standard_NumericError.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
@@ -61,10 +64,12 @@
 #include <gp_Trsf.hxx>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cmath>
 #include <condition_variable>
+#include <cstring>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -72,6 +77,11 @@
 #include <limits>
 #include <set>
 #include <sstream>
+
+#if !defined(_WIN32)
+#include <pthread.h>
+#include <signal.h>
+#endif
 
 namespace os::geom {
 
@@ -82,12 +92,79 @@ namespace {
 #if defined(_WIN32)
 constexpr int kKernelSignals[] = {SIGSEGV, SIGILL, SIGFPE};
 using SignalHandler = void (*)(int);
-SignalHandler g_kernelHandlers[std::size(kKernelSignals)] = {};
 SignalHandler g_outsideHandlers[std::size(kKernelSignals)] = {};
+
+// Installed (per thread: the C runtime keeps these handlers per thread) while
+// a kernel call runs. It does what OpenCASCADE's own handler does - jump
+// back to the kernel call's try block, where the fault becomes a failure -
+// but without that handler's process-wide mutex: OCCT locks it and jumps
+// with it still locked (the jump skips the release). The faulting thread
+// could lock it again, but the next fault on any other thread (the GUI
+// thread after the preview worker's, or the other way round) would wait
+// for it forever: the app would freeze instead of reporting a failure.
+extern "C" void onKernelSignal(int signal)
+{
+    // The C runtime resets the handler before calling it.
+    std::signal(signal, onKernelSignal);
+    switch (signal) {
+    case SIGSEGV: OSD_Exception_ACCESS_VIOLATION::NewInstance("ACCESS VIOLATION in a kernel call")->Jump(); break;
+    case SIGILL: OSD_Exception_ILLEGAL_INSTRUCTION::NewInstance("ILLEGAL INSTRUCTION in a kernel call")->Jump(); break;
+    default: Standard_NumericError::NewInstance("ARITHMETIC ERROR in a kernel call")->Jump(); break;
+    }
+}
 #else
 constexpr int kKernelSignals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE};
-struct sigaction g_kernelActions[std::size(kKernelSignals)];
-struct sigaction g_outsideActions[std::size(kKernelSignals)];
+struct sigaction g_kernelActions[std::size(kKernelSignals)];  // OpenCASCADE's
+struct sigaction g_outsideActions[std::size(kKernelSignals)]; // in place outside kernel calls (the crash log's)
+struct sigaction g_dispatchActions[std::size(kKernelSignals)]; // installed while a kernel call runs
+// sigaction handlers belong to the whole process: while the preview worker
+// is in the kernel, a crash on the GUI thread would reach OpenCASCADE's
+// handler, which ends the app with exit(1) when the faulting thread is in no
+// kernel call (no crash log, no crash report). So kernel calls install a
+// dispatcher that hands the fault to OpenCASCADE only on the thread inside
+// the kernel call: one at a time (the kernel lock), recorded here.
+static_assert(std::atomic<pthread_t>::is_always_lock_free, "read in a signal handler");
+std::atomic<bool> g_kernelThreadSet{false};
+std::atomic<pthread_t> g_kernelThread{};
+
+int kernelSignalIndex(int signal)
+{
+    for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+        if (kKernelSignals[i] == signal)
+            return static_cast<int>(i);
+    return -1;
+}
+
+void forwardSignal(const struct sigaction* action, int signal, siginfo_t* info, void* context)
+{
+    if (action && (action->sa_flags & SA_SIGINFO) != 0) {
+        if (action->sa_sigaction) {
+            action->sa_sigaction(signal, info, context);
+            return;
+        }
+    } else if (action && action->sa_handler != SIG_DFL && action->sa_handler != SIG_IGN) {
+        action->sa_handler(signal);
+        return;
+    }
+    // No handler to hand it to: the default action, a crash the system
+    // reports (the raised signal is delivered when this handler returns).
+    struct sigaction fallback;
+    std::memset(&fallback, 0, sizeof fallback);
+    fallback.sa_handler = SIG_DFL;
+    sigemptyset(&fallback.sa_mask);
+    sigaction(signal, &fallback, nullptr);
+    raise(signal);
+}
+
+extern "C" void onKernelSignal(int signal, siginfo_t* info, void* context)
+{
+    const int index = kernelSignalIndex(signal);
+    const bool kernelThread = g_kernelThreadSet.load() && pthread_equal(g_kernelThread.load(), pthread_self()) != 0;
+    const struct sigaction* action = index < 0 ? nullptr
+                                   : kernelThread ? &g_kernelActions[index]
+                                                  : &g_outsideActions[index];
+    forwardSignal(action, signal, info, context);
+}
 #endif
 std::mutex g_signalMutex;
 int g_kernelCalls = 0; // kernel calls running now, on all threads
@@ -191,6 +268,8 @@ void installKernelSignalHandlers()
         // back what was there before. No floating-point traps: kernel code
         // relies on IEEE results.
 #if defined(_WIN32)
+        // OCCT's C signal handlers are replaced by onKernelSignal (their
+        // mutex); its top-level exception filter stays (CrashLog chains to it).
         SignalHandler before[std::size(kKernelSignals)];
         for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
             before[i] = std::signal(kKernelSignals[i], SIG_DFL);
@@ -198,14 +277,19 @@ void installKernelSignalHandlers()
         }
         OSD::SetSignal(OSD_SignalMode_Set, false);
         for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
-            g_kernelHandlers[i] = std::signal(kKernelSignals[i], before[i]);
+            std::signal(kKernelSignals[i], before[i]);
 #else
         struct sigaction before[std::size(kKernelSignals)];
         for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
             sigaction(kKernelSignals[i], nullptr, &before[i]);
         OSD::SetSignal(OSD_SignalMode_Set, false);
-        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
             sigaction(kKernelSignals[i], &before[i], &g_kernelActions[i]);
+            // The dispatcher blocks what OpenCASCADE's handler blocks.
+            g_dispatchActions[i] = g_kernelActions[i];
+            g_dispatchActions[i].sa_sigaction = onKernelSignal;
+            g_dispatchActions[i].sa_flags = (g_kernelActions[i].sa_flags | SA_SIGINFO) & ~static_cast<int>(SA_RESETHAND);
+        }
 #endif
     });
 }
@@ -220,11 +304,15 @@ KernelSignalScope::KernelSignalScope() : entryDepth_(kernelLockDepth())
     const std::lock_guard lock(g_signalMutex);
     if (g_kernelCalls++ > 0)
         return;
+#if !defined(_WIN32)
+    g_kernelThread.store(pthread_self());
+    g_kernelThreadSet.store(true);
+#endif
     for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
 #if defined(_WIN32)
-        g_outsideHandlers[i] = std::signal(kKernelSignals[i], g_kernelHandlers[i]);
+        g_outsideHandlers[i] = std::signal(kKernelSignals[i], onKernelSignal);
 #else
-        sigaction(kKernelSignals[i], &g_kernelActions[i], &g_outsideActions[i]);
+        sigaction(kKernelSignals[i], &g_dispatchActions[i], &g_outsideActions[i]);
 #endif
     }
 }
@@ -241,6 +329,9 @@ KernelSignalScope::~KernelSignalScope()
                 sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
 #endif
             }
+#if !defined(_WIN32)
+            g_kernelThreadSet.store(false);
+#endif
         }
     }
     // Also releases kernel locks taken inside this scope whose release a
@@ -294,6 +385,14 @@ bool simulateKernelFault()
         return okStatus();
     });
     return !status;
+}
+
+void runInsideKernelCallForTesting(const std::function<void()>& fn)
+{
+    (void)detail::guarded("test kernel call", "The modeling kernel failed.", [&fn]() -> Status {
+        fn();
+        return okStatus();
+    });
 }
 
 namespace detail {

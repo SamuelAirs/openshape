@@ -60,8 +60,15 @@ void installKernelSignalHandlers();
 // last one ends, the handlers that were there before come back: outside
 // kernel calls a fault is a real crash for the app's crash handler and the
 // operating system (OCCT's handlers would end the app with exit(1)). On
-// Windows the MinGW runtime calls these C signal handlers from an SEH
-// handler around main, before any top-level exception filter.
+// Windows the C runtime calls C signal handlers from an SEH handler around
+// main and every thread it starts, before any top-level exception filter,
+// and keeps them per thread; ours (onKernelSignal in Modeling.cpp) jumps
+// back as OCCT's does, without OCCT's mutex, which a jump leaves locked (a
+// fault on a second thread would then wait forever). On POSIX handlers
+// belong to the process, so a dispatcher is installed instead: it hands a
+// fault to OCCT only on the thread inside the kernel call (the kernel lock
+// owner) and to the handler from before on any other thread (e.g. a crash
+// on the GUI thread while the preview worker is in the kernel).
 //
 // It also holds the kernel lock (see KernelLock below) for its lifetime.
 class KernelSignalScope {

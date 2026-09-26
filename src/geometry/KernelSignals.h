@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace os::geom {
 
@@ -22,6 +23,11 @@ bool insideKernelCall();
 // For tests (--simulate-kernel-fault): an access violation inside a guarded
 // kernel call. True if it came back as a failure, as it should.
 bool simulateKernelFault();
+
+// For tests: runs `fn` inside a guarded kernel call on the calling thread
+// (it holds the kernel lock, and OpenCASCADE's signal handling is active for
+// this thread only: a fault on another thread meanwhile is a real crash).
+void runInsideKernelCallForTesting(const std::function<void()>& fn);
 
 // ---- Threads ----------------------------------------------------------------
 // OpenCASCADE runs on one thread at a time: every kernel call takes one

@@ -428,18 +428,26 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`InteractionController::deliverPreviews`, which the UI calls when the
   worker's notify arrives) and `Operation::acceptPreview` decides: another
   operation's, or older than the shown one or than a reset (Esc, a sync
-  refusal) - dropped; the newest request's - shown with its error and
-  automatic choices (`adoptAutomaticChoices`); a superseded value's - shown
-  if it worked (the preview keeps up during a drag), its error dropped. The
-  last good preview stays on screen meanwhile; `previewMeshBody()` says
-  which body it stands in for. `canCommit()` counts a pending preview as
-  committable (`previewUsable()`): the command computes the step again;
-  commit waits for it only when an automatic choice depends on it
-  (`commitNeedsPreview`: an extrusion that becomes a new body). A click
-  elsewhere first takes a finished preview's verdict (`deliverPreviews`);
-  when the command refuses a value whose preview had not come back yet,
-  the click goes on to select, as it does when the refusal is shown
-  (`applyBeforeSelecting`). Random sessions through these entry points give
+  refusal) or a parameter change - dropped; the newest request's - shown
+  with its error and automatic choices (`adoptAutomaticChoices`); a
+  superseded value's - shown if it worked (the preview keeps up during a
+  drag), its error dropped. Only drag steps and typed values
+  (`setValue(..., Change::ValueOnly)`) let earlier results keep up; every
+  other `setValue` (the setters: mode, Through all, count, preset, target)
+  is a parameter change, after which an earlier request's result is the
+  old geometry and is dropped. The last good preview stays on screen
+  meanwhile; `previewMeshBody()` says which body it stands in for.
+  `canCommit()` counts a pending preview as committable (`previewUsable()`):
+  the command computes the step again; commit waits for it only when an
+  automatic choice depends on it (`commitNeedsPreview`: an extrusion that
+  becomes a new body), and drops a job that has not started. When the
+  command refuses a value whose preview had not come back, that refusal
+  becomes the value's verdict (`refusePendingValue`: the message in the
+  value chip, no preview, nothing left pending), as a refused preview's
+  would be. A click elsewhere first takes a finished preview's verdict
+  (`deliverPreviews`); when the command refuses a value whose preview had
+  not come back yet, the click goes on to select, as it does when the
+  refusal is shown (`applyBeforeSelecting`). Random sessions through these entry points give
   the same documents and operations with and without the worker
   (`AsyncPreview.RandomSessionsMatchSynchronousOnes`). Operations
   created while previews are asynchronous get the scheduler
@@ -555,7 +563,15 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   meshing alone would not do. With the lock held, OCCT's signal handlers
   are installed and removed by the thread that runs the kernel code (the
   Windows C runtime keeps them per thread): a fault on the worker becomes
-  a failed preview like one on the GUI thread (tested). The tight
+  a failed preview like one on the GUI thread (tested). On Windows the
+  handler is our own (`onKernelSignal`): OCCT's leaves a process-wide mutex
+  locked after a fault, and a later fault on the other thread froze the app
+  (`KernelThreads.FaultsOnTwoThreadsInTurnAreAllContained`). On POSIX
+  (macOS, iPad) handlers belong to the process, so a kernel call installs
+  a dispatcher instead that hands a fault to OCCT only on the thread in the
+  kernel call; a crash on any other thread meanwhile reaches the crash log
+  and the system's crash report as before
+  (`KernelThreads.FaultOnAnotherThreadDuringAKernelCallIsNotTheKernels`). The tight
   bounding-box cache in `ShapeData` is guarded by it too (a
   `std::call_once` would stay blocked after a fault jumped out of it).
   While a preview computes, a GUI-thread kernel call (a click on another

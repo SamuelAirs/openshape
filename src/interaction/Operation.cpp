@@ -54,7 +54,7 @@ PreviewSchedulerScope::~PreviewSchedulerScope()
     t_creationScheduler = previous_;
 }
 
-void Operation::setValue(double value, const doc::Document& document)
+void Operation::setValue(double value, const doc::Document& document, Change change)
 {
     if (!allowsNegative() && value < 0)
         value = 0;
@@ -78,6 +78,10 @@ void Operation::setValue(double value, const doc::Document& document)
             std::shared_ptr<const doc::Document> snapshot = scheduler_->previewSnapshot(document);
             const std::uint64_t serial = nextPreviewSerial();
             pendingSerial_ = serial;
+            // Earlier requests computed other parameters: none of them may
+            // show any more (the shown preview stays until this one arrives).
+            if (change == Change::Parameters)
+                floorSerial_ = serial;
             scheduler_->schedulePreview([copy, snapshot, value, serial]() {
                 PreviewOutcome outcome = copy->computeOutcome(value, *snapshot);
                 outcome.serial = serial;
@@ -130,6 +134,13 @@ PreviewOutcome Operation::computeOutcome(double value, const doc::Document& docu
         outcome.error = "Unable to preview this.";
         outcome.developerMessage = std::string("preview threw: ") + e.what();
         OS_LOG(Error, Interaction) << title() << " " << outcome.developerMessage;
+    } catch (...) {
+        // E.g. a kernel exception outside guarded(). Still an outcome: the
+        // operation awaits one for every request it made.
+        outcome.mesh.reset();
+        outcome.error = "Unable to preview this.";
+        outcome.developerMessage = "preview threw an unknown exception";
+        OS_LOG(Error, Interaction) << title() << " " << outcome.developerMessage;
     }
     outcome.milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     return outcome;
@@ -164,6 +175,14 @@ bool Operation::acceptPreview(const PreviewOutcome& outcome)
     }
     showOutcome(outcome);
     return true;
+}
+
+void Operation::refusePendingValue(std::string message)
+{
+    // As a synchronous preview's refusal: the message, and no preview of
+    // another value left on screen.
+    dropPreviews();
+    error_ = std::move(message);
 }
 
 void Operation::dropPreviews()

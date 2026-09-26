@@ -100,7 +100,11 @@ field (`-Wmissing-field-initializers`) fails CI.
    from the preview needs `adoptAutomaticChoices()` and
    `commitNeedsPreview()`. Everything its preview reads must come from the
    operation's own members and the document passed in (a snapshot on the
-   worker), never from the controller.
+   worker), never from the controller. A setter that changes what the
+   preview computes (a mode, a count, a target) calls `setValue(value(),
+   document)` with the default `Change::Parameters`, so a result computed
+   before the change is not shown; only a pure value change (a drag step, a
+   typed value) passes `Change::ValueOnly`.
 2. `InteractionController`: arm it in `rebuildOperation()`, offer it in
    `contextActions()`, handle its id in `triggerAction()`, and in `runTool()`
    when it belongs in the palette.

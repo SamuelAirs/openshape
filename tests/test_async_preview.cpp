@@ -511,6 +511,107 @@ TEST(AsyncPreview, OlderResultsKeepUpButTheirErrorsDoNot)
     EXPECT_EQ(h.controller.previewsDropped(), dropped + 1);
 }
 
+// Enter on a value whose preview has not started yet (queued behind an older
+// value's): the commit drops that preview and the command refuses the value.
+// The refusal is then the verdict, as a refused preview's would be: shown,
+// nothing left pending, and the older value's preview that arrives later is
+// not shown in its place.
+TEST(AsyncPreview, ValueRefusedByTheCommandBeforeItsPreviewCame)
+{
+    AsyncHarness h;
+    h.clickAt(h.screen({10, -10, 10})); // the front right vertical edge
+    const Operation* op = h.controller.operation();
+    ASSERT_NE(op, nullptr);
+    ASSERT_EQ(op->title(), "Fillet");
+    h.worker().setJobDelayForTesting(300ms);
+    EXPECT_EQ(h.controller.setValueText("1"), "");
+    h.untilRunning();
+    EXPECT_EQ(h.controller.setValueText("50"), ""); // waits behind 1
+    ASSERT_TRUE(op->previewPending());
+    EXPECT_TRUE(op->canCommit()) << "a pending preview counts as committable";
+    const std::size_t messages = h.messages.size();
+    const std::string lastStep = h.stack.undoLabel();
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.controller.operation(), op) << "the refused fillet stays active";
+    EXPECT_EQ(h.stack.undoLabel(), lastStep) << "the refused step was added";
+    EXPECT_GT(h.messages.size(), messages) << "the refusal was not reported";
+    EXPECT_FALSE(op->previewPending()) << "the preview the commit dropped is still awaited";
+    EXPECT_FALSE(op->error().empty());
+    EXPECT_FALSE(op->hasPreview());
+    EXPECT_FALSE(op->canCommit());
+
+    // The 1 mm preview arrives: not shown for the refused 50 mm, error kept.
+    const std::uint64_t dropped = h.controller.previewsDropped();
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_EQ(h.controller.previewsDropped(), dropped + 1);
+    EXPECT_FALSE(op->previewPending());
+    EXPECT_FALSE(op->hasPreview()) << "another value's preview is shown";
+    EXPECT_FALSE(op->error().empty());
+    EXPECT_FALSE(op->canCommit());
+    // Enter again: the same verdict, without a new preview or command.
+    EXPECT_EQ(h.controller.setValueText("50"), op->error());
+    EXPECT_FALSE(h.controller.previewBusy());
+    EXPECT_FALSE(h.controller.keyPress(Key::Enter));
+    EXPECT_EQ(h.stack.undoLabel(), lastStep);
+    // A size that works clears it and applies.
+    EXPECT_EQ(h.controller.setValueText("2"), "");
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_TRUE(op->error().empty());
+    EXPECT_TRUE(op->hasPreview());
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_EQ(h.stack.undoLabel(), "Fillet");
+}
+
+// A change of anything but the value (here the pattern's count) while an
+// older request computes: that result is the old layout, and it is dropped;
+// the preview shown before the change stays until the new one arrives.
+TEST(AsyncPreview, ParameterChangeDropsEarlierResults)
+{
+    AsyncHarness h;
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("pattern").ok());
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(pattern->hasPreview());
+    EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 70.0, 1e-4); // 3 copies 25 mm apart
+
+    h.worker().setJobDelayForTesting(150ms);
+    EXPECT_EQ(h.controller.setValueText("30"), ""); // 3 copies 30 mm apart: 80 mm
+    h.untilRunning();
+    const std::uint64_t jobsBefore = h.worker().jobsRun();
+    ASSERT_TRUE(h.controller.triggerAction("more").ok()); // 4 copies
+    EXPECT_EQ(pattern->count(), 4);
+    ASSERT_TRUE(pattern->previewPending());
+    // The 3-copy result comes back while the 4-copy one computes.
+    const auto t0 = std::chrono::steady_clock::now();
+    while (h.worker().jobsRun() == jobsBefore && msSince(t0) < 5000)
+        std::this_thread::yield();
+    const std::uint64_t dropped = h.controller.previewsDropped();
+    EXPECT_FALSE(h.controller.deliverPreviews()) << "the result for the old count was shown";
+    EXPECT_EQ(h.controller.previewsDropped(), dropped + 1);
+    EXPECT_TRUE(pattern->previewPending());
+    ASSERT_TRUE(pattern->hasPreview());
+    EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 70.0, 1e-4) << "the preview shown before the change went away";
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(pattern->hasPreview());
+    EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 110.0, 1e-4); // 4 copies 30 mm apart
+    EXPECT_TRUE(pattern->error().empty());
+
+    // Value changes still keep up: an older value's finished result shows
+    // while the newest computes.
+    EXPECT_EQ(h.controller.setValueText("40"), "");
+    h.untilRunning();
+    EXPECT_EQ(h.controller.setValueText("50"), "");
+    const auto t1 = std::chrono::steady_clock::now();
+    while (!h.controller.deliverPreviews() && msSince(t1) < 5000)
+        std::this_thread::yield();
+    EXPECT_TRUE(pattern->previewPending());
+    EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 140.0, 1e-4); // 4 copies 40 mm apart
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 170.0, 1e-4);
+}
+
 // Hovering sketch profiles while a preview computes: the pick tests the
 // profile's mesh, so the GUI thread makes no kernel call (it would wait for
 // the worker's).

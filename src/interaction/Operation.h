@@ -82,11 +82,23 @@ public:
     LinearManipulator& manipulator() { return manipulator_; }
 
     double value() const { return value_; }
+    // What a new preview request changes. Only a new value (a drag step, a
+    // typed value) lets a finished preview of an earlier value show while the
+    // newest one computes: it keeps up with the drag. After any other change
+    // (a mode, a count, a target, Through all: the setters, which call
+    // setValue with the default) an earlier request's preview is wrong
+    // geometry, and it is not shown.
+    enum class Change { Parameters, ValueOnly };
     // Sets the value and recomputes the preview. Invalid values leave an
     // error message and no preview; the previous document state is untouched.
     // With a preview scheduler the preview is computed on the worker: this
     // returns at once, previewPending() until acceptPreview() gets it.
-    void setValue(double value, const doc::Document& document);
+    void setValue(double value, const doc::Document& document, Change change = Change::Parameters);
+    // The command refused the value while its preview was still computing
+    // (Enter does not wait for it): that refusal is the verdict, shown as a
+    // refused preview would be (the message, no preview), and the preview is
+    // no longer awaited (the commit dropped it if it had not started).
+    void refusePendingValue(std::string message);
 
     bool hasPreview() const { return previewMesh_ != nullptr; }
     const std::shared_ptr<const geom::Mesh>& previewMesh() const { return previewMesh_; }
@@ -109,9 +121,10 @@ public:
     bool previewPending() const { return pendingSerial_ != 0; }
     // A preview from the worker arrives (on the operation's thread). Shows it
     // and returns true, or drops it when stale: for another operation, older
-    // than what is shown, or from before the preview was reset. A result for
-    // a value the user has since left is still shown if it succeeded (the
-    // preview keeps up while dragging), but its error is not.
+    // than what is shown, from before the preview was reset, or from before a
+    // change of anything but the value. A result for a value the user has
+    // since left is still shown if it succeeded (the preview keeps up while
+    // dragging), but its error is not.
     bool acceptPreview(const PreviewOutcome& outcome);
     // Identifies this operation (its clones share it).
     std::uint64_t instance() const { return instance_; }
@@ -208,7 +221,7 @@ private:
     PreviewScheduler* scheduler_ = nullptr;
     std::uint64_t pendingSerial_ = 0;  // the request whose preview is awaited (0: none)
     std::uint64_t resolvedSerial_ = 0; // the newest request whose result was applied
-    std::uint64_t floorSerial_ = 0;    // results of older requests are stale
+    std::uint64_t floorSerial_ = 0;    // results of older requests are stale (a reset, a parameter change)
 };
 
 // While one exists (on this thread), new operations use `scheduler` for

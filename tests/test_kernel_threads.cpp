@@ -15,8 +15,17 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <future>
 #include <thread>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <signal.h>
+#endif
 
 using namespace os;
 
@@ -77,6 +86,98 @@ TEST(KernelThreads, FaultOnAWorkerThreadBecomesAFailure)
     other.join();
     EXPECT_TRUE(done.load());
     EXPECT_TRUE(geom::makeBox({0, 0, 0}, {2, 2, 2}).ok());
+}
+
+namespace {
+std::atomic<int> g_outsideFaults{0};
+extern "C" void countOutsideFault(int)
+{
+    ++g_outsideFaults;
+}
+} // namespace
+
+// A fault on another thread while the worker is in a kernel call is not the
+// kernel's: it reaches the handler that was there before (the app's crash
+// log), not OpenCASCADE's, which would end the app with exit(1) - no crash
+// log, no crash report. On POSIX signal handlers belong to the process
+// (Modeling.cpp dispatches by thread); the Windows C runtime keeps them per
+// thread.
+TEST(KernelThreads, FaultOnAnotherThreadDuringAKernelCallIsNotTheKernels)
+{
+    geom::installKernelSignalHandling();
+    // The app's crash handler stands in: one that counts (a raised signal
+    // returns from its handler).
+#if defined(_WIN32)
+    const auto previous = std::signal(SIGSEGV, countOutsideFault);
+#else
+    struct sigaction count;
+    struct sigaction previous;
+    std::memset(&count, 0, sizeof count);
+    count.sa_handler = countOutsideFault;
+    sigemptyset(&count.sa_mask);
+    ASSERT_EQ(sigaction(SIGSEGV, &count, &previous), 0);
+#endif
+    g_outsideFaults = 0;
+    std::atomic<bool> inside{false}, release{false};
+    std::thread worker([&] {
+        geom::runInsideKernelCallForTesting([&] {
+            inside = true;
+            while (!release)
+                std::this_thread::yield();
+        });
+    });
+    while (!inside)
+        std::this_thread::yield();
+    std::raise(SIGSEGV); // on this thread, in no kernel call
+    release = true;
+    worker.join();
+    EXPECT_EQ(g_outsideFaults.load(), 1) << "a fault outside the kernel did not reach the handler from before";
+#if !defined(_WIN32)
+    // Back in place after the kernel call.
+    struct sigaction now;
+    ASSERT_EQ(sigaction(SIGSEGV, nullptr, &now), 0);
+    EXPECT_TRUE((now.sa_flags & SA_SIGINFO) == 0 && now.sa_handler == countOutsideFault);
+    sigaction(SIGSEGV, &previous, nullptr);
+#else
+    std::signal(SIGSEGV, previous);
+#endif
+    // Faults inside kernel calls are still contained.
+    EXPECT_TRUE(geom::simulateKernelFault());
+}
+
+// Kernel faults on two threads in turn (the preview worker's, then the GUI
+// thread's on the same step when it is applied, and again): each comes back
+// as a failure. OpenCASCADE's own Windows handler leaves a process-wide
+// mutex locked after a fault, so the next fault on another thread would
+// wait for it forever (Modeling.cpp, onKernelSignal).
+TEST(KernelThreads, FaultsOnTwoThreadsInTurnAreAllContained)
+{
+    std::promise<int> result;
+    std::future<int> done = result.get_future();
+    std::thread driver([&result] {
+        int contained = 0;
+        for (int round = 0; round < 3; ++round) {
+            contained += geom::simulateKernelFault() ? 1 : 0;
+            bool other = false;
+            std::thread worker([&other] { other = geom::simulateKernelFault(); });
+            worker.join();
+            contained += other ? 1 : 0;
+        }
+        result.set_value(contained);
+    });
+    if (done.wait_for(std::chrono::seconds(60)) != std::future_status::ready) {
+        std::fprintf(stderr, "a kernel fault on a second thread waits forever for the first one's fault handling\n");
+        std::fflush(stderr);
+        std::_Exit(1); // the stuck thread cannot be joined
+    }
+    driver.join();
+    EXPECT_EQ(done.get(), 6) << "every fault must come back as a failure";
+    // The kernel works on both threads afterwards.
+    EXPECT_TRUE(geom::makeBox({0, 0, 0}, {1, 1, 1}).ok());
+    bool ok = false;
+    std::thread after([&ok] { ok = geom::makeBox({0, 0, 0}, {2, 2, 2}).ok(); });
+    after.join();
+    EXPECT_TRUE(ok);
 }
 
 TEST(KernelThreads, SharedShapesMeshedAndModeledFromTwoThreads)

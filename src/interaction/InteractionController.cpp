@@ -460,7 +460,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
             const double degrees = drag_.ringHandle.dragTo(camera_, event.position) * 180.0 / kPi;
             const double value = snapValue(degrees, event.modifiers.alt ? 1.0 : 15.0);
             if (value != operation_->value()) {
-                operation_->setValue(value, *document_);
+                operation_->setValue(value, *document_, Operation::Change::ValueOnly);
                 notifyState();
             }
         } else if (operation_) {
@@ -469,7 +469,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
             if (!event.modifiers.alt)
                 value = snapValue(value, snapIncrement(camera_.pixelSize(operation_->anchor())));
             if (value != operation_->value()) {
-                operation_->setValue(value, *document_);
+                operation_->setValue(value, *document_, Operation::Change::ValueOnly);
                 notifyState();
             }
         }
@@ -918,7 +918,7 @@ std::string InteractionController::setValueText(const std::string& text)
     const bool known = value == operation_->value()
                     && (operation_->previewPending() || operation_->hasPreview() || !operation_->error().empty());
     if (!known)
-        operation_->setValue(value, *document_);
+        operation_->setValue(value, *document_, Operation::Change::ValueOnly);
     notifyState();
     notifyView();
     // A preview still computing has no verdict yet (it arrives with a state change).
@@ -1000,7 +1000,14 @@ Status InteractionController::commitOperation()
         previewWorker_->dropWaiting();
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
+        // Refused before its preview came back (the waiting job was dropped
+        // above): the refusal is the value's verdict, as a refused preview's
+        // would be, and no preview of another value stays shown.
+        if (operation_->previewPending())
+            operation_->refusePendingValue(status.userMessage());
         message(status.userMessage());
+        notifyState();
+        notifyView();
         return status;
     }
     operation_.reset();
