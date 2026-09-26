@@ -498,7 +498,7 @@ void InteractionController::updateHover(const PointerEvent& event)
     const auto profile = InputProfile::forDevice(event.device);
     const int handle = handleAt(event.position, event.device);
     const int ring = handle >= 0 ? -1 : ringAt(event.position, event.device);
-    const sel::PickResult hit = handle >= 0 || ring >= 0 ? sel::PickResult{} : pickAt(event.position, profile);
+    const sel::PickResult hit = handle >= 0 || ring >= 0 ? sel::PickResult{} : operationPickAt(event.position, profile);
     if (!sameHover(hit, hover_) || handle != hoveredHandle_ || ring != hoveredRing_) {
         hover_ = hit;
         hoveredHandle_ = handle;
@@ -511,7 +511,7 @@ void InteractionController::click(const PointerEvent& event)
 {
     const auto profile = InputProfile::forDevice(event.device);
     bool additive = profile.additiveSelection || event.modifiers.shift || event.modifiers.control;
-    sel::PickResult hit = pickAt(event.position, profile);
+    sel::PickResult hit = operationPickAt(event.position, profile);
 
     // Align: clicks pick (or re-pick) the target; clicking empty space applies.
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
@@ -1537,6 +1537,23 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
         && (!body.hit() || (consumed ? std::abs(region.depth - body.depth) <= slack : region.depth <= body.depth + slack)))
         return region;
     return body;
+}
+
+// While a tool waits for a face (Mirror's plane, Extrude's "Up to face") or
+// for a face or edge (Align's target), sketch profiles are not candidates,
+// and where only a face will do, a nearby edge does not steal the click
+// (at low zoom edges win within the pick tolerance).
+sel::PickResult InteractionController::operationPickAt(Vec2 screen, const InputProfile& profile) const
+{
+    const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get());
+    if (dynamic_cast<const MirrorOperation*>(operation_.get()) || (extrude && extrude->pickingTarget()))
+        return sel::pickFace(pickTargets(), camera_, screen);
+    if (dynamic_cast<const AlignOperation*>(operation_.get())) {
+        sel::PickOptions options;
+        options.edgeTolerance = profile.pickTolerance;
+        return sel::pick(pickTargets(), camera_, screen, options);
+    }
+    return pickAt(screen, profile);
 }
 
 // ---- Sketching -------------------------------------------------------------------------

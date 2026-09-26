@@ -453,6 +453,26 @@ TEST(Interaction, MirrorAcrossAFace)
     EXPECT_EQ(h.stack.undoLabel(), "Mirror");
 }
 
+// Found on the CI Mac's small window: a click on the face just beside an edge
+// picked the edge (edges win within the pick tolerance), so Mirror, which
+// waits for a flat face, ignored it. Tools waiting for a face pick faces only.
+TEST(Interaction, MirrorPlaneClickBesideAnEdgeTakesTheFace)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0)..(10,10,20)
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.runTool("mirror").ok());
+    const Vec3 nearEdge{10, 0, 20 - 1.5 * h.controller.camera().pixelSize({10, 0, 20})}; // on +X, 1.5 px below the top edge
+    const auto profile = InputProfile::forDevice(PointerDevice::Mouse);
+    ASSERT_EQ(h.controller.pickAt(h.screen(nearEdge), profile).kind, sel::PickKind::Edge); // what a plain click picks
+    EXPECT_EQ(h.controller.operationPickAt(h.screen(nearEdge), profile).kind, sel::PickKind::Face);
+    h.clickAt(h.screen(nearEdge));
+    ASSERT_TRUE(h.controller.operation() && h.controller.operation()->canCommit());
+    ASSERT_TRUE(h.controller.triggerAction("apply").ok());
+    EXPECT_NEAR(geom::boundingBox(h.body().shape()).max.x, 30.0, 1e-6);
+}
+
 TEST(Interaction, MirrorAcrossAnOriginPlane)
 {
     Harness h;

@@ -102,6 +102,7 @@ private:
     int scenarioChecks_ = 0;
     int scenarioFailures_ = 0;
     QStringList summary_;
+    int waitedMs_ = 0; // for a camera animation to end before the next step
     QPointF lastClick_;
     bool hasLastClick_ = false;
     double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)

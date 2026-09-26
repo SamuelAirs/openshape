@@ -176,6 +176,8 @@ public:
 
     // Picking with explicit options (exposed for tests and tools).
     sel::PickResult pickAt(Vec2 screen, const InputProfile& profile) const;
+    // pickAt, narrowed to what the active tool is waiting for (e.g. faces only).
+    sel::PickResult operationPickAt(Vec2 screen, const InputProfile& profile) const;
 
     // ---- Notifications ----
     std::function<void()> onViewChanged;                 // needs redraw

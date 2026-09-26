@@ -1039,6 +1039,15 @@ void AcceptanceRunner::endScenario()
 
 void AcceptanceRunner::runNext()
 {
+    // A slow machine (the CI Mac) may still be animating the view after the
+    // fixed step delay; clicks computed from a moving camera miss. Wait for
+    // the animation to end (up to 3 s) before the next step (TD-31, TD-35).
+    if (app_->interaction().isAnimating() && waitedMs_ < 3000) {
+        waitedMs_ += 20;
+        QTimer::singleShot(20, this, &AcceptanceRunner::runNext);
+        return;
+    }
+    waitedMs_ = 0;
     if (next_ < steps_.size()) {
         try {
             steps_[next_++]();
