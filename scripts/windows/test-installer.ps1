@@ -48,6 +48,17 @@ function Snapshot([string] $path) { # something the installer must not touch: ex
 }
 
 $Setup = (Resolve-Path $Setup).Path
+if ($TestDesktopDir) {
+    # /DESKTOP only with a test build that puts the shortcut into
+    # $TestDesktopDir: a release build would replace the user's own
+    # desktop\OpenShape.lnk, and its uninstaller would delete it.
+    New-Item -ItemType Directory -Force $TestDesktopDir | Out-Null
+    $TestDesktopDir = (Resolve-Path $TestDesktopDir).Path
+    $comments = (Get-Item $Setup).VersionInfo.Comments
+    if ($comments -ne "Test build: desktop shortcut in $TestDesktopDir") {
+        throw "$Setup is not a test build for $TestDesktopDir (Comments: '$comments'): build it with OPENSHAPE_TEST_DESKTOP_DIR=<that folder> scripts/windows/make-installer.sh"
+    }
+}
 New-Item -ItemType Directory -Force (Split-Path $InstallDir) | Out-Null
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $uninstKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenShape'

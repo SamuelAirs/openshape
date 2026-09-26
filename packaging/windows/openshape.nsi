@@ -65,6 +65,11 @@ VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "FileDescription" "${APP_NAME} ${VERSION} Setup"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
 VIAddVersionKey "LegalCopyright" "Copyright (C) ${PUBLISHER}. Mozilla Public License 2.0."
+!ifdef TEST_DESKTOP_DIR
+  ; The installer tests check this before they run (a release build would
+  ; put its shortcut on the real desktop).
+  VIAddVersionKey "Comments" "Test build: desktop shortcut in ${TEST_DESKTOP_DIR}"
+!endif
 
 !define MUI_ICON "${ICON_FILE}"
 !define MUI_UNICON "${ICON_FILE}"
@@ -126,6 +131,11 @@ Function .onInit
   ${EndIf}
   ReadRegStr $PreviousDir HKCU "${UNINST_KEY}" "InstallLocation"
   ReadRegStr $DesktopLink HKCU "${UNINST_KEY}" "DesktopShortcut"
+  ; A shortcut the user deleted since stays deleted.
+  ${If} $DesktopLink != ""
+  ${AndIfNot} ${FileExists} "$DesktopLink"
+    StrCpy $DesktopLink ""
+  ${EndIf}
 FunctionEnd
 
 Section "OpenShape" SecMain

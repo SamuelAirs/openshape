@@ -197,8 +197,17 @@ in the repository root.
    OpenShape is installed):
 
    ```bash
-   OPENSHAPE_TEST_DESKTOP_DIR=build/installer-test/desktop bash scripts/windows/make-installer.sh dist/OpenShape build/installer-test
+   env OPENSHAPE_TEST_DESKTOP_DIR=build/installer-test/desktop bash scripts/windows/make-installer.sh dist/OpenShape build/installer-test
    ```
+
+   It must print `TEST BUILD: desktop shortcut goes to ...` (the setup's
+   Comments field then names that folder). Both installer tests refuse a
+   setup that is not such a test build for their `-TestDesktopDir`: a
+   release build puts its shortcut on the real desktop, replacing the
+   owner's own `OpenShape.lnk` when the box is ticked and deleting it when
+   it is unticked or uninstalled. (On 2026-09-26 a run of the dialog test
+   with a setup built without the variable did exactly that, before this
+   check existed.)
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -PackageDir dist\OpenShape -TestDesktopDir build\installer-test\desktop -Screenshot build\installer-test\installed.png -TestRunningApp
@@ -209,6 +218,26 @@ in the repository root.
    owner's own `OpenShape.lnk` must stay untouched — the test checks that);
    `release.yml` runs the test without the app launches. The uninstaller's
    temporary copy (`%TEMP%\~nsu*.tmp`) stays until Windows cleans up.
+
+   The dialogs (license page, folder page, finish page checkboxes, "Run
+   OpenShape", the "OpenShape is running" Retry box, the uninstaller's
+   pages) are clicked through by UI Automation, without moving the mouse;
+   it holds OpenShape's automation lock meanwhile and needs a desktop
+   session:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer-dialogs.ps1 -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -TestDesktopDir build\installer-test\desktop
+   ```
+
+   Run on 2026-09-26: 53 of 56 checks passed (license text, folder page,
+   finish-page defaults, "Run OpenShape" starting the app, upgrade offering
+   the installed folder and showing the shortcut ticked, unticking removing
+   it, Retry after closing the running app, the uninstaller's dialog
+   removing files, registry entries and shortcuts). The 3 failures: the
+   setup was not a test build (see above), so the shortcut went to the
+   real desktop, replacing and then deleting the owner's `OpenShape.lnk`.
+   Only the test-build check was added after that run (checked against a
+   test and a release setup, not in a full run).
 
 6. **The packaged app's full acceptance run**, with nothing but Windows on
    `PATH` (verified 2026-09-25: 174/174 checks — core, views, release — in

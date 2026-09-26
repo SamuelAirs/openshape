@@ -455,7 +455,9 @@ disk. Saves are atomic (temp file + rename). See
   `scripts/windows/make-installer.sh` (NSIS installer from
   `packaging/windows/openshape.nsi`, portable zip, SHA256SUMS.txt) →
   `scripts/windows/test-installer.ps1` (silent install, upgrade, uninstall,
-  checks). `.github/workflows/release.yml` runs the whole chain and
+  checks) and `scripts/windows/test-installer-dialogs.ps1` (the same through
+  the dialogs, clicked by UI Automation; both only accept a test build of
+  the setup, whose desktop shortcut goes to a test folder). `.github/workflows/release.yml` runs the whole chain and
   publishes tags `v*` as GitHub Releases.
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
