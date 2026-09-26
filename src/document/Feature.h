@@ -235,6 +235,8 @@ public:
     double rotationAngle = 0; // radians
 
     geom::RigidMotion motion() const;
+    // The step that moves a body by `m` (a rotation when m.angle is not 0).
+    void setMotion(const geom::RigidMotion& m);
 
     FeatureKind kind() const override { return FeatureKind::Move; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MoveFeature(*this)); }

@@ -84,6 +84,10 @@ Result<geom::Shape> previewCopies(const doc::Document& document, const Uuid& sou
     const doc::Body* body = document.body(source);
     if (!body || body->shape().isNull())
         return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "previewCopies: body");
+    // Each copy stores the body's imported geometry again.
+    if (Status fits = cmd::checkImportedCopiesFit(document, source, steps.size()); !fits)
+        return Result<geom::Shape>::failure(fits.error(), fits.userMessage() + " Turn off Separate bodies to join them.",
+                                            fits.developerMessage());
     std::vector<geom::Shape> shapes{body->shape()};
     for (const auto& step : steps) {
         auto shape = document.preview(source, *step);
@@ -108,6 +112,16 @@ bool joinMissedBody(const geom::Shape& result, const doc::Document& document, co
 {
     const doc::Body* body = host ? document.body(*host) : nullptr;
     return body && result.solidCount() > std::max(body->shape().solidCount(), 1);
+}
+
+// Copies (a mirror image, pattern copies) of which none touches the body or
+// another copy: the joined result has (copies + 1) times the body's pieces.
+// Then the user meant separate bodies (as Shapr3D does). One that touches a
+// piece of a body in several pieces joins it: the result has fewer.
+bool copiesMissedBody(const geom::Shape& result, const doc::Document& document, const Uuid& host, int copies)
+{
+    const doc::Body* body = document.body(host);
+    return body && copies > 0 && result.solidCount() == (copies + 1) * std::max(body->shape().solidCount(), 1);
 }
 
 } // namespace
@@ -444,8 +458,10 @@ Result<geom::Shape> MirrorOperation::computePreview(double value, const doc::Doc
 
 bool MirrorOperation::reconsider(const geom::Shape& result, const doc::Document& document)
 {
-    // The joined image would be a piece of its own: it becomes its own body.
-    if (separateChoice_ || autoSeparate_ || !joinMissedBody(result, document, bodyId()))
+    // The joined image would not touch the body: it becomes its own body
+    // (unless its imported geometry would not fit in the project).
+    if (separateChoice_ || autoSeparate_ || !copiesMissedBody(result, document, bodyId(), 1)
+        || !cmd::checkImportedCopiesFit(document, bodyId(), 1))
         return false;
     autoSeparate_ = true;
     return true;
@@ -573,13 +589,7 @@ std::vector<std::unique_ptr<doc::Feature>> PatternOperation::makeCopySteps(doubl
     for (const geom::RigidMotion& motion : static_cast<const doc::PatternFeature&>(*feature).copies()) {
         auto move = std::make_unique<doc::MoveFeature>();
         move->setName("Pattern copy");
-        move->translation = motion.translation;
-        move->rotates = std::abs(motion.angle) > 0;
-        if (move->rotates) {
-            move->rotationCenter = motion.center;
-            move->rotationAxis = motion.axis;
-            move->rotationAngle = motion.angle;
-        }
+        move->setMotion(motion);
         steps.push_back(std::move(move));
     }
     return steps;
@@ -592,10 +602,12 @@ Result<geom::Shape> PatternOperation::computePreview(double value, const doc::Do
 
 bool PatternOperation::reconsider(const geom::Shape& result, const doc::Document& document)
 {
-    // Copies that would be pieces of their own become bodies of their own
-    // (not beyond the separate-bodies limit: then they stay joined).
+    // Copies that would touch neither the body nor each other become bodies
+    // of their own (not beyond the separate-bodies limit, nor when their
+    // imported geometry would not fit in the project: then they stay joined).
     if (separateChoice_ || autoSeparate_ || count_ - 1 > static_cast<int>(kMaxSeparateCopies)
-        || !joinMissedBody(result, document, bodyId()))
+        || !copiesMissedBody(result, document, bodyId(), count_ - 1)
+        || !cmd::checkImportedCopiesFit(document, bodyId(), std::size_t(count_ - 1)))
         return false;
     autoSeparate_ = true;
     return true;

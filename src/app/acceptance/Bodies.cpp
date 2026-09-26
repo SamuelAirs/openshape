@@ -3,10 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // Bodies and copies: Duplicate (value chip, Ctrl+D, Model panel row), Split
-// into bodies (value chip, Model panel; the pieces are independent), Mirror /
-// Pattern as separate bodies (chosen, or automatic when the copies would not
-// touch; more in acceptance/Copies.cpp), Delete of a body its copies came
-// from, Rotate about a picked edge, corner, hole or circle.
+// into bodies (value chip, Model panel; the pieces are independent), Delete
+// of a body another is built from (a consumed tool shown again: hidden
+// instead, key and Model panel), Mirror / Pattern as separate bodies (chosen,
+// or automatic when the copies would not touch; more in
+// acceptance/Copies.cpp), Delete of a body its copies came from, Rotate about
+// a picked edge, corner, hole or circle.
 
 #include "app/AcceptanceRunner.h"
 #include "commands/DocumentCommands.h"
@@ -20,6 +22,7 @@
 #include <QtQuick/QQuickWindow>
 
 #include <cmath>
+#include <memory>
 #include <optional>
 
 namespace os::app {
@@ -30,9 +33,19 @@ QString idOf(const doc::Body& body)
     return QString::fromStdString(body.id().toString());
 }
 
+bool shown(AcceptanceRunner& r, const QString& objectName)
+{
+    const QQuickItem* item = r.findItem(objectName);
+    return item && item->isVisible();
+}
+
 std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
 {
     auto num = [](double v) { return AcceptanceRunner::num(v); };
+    // What the app told the user.
+    auto messages = std::make_shared<QStringList>();
+    QObject::connect(&r.app(), &ui::AppController::message, &r, [messages](const QString& text) { messages->push_back(text); });
+    auto told = [messages](const QString& text) { return messages->join(QStringLiteral(" | ")).contains(text); };
     auto selectedBody = [&r]() -> std::optional<Uuid> {
         const auto& sel = r.app().interaction().selection();
         if (sel.size() != 1 || sel.items()[0].kind != sel::SelectionKind::Body)
@@ -208,6 +221,68 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.screenshot(QStringLiteral("bodies_03a_parent_deleted"));
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 4 && r.body(0).isVisible(), "undo brings the plate back");
+        },
+
+        // ---- Delete of a body another is built from: hidden instead -----------------
+        // The slot the plate consumed (body 1), shown again from the Model
+        // panel: the plate is built from it, so Delete hides it again and
+        // says why (as for the linked copies and pieces of older files).
+        [&r] {
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+            r.check(r.app().bodyCount() == 4 && r.body(1).name() == "Slot" && !r.body(1).isVisible(),
+                    "the slot the plate consumed is hidden");
+        },
+        [] {}, [] {}, [] {},
+        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1))), "the hidden slot's Model panel row"); },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("historyVisibility_") + idOf(r.body(1))), "Show in the slot's row");
+            r.check(r.body(1).isVisible(), "the slot is shown again");
+        },
+        [] {}, [] {}, [] {},
+        [&r, selectedBody] {
+            if (selectedBody() != r.body(1).id())
+                r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1)));
+            r.check(selectedBody() == r.body(1).id(), "the shown slot selected in the Model panel");
+        },
+        [&r, num, messages, told] {
+            const double plate = geom::volume(r.body(0).shape());
+            messages->clear();
+            r.key(Qt::Key_Delete);
+            r.check(r.app().bodyCount() == 4, "Delete keeps the slot the plate is built from", QString::number(r.app().bodyCount()));
+            r.check(!r.body(1).isVisible(), "it is hidden instead");
+            r.check(told(QStringLiteral("Slot is hidden, not deleted: Body 1 is built from it.")), "the message says why",
+                    messages->join(QStringLiteral(" | ")));
+            r.check(std::abs(geom::volume(r.body(0).shape()) - plate) < 1e-6 && !r.body(0).hasFailures(), "the plate is unchanged",
+                    num(geom::volume(r.body(0).shape())));
+            r.screenshot(QStringLiteral("bodies_03b_tool_hidden"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.body(1).isVisible(), "undo shows the slot again");
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            // The row's actions show while it is expanded.
+            if (!shown(r, QStringLiteral("historyDelete_") + idOf(r.body(1))))
+                r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1)));
+        },
+        [&r, messages, told] {
+            messages->clear();
+            r.check(r.clickItem(QStringLiteral("historyDelete_") + idOf(r.body(1))), "Delete in the shown slot's Model panel row");
+            r.check(r.app().bodyCount() == 4 && !r.body(1).isVisible(), "the row's Delete hides it too");
+            r.check(told(QStringLiteral("Slot is hidden, not deleted: Body 1 is built from it.")), "and says why",
+                    messages->join(QStringLiteral(" | ")));
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            if (!shown(r, QStringLiteral("historyVisibility_") + idOf(r.body(1))))
+                r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1)));
+        },
+        [&r] {
+            r.check(shown(r, QStringLiteral("historyVisibility_") + idOf(r.body(1))), "the hidden slot's row is open (it offers Show)");
+            r.check(!shown(r, QStringLiteral("historyDelete_") + idOf(r.body(1))),
+                    "a hidden body the plate is built from offers no Delete");
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.body(1).isVisible(), "undo shows it again");
         },
 
         // ---- Mirror / Pattern as separate bodies -----------------------------------

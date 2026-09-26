@@ -75,6 +75,15 @@ public:
     bool dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const;
     std::string nextSketchName() const;
 
+    // Imported geometry the document holds: the BRep text of its Imported
+    // steps (ImportedFeature::brepText), what a project file stores in imports/.
+    std::uint64_t importedGeometryBytes() const;
+    // How much of it the document may hold (kMaxImportedGeometryBytes; lower
+    // only in tests): copies that would take it beyond are refused, since a
+    // project holding more cannot be saved (io::SaveOptions).
+    std::uint64_t importedGeometryLimit() const { return importedGeometryLimit_; }
+    void setImportedGeometryLimit(std::uint64_t bytes) { importedGeometryLimit_ = bytes; }
+
     EvalContext context() const { return EvalContext{this}; }
 
     void recomputeAll();
@@ -107,6 +116,7 @@ private:
     std::vector<std::unique_ptr<sketch::Sketch>> sketches_;
     std::vector<std::pair<Uuid, std::uint64_t>> sketchRevisions_;
     std::uint64_t revision_ = 0;
+    std::uint64_t importedGeometryLimit_ = kMaxImportedGeometryBytes;
     std::vector<std::pair<int, Listener>> listeners_;
     int nextListener_ = 1;
 };

@@ -267,6 +267,16 @@ std::vector<Uuid> Document::bodiesUsing(const Uuid& objectId) const
     return out;
 }
 
+std::uint64_t Document::importedGeometryBytes() const
+{
+    std::uint64_t total = 0;
+    for (const auto& b : bodies_)
+        for (const auto& f : b->features())
+            if (const auto* imported = dynamic_cast<const ImportedFeature*>(f.get()))
+                total += imported->brepText().size();
+    return total;
+}
+
 void Document::recomputeDependents(const Uuid& objectId)
 {
     // Transitive: a body that uses a body that changed changes too (A combines

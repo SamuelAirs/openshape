@@ -389,6 +389,15 @@ geom::RigidMotion MoveFeature::motion() const
     return m;
 }
 
+void MoveFeature::setMotion(const geom::RigidMotion& m)
+{
+    translation = m.translation;
+    rotates = std::abs(m.angle) > 0;
+    rotationCenter = rotates ? m.center : Vec3{};
+    rotationAxis = rotates ? m.axis : Vec3{0, 0, 1};
+    rotationAngle = rotates ? m.angle : 0.0;
+}
+
 Result<geom::Shape> MoveFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
     const geom::RigidMotion m = motion();
