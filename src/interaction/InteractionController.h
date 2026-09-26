@@ -241,7 +241,7 @@ private:
         Vec2 last;
         Vec3 pivot;
         LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
-        int ring = -1;            // grabbed rotation ring, or -1 for an arrow
+        int ring = -1;            // rotation ring pressed on (grabbed once it moves), or -1
         RingManipulator ringHandle;
     } drag_;
 
@@ -249,6 +249,8 @@ private:
     int handleAt(Vec2 screen, PointerDevice device) const;
     // Index of the rotation ring under the pointer, or -1.
     int ringAt(Vec2 screen, PointerDevice device) const;
+    // Starts turning the ring pressed on (drag_.ring) once the pointer moves.
+    void grabPendingRing();
 
     struct Animation {
         Camera from;

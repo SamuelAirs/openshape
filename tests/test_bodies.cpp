@@ -755,6 +755,139 @@ TEST(Copies, MalformedParamsAreRefused)
         << "a rotation needs an axis";
 }
 
+// ---- Rotate about a picked edge or point ------------------------------------------
+
+namespace {
+void expectBox(const geom::BoundingBox& bb, Vec3 min, Vec3 max)
+{
+    EXPECT_NEAR(bb.min.x, min.x, 1e-6);
+    EXPECT_NEAR(bb.min.y, min.y, 1e-6);
+    EXPECT_NEAR(bb.min.z, min.z, 1e-6);
+    EXPECT_NEAR(bb.max.x, max.x, 1e-6);
+    EXPECT_NEAR(bb.max.y, max.y, 1e-6);
+    EXPECT_NEAR(bb.max.z, max.z, 1e-6);
+}
+} // namespace
+
+// Clicking a straight edge makes it the axis: a 20 x 10 x 5 box turned 90
+// degrees about its top front edge stands up on that edge.
+TEST(RotateAbout, EdgeGivesTheExactBox)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {20, 10, 5});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    h.clickAt(h.screen({10, 0, 5})); // the top front edge, along X
+    const auto* rotate = dynamic_cast<const RotateOperation*>(h.controller.operation());
+    ASSERT_NE(rotate, nullptr) << "clicking an edge keeps rotating";
+    ASSERT_TRUE(rotate->axis().has_value());
+    EXPECT_NEAR(rotate->axis()->x, 1.0, 1e-12) << "the axis points along +X";
+    EXPECT_NEAR((rotate->center() - Vec3{10, 0, 5}).length(), 0.0, 1e-9);
+    EXPECT_EQ(rotate->ringCount(), 1);
+    EXPECT_EQ(rotate->valueLabel(), "Angle");
+    EXPECT_EQ(h.controller.renderScene().rings.size(), 1u);
+    EXPECT_EQ(h.controller.renderScene().rings[0].axis, 0) << "colored as X";
+    EXPECT_EQ(h.controller.setValueText("90"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {0, 0, 5}, {20, 5, 15});
+    EXPECT_NEAR(geom::volume(h.document.body(a)->shape()), 1000.0, 1e-6);
+    bool detail = false;
+    for (const auto& row : h.controller.historyRows())
+        detail = detail || (row.name == "Rotate" && row.detail == "90.0\xC2\xB0 about X");
+    EXPECT_TRUE(detail);
+    EXPECT_TRUE(h.controller.undo());
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {0, 0, 0}, {20, 10, 5});
+}
+
+// Clicking an edge near its end picks that corner: the X/Y/Z rings move there.
+TEST(RotateAbout, CornerMovesThePivot)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {20, 10, 5});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    const Vec2 corner = h.screen({20, 0, 5});
+    h.clickAt(corner + Vec2{-3, 2}); // a few pixels off the corner, on the box's edges
+    const auto* rotate = dynamic_cast<const RotateOperation*>(h.controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    EXPECT_FALSE(rotate->axis().has_value());
+    EXPECT_NEAR((rotate->center() - Vec3{20, 0, 5}).length(), 0.0, 1e-9);
+    EXPECT_EQ(rotate->ringCount(), 3);
+    EXPECT_EQ(rotate->valueLabel(), "Angle Z");
+    EXPECT_TRUE(h.hasAction("pivotCenter"));
+    EXPECT_EQ(h.controller.setValueText("90"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    // 90 degrees about Z through (20, 0): x' = 20 - y, y' = x - 20.
+    expectBox(geom::boundingBox(h.document.body(a)->shape()), {10, -20, 0}, {20, 0, 5});
+}
+
+// A ring is grabbed when dragged; a click on it (away from edges) makes it the
+// active ring, as before.
+TEST(RotateAbout, ClickingARingActivatesIt)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {20, 10, 5});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    const Operation* op = h.controller.operation();
+    ASSERT_NE(op, nullptr);
+    ASSERT_EQ(op->activeHandle(), 2);
+    const Camera& cam = h.controller.camera();
+    std::optional<Vec2> spot;
+    for (int k = 0; k < 36 && !spot; ++k) {
+        const Vec2 p = cam.project(op->ring(0).pointAt(cam, 2 * kPi * k / 36));
+        if (h.controller.pickAt(p, InputProfile{}).kind != sel::PickKind::Edge)
+            spot = p;
+    }
+    ASSERT_TRUE(spot.has_value());
+    h.clickAt(*spot);
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->activeHandle(), 0);
+    EXPECT_EQ(h.controller.operation()->valueLabel(), "Angle X");
+    EXPECT_EQ(h.document.bodies().size(), 1u);
+}
+
+TEST(RotateAbout, CircleCenterAndBackToTheBodyCenter)
+{
+    Model m;
+    sketch::Sketch s(Uuid::generate(), sketch::Plane::xy());
+    s.setName("Sketch 1");
+    s.addCircle(s.addPoint({30, 0}), 5);
+    const Uuid sketchId = s.id();
+    ASSERT_TRUE(m.push(std::make_unique<cmd::CreateSketchCommand>(std::move(s))).ok());
+    const Uuid disk = m.extrude(sketchId, 10);
+    cmd::UndoStack& stack = m.stack;
+    InteractionController controller(m.document, stack);
+    controller.setViewportSize({1200, 800});
+    controller.fitAll(false);
+    ASSERT_TRUE(controller.selectBody(disk, false).ok());
+    ASSERT_TRUE(controller.runTool("rotate").ok());
+    const Vec2 rim = controller.camera().project({30 + 5 * std::cos(-1.2), 5 * std::sin(-1.2), 10});
+    controller.pointerPress(Harness::at(rim));
+    controller.pointerRelease(Harness::at(rim));
+    const auto* rotate = dynamic_cast<const RotateOperation*>(controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    EXPECT_NEAR((rotate->center() - Vec3{30, 0, 10}).length(), 0.0, 1e-6) << "the top rim's center";
+    // The round side: its axis (vertical, through the disk's center).
+    const Vec2 side = controller.camera().project({30 + 5 * std::cos(-1.0), 5 * std::sin(-1.0), 4});
+    controller.pointerPress(Harness::at(side));
+    controller.pointerRelease(Harness::at(side));
+    rotate = dynamic_cast<const RotateOperation*>(controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    ASSERT_TRUE(rotate->axis().has_value());
+    EXPECT_NEAR(rotate->axis()->z, 1.0, 1e-9);
+    EXPECT_NEAR(rotate->center().x, 30.0, 1e-6);
+    EXPECT_NEAR(rotate->center().y, 0.0, 1e-6);
+    ASSERT_TRUE(controller.triggerAction("pivotCenter").ok());
+    rotate = dynamic_cast<const RotateOperation*>(controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    EXPECT_FALSE(rotate->hasCustomPivot());
+    EXPECT_NEAR(rotate->center().z, 5.0, 1e-3) << "the body's center again";
+}
+
 // A step that leaves the body in pieces says how to split it.
 TEST(Split, MirrorThatLeavesPiecesSuggestsTheSplit)
 {

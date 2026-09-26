@@ -315,7 +315,15 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   and typed values. `MoveOperation` uses this for X/Y/Z (axis-colored).
   `RotateOperation` exposes three `RingManipulator`s instead (`ringCount()`:
   constant screen size, the angle unwrapped past ±180°, a screen-space
-  fallback when a ring is seen edge-on; 15° snaps, Alt for 1°).
+  fallback when a ring is seen edge-on; 15° snaps, Alt for 1°). Clicking a
+  straight edge (of any body) or a hole/shaft makes it the axis — one ring around it, its
+  direction's largest component positive; clicking an edge near its end (a
+  corner) or a circular edge moves the X/Y/Z rings' pivot there; "Center
+  pivot" goes back. The typed or dragged angle is kept. It is stored as the
+  usual Move step with a rotation center and axis (no file format change).
+  A ring is grabbed only once the pointer moves: a click on a ring activates
+  it, except over an edge in Rotate, where it picks the edge (the rings
+  cover edges near the body's center).
 - **Operation hooks** (`Operation.h`): `prompt()` while a further pick is
   needed (Align's target, Mirror's plane); `labelAnchor()` for a value editor
   without an arrow; `neutralValue()` (what Esc returns to, e.g. a hole's

@@ -375,7 +375,9 @@ private:
 
 // Rotate: X/Y/Z rings through the body's center. Drag a ring or type an
 // angle (degrees) for the active ring; one axis per step (switching rings
-// starts over). Commits as a Move step with a rotation, named "Rotate".
+// starts over). A clicked straight edge becomes the axis (one ring around
+// it); a clicked corner or circle moves the rings' pivot there. Commits as a
+// Move step with a rotation, named "Rotate".
 class RotateOperation final : public Operation {
 public:
     static std::unique_ptr<RotateOperation> create(const doc::Document& document, const Uuid& bodyId);
@@ -387,19 +389,34 @@ public:
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Move; }
 
     int handleCount() const override { return 0; }
-    int ringCount() const override { return 3; }
+    int ringCount() const override { return axis_ ? 1 : 3; }
     RingManipulator ring(int index) const override;
-    int handleAxis(int index) const override { return index; }
+    // Ring colors: X/Y/Z, or the accent for a picked axis along none of them.
+    int handleAxis(int index) const override;
     void setActiveHandle(int index) override;
+    // The pivot (the rings' center, a point on the axis).
     const Vec3& center() const { return center_; }
+    // A picked axis (unit; its largest component positive), if any.
+    const std::optional<Vec3>& axis() const { return axis_; }
+
+    // Turn about the line through `point` along `direction` (a picked
+    // straight edge). The typed or dragged angle is kept.
+    void setAxis(const Vec3& point, const Vec3& direction, const doc::Document& document);
+    // X/Y/Z rings through `point` (a picked corner or circle center).
+    void setPivot(const Vec3& point, const doc::Document& document);
+    // Back to X/Y/Z rings through the body's center.
+    void resetPivot(const doc::Document& document);
+    bool hasCustomPivot() const { return axis_.has_value() || (center_ - bodyCenter_).length() > 1e-12; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double degrees) const override;
 
 private:
     RotateOperation(Uuid bodyId, const Vec3& center)
-        : Operation(bodyId, LinearManipulator(center, {0, 0, 1})), center_(center) {}
+        : Operation(bodyId, LinearManipulator(center, {0, 0, 1})), center_(center), bodyCenter_(center) {}
     Vec3 center_;
+    Vec3 bodyCenter_;
+    std::optional<Vec3> axis_;
 };
 
 // Move: X/Y/Z arrows at the body's center. Drag any arrow or type a value

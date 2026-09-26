@@ -231,6 +231,59 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 1, "undo removes the copies");
         },
+
+        // ---- Rotate about a picked edge ---------------------------------------------
+        // Set up: a 20 x 10 x 5 box at the origin.
+        [&r] {
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+            r.app().newDocument();
+            r.app().interaction().setStandardView(StandardView::Isometric, false);
+            auto box = std::make_unique<doc::BoxFeature>();
+            box->size = {20, 10, 5};
+            const bool built = r.app().interaction().undoStack().push(std::make_unique<cmd::CreateBodyCommand>("Body 1", std::move(box)),
+                                                                    r.app().document()).ok();
+            r.app().interaction().documentChanged();
+            r.app().interaction().fitAll(false);
+            r.check(built, "rotate: a 20 x 10 x 5 box");
+        },
+        [] {}, [] {},
+        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "the box selected in the Model panel"); },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_rotate")), "Rotate tool button");
+            const auto* op = r.app().interaction().operation();
+            r.check(op && op->ringCount() == 3, "three rings through the center");
+        },
+        [&r] {
+            r.click(r.screenPoint(4, 0, 5)); // the top front edge, along X
+            const auto* rotate = dynamic_cast<const interact::RotateOperation*>(r.app().interaction().operation());
+            r.check(rotate && rotate->ringCount() == 1 && rotate->axis() && std::abs(rotate->axis()->x - 1.0) < 1e-9,
+                    "clicking an edge makes it the axis: one ring around it");
+            r.check(r.app().operationValueLabel() == QStringLiteral("Angle"), "the value is the angle about the edge",
+                    r.app().operationValueLabel());
+            r.screenshot(QStringLiteral("bodies_06_rotate_about_edge"));
+            r.type(QStringLiteral("90"));
+            r.key(Qt::Key_Return);
+        },
+        [&r, num] {
+            const auto bb = geom::boundingBox(r.body(0).shape());
+            const bool exact = std::abs(bb.min.x) < 1e-6 && std::abs(bb.max.x - 20) < 1e-6 && std::abs(bb.min.y) < 1e-6
+                            && std::abs(bb.max.y - 5) < 1e-6 && std::abs(bb.min.z - 5) < 1e-6 && std::abs(bb.max.z - 15) < 1e-6;
+            r.check(exact, "90 degrees about the edge: it stands on that edge (0..20, 0..5, 5..15)",
+                    num(bb.min.y) + QStringLiteral("..") + num(bb.max.y) + QStringLiteral(", ") + num(bb.min.z)
+                        + QStringLiteral("..") + num(bb.max.z));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(std::abs(geom::boundingBox(r.body(0).shape()).max.z - 5) < 1e-6, "undo lays it down again");
+        },
+        [] {}, [] {}, [] {}, // the same spot clicked again now would be a double-click
+        [&r] {
+            r.click(r.screenPoint(4, 0, 5));
+            r.check(r.app().interaction().operation() && r.app().interaction().operation()->ringCount() == 1,
+                    "the edge again: one ring");
+            r.check(r.clickItem(QStringLiteral("action_pivotCenter")), "Center pivot button");
+            const auto* op = r.app().interaction().operation();
+            r.check(op && op->ringCount() == 3, "back to three rings through the center");
+        },
     };
 }
 

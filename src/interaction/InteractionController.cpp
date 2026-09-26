@@ -226,17 +226,26 @@ void InteractionController::pointerPress(const PointerEvent& event)
             notifyView();
             return;
         }
-        if (const int ring = ringAt(event.position, event.device); ring >= 0) {
-            operation_->setActiveHandle(ring); // a different ring starts from zero
-            drag_.mode = DragMode::Manipulator;
+        // A ring is grabbed once the pointer moves (pointerMove). A click on
+        // it activates it - or, where it crosses an edge, picks that edge
+        // (Rotate about an edge: the rings often cross the body's edges).
+        if (const int ring = ringAt(event.position, event.device); ring >= 0)
             drag_.ring = ring;
-            drag_.ringHandle = operation_->ring(ring);
-            drag_.ringHandle.beginDrag(camera_, event.position, operation_->value() * kPi / 180.0);
-            hover_ = {};
-            notifyState();
-            notifyView();
-        }
     }
+}
+
+void InteractionController::grabPendingRing()
+{
+    const int ring = drag_.ring;
+    operation_->setActiveHandle(ring); // a different ring starts from zero
+    drag_.mode = DragMode::Manipulator;
+    drag_.ringHandle = operation_->ring(ring);
+    drag_.ringHandle.beginDrag(camera_, drag_.press.position, operation_->value() * kPi / 180.0);
+    hover_ = {};
+    hoveredHandle_ = -1;
+    hoveredRing_ = -1;
+    notifyState();
+    notifyView();
 }
 
 int InteractionController::ringAt(Vec2 screen, PointerDevice device) const
@@ -292,6 +301,11 @@ void InteractionController::pointerMove(const PointerEvent& event)
         return;
     }
     const auto profile = InputProfile::forDevice(drag_.press.device);
+    if (drag_.mode == DragMode::Pending && drag_.ring >= 0 && operation_) {
+        if ((event.position - drag_.press.position).length() < profile.dragThreshold)
+            return;
+        grabPendingRing(); // then this move turns it (below)
+    }
     if (drag_.mode == DragMode::Pending) {
         if ((event.position - drag_.press.position).length() < profile.dragThreshold)
             return;
@@ -347,7 +361,9 @@ void InteractionController::pointerRelease(const PointerEvent& event)
 {
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
+    const int pendingRing = mode == DragMode::Pending ? drag_.ring : -1;
     drag_.mode = DragMode::None;
+    drag_.ring = -1;
     if (press.device == PointerDevice::Touch && penMode_) {
         notifyView(); // a finger only navigated (or merely tapped)
         return;
@@ -365,7 +381,12 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     }
     // Only a left click or a tap selects (and applies a pending value); right
     // and middle buttons orbit/pan when dragged and do nothing on a click.
-    if (mode == DragMode::Pending && press.button == PointerButton::Left)
+    const bool edgeUnderRing = pendingRing >= 0 && dynamic_cast<const RotateOperation*>(operation_.get())
+                            && pickAt(press.position, InputProfile::forDevice(press.device)).kind == sel::PickKind::Edge;
+    if (pendingRing >= 0 && operation_ && !edgeUnderRing) {
+        operation_->setActiveHandle(pendingRing); // clicking a ring makes it the active one
+        notifyState();
+    } else if (mode == DragMode::Pending && press.button == PointerButton::Left)
         click(press);
     else if (mode == DragMode::Manipulator)
         notifyState();
@@ -568,6 +589,43 @@ void InteractionController::click(const PointerEvent& event)
         notifyState();
         notifyView();
         return;
+    }
+    // Rotate: a straight edge becomes the axis (one ring around it); a corner
+    // (an edge clicked near its end) or a circle moves the pivot there. The
+    // angle is kept. Other clicks behave as usual.
+    if (auto* rotate = dynamic_cast<RotateOperation*>(operation_.get()); rotate && hit.kind == sel::PickKind::Edge) {
+        const doc::Body* body = document_->body(hit.bodyId);
+        if (const auto edge = body ? geom::edgeInfo(body->shape(), hit.index) : std::nullopt) {
+            std::optional<Vec3> corner;
+            double nearest = profile.pickTolerance * 2;
+            if ((edge->start - edge->end).length() > 1e-9) // closed curves have no corners
+                for (const Vec3& end : {edge->start, edge->end})
+                    if (const double d = (camera_.project(end) - event.position).length(); d <= nearest) {
+                        nearest = d;
+                        corner = end;
+                    }
+            if (corner)
+                rotate->setPivot(*corner, *document_);
+            else if (edge->kind == geom::CurveKind::Line)
+                rotate->setAxis(edge->midpoint, edge->tangent, *document_);
+            else if (edge->kind == geom::CurveKind::Circle)
+                rotate->setPivot(edge->center, *document_);
+            else
+                message("Turn about a straight edge, or click a corner or a circle to move the pivot there.");
+            notifyState();
+            notifyView();
+            return;
+        }
+    }
+    // ...and a hole or shaft (a round face) gives its axis.
+    if (auto* rotate = dynamic_cast<RotateOperation*>(operation_.get()); rotate && hit.kind == sel::PickKind::Face) {
+        const doc::Body* body = document_->body(hit.bodyId);
+        if (const auto face = body ? geom::faceInfo(body->shape(), hit.index) : std::nullopt; face && face->hasAxis()) {
+            rotate->setAxis(face->axisOrigin, face->axisDirection, *document_);
+            notifyState();
+            notifyView();
+            return;
+        }
     }
 
     if (operation_ && operation_->canCommit()) {
@@ -1035,7 +1093,10 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
         if (selection_.size() == 1) {
             actions.push_back({"move", "Move", dynamic_cast<const MoveOperation*>(operation_.get()) != nullptr});
-            actions.push_back({"rotate", "Rotate", dynamic_cast<const RotateOperation*>(operation_.get()) != nullptr});
+            const auto* rotate = dynamic_cast<const RotateOperation*>(operation_.get());
+            actions.push_back({"rotate", "Rotate", rotate != nullptr});
+            if (rotate && rotate->hasCustomPivot())
+                actions.push_back({"pivotCenter", "Center pivot", false});
             actions.push_back({"mirror", "Mirror", dynamic_cast<const MirrorOperation*>(operation_.get()) != nullptr});
             actions.push_back({"pattern", "Pattern", dynamic_cast<const PatternOperation*>(operation_.get()) != nullptr});
             actions.push_back({"duplicate", "Duplicate", false});
@@ -1172,6 +1233,15 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "apply")
         return commitOperation();
+    if (id == "pivotCenter") {
+        auto* rotate = dynamic_cast<RotateOperation*>(operation_.get());
+        if (!rotate)
+            return Status::failure(ErrorCode::InvalidArgument, "Center pivot belongs to Rotate.", "pivotCenter without rotate");
+        rotate->resetPivot(*document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "separate") {
         if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get()))
             mirror->setSeparate(!mirror->separate(), *document_);
@@ -1519,7 +1589,7 @@ RenderScene InteractionController::renderScene() const
             for (int k = 0; k <= segments; ++k)
                 rr.points.push_back(ring.pointAt(camera_, 2 * kPi * k / segments));
             rr.marker = ring.pointAt(camera_, active ? operation_->value() * kPi / 180.0 : 0.0);
-            rr.axis = i;
+            rr.axis = operation_->handleAxis(i);
             if (!operation_->error().empty() && active)
                 rr.state = HandleState::Error;
             else if (drag_.mode == DragMode::Manipulator && drag_.ring == i)

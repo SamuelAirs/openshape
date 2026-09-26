@@ -110,6 +110,7 @@ Rectangle {
                         title: "Bodies"
                         rows: [
                             ["Move / rotate", "Select the body → Move or Rotate; drag an arrow or ring, or type"],
+                            ["Rotate about an edge", "Rotate, then click a straight edge or a hole (one ring around it), or a corner or circle (the rings move there); Center pivot goes back"],
                             ["Duplicate", "Body → Duplicate (Ctrl+D), or Duplicate in its Model panel row; drag the copy away"],
                             ["Split into bodies", "A body in separate pieces (e.g. cut in two) → Split into bodies: each piece becomes a body that still follows the history"],
                             ["Align", "Face or edge → Align, then click the face or edge to line it up with"],

@@ -591,13 +591,25 @@ std::unique_ptr<RotateOperation> RotateOperation::create(const doc::Document& do
 
 std::string RotateOperation::valueLabel() const
 {
+    if (axis_)
+        return "Angle";
     static const char* names[] = {"Angle X", "Angle Y", "Angle Z"};
     return names[std::clamp(activeHandle(), 0, 2)];
 }
 
 RingManipulator RotateOperation::ring(int index) const
 {
-    return RingManipulator(center_, axisVector(std::clamp(index, 0, 2)));
+    return RingManipulator(center_, axis_ ? *axis_ : axisVector(std::clamp(index, 0, 2)));
+}
+
+int RotateOperation::handleAxis(int index) const
+{
+    if (!axis_)
+        return index;
+    for (int k = 0; k < 3; ++k)
+        if (std::abs(axis_->dot(axisVector(k))) > 1 - 1e-9)
+            return k;
+    return -1;
 }
 
 void RotateOperation::setActiveHandle(int index)
@@ -610,13 +622,46 @@ void RotateOperation::setActiveHandle(int index)
     clearPreview();
 }
 
+void RotateOperation::setAxis(const Vec3& point, const Vec3& direction, const doc::Document& document)
+{
+    Vec3 d = direction.normalized();
+    // A predictable sense: positive angles turn counterclockwise looking down
+    // the axis' main direction, as on the X/Y/Z rings.
+    const double c[3] = {d.x, d.y, d.z};
+    int main = 0;
+    for (int k = 1; k < 3; ++k)
+        if (std::abs(c[k]) > std::abs(c[main]))
+            main = k;
+    if (c[main] < 0)
+        d = d * -1.0;
+    axis_ = d;
+    center_ = point;
+    Operation::setActiveHandle(0); // the one ring; the angle is kept
+    setValue(value(), document);
+}
+
+void RotateOperation::setPivot(const Vec3& point, const doc::Document& document)
+{
+    if (axis_) {
+        axis_.reset();
+        Operation::setActiveHandle(2); // Z, as when the tool starts; the angle is kept
+    }
+    center_ = point;
+    setValue(value(), document);
+}
+
+void RotateOperation::resetPivot(const doc::Document& document)
+{
+    setPivot(bodyCenter_, document);
+}
+
 std::unique_ptr<doc::Feature> RotateOperation::makeFeature(double degrees) const
 {
     auto feature = std::make_unique<doc::MoveFeature>();
     feature->setName("Rotate");
     feature->rotates = true;
     feature->rotationCenter = center_;
-    feature->rotationAxis = axisVector(std::clamp(activeHandle(), 0, 2));
+    feature->rotationAxis = axis_ ? *axis_ : axisVector(std::clamp(activeHandle(), 0, 2));
     feature->rotationAngle = degrees * kPi / 180.0;
     return feature;
 }
