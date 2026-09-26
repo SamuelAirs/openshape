@@ -152,13 +152,26 @@ No installer yet, and not distributable yet (TD-17).
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,
   bounding boxes and recovery copies / full saves on a 21-face filleted part
-  (and saves on a 21-body, 1528-face model) (numbers in
-  PROJECT_STATUS.md):
+  (and saves on a 21-body, 1528-face model), then the same plus a fillet
+  drag and hover picking (1200 pointer positions over the part) on a
+  249-face enclosure (shelled, rounded, 95 vent holes with chamfers, screw
+  bosses; 25k triangles). Numbers in PROJECT_STATUS.md:
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
   cmake --build build/msys2-ucrt64 --target bench_session
   ./build/msys2-ucrt64/bin/bench_session.exe
+  ```
+
+- **Longer stress hunts** — the robustness suite runs a few fixed seeds;
+  `OPENSHAPE_STRESS_SEEDS=N` runs N other seeds of each random session
+  instead (undo/redo, interleaved, save/open; ~3 s each). A seed replays the
+  same session on Windows and macOS (`tests/PortableRandom.h`: no standard
+  distributions, whose output differs between libstdc++ and libc++).
+  Failures print the action log and every body's steps with status:
+
+  ```bash
+  OPENSHAPE_STRESS_SEEDS=20 GTEST_FILTER='Seeds/*' ./build/msys2-ucrt64/bin/test_robustness.exe
   ```
 
 - **`scripts/dev/drive.py`** — drives a running OpenShape window with real

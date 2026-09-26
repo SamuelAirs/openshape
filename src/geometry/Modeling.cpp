@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "geometry/Modeling.h"
+#include "geometry/KernelSignals.h"
 
 #include "core/Log.h"
 #include "core/Timer.h"
@@ -42,6 +43,7 @@
 #include <IntCurvesFace_ShapeIntersector.hxx>
 #include <Precision.hxx>
 #include <Message_Report.hxx>
+#include <OSD.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
@@ -59,12 +61,114 @@
 #include <gp_Trsf.hxx>
 
 #include <algorithm>
+#include <chrono>
+#include <csignal>
 #include <cmath>
+#include <functional>
+#include <mutex>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <sstream>
 
 namespace os::geom {
+
+namespace detail {
+
+namespace {
+
+#if defined(_WIN32)
+constexpr int kKernelSignals[] = {SIGSEGV, SIGILL, SIGFPE};
+using SignalHandler = void (*)(int);
+SignalHandler g_kernelHandlers[std::size(kKernelSignals)] = {};
+SignalHandler g_outsideHandlers[std::size(kKernelSignals)] = {};
+#else
+constexpr int kKernelSignals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE};
+struct sigaction g_kernelActions[std::size(kKernelSignals)];
+struct sigaction g_outsideActions[std::size(kKernelSignals)];
+#endif
+std::mutex g_signalMutex;
+int g_kernelCalls = 0; // kernel calls running now, on all threads
+
+} // namespace
+
+void installKernelSignalHandlers()
+{
+    static std::once_flag once;
+    std::call_once(once, [] {
+        // Let OCCT install its handlers, keep them for kernel calls and put
+        // back what was there before. No floating-point traps: kernel code
+        // relies on IEEE results.
+#if defined(_WIN32)
+        SignalHandler before[std::size(kKernelSignals)];
+        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
+            before[i] = std::signal(kKernelSignals[i], SIG_DFL);
+            std::signal(kKernelSignals[i], before[i]);
+        }
+        OSD::SetSignal(OSD_SignalMode_Set, false);
+        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+            g_kernelHandlers[i] = std::signal(kKernelSignals[i], before[i]);
+#else
+        struct sigaction before[std::size(kKernelSignals)];
+        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+            sigaction(kKernelSignals[i], nullptr, &before[i]);
+        OSD::SetSignal(OSD_SignalMode_Set, false);
+        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+            sigaction(kKernelSignals[i], &before[i], &g_kernelActions[i]);
+#endif
+    });
+}
+
+KernelSignalScope::KernelSignalScope()
+{
+    installKernelSignalHandlers();
+    const std::lock_guard lock(g_signalMutex);
+    if (g_kernelCalls++ > 0)
+        return;
+    for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
+#if defined(_WIN32)
+        g_outsideHandlers[i] = std::signal(kKernelSignals[i], g_kernelHandlers[i]);
+#else
+        sigaction(kKernelSignals[i], &g_kernelActions[i], &g_outsideActions[i]);
+#endif
+    }
+}
+
+KernelSignalScope::~KernelSignalScope()
+{
+    const std::lock_guard lock(g_signalMutex);
+    if (--g_kernelCalls > 0)
+        return;
+    for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
+#if defined(_WIN32)
+        std::signal(kKernelSignals[i], g_outsideHandlers[i]);
+#else
+        sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
+#endif
+    }
+}
+
+} // namespace detail
+
+void installKernelSignalHandling()
+{
+    detail::installKernelSignalHandlers();
+}
+
+bool insideKernelCall()
+{
+    return Standard_ErrorHandler::IsInTryBlock();
+}
+
+bool simulateKernelFault()
+{
+    const Status status = detail::guarded("simulated kernel fault", "The modeling kernel failed.", []() -> Status {
+        int* volatile target = nullptr; // volatile: the compiler must not see it is null
+        *target = 1;
+        return okStatus();
+    });
+    return !status;
+}
 
 namespace detail {
 
@@ -159,6 +263,23 @@ CurveKind curveKind(GeomAbs_CurveType type)
     }
 }
 
+// Runs a boolean leaving its inputs untouched. By default OCCT may raise
+// tolerances of the arguments' sub-shapes in place; those belong to cached
+// step outputs (and the previous state kept for undo), which must not change
+// under later steps. Found by the undo/redo stress test: the same step
+// recomputed after an undo gave a bounding box 4e-5 mm different.
+template <typename Op>
+void runBoolean(Op& op, const TopoDS_Shape& argument, const TopoDS_Shape& tool)
+{
+    TopTools_ListOfShape arguments, tools;
+    arguments.Append(argument);
+    tools.Append(tool);
+    op.SetArguments(arguments);
+    op.SetTools(tools);
+    op.SetNonDestructive(Standard_True);
+    op.Build();
+}
+
 } // namespace
 
 Result<Shape> makeBox(const Vec3& origin, const Vec3& size)
@@ -198,7 +319,7 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
     if (std::abs(distance) < kMinLength)
         return Result<Shape>::success(shape); // zero offset: no change
 
-    const char* userMessage = "Unable to move this face by that distance.";
+    const char* userMessage = "Unable to move this face by that distance. Try a slightly different distance.";
     return guarded("pushPullFace", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("pushPullFace");
         const TopoDS_Face face = faceAt(shape, faceIndex);
@@ -228,12 +349,14 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
 
         TopoDS_Shape combined;
         if (distance > 0) {
-            BRepAlgoAPI_Fuse op(occ(shape), prism);
+            BRepAlgoAPI_Fuse op;
+            runBoolean(op, occ(shape), prism);
             if (op.HasErrors())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(op));
             combined = op.Shape();
         } else {
-            BRepAlgoAPI_Cut op(occ(shape), prism);
+            BRepAlgoAPI_Cut op;
+            runBoolean(op, occ(shape), prism);
             if (op.HasErrors())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Cut failed: " + describeAlgoErrors(op));
             combined = op.Shape();
@@ -245,20 +368,150 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
     });
 }
 
-Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
-{
-    if (edgeIndices.empty())
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to fillet.", "filletEdges: no edges");
-    if (radius < kMinLength)
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The fillet radius must be greater than zero.",
-                                      "filletEdges: radius " + std::to_string(radius));
-    for (int e : edgeIndices)
-        if (!validIndex(shape, e, shape.edgeCount()))
-            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
-                                          "filletEdges: edge index " + std::to_string(e) + " out of range");
+namespace detail {
 
+std::optional<double> largestWorkingSize(double failed, std::chrono::steady_clock::duration firstAttempt,
+                                         const std::function<bool(double)>& works)
+{
+    using Clock = std::chrono::steady_clock;
+    const auto start = Clock::now();
+    Clock::duration slowest = firstAttempt;
+    int attempts = 0;
+    const auto affordable = [&] {
+        return attempts < kMaxSizeAttempts && Clock::now() - start + slowest <= kSizeBudget;
+    };
+    const auto attempt = [&](double size) {
+        const auto t0 = Clock::now();
+        const bool ok = works(size);
+        slowest = std::max(slowest, Clock::now() - t0);
+        ++attempts;
+        return ok;
+    };
+
+    std::optional<double> largest;
+    double lo = std::min(kTinySize, failed * 0.02);
+    double hi = failed;
+    if (affordable()) {
+        if (!attempt(lo)) {
+            largest = 0.0;
+        } else {
+            while (hi / lo > 1.02 && affordable()) {
+                const double mid = hi / lo > 2 ? std::sqrt(lo * hi) : (lo + hi) / 2;
+                (attempt(mid) ? lo : hi) = mid;
+            }
+            if (hi / lo <= 1.5)
+                largest = lo;
+        }
+    }
+    OS_LOG(Debug, Geometry) << "largestWorkingSize: " << attempts << " attempts, "
+                            << std::chrono::duration<double, std::milli>(Clock::now() - start).count() << " ms, "
+                            << (largest ? std::to_string(*largest) : std::string("unknown"));
+    return largest;
+}
+
+} // namespace detail
+
+namespace {
+
+// ---- Plain-language hints for sizes the kernel refuses --------------------------
+
+enum class SizedOperation { Fillet, Chamfer, Shell };
+
+using Clock = std::chrono::steady_clock;
+
+// detail::largestWorkingSize for one operation on one shape and items. The
+// last answer is cached, "unknown" included: a drag keeps asking about the
+// same shape and items, and should not wait for the search again.
+std::optional<double> largestWorkingSize(SizedOperation operation, const Shape& shape, const std::vector<int>& items,
+                                         double failed, Clock::duration firstAttempt,
+                                         const std::function<bool(double)>& works)
+{
+    struct Entry {
+        SizedOperation operation;
+        Shape shape; // held, so its address cannot be reused by another shape
+        std::vector<int> items;
+        std::optional<double> largest;
+    };
+    static std::mutex mutex;
+    static std::optional<Entry> last;
+    {
+        std::lock_guard lock(mutex);
+        if (last && last->operation == operation && last->shape.sameAs(shape) && last->items == items
+            && (!last->largest || *last->largest < failed))
+            return last->largest;
+    }
+    const std::optional<double> largest = detail::largestWorkingSize(failed, firstAttempt, works);
+    std::lock_guard lock(mutex);
+    last = Entry{operation, shape, items, largest};
+    return largest;
+}
+
+// "2.9 mm", "0.11 in": two significant digits (half units from 10 up),
+// rounded down so the suggested value itself works.
+std::string sizeText(double millimeters, LengthUnit unit)
+{
+    const double value = fromMillimeters(millimeters, unit);
+    const double step = value >= 10 ? 0.5 : std::pow(10.0, std::floor(std::log10(value)) - 1);
+    const double down = std::floor(value / step + 1e-9) * step;
+    const int decimals = std::max(1, static_cast<int>(std::lround(-std::log10(step))));
+    char text[48];
+    std::snprintf(text, sizeof text, "%.*f %s", decimals, down, std::string(unitSymbol(unit)).c_str());
+    return text;
+}
+
+// True when the two faces along the edge meet without a crease (a tangent
+// edge, e.g. between a fillet and its neighbour): there is no corner there.
+bool isSmoothEdge(const Shape& shape, int edgeIndex)
+{
+    const std::vector<int> faces = facesOfEdge(shape, edgeIndex);
+    if (faces.size() != 2)
+        return false;
+    const TopoDS_Edge edge = edgeAt(shape, edgeIndex);
+    std::optional<gp_Dir> normals[2];
+    for (int k = 0; k < 2; ++k) {
+        const TopoDS_Face face = faceAt(shape, faces[std::size_t(k)]);
+        double first = 0, last = 0;
+        const Handle(Geom2d_Curve) onFace = BRep_Tool::CurveOnSurface(edge, face, first, last);
+        if (onFace.IsNull())
+            return false;
+        const gp_Pnt2d uv = onFace->Value((first + last) / 2);
+        normals[k] = faceNormal(face, uv.X(), uv.Y());
+        if (!normals[k])
+            return false;
+    }
+    return normals[0]->Angle(*normals[1]) < 1.0 * kPi / 180;
+}
+
+// The message for an edge fillet or chamfer the kernel refused (the failed
+// attempt took `attempt`).
+std::string edgeSizeMessage(SizedOperation operation, const Shape& shape, const std::vector<int>& edges, double size,
+                            const SizeAdvice& advice, Clock::duration attempt, const std::function<bool(double)>& works)
+{
+    const bool fillet = operation == SizedOperation::Fillet;
+    const bool several = edges.size() > 1;
+    try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
+        for (int e : edges)
+            if (isSmoothEdge(shape, e))
+                return std::string(several ? "One of these edges" : "This edge") + " joins two faces smoothly, so there is no corner to "
+                     + (fillet ? "round" : "bevel") + ". Select sharp edges only.";
+        const auto largest = advice.suggest ? largestWorkingSize(operation, shape, edges, size, attempt, works) : std::nullopt;
+        const std::string what = fillet ? "radius" : "distance";
+        const std::string where = several ? "these edges" : "this edge";
+        if (largest && *largest <= 0)
+            return std::string("Unable to ") + (fillet ? "round " : "bevel ") + where
+                 + " at any size. Try fewer edges at a time, or remove nearby rounded edges first.";
+        if (largest && *largest >= kMinLength)
+            return "The " + what + " is too large for " + where + ". Try " + sizeText(*largest, advice.unit) + " or less.";
+    } catch (const Standard_Failure&) {
+    }
+    return fillet ? "Unable to create this fillet. Try a smaller radius." : "Unable to create this chamfer. Try a smaller distance.";
+}
+
+Result<Shape> tryFillet(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
+{
     const char* userMessage = "Unable to create this fillet. Try a smaller radius.";
-    auto result = guarded("BRepFilletAPI_MakeFillet", userMessage, [&]() -> Result<Shape> {
+    return guarded("BRepFilletAPI_MakeFillet", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("filletEdges");
         BRepFilletAPI_MakeFillet maker(occ(shape));
         for (int e : edgeIndices)
@@ -272,25 +525,12 @@ Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndice
         }
         return finishSolid(maker.Shape(), "BRepFilletAPI_MakeFillet", userMessage);
     });
-    if (!result && result.error() != ErrorCode::InvalidArgument)
-        return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, userMessage, result.developerMessage());
-    return result;
 }
 
-Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance)
+Result<Shape> tryChamfer(const Shape& shape, const std::vector<int>& edgeIndices, double distance)
 {
-    if (edgeIndices.empty())
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to chamfer.", "chamferEdges: no edges");
-    if (distance < kMinLength)
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The chamfer distance must be greater than zero.",
-                                      "chamferEdges: distance " + std::to_string(distance));
-    for (int e : edgeIndices)
-        if (!validIndex(shape, e, shape.edgeCount()))
-            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
-                                          "chamferEdges: edge index " + std::to_string(e) + " out of range");
-
     const char* userMessage = "Unable to create this chamfer. Try a smaller distance.";
-    auto result = guarded("BRepFilletAPI_MakeChamfer", userMessage, [&]() -> Result<Shape> {
+    return guarded("BRepFilletAPI_MakeChamfer", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("chamferEdges");
         BRepFilletAPI_MakeChamfer maker(occ(shape));
         for (int e : edgeIndices)
@@ -301,25 +541,12 @@ Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndic
                                           "BRepFilletAPI_MakeChamfer not done: distance=" + std::to_string(distance));
         return finishSolid(maker.Shape(), "BRepFilletAPI_MakeChamfer", userMessage);
     });
-    if (!result && result.error() != ErrorCode::InvalidArgument)
-        return Result<Shape>::failure(ErrorCode::ChamferTooLarge, userMessage, result.developerMessage());
-    return result;
 }
 
-Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
+Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
 {
-    if (openFaces.empty())
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the face(s) to open.", "shell: no faces");
-    if (thickness < kMinLength)
-        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The wall thickness must be greater than zero.",
-                                      "shell: thickness " + std::to_string(thickness));
-    for (int f : openFaces)
-        if (!validIndex(shape, f, shape.faceCount()))
-            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
-                                          "shell: face index " + std::to_string(f) + " out of range");
-
     const char* userMessage = "Unable to shell with this wall thickness. Try thinner walls.";
-    auto result = guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
+    return guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("shell");
         TopTools_ListOfShape faces;
         for (int f : openFaces)
@@ -339,23 +566,89 @@ Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, doubl
                                           "MakeThickSolidByJoin removed no material: thickness=" + std::to_string(thickness));
         return hollow;
     });
-    if (!result && result.error() != ErrorCode::InvalidArgument)
-        return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage, result.developerMessage());
-    return result;
+}
+
+} // namespace
+
+Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius, const SizeAdvice& advice)
+{
+    if (edgeIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to fillet.", "filletEdges: no edges");
+    if (radius < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The fillet radius must be greater than zero.",
+                                      "filletEdges: radius " + std::to_string(radius));
+    for (int e : edgeIndices)
+        if (!validIndex(shape, e, shape.edgeCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
+                                          "filletEdges: edge index " + std::to_string(e) + " out of range");
+    const auto start = Clock::now();
+    auto result = tryFillet(shape, edgeIndices, radius);
+    if (result)
+        return result;
+    const std::string message = edgeSizeMessage(SizedOperation::Fillet, shape, edgeIndices, radius, advice, Clock::now() - start,
+                                                [&](double r) { return tryFillet(shape, edgeIndices, r).ok(); });
+    return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, message, result.developerMessage());
+}
+
+Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance, const SizeAdvice& advice)
+{
+    if (edgeIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select at least one edge to chamfer.", "chamferEdges: no edges");
+    if (distance < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The chamfer distance must be greater than zero.",
+                                      "chamferEdges: distance " + std::to_string(distance));
+    for (int e : edgeIndices)
+        if (!validIndex(shape, e, shape.edgeCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
+                                          "chamferEdges: edge index " + std::to_string(e) + " out of range");
+    const auto start = Clock::now();
+    auto result = tryChamfer(shape, edgeIndices, distance);
+    if (result)
+        return result;
+    const std::string message = edgeSizeMessage(SizedOperation::Chamfer, shape, edgeIndices, distance, advice, Clock::now() - start,
+                                                [&](double d) { return tryChamfer(shape, edgeIndices, d).ok(); });
+    return Result<Shape>::failure(ErrorCode::ChamferTooLarge, message, result.developerMessage());
+}
+
+Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness, const SizeAdvice& advice)
+{
+    if (openFaces.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the face(s) to open.", "shell: no faces");
+    if (thickness < kMinLength)
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "The wall thickness must be greater than zero.",
+                                      "shell: thickness " + std::to_string(thickness));
+    for (int f : openFaces)
+        if (!validIndex(shape, f, shape.faceCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
+                                          "shell: face index " + std::to_string(f) + " out of range");
+    const auto start = Clock::now();
+    auto result = tryShell(shape, openFaces, thickness);
+    if (result)
+        return result;
+    std::string message = "Unable to shell with this wall thickness. Try thinner walls.";
+    const auto largest = advice.suggest ? largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness, Clock::now() - start,
+                                                             [&](double t) { return tryShell(shape, openFaces, t).ok(); })
+                                        : std::nullopt;
+    if (largest && *largest <= 0)
+        message = "Unable to hollow this body with these faces open. Try opening a different face.";
+    else if (largest && *largest >= kMinLength)
+        message = "The walls are too thick for this body. Try " + sizeText(*largest, advice.unit) + " or less.";
+    return Result<Shape>::failure(ErrorCode::ShellTooThick, message, result.developerMessage());
 }
 
 Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
 {
     if (a.isNull() || b.isNull())
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select two bodies.", "booleanOp: null operand");
-    const char* userMessage = "Unable to combine these bodies.";
+    const char* userMessage = "Unable to combine these bodies. Moving one of them slightly often helps.";
     return guarded("booleanOp", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("booleanOp");
         TopoDS_Shape out;
         std::string errors;
         switch (kind) {
         case BooleanKind::Union: {
-            BRepAlgoAPI_Fuse op(occ(a), occ(b));
+            BRepAlgoAPI_Fuse op;
+            runBoolean(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -363,7 +656,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
             break;
         }
         case BooleanKind::Subtract: {
-            BRepAlgoAPI_Cut op(occ(a), occ(b));
+            BRepAlgoAPI_Cut op;
+            runBoolean(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -371,7 +665,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
             break;
         }
         case BooleanKind::Intersect: {
-            BRepAlgoAPI_Common op(occ(a), occ(b));
+            BRepAlgoAPI_Common op;
+            runBoolean(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -381,12 +676,24 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
         }
         if (!errors.empty())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Boolean failed: " + errors);
+        if (kind == BooleanKind::Intersect && !TopExp_Explorer(out, TopAbs_SOLID).More())
+            return Result<Shape>::failure(ErrorCode::EmptyResult, "These bodies do not overlap, so nothing would be left.",
+                                          "booleanOp: intersection is empty");
         if (kind != BooleanKind::Intersect) {
             ShapeUpgrade_UnifySameDomain unify(out, true, true, true);
             unify.Build();
             out = unify.Shape();
         }
-        return finishSolid(out, "booleanOp", userMessage);
+        auto result = finishSolid(out, "booleanOp", userMessage);
+        // A cut must remove material. One that misses (or only touches the
+        // surface) would silently change nothing.
+        if (result && kind == BooleanKind::Subtract) {
+            const double before = volume(a), after = volume(result.value());
+            if (after >= before - 1e-9 * std::max(before, 1.0))
+                return Result<Shape>::failure(ErrorCode::NoEffect, "The shapes do not overlap, so nothing would be cut away.",
+                                              "booleanOp: subtraction removed no volume");
+        }
+        return result;
     });
 }
 
@@ -559,6 +866,7 @@ Result<Shape> fuseInOnePass(const std::vector<TopoDS_Shape>& shapes, const char*
     BRepAlgoAPI_Fuse fuse;
     fuse.SetArguments(arguments);
     fuse.SetTools(tools);
+    fuse.SetNonDestructive(Standard_True);
     fuse.Build();
     if (fuse.HasErrors())
         return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
@@ -574,10 +882,17 @@ Result<Shape> mirrorJoined(const Shape& shape, const Vec3& planeOrigin, const Ve
     auto image = mirrored(shape, planeOrigin, planeNormal);
     if (!image)
         return image;
-    const char* userMessage = "Unable to mirror the body across this plane.";
+    const char* userMessage = "Unable to mirror the body across this plane. Try another plane.";
     return guarded("mirrorJoined", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("mirrorJoined");
-        return fuseInOnePass({occ(shape), occ(image.value())}, "mirrorJoined", userMessage);
+        auto joined = fuseInOnePass({occ(shape), occ(image.value())}, "mirrorJoined", userMessage);
+        // The image of a body symmetric about the plane lands on itself.
+        if (joined && volume(joined.value()) <= volume(shape) * (1 + 1e-9))
+            return Result<Shape>::failure(ErrorCode::NoEffect,
+                                          "The body is already symmetric about this plane, so mirroring would change nothing. "
+                                          "Pick another plane.",
+                                          "mirrorJoined: volume unchanged");
+        return joined;
     });
 }
 
@@ -592,10 +907,18 @@ Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& c
             return copy;
         parts.push_back(occ(copy.value()));
     }
-    const char* userMessage = "Unable to repeat the body this way.";
+    const char* userMessage = "Unable to repeat the body this way. Try a different spacing or number of copies.";
     return guarded("repeatJoined", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("repeatJoined");
-        return fuseInOnePass(parts, "repeatJoined", userMessage);
+        auto joined = fuseInOnePass(parts, "repeatJoined", userMessage);
+        // Copies that all land on the original (no spacing, or a round body
+        // turned about its own axis) add nothing.
+        if (joined && !copies.empty() && volume(joined.value()) <= volume(shape) * (1 + 1e-9))
+            return Result<Shape>::failure(ErrorCode::NoEffect,
+                                          "The copies land on top of the original, so nothing would change. "
+                                          "Use a larger spacing or a different axis.",
+                                          "repeatJoined: volume unchanged");
+        return joined;
     });
 }
 
@@ -653,7 +976,7 @@ Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double
         return notHere("not a flat face");
     if (std::abs(distance) < kMinLength)
         return R::success(shape);
-    const char* userMessage = "Unable to move this face by that distance.";
+    const char* userMessage = "Unable to move this face by that distance. Try a slightly different distance.";
     return guarded("pushPullFaceKeepingEdges", userMessage, [&]() -> R {
         ScopedTimer timer("pushPullFaceKeepingEdges");
         const Vec3 n = info->normal.normalized();
@@ -732,8 +1055,10 @@ Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double
             return BRepPrimAPI_MakeBox(gp_Ax2(corner, frame.Direction(), frame.XDirection()), size, size, size).Shape();
         };
         const TopoDS_Shape above = boxAbove(split);
-        BRepAlgoAPI_Common upperOp(occ(shape), above);
-        BRepAlgoAPI_Cut lowerOp(occ(shape), distance > 0 ? above : boxAbove(bandLow));
+        BRepAlgoAPI_Common upperOp;
+        runBoolean(upperOp, occ(shape), above);
+        BRepAlgoAPI_Cut lowerOp;
+        runBoolean(lowerOp, occ(shape), distance > 0 ? above : boxAbove(bandLow));
         if (upperOp.HasErrors() || lowerOp.HasErrors())
             return R::failure(ErrorCode::KernelFailure, userMessage, "pushPullFaceKeepingEdges: split failed");
         gp_Trsf shift;
@@ -953,6 +1278,7 @@ std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex)
     if (!validIndex(shape, faceIndex, shape.faceCount()))
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Face face = faceAt(shape, faceIndex);
         FaceInfo info;
         BRepAdaptor_Surface surface(face);
@@ -990,6 +1316,7 @@ std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex)
     if (!validIndex(shape, edgeIndex, shape.edgeCount()))
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Edge edge = edgeAt(shape, edgeIndex);
         if (BRep_Tool::Degenerated(edge))
             return std::nullopt;
@@ -1042,6 +1369,7 @@ std::optional<Vec3> pointOnFace(const Shape& shape, int faceIndex, const Vec3& p
     if (!validIndex(shape, faceIndex, shape.faceCount()))
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Face face = faceAt(shape, faceIndex);
         BRepAdaptor_Surface surface(face);
         if (surface.GetType() != GeomAbs_Plane)
@@ -1098,6 +1426,7 @@ std::optional<FaceThickness> faceThickness(const Shape& shape, int faceIndex, co
     if (!info || !info->isPlanar())
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const Vec3 normal = info->normal.normalized();
         IntCurvesFace_ShapeIntersector intersector;
         intersector.Load(occ(shape), Precision::Confusion());
@@ -1151,6 +1480,7 @@ std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b)
     if (sa.IsNull() || sb.IsNull())
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         BRepExtrema_DistShapeShape extrema(sa, sb);
         if (!extrema.IsDone() || extrema.NbSolution() < 1)
             return std::nullopt;

@@ -23,6 +23,7 @@ bool SceneCache::update(const doc::Document& document)
         Entry entry;
         entry.shapeRevision = body->shapeRevision();
         entry.mesh = std::make_shared<const geom::Mesh>(geom::tessellate(body->shape()));
+        entry.accelerator = std::make_shared<const sel::PickAccelerator>(*entry.mesh);
         next.emplace(body->id(), std::move(entry));
         changed = true;
     }
@@ -59,6 +60,12 @@ std::shared_ptr<const geom::Mesh> SceneCache::mesh(const Uuid& bodyId) const
 {
     const auto it = entries_.find(bodyId);
     return it == entries_.end() ? nullptr : it->second.mesh;
+}
+
+std::shared_ptr<const sel::PickAccelerator> SceneCache::accelerator(const Uuid& bodyId) const
+{
+    const auto it = entries_.find(bodyId);
+    return it == entries_.end() ? nullptr : it->second.accelerator;
 }
 
 const SceneCache::SketchEntry* SceneCache::sketch(const Uuid& sketchId) const

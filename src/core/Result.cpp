@@ -25,6 +25,7 @@ const char* toString(ErrorCode code)
     case ErrorCode::FileFormatError: return "FileFormatError";
     case ErrorCode::FileVersionUnsupported: return "FileVersionUnsupported";
     case ErrorCode::Unsupported: return "Unsupported";
+    case ErrorCode::NoEffect: return "NoEffect";
     }
     return "Unknown";
 }

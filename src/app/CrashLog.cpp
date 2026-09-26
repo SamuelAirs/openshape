@@ -4,6 +4,8 @@
 
 #include "app/CrashLog.h"
 
+#include "geometry/KernelSignals.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,6 +22,7 @@
 #endif
 #include <windows.h>
 #else
+#include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -36,6 +39,13 @@ constexpr const char* kNewline = "\n";
 char g_logPath[4096] = {};
 #endif
 bool g_simulated = false;
+#if defined(_WIN32)
+// The filter in place before ours: OpenCASCADE's (or the C runtime's, which
+// calls OpenCASCADE's signal handler). Only used inside kernel calls.
+LPTOP_LEVEL_EXCEPTION_FILTER g_kernelFilter = nullptr;
+#else
+constexpr int kFatalSignals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE};
+#endif
 
 // Opens the log file anew (the logger's own handle may be mid-write in the
 // crashing thread) and appends the line; no allocation.
@@ -105,6 +115,9 @@ const char* exceptionName(DWORD code)
 
 LONG WINAPI onUnhandledException(EXCEPTION_POINTERS* info)
 {
+    // Inside a kernel call OpenCASCADE turns the fault into a failed step.
+    if (g_kernelFilter && os::geom::insideKernelCall())
+        return g_kernelFilter(info);
     const EXCEPTION_RECORD* record = info ? info->ExceptionRecord : nullptr;
     const DWORD code = record ? record->ExceptionCode : 0;
     const void* address = record ? record->ExceptionAddress : nullptr;
@@ -132,21 +145,60 @@ LONG WINAPI onUnhandledException(EXCEPTION_POINTERS* info)
 }
 #endif
 
+#if !defined(_WIN32)
+const char* signalName(int signal)
+{
+    switch (signal) {
+    case SIGSEGV: return "segmentation fault";
+    case SIGBUS: return "bus error";
+    case SIGILL: return "illegal instruction";
+    case SIGFPE: return "arithmetic error";
+    default: return "fatal signal";
+    }
+}
+
+// Outside kernel calls (inside them OpenCASCADE's handlers are installed:
+// geometry/internal/KernelUtil.h, KernelSignalScope).
+extern "C" void onFatalSignal(int signal)
+{
+    char line[256];
+    std::snprintf(line, sizeof line, "[error] APP: OpenShape closed unexpectedly: signal %d (%s)%s", signal, signalName(signal),
+                  kNewline);
+    writeCrashLine(line);
+    // A real crash from here on: the system's crash report sees the signal.
+    std::signal(signal, SIG_DFL);
+    std::raise(signal);
+}
+#endif
+
 } // namespace
 
 void installCrashLogging(const QString& logFile)
 {
+    // OpenCASCADE's signal handling first: its handlers are active only
+    // inside kernel calls, where they turn a fault into a failed step (and
+    // on Windows its top-level filter is the one ours hands those over to).
+    // Faults outside kernel calls are real crashes: logged here, then left
+    // to the system (Windows Error Reporting, crash reports).
+    os::geom::installKernelSignalHandling();
 #if defined(_WIN32)
     const std::wstring path = logFile.toStdWString();
     if (path.size() < std::size(g_logPath))
         std::memcpy(g_logPath, path.c_str(), (path.size() + 1) * sizeof(wchar_t));
-    SetUnhandledExceptionFilter(onUnhandledException);
+    g_kernelFilter = SetUnhandledExceptionFilter(onUnhandledException);
 #else
     const QByteArray path = logFile.toLocal8Bit();
     if (std::size_t(path.size()) < sizeof g_logPath)
         std::memcpy(g_logPath, path.constData(), std::size_t(path.size()) + 1);
+    for (const int signal : kFatalSignals)
+        std::signal(signal, onFatalSignal);
 #endif
     std::set_terminate(onTerminate);
+}
+
+bool simulateKernelFault()
+{
+    return os::geom::simulateKernelFault();
 }
 
 void simulateCrash()

@@ -189,6 +189,20 @@ Steps recoverySteps(AcceptanceRunner& r)
         const QByteArray logText = log.open(QIODevice::ReadOnly) ? log.readAll() : QByteArray();
         r.check(logText.contains("OpenShape closed unexpectedly"), "the crash is in its log",
                 QString::fromUtf8(logText.right(200)));
+        // The kernel's own crash handling (a fault inside a modeling call
+        // becomes a failed step) and the crash log work together.
+        const QString faultDir = s->outputDir + QStringLiteral("/kernel-fault");
+        QDir(faultDir).removeRecursively();
+        QProcess faulty;
+        faulty.start(QCoreApplication::applicationFilePath(),
+                     {QStringLiteral("--data-dir"), faultDir, QStringLiteral("--simulate-kernel-fault")});
+        const bool faultFinished = faulty.waitForFinished(90000);
+        QFile faultLog(faultDir + QStringLiteral("/logs/openshape.log"));
+        const QByteArray faultText = faultLog.open(QIODevice::ReadOnly) ? faultLog.readAll() : QByteArray();
+        r.check(faultFinished && faulty.exitStatus() == QProcess::NormalExit && faulty.exitCode() == 0
+                    && faultText.contains("it became a failed step") && !faultText.contains("closed unexpectedly"),
+                "a fault inside a kernel call is a failed step, not a crash",
+                QStringLiteral("exit %1: ").arg(faulty.exitCode()) + QString::fromUtf8(faultText.right(160)));
         // Its recovery folder: move the copy, sidecar and (dead) lock into ours.
         const QDir from(crashDir + QStringLiteral("/recovery"));
         const QStringList copies = from.entryList({QStringLiteral("*.openshape")}, QDir::Files);

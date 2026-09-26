@@ -463,7 +463,11 @@ int main(int argc, char* argv[])
     parser.addOption(screenshotOption);
     parser.addOption(dataDirOption);
     parser.addOption(simulateCrashOption);
+    QCommandLineOption simulateKernelFaultOption(
+        QStringLiteral("simulate-kernel-fault"),
+        QStringLiteral("Test: an access violation inside a modeling kernel call must become a failed step, not a crash."));
     parser.addOption(simulateQuitOption);
+    parser.addOption(simulateKernelFaultOption);
     parser.addPositionalArgument(QStringLiteral("project"), QStringLiteral("Project file to open."), QStringLiteral("[project]"));
     parser.process(application);
 
@@ -500,6 +504,12 @@ int main(int argc, char* argv[])
     if (!dataDir.isEmpty())
         OS_LOG(Info, App) << "settings and recovery copies in " << QDir::toNativeSeparators(dataDir).toStdString();
 
+    if (parser.isSet(simulateKernelFaultOption)) {
+        const bool contained = os::app::simulateKernelFault();
+        OS_LOG(Info, App) << (contained ? "simulated kernel fault: it became a failed step"
+                                        : "simulated kernel fault: it was NOT contained");
+        return contained ? 0 : 4;
+    }
     if (parser.isSet(simulateCrashOption)) {
         // No window: an unsaved box, its recovery copy, then a real crash.
         os::ui::AppController controller;

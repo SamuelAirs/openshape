@@ -22,7 +22,8 @@ struct Scene {
     Scene()
     {
         shape = geom::makeBox({-10, -10, 0}, {20, 20, 20}).value();
-        targets.push_back({id, std::make_shared<const geom::Mesh>(geom::tessellate(shape))});
+        auto mesh = std::make_shared<const geom::Mesh>(geom::tessellate(shape));
+        targets.push_back({id, mesh, std::make_shared<const sel::PickAccelerator>(*mesh)});
         camera.viewportSize = {1000, 800};
         camera.fit({-10, -10, 0}, {10, 10, 20});
     }

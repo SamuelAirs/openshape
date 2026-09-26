@@ -63,6 +63,24 @@ PickResult pickFace(const std::vector<PickTarget>& targets, const Camera& camera
         if (!target.mesh)
             continue;
         const geom::Mesh& mesh = *target.mesh;
+        if (target.accelerator && target.accelerator->matches(mesh)) {
+            // Same first test as below, then only the triangles near the ray.
+            const Box3& vb = target.accelerator->vertexBounds();
+            Bounds bounds;
+            if (!vb.empty())
+                bounds = {vb.min, vb.max};
+            if (!rayHitsBox(ray, bounds, 1e-6))
+                continue;
+            const auto hit = target.accelerator->nearestHit(mesh, ray);
+            if (hit && hit->t < bestT) {
+                bestT = hit->t;
+                best.kind = PickKind::Face;
+                best.bodyId = target.bodyId;
+                best.index = static_cast<int>(mesh.triangleFace[hit->triangle]);
+                best.point = ray.at(hit->t);
+            }
+            continue;
+        }
         if (!rayHitsBox(ray, boundsOf(mesh), 1e-6))
             continue;
         for (std::size_t t = 0; t < mesh.triangleCount(); ++t) {
@@ -90,37 +108,64 @@ PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Ve
 
     PickResult bestEdge;
     double bestDistance = options.edgeTolerance;
+    // One segment, in the order a scan over all edges would meet it: the
+    // nearest wins, and of equally near ones the last.
+    auto visit = [&](const PickTarget& target, const geom::Mesh::EdgePolyline& edge, std::size_t i) {
+        const auto& p = edge.points;
+        const Vec3 a{p[i], p[i + 1], p[i + 2]};
+        const Vec3 b{p[i + 3], p[i + 4], p[i + 5]};
+        if (camera.projection == Camera::Projection::Perspective && (camera.depthOf(a) <= 0 || camera.depthOf(b) <= 0))
+            return;
+        double t = 0;
+        const double d = distanceToSegment2D(screen, camera.project(a), camera.project(b), &t);
+        if (d > bestDistance)
+            return;
+        const Vec3 onEdge = a + (b - a) * t;
+        // Occlusion: reject edges clearly behind the visible surface.
+        if (face.hit()) {
+            const double slack = camera.pixelSize(onEdge) * (options.edgeTolerance + 2);
+            if (camera.depthOf(onEdge) > face.depth + slack)
+                return;
+        }
+        bestDistance = d;
+        bestEdge.kind = PickKind::Edge;
+        bestEdge.bodyId = target.bodyId;
+        bestEdge.index = edge.edgeIndex;
+        bestEdge.point = onEdge;
+        bestEdge.depth = camera.depthOf(onEdge);
+        bestEdge.screenDistance = d;
+    };
+    // How far from the pick ray a point in `box` may lie and still project
+    // within the tolerance: the tolerance (plus a pixel) at the box's far
+    // side. Boxes entirely behind a perspective eye hold only skipped segments.
+    const Ray ray = camera.rayAt(screen);
+    auto reach = [&](const Box3& box) {
+        Vec3 farthest = box.min;
+        double deepest = -std::numeric_limits<double>::max();
+        for (int c = 0; c < 8; ++c) {
+            const Vec3 corner{c & 1 ? box.max.x : box.min.x, c & 2 ? box.max.y : box.min.y, c & 4 ? box.max.z : box.min.z};
+            const double depth = camera.depthOf(corner);
+            if (depth > deepest) {
+                deepest = depth;
+                farthest = corner;
+            }
+        }
+        if (camera.projection == Camera::Projection::Perspective && deepest <= 0)
+            return -1.0;
+        return camera.pixelSize(farthest) * (options.edgeTolerance * 1.05 + 1.0);
+    };
     for (const auto& target : targets) {
         if (!target.mesh)
             continue;
-        for (const auto& edge : target.mesh->edges) {
-            const auto& p = edge.points;
-            for (std::size_t i = 0; i + 5 < p.size(); i += 3) {
-                const Vec3 a{p[i], p[i + 1], p[i + 2]};
-                const Vec3 b{p[i + 3], p[i + 4], p[i + 5]};
-                if (camera.projection == Camera::Projection::Perspective
-                    && (camera.depthOf(a) <= 0 || camera.depthOf(b) <= 0))
-                    continue;
-                double t = 0;
-                const double d = distanceToSegment2D(screen, camera.project(a), camera.project(b), &t);
-                if (d > bestDistance)
-                    continue;
-                const Vec3 onEdge = a + (b - a) * t;
-                // Occlusion: reject edges clearly behind the visible surface.
-                if (face.hit()) {
-                    const double slack = camera.pixelSize(onEdge) * (options.edgeTolerance + 2);
-                    if (camera.depthOf(onEdge) > face.depth + slack)
-                        continue;
-                }
-                bestDistance = d;
-                bestEdge.kind = PickKind::Edge;
-                bestEdge.bodyId = target.bodyId;
-                bestEdge.index = edge.edgeIndex;
-                bestEdge.point = onEdge;
-                bestEdge.depth = camera.depthOf(onEdge);
-                bestEdge.screenDistance = d;
-            }
+        const geom::Mesh& mesh = *target.mesh;
+        if (target.accelerator && target.accelerator->matches(mesh)) {
+            for (const auto& s : target.accelerator->segmentsNear(ray, reach))
+                visit(target, mesh.edges[s.edge], 3 * std::size_t(s.point));
+            continue;
         }
+        for (const auto& edge : mesh.edges)
+            for (std::size_t i = 0; i + 5 < edge.points.size(); i += 3)
+                visit(target, edge, i);
     }
     if (bestEdge.hit())
         return bestEdge;

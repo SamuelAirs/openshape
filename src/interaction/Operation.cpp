@@ -42,7 +42,7 @@ void Operation::setValue(double value, const doc::Document& document)
     }
     resetAutomaticChoices();
     auto result = computePreview(value, document);
-    if (result && reconsider(result.value(), document))
+    if (result ? reconsider(result.value(), document) : reconsiderRefusal(result.error()))
         result = computePreview(value, document);
     if (!result) {
         previewMesh_.reset();
@@ -894,6 +894,16 @@ doc::ExtrudeMode ExtrudeOperation::mode() const
 bool ExtrudeOperation::reconsider(const geom::Shape& result, const doc::Document& document)
 {
     if (modeOverride_ || mode() != doc::ExtrudeMode::Join || !joinMissedBody(result, document, host_))
+        return false;
+    autoNewBody_ = true;
+    return true;
+}
+
+bool ExtrudeOperation::reconsiderRefusal(ErrorCode code)
+{
+    // Pushed in beside the body, an automatic cut removes nothing: the user
+    // meant a new body on that side (as a join that misses does).
+    if (modeOverride_ || mode() != doc::ExtrudeMode::Cut || code != ErrorCode::NoEffect)
         return false;
     autoNewBody_ = true;
     return true;

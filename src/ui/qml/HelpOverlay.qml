@@ -103,7 +103,8 @@ Rectangle {
                             ["Remove a hole or fillet", "Select its face(s), press Delete"],
                             ["Insert for a screw", "Hole rim → Heat-set insert"],
                             ["Measure", "Select two faces or edges"],
-                            ["Apply / cancel", "Enter / Esc (or ✓ / ✕)"]
+                            ["Apply / cancel", "Enter / Esc (or ✓ / ✕)"],
+                            ["When a step can't be done", "The red text says why and what to try, e.g. the largest radius that fits"]
                         ]
                     }
                     HelpSection {

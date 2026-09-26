@@ -6,7 +6,7 @@
 add_library(openshape_geometry STATIC
     Exchange.cpp Exchange.h
     Mesh.h
-    Modeling.cpp Modeling.h
+    Modeling.cpp Modeling.h KernelSignals.h
     Profiles.cpp Profiles.h
     Shape.cpp Shape.h
     Tessellation.cpp Tessellation.h
@@ -24,4 +24,12 @@ target_link_libraries(openshape_geometry
 target_include_directories(openshape_geometry SYSTEM PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 # OCCT headers use M_PI, which strict ISO mode hides on MinGW/MSVC.
 target_compile_definitions(openshape_geometry PRIVATE _USE_MATH_DEFINES)
+# An OCCT built with OCC_CONVERT_SIGNALS (MSYS2, Homebrew, Linux packages)
+# turns crashes inside the kernel into exceptions at OCC_CATCH_SIGNALS (see
+# internal/KernelUtil.h). Its package config exports the definition for the
+# Release configuration only; match it in every configuration.
+get_directory_property(OPENSHAPE_OCCT_DEFINITIONS COMPILE_DEFINITIONS)
+if(OPENSHAPE_OCCT_DEFINITIONS MATCHES "OCC_CONVERT_SIGNALS")
+    target_compile_definitions(openshape_geometry PRIVATE OCC_CONVERT_SIGNALS)
+endif()
 openshape_set_warnings(openshape_geometry)

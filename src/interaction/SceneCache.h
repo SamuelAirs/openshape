@@ -8,6 +8,7 @@
 #include "geometry/Mesh.h"
 #include "geometry/Profiles.h"
 #include "geometry/Shape.h"
+#include "selection/PickAccelerator.h"
 
 #include <cstdint>
 #include <memory>
@@ -27,6 +28,8 @@ public:
     struct Entry {
         std::uint64_t shapeRevision = 0;
         std::shared_ptr<const geom::Mesh> mesh;
+        // Built with the mesh; hover picking tests only what is near the ray.
+        std::shared_ptr<const sel::PickAccelerator> accelerator;
     };
 
     // Closed regions of a sketch with display meshes (for profile picking and fills).
@@ -40,6 +43,7 @@ public:
     // Brings the cache in sync with the document. Returns true if any mesh changed.
     bool update(const doc::Document& document);
     std::shared_ptr<const geom::Mesh> mesh(const Uuid& bodyId) const;
+    std::shared_ptr<const sel::PickAccelerator> accelerator(const Uuid& bodyId) const;
     std::uint64_t revision(const Uuid& bodyId) const;
     const SketchEntry* sketch(const Uuid& sketchId) const;
     void clear()

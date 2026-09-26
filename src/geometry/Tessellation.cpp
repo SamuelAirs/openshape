@@ -7,6 +7,7 @@
 #include "core/Log.h"
 #include "core/Timer.h"
 #include "geometry/Modeling.h"
+#include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
 #include <BRepAdaptor_Curve.hxx>
@@ -63,6 +64,7 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
     }
 
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         // Faces are meshed in parallel inside this one call (OCCT synchronizes it).
         BRepMesh_IncrementalMesh mesher(occShape, deflection, params.relative, params.angularDeflection, true);
         (void)mesher;

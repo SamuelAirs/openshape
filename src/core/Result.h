@@ -30,6 +30,7 @@ enum class ErrorCode {
     FileFormatError,
     FileVersionUnsupported,
     Unsupported,
+    NoEffect,             // the operation would not change the body (a cut that misses, copies on top of each other)
 };
 
 const char* toString(ErrorCode code);

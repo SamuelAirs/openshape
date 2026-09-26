@@ -34,7 +34,7 @@ Technology choices and the alternatives considered are in
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
         │         ▼
-        │   selection/  picking (CPU ray/segment/profile), SelectionSet (+signatures)
+        │   selection/  picking (CPU ray/segment/profile, BVH per mesh), SelectionSet (+signatures)
         ▼
  commands/  Command + UndoStack (CreateBody, AddFeature, SetParameter, EditSketch…)
         ▼
@@ -93,7 +93,10 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 
 - `Shape` is an immutable, shared, opaque handle. Its topology index maps
   (faces/edges/vertices) are built once. Indices are **0-based and only valid
-  for that Shape instance**.
+  for that Shape instance**. Booleans run non-destructive (`runBoolean`):
+  by default OCCT widens tolerances of its inputs' sub-shapes in place, which
+  changed cached step outputs under later steps (found by the undo/redo
+  stress test). Meshing still writes triangulations into shapes (TD-4).
 - `Modeling.h`: box, cylinder, push/pull of a planar face (prism + fuse/cut +
   `ShapeUpgrade_UnifySameDomain`), fillet, chamfer, shell, booleans,
   transforms, direct face edits, measurements (volume, area, optimal bounding
@@ -102,6 +105,16 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   `Standard_Failure`) and results pass `finishSolid()` (unwraps single solids,
   rejects empty results, runs `BRepCheck_Analyzer`, and adds a `Result`
   warning when the result is in several pieces).
+- **Kernel crashes become failures.** OCCT can dereference null pointers on
+  valid input (the stress test found a General Fuse that crashed in its solid
+  classifier on blend corners with degenerate edges). The first kernel call
+  installs OCCT's signal handlers (`OSD::SetSignal`, `SetUnhandled` mode, no
+  floating-point traps); OCCT is built with `OCC_CONVERT_SIGNALS` (MSYS2,
+  Homebrew, Linux), so an access violation jumps to the nearest
+  `OCC_CATCH_SIGNALS`: OCCT's own algorithms then report a failed build, and
+  our try blocks (`guarded()`, `OS_KERNEL_SIGNALS_TO_EXCEPTIONS` in
+  `internal/KernelUtil.h`) rethrow it as a `Standard_Failure`. Locks stay
+  outside those try blocks (a jump skips destructors).
 - **Kernel "success" is verified.** OCCT sometimes reports success with an
   unchanged or wrong result, so operations check a cheap invariant of their
   intent: `shell` must remove volume; `deleteFaces` (`BRepAlgoAPI_Defeaturing`)
@@ -109,6 +122,31 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   offset; the skin-mode result is a shell, closed into a solid) must change
   the volume by about area × distance (within 25 %), otherwise the
   neighbours could not follow (e.g. tangent fillets) and the edit is refused.
+- **Nothing fails silently or does nothing silently.** A subtraction must
+  remove volume, a mirror or pattern must add some, an intersection must
+  leave some: otherwise the operation fails with `ErrorCode::NoEffect` (or
+  `EmptyResult`) and a message saying why ("This cut does not reach the
+  body…", "The copies land on top of the original…"); features reword the
+  kernel layer's generic text for their context (`reworded()` in
+  `Feature.cpp`). A **new** step that would change nothing is refused
+  (previews, `AddFeatureCommand`, a direct-manipulation `SetParameterCommand`);
+  during history recompute such a step passes its input on as an `Ok` step
+  with a warning note, so an upstream edit that moves a cut off the body, or
+  a file from an older version, does not block the steps after it.
+- **Refused sizes name one that works** (`geom::SizeAdvice`). Only
+  interactive previews ask for it (`EvalContext::interactive`, set by
+  `Document::preview`): a fillet, chamfer or shell the kernel refuses is then
+  retried to find the largest size that works, and the message names it in
+  the document's display unit ("The radius is too large for this edge. Try
+  2.9 mm or less."). The search (`geom::detail::largestWorkingSize`) tries
+  0.1 mm first (fails: "at any size"), then bisects geometrically while the
+  bounds are far apart (a value typed 100x too large) and arithmetically
+  after; at most 10 attempts, none that would end past 600 ms judged by the
+  slowest attempt so far; if it stops before the bounds are within 1.5x it
+  keeps the general wording. The last answer is cached for drags. History
+  recompute and file loading use the general wording ("Try a smaller
+  radius."), so a failing step costs no extra kernel attempts per rebuild.
+  An edge between tangent faces is reported as having no corner to round.
 - Rigid motions: `RigidMotion` (`Shape.h`: rotate about the axis through
   `center`, then translate) and `transformed`; `mirrored`; `mirrorJoined`
   and `repeatJoined` fuse the original and all copies in one General Fuse
@@ -163,6 +201,10 @@ Document (UUID, display unit)
   reusing cached outputs before it. Evaluation **stops at the first failure**:
   the failed feature is `Failed` (with user/developer messages), later ones are
   `NotComputed`, and the body shows the last good shape. Nothing is deleted.
+  A recompute that starts after a failed step (editing a blocked step) keeps
+  that last good shape too (it once left the body empty). A step that
+  changes nothing (`ErrorCode::NoEffect`) is not a failure here: it is `Ok`
+  with its input as output, `error` set and a `note` shown as a warning.
 - Features expose editable scalar `parameters()` (e.g. box width, push/pull
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
@@ -237,7 +279,10 @@ Document (UUID, display unit)
   (base feature), Join or Cut; cuts can be "through all". `Feature::compute` receives an `EvalContext`
   for such lookups, `Feature::dependencies()` declares them, and
   `Document::replaceSketch` recomputes dependent bodies. Deleting a sketch that
-  a feature uses is refused.
+  a feature uses is refused. `recomputeDependents` follows dependencies
+  transitively (A combines with B, B with C: editing C updates B, then A),
+  so the order of bodies in a file does not matter; a cycle from a hostile
+  file stops after a bounded number of recomputes per body.
 
 ## Topological naming (interim strategy)
 
@@ -287,6 +332,16 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Shift/Ctrl adds; touch and pen taps are additive by default (no modifier
   keys on tablets); tapping empty space clears. Double-click selects the body.
   `InputProfile` gives touch 3× larger pick/grab tolerances.
+- **Picking acceleration:** `SceneCache` builds a `sel::PickAccelerator`
+  with every body mesh (two bounding-volume hierarchies: triangles and edge
+  segments, median splits, 4 items per leaf; ~9 ms for 25k triangles). Face
+  picking walks the triangle tree for the nearest hit (ties go to the lowest
+  triangle index, like the linear scan); edge picking collects the segments
+  whose boxes come within the pixel tolerance of the pick line (the
+  tolerance times the pixel size at the box's far side, so the cull is
+  conservative) and runs the unchanged per-segment logic on them in mesh
+  order. Results are identical to the linear scan, which remains the path
+  for targets without an accelerator (tests compare the two).
 - **Push/pull shows the size:** `PushPullOperation` places its arrow on the
   face (`geom::pointOnFace`: a washer's centroid is in its hole) and measures
   the part behind it (`geom::faceThickness`: a line into the material must
@@ -402,7 +457,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   arrow follows the plane normal. For sketches on a body, pulling out joins
   and pushing in cuts, unless overridden (New body / Join / Cut). An
   automatic join whose preview would add separate pieces becomes a new body
-  (`Operation::reconsider` revises automatic choices after a preview).
+  (`Operation::reconsider` revises automatic choices after a preview), and
+  so does an automatic cut that would remove nothing (a profile beside the
+  body pushed in: `reconsiderRefusal` on `ErrorCode::NoEffect`). A cut
+  chosen explicitly is refused with the reason instead.
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as
@@ -489,7 +547,9 @@ hides it).
 `geometry/<body>.brep` (cache), optional `thumbnail.png`. Versioned with a
 migration table; newer versions are refused with a clear message. Readers
 treat files as untrusted: size limits, entry-name validation (no traversal),
-strict JSON schema checks, duplicate-UUID rejection; nothing is extracted to
+a JSON nesting limit (256), strict JSON schema checks (a wrong type is an
+error, never a thrown exception; `loadProject` also catches any that slip
+through), duplicate-UUID rejection; nothing is extracted to
 disk. Saves are atomic (temp file + rename). See
 [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md). `saveProject` is three steps
 (`serializeProject` reads the document on the GUI thread;
@@ -561,6 +621,16 @@ them on a hidden menu separator after the Open Recent sub-menu).
   camera/picking/interaction including a **headless Milestone 0 script**;
   `test_uistate` (Qt Core, no window): settings, window placement and
   recovery sessions with real lock files.
+- Robustness suite (`test_robustness`): seeded random modeling sessions
+  (`tests/StressHarness.h`: boxes, push/pull, fillets, chamfers, shells,
+  sketches, extrusions, moves, rotations, mirrors, patterns, booleans,
+  history edits, suppression, deletions; `tests/PortableRandom.h` makes a
+  seed replay the same session with every standard library) checked for undo-all / redo-all,
+  random undo/redo/edit interleavings and save/open equality (per body:
+  volume, box, face count, history with parameters and status); a project
+  file fuzzer (truncation, bit flips, broken JSON, wrong types, hostile
+  numbers, broken references, unsafe entries: fail with a plain message or
+  load a usable document); kernel crash regressions (`tests/data/`).
 - `OpenShape --acceptance <dir>` (CTest `acceptance_gui`, label `gui`) drives
   the real application through Qt's platform input path — including clicking
   QML buttons found by `objectName` — and checks geometry after each step,
@@ -584,7 +654,8 @@ them on a hidden menu separator after the Open Recent sub-menu).
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
 - Tessellation and previews run synchronously on the GUI thread.
-- Picking is brute force (no BVH).
+- Sketch-profile picking still runs an exact face classifier per region under
+  the cursor (TD-20; ~0.06 ms per hover on the benchmark enclosure).
 - Only linear per-body history. Features may depend on sketches and (Combine)
   on other bodies; `Document::recomputeDependents` propagates changes
   transitively (a body that changed updates the bodies built on it in turn)

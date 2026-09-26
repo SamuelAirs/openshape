@@ -112,6 +112,7 @@ TopoDS_Shape fuseAll(const TopTools_ListOfShape& solids, std::string& error)
     BRepAlgoAPI_Fuse fuse;
     fuse.SetArguments(arguments);
     fuse.SetTools(tools);
+    fuse.SetNonDestructive(Standard_True); // inputs stay as they are (see runBoolean in Modeling.cpp)
     fuse.Build();
     if (fuse.HasErrors()) {
         error = describeAlgoErrors(fuse);
@@ -150,6 +151,7 @@ Result<std::vector<Region>> findRegions(const PlaneFrame& plane, const std::vect
 
     ScopedTimer timer("findRegions");
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const Vec3 n = plane.normal().normalized();
         const gp_Ax3 axes(toPnt(plane.origin), toDir(n), toDir(plane.xAxis));
 
@@ -244,6 +246,7 @@ bool regionContains(const Shape& face, const Vec3& point)
     if (face.isNull())
         return false;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         TopExp_Explorer ex(occ(face), TopAbs_FACE);
         if (!ex.More())
             return false;
@@ -261,7 +264,7 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
     if (vector.length() < kMinLength)
         return Result<Shape>::failure(ErrorCode::InvalidArgument, "The extrusion distance must not be zero.",
                                       "extrudeFaces: zero vector");
-    const char* userMessage = "Unable to extrude this shape.";
+    const char* userMessage = "Unable to extrude this shape. Try a different distance.";
     return guarded("extrudeFaces", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("extrudeFaces");
         TopoDS_Shape result;
@@ -324,7 +327,7 @@ Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrig
                                           "The shape crosses the revolve axis. Draw it on one side of the axis.",
                                           "revolveFaces: profile straddles the axis");
     }
-    const char* userMessage = "Unable to revolve this shape.";
+    const char* userMessage = "Unable to revolve this shape. Try a smaller angle.";
     return guarded("revolveFaces", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("revolveFaces");
         const gp_Ax1 ax(toPnt(axisOrigin), toDir(axis));

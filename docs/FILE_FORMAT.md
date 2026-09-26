@@ -166,7 +166,18 @@ Project files are untrusted input:
 - every entry name is validated (no absolute paths, drive letters, backslashes,
   `.`/`..` components) and the file is rejected otherwise;
 - nothing is extracted to disk — entries are read into memory only;
-- JSON is parsed without exceptions and validated field by field;
+- `document.json` may nest at most 256 levels (it uses about 8): deeper
+  nesting is refused before parsing, since copying such a value would
+  overflow the stack;
+- JSON is parsed without exceptions and validated field by field (wrong
+  types, e.g. a `"fixed": "yes"`, are format errors, never defaults);
+  sketch entity ids and `nextId` must be at most 2^30;
+- references that do not resolve (a missing sketch, tool body or face)
+  load as failed steps with a message; dependency cycles between bodies
+  stop after a bounded number of recomputes;
+- a step that changes nothing (a cut beside the body or a subtraction of a
+  body that does not touch, which older versions could save) loads as a
+  step with a warning, and the steps after it still build;
 - nothing in a project file is ever executed.
 
 ## Recovery copies (not user files)

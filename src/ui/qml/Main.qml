@@ -482,19 +482,28 @@ ApplicationWindow {
             }
         }
         Text {
+            objectName: "hintText"
             // Wraps instead of running under the view buttons or the axis marker.
             width: (statusColumn.stacked ? axisTriad.x : viewPanel.x) - 2 * Theme.margin
             text: window.hintText()
-            color: Theme.mutedText
+            color: window.operationRefused() ? Theme.error : Theme.mutedText
             font.pixelSize: 12
             leftPadding: 4
             wrapMode: Text.WordWrap
         }
     }
 
+    // An operation without a value chip (Mirror) that cannot be applied says
+    // why here; the chip shows its own errors.
+    function operationRefused() {
+        return !app.sketchMode && app.operationActive && app.operationError.length > 0 && !app.valueLabelVisible
+    }
+
     function hintText() {
         if (app.sketchMode)
             return app.sketchHint
+        if (operationRefused())
+            return app.operationError
         if (app.operationPrompt.length > 0)
             return app.operationPrompt
         if (app.operationActive && app.operationTitle === "Align")

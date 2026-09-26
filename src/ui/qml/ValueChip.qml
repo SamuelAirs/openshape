@@ -125,6 +125,7 @@ Item {
 
         Text {
             id: errorText
+            objectName: "valueChipError"
             Layout.alignment: Qt.AlignHCenter
             Layout.maximumWidth: 320
             visible: text.length > 0

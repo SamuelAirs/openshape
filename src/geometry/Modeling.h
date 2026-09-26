@@ -5,9 +5,12 @@
 #pragma once
 
 #include "core/Result.h"
+#include "core/Units.h"
 #include "geometry/Shape.h"
 #include "geometry/TopoSignature.h"
 
+#include <chrono>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,12 +37,45 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance);
 // moves is not straight walls; callers then use pushPullFace.
 Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double distance);
 
-Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius);
-Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance);
+// How a refused fillet, chamfer or shell explains itself. By default the
+// message says what went wrong and what to try ("Try a smaller radius.").
+// With `suggest`, the kernel is asked a few more times (a bisection bounded
+// in attempts and time) for the largest size that still works, and the
+// message names it in `unit` ("Try 2.9 mm or less."). Interactive previews
+// ask for it; history recompute and file loading do not, so a step that keeps
+// failing does not cost extra kernel attempts on every rebuild.
+struct SizeAdvice {
+    bool suggest = false;
+    LengthUnit unit = LengthUnit::Millimeter;
+};
+
+namespace detail {
+// The search behind SizeAdvice, exposed for tests: the largest size below
+// `failed` for which `works` holds. Feasibility is close to monotonic in the
+// size for these operations. A tiny size is tried first (kTinySize, or 2% of
+// `failed` if smaller): when it fails too, no practical size works and the
+// answer is 0. Otherwise the bounds [works, fails] are narrowed by bisection,
+// geometric while they are far apart (a value typed 100x too large) and
+// arithmetic after. At most kMaxSizeAttempts attempts are made, and none
+// that would end past kSizeBudget, judged by the slowest attempt so far
+// (`firstAttempt`: how long the refused call took). Returns nullopt when the
+// search stopped before the bounds were within a factor of 1.5: a size far
+// below the limit would mislead, so the caller keeps its general wording.
+inline constexpr double kTinySize = 0.1; // mm
+inline constexpr int kMaxSizeAttempts = 10;
+inline constexpr std::chrono::milliseconds kSizeBudget{600};
+std::optional<double> largestWorkingSize(double failed, std::chrono::steady_clock::duration firstAttempt,
+                                         const std::function<bool(double)>& works);
+} // namespace detail
+
+Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius,
+                          const SizeAdvice& advice = {});
+Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndices, double distance,
+                           const SizeAdvice& advice = {});
 
 // Hollows the solid, removing the given faces (openings) and keeping walls of
 // `thickness` inside the original boundary.
-Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness);
+Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, double thickness, const SizeAdvice& advice = {});
 // Removes faces and closes the gap by extending their neighbours: holes,
 // fillets, chamfers and bosses disappear (OCCT defeaturing).
 Result<Shape> deleteFaces(const Shape& shape, const std::vector<int>& faceIndices);

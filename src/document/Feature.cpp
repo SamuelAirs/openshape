@@ -114,6 +114,22 @@ Status unknownParameter(std::string_view key)
                            "unknown parameter '" + std::string(key) + "'");
 }
 
+// Replaces the kernel layer's generic wording for one failure kind with
+// wording about this step ("This cut does not reach the body" rather than
+// "The shapes do not overlap").
+Result<geom::Shape> reworded(Result<geom::Shape> result, ErrorCode code, const char* userMessage)
+{
+    if (!result && result.error() == code)
+        return Result<geom::Shape>::failure(code, userMessage, result.developerMessage());
+    return result;
+}
+
+// Previews name a size that works, in the document's unit; recompute does not.
+geom::SizeAdvice sizeAdvice(const EvalContext& context)
+{
+    return {context.interactive, context.document ? context.document->displayUnit() : LengthUnit::Millimeter};
+}
+
 Status requirePositive(double value, const char* what)
 {
     if (!(value > 0.0) || !std::isfinite(value))
@@ -284,20 +300,20 @@ Status EdgeTreatmentFeature::readParams(const json& in)
     return okStatus();
 }
 
-Result<geom::Shape> FilletFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> FilletFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     auto indices = resolveEdges(input);
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
-    return geom::filletEdges(input, indices.value(), size);
+    return geom::filletEdges(input, indices.value(), size, sizeAdvice(context));
 }
 
-Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> ChamferFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     auto indices = resolveEdges(input);
     if (!indices)
         return Result<geom::Shape>::failureFrom(indices);
-    return geom::chamferEdges(input, indices.value(), size);
+    return geom::chamferEdges(input, indices.value(), size, sizeAdvice(context));
 }
 
 // ---- Combine --------------------------------------------------------------------
@@ -321,7 +337,8 @@ Result<geom::Shape> CombineFeature::compute(const geom::Shape& input, const Eval
     const geom::BooleanKind kind = mode == CombineMode::Union      ? geom::BooleanKind::Union
                                  : mode == CombineMode::Subtract ? geom::BooleanKind::Subtract
                                                                  : geom::BooleanKind::Intersect;
-    return geom::booleanOp(input, tool->shape(), kind);
+    return reworded(geom::booleanOp(input, tool->shape(), kind), ErrorCode::NoEffect,
+                    "The bodies do not overlap, so nothing would be cut away. Move one into the other first.");
 }
 
 Status CombineFeature::setParameter(std::string_view key, double)
@@ -577,6 +594,10 @@ Result<geom::Shape> PatternFeature::compute(const geom::Shape& input, const Eval
                                             "Pattern: count < 1");
     if (count == 1)
         return Result<geom::Shape>::success(input);
+    if (layout == Layout::Linear && std::abs(spacing) < 1e-6)
+        return Result<geom::Shape>::failure(ErrorCode::NoEffect,
+                                            "With no spacing the copies would all be in the same place. Set a spacing.",
+                                            "Pattern: spacing 0");
     return geom::repeatJoined(input, copies());
 }
 
@@ -899,7 +920,7 @@ Status CopyFeature::readParams(const json& in)
 
 // ---- Shell ----------------------------------------------------------------------
 
-Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     std::vector<int> indices;
     for (const FaceRef& ref : faces) {
@@ -909,7 +930,7 @@ Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalCo
                                                 "A face this shell opens no longer exists.", "Shell face unresolved");
         indices.push_back(*index);
     }
-    return geom::shell(input, indices, thickness);
+    return geom::shell(input, indices, thickness, sizeAdvice(context));
 }
 
 std::vector<ParameterInfo> ShellFeature::parameters() const
@@ -979,6 +1000,10 @@ Result<geom::Shape> ExtrudeFeature::toolSolid(const geom::Shape& input, const Ev
     auto regions = sketchRegions(*sk, plane);
     if (!regions)
         return Result<geom::Shape>::failureFrom(regions);
+    if (regions.value().empty())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                            "The sketch has no closed shape to extrude. Close its outline first.",
+                                            "Extrude: sketch has no regions");
     std::vector<geom::Shape> faces;
     for (const ProfileRef& ref : profiles) {
         const auto index = resolveProfile(regions.value(), plane, ref);
@@ -1015,7 +1040,9 @@ Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const Eval
     switch (mode) {
     case ExtrudeMode::NewBody: return tool;
     case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
-    case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
+    case ExtrudeMode::Cut:
+        return reworded(geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
+                        "This cut does not reach the body, so nothing would be removed. Extrude toward the body, or further.");
     }
     return tool;
 }
@@ -1131,7 +1158,13 @@ Result<geom::Shape> HoleFeature::compute(const geom::Shape& input, const EvalCon
                                     depth + kLead);
     if (!drill)
         return drill;
-    return geom::booleanOp(input, drill.value(), geom::BooleanKind::Subtract);
+    // Drilled from the rim of a hole at least as wide and deep, the drill
+    // only meets air: the insert fits the hole as it is.
+    const bool fitsAlready = diameter / 2 <= placement->rimRadius + 1e-6;
+    return reworded(geom::booleanOp(input, drill.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
+                    fitsAlready ? "This hole is already wide and deep enough for the insert, so nothing would change. "
+                                  "Pick a smaller hole, or a larger insert."
+                                : "The hole does not reach into the body. Pick the rim of a hole on a flat face.");
 }
 
 std::vector<ParameterInfo> HoleFeature::parameters() const
@@ -1184,6 +1217,10 @@ Result<geom::Shape> RevolveFeature::compute(const geom::Shape& input, const Eval
     auto regions = sketchRegions(*sk, plane);
     if (!regions)
         return Result<geom::Shape>::failureFrom(regions);
+    if (regions.value().empty())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                            "The sketch has no closed shape to revolve. Close its outline first.",
+                                            "Revolve: sketch has no regions");
     std::vector<geom::Shape> faces;
     for (const ProfileRef& ref : profiles) {
         const auto index = resolveProfile(regions.value(), plane, ref);
@@ -1199,7 +1236,9 @@ Result<geom::Shape> RevolveFeature::compute(const geom::Shape& input, const Eval
     switch (mode) {
     case ExtrudeMode::NewBody: return tool;
     case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
-    case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
+    case ExtrudeMode::Cut:
+        return reworded(geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
+                        "This cut does not reach the body, so nothing would be removed.");
     }
     return tool;
 }

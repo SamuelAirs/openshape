@@ -135,12 +135,14 @@ void Document::featureChanged(const Uuid& featureId)
 
 Result<geom::Shape> Document::preview(const Uuid& bodyId, const Feature& feature) const
 {
+    EvalContext interactive = context();
+    interactive.interactive = true; // refusals may name a size that works
     if (bodyId.isNil())
-        return feature.compute({}, context());
+        return feature.compute({}, interactive);
     const Body* b = body(bodyId);
     if (!b)
         return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "preview: unknown body");
-    return feature.compute(b->shape(), context());
+    return feature.compute(b->shape(), interactive);
 }
 
 sketch::Sketch* Document::sketch(const Uuid& id) const
@@ -267,26 +269,30 @@ std::vector<Uuid> Document::bodiesUsing(const Uuid& objectId) const
 
 void Document::recomputeDependents(const Uuid& objectId)
 {
-    // Transitive: a body that changed because of `objectId` updates the
-    // bodies built on it in turn (a piece split off a body whose cut uses
-    // a sketch, a copy of a body that combines with another). Each body is
-    // requeued at most once per body in the document, so a cycle (only
-    // possible in a hand-edited file) cannot loop forever.
+    // Transitive: a body that uses a body that changed changes too (A combines
+    // with B, B with C: editing C updates B, then A). Each recomputed body is
+    // queued in turn. A file can describe a cycle; the per-body cap ends it.
     std::vector<Uuid> queue{objectId};
-    std::vector<std::pair<Uuid, std::size_t>> requeued;
+    std::vector<std::pair<Uuid, int>> recomputed;
+    const int cap = static_cast<int>(bodies_.size()) + 1;
     for (std::size_t next = 0; next < queue.size(); ++next) {
-        const Uuid changedId = queue[next];
+        const Uuid changed = queue[next];
         for (auto& b : bodies_) {
             const auto& features = b->features();
             for (std::size_t i = 0; i < features.size(); ++i) {
                 const auto deps = features[i]->dependencies();
-                if (std::find(deps.begin(), deps.end(), changedId) == deps.end())
+                if (std::find(deps.begin(), deps.end(), changed) == deps.end())
                     continue;
+                auto it = std::find_if(recomputed.begin(), recomputed.end(), [&](const auto& p) { return p.first == b->id(); });
+                if (it == recomputed.end())
+                    it = recomputed.insert(recomputed.end(), {b->id(), 0});
+                if (++it->second > cap) {
+                    OS_LOG(Warning, Document) << "dependency cycle through body " << b->id().toString();
+                    break;
+                }
+                const std::uint64_t before = b->shapeRevision();
                 b->recompute(static_cast<int>(i), context());
-                auto it = std::find_if(requeued.begin(), requeued.end(), [&](const auto& p) { return p.first == b->id(); });
-                if (it == requeued.end())
-                    it = requeued.insert(requeued.end(), {b->id(), 0});
-                if (it->second++ <= bodies_.size())
+                if (b->shapeRevision() != before)
                     queue.push_back(b->id());
                 break;
             }

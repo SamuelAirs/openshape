@@ -114,6 +114,32 @@ Result<std::string> readEntry(zip_t* archive, zip_int64_t index)
     return R::success(std::move(data));
 }
 
+// Deepest bracket nesting in JSON text (brackets inside strings do not
+// count). The parser itself copes with any depth, but copying, comparing and
+// destroying a json value recurse: thousands of nested arrays in a hostile
+// file would overflow the stack.
+std::size_t jsonNestingDepth(const std::string& text)
+{
+    std::size_t depth = 0, deepest = 0;
+    bool inString = false;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if (inString) {
+            if (c == '\\')
+                ++i;
+            else if (c == '"')
+                inString = false;
+        } else if (c == '"') {
+            inString = true;
+        } else if (c == '[' || c == '{') {
+            deepest = std::max(deepest, ++depth);
+        } else if ((c == ']' || c == '}') && depth > 0) {
+            --depth;
+        }
+    }
+    return deepest;
+}
+
 } // namespace
 
 bool isSafeArchiveEntryName(const std::string& name)
@@ -443,11 +469,19 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
     auto text = readEntry(archive.archive, documentIndex);
     if (!text)
         return R::failureFrom(text);
+    if (const std::size_t depth = jsonNestingDepth(text.value()); depth > kMaxJsonDepth)
+        return R::failureFrom(formatError("document.json nested " + std::to_string(depth) + " levels deep"));
     json root = json::parse(text.value(), nullptr, false);
     if (root.is_discarded())
         return R::failureFrom(formatError("document.json is not valid JSON"));
 
-    auto document = documentFromJson(root);
+    // The reader checks every type it reads; this is the net under that.
+    Result<std::unique_ptr<doc::Document>> document = R::failure(ErrorCode::FileFormatError, "", "");
+    try {
+        document = documentFromJson(root);
+    } catch (const std::exception& e) {
+        return R::failureFrom(formatError(std::string("exception while reading document.json: ") + e.what()));
+    }
     if (!document)
         return document;
     for (const auto& body : document.value()->bodies())

@@ -22,4 +22,9 @@ void installCrashLogging(const QString& logFile);
 // Skips the operating system's crash dialog so automated checks never hang.
 [[noreturn]] void simulateCrash();
 
+// --simulate-kernel-fault: an access violation inside a modeling kernel call
+// while the crash handler is installed. True if it became a failed call (as
+// it must), false if the handler let it through.
+bool simulateKernelFault();
+
 } // namespace os::app
