@@ -169,6 +169,23 @@ CurveKind curveKind(GeomAbs_CurveType type)
     }
 }
 
+// Runs a boolean leaving its inputs untouched. By default OCCT may raise
+// tolerances of the arguments' sub-shapes in place; those belong to cached
+// step outputs (and the previous state kept for undo), which must not change
+// under later steps. Found by the undo/redo stress test: the same step
+// recomputed after an undo gave a bounding box 4e-5 mm different.
+template <typename Op>
+void runBoolean(Op& op, const TopoDS_Shape& argument, const TopoDS_Shape& tool)
+{
+    TopTools_ListOfShape arguments, tools;
+    arguments.Append(argument);
+    tools.Append(tool);
+    op.SetArguments(arguments);
+    op.SetTools(tools);
+    op.SetNonDestructive(Standard_True);
+    op.Build();
+}
+
 } // namespace
 
 Result<Shape> makeBox(const Vec3& origin, const Vec3& size)
@@ -238,12 +255,14 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
 
         TopoDS_Shape combined;
         if (distance > 0) {
-            BRepAlgoAPI_Fuse op(occ(shape), prism);
+            BRepAlgoAPI_Fuse op;
+            runBoolean(op, occ(shape), prism);
             if (op.HasErrors())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(op));
             combined = op.Shape();
         } else {
-            BRepAlgoAPI_Cut op(occ(shape), prism);
+            BRepAlgoAPI_Cut op;
+            runBoolean(op, occ(shape), prism);
             if (op.HasErrors())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Cut failed: " + describeAlgoErrors(op));
             combined = op.Shape();
@@ -497,7 +516,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
         std::string errors;
         switch (kind) {
         case BooleanKind::Union: {
-            BRepAlgoAPI_Fuse op(occ(a), occ(b));
+            BRepAlgoAPI_Fuse op;
+            runBoolean(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -505,7 +525,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
             break;
         }
         case BooleanKind::Subtract: {
-            BRepAlgoAPI_Cut op(occ(a), occ(b));
+            BRepAlgoAPI_Cut op;
+            runBoolean(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -513,7 +534,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
             break;
         }
         case BooleanKind::Intersect: {
-            BRepAlgoAPI_Common op(occ(a), occ(b));
+            BRepAlgoAPI_Common op;
+            runBoolean(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -713,6 +735,7 @@ Result<Shape> fuseInOnePass(const std::vector<TopoDS_Shape>& shapes, const char*
     BRepAlgoAPI_Fuse fuse;
     fuse.SetArguments(arguments);
     fuse.SetTools(tools);
+    fuse.SetNonDestructive(Standard_True);
     fuse.Build();
     if (fuse.HasErrors())
         return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
@@ -859,8 +882,10 @@ Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double
             return BRepPrimAPI_MakeBox(gp_Ax2(corner, frame.Direction(), frame.XDirection()), size, size, size).Shape();
         };
         const TopoDS_Shape above = boxAbove(split);
-        BRepAlgoAPI_Common upperOp(occ(shape), above);
-        BRepAlgoAPI_Cut lowerOp(occ(shape), distance > 0 ? above : boxAbove(bandLow));
+        BRepAlgoAPI_Common upperOp;
+        runBoolean(upperOp, occ(shape), above);
+        BRepAlgoAPI_Cut lowerOp;
+        runBoolean(lowerOp, occ(shape), distance > 0 ? above : boxAbove(bandLow));
         if (upperOp.HasErrors() || lowerOp.HasErrors())
             return R::failure(ErrorCode::KernelFailure, userMessage, "pushPullFaceKeepingEdges: split failed");
         gp_Trsf shift;

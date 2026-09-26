@@ -112,6 +112,7 @@ TopoDS_Shape fuseAll(const TopTools_ListOfShape& solids, std::string& error)
     BRepAlgoAPI_Fuse fuse;
     fuse.SetArguments(arguments);
     fuse.SetTools(tools);
+    fuse.SetNonDestructive(Standard_True); // inputs stay as they are (see runBoolean in Modeling.cpp)
     fuse.Build();
     if (fuse.HasErrors()) {
         error = describeAlgoErrors(fuse);

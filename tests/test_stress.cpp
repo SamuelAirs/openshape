@@ -87,6 +87,50 @@ TEST(Dependencies, ChainedCombinesFollowAnUpstreamEdit)
     EXPECT_FALSE(loaded.value()->body(a)->hasFailures());
 }
 
+// Found by the save/open stress test: after a step failed, editing a later
+// (blocked) step recomputed from there with no input and the body's shape
+// became empty - the part vanished from the view until reopened.
+TEST(Recompute, EditingABlockedStepKeepsTheLastGoodShape)
+{
+    doc::Document d;
+    cmd::UndoStack stack;
+    auto box = std::make_unique<doc::BoxFeature>();
+    box->size = {20, 20, 10};
+    auto create = std::make_unique<cmd::CreateBodyCommand>("Body", std::move(box));
+    const Uuid id = create->bodyId();
+    ASSERT_TRUE(stack.push(std::move(create), d).ok());
+    auto fillet = std::make_unique<doc::FilletFeature>();
+    const geom::Shape& shape = d.body(id)->shape();
+    for (int e = 0; e < shape.edgeCount(); ++e)
+        if (const auto info = geom::edgeInfo(shape, e); info && std::abs(std::abs(info->tangent.z) - 1) < 1e-9)
+            fillet->edges.push_back({e, *geom::captureEdgeSignature(shape, e)});
+    fillet->size = 2;
+    const Uuid filletId = fillet->id();
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(fillet)), d).ok());
+    auto move = std::make_unique<doc::MoveFeature>();
+    move->translation = {0, 0, 5};
+    const Uuid moveId = move->id();
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::AddFeatureCommand>(id, std::move(move)), d).ok());
+    const double rounded = geom::volume(d.body(id)->shape());
+
+    // The fillet breaks (history edits keep failures): the body shows the box.
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::SetParameterCommand>(filletId, "size", 50.0, false), d).ok());
+    EXPECT_EQ(d.body(id)->state(1).status, doc::FeatureStatus::Failed);
+    EXPECT_EQ(d.body(id)->state(2).status, doc::FeatureStatus::NotComputed);
+    EXPECT_NEAR(geom::volume(d.body(id)->shape()), 4000.0, 1e-6);
+
+    // Editing the blocked move keeps showing the box.
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::SetParameterCommand>(moveId, "z", 8.0, false), d).ok());
+    ASSERT_FALSE(d.body(id)->shape().isNull());
+    EXPECT_NEAR(geom::volume(d.body(id)->shape()), 4000.0, 1e-6);
+    // So does suppressing it, and undoing everything restores the rounded part.
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::SetFeatureSuppressedCommand>(moveId, true), d).ok());
+    EXPECT_NEAR(geom::volume(d.body(id)->shape()), 4000.0, 1e-6);
+    while (stack.canUndo() && stack.index() > 3)
+        ASSERT_TRUE(stack.undo(d));
+    EXPECT_NEAR(geom::volume(d.body(id)->shape()), rounded, 1e-6);
+}
+
 class UndoRedoStress : public ::testing::TestWithParam<unsigned> {};
 
 TEST_P(UndoRedoStress, UndoAllRestoresStartRedoAllRestoresEnd)
@@ -108,7 +152,7 @@ TEST_P(UndoRedoStress, UndoAllRestoresStartRedoAllRestoresEnd)
     while (s.controller.redo()) {
     }
     EXPECT_EQ(s.stack.index(), s.stack.size()) << "a step that once worked failed to redo";
-    EXPECT_TRUE(sameState(end, s.snapshot())) << "after redoing: " << joined(log);
+    EXPECT_TRUE(sameState(end, s.snapshot())) << "after redoing: " << joined(log) << "\n" << describe(s.document);
 }
 
 INSTANTIATE_TEST_SUITE_P(Seeds, UndoRedoStress, ::testing::Values(11u, 22u, 33u));
@@ -117,6 +161,9 @@ class InterleavedStress : public ::testing::TestWithParam<unsigned> {};
 
 // New edits, undos and redos in random order. snapshots[i] is the state with
 // i steps applied; a new edit discards the redo branch as the stack does.
+// Seed 5 caught OCCT booleans widening tolerances of their inputs in place
+// (a cached step output changed under a later step): booleans now run
+// non-destructive (runBoolean in Modeling.cpp).
 TEST_P(InterleavedStress, EveryUndoRedoStateMatchesTheRecordedOne)
 {
     StressSession s(GetParam());
@@ -176,7 +223,8 @@ TEST_P(SaveOpenStress, ReopenedDocumentEqualsLiveOne)
         ++saves;
         doc::Document& reopened = *loaded.value();
         MetricsCache cache;
-        ASSERT_TRUE(sameState(live, snapshotOf(reopened, cache))) << "after " << joined(log);
+        ASSERT_TRUE(sameState(live, snapshotOf(reopened, cache)))
+            << "after " << joined(log) << "\nlive:\n" << describe(s.document) << "reopened:\n" << describe(reopened);
         // A full recompute of the reopened model gives the same geometry.
         reopened.recomputeAll();
         ASSERT_TRUE(sameState(live, snapshotOf(reopened, cache))) << "recompute after " << joined(log);

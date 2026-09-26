@@ -137,6 +137,27 @@ inline std::string statusName(doc::FeatureStatus s)
     return "?";
 }
 
+// The document's bodies and their steps with status, for failure messages.
+inline std::string describe(const doc::Document& document)
+{
+    std::string out;
+    for (const auto& body : document.bodies()) {
+        out += "  " + body->name() + (body->isVisible() ? "" : " (hidden)") + ": "
+             + std::to_string(body->shape().isNull() ? 0 : body->shape().faceCount()) + " faces\n";
+        for (std::size_t i = 0; i < body->features().size(); ++i) {
+            const doc::Feature& f = *body->features()[i];
+            nlohmann::json params = nlohmann::json::object();
+            f.writeParams(params);
+            std::string text = params.dump();
+            if (text.size() > 160)
+                text = text.substr(0, 160) + "...";
+            out += "    " + std::string(doc::toString(f.kind())) + (f.isSuppressed() ? " (suppressed)" : "") + " "
+                 + statusName(body->state(int(i)).status) + " " + body->state(int(i)).developerMessage + " " + text + "\n";
+        }
+    }
+    return out;
+}
+
 // Equal up to floating-point noise in derived geometry; exact for identity,
 // history and parameters.
 inline ::testing::AssertionResult sameState(const Snapshot& a, const Snapshot& b)
@@ -177,8 +198,13 @@ inline ::testing::AssertionResult sameState(const Snapshot& a, const Snapshot& b
                         + std::to_string(x.solids) + " vs " + std::to_string(y.solids));
         if (!near(x.volume, y.volume, 1e-7, 1e-7))
             return fail(where + "volume " + std::to_string(x.volume) + " vs " + std::to_string(y.volume));
-        if (x.box.valid != y.box.valid || (x.box.valid && (!nearVec(x.box.min, y.box.min, 1e-5) || !nearVec(x.box.max, y.box.max, 1e-5))))
-            return fail(where + "bounding box differs");
+        if (x.box.valid != y.box.valid || (x.box.valid && (!nearVec(x.box.min, y.box.min, 1e-5) || !nearVec(x.box.max, y.box.max, 1e-5)))) {
+            char text[256];
+            std::snprintf(text, sizeof text, "(%.9g %.9g %.9g)-(%.9g %.9g %.9g) vs (%.9g %.9g %.9g)-(%.9g %.9g %.9g)", x.box.min.x,
+                          x.box.min.y, x.box.min.z, x.box.max.x, x.box.max.y, x.box.max.z, y.box.min.x, y.box.min.y, y.box.min.z,
+                          y.box.max.x, y.box.max.y, y.box.max.z);
+            return fail(where + "bounding box differs: " + text);
+        }
     }
     if (a.sketches.size() != b.sketches.size())
         return fail("sketch count " + std::to_string(a.sketches.size()) + " vs " + std::to_string(b.sketches.size()));
@@ -310,6 +336,8 @@ private:
             {"deleteStep", 1, [&] { deleteStep(); }},
             {"deleteBody", document_.bodies().size() >= 3 ? 1 : 0, [&] { deleteBody(); }},
             {"deleteFaces", 1, [&] { deleteFaces(); }},
+            {"offsetFace", 1, [&] { offsetRoundFace(); }},
+            {"hole", 1, [&] { hole(); }},
             {"visibility", 1, [&] { toggleVisible(); }},
         };
         int total = 0;
@@ -618,6 +646,47 @@ private:
         const int f = pickFrom(candidates);
         auto feature = std::make_unique<doc::DeleteFacesFeature>();
         feature->faces = {{f, *geom::captureFaceSignature(s, f)}};
+        (void)push(std::make_unique<cmd::AddFeatureCommand>(body->id(), std::move(feature)));
+    }
+
+    // Resize a hole or shaft: move a cylindrical face (OffsetFace).
+    void offsetRoundFace()
+    {
+        const doc::Body* body = randomBody(200);
+        if (!body)
+            return;
+        std::vector<int> candidates;
+        const geom::Shape& s = body->shape();
+        for (int i = 0; i < s.faceCount(); ++i)
+            if (const auto info = geom::faceInfo(s, i); info && info->kind == geom::SurfaceKind::Cylinder)
+                candidates.push_back(i);
+        if (candidates.empty())
+            return;
+        const int f = pickFrom(candidates);
+        auto feature = std::make_unique<doc::OffsetFaceFeature>();
+        feature->face = {f, *geom::captureFaceSignature(s, f)};
+        feature->distance = (chance(0.5) ? -1 : 1) * uniform(0.2, 1.0);
+        (void)push(std::make_unique<cmd::AddFeatureCommand>(body->id(), std::move(feature)));
+    }
+
+    // A heat-set insert pilot hole at a circular rim.
+    void hole()
+    {
+        const doc::Body* body = randomBody(200);
+        if (!body)
+            return;
+        std::vector<int> rims;
+        const geom::Shape& s = body->shape();
+        for (int e = 0; e < s.edgeCount(); ++e)
+            if (doc::holePlacement(s, e))
+                rims.push_back(e);
+        if (rims.empty())
+            return;
+        const int e = pickFrom(rims);
+        auto feature = std::make_unique<doc::HoleFeature>();
+        feature->rim = {e, *geom::captureEdgeSignature(s, e)};
+        feature->diameter = uniform(1.5, 4.0);
+        feature->depth = uniform(2, 6);
         (void)push(std::make_unique<cmd::AddFeatureCommand>(body->id(), std::move(feature)));
     }
 

@@ -85,11 +85,15 @@ void Body::recompute(int fromIndex, const EvalContext& context)
     fromIndex = std::clamp(fromIndex, 0, static_cast<int>(features_.size()));
     geom::Shape current = shapeBefore(fromIndex);
     bool blocked = false;
-    // If an earlier feature is not Ok, everything from here on is blocked.
-    for (int i = 0; i < fromIndex; ++i) {
-        const auto status = states_[static_cast<std::size_t>(i)].status;
-        if (status == FeatureStatus::Failed || status == FeatureStatus::NotComputed)
+    // If an earlier feature is not Ok, everything from here on is blocked,
+    // and the body keeps showing the last good shape: the output of the
+    // step before the first failure (as a recompute from the start leaves it).
+    for (int i = 0; i < fromIndex && !blocked; ++i) {
+        const auto& state = states_[static_cast<std::size_t>(i)];
+        if (state.status == FeatureStatus::Failed || state.status == FeatureStatus::NotComputed)
             blocked = true;
+        else
+            current = state.output;
     }
 
     for (std::size_t i = static_cast<std::size_t>(fromIndex); i < features_.size(); ++i) {

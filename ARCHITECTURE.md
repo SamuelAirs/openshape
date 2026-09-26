@@ -92,7 +92,10 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 
 - `Shape` is an immutable, shared, opaque handle. Its topology index maps
   (faces/edges/vertices) are built once. Indices are **0-based and only valid
-  for that Shape instance**.
+  for that Shape instance**. Booleans run non-destructive (`runBoolean`):
+  by default OCCT widens tolerances of its inputs' sub-shapes in place, which
+  changed cached step outputs under later steps (found by the undo/redo
+  stress test). Meshing still writes triangulations into shapes (TD-4).
 - `Modeling.h`: box, cylinder, push/pull of a planar face (prism + fuse/cut +
   `ShapeUpgrade_UnifySameDomain`), fillet, chamfer, shell, booleans,
   transforms, direct face edits, measurements (volume, area, optimal bounding
@@ -184,6 +187,8 @@ Document (UUID, display unit)
   reusing cached outputs before it. Evaluation **stops at the first failure**:
   the failed feature is `Failed` (with user/developer messages), later ones are
   `NotComputed`, and the body shows the last good shape. Nothing is deleted.
+  A recompute that starts after a failed step (editing a blocked step) keeps
+  that last good shape too (it once left the body empty).
 - Features expose editable scalar `parameters()` (e.g. box width, push/pull
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
