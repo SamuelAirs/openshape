@@ -53,9 +53,31 @@ first, tested version. Their follow-ups are the next tasks below.
   OpenCASCADE's source to this PC to rebuild it without FFmpeg/FreeImage
   for a distributable Windows package (TD-17).
 - **Owner decisions:** the license is **MPL-2.0** (chosen 2026-09-25; see
-  docs/LICENSING.md). No product decision is pending. Their global git
+  docs/LICENSING.md). Their global git
   `user.email` is malformed but they don't mind; this repository sets its
   own (GitHub noreply address).
+- **Owner decisions for the overnight session (2026-09-25, evening):**
+  - Permissions granted for the night: push to `main` as often as needed
+    (after build + tests, waiting for CI between pushes); download sources
+    and packages (OpenCASCADE's source for a GPL-free rebuild, MSYS2
+    packages such as NSIS); run the real-UI acceptance tests while they
+    sleep (never two at once); a tag-triggered CI release workflow and a
+    first tag + GitHub Release (v0.1.0, pre-release).
+  - Keeping the PC awake: not needed (their power plan handles it).
+  - "An actual application" means, all four: a **Windows installer and
+    release**, **reliability** (autosave, crash recovery, speed), **modeling
+    features**, **help and onboarding**.
+  - Modeling features wanted, all four groups: sketch toolkit part 3; bodies
+    and copies (split pieces, pattern/mirror as bodies, rotate about an
+    edge/point); holes and print helpers (counterbore/countersink, draft,
+    text/emboss); files and settings (STEP import, recent files,
+    thumbnails, preferences, shortcut reference).
+  - Autosave: **recovery copies** (written periodically and after edits into
+    the app's data folder; the user's file changes only on Save; restore is
+    offered after a crash).
+  - Apple Developer enrollment: **still pending**. Polish the iPad build
+    anyway (what can be checked without a device).
+  - Bugs: nothing new; they have not used the app since the last session.
 - **CI:** Windows runs #3–#11 passed (6–11 min each). The repository is
   public now: run/job status and annotations can be read through the public
   API without a login (docs/IPAD.md, "Reading CI results"); failed steps
