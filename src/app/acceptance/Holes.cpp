@@ -4,7 +4,8 @@
 
 // Holes for screws: a counterbore and a countersink on a hole's rim, chosen
 // in the value chip with screw presets, sized by typing and by the depth
-// arrow, checked by exact volumes.
+// arrow ("holes"); the Hole tool placing holes on a face by clicks, snapping
+// and typed X / Y ("hole_tool"). Checked by exact volumes.
 
 #include "app/AcceptanceRunner.h"
 #include "document/Body.h"
@@ -13,6 +14,9 @@
 #include "interaction/InteractionController.h"
 #include "ui/AppController.h"
 
+#include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QUrl>
 #include <QtQuick/QQuickWindow>
 
 #include <cmath>
@@ -168,7 +172,102 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     return all;
 }
 
+const interact::HoleOperation* holeTool(AcceptanceRunner& r)
+{
+    return dynamic_cast<const interact::HoleOperation*>(r.app().interaction().operation());
+}
+
+// The Hole tool from the palette: a click snapped to the face's center, a
+// second hole placed by typed X / Y, M3 close fit with a countersink; one
+// step; saved and reopened.
+std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
+{
+    return {
+        [&r] {
+            r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+            r.check(r.app().bodyCount() == 1, "hole tool: a box");
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.click(r.screenPoint(3, -3, 20));
+            r.type(QStringLiteral("5"));
+            r.key(Qt::Key_Return);
+            r.check(std::abs(r.bodyHeight() - 5) < 1e-6, "hole tool: a 20 x 20 x 5 plate", AcceptanceRunner::num(r.bodyHeight()));
+            r.app().interaction().fitAll(false);
+        },
+        [] {},
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_hole")), "hole tool: Hole in the Modify palette");
+            r.check(holeTool(r) != nullptr, "hole tool: the selected top face takes holes", r.app().operationTitle());
+            r.check(!r.app().operationPrompt().isEmpty(), "hole tool: it asks where the first hole goes");
+        },
+        [&r] {
+            // Near the center: it snaps there.
+            const double px = r.app().interaction().camera().pixelSize({0, 0, 5});
+            r.click(r.screenPoint(4 * px, 3 * px, 5));
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->positions().size() == 1 && tool->positions()[0].length() < 1e-9,
+                    "hole tool: a click near the center snaps to it",
+                    tool && !tool->positions().empty()
+                        ? AcceptanceRunner::num(tool->positions()[0].x) + QStringLiteral(", ") + AcceptanceRunner::num(tool->positions()[0].y)
+                        : QString());
+            // A second hole, then its exact place typed: 4 from the left, 15 from the front edge.
+            r.click(r.screenPoint(-5.3, 4.7, 5));
+            r.check(tool && tool->positions().size() == 2, "hole tool: a second click adds a hole");
+            r.check(r.clickItem(QStringLiteral("action_field:x")), "hole tool: X field");
+        },
+        [&r] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("X from corner"), "hole tool: X is measured from the corner",
+                    r.app().operationValueLabel());
+            r.type(QStringLiteral("4"));
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("action_field:y")), "hole tool: Y field"); },
+        [&r] {
+            r.type(QStringLiteral("15"));
+        },
+        [&r] {
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->livePositions(tool->value()).size() == 2
+                        && (tool->livePositions(tool->value())[1] - Vec2{-6, 5}).length() < 1e-9,
+                    "hole tool: the typed position (-6, 5)");
+            r.check(r.clickItem(QStringLiteral("action_fit:close")), "hole tool: Close fit");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_head:countersink")), "hole tool: Countersink");
+        },
+        [&r] {
+            const auto* tool = holeTool(r);
+            r.check(tool && std::abs(tool->diameter() - 3.2) < 1e-9, "hole tool: M3 close fit is 3.2 mm (ISO 273)");
+            r.screenshot(QStringLiteral("hole_tool_preview"));
+            r.key(Qt::Key_Return);
+            const double h = 3.36 - 1.6;
+            const double oneHole = kPi * 1.6 * 1.6 * 5 + frustum(3.36, 1.6, h) - kPi * 1.6 * 1.6 * h;
+            r.check(std::abs(r.bodyVolume() - (2000 - 2 * oneHole)) < 1e-3, "hole tool: two countersunk M3 holes through the plate",
+                    AcceptanceRunner::num(r.bodyVolume()));
+            r.check(r.body(0).features().size() == 3, "hole tool: one step for both holes");
+            bool listed = false;
+            for (const auto& row : r.app().interaction().historyRows())
+                listed = listed || (row.name == "Holes" && row.detail.find("M3 close fit") != std::string::npos);
+            r.check(listed, "hole tool: the Model panel lists the holes");
+        },
+        [] {},
+        [&r] {
+            r.screenshot(QStringLiteral("hole_tool"));
+            const double volume = r.bodyVolume();
+            const QString path = QDir::temp().filePath(QStringLiteral("openshape_acceptance_holes.openshape"));
+            QFile::remove(path);
+            r.check(r.app().saveProjectAs(QUrl::fromLocalFile(path)), "hole tool: the project saves");
+            r.app().newDocument();
+            r.check(r.app().openProject(QUrl::fromLocalFile(path)), "hole tool: and reopens");
+            r.check(r.app().bodyCount() == 1 && std::abs(r.bodyVolume() - volume) < 1e-6, "hole tool: the same holes after reopening",
+                    AcceptanceRunner::num(r.bodyVolume()));
+            QFile::remove(path);
+        },
+    };
+}
+
 const bool registered = registerAcceptanceScenario({QStringLiteral("holes"), 70, steps});
+const bool registeredTool = registerAcceptanceScenario({QStringLiteral("hole_tool"), 71, toolSteps});
 
 } // namespace
 } // namespace os::app

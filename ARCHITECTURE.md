@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert, Head)
+        │         │   Pattern, Insert, Head, Hole)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
@@ -183,7 +183,9 @@ Document (UUID, display unit)
   insert's pilot hole, or a counterbore / countersink for a screw head,
   whose exact ring or frustum volume is verified; sizes from
   `document/Fasteners`, the one place for screw and insert tables with
-  their sources), Move (a translation plus an
+  their sources), Holes (the Hole tool: holes at points on a flat face,
+  stored in the face's frame like a sketch on it, so they follow the face;
+  diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
   OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
@@ -395,6 +397,22 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   tool bodies); the first selected body is kept and Swap exchanges the two.
   A body built from the other (a Copy or SplitPiece of it) cannot be its
   tool: Union and Intersect then keep the result in the copy instead.
+- **Hole tool:** "Hole" on a single flat face (or the palette) arms
+  `HoleOperation` (no arrows; the value chip sits at the current hole via
+  `labelAnchor()`). Clicks on that face (picked as faces only) add holes:
+  `snap()` puts a click within two pick tolerances onto the face's center
+  (of its outline's bounding rectangle, `geom::faceOutline`) or a straight
+  edge's middle, and otherwise lines X and Y up with those, with circles on
+  the face and with the holes placed so far; hovering shows where the hole
+  would go. A click on a placed hole makes it the current one. The chip
+  edits one field at a time (`field:` actions, Tab = `nextField`):
+  diameter, depth (when not through all) and the current hole's X / Y from
+  the face's reference corner (the outline's minimum corner) or from the
+  hole before it. Screw size (M2-M6) x fit (close / normal per ISO 273, or
+  tap) sets the diameter; Counterbore / Countersink use the size's head
+  table. Everything placed is one Holes step; Esc leaves the tool; the
+  settings are remembered for the next face (`HoleSettings`). The chip's
+  actions wrap at 460 px (a hidden row measures their natural width).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -440,7 +458,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the UI shows them in the value chip while a manipulator is active and in the
   selection action bar otherwise (`barAction_<id>` object names, used by the
   acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
-  pushpull, fillet, chamfer, shell, offset, move, rotate, mirror, pattern,
+  pushpull, fillet, chamfer, shell, offset, hole, move, rotate, mirror, pattern,
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 

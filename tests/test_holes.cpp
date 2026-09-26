@@ -309,3 +309,194 @@ TEST(Holes, DrillHolesCutsExactShapes)
     away.entry = {100, 15, 5};
     EXPECT_EQ(geom::drillHoles(plate, {away}).userMessage(), "The hole does not reach into the part here.");
 }
+
+// ---- Holes on a face (the Hole tool's step) ----------------------------------------------
+
+namespace {
+
+// A 60 x 30 plate (`thickness` thick) from the origin, and Holes steps on
+// its top face (whose frame is world X / Y).
+struct HolePlate {
+    doc::Document document;
+    Uuid body;
+    Uuid box;
+
+    explicit HolePlate(double thickness = 5)
+    {
+        auto b = std::make_unique<doc::Body>();
+        body = b->id();
+        auto boxFeature = test::boxFeature(60, 30, thickness);
+        box = boxFeature->id();
+        b->insertFeature(std::move(boxFeature), 0);
+        document.addBody(std::move(b));
+    }
+    const geom::Shape& shape() const { return document.body(body)->shape(); }
+
+    std::unique_ptr<doc::HolesFeature> holes(std::vector<Vec2> positions, double diameter = 3.4) const
+    {
+        auto f = std::make_unique<doc::HolesFeature>();
+        const int top = test::faceWithNormal(shape(), {0, 0, 1});
+        EXPECT_GE(top, 0);
+        f->face = {top, *geom::captureFaceSignature(shape(), top)};
+        f->positions = std::move(positions);
+        f->diameter = diameter;
+        f->throughAll = true;
+        return f;
+    }
+};
+
+// The material a step took away, as separate solids (one per hole).
+std::vector<geom::Shape> removedPieces(const geom::Shape& before, const geom::Shape& after)
+{
+    auto removed = geom::booleanOp(before, after, geom::BooleanKind::Subtract);
+    EXPECT_TRUE(removed.ok()) << removed.developerMessage();
+    return removed ? geom::solids(removed.value()) : std::vector<geom::Shape>{};
+}
+
+} // namespace
+
+TEST(Holes, HoleFrameOfATopFaceIsWorldXY)
+{
+    HolePlate plate;
+    const int top = test::faceWithNormal(plate.shape(), {0, 0, 1});
+    const auto frame = doc::holeFrame(plate.shape(), top);
+    ASSERT_TRUE(frame);
+    EXPECT_NEAR((frame->origin - Vec3{0, 0, 5}).length(), 0, 1e-12);
+    EXPECT_NEAR(frame->xAxis.x, 1, 1e-12);
+    EXPECT_NEAR(frame->yAxis.y, 1, 1e-12);
+    EXPECT_NEAR(frame->normal.z, 1, 1e-12);
+    const auto outline = geom::faceOutline(plate.shape(), top, frame->origin, frame->xAxis, frame->yAxis);
+    ASSERT_TRUE(outline.valid);
+    EXPECT_NEAR(outline.minU, 0, 1e-7);
+    EXPECT_NEAR(outline.maxU, 60, 1e-7);
+    EXPECT_NEAR(outline.minV, 0, 1e-7);
+    EXPECT_NEAR(outline.maxV, 30, 1e-7);
+    EXPECT_EQ(outline.edgeMidpoints.size(), 4u);
+    EXPECT_TRUE(outline.circleCenters.empty());
+    EXPECT_TRUE(geom::faceContains(plate.shape(), top, {30, 15, 5}));
+    EXPECT_TRUE(geom::faceContains(plate.shape(), top, {60, 15, 5})) << "on the edge counts";
+    EXPECT_FALSE(geom::faceContains(plate.shape(), top, {61, 15, 5}));
+    EXPECT_FALSE(doc::holeFrame(plate.shape(), -1));
+}
+
+// Through-all holes on a 5 mm plate: each removes pi r^2 x 5, exactly where it was placed.
+TEST(Holes, HolesThroughAPlateAtTheirPositions)
+{
+    HolePlate plate;
+    const geom::Shape before = plate.shape();
+    plate.document.insertFeature(plate.body, plate.holes({{5, 5}, {55, 5}, {30, 15}}));
+    const doc::Body& body = *plate.document.body(plate.body);
+    ASSERT_FALSE(body.hasFailures()) << body.state(1).userMessage;
+    EXPECT_NEAR(geom::volume(plate.shape()), 9000 - 3 * kPi * 1.7 * 1.7 * 5, 1e-6);
+    auto pieces = removedPieces(before, plate.shape());
+    ASSERT_EQ(pieces.size(), 3u);
+    std::vector<Vec2> centers;
+    for (const auto& piece : pieces) {
+        const auto box = geom::boundingBox(piece);
+        EXPECT_NEAR(box.size().x, 3.4, 1e-6);
+        EXPECT_NEAR(box.size().y, 3.4, 1e-6);
+        EXPECT_NEAR(box.min.z, 0, 1e-6);
+        EXPECT_NEAR(box.max.z, 5, 1e-6);
+        centers.push_back({box.center().x, box.center().y});
+    }
+    for (const Vec2& expected : {Vec2{5, 5}, Vec2{55, 5}, Vec2{30, 15}}) {
+        bool found = false;
+        for (const Vec2& c : centers)
+            found = found || (c - expected).length() < 1e-6;
+        EXPECT_TRUE(found) << expected.x << ", " << expected.y;
+    }
+}
+
+TEST(Holes, BlindHolesWithHeads)
+{
+    HolePlate plate(10);
+    auto blind = plate.holes({{10, 10}}, 2.5); // M3 tap drill, 6 mm deep
+    blind->throughAll = false;
+    blind->depth = 6;
+    plate.document.insertFeature(plate.body, std::move(blind));
+    ASSERT_FALSE(plate.document.body(plate.body)->hasFailures());
+    double expected = 18000 - kPi * 1.25 * 1.25 * 6;
+    EXPECT_NEAR(geom::volume(plate.shape()), expected, 1e-6);
+    EXPECT_NEAR(flatAreaAt(plate.shape(), 4, 1), kPi * 1.25 * 1.25, 1e-6) << "a flat bottom 6 mm down";
+
+    auto bored = plate.holes({{30, 15}});
+    bored->head = doc::HoleKind::Counterbore;
+    bored->headDiameter = 6.5;
+    bored->headDepth = 3.4;
+    plate.document.insertFeature(plate.body, std::move(bored));
+    auto sunk = plate.holes({{50, 15}});
+    sunk->head = doc::HoleKind::Countersink;
+    sunk->headDiameter = 6.72;
+    sunk->headAngle = kPi / 2;
+    plate.document.insertFeature(plate.body, std::move(sunk));
+    ASSERT_FALSE(plate.document.body(plate.body)->hasFailures());
+    expected -= kPi * 1.7 * 1.7 * 10 + kPi * (3.25 * 3.25 - 1.7 * 1.7) * 3.4;
+    expected -= kPi * 1.7 * 1.7 * 10 + frustum(3.36, 1.7, 1.66) - kPi * 1.7 * 1.7 * 1.66;
+    EXPECT_NEAR(geom::volume(plate.shape()), expected, 1e-6);
+    EXPECT_NEAR(flatAreaAt(plate.shape(), 6.6, 1), kPi * (3.25 * 3.25 - 1.7 * 1.7), 1e-6) << "the counterbore's flat seat";
+
+    // A counterbore deeper than the part is refused.
+    HolePlate thin(3);
+    auto deep = thin.holes({{30, 15}});
+    deep->head = doc::HoleKind::Counterbore;
+    deep->headDiameter = 6.5;
+    deep->headDepth = 3.4;
+    const auto refused = thin.document.preview(thin.body, *deep);
+    EXPECT_FALSE(refused.ok());
+    EXPECT_EQ(refused.userMessage(), "The counterbore would reach through the part: it is 3.00 mm thick here.");
+}
+
+// The holes ride along with their face: a thicker plate keeps them through,
+// a narrower one loses the hole that was on the part cut away.
+TEST(Holes, HolesFollowTheirFaceUpstream)
+{
+    HolePlate plate;
+    plate.document.insertFeature(plate.body, plate.holes({{5, 5}, {55, 5}}));
+    doc::Body& body = *plate.document.body(plate.body);
+    ASSERT_TRUE(body.feature(plate.box)->setParameter("height", 8).ok());
+    plate.document.featureChanged(plate.box);
+    ASSERT_FALSE(body.hasFailures()) << body.state(1).userMessage;
+    EXPECT_NEAR(geom::volume(plate.shape()), 60 * 30 * 8 - 2 * kPi * 1.7 * 1.7 * 8, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(plate.shape()).size().z, 8, 1e-7);
+
+    ASSERT_TRUE(body.feature(plate.box)->setParameter("width", 40).ok());
+    plate.document.featureChanged(plate.box);
+    ASSERT_TRUE(body.hasFailures());
+    EXPECT_EQ(body.state(1).userMessage, "Hole 2 no longer lies on its face.");
+}
+
+TEST(Holes, HolesRoundTrip)
+{
+    HolePlate plate(10);
+    auto f = plate.holes({{5, 5}, {30, 15.5}}, 4.5);
+    f->throughAll = false;
+    f->depth = 7;
+    f->head = doc::HoleKind::Counterbore;
+    f->headDiameter = 8;
+    f->headDepth = 4.4;
+    f->preset = "M4 normal fit";
+    plate.document.insertFeature(plate.body, std::move(f));
+    ASSERT_FALSE(plate.document.body(plate.body)->hasFailures());
+    const double volume = geom::volume(plate.shape());
+    EXPECT_NEAR(volume, 18000 - 2 * (kPi * 2.25 * 2.25 * 7 + kPi * (16 - 2.25 * 2.25) * 4.4), 1e-6);
+    const auto json = io::documentToJson(plate.document);
+    auto again = io::documentFromJson(json);
+    ASSERT_TRUE(again.ok()) << again.developerMessage();
+    const doc::Body& body = *again.value()->body(plate.body);
+    EXPECT_FALSE(body.hasFailures());
+    EXPECT_NEAR(geom::volume(body.shape()), volume, 1e-6);
+    const auto& holes = static_cast<const doc::HolesFeature&>(*body.features()[1]);
+    ASSERT_EQ(holes.positions.size(), 2u);
+    EXPECT_DOUBLE_EQ(holes.positions[1].y, 15.5);
+    EXPECT_EQ(holes.head, doc::HoleKind::Counterbore);
+    EXPECT_FALSE(holes.throughAll);
+    EXPECT_EQ(holes.preset, "M4 normal fit");
+    EXPECT_EQ(io::documentToJson(*again.value()), json);
+    // Broken positions are refused.
+    auto broken = json;
+    for (auto& feature : broken["bodies"][0]["features"]) {
+        if (feature["type"] == "Holes")
+            feature["params"]["positions"] = nlohmann::json::array();
+    }
+    EXPECT_FALSE(io::documentFromJson(broken).ok());
+}

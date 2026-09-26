@@ -29,7 +29,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece, Copy
+    Split, SplitPiece, Copy, Holes
 };
 
 // What a feature may consult besides its input shape.
@@ -474,6 +474,46 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
 };
+
+// Round holes drilled into a flat face at points on it (the Hole tool), all
+// alike: a diameter, a depth or through all, and optionally a counterbore or
+// countersink for the screw head. The face is found again on every
+// recompute; the points are in the face's plane frame (holeFrame: the world
+// origin projected onto the face, as for a sketch on it), so the holes ride
+// along when an upstream step moves the face. A point that no longer lies on
+// the face fails the step with a message.
+class HolesFeature final : public Feature {
+public:
+    using Feature::Feature;
+    FaceRef face;
+    std::vector<Vec2> positions; // in holeFrame(face) coordinates, mm
+    double diameter = 3.4;       // mm
+    double depth = 10;           // mm, when not through all
+    bool throughAll = true;
+    HoleKind head = HoleKind::Plain; // Plain = no head
+    double headDiameter = 6.5;   // counterbore / countersink diameter
+    double headDepth = 3.4;      // counterbore depth
+    double headAngle = kPi / 2;  // countersink included angle, radians
+    std::string preset;          // e.g. "M3 normal fit" (informational)
+
+    FeatureKind kind() const override { return FeatureKind::Holes; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new HolesFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// The frame holes on a flat face are placed in: on the face's plane, origin
+// the world origin projected onto it, x axis horizontal (world X on floors),
+// like a sketch started on that face. nullopt for a face that is not flat.
+struct HoleFrame {
+    Vec3 origin, xAxis, yAxis, normal; // normal: the face's outward normal
+    Vec3 toWorld(Vec2 p) const { return origin + xAxis * p.x + yAxis * p.y; }
+    Vec2 toLocal(const Vec3& w) const { return {(w - origin).dot(xAxis), (w - origin).dot(yAxis)}; }
+};
+std::optional<HoleFrame> holeFrame(const geom::Shape& shape, int faceIndex);
 
 // Where a hole at a circular rim starts and which way it goes into the body.
 struct HolePlacement {

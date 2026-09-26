@@ -296,6 +296,7 @@ ApplicationWindow {
                     { id: "chamfer", label: "Chamfer", tip: "Bevel edges: select them, drag or type the size." },
                     { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
                     { id: "offset", label: "Offset", tip: "Move a face with its neighbours following; a hole or shaft takes its new diameter (e.g. print tolerance)." },
+                    { id: "hole", label: "Hole", tip: "Drill holes for screws into a flat face: click where each goes (snaps to the center and edge middles), type X / Y, pick M2-M6 and the fit, add a counterbore or countersink." },
                     { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
                     { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
                     { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
@@ -507,6 +508,9 @@ ApplicationWindow {
             return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)
             return "Add a box, or start a sketch."
+        if (app.operationActive && app.operationTitle === "Hole")
+            return "Click to add holes (they snap to the center and edge middles and line up with each other) · "
+                 + "X / Y (Tab) type the current hole's position · click a hole to pick it · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
             return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Countersink"))

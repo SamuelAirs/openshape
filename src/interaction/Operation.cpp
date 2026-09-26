@@ -885,6 +885,278 @@ std::unique_ptr<doc::Feature> HeadOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Hole tool ------------------------------------------------------------------------
+
+std::unique_ptr<HoleOperation> HoleOperation::create(const doc::Document& document, const Uuid& bodyId, int faceIndex,
+                                                     const HoleSettings& settings)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const geom::Shape& shape = body->shape();
+    const auto frame = doc::holeFrame(shape, faceIndex);
+    const auto signature = geom::captureFaceSignature(shape, faceIndex);
+    const auto info = geom::faceInfo(shape, faceIndex);
+    if (!frame || !signature || !info)
+        return nullptr;
+    auto op = std::unique_ptr<HoleOperation>(new HoleOperation(bodyId, doc::FaceRef{faceIndex, *signature}, *frame));
+    op->outline_ = geom::faceOutline(shape, faceIndex, frame->origin, frame->xAxis, frame->yAxis);
+    if (!op->outline_.valid)
+        return nullptr;
+    op->facePoint_ = geom::pointOnFace(shape, faceIndex, info->centroid).value_or(info->centroid);
+    op->settings_ = settings;
+    op->settings_.screw = std::min(settings.screw, doc::metricScrews().size() - 1);
+    op->depth_ = settings.depth;
+    op->applyPreset();
+    op->setStoredValue(op->diameter_);
+    return op;
+}
+
+std::string HoleOperation::valueLabel() const
+{
+    const bool fromLast = fromLastHole_ && current_ > 0;
+    switch (field_) {
+    case Field::Diameter: return "Diameter";
+    case Field::Depth: return "Depth";
+    case Field::X: return fromLast ? "X from last hole" : "X from corner";
+    case Field::Y: return fromLast ? "Y from last hole" : "Y from corner";
+    }
+    return "Diameter";
+}
+
+std::string HoleOperation::prompt() const
+{
+    return positions_.empty()
+               ? std::string("Click or tap the face where a hole goes (it snaps to the center and the middles of the edges) "
+                             "\xC2\xB7 Esc cancels")
+               : std::string();
+}
+
+std::optional<Vec3> HoleOperation::labelAnchor() const
+{
+    if (current_ < 0)
+        return facePoint_;
+    return frame_.toWorld(livePositions(value())[std::size_t(current_)]);
+}
+
+Vec2 HoleOperation::reference() const
+{
+    if (fromLastHole_ && current_ > 0)
+        return positions_[std::size_t(current_ - 1)];
+    return {outline_.minU, outline_.minV};
+}
+
+std::vector<Vec2> HoleOperation::livePositions(double value) const
+{
+    std::vector<Vec2> out = positions_;
+    if (current_ >= 0 && (field_ == Field::X || field_ == Field::Y)) {
+        Vec2& p = out[std::size_t(current_)];
+        (field_ == Field::X ? p.x : p.y) = (field_ == Field::X ? reference().x : reference().y) + value;
+    }
+    return out;
+}
+
+double HoleOperation::fieldValue(Field field) const
+{
+    switch (field) {
+    case Field::Diameter: return diameter_;
+    case Field::Depth: return depth_;
+    case Field::X: return current_ >= 0 ? positions_[std::size_t(current_)].x - reference().x : 0.0;
+    case Field::Y: return current_ >= 0 ? positions_[std::size_t(current_)].y - reference().y : 0.0;
+    }
+    return 0.0;
+}
+
+void HoleOperation::storeValue()
+{
+    switch (field_) {
+    case Field::Diameter: diameter_ = value(); break;
+    case Field::Depth: depth_ = settings_.depth = value(); break;
+    case Field::X:
+    case Field::Y: positions_ = livePositions(value()); break;
+    }
+}
+
+double HoleOperation::presetDiameter() const
+{
+    return doc::holeDiameterFor(doc::metricScrews()[settings_.screw], settings_.fit);
+}
+
+void HoleOperation::applyPreset()
+{
+    diameter_ = presetDiameter();
+}
+
+std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapDistance) const
+{
+    Vec2 p = frame_.toLocal(world);
+    const Vec2 center{(outline_.minU + outline_.maxU) / 2, (outline_.minV + outline_.maxV) / 2};
+    // Onto a point: the center, or the middle of a straight edge.
+    std::optional<Vec2> best;
+    std::string what;
+    double bestDistance = snapDistance;
+    auto consider = [&](const Vec2& q, const char* name) {
+        if (const double d = (q - p).length(); d <= bestDistance) {
+            bestDistance = d;
+            best = q;
+            what = name;
+        }
+    };
+    consider(center, "center");
+    for (const Vec3& m : outline_.edgeMidpoints)
+        consider(frame_.toLocal(m), "midpoint");
+    if (best)
+        return {*best, what};
+    // Otherwise in line (X or Y) with those, with circles on the face (holes
+    // already there) and with the holes placed so far.
+    std::vector<Vec2> lines{center};
+    for (const Vec3& m : outline_.edgeMidpoints)
+        lines.push_back(frame_.toLocal(m));
+    for (const Vec3& c : outline_.circleCenters)
+        lines.push_back(frame_.toLocal(c));
+    for (const Vec2& h : livePositions(value()))
+        lines.push_back(h);
+    double du = snapDistance, dv = snapDistance;
+    std::optional<double> u, v;
+    for (const Vec2& q : lines) {
+        if (const double d = std::abs(q.x - p.x); d <= du) {
+            du = d;
+            u = q.x;
+        }
+        if (const double d = std::abs(q.y - p.y); d <= dv) {
+            dv = d;
+            v = q.y;
+        }
+    }
+    if (u)
+        p.x = *u;
+    if (v)
+        p.y = *v;
+    return {p, u || v ? "aligned" : ""};
+}
+
+std::string HoleOperation::placeAt(const Vec3& world, double snapDistance, const doc::Document& document)
+{
+    storeValue();
+    // A click on a placed hole makes it the current one (its X / Y can be typed).
+    const Vec2 raw = frame_.toLocal(world);
+    const double reach = std::max(diameter_ / 2, snapDistance);
+    for (std::size_t i = 0; i < positions_.size(); ++i)
+        if ((positions_[i] - raw).length() <= reach) {
+            current_ = static_cast<int>(i);
+            setStoredValue(fieldValue(field_));
+            setValue(value(), document);
+            return "hole";
+        }
+    const auto [point, what] = snap(world, snapDistance);
+    positions_.push_back(point);
+    current_ = static_cast<int>(positions_.size()) - 1;
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+    return what;
+}
+
+void HoleOperation::setField(Field field, const doc::Document& document)
+{
+    if ((field == Field::X || field == Field::Y) && current_ < 0)
+        return; // no hole to move yet
+    if (field == Field::Depth && settings_.throughAll)
+        return;
+    storeValue();
+    field_ = field;
+    setStoredValue(fieldValue(field));
+    setValue(value(), document);
+}
+
+void HoleOperation::nextField(const doc::Document& document)
+{
+    std::vector<Field> order{Field::Diameter};
+    if (!settings_.throughAll)
+        order.push_back(Field::Depth);
+    if (current_ >= 0) {
+        order.push_back(Field::X);
+        order.push_back(Field::Y);
+    }
+    const auto it = std::find(order.begin(), order.end(), field_);
+    const std::size_t next = it == order.end() ? 0 : (std::size_t(it - order.begin()) + 1) % order.size();
+    setField(order[next], document);
+}
+
+void HoleOperation::setScrew(std::size_t index, const doc::Document& document)
+{
+    storeValue();
+    settings_.screw = std::min(index, doc::metricScrews().size() - 1);
+    applyPreset();
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+}
+
+void HoleOperation::setFit(doc::HoleFit fit, const doc::Document& document)
+{
+    storeValue();
+    settings_.fit = fit;
+    applyPreset();
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+}
+
+void HoleOperation::setThroughAll(bool throughAll, const doc::Document& document)
+{
+    storeValue();
+    settings_.throughAll = throughAll;
+    if (throughAll && field_ == Field::Depth)
+        field_ = Field::Diameter;
+    if (!throughAll)
+        field_ = Field::Depth; // the next thing to type is the depth
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+}
+
+void HoleOperation::setHead(doc::HoleKind head, const doc::Document& document)
+{
+    storeValue();
+    settings_.head = settings_.head == head ? doc::HoleKind::Plain : head;
+    setValue(value(), document);
+}
+
+void HoleOperation::setFromLastHole(bool on, const doc::Document& document)
+{
+    storeValue();
+    fromLastHole_ = on;
+    setStoredValue(fieldValue(field_)); // the same hole, measured from elsewhere
+    setValue(value(), document);
+}
+
+std::unique_ptr<doc::Feature> HoleOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::HolesFeature>();
+    feature->face = face_;
+    feature->positions = livePositions(value);
+    feature->diameter = field_ == Field::Diameter ? value : diameter_;
+    feature->depth = field_ == Field::Depth ? value : depth_;
+    feature->throughAll = settings_.throughAll;
+    const doc::ScrewSize& screw = doc::metricScrews()[settings_.screw];
+    feature->head = settings_.head;
+    feature->headDiameter = settings_.head == doc::HoleKind::Countersink ? screw.countersinkDiameter : screw.counterboreDiameter;
+    feature->headDepth = screw.counterboreDepth;
+    feature->headAngle = doc::kCountersinkAngleDegrees * kPi / 180.0;
+    // Named after the screw only while the diameter is the preset's.
+    if (std::abs(feature->diameter - presetDiameter()) < 1e-9)
+        feature->preset = doc::holeFitLabel(screw, settings_.fit);
+    return feature;
+}
+
+Result<geom::Shape> HoleOperation::computePreview(double value, const doc::Document& document) const
+{
+    if (positions_.empty()) {
+        const doc::Body* body = document.body(bodyId());
+        if (!body)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "hole: body");
+        return Result<geom::Shape>::success(body->shape());
+    }
+    return Operation::computePreview(value, document);
+}
+
 // ---- Shell -----------------------------------------------------------------------
 
 std::unique_ptr<ShellOperation> ShellOperation::create(const doc::Document& document, const Uuid& bodyId,

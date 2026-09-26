@@ -148,9 +148,21 @@ Rules:
   "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
   (applied before the translation) — the body's shape moved. It follows
   every change of that body and fails with a message when the body is gone.
+- `Holes` params: `{ "face": faceRef, "positions": [[x, y], ...],
+  "diameter", "throughAll", "depth"?, "head"?, "headDiameter"?,
+  "headDepth"?, "headAngle"?, "preset" }` — round holes drilled into a flat
+  face (the Hole tool; one step for the set, 1 to 1000 positions). The
+  positions are in the face's frame: on its plane, origin the world origin
+  projected onto it, x axis horizontal (world X on floors; the same frame
+  as a sketch started on the face), so the holes follow the face when an
+  upstream step moves it; a position no longer on the face fails the step.
+  `depth` only when `throughAll` is false. `head` is `"Counterbore"`
+  (with `headDiameter`, `headDepth`) or `"Countersink"` (with
+  `headDiameter`, `headAngle` in radians); absent: no head. `preset` is an
+  informational label such as "M3 normal fit".
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

@@ -172,3 +172,143 @@ TEST(HoleInteraction, CounterboreOnAHoleRimWithPresetsAndTypedSizes)
     ASSERT_TRUE(h.controller.undo());
     EXPECT_NEAR(h.volume(), bored, 1e-6);
 }
+
+namespace {
+
+// A 60 x 30 x 5 plate from the origin, its top face selected.
+void plateWithTopSelected(HoleHarness& h)
+{
+    auto box = std::make_unique<doc::BoxFeature>();
+    box->size = {60, 30, 5};
+    auto create = std::make_unique<cmd::CreateBodyCommand>("Plate", std::move(box));
+    h.body = create->bodyId();
+    ASSERT_TRUE(h.stack.push(std::move(create), h.document).ok());
+    h.controller.documentChanged();
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Face);
+}
+
+const HoleOperation* holeTool(const HoleHarness& h)
+{
+    return dynamic_cast<const HoleOperation*>(h.controller.operation());
+}
+
+} // namespace
+
+// The Hole tool: clicks place holes (snapped to the face's center, in line
+// with it and with each other), typed X / Y set exact positions, presets set
+// the diameter; one step for the set.
+TEST(HoleInteraction, HoleToolPlacesSnapsAndTypesPositions)
+{
+    HoleHarness h;
+    plateWithTopSelected(h);
+    EXPECT_TRUE(h.offers("hole"));
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const HoleOperation* tool = holeTool(h);
+    ASSERT_NE(tool, nullptr);
+    EXPECT_EQ(tool->title(), "Hole");
+    EXPECT_FALSE(tool->prompt().empty()) << "asks for the first click";
+    EXPECT_DOUBLE_EQ(tool->value(), 3.4) << "M3 normal fit (ISO 273) to start with";
+    EXPECT_FALSE(tool->canCommit());
+    EXPECT_TRUE(h.controller.valueLabelPosition().has_value()) << "the diameter can be typed before the first hole";
+    EXPECT_EQ(h.controller.setValueText("3.2"), "") << "no error before the first hole";
+    EXPECT_FALSE(h.offers("field:x")) << "no hole to move yet";
+
+    // Hovering shows where a click would go; clicking near the center snaps to it.
+    const double px = h.controller.camera().pixelSize({30, 15, 5});
+    h.controller.pointerMove(HoleHarness::at(h.screen({30 + 4 * px, 15 - 3 * px, 5})));
+    ASSERT_TRUE(tool->hover().has_value());
+    EXPECT_NEAR((*tool->hover() - Vec2{30, 15}).length(), 0, 1e-9);
+    h.clickAt(h.screen({30 + 4 * px, 15 - 3 * px, 5}));
+    ASSERT_EQ(tool->positions().size(), 1u);
+    EXPECT_NEAR((tool->positions()[0] - Vec2{30, 15}).length(), 0, 1e-9);
+    EXPECT_TRUE(tool->prompt().empty());
+    EXPECT_TRUE(tool->canCommit());
+    // Far from any snap point but in line with the center (Y), then typed X / Y.
+    h.clickAt(h.screen({10.37, 15 + 3 * px, 5}));
+    ASSERT_EQ(tool->positions().size(), 2u);
+    EXPECT_NEAR(tool->positions()[1].y, 15.0, 1e-9) << "lined up with the center";
+    EXPECT_NEAR(tool->positions()[1].x, 10.37, 0.05);
+    ASSERT_TRUE(h.controller.triggerAction("field:x").ok());
+    EXPECT_EQ(tool->valueLabel(), "X from corner");
+    EXPECT_NEAR(tool->value(), tool->positions()[1].x, 1e-9) << "the face's corner is at the origin";
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(h.controller.triggerAction("nextField").ok()) << "Tab";
+    EXPECT_EQ(tool->valueLabel(), "Y from corner");
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    // A third hole, measured from the last one.
+    h.clickAt(h.screen({48, 22, 5}));
+    ASSERT_EQ(tool->positions().size(), 3u);
+    EXPECT_NEAR((tool->positions()[1] - Vec2{10, 5}).length(), 0, 1e-9) << "typed position kept";
+    ASSERT_TRUE(h.controller.triggerAction("fromLast").ok());
+    EXPECT_EQ(tool->valueLabel(), "Y from last hole");
+    EXPECT_EQ(h.controller.setValueText("0"), "");
+    ASSERT_TRUE(h.controller.triggerAction("field:x").ok());
+    EXPECT_EQ(h.controller.setValueText("40"), "");
+    // Clicking a placed hole makes it the current one again.
+    h.clickAt(h.screen({30, 15, 5}));
+    EXPECT_EQ(tool->positions().size(), 3u);
+    EXPECT_EQ(tool->current(), 0);
+    EXPECT_NEAR((tool->positions()[2] - Vec2{50, 5}).length(), 0, 1e-9);
+
+    // M4 close fit (ISO 273: 4.3), with a counterbore for the head (8 x 4.4).
+    ASSERT_TRUE(h.controller.triggerAction("size:3").ok());
+    ASSERT_TRUE(h.controller.triggerAction("fit:close").ok());
+    EXPECT_DOUBLE_EQ(tool->diameter(), 4.3);
+    ASSERT_TRUE(h.controller.triggerAction("head:counterbore").ok());
+    EXPECT_TRUE(tool->hasPreview()) << tool->error();
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const double oneHole = kPi * 2.15 * 2.15 * 5 + kPi * (16 - 2.15 * 2.15) * 4.4;
+    EXPECT_NEAR(h.volume(), 9000 - 3 * oneHole, 1e-6);
+    ASSERT_EQ(h.document.body(h.body)->features().size(), 2u) << "one step for the set";
+    bool listed = false;
+    for (const auto& row : h.controller.historyRows())
+        listed = listed || (row.name == "Holes" && row.detail.find("3 \xC3\x97 \xC3\x98" "4.30 mm") == 0
+                            && row.detail.find("Counterbore") != std::string::npos
+                            && row.detail.find("M4 close fit") != std::string::npos);
+    EXPECT_TRUE(listed);
+    ASSERT_TRUE(h.controller.undo());
+    EXPECT_NEAR(h.volume(), 9000, 1e-6);
+}
+
+// A blind tap-drill hole: the depth becomes the field to type; the tool
+// remembers its settings for the next face.
+TEST(HoleInteraction, BlindTapHoleAndRememberedSettings)
+{
+    HoleHarness h;
+    plateWithTopSelected(h);
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    ASSERT_TRUE(h.controller.triggerAction("fit:tap").ok());
+    EXPECT_DOUBLE_EQ(holeTool(h)->diameter(), 2.5) << "M3 tap";
+    ASSERT_TRUE(h.controller.triggerAction("throughAll").ok());
+    EXPECT_EQ(holeTool(h)->valueLabel(), "Depth");
+    EXPECT_EQ(h.controller.setValueText("3"), "");
+    h.clickAt(h.screen({20, 10, 5}));
+    ASSERT_EQ(holeTool(h)->positions().size(), 1u);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.volume(), 9000 - kPi * 1.25 * 1.25 * 3, 1e-6);
+
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    ASSERT_NE(holeTool(h), nullptr);
+    EXPECT_DOUBLE_EQ(holeTool(h)->diameter(), 2.5);
+    EXPECT_FALSE(holeTool(h)->settings().throughAll);
+    EXPECT_DOUBLE_EQ(holeTool(h)->settings().depth, 3.0);
+    // Esc leaves the tool without drilling anything.
+    h.controller.keyPress(Key::Escape);
+    EXPECT_EQ(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
+}
+
+TEST(HoleInteraction, HoleToolNeedsAFlatFace)
+{
+    HoleHarness h;
+    EXPECT_FALSE(h.controller.runTool("hole").ok());
+    ASSERT_FALSE(h.messages.empty());
+    EXPECT_EQ(h.messages.back(), "Click a flat face, then Hole, then click or tap where each hole goes.");
+    plateWithTopSelected(h);
+    ASSERT_TRUE(h.controller.runTool("hole").ok());
+    EXPECT_NE(holeTool(h), nullptr);
+}

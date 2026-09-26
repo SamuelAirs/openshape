@@ -41,6 +41,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Split: return "Split";
     case FeatureKind::SplitPiece: return "SplitPiece";
     case FeatureKind::Copy: return "Copy";
+    case FeatureKind::Holes: return "Holes";
     }
     return "Unknown";
 }
@@ -51,7 +52,7 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
                           FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
-                          FeatureKind::Copy})
+                          FeatureKind::Copy, FeatureKind::Holes})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -77,6 +78,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Split: return std::make_unique<SplitFeature>(id);
     case FeatureKind::SplitPiece: return std::make_unique<SplitPieceFeature>(id);
     case FeatureKind::Copy: return std::make_unique<CopyFeature>(id);
+    case FeatureKind::Holes: return std::make_unique<HolesFeature>(id);
     }
     return nullptr;
 }
@@ -1287,6 +1289,190 @@ Status HoleFeature::readParams(const json& in)
     rim = *ref;
     holeKind = kind;
     diameter = *d;
+    preset = in.contains("preset") && in["preset"].is_string() ? in["preset"].get<std::string>() : std::string();
+    return okStatus();
+}
+
+// ---- Holes on a face (the Hole tool) ----------------------------------------------
+
+std::optional<HoleFrame> holeFrame(const geom::Shape& shape, int faceIndex)
+{
+    const auto info = geom::faceInfo(shape, faceIndex);
+    if (!info || !info->isPlanar())
+        return std::nullopt;
+    const Vec3 n = info->normal.normalized();
+    const sketch::Plane plane = sketch::Plane::fromNormal(n * n.dot(info->centroid), n);
+    return HoleFrame{plane.origin, plane.xAxis, plane.yAxis, n};
+}
+
+Result<geom::Shape> HolesFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    using R = Result<geom::Shape>;
+    if (positions.empty())
+        return R::failure(ErrorCode::InvalidArgument, "Place at least one hole.", "Holes: no positions");
+    const auto index = geom::resolveFace(input, face.signature, face.indexHint);
+    const auto frame = index ? holeFrame(input, *index) : std::nullopt;
+    if (!frame)
+        return R::failure(ErrorCode::InvalidReference, "The face these holes were drilled into no longer exists.",
+                          "Holes: face unresolved");
+    std::vector<geom::HoleCut> cuts;
+    for (std::size_t i = 0; i < positions.size(); ++i) {
+        geom::HoleCut cut;
+        cut.entry = frame->toWorld(positions[i]);
+        cut.direction = frame->normal * -1.0;
+        cut.diameter = diameter;
+        cut.depth = depth;
+        cut.throughAll = throughAll;
+        cut.head = head == HoleKind::Counterbore   ? geom::HoleHead::Counterbore
+                 : head == HoleKind::Countersink ? geom::HoleHead::Countersink
+                                                 : geom::HoleHead::None;
+        cut.headDiameter = headDiameter;
+        cut.headDepth = headDepth;
+        cut.headAngle = headAngle;
+        const std::string which = positions.size() == 1 ? "The hole" : "Hole " + std::to_string(i + 1);
+        if (!geom::faceContains(input, *index, cut.entry))
+            return R::failure(ErrorCode::InvalidReference, which + " no longer lies on its face.",
+                              "Holes: position " + std::to_string(i) + " off the face");
+        // A screw head's seat must not reach through the part (as on a rim).
+        if (cut.head != geom::HoleHead::None && headDiameter > diameter) {
+            const HolePlacement at{cut.entry, cut.direction, diameter / 2};
+            const double reach = geom::headReach(cut);
+            if (const auto thickness = thicknessAround(input, at, (diameter + headDiameter) / 4);
+                thickness && reach >= *thickness - 1e-6)
+                return R::failure(ErrorCode::InvalidArgument,
+                                  std::string(head == HoleKind::Counterbore ? "The counterbore" : "The countersink")
+                                      + " would reach through the part: it is " + millimeters(*thickness) + " thick here.",
+                                  "Holes: head reach " + std::to_string(reach) + " >= thickness " + std::to_string(*thickness));
+        }
+        cuts.push_back(cut);
+    }
+    return geom::drillHoles(input, cuts);
+}
+
+std::vector<ParameterInfo> HolesFeature::parameters() const
+{
+    std::vector<ParameterInfo> out{{"diameter", "Diameter", ParameterKind::Length, diameter}};
+    if (!throughAll)
+        out.push_back({"depth", "Depth", ParameterKind::Length, depth});
+    if (head == HoleKind::Counterbore) {
+        out.push_back({"headDiameter", "Counterbore \xC3\x98", ParameterKind::Length, headDiameter});
+        out.push_back({"headDepth", "Counterbore depth", ParameterKind::Length, headDepth});
+    } else if (head == HoleKind::Countersink) {
+        out.push_back({"headDiameter", "Countersink \xC3\x98", ParameterKind::Length, headDiameter});
+        out.push_back({"headAngle", "Countersink angle", ParameterKind::Angle, headAngle});
+    }
+    return out;
+}
+
+Status HolesFeature::setParameter(std::string_view key, double value)
+{
+    if (key == "headAngle" && head == HoleKind::Countersink) {
+        if (!(value > 1e-3) || !(value < kPi - 1e-3))
+            return Status::failure(ErrorCode::InvalidArgument, "The angle must be between 0\xC2\xB0 and 180\xC2\xB0.",
+                                   "countersink angle out of range");
+        headAngle = value;
+        return okStatus();
+    }
+    double* target = key == "diameter"                                  ? &diameter
+                   : key == "depth" && !throughAll                      ? &depth
+                   : key == "headDiameter" && head != HoleKind::Plain    ? &headDiameter
+                   : key == "headDepth" && head == HoleKind::Counterbore ? &headDepth
+                                                                         : nullptr;
+    if (!target)
+        return unknownParameter(key);
+    if (auto s = requirePositive(value, key == "diameter" ? "Diameter" : key == "depth" ? "Depth" : "The head size"); !s)
+        return s;
+    *target = value;
+    return okStatus();
+}
+
+void HolesFeature::writeParams(json& out) const
+{
+    out["face"] = faceRefToJson(face);
+    json list = json::array();
+    for (const Vec2& p : positions)
+        list.push_back(json::array({p.x, p.y}));
+    out["positions"] = list;
+    out["diameter"] = diameter;
+    out["throughAll"] = throughAll;
+    if (!throughAll)
+        out["depth"] = depth;
+    if (head != HoleKind::Plain) {
+        out["head"] = std::string(toString(head));
+        out["headDiameter"] = headDiameter;
+        if (head == HoleKind::Counterbore)
+            out["headDepth"] = headDepth;
+        else
+            out["headAngle"] = headAngle;
+    }
+    out["preset"] = preset;
+}
+
+Status HolesFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains invalid holes.", std::string("Holes: ") + why);
+    };
+    const auto ref = faceRefFromJson(in, "face");
+    if (!ref)
+        return bad("face");
+    if (!in.contains("positions") || !in["positions"].is_array() || in["positions"].empty() || in["positions"].size() > 1000)
+        return bad("positions");
+    std::vector<Vec2> list;
+    for (const auto& p : in["positions"]) {
+        if (!p.is_array() || p.size() != 2 || !p[0].is_number() || !p[1].is_number())
+            return bad("position");
+        const Vec2 v{p[0].get<double>(), p[1].get<double>()};
+        if (!std::isfinite(v.x) || !std::isfinite(v.y))
+            return bad("position");
+        list.push_back(v);
+    }
+    const auto d = numberFrom(in, "diameter");
+    if (!d || !(*d > 0) || !std::isfinite(*d))
+        return bad("diameter");
+    const bool through = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
+    double h = depth;
+    if (!through) {
+        const auto value = numberFrom(in, "depth");
+        if (!value || !(*value > 0))
+            return bad("depth");
+        h = *value;
+    }
+    HoleKind kind = HoleKind::Plain;
+    double hd = headDiameter, hh = headDepth, ha = headAngle;
+    if (in.contains("head")) {
+        const std::string name = in["head"].is_string() ? in["head"].get<std::string>() : std::string();
+        if (name == "Counterbore")
+            kind = HoleKind::Counterbore;
+        else if (name == "Countersink")
+            kind = HoleKind::Countersink;
+        else
+            return bad("head");
+        const auto value = numberFrom(in, "headDiameter");
+        if (!value || !(*value > 0))
+            return bad("headDiameter");
+        hd = *value;
+        if (kind == HoleKind::Counterbore) {
+            const auto depthValue = numberFrom(in, "headDepth");
+            if (!depthValue || !(*depthValue > 0))
+                return bad("headDepth");
+            hh = *depthValue;
+        } else {
+            const auto angleValue = numberFrom(in, "headAngle");
+            if (!angleValue || !(*angleValue > 1e-3) || !(*angleValue < kPi - 1e-3))
+                return bad("headAngle");
+            ha = *angleValue;
+        }
+    }
+    face = *ref;
+    positions = std::move(list);
+    diameter = *d;
+    throughAll = through;
+    depth = h;
+    head = kind;
+    headDiameter = hd;
+    headDepth = hh;
+    headAngle = ha;
     preset = in.contains("preset") && in["preset"].is_string() ? in["preset"].get<std::string>() : std::string();
     return okStatus();
 }

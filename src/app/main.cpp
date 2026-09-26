@@ -260,6 +260,24 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         interaction.fitAll(false);
         return;
     }
+    if (demo == QLatin1String("holes")) {
+        // The Hole tool on the cube's top: two countersunk M3 holes, the
+        // second one's Y being typed.
+        app.createBox(20);
+        interaction.fitAll(false);
+        for (const os::Vec3& p : {os::Vec3{3, -3, 20}, os::Vec3{0, 0, 20}, os::Vec3{-5, 5, 20}}) {
+            os::interact::PointerEvent tap;
+            tap.position = interaction.camera().project(p);
+            interaction.pointerPress(tap);
+            interaction.pointerRelease(tap);
+            if (p.x == 3)
+                (void)interaction.triggerAction("hole");
+        }
+        (void)interaction.triggerAction("head:countersink");
+        (void)interaction.triggerAction("field:y");
+        interaction.setValueText("15");
+        return;
+    }
     if (demo == QLatin1String("rotate")) {
         // A body in Rotate mode with a 30 degree preview about Z.
         app.createBox(20);

@@ -78,6 +78,20 @@ Item {
                     onActiveFocusChanged: if (activeFocus) selectAll()
                     Keys.onReturnPressed: apply()
                     Keys.onEnterPressed: apply()
+                    // Operations with several fields (the Hole tool's
+                    // diameter, depth, X, Y): Tab goes to the next one.
+                    Keys.onTabPressed: (event) => {
+                        if (!chip.app.contextActions.some(a => a.id.startsWith("field:"))) {
+                            event.accepted = false
+                            return
+                        }
+                        errorText.text = chip.app.setValueText(text)
+                        if (errorText.text.length === 0) {
+                            chip.app.triggerAction("nextField")
+                            field.text = chip.app.operationValueText
+                            field.selectAll()
+                        }
+                    }
                     Keys.onEscapePressed: {
                         field.focus = false
                         chip.finished()
@@ -134,8 +148,24 @@ Item {
             font.pixelSize: 12
         }
 
+        // The actions' natural width, to wrap them (the Hole tool has many)
+        // at a width that still fits beside the model.
         Row {
+            id: actionMeasure
+            visible: false
+            spacing: 4
+            Repeater {
+                model: chip.app.contextActions
+                delegate: ActionButton {
+                    required property var modelData
+                    text: modelData.label
+                    compact: true
+                }
+            }
+        }
+        Flow {
             Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: Math.min(actionMeasure.implicitWidth, 460)
             spacing: 4
             visible: chip.app.contextActions.length > 1
             Repeater {

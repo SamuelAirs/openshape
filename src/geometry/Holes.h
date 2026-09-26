@@ -47,6 +47,20 @@ double headVolume(const HoleCut& hole);
 // line does not start into material there (e.g. beside the part).
 std::optional<double> materialDepth(const Shape& shape, const Vec3& point, const Vec3& direction);
 
+// A flat face seen in a frame on its plane (u along xAxis, v along yAxis):
+// its bounding rectangle, and where its straight edges' middles and its
+// circles' centers are (world points), for placing holes on it.
+struct FaceOutline {
+    bool valid = false;
+    double minU = 0, minV = 0, maxU = 0, maxV = 0;
+    std::vector<Vec3> edgeMidpoints; // straight edges
+    std::vector<Vec3> circleCenters; // circular edges (holes, round outlines)
+};
+FaceOutline faceOutline(const Shape& shape, int faceIndex, const Vec3& origin, const Vec3& xAxis, const Vec3& yAxis);
+// Whether `point` (on the face's plane) lies on the face (inside or on its
+// boundary, not in one of its holes).
+bool faceContains(const Shape& shape, int faceIndex, const Vec3& point);
+
 // Cuts all holes in one boolean. Fails with a plain message for impossible
 // sizes (a head narrower than its hole, a countersink deeper than a blind
 // hole) and when the result is unchanged; callers check what else the

@@ -11,14 +11,27 @@
 
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRep_Tool.hxx>
+#include <Bnd_Box.hxx>
+#include <ElSLib.hxx>
 #include <IntCurvesFace_ShapeIntersector.hxx>
 #include <Precision.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Ax3.hxx>
 #include <gp_Lin.hxx>
+#include <gp_Pnt2d.hxx>
+#include <gp_Trsf.hxx>
 
 #include <algorithm>
 #include <cmath>
@@ -197,6 +210,63 @@ std::optional<double> materialDepth(const Shape& shape, const Vec3& point, const
     } catch (const Standard_Failure& failure) {
         OS_LOG(Warning, Kernel) << "materialDepth failed: " << describeFailure(failure);
         return std::nullopt;
+    }
+}
+
+FaceOutline faceOutline(const Shape& shape, int faceIndex, const Vec3& origin, const Vec3& xAxis, const Vec3& yAxis)
+{
+    FaceOutline out;
+    if (shape.isNull() || faceIndex < 0 || faceIndex >= shape.faceCount())
+        return out;
+    try {
+        const TopoDS_Face face = TopoDS::Face(shape.data()->faces.FindKey(faceIndex + 1));
+        // The face in the frame's coordinates: its box there is the outline's.
+        const Vec3 n = xAxis.cross(yAxis);
+        gp_Trsf toFrame;
+        toFrame.SetTransformation(gp_Ax3(toPnt(origin), toDir(n), toDir(xAxis)));
+        const TopoDS_Shape local = BRepBuilderAPI_Transform(face, toFrame, false).Shape();
+        Bnd_Box box;
+        BRepBndLib::AddOptimal(local, box, false, false);
+        if (box.IsVoid())
+            return out;
+        double zMin = 0, zMax = 0;
+        box.Get(out.minU, out.minV, zMin, out.maxU, out.maxV, zMax);
+        TopTools_IndexedMapOfShape edges;
+        TopExp::MapShapes(face, TopAbs_EDGE, edges);
+        for (int i = 1; i <= edges.Extent(); ++i) {
+            const int index = shape.data()->edges.FindIndex(edges(i)) - 1;
+            const auto info = edgeInfo(shape, index);
+            if (!info)
+                continue;
+            if (info->kind == CurveKind::Line)
+                out.edgeMidpoints.push_back(info->midpoint);
+            else if (info->kind == CurveKind::Circle)
+                out.circleCenters.push_back(info->center);
+        }
+        out.valid = true;
+        return out;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "faceOutline(" << faceIndex << ") failed: " << describeFailure(failure);
+        return FaceOutline{};
+    }
+}
+
+bool faceContains(const Shape& shape, int faceIndex, const Vec3& point)
+{
+    if (shape.isNull() || faceIndex < 0 || faceIndex >= shape.faceCount())
+        return false;
+    try {
+        const TopoDS_Face face = TopoDS::Face(shape.data()->faces.FindKey(faceIndex + 1));
+        BRepAdaptor_Surface surface(face);
+        if (surface.GetType() != GeomAbs_Plane)
+            return false;
+        double u = 0, v = 0;
+        ElSLib::Parameters(surface.Plane(), toPnt(point), u, v);
+        BRepClass_FaceClassifier classifier(face, gp_Pnt2d(u, v), BRep_Tool::Tolerance(face) * 10);
+        return classifier.State() == TopAbs_IN || classifier.State() == TopAbs_ON;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "faceContains(" << faceIndex << ") failed: " << describeFailure(failure);
+        return false;
     }
 }
 
