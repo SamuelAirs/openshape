@@ -163,6 +163,7 @@ Rectangle {
                             ["Recent projects", "File → Open Recent"],
                             ["For printing", "File → Export STL or 3MF"],
                             ["For other CAD", "File → Export STEP"],
+                            ["From other CAD", "File → Import STEP… (Ctrl+I): each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size"],
                             ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
                             ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies"]
                         ]

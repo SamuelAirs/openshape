@@ -18,7 +18,10 @@
 #include <BRepOffset_MakeOffset.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepCheck_ListOfStatus.hxx>
+#include <BRepCheck_Result.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
@@ -43,7 +46,9 @@
 #include <Precision.hxx>
 #include <Message_Report.hxx>
 #include <Standard_Failure.hxx>
+#include <TopAbs.hxx>
 #include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
@@ -61,12 +66,41 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 
 namespace os::geom {
 
 namespace detail {
+
+std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const TopoDS_Shape& shape)
+{
+    std::map<std::string, int> counts;
+    for (TopAbs_ShapeEnum type : {TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX}) {
+        TopTools_IndexedMapOfShape subs;
+        TopExp::MapShapes(shape, type, subs);
+        for (int i = 1; i <= subs.Extent(); ++i) {
+            const Handle(BRepCheck_Result)& result = analyzer.Result(subs(i));
+            if (result.IsNull())
+                continue;
+            for (BRepCheck_ListIteratorOfListOfStatus it(result->Status()); it.More(); it.Next()) {
+                if (it.Value() == BRepCheck_NoError)
+                    continue;
+                std::ostringstream name;
+                BRepCheck::Print(it.Value(), name);
+                std::string text = name.str();
+                while (!text.empty() && (text.back() == '\n' || text.back() == ' '))
+                    text.pop_back();
+                ++counts[std::string(TopAbs::ShapeTypeToString(type)) + ": " + text];
+            }
+        }
+    }
+    std::string out;
+    for (const auto& [what, n] : counts)
+        out += (out.empty() ? "" : "; ") + what + (n > 1 ? " x" + std::to_string(n) : std::string());
+    return out.empty() ? std::string("no detail") : out;
+}
 
 Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage)
 {
@@ -88,7 +122,8 @@ Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, con
 
     BRepCheck_Analyzer analyzer(out);
     if (!analyzer.IsValid()) {
-        const std::string dev = std::string(operation) + " produced an invalid shape (BRepCheck_Analyzer failed)";
+        const std::string dev = std::string(operation) + " produced an invalid shape (BRepCheck_Analyzer failed: "
+                              + describeCheckFailures(analyzer, out) + ")";
         OS_LOG(Error, Kernel) << dev;
         return Result<Shape>::failure(ErrorCode::InvalidResultShape, userMessage, dev);
     }
@@ -104,6 +139,24 @@ Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, con
 using namespace detail;
 
 namespace {
+
+// Booleans never modify their arguments. By default OCCT may update the
+// argument shapes in place (tolerances, curves on faces), but our Shapes are
+// shared and immutable: cached step results, imported geometry. One
+// push/pull left a STEP-imported plate invalid for every later step before
+// this (2026-09-26).
+template <typename Op>
+Op& runNonDestructive(Op& op, const TopoDS_Shape& argument, const TopoDS_Shape& tool)
+{
+    TopTools_ListOfShape arguments, tools;
+    arguments.Append(argument);
+    tools.Append(tool);
+    op.SetArguments(arguments);
+    op.SetTools(tools);
+    op.SetNonDestructive(Standard_True);
+    op.Build();
+    return op;
+}
 
 bool validIndex(const Shape& shape, int index, int count)
 {
@@ -228,12 +281,14 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
 
         TopoDS_Shape combined;
         if (distance > 0) {
-            BRepAlgoAPI_Fuse op(occ(shape), prism);
+            BRepAlgoAPI_Fuse op;
+            runNonDestructive(op, occ(shape), prism);
             if (op.HasErrors())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(op));
             combined = op.Shape();
         } else {
-            BRepAlgoAPI_Cut op(occ(shape), prism);
+            BRepAlgoAPI_Cut op;
+            runNonDestructive(op, occ(shape), prism);
             if (op.HasErrors())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Cut failed: " + describeAlgoErrors(op));
             combined = op.Shape();
@@ -355,7 +410,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
         std::string errors;
         switch (kind) {
         case BooleanKind::Union: {
-            BRepAlgoAPI_Fuse op(occ(a), occ(b));
+            BRepAlgoAPI_Fuse op;
+            runNonDestructive(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -363,7 +419,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
             break;
         }
         case BooleanKind::Subtract: {
-            BRepAlgoAPI_Cut op(occ(a), occ(b));
+            BRepAlgoAPI_Cut op;
+            runNonDestructive(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -371,7 +428,8 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
             break;
         }
         case BooleanKind::Intersect: {
-            BRepAlgoAPI_Common op(occ(a), occ(b));
+            BRepAlgoAPI_Common op;
+            runNonDestructive(op, occ(a), occ(b));
             if (op.HasErrors())
                 errors = describeAlgoErrors(op);
             else
@@ -559,6 +617,7 @@ Result<Shape> fuseInOnePass(const std::vector<TopoDS_Shape>& shapes, const char*
     BRepAlgoAPI_Fuse fuse;
     fuse.SetArguments(arguments);
     fuse.SetTools(tools);
+    fuse.SetNonDestructive(Standard_True); // the original is a shared, immutable Shape
     fuse.Build();
     if (fuse.HasErrors())
         return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
@@ -732,8 +791,10 @@ Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double
             return BRepPrimAPI_MakeBox(gp_Ax2(corner, frame.Direction(), frame.XDirection()), size, size, size).Shape();
         };
         const TopoDS_Shape above = boxAbove(split);
-        BRepAlgoAPI_Common upperOp(occ(shape), above);
-        BRepAlgoAPI_Cut lowerOp(occ(shape), distance > 0 ? above : boxAbove(bandLow));
+        BRepAlgoAPI_Common upperOp;
+        runNonDestructive(upperOp, occ(shape), above);
+        BRepAlgoAPI_Cut lowerOp;
+        runNonDestructive(lowerOp, occ(shape), distance > 0 ? above : boxAbove(bandLow));
         if (upperOp.HasErrors() || lowerOp.HasErrors())
             return R::failure(ErrorCode::KernelFailure, userMessage, "pushPullFaceKeepingEdges: split failed");
         gp_Trsf shift;
@@ -1182,12 +1243,15 @@ std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b)
     }
 }
 
-std::string toBrepString(const Shape& shape)
+std::string toBrepString(const Shape& shape, bool withTriangulation)
 {
     if (shape.isNull())
         return {};
     std::ostringstream out;
-    BRepTools::Write(occ(shape), out);
+    if (withTriangulation)
+        BRepTools::Write(occ(shape), out);
+    else
+        BRepTools::Write(occ(shape), out, Standard_False, Standard_False, TopTools_FormatVersion_CURRENT);
     return out.str();
 }
 
@@ -1195,6 +1259,10 @@ Result<Shape> fromBrepString(const std::string& text)
 {
     return guarded("BRepTools::Read", "The stored geometry could not be read.", [&]() -> Result<Shape> {
         std::istringstream in(text);
+        // Stored geometry is untrusted (project files): a truncated or damaged
+        // text must end the read with an error. OCCT's reader does not check
+        // the stream everywhere and looped forever at the end of a cut-off text.
+        in.exceptions(std::ios::failbit | std::ios::badbit);
         TopoDS_Shape shape;
         BRep_Builder builder;
         BRepTools::Read(shape, in, builder);

@@ -20,6 +20,7 @@ target_link_libraries(openshape_geometry
         TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
         TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKFillet TKOffset TKFeat TKMesh
         TKDE TKXSBase TKDESTEP TKDESTL
+        TKCDF TKLCAF TKCAF TKXCAF # STEP product names (XCAF document)
 )
 target_include_directories(openshape_geometry SYSTEM PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 # OCCT headers use M_PI, which strict ISO mode hides on MinGW/MSVC.

@@ -24,6 +24,7 @@ ApplicationWindow {
 
     property bool closeConfirmed: false
     property var afterSave: null   // action to run once a Save As completes
+    property bool importAsProject: false // the import dialog makes a new document (from Home)
     // A question the user must answer first: the window's shortcuts wait
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
     readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible
@@ -80,6 +81,7 @@ ApplicationWindow {
         onActivated: window.confirmDiscard(() => window.app.newDocument())
     }
     Shortcut { sequence: "Ctrl+,"; enabled: !window.modalOpen; onActivated: preferencesOverlay.open() }
+    Shortcut { sequence: "Ctrl+I"; enabled: !window.modalOpen; onActivated: window.chooseImportFile(false) }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
     Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
@@ -103,6 +105,27 @@ ApplicationWindow {
             }
         }
         viewport.forceActiveFocus()
+    }
+
+    // Opens a file dialog, unless an acceptance run prepared the file it
+    // would return (native dialogs cannot be clicked): then `accept` runs
+    // with it at once, as the dialog's onAccepted would.
+    function chooseFile(dialog, accept) {
+        const prepared = app.takeNextFileChoice()
+        if (prepared.toString() !== "")
+            accept(prepared)
+        else
+            dialog.open()
+    }
+    function chooseImportFile(asProject) {
+        window.importAsProject = asProject
+        chooseFile(importDialog, window.acceptImport)
+    }
+    function acceptImport(url) {
+        if (window.importAsProject)
+            app.importStepAsProject(url)
+        else
+            app.importStep(url)
     }
 
     function save() {
@@ -224,6 +247,11 @@ ApplicationWindow {
             }
             MenuSeparator {}
             MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
+        }
+        MenuItem {
+            objectName: "importStepMenuItem"
+            text: "Import STEP…"
+            onTriggered: window.chooseImportFile(false)
         }
         MenuSeparator {}
         MenuItem { text: "Save"; onTriggered: window.save() }
@@ -506,7 +534,7 @@ ApplicationWindow {
         if (app.bodyCount === 0 && app.sketchCount > 0)
             return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)
-            return "Add a box, or start a sketch."
+            return "Add a box, start a sketch, or import a STEP file (Ctrl+I)."
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
         if (app.operationActive && app.operationTitle === "Move" && app.contextActions.some(a => a.id === "split"))
@@ -707,6 +735,12 @@ ApplicationWindow {
             }
         }
         onRejected: window.afterSave = null
+    }
+    FileDialog {
+        id: importDialog
+        title: "Import STEP"
+        nameFilters: ["STEP files (*.step *.stp *.STEP *.STP)"]
+        onAccepted: window.acceptImport(selectedFile)
     }
     FileDialog {
         id: stepDialog

@@ -28,7 +28,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece, Copy
+    Split, SplitPiece, Copy, Imported
 };
 
 // What a feature may consult besides its input shape.
@@ -384,6 +384,50 @@ public:
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sourceBody}; }
     void remapReferences(const std::map<Uuid, Uuid>& copies) override;
+};
+
+// The first step of a body imported from a file (STEP): its exact geometry
+// as imported (millimeters, placed as in the file). Projects store the
+// geometry itself (imports/<feature id>.brep inside the file), so it is this
+// step's source of truth, like other steps' parameters; later steps build on
+// it as on any other body.
+class ImportedFeature final : public Feature {
+public:
+    using Feature::Feature;
+    geom::Shape shape;   // the imported solid
+    std::string source;  // the file it came from ("bracket.step"), shown in the Model panel
+    double volume = 0;   // mm³ when imported; a loaded file's geometry must still have it
+
+    // Where a project file keeps the geometry: imports/<feature id>.brep.
+    std::string entryName() const;
+    // The entry a loaded file named in this step's params, and the hash its
+    // content must have (read and checked by the loader before parsing).
+    const std::string& loadedEntry() const { return loadedEntry_; }
+    const std::string& loadedHash() const { return loadedHash_; }
+    // `shape` as BRep text without triangulation, made once (shapes never change).
+    const std::string& brepText() const;
+    // FNV-1a (64 bit) of stored geometry, 16 hex digits: catches a damaged or
+    // swapped imports/ entry before the kernel parses it.
+    static std::string hashOf(const std::string& text);
+    // Sets the geometry (and the volume it must keep).
+    void setShape(const geom::Shape& imported);
+    // The geometry a project file stored as `brep` (checked by the loader):
+    // saving again writes the same text.
+    void setLoadedShape(const geom::Shape& loaded, const std::string& brep);
+
+    FeatureKind kind() const override { return FeatureKind::Imported; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ImportedFeature(*this)); }
+    bool isBaseFeature() const override { return true; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+
+private:
+    std::string loadedEntry_;
+    std::string loadedHash_;
+    mutable std::shared_ptr<const std::string> brep_; // shared by clones: same shape
 };
 
 // Hollows the body, opening the referenced faces, with walls of `thickness`.

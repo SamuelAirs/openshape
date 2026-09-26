@@ -939,6 +939,56 @@ Status InteractionController::createBox(double size)
     return status;
 }
 
+Status InteractionController::importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source)
+{
+    if (shapes.empty())
+        return Status::failure(ErrorCode::InvalidArgument, "There is nothing to import.", "importBodies: no shapes");
+    if (session_)
+        finishSketch();
+    // Like clicking elsewhere: a pending value is applied first.
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    std::vector<std::string> taken;
+    for (const auto& body : document_->bodies())
+        taken.push_back(body->name());
+    auto isTaken = [&](const std::string& name) { return std::find(taken.begin(), taken.end(), name) != taken.end(); };
+    int unnamed = 1;
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    for (const geom::NamedShape& shape : shapes) {
+        if (shape.shape.isNull())
+            continue;
+        std::string name = shape.name;
+        if (name.empty()) {
+            do
+                name = "Imported " + std::to_string(unnamed++);
+            while (isTaken(name));
+        } else {
+            const std::string base = name;
+            for (int n = 2; isTaken(name); ++n)
+                name = base + " " + std::to_string(n);
+        }
+        taken.push_back(name);
+        auto feature = std::make_unique<doc::ImportedFeature>();
+        feature->setShape(shape.shape);
+        feature->source = source;
+        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(name, std::move(feature)));
+    }
+    if (steps.empty())
+        return Status::failure(ErrorCode::InvalidArgument, "There is nothing to import.", "importBodies: only null shapes");
+    const std::string label = steps.size() == 1 ? "Import " + taken.back() : "Import " + std::to_string(steps.size()) + " bodies";
+    Status status = undoStack_->push(std::make_unique<cmd::CompositeCommand>(label, std::move(steps)), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    operation_.reset();
+    selection_.clear();
+    afterDocumentEdit();
+    fitAll(true);
+    return status;
+}
+
 bool InteractionController::undo()
 {
     if (!undoStack_->undo(*document_))
@@ -2007,6 +2057,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Split: return "Split";
     case doc::FeatureKind::SplitPiece: return "Piece";
     case doc::FeatureKind::Copy: return static_cast<const doc::CopyFeature&>(f).mirror ? "Mirror copy" : "Copy";
+    case doc::FeatureKind::Imported: return "Import";
     }
     return "Step";
 }
@@ -2148,6 +2199,10 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         if (e.symmetric)
             extent += " symmetric";
         return extent + dot + mode;
+    }
+    case doc::FeatureKind::Imported: {
+        const auto& imported = static_cast<const doc::ImportedFeature&>(f);
+        return imported.source.empty() ? std::string("STEP") : imported.source;
     }
     }
     return {};

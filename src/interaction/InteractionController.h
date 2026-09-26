@@ -7,6 +7,7 @@
 #include "commands/Command.h"
 #include "core/Camera.h"
 #include "document/Document.h"
+#include "geometry/Exchange.h"
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
 #include "interaction/Operation.h"
@@ -130,6 +131,11 @@ public:
 
     // ---- Actions ----
     Status createBox(double size);
+    // One body per imported shape, each starting with an Imported step, as
+    // one undo step. Names stay unique ("Bracket 2"); unnamed shapes become
+    // "Imported 1", "Imported 2", ... The view fits everything afterwards.
+    // `source` is the file name shown on the steps.
+    Status importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source);
     bool undo();
     bool redo();
     // Deletes the selected bodies, as one undo step. A body that other bodies

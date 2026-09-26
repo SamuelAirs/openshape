@@ -6,6 +6,7 @@ A ZIP archive (deflate) with these entries:
 |---|---|---|
 | `document.json` | yes | The parametric document. **Source of truth.** |
 | `metadata.json` | no | `{ "format", "version", "application", "applicationVersion" }` |
+| `imports/<feature-uuid>.brep` | when named | The exact geometry of an imported body (OCCT BRep text, no triangulation), named by its `Imported` step. **Part of the model**, like document.json: written on every save, recovery copies included. |
 | `geometry/<body-uuid>.brep` | no | OCCT BRep text of each body's current shape. A cache for external tools and future fast-open; ignored on load (bodies are recomputed from features). |
 | `thumbnail.png` | no | Preview image (not written yet). |
 
@@ -56,7 +57,8 @@ Rules:
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
 - The first feature of every body must be a base feature (`Box`,
-  `SplitPiece`, `Copy`, or `Extrude` / `Revolve` with mode `NewBody`).
+  `SplitPiece`, `Copy`, `Imported`, or `Extrude` / `Revolve` with mode
+  `NewBody`).
 - Sketch entity ids are integers unique within their sketch; id 1 is always
   the fixed origin point. `nextId` is the next unused id. Sketch coordinates
   are millimeters in the plane's (xAxis, yAxis) frame.
@@ -139,9 +141,20 @@ Rules:
   "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
   (applied before the translation) — the body's shape moved. It follows
   every change of that body and fails with a message when the body is gone.
+- `Imported` params (a base feature: a body imported from a STEP file):
+  `{ "geometry": "imports/<feature uuid>.brep", "hash", "volume", "source" }`
+  — the archive entry holding the exact geometry (millimeters, placed as in
+  the file it came from); `hash`, 16 lowercase hex digits, the FNV-1a (64
+  bit) of that entry's bytes; `volume` (> 0, mm³) of the solid; `source`,
+  the imported file's name (informational, at most 1024 bytes). The loader
+  reads the entry, compares its hash before parsing it, and refuses the
+  project ("damaged") when the entry is missing, does not match, is not a
+  valid solid or no longer has the recorded volume (within 1e-6). Writers
+  name the entry after the step's own id; readers accept any `imports/`
+  entry the step names.
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Imported`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 
@@ -178,7 +191,7 @@ named by a lowercase UUID):
 
 | File | Content |
 |---|---|
-| `<session>.openshape` | A normal project file as above, written without the `geometry/` cache. |
+| `<session>.openshape` | A normal project file as above, written without the `geometry/` cache (with `imports/`: imported geometry is part of the model). |
 | `<session>.json` | Sidecar: `{ "format": "OpenShapeRecovery", "version": 1, "originalPath", "title", "savedAt" (Unix ms), "appVersion" }`. `originalPath` is the user's file (UTF-8, empty if never saved). |
 | `<session>.lock` | A `QLockFile`: the session's app is running. A lock whose process is gone marks a crashed session, whose copy is offered for restoring. |
 

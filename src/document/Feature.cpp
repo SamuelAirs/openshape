@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace os::doc {
 
@@ -39,6 +40,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Split: return "Split";
     case FeatureKind::SplitPiece: return "SplitPiece";
     case FeatureKind::Copy: return "Copy";
+    case FeatureKind::Imported: return "Imported";
     }
     return "Unknown";
 }
@@ -49,7 +51,7 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
                           FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
-                          FeatureKind::Copy})
+                          FeatureKind::Copy, FeatureKind::Imported})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -75,6 +77,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Split: return std::make_unique<SplitFeature>(id);
     case FeatureKind::SplitPiece: return std::make_unique<SplitPieceFeature>(id);
     case FeatureKind::Copy: return std::make_unique<CopyFeature>(id);
+    case FeatureKind::Imported: return std::make_unique<ImportedFeature>(id);
     }
     return nullptr;
 }
@@ -894,6 +897,102 @@ Status CopyFeature::readParams(const json& in)
     sourceBody = *body;
     mirror = false;
     motion = m;
+    return okStatus();
+}
+
+// ---- Imported ---------------------------------------------------------------------
+
+std::string ImportedFeature::entryName() const
+{
+    return "imports/" + id().toString() + ".brep";
+}
+
+const std::string& ImportedFeature::brepText() const
+{
+    if (!brep_)
+        brep_ = std::make_shared<const std::string>(geom::toBrepString(shape, false));
+    return *brep_;
+}
+
+std::string ImportedFeature::hashOf(const std::string& text)
+{
+    std::uint64_t hash = 14695981039346656037ull;
+    for (unsigned char c : text) {
+        hash ^= c;
+        hash *= 1099511628211ull;
+    }
+    static const char* digits = "0123456789abcdef";
+    std::string out(16, '0');
+    for (int i = 15; i >= 0; --i, hash >>= 4)
+        out[std::size_t(i)] = digits[hash & 0xF];
+    return out;
+}
+
+void ImportedFeature::setShape(const geom::Shape& imported)
+{
+    shape = imported;
+    volume = geom::volume(imported);
+    brep_.reset();
+}
+
+void ImportedFeature::setLoadedShape(const geom::Shape& loaded, const std::string& brep)
+{
+    shape = loaded;
+    brep_ = std::make_shared<const std::string>(brep);
+}
+
+Result<geom::Shape> ImportedFeature::compute(const geom::Shape&, const EvalContext&) const
+{
+    if (shape.isNull())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The imported geometry of this body is missing.",
+                                            "Imported: no shape");
+    return Result<geom::Shape>::success(shape);
+}
+
+Status ImportedFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void ImportedFeature::writeParams(json& out) const
+{
+    out["geometry"] = entryName();
+    out["hash"] = hashOf(brepText());
+    out["source"] = source;
+    out["volume"] = volume;
+}
+
+Status ImportedFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid imported body.",
+                               std::string("Imported: ") + why);
+    };
+    if (!in.contains("geometry") || !in["geometry"].is_string())
+        return bad("geometry");
+    const std::string entry = in["geometry"].get<std::string>();
+    if (entry.rfind("imports/", 0) != 0 || entry.size() <= 8 || entry.size() > 512)
+        return bad("geometry entry name");
+    const auto v = numberFrom(in, "volume");
+    if (!v || !(*v > 0) || !std::isfinite(*v))
+        return bad("volume");
+    if (!in.contains("hash") || !in["hash"].is_string())
+        return bad("hash");
+    const std::string hash = in["hash"].get<std::string>();
+    if (hash.size() != 16 || hash.find_first_not_of("0123456789abcdef") != std::string::npos)
+        return bad("hash format");
+    std::string from;
+    if (in.contains("source")) {
+        if (!in["source"].is_string() || in["source"].get<std::string>().size() > 1024)
+            return bad("source");
+        from = in["source"].get<std::string>();
+    }
+    loadedEntry_ = entry;
+    loadedHash_ = hash;
+    volume = *v;
+    source = std::move(from);
+    shape = {};
+    brep_.reset();
     return okStatus();
 }
 

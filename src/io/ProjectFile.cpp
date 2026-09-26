@@ -13,6 +13,7 @@
 #include <zip.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -167,7 +168,38 @@ json documentToJson(const doc::Document& document)
             {"bodies", bodies}};
 }
 
-Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input)
+namespace {
+
+// An Imported step's geometry, from the archive: it must parse, be a valid
+// solid and still have the volume recorded when it was imported (so a
+// damaged or swapped entry is caught here, not in a later modeling step).
+Status loadImportedGeometry(doc::ImportedFeature& feature, const EntryReader& readEntry)
+{
+    if (!readEntry)
+        return formatError("imported geometry " + feature.loadedEntry() + " without an archive to read it from");
+    auto text = readEntry(feature.loadedEntry());
+    if (!text)
+        return formatError("imported geometry " + feature.loadedEntry() + ": " + text.developerMessage());
+    // Damage is caught here, before the kernel parses anything.
+    if (doc::ImportedFeature::hashOf(text.value()) != feature.loadedHash())
+        return formatError("imported geometry " + feature.loadedEntry() + " does not match its hash");
+    auto shape = geom::fromBrepString(text.value());
+    if (!shape)
+        return formatError("imported geometry " + feature.loadedEntry() + " unreadable: " + shape.developerMessage());
+    if (geom::solids(shape.value()).empty() || !geom::isValid(shape.value()))
+        return formatError("imported geometry " + feature.loadedEntry() + " is not a valid solid");
+    const double volume = geom::volume(shape.value());
+    const double recorded = feature.volume;
+    if (!(std::abs(volume - recorded) <= 1e-6 * std::max(1.0, recorded)))
+        return formatError("imported geometry " + feature.loadedEntry() + " has volume " + std::to_string(volume)
+                           + ", recorded " + std::to_string(recorded));
+    feature.setLoadedShape(shape.value(), text.value());
+    return okStatus();
+}
+
+} // namespace
+
+Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const EntryReader& readEntry)
 {
     using R = Result<std::unique_ptr<doc::Document>>;
     if (!input.is_object())
@@ -254,6 +286,9 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input)
             auto feature = doc::createFeature(*kind, *featureId);
             if (Status s = feature->readParams(f["params"]); !s)
                 return R::failureFrom(s);
+            if (auto* imported = dynamic_cast<doc::ImportedFeature*>(feature.get()))
+                if (Status s = loadImportedGeometry(*imported, readEntry); !s)
+                    return R::failureFrom(s);
             if (f.contains("name") && f["name"].is_string())
                 feature->setName(f["name"].get<std::string>());
             if (f.contains("suppressed") && f["suppressed"].is_boolean())
@@ -278,6 +313,11 @@ ProjectData serializeProject(const doc::Document& document, const SaveOptions& o
                              {"application", "OpenShape"},
                              {"applicationVersion", "0.1.0"}}
                             .dump(2);
+    // Imported geometry is part of the model (not a cache): always written.
+    for (const auto& body : document.bodies())
+        for (const auto& feature : body->features())
+            if (const auto* imported = dynamic_cast<const doc::ImportedFeature*>(feature.get()))
+                data.imports.emplace_back(imported->entryName(), imported->brepText());
     if (options.includeGeometryCache) {
         for (const auto& body : document.bodies())
             if (!body->shape().isNull())
@@ -317,6 +357,9 @@ Result<std::string> buildProjectArchive(const ProjectData& data)
         return fail(s);
     if (Status s = addEntry(archive, "metadata.json", data.metadataJson); !s)
         return fail(s);
+    for (const auto& [entry, brep] : data.imports)
+        if (Status s = addEntry(archive, entry, brep); !s)
+            return fail(s);
     for (const auto& [bodyId, brep] : data.geometry)
         if (Status s = addEntry(archive, "geometry/" + bodyId + ".brep", brep); !s)
             return fail(s);
@@ -430,12 +473,16 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
         return R::failureFrom(formatError("bad entry count"));
 
     zip_int64_t documentIndex = -1;
+    std::map<std::string, zip_int64_t> importEntries;
     for (zip_int64_t i = 0; i < count; ++i) {
         const char* name = zip_get_name(archive.archive, static_cast<zip_uint64_t>(i), ZIP_FL_ENC_GUESS);
         if (!name || !isSafeArchiveEntryName(name))
             return R::failureFrom(formatError(std::string("unsafe entry name: ") + (name ? name : "<null>")));
-        if (std::string(name) == "document.json")
+        const std::string entry(name);
+        if (entry == "document.json")
             documentIndex = i;
+        else if (entry.rfind("imports/", 0) == 0)
+            importEntries.emplace(entry, i);
     }
     if (documentIndex < 0)
         return R::failureFrom(formatError("document.json missing"));
@@ -447,7 +494,14 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
     if (root.is_discarded())
         return R::failureFrom(formatError("document.json is not valid JSON"));
 
-    auto document = documentFromJson(root);
+    // Imported geometry is read only when a step names it.
+    const EntryReader readImport = [&](const std::string& name) -> Result<std::string> {
+        const auto it = importEntries.find(name);
+        if (it == importEntries.end())
+            return Result<std::string>::failure(ErrorCode::FileFormatError, "Missing geometry.", "no entry " + name);
+        return readEntry(archive.archive, it->second);
+    };
+    auto document = documentFromJson(root, readImport);
     if (!document)
         return document;
     for (const auto& body : document.value()->bodies())

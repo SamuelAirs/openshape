@@ -637,6 +637,65 @@ bool AppController::exportStep(const QUrl& url)
     return status.ok();
 }
 
+namespace {
+
+// "Imported “Bracket”" / "Imported 3 bodies", plus what was skipped.
+QString importMessage(const std::vector<geom::NamedShape>& shapes, const std::vector<std::string>& warnings,
+                      const doc::Document& document)
+{
+    QString text = shapes.size() == 1 && !document.bodies().empty()
+                     ? QStringLiteral("Imported \u201C%1\u201D").arg(QString::fromStdString(document.bodies().back()->name()))
+                     : QStringLiteral("Imported %1 bodies").arg(shapes.size());
+    for (const std::string& warning : warnings)
+        text += QStringLiteral(". ") + QString::fromStdString(warning);
+    return text;
+}
+
+} // namespace
+
+bool AppController::importStep(const QUrl& url)
+{
+    const auto path = toPath(url);
+    auto imported = geom::importStep(path);
+    if (!imported) {
+        OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
+        notifyMessage(q(imported.userMessage()));
+        return false;
+    }
+    const std::string source = QFileInfo(QString::fromStdWString(path.wstring())).fileName().toStdString();
+    const Status status = interaction_->importBodies(imported.value(), source);
+    if (!status)
+        return false; // the controller said why
+    notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
+    return true;
+}
+
+bool AppController::importStepAsProject(const QUrl& url)
+{
+    // Read the file first: a file that cannot be imported leaves the current
+    // document alone.
+    const auto path = toPath(url);
+    auto imported = geom::importStep(path);
+    if (!imported) {
+        OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
+        notifyMessage(q(imported.userMessage()));
+        return false;
+    }
+    newDocument();
+    const std::string source = QFileInfo(QString::fromStdWString(path.wstring())).fileName().toStdString();
+    if (!interaction_->importBodies(imported.value(), source))
+        return false;
+    notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
+    return true;
+}
+
+QUrl AppController::takeNextFileChoice()
+{
+    QUrl url;
+    std::swap(url, nextFileChoice_);
+    return url;
+}
+
 bool AppController::exportStl(const QUrl& url)
 {
     std::vector<geom::NamedShape> shapes;

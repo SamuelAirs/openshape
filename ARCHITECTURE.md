@@ -147,7 +147,22 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Profiles.h`: planar curves (lines, circles, counter-clockwise arcs) →
   regions (see Sketches).
 - `TopoSignature.h`: interim topological naming (see below).
-- `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export.
+- `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export. Both STEP
+  directions go through an XCAF document (`STEPCAFControl_*`): export writes
+  one product per body named after it (each body wrapped in a compound of
+  its own, so bodies sharing a kernel shape stay separate and a moved body
+  is no assembly), in mm, inches or meters (`StepWriteOptions`); import
+  flattens assemblies with their placements, names each solid after its
+  product (a part without a name takes its assembly's; OCCT's placeholder
+  "Open CASCADE STEP translator ..." is no name), converts any unit to mm,
+  closes closed shells into solids, repairs damaged solids with ShapeFix
+  (or skips them) and reports open surfaces and curves as warnings. Curves
+  on round faces (cylinders, cones, spheres, tori) are rebuilt from the 3D
+  edges: the file's are rounded (OCCT writes 13 digits) and made the first
+  push/pull on an imported fillet produce unorientable faces.
+- **Booleans never modify their arguments** (`runNonDestructive`,
+  `SetNonDestructive`): OCCT otherwise updates argument shapes in place, and
+  Shapes are shared and immutable (cached step outputs, imported geometry).
 
 ## Document model (`document/`)
 
@@ -170,9 +185,10 @@ Document (UUID, display unit)
   Shell, Hole (drilled at a circular rim), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
-  OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
+  OffsetFace, Split and SplitPiece (below), Copy (a base feature: another
   body's current shape mirrored or moved — Mirror / Pattern with "Separate
-  bodies"). Planes, axes and directions are stored as geometry, not as
+  bodies") and Imported (a base feature holding a STEP-imported solid's
+  exact geometry; projects store it in `imports/`, see Files). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
@@ -486,7 +502,12 @@ hides it).
 ## Files (`io/`)
 
 `.openshape` = ZIP: `document.json` (source of truth), `metadata.json`,
-`geometry/<body>.brep` (cache), optional `thumbnail.png`. Versioned with a
+`imports/<step>.brep` (the geometry of Imported steps: source of truth,
+also in recovery copies), `geometry/<body>.brep` (cache), optional
+`thumbnail.png`. `documentFromJson` takes an `EntryReader` for the imports;
+the loader checks each against the hash, validity and volume its step
+recorded before any modeling sees it (the BRep text is read with stream
+exceptions on: OCCT's reader looped forever on a cut-off text). Versioned with a
 migration table; newer versions are refused with a clear message. Readers
 treat files as untrusted: size limits, entry-name validation (no traversal),
 strict JSON schema checks, duplicate-UUID rejection; nothing is extracted to
@@ -541,6 +562,16 @@ QSettings at a temporary INI file (and recovery copies at a temporary
 folder) for `--acceptance`, `--demo` and `--screenshot`, or at
 `--data-dir`. `app/CrashLog` writes one log line on an unhandled exception
 (Windows, with module + offset) or `std::terminate`.
+
+**Import STEP** (File menu, Ctrl+I): `AppController::importStep` reads the
+file (`geom::importStep`), `InteractionController::importBodies` adds one
+body per solid (an `Imported` base step, unique names, "Imported 1" when
+the file has none) as one `CompositeCommand` and fits the view; the message
+says how many bodies came in and what was skipped. `importStepAsProject`
+does the same into a new document (the current one stays if the file
+cannot be read). Native file dialogs cannot be clicked by the acceptance
+run: `AppController::setNextFileChoice` hands it the file, and
+`window.chooseFile(dialog, accept)` runs the dialog's accept code with it.
 
 **Dialogs are overlays** in the window, not native message boxes (touch-sized,
 clickable by the acceptance run): `UnsavedOverlay` (Save / Don't Save /

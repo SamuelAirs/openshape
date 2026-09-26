@@ -187,6 +187,18 @@ public:
     Q_INVOKABLE bool saveProjectAs(const QUrl& url);
     Q_INVOKABLE bool hasProjectPath() const { return !path_.isEmpty(); }
     Q_INVOKABLE bool exportStep(const QUrl& url);
+    // File -> Import STEP...: every closed solid in the file becomes a body
+    // (one undo step); what was skipped (open surfaces, curves) is said in
+    // the message. False (with a message) when nothing could be imported.
+    Q_INVOKABLE bool importStep(const QUrl& url);
+    // Home -> Import STEP...: the same into a new document (the current one
+    // stays when the file cannot be imported).
+    Q_INVOKABLE bool importStepAsProject(const QUrl& url);
+    // Acceptance runs cannot click native file dialogs: they give the file
+    // the next dialog would return here, and the QML takes it instead of
+    // opening the dialog (then the usual onAccepted code runs).
+    Q_INVOKABLE void setNextFileChoice(const QUrl& url) { nextFileChoice_ = url; }
+    Q_INVOKABLE QUrl takeNextFileChoice();
     Q_INVOKABLE bool exportStl(const QUrl& url);
     Q_INVOKABLE bool export3mf(const QUrl& url);
 
@@ -275,6 +287,7 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
+    QUrl nextFileChoice_;
 };
 
 } // namespace os::ui
