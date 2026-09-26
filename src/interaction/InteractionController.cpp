@@ -1067,6 +1067,15 @@ Status InteractionController::commitOperation()
     return status;
 }
 
+Status InteractionController::applyPendingValue(const char* action)
+{
+    if (operation_ && operation_->canCommit() && applyBeforeSelecting() == ApplyResult::Refused)
+        return Status::failure(ErrorCode::InvalidArgument,
+                               operation_ && !operation_->error().empty() ? operation_->error() : "The value could not be applied.",
+                               std::string(action) + ": the pending operation was refused");
+    return okStatus();
+}
+
 InteractionController::ApplyResult InteractionController::applyBeforeSelecting()
 {
     // A finished preview's verdict first (its delivery may still be queued).
@@ -1196,9 +1205,8 @@ Status InteractionController::importBodies(const std::vector<geom::NamedShape>& 
     if (session_)
         finishSketch();
     // Like clicking elsewhere: a pending value is applied first.
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (Status status = applyPendingValue("importBodies"); !status)
+        return status;
     std::vector<std::string> taken;
     for (const auto& body : document_->bodies())
         taken.push_back(body->name());
@@ -2894,9 +2902,8 @@ Status InteractionController::duplicateBody(const Uuid& bodyId)
     if (!document_->body(bodyId))
         return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "duplicate: unknown body");
     // Like clicking elsewhere: a pending value is applied first.
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (Status status = applyPendingValue("duplicateBody"); !status)
+        return status;
     auto command = std::make_unique<cmd::DuplicateBodyCommand>(bodyId);
     const Uuid copy = command->copyId();
     Status status = undoStack_->push(std::move(command), *document_);
@@ -2921,9 +2928,8 @@ Status InteractionController::splitBody(const Uuid& bodyId)
         message("Finish the sketch first.");
         return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "split in sketch mode");
     }
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (Status status = applyPendingValue("splitBody"); !status)
+        return status;
     auto command = cmd::makeSplitBodyCommand(*document_, bodyId);
     if (!command) {
         message(command.userMessage());
@@ -3005,10 +3011,8 @@ Status InteractionController::selectBody(const Uuid& bodyId, BodyPick how)
                        [&](const sel::SelectionItem& selected) { return selected.bodyId == bodyId; }))
         return okStatus();
     // Like clicking elsewhere in the view: a pending value is applied first.
-    if (operation_ && operation_->canCommit() && applyBeforeSelecting() == ApplyResult::Refused)
-        return Status::failure(ErrorCode::InvalidArgument,
-                               operation_ && !operation_->error().empty() ? operation_->error() : "The value could not be applied.",
-                               "selectBody: the pending operation was refused");
+    if (Status status = applyPendingValue("selectBody"); !status)
+        return status;
     auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, bodyId, -1);
     if (!item)
         return Status::failure(ErrorCode::InvalidReference, "That body has no shape to select.", "selectBody: no item");

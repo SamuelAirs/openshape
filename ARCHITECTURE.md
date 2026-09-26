@@ -494,7 +494,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   would be. A click elsewhere first takes a finished preview's verdict
   (`deliverPreviews`); when the command refuses a value whose preview had
   not come back yet, the click goes on to select, as it does when the
-  refusal is shown (`applyBeforeSelecting`). Random sessions through these entry points give
+  refusal is shown (`applyBeforeSelecting`); Import, Duplicate, Split and a
+  Model panel row go on the same way (`applyPendingValue`). Random sessions through these entry points give
   the same documents and operations with and without the worker
   (`AsyncPreview.RandomSessionsMatchSynchronousOnes`). Operations
   created while previews are asynchronous get the scheduler

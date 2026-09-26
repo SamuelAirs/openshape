@@ -625,6 +625,41 @@ TEST(AsyncPreview, ParameterChangeDropsEarlierResults)
     EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 170.0, 1e-4);
 }
 
+// Import and Duplicate apply a pending value first, as a click elsewhere
+// does: a value the command refuses while its preview is still computing is
+// dropped (it would have shown as refused and never applied), and the action
+// goes on - as it does with synchronous previews.
+TEST(AsyncPreview, ActionsGoOnWhenThePendingValueIsRefused)
+{
+    AsyncHarness h;
+    const auto fillet = [&h] {
+        h.clickAt(h.screen({10, -10, 10})); // the front right vertical edge
+        const Operation* op = h.controller.operation();
+        EXPECT_NE(op, nullptr);
+        h.worker().setJobDelayForTesting(300ms);
+        EXPECT_EQ(h.controller.setValueText("1"), "");
+        h.untilRunning();
+        EXPECT_EQ(h.controller.setValueText("50"), ""); // too large; waits behind 1
+        EXPECT_TRUE(op && op->previewPending() && op->canCommit());
+    };
+    fillet();
+    ASSERT_TRUE(h.controller.duplicateBody(h.body().id()).ok());
+    EXPECT_EQ(h.document.bodies().size(), 2u);
+    EXPECT_EQ(h.stack.undoLabel(), "Duplicate");
+    EXPECT_NEAR(geom::volume(h.body().shape()), 8000.0, 1e-6) << "the refused fillet changed the box";
+    ASSERT_TRUE(h.controller.waitForPreview());
+
+    h.controller.cancelOperation();
+    h.controller.cancelOperation();
+    fillet();
+    const auto box = geom::makeBox({40, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(box.ok());
+    ASSERT_TRUE(h.controller.importBodies({{"Part", box.value()}}, "part.step").ok());
+    EXPECT_EQ(h.document.bodies().size(), 3u);
+    EXPECT_NEAR(geom::volume(h.body().shape()), 8000.0, 1e-6);
+    ASSERT_TRUE(h.controller.waitForPreview());
+}
+
 // The Hole tool previews on the worker. Its Apply waits for a pending
 // preview, which says which hole is off the face (the step's own refusal is
 // worded for upstream changes). A counterbore on the hole's rim previews on

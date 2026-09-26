@@ -295,6 +295,9 @@ private:
     // preview had not come back yet - the click goes on to select.
     enum class ApplyResult { Applied, Refused, Dropped };
     ApplyResult applyBeforeSelecting();
+    // The same before an action that replaces the operation (Import,
+    // Duplicate, Split, a Model panel row): fails only when Refused.
+    Status applyPendingValue(const char* action);
     sel::PickResult pickProfile(Vec2 screen) const;
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);

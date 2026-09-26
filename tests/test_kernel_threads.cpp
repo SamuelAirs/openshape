@@ -187,7 +187,8 @@ TEST(KernelThreads, FaultsOnTwoThreadsInTurnAreAllContained)
 // Kernel entry points outside guarded() take the kernel lock too: the Hole
 // tool's face queries (called on the GUI thread while hovering, and in the
 // worker's previews), the geometry text of imported bodies (made on the GUI
-// thread while the worker may be meshing shapes it shares) and STEP export.
+// thread while the worker may be meshing shapes it shares) and STEP export
+// and import.
 // While another thread is in a kernel call, each of them waits for it.
 TEST(KernelThreads, HoleQueriesGeometryTextAndStepWaitForTheKernel)
 {
@@ -248,7 +249,35 @@ TEST(KernelThreads, HoleQueriesGeometryTextAndStepWaitForTheKernel)
     ASSERT_TRUE(empty.has_value());
     EXPECT_NEAR(*empty, 15.0, 1e-6);
     EXPECT_FALSE(text.empty());
-    EXPECT_TRUE(exported);
+    ASSERT_TRUE(exported);
+
+    // Importing it back (XCAF) waits as well.
+    inside = false;
+    release = false;
+    std::thread again([&] {
+        geom::runInsideKernelCallForTesting([&] {
+            inside = true;
+            while (!release)
+                std::this_thread::yield();
+        });
+    });
+    while (!inside)
+        std::this_thread::yield();
+    std::atomic<bool> imported{false};
+    std::optional<double> importedVolume;
+    std::thread importer([&] {
+        const auto parts = geom::importStep(step, {});
+        if (parts && parts.value().size() == 1)
+            importedVolume = geom::volume(parts.value().front().shape);
+        imported = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    EXPECT_FALSE(imported.load()) << "STEP import ran while another thread was in a kernel call";
+    release = true;
+    again.join();
+    importer.join();
+    ASSERT_TRUE(importedVolume.has_value());
+    EXPECT_NEAR(*importedVolume, 4000.0, 1e-6);
     std::error_code ec;
     std::filesystem::remove(step, ec);
 }
