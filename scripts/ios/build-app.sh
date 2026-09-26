@@ -49,8 +49,14 @@ if grep -q 'qml_import_scanner_imports_count 0)' "$imports"; then
     exit 1
 fi
 # Entries look like "CLASSNAME;QtQuick2Plugin;NAME;QtQuick;PATH;...".
-sed -nE 's/.*[";]NAME;([^;"]*).*/\1/p' "$imports" | sort -u > "$BUILD/qml-modules.txt"
+# The unused Controls styles are unlinked after the scan (TD-36,
+# src/app/CMakeLists.txt), which leaves a list of what it dropped.
+dropped="$BUILD/src/app/.qt/qml_imports/openshape_dropped_styles.txt"
+[ -f "$dropped" ] || { echo "error: the unused Controls styles were not unlinked ($dropped missing)"; exit 1; }
+unused_styles='^QtQuick\.Controls\.(Material|Fusion|Universal|Imagine|FluentWinUI3|iOS|macOS|Windows)(\.impl)?$'
+sed -nE 's/.*[";]NAME;([^;"]*).*/\1/p' "$imports" | sort -u | grep -vE "$unused_styles" > "$BUILD/qml-modules.txt"
 echo "QML modules linked: $(tr '\n' ' ' < "$BUILD/qml-modules.txt")"
+echo "Controls style plugins not linked: $(cat "$dropped")"
 if grep -q "will not be linked" "$BUILD/configure.log"; then
     echo "error: a QML plugin will not be linked (see the configure output above)"
     exit 1

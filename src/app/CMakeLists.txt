@@ -49,6 +49,32 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         # Only the app goes into an archive (the libraries set SKIP_INSTALL).
         XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
         XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)")
+
+    # TD-36: Qt's QML import scan links every Qt Quick Controls style, because
+    # QtQuick.Controls imports them optionally and QtQuick.Dialogs has
+    # per-style variants. OpenShape only uses Basic (QQuickStyle::setStyle in
+    # main.cpp), so unlink the other style plugins once Qt has finalized the
+    # target (its finalizer runs deferred at the end of this directory; this
+    # runs at the end of the top-level one). Lists what it dropped for the
+    # build script's report.
+    function(openshape_drop_unused_controls_styles target)
+        get_target_property(libs ${target} LINK_LIBRARIES)
+        set(kept "")
+        set(dropped "")
+        foreach(lib IN LISTS libs)
+            if(lib MATCHES "^Qt6::qtquickcontrols2(material|fusion|universal|imagine|fluentwinui3|ios|macos|windows)style(impl)?plugin$")
+                list(APPEND dropped "${lib}")
+            else()
+                list(APPEND kept "${lib}")
+            endif()
+        endforeach()
+        set_property(TARGET ${target} PROPERTY LINK_LIBRARIES "${kept}")
+        get_target_property(binary_dir ${target} BINARY_DIR)
+        list(JOIN dropped " " dropped_text)
+        file(WRITE "${binary_dir}/.qt/qml_imports/${target}_dropped_styles.txt" "${dropped_text}\n")
+        message(STATUS "Controls style plugins not linked (TD-36): ${dropped_text}")
+    endfunction()
+    cmake_language(DEFER DIRECTORY "${PROJECT_SOURCE_DIR}" CALL openshape_drop_unused_controls_styles openshape)
 endif()
 
 if(OPENSHAPE_BUILD_TESTS)
