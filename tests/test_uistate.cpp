@@ -2,8 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// What the app remembers (ui/AppSettings) and recovery sessions with real
-// lock files (ui/RecoverySession). Qt Core only; no window.
+// What the app remembers (ui/AppSettings), recovery sessions with real
+// lock files (ui/RecoverySession) and Home's preview sources
+// (ui/ThumbnailSource). Qt Core only; no window.
 
 #include "document/Feature.h"
 #include "core/Uuid.h"
@@ -12,6 +13,7 @@
 #include "io/ProjectFile.h"
 #include "ui/AppSettings.h"
 #include "ui/RecoverySession.h"
+#include "ui/ThumbnailSource.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -20,6 +22,7 @@
 #include <QtCore/QSettings>
 #include <QtCore/QSysInfo>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QUrl>
 
 #include <gtest/gtest.h>
 
@@ -151,6 +154,22 @@ TEST(AppSettings, ClientAreaKeepsTheFramesBorders)
     // Windows 10 style: 8 px borders all round.
     const WindowPlacement bordered{QRect(92, 49, 1216, 839), QRect(100, 80, 1200, 800), false};
     EXPECT_EQ(clientForFrame(bordered, QRect(0, 0, 1000, 700)), QRect(8, 31, 984, 661));
+}
+
+TEST(AppSettings, ProjectNamesBecomeSafeFileNames)
+{
+    using os::ui::projectFileBaseName;
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("  Bracket  ")), QStringLiteral("Bracket"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Bracket.openshape")), QStringLiteral("Bracket"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Bracket.OPENSHAPE")), QStringLiteral("Bracket"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("a/b\\c:d*e?f\"g<h>i|j")), QStringLiteral("a-b-c-d-e-f-g-h-i-j"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Lid v2 (20 mm)")), QStringLiteral("Lid v2 (20 mm)"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("Grüße 日本")), QStringLiteral("Grüße 日本"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("..")), QString());
+    EXPECT_EQ(projectFileBaseName(QStringLiteral(".hidden")), QStringLiteral("hidden"));
+    EXPECT_EQ(projectFileBaseName(QStringLiteral("   ")), QString());
+    EXPECT_EQ(projectFileBaseName(QStringLiteral(".openshape")), QString());
+    EXPECT_EQ(projectFileBaseName(QString(150, QLatin1Char('x'))).size(), 100);
 }
 
 TEST(AppSettings, WindowIsNeverRestoredOffScreen)
@@ -316,4 +335,56 @@ TEST(RecoverySession, CleansUpAfterCrashesWithNothingUnsaved)
     EXPECT_FALSE(QFile::exists(lockOf(b, dead)));
     EXPECT_FALSE(half.exists());
     EXPECT_TRUE(QFile::exists(lockOf(b, b.session()))) << "our own lock stays";
+}
+
+// Qt hands an image provider the id as QQuickPixmap makes it:
+// url.toString(QUrl::RemoveScheme | QUrl::RemoveAuthority).mid(1), which
+// decodes percent-encoded characters (a percent-encoded path came back with
+// U+FFFD and '?' for every character outside ASCII: no preview on Home for
+// any project under C:/Users/José).
+QString providerId(const QString& source)
+{
+    return QUrl(source).toString(QUrl::RemoveScheme | QUrl::RemoveAuthority).mid(1);
+}
+
+TEST(ThumbnailSource, AnyPathSurvivesQtsImageIds)
+{
+    const QStringList paths{
+        QStringLiteral("C:/Users/sam/Projects/bracket.openshape"),
+        QString::fromUtf8("C:/Users/Jos\xC3\xA9/My Files/\xD0\x96 50%.openshape"),
+        QString::fromUtf8("/var/mobile/Documents/\xE6\x94\xAF\xE6\x9E\xB6 #2?.openshape"),
+        QStringLiteral("C:/p/a%20b%2Fc+d&e=f.openshape"),
+        QString::fromUtf8("C:/p/\xF0\x9F\x94\xA7 wrench.openshape"), // outside the BMP
+    };
+    for (const QString& path : paths) {
+        const QString source = thumbnailSource(path, 1727000000123);
+        const QUrl url(source);
+        ASSERT_TRUE(url.isValid()) << source.toStdString();
+        EXPECT_EQ(url.scheme(), QStringLiteral("image"));
+        EXPECT_EQ(url.host(), QStringLiteral("thumbnail"));
+        const QString id = providerId(source);
+        EXPECT_TRUE(id.startsWith(QStringLiteral("1727000000123/"))) << id.toStdString();
+        EXPECT_EQ(thumbnailPathFromId(id), path) << id.toStdString();
+    }
+    // Malformed ids give no path (the card shows "No preview").
+    EXPECT_TRUE(thumbnailPathFromId(QStringLiteral("123")).isEmpty());
+    EXPECT_TRUE(thumbnailPathFromId(QStringLiteral("123/")).isEmpty());
+    EXPECT_TRUE(thumbnailPathFromId(QStringLiteral("123/not base64!")).isEmpty());
+}
+
+TEST(ThumbnailSource, PreviewOfAProjectWithANonAsciiName)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QString path = dir.path() + QString::fromUtf8("/Halterung f\xC3\xBCr Rad \xD0\x96 50%.openshape");
+    doc::Document document;
+    io::SaveOptions options;
+    options.thumbnailPng = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 0, 0, 0, 13};
+    ASSERT_TRUE(io::saveProject(document, std::filesystem::path(path.toStdWString()), options).ok());
+    // What the provider does with the id Qt gives it.
+    const QString back = thumbnailPathFromId(providerId(thumbnailSource(path, 42)));
+    ASSERT_EQ(back, path);
+    auto png = io::readProjectThumbnail(std::filesystem::path(back.toStdWString()));
+    ASSERT_TRUE(png.ok()) << png.developerMessage();
+    EXPECT_EQ(png.value(), options.thumbnailPng);
 }

@@ -9,15 +9,18 @@
 #include "geometry/Modeling.h"
 #include "ui/AppController.h"
 #include "ui/AppSettings.h"
+#include "ui/ThumbnailProvider.h"
 
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QLockFile>
+#include <QtCore/QMap>
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
+#include <QtCore/QUrl>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
@@ -25,10 +28,12 @@
 #include <QtGui/QStyleHints>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlExtensionPlugin>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtQuickControls2/QQuickStyle>
 
 #include <cstdio>
+#include <iterator>
 #include <memory>
 #include <mutex>
 
@@ -78,14 +83,107 @@ void installLogging(const QString& dir)
     });
 }
 
+// The README's hero shot: a small project box built as a user would (a box,
+// three sizes typed, rounded corners, shelled, a cable hole in one end),
+// left with the hole's new diameter being typed (the print-tolerance step).
+void runEnclosureDemo(os::ui::AppController& app)
+{
+    auto& interaction = app.interaction();
+    auto clickAt = [&](const os::Vec3& world, bool add = false) {
+        os::interact::PointerEvent e;
+        e.position = interaction.camera().project(world);
+        e.modifiers.shift = add;
+        interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, e.position, {}});
+        interaction.pointerPress(e);
+        interaction.pointerRelease(e);
+    };
+    auto apply = [&](const char* value) {
+        interaction.setValueText(value);
+        (void)interaction.commitOperation();
+        interaction.setStandardView(os::StandardView::Isometric, false);
+        interaction.fitAll(false);
+    };
+    app.createBox(20); // x, y in [-10, 10], z in [0, 20]
+    interaction.fitAll(false);
+    clickAt({10, 0, 10});
+    apply("60"); // width: x in [-10, 50]
+    clickAt({20, -10, 10});
+    apply("40"); // depth: y in [-30, 10]
+    clickAt({20, -10, 20});
+    apply("25"); // height: z in [0, 25]
+    // Round the four upright edges; the one at the back is picked from behind.
+    clickAt({50, -30, 12});
+    clickAt({-10, -30, 12}, true);
+    clickAt({50, 10, 12}, true);
+    interaction.twoFingerRotate(os::kPi / 0.008, 0); // half a turn (Camera orbits 0.008 rad per pixel)
+    clickAt({-10, 10, 12}, true);
+    apply("6");
+    clickAt({20, -10, 25});
+    (void)interaction.triggerAction("shell");
+    apply("2");
+    // A cable hole: a 10 mm circle on the right end, cut through the wall.
+    clickAt({50, -10, 20});
+    (void)interaction.startSketch();
+    interaction.skipAnimation();
+    interaction.setSketchTool(os::interact::SketchTool::Circle);
+    clickAt({50, -10, 12.5});
+    interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None,
+                             interaction.camera().project({50, -6, 12.5}), {}});
+    interaction.sketchSession()->typeIntoInput("10");
+    interaction.keyPress(os::interact::Key::Enter);
+    interaction.finishSketch();
+    interaction.setStandardView(os::StandardView::Isometric, false);
+    interaction.fitAll(false);
+    clickAt({50, -10, 12.5});
+    apply("-4");
+    // The hole's wall: its diameter, typed with a little print clearance.
+    // Zoomed in to click it, as a user would: the 2 mm wall must be wider
+    // than the edge pick tolerance (6 px), or the click picks a rim.
+    const os::Vec3 wall{49, -10, 7.5};
+    const os::Vec2 hole = interaction.camera().project(wall);
+    int steps = 0;
+    for (; steps < 30 && interaction.camera().pixelSize(wall) > 1.0 / 15; ++steps)
+        interaction.wheel(hole, 1);
+    clickAt(wall);
+    interaction.wheel(hole, -steps);
+    interaction.wheel(interaction.camera().project({20, -10, 12.5}), 2);
+    interaction.setValueText("10.4");
+}
+
 // Scripted demo used for screenshots and smoke tests: builds the Milestone 0
 // state (cube, top face selected, push/pull preview to a 35 mm height).
-void runDemo(os::ui::AppController& app, const QString& demo)
+// `dataDir` is the run's scratch folder (where "home" saves its projects).
+void runDemo(os::ui::AppController& app, const QString& demo, const QString& dataDir = {})
 {
     auto& interaction = app.interaction();
     interaction.fitAll(false);
     if (demo == QLatin1String("empty"))
         return;
+    if (demo == QLatin1String("home")) {
+        // Home with a few saved projects (and their previews).
+        const QString dir = (dataDir.isEmpty() ? QDir::tempPath() : dataDir) + QStringLiteral("/projects");
+        QDir().mkpath(dir);
+        auto save = [&](const QString& name) {
+            (void)app.saveProjectAs(QUrl::fromLocalFile(dir + QLatin1Char('/') + name + QStringLiteral(".openshape")));
+            app.newDocument();
+        };
+        runDemo(app, QStringLiteral("committed"));
+        save(QStringLiteral("Tall block"));
+        for (int i = 0; i < 3; ++i)
+            app.createBox(20);
+        save(QStringLiteral("Three blocks"));
+        runDemo(app, QStringLiteral("fillet"));
+        app.commitOperation();
+        save(QStringLiteral("Rounded block"));
+        runDemo(app, QStringLiteral("bracket"));
+        save(QStringLiteral("Mounting bracket"));
+        app.setHomeVisible(true);
+        return;
+    }
+    if (demo == QLatin1String("enclosure")) {
+        runEnclosureDemo(app);
+        return;
+    }
     if (demo == QLatin1String("revolve")) {
         using P = os::interact::InteractionController::SketchPlane;
         (void)interaction.startSketch(P::Front);
@@ -261,6 +359,25 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         interaction.fitAll(false);
         return;
     }
+    if (demo == QLatin1String("holes")) {
+        // The Hole tool on the cube's top: two countersunk M3 holes, the
+        // second one's Y being typed.
+        app.createBox(20);
+        interaction.fitAll(false);
+        const os::Vec3 taps[] = {{3, -3, 20}, {0, 0, 20}, {-5, 5, 20}}; // the face, then two holes
+        for (std::size_t i = 0; i < std::size(taps); ++i) {
+            os::interact::PointerEvent tap;
+            tap.position = interaction.camera().project(taps[i]);
+            interaction.pointerPress(tap);
+            interaction.pointerRelease(tap);
+            if (i == 0)
+                (void)interaction.triggerAction("hole");
+        }
+        (void)interaction.triggerAction("head:countersink");
+        (void)interaction.triggerAction("field:y");
+        interaction.setValueText("15");
+        return;
+    }
     if (demo == QLatin1String("rotate")) {
         // A body in Rotate mode with a 30 degree preview about Z.
         app.createBox(20);
@@ -432,7 +549,9 @@ int main(int argc, char* argv[])
     parser.addVersionOption();
     QCommandLineOption demoOption(QStringLiteral("demo"),
                                   QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
-                                                 "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern)."),
+                                                 "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
+                                                 "polygon, constraints, holes, home, enclosure; panels: help, about, preferences, modelpanel, viewmenu, "
+                                                 "savename)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
@@ -445,6 +564,14 @@ int main(int argc, char* argv[])
     QCommandLineOption sizeOption(QStringLiteral("size"),
                                   QStringLiteral("Window size in logical pixels, e.g. 1180x820 (an 11-inch iPad in landscape)."),
                                   QStringLiteral("WxH"));
+    QCommandLineOption safeAreaOption(QStringLiteral("safe-area"),
+                                      QStringLiteral("Simulate a phone's safe-area insets in logical pixels, top,right,bottom,left "
+                                                     "(e.g. 62,0,34,0: an iPhone 16 Pro in portrait; 0,62,21,62 in landscape)."),
+                                      QStringLiteral("t,r,b,l"));
+    QCommandLineOption appFolderOption(QStringLiteral("app-folder"),
+                                       QStringLiteral("Save and export as on an iPhone or iPad: projects by name into <dir>, "
+                                                      "exports into <dir>/Exports, no save dialogs."),
+                                       QStringLiteral("dir"));
     QCommandLineOption scenarioOption(QStringLiteral("scenario"),
                                       QStringLiteral("With --acceptance: run only these scenarios (comma-separated, e.g. core,views)."),
                                       QStringLiteral("names"));
@@ -459,6 +586,8 @@ int main(int argc, char* argv[])
     parser.addOption(scenarioOption);
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
+    parser.addOption(safeAreaOption);
+    parser.addOption(appFolderOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
     parser.addOption(screenshotOption);
@@ -554,8 +683,32 @@ int main(int argc, char* argv[])
     controller.startRecovery(recoveryDir);
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
+    // Home at launch without a file (never in automated runs, which start
+    // from an empty document; the "home" demo shows it).
+    if (!automated && parser.positionalArguments().isEmpty())
+        controller.setHomeVisible(true);
+    if (parser.isSet(appFolderOption))
+        controller.setAppFolder(parser.value(appFolderOption));
     QQmlApplicationEngine engine;
-    engine.setInitialProperties({{QStringLiteral("app"), QVariant::fromValue(&controller)}});
+    engine.addImageProvider(QStringLiteral("thumbnail"), new os::ui::ThumbnailProvider); // the engine owns it
+    QVariantMap initialProperties{{QStringLiteral("app"), QVariant::fromValue(&controller)}};
+    if (parser.isSet(safeAreaOption)) {
+        // Main.qml keeps the controls out of these insets as it does out of
+        // a real phone's (SafeArea), and shades them.
+        const QStringList parts = parser.value(safeAreaOption).split(QLatin1Char(','));
+        QVariantList insets;
+        for (const QString& part : parts) {
+            bool ok = false;
+            const double value = part.trimmed().toDouble(&ok);
+            if (ok && value >= 0)
+                insets.append(value);
+        }
+        if (parts.size() == 4 && insets.size() == 4)
+            initialProperties.insert(QStringLiteral("simulatedSafeArea"), insets);
+        else
+            OS_LOG(Warning, App) << "--safe-area expects four numbers, top,right,bottom,left, e.g. 62,0,34,0";
+    }
+    engine.setInitialProperties(initialProperties);
     engine.loadFromModule("OpenShape", "Main");
     if (engine.rootObjects().isEmpty()) {
         OS_LOG(Error, App) << "failed to load the user interface";
@@ -601,11 +754,29 @@ int main(int argc, char* argv[])
         const QString demo = parser.value(demoOption);
         const QString shot = parser.value(screenshotOption);
         // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, demo] {
-            if (!demo.isEmpty())
-                runDemo(controller, demo);
+        QTimer::singleShot(600, &controller, [&controller, window, demo, dataDir] {
+            if (demo.isEmpty())
+                return;
+            // Panels to look at (layout checks at phone sizes): the help card,
+            // About, Preferences; the compact layout's Model panel and View menu.
+            static const QMap<QString, QPair<QString, const char*>> panels{
+                {QStringLiteral("help"), {QStringLiteral("combine"), "helpOverlay"}},
+                {QStringLiteral("about"), {QStringLiteral("empty"), "aboutOverlay"}},
+                {QStringLiteral("preferences"), {QStringLiteral("empty"), "preferencesOverlay"}},
+                {QStringLiteral("modelpanel"), {QStringLiteral("history"), "historyOpen"}},
+                {QStringLiteral("viewmenu"), {QStringLiteral("combine"), "viewMenuOpen"}},
+                {QStringLiteral("savename"), {QStringLiteral("bracket"), "saveNamePrompt"}},
+            };
+            const auto panel = panels.find(demo);
+            runDemo(controller, panel == panels.end() ? demo : panel->first, dataDir);
             // Previews compute on a worker thread: show the scene's before the screenshot.
             (void)controller.interaction().waitForPreview();
+            if (panel == panels.end())
+                return;
+            if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second)))
+                item->setVisible(true);
+            else
+                window->setProperty(panel->second, true); // the compact layout's switches (Main.qml)
         });
         if (!shot.isEmpty()) {
             QTimer::singleShot(1600, window, [window, shot] {

@@ -19,7 +19,10 @@
 #include <BRepOffset_MakeOffset.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepCheck_ListOfStatus.hxx>
+#include <BRepCheck_Result.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
@@ -48,7 +51,9 @@
 #include <OSD_Exception_ILLEGAL_INSTRUCTION.hxx>
 #include <Standard_NumericError.hxx>
 #include <Standard_Failure.hxx>
+#include <TopAbs.hxx>
 #include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
@@ -64,7 +69,6 @@
 #include <gp_Trsf.hxx>
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cmath>
@@ -75,11 +79,11 @@
 #include <thread>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 
 #if !defined(_WIN32)
-#include <pthread.h>
 #include <signal.h>
 #endif
 
@@ -104,7 +108,12 @@ SignalHandler g_outsideHandlers[std::size(kKernelSignals)] = {};
 // for it forever: the app would freeze instead of reporting a failure.
 extern "C" void onKernelSignal(int signal)
 {
-    // The C runtime resets the handler before calling it.
+    // Outside the kernel call's try block (its first and last statements)
+    // there is nowhere to jump to: OCCT would end the app with exit(1).
+    // Left at SIG_DFL (the C runtime resets the handler before calling it),
+    // the fault repeats as a real crash for the crash log and the system.
+    if (!Standard_ErrorHandler::IsInTryBlock())
+        return;
     std::signal(signal, onKernelSignal);
     switch (signal) {
     case SIGSEGV: OSD_Exception_ACCESS_VIOLATION::NewInstance("ACCESS VIOLATION in a kernel call")->Jump(); break;
@@ -121,11 +130,10 @@ struct sigaction g_dispatchActions[std::size(kKernelSignals)]; // installed whil
 // is in the kernel, a crash on the GUI thread would reach OpenCASCADE's
 // handler, which ends the app with exit(1) when the faulting thread is in no
 // kernel call (no crash log, no crash report). So kernel calls install a
-// dispatcher that hands the fault to OpenCASCADE only on the thread inside
-// the kernel call: one at a time (the kernel lock), recorded here.
-static_assert(std::atomic<pthread_t>::is_always_lock_free, "read in a signal handler");
-std::atomic<bool> g_kernelThreadSet{false};
-std::atomic<pthread_t> g_kernelThread{};
+// dispatcher that hands the fault to OpenCASCADE only when the faulting
+// thread is inside a kernel try block (its own: OCCT's handler jumps back to
+// the faulting thread's innermost one, which also covers OCCT's pool threads
+// running a parallel algorithm), and otherwise to the handler from before.
 
 int kernelSignalIndex(int signal)
 {
@@ -159,9 +167,9 @@ void forwardSignal(const struct sigaction* action, int signal, siginfo_t* info, 
 extern "C" void onKernelSignal(int signal, siginfo_t* info, void* context)
 {
     const int index = kernelSignalIndex(signal);
-    const bool kernelThread = g_kernelThreadSet.load() && pthread_equal(g_kernelThread.load(), pthread_self()) != 0;
+    const bool inKernelCall = Standard_ErrorHandler::IsInTryBlock();
     const struct sigaction* action = index < 0 ? nullptr
-                                   : kernelThread ? &g_kernelActions[index]
+                                   : inKernelCall ? &g_kernelActions[index]
                                                   : &g_outsideActions[index];
     forwardSignal(action, signal, info, context);
 }
@@ -304,10 +312,6 @@ KernelSignalScope::KernelSignalScope() : entryDepth_(kernelLockDepth())
     const std::lock_guard lock(g_signalMutex);
     if (g_kernelCalls++ > 0)
         return;
-#if !defined(_WIN32)
-    g_kernelThread.store(pthread_self());
-    g_kernelThreadSet.store(true);
-#endif
     for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
 #if defined(_WIN32)
         g_outsideHandlers[i] = std::signal(kKernelSignals[i], onKernelSignal);
@@ -329,9 +333,6 @@ KernelSignalScope::~KernelSignalScope()
                 sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
 #endif
             }
-#if !defined(_WIN32)
-            g_kernelThreadSet.store(false);
-#endif
         }
     }
     // Also releases kernel locks taken inside this scope whose release a
@@ -397,6 +398,34 @@ void runInsideKernelCallForTesting(const std::function<void()>& fn)
 
 namespace detail {
 
+std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const TopoDS_Shape& shape)
+{
+    std::map<std::string, int> counts;
+    for (TopAbs_ShapeEnum type : {TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX}) {
+        TopTools_IndexedMapOfShape subs;
+        TopExp::MapShapes(shape, type, subs);
+        for (int i = 1; i <= subs.Extent(); ++i) {
+            const Handle(BRepCheck_Result)& result = analyzer.Result(subs(i));
+            if (result.IsNull())
+                continue;
+            for (BRepCheck_ListIteratorOfListOfStatus it(result->Status()); it.More(); it.Next()) {
+                if (it.Value() == BRepCheck_NoError)
+                    continue;
+                std::ostringstream name;
+                BRepCheck::Print(it.Value(), name);
+                std::string text = name.str();
+                while (!text.empty() && (text.back() == '\n' || text.back() == ' '))
+                    text.pop_back();
+                ++counts[std::string(TopAbs::ShapeTypeToString(type)) + ": " + text];
+            }
+        }
+    }
+    std::string out;
+    for (const auto& [what, n] : counts)
+        out += (out.empty() ? "" : "; ") + what + (n > 1 ? " x" + std::to_string(n) : std::string());
+    return out.empty() ? std::string("no detail") : out;
+}
+
 Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage)
 {
     if (result.IsNull())
@@ -417,7 +446,8 @@ Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, con
 
     BRepCheck_Analyzer analyzer(out);
     if (!analyzer.IsValid()) {
-        const std::string dev = std::string(operation) + " produced an invalid shape (BRepCheck_Analyzer failed)";
+        const std::string dev = std::string(operation) + " produced an invalid shape (BRepCheck_Analyzer failed: "
+                              + describeCheckFailures(analyzer, out) + ")";
         OS_LOG(Error, Kernel) << dev;
         return Result<Shape>::failure(ErrorCode::InvalidResultShape, userMessage, dev);
     }
@@ -492,7 +522,8 @@ CurveKind curveKind(GeomAbs_CurveType type)
 // tolerances of the arguments' sub-shapes in place; those belong to cached
 // step outputs (and the previous state kept for undo), which must not change
 // under later steps. Found by the undo/redo stress test: the same step
-// recomputed after an undo gave a bounding box 4e-5 mm different.
+// recomputed after an undo gave a bounding box 4e-5 mm different; and one
+// push/pull left a STEP-imported plate invalid for every later step.
 template <typename Op>
 void runBoolean(Op& op, const TopoDS_Shape& argument, const TopoDS_Shape& tool)
 {
@@ -1750,13 +1781,16 @@ std::optional<Measurement> measure(const SubShapeRef& a, const SubShapeRef& b)
     }
 }
 
-std::string toBrepString(const Shape& shape)
+std::string toBrepString(const Shape& shape, bool withTriangulation)
 {
     if (shape.isNull())
         return {};
     const KernelLock lock; // also writes triangulations, which meshing changes
     std::ostringstream out;
-    BRepTools::Write(occ(shape), out);
+    if (withTriangulation)
+        BRepTools::Write(occ(shape), out);
+    else
+        BRepTools::Write(occ(shape), out, Standard_False, Standard_False, TopTools_FormatVersion_CURRENT);
     return out.str();
 }
 
@@ -1764,6 +1798,10 @@ Result<Shape> fromBrepString(const std::string& text)
 {
     return guarded("BRepTools::Read", "The stored geometry could not be read.", [&]() -> Result<Shape> {
         std::istringstream in(text);
+        // Stored geometry is untrusted (project files): a truncated or damaged
+        // text must end the read with an error. OCCT's reader does not check
+        // the stream everywhere and looped forever at the end of a cut-off text.
+        in.exceptions(std::ios::failbit | std::ios::badbit);
         TopoDS_Shape shape;
         BRep_Builder builder;
         BRepTools::Read(shape, in, builder);

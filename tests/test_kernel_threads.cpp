@@ -7,6 +7,8 @@
 // share faces and edges with every preview. OpenCASCADE code runs under one
 // process-wide lock, a kernel fault on the worker becomes a failure there as
 // on the GUI thread, and the GUI thread's waits for the lock are counted.
+#include "geometry/Exchange.h"
+#include "geometry/Holes.h"
 #include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
 #include "geometry/Tessellation.h"
@@ -19,6 +21,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <functional>
 #include <future>
 #include <thread>
 #include <vector>
@@ -100,8 +104,8 @@ extern "C" void countOutsideFault(int)
 // kernel's: it reaches the handler that was there before (the app's crash
 // log), not OpenCASCADE's, which would end the app with exit(1) - no crash
 // log, no crash report. On POSIX signal handlers belong to the process
-// (Modeling.cpp dispatches by thread); the Windows C runtime keeps them per
-// thread.
+// (Modeling.cpp dispatches by the faulting thread's try block); the Windows
+// C runtime keeps them per thread.
 TEST(KernelThreads, FaultOnAnotherThreadDuringAKernelCallIsNotTheKernels)
 {
     geom::installKernelSignalHandling();
@@ -178,6 +182,75 @@ TEST(KernelThreads, FaultsOnTwoThreadsInTurnAreAllContained)
     std::thread after([&ok] { ok = geom::makeBox({0, 0, 0}, {2, 2, 2}).ok(); });
     after.join();
     EXPECT_TRUE(ok);
+}
+
+// Kernel entry points outside guarded() take the kernel lock too: the Hole
+// tool's face queries (called on the GUI thread while hovering, and in the
+// worker's previews), the geometry text of imported bodies (made on the GUI
+// thread while the worker may be meshing shapes it shares) and STEP export.
+// While another thread is in a kernel call, each of them waits for it.
+TEST(KernelThreads, HoleQueriesGeometryTextAndStepWaitForTheKernel)
+{
+    const auto box = geom::makeBox({0, 0, 0}, {20, 20, 10});
+    ASSERT_TRUE(box.ok());
+    const geom::Shape shape = box.value();
+    int top = -1;
+    for (int i = 0; i < shape.faceCount(); ++i)
+        if (const auto info = geom::faceInfo(shape, i); info && info->isPlanar() && info->normal.z > 0.999)
+            top = i;
+    ASSERT_GE(top, 0);
+    const std::filesystem::path step = std::filesystem::temp_directory_path() / "openshape_kernel_lock_test.step";
+
+    std::atomic<bool> inside{false}, release{false};
+    std::thread holder([&] {
+        geom::runInsideKernelCallForTesting([&] {
+            inside = true;
+            while (!release)
+                std::this_thread::yield();
+        });
+    });
+    while (!inside)
+        std::this_thread::yield();
+
+    bool contains = false;
+    geom::FaceOutline outline;
+    std::optional<double> material, empty;
+    std::string text;
+    bool exported = false;
+    const std::vector<std::function<void()>> queries{
+        [&] { contains = geom::faceContains(shape, top, {10, 10, 10}); },
+        [&] { outline = geom::faceOutline(shape, top, {0, 0, 10}, {1, 0, 0}, {0, 1, 0}); },
+        [&] { material = geom::materialDepth(shape, {10, 10, 10}, {0, 0, -1}); },
+        [&] { empty = geom::emptyDepth(shape, {{10, 10, 25}}, {0, 0, -1}); },
+        [&] { text = geom::toBrepString(shape, false); },
+        [&] { exported = geom::exportStep({{"Box", shape}}, step, {}).ok(); },
+    };
+    std::vector<std::atomic<bool>> done(queries.size());
+    std::vector<std::thread> threads;
+    for (std::size_t i = 0; i < queries.size(); ++i)
+        threads.emplace_back([&, i] {
+            queries[i]();
+            done[i] = true;
+        });
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    for (std::size_t i = 0; i < queries.size(); ++i)
+        EXPECT_FALSE(done[i].load()) << "query " << i << " ran while another thread was in a kernel call";
+    release = true;
+    holder.join();
+    for (std::thread& t : threads)
+        t.join();
+
+    EXPECT_TRUE(contains);
+    EXPECT_TRUE(outline.valid);
+    EXPECT_NEAR(outline.maxU - outline.minU, 20.0, 1e-6);
+    ASSERT_TRUE(material.has_value());
+    EXPECT_NEAR(*material, 10.0, 1e-6);
+    ASSERT_TRUE(empty.has_value());
+    EXPECT_NEAR(*empty, 15.0, 1e-6);
+    EXPECT_FALSE(text.empty());
+    EXPECT_TRUE(exported);
+    std::error_code ec;
+    std::filesystem::remove(step, ec);
 }
 
 TEST(KernelThreads, SharedShapesMeshedAndModeledFromTwoThreads)

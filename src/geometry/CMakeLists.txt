@@ -4,7 +4,9 @@
 
 # The only library allowed to include OpenCASCADE headers.
 add_library(openshape_geometry STATIC
+    DraftExtrude.cpp
     Exchange.cpp Exchange.h
+    Holes.cpp Holes.h
     Mesh.h
     Modeling.cpp Modeling.h KernelSignals.h
     Profiles.cpp Profiles.h
@@ -20,6 +22,7 @@ target_link_libraries(openshape_geometry
         TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
         TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKFillet TKOffset TKFeat TKMesh
         TKDE TKXSBase TKDESTEP TKDESTL
+        TKCDF TKLCAF TKCAF TKXCAF # STEP product names (XCAF document)
 )
 target_include_directories(openshape_geometry SYSTEM PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 # OCCT headers use M_PI, which strict ISO mode hides on MinGW/MSVC.

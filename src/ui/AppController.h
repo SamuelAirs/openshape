@@ -18,12 +18,16 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
 namespace os::ui {
 
 class RecoverySession;
+
+// Pixels (square) of the preview saved in project files.
+inline constexpr int kThumbnailSize = 256;
 
 // Bridge between QML and the application core. Holds the document, undo
 // stack and interaction controller; exposes their state as properties and
@@ -82,11 +86,25 @@ class AppController : public QObject {
     // File → Open Recent: {path, name, folder}, most recent first, existing
     // files only (as of the last refreshRecentFiles(), open or save).
     Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
+    // The start screen (Home): shown at launch without a file and from File ->
+    // Home; opening, New and importing as a project close it.
+    Q_PROPERTY(bool homeVisible READ homeVisible WRITE setHomeVisible NOTIFY homeChanged)
+    // What Home lists: {path, name, folder, modified, thumbnail (image source),
+    // removable}: the recent files, and on iPadOS also the projects in the
+    // app's Documents folder.
+    Q_PROPERTY(QVariantList homeProjects READ homeProjects NOTIFY recentFilesChanged)
     // File → Preferences… (stored in QSettings, applied at once).
     Q_PROPERTY(QString defaultUnit READ defaultUnit WRITE setDefaultUnit NOTIFY preferencesChanged)
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
     // Seconds; 0 = no recovery copies. One of kRecoveryIntervals.
     Q_PROPERTY(int recoveryInterval READ recoveryInterval WRITE setRecoveryInterval NOTIFY preferencesChanged)
+    // iPhone / iPad: projects are saved by name into the app's own folder
+    // (Documents, which the Files app shows) and exports go to its Exports
+    // folder: iOS has no save dialog (Qt's FileDialog opens only). False on
+    // the desktop, which uses file dialogs.
+    Q_PROPERTY(bool savesToAppFolder READ savesToAppFolder NOTIFY appFolderChanged)
+    // The app's folder as a URL (for the Open picker to start in), or "".
+    Q_PROPERTY(QString appFolderUrl READ appFolderUrl NOTIFY appFolderChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -137,6 +155,9 @@ public:
     QVariantList history() const { return historyList_; }
     QVariantList recoveryItems() const;
     QVariantList recentFiles() const { return recentFiles_; }
+    bool homeVisible() const { return homeVisible_; }
+    void setHomeVisible(bool visible);
+    QVariantList homeProjects() const { return homeProjects_; }
     QString defaultUnit() const;
     void setDefaultUnit(const QString& symbol);
     bool sketchGridSnap() const { return preferences_.sketchGridSnap; }
@@ -190,6 +211,8 @@ public:
 
     Q_INVOKABLE bool openRecent(const QString& path);
     Q_INVOKABLE void clearRecentFiles();
+    // Home: "Remove from list" (the file stays where it is).
+    Q_INVOKABLE void removeRecentFile(const QString& path);
     // Rereads the list and drops files that are gone (e.g. deleted in
     // Explorer while the app runs); the File menu calls it as it opens.
     Q_INVOKABLE void refreshRecentFiles();
@@ -200,15 +223,48 @@ public:
     Q_INVOKABLE bool saveProjectAs(const QUrl& url);
     Q_INVOKABLE bool hasProjectPath() const { return !path_.isEmpty(); }
     Q_INVOKABLE bool exportStep(const QUrl& url);
+    // File -> Import STEP...: every closed solid in the file becomes a body
+    // (one undo step); what was skipped (open surfaces, curves) is said in
+    // the message. False (with a message) when nothing could be imported.
+    Q_INVOKABLE bool importStep(const QUrl& url);
+    // Home -> Import STEP...: the same into a new document (the current one
+    // stays when the file cannot be imported).
+    Q_INVOKABLE bool importStepAsProject(const QUrl& url);
+    // Acceptance runs cannot click native file dialogs: they give the file
+    // the next dialog would return here, and the QML takes it instead of
+    // opening the dialog (then the usual onAccepted code runs).
+    Q_INVOKABLE void setNextFileChoice(const QUrl& url) { nextFileChoice_ = url; }
+    Q_INVOKABLE QUrl takeNextFileChoice();
     Q_INVOKABLE bool exportStl(const QUrl& url);
     Q_INVOKABLE bool export3mf(const QUrl& url);
+
+    // ---- The app folder (iPhone / iPad; see savesToAppFolder)
+    bool savesToAppFolder() const { return !appFolder_.isEmpty(); }
+    QString appFolder() const { return appFolder_; }
+    QString appFolderUrl() const;
+    // Saving there by name (projectFileBaseName): replaces a project of that
+    // name. False, with a message, if the name is unusable or saving fails.
+    Q_INVOKABLE bool saveInAppFolder(const QString& name);
+    // Whether a project of that name is there already (Save then replaces it).
+    Q_INVOKABLE bool appFolderHasProject(const QString& name) const;
+    // Exports the visible bodies to <app folder>/Exports/<document title>.<format>
+    // ("stl", "3mf" or "step"), replacing an earlier export of that name.
+    Q_INVOKABLE bool exportToAppFolder(const QString& format);
+    // Where to save without dialogs: the Documents folder on iOS and Android
+    // (set at start), "" for file dialogs; tests and --app-folder set it.
+    void setAppFolder(const QString& folder);
 
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
-    // Gesture undo/redo (two/three-finger taps) say what they did.
-    void undoWithFeedback();
-    void redoWithFeedback();
+    // Gesture undo/redo (two/three-finger taps), and the Undo / Redo buttons
+    // in the touch layout (no tooltip there), say what they did.
+    Q_INVOKABLE void undoWithFeedback();
+    Q_INVOKABLE void redoWithFeedback();
+    // A hint written for mouse and keyboard, worded for touch (taps, the
+    // on-screen ✓ / ✕; no Shift-click, Esc, Enter, scrolling or hovering).
+    // Only for the app's own hints: a name in the text would be reworded too.
+    Q_INVOKABLE QString touchWording(const QString& text) const;
     Q_INVOKABLE void commitOperation();
     Q_INVOKABLE void cancelOperation();
     // Returns an error message ("" on success). Previews live as the user types.
@@ -242,8 +298,12 @@ public:
     Q_INVOKABLE void editSketch(const QString& sketchId);
     // Highlights a row's geometry in the view while hovered/expanded ("" clears).
     Q_INVOKABLE void highlightHistoryItem(const QString& id);
-    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine.
+    // Selects a body from the panel; additive (Shift) adds it, e.g. to combine,
+    // or takes it out again.
     Q_INVOKABLE void selectBody(const QString& bodyId, bool additive);
+    // A tap on a body's row in the touch layout: adds the body (never takes it
+    // out: tapping the row again folds it and keeps the body selected).
+    Q_INVOKABLE void addBodyToSelection(const QString& bodyId);
     // Model panel row actions for a body.
     Q_INVOKABLE void duplicateBody(const QString& bodyId);
     Q_INVOKABLE void splitBody(const QString& bodyId);
@@ -260,7 +320,9 @@ signals:
     void touchModeChanged();
     void recoveryChanged();
     void recentFilesChanged();
+    void homeChanged();
     void preferencesChanged();
+    void appFolderChanged();
 
 private:
     void attach();
@@ -275,8 +337,17 @@ private:
     void stopRecoveryTimers();
     void rememberRecentFile(const QString& path);
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
+    // With an app folder, entries into its old location (the app's data
+    // folder moves when an iOS app is updated) are moved into the current one.
     void updateRecentFiles();
+    // A remembered path (a recovery copy's project) where the file is now:
+    // io::rebasedIntoFolder into the app folder, if there is one.
+    QString currentLocation(const std::string& storedPath) const;
     void savePreferences() const;
+    // thumbnail.png for a save: kThumbnailSize pixels square (empty without bodies).
+    std::vector<unsigned char> thumbnailPng() const;
+    // The visible bodies written as STL, 3MF or STEP (by `format`).
+    Status writeExport(const QString& format, const std::filesystem::path& path);
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
@@ -303,6 +374,10 @@ private:
     int lastDragMoves_ = 0;
     double lastDragLongestMs_ = 0;
     double lastDragAverageMs_ = 0;
+    QVariantList homeProjects_;
+    bool homeVisible_ = false;
+    QUrl nextFileChoice_;
+    QString appFolder_; // see savesToAppFolder
 };
 
 } // namespace os::ui

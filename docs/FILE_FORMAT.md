@@ -6,8 +6,9 @@ A ZIP archive (deflate) with these entries:
 |---|---|---|
 | `document.json` | yes | The parametric document. **Source of truth.** |
 | `metadata.json` | no | `{ "format", "version", "application", "applicationVersion" }`; `applicationVersion` is the version of the OpenShape that wrote the file (CMake's project version, e.g. `"0.1.0"`); informational, not used when reading. |
+| `imports/<feature-uuid>.brep` | when named | The exact geometry of an imported body (OCCT BRep text, no triangulation), named by its `Imported` step. **Part of the model**, like document.json: written on every save, recovery copies included. |
 | `geometry/<body-uuid>.brep` | no | OCCT BRep text of each body's current shape. A cache for external tools and future fast-open; ignored on load (bodies are recomputed from features). |
-| `thumbnail.png` | no | Preview image (not written yet). |
+| `thumbnail.png` | no | Preview of the model, written by every Save (not by recovery copies): 256 x 256 PNG with alpha, the visible bodies from the isometric direction framed to fill it, on a transparent background. Readers treat it as untrusted: at most 4 MiB, PNG signature checked; `io::readProjectThumbnail` reads only this entry. |
 
 ## document.json
 
@@ -56,7 +57,8 @@ Rules:
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
 - The first feature of every body must be a base feature (`Box`,
-  `SplitPiece`, `Copy`, or `Extrude` / `Revolve` with mode `NewBody`).
+  `SplitPiece`, `Copy`, `Imported`, or `Extrude` / `Revolve` with mode
+  `NewBody`).
 - Sketch entity ids are integers unique within their sketch; id 1 is always
   the fixed origin point. `nextId` is the next unused id. Sketch coordinates
   are millimeters in the plane's (xAxis, yAxis) frame.
@@ -85,7 +87,13 @@ Rules:
 - `Extrude` may carry `"throughAll": true` (cuts only): the cut extends
   through the whole body in the direction of `distance`; and
   `"symmetric": true`: centered on the sketch plane, `|distance|` being the
-  total thickness.
+  total thickness; and `"draft": { "angle": radians, "distance" }` (absent
+  = no draft; |angle| <= 89 degrees): the side walls lean in by that angle
+  as they go away from the sketch (both ways when symmetric; negative leans
+  out), corners staying sharp. A drafted extrusion writes its `distance`
+  **only** inside `draft` (both places: refused), so builds that predate
+  drafts refuse the file ("invalid extrusion") instead of extruding
+  straight walls. A draft with `throughAll` is refused.
 - `PushPull` params: `{ "face": faceRef, "distance" }` plus optional
   `"keepEdges": true` (fillets and chamfers around the face move with it
   where possible; steps without it are the plain prism + boolean).
@@ -118,10 +126,19 @@ Rules:
 - `DeleteFaces` params: `{ "faces": [faceRef…] }` — removed and healed.
   `OffsetFace` params: `{ "face": faceRef, "distance" }` (positive: the body
   grows along the face's outward normal).
-- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset" }` — a
-  cylindrical hole centered on a circular rim edge, drilled into the
-  material (the direction comes from the flat face next to the rim);
-  `preset` is an informational label such as "M3 heat-set insert".
+- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset", "type"?,
+  "angle"? }` — made at a circular rim edge, into the material (the
+  direction comes from the flat face next to the rim); `preset` is an
+  informational label such as "M3 heat-set insert" or "M3". `type` is
+  absent (or `"Plain"`) for a cylinder of `diameter` x `depth` (heat-set
+  insert pilot holes; files from before counterbores compute exactly as
+  before); `"Counterbore"`: the same cylinder as a screw head's seat on the
+  existing hole (refused when not wider than the hole or reaching through
+  the part); `"Countersink"`: a cone of `diameter` at the surface with the
+  included `angle` (radians, 90 degrees for metric screws) down to the hole,
+  written **without** `depth`, so builds that predate countersinks refuse
+  the file instead of drilling a plain hole of the countersink's diameter.
+  Unknown `type` values are refused.
 - `Split` params: `{ "pieces": [solid…] }` (at least two), where a solid is
   `{ "volume", "centroid": [x, y, z], "min": [x, y, z], "max": [x, y, z] }`
   (volume > 0, center of mass, bounding box) as the pieces were when the body
@@ -139,9 +156,39 @@ Rules:
   "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
   (applied before the translation) — the body's shape moved. It follows
   every change of that body and fails with a message when the body is gone.
+- `Holes` params: `{ "face": faceRef, "positions": [[x, y], ...],
+  "diameter", "throughAll", "depth"?, "head"?, "headDiameter"?,
+  "headDepth"?, "headAngle"?, "preset" }` — round holes drilled into a flat
+  face (the Hole tool; one step for the set, 1 to 1000 positions). The
+  positions are in the face's frame: on its plane, origin the world origin
+  projected onto it, x axis horizontal (world X on floors; the same frame
+  as a sketch started on the face), so the holes follow the face when an
+  upstream step moves it; a position no longer on the face fails the step.
+  `depth` only when `throughAll` is false. `head` is `"Counterbore"`
+  (with `headDiameter`, `headDepth`) or `"Countersink"` (with
+  `headDiameter`, `headAngle` in radians); absent: no head. `preset` is an
+  informational label such as "M3 normal fit".
+- `Imported` params (a base feature: a body imported from a STEP file):
+  `{ "geometry": "imports/<feature uuid>.brep", "hash", "volume", "source" }`
+  — the archive entry holding the exact geometry (millimeters, placed as in
+  the file it came from); `hash`, 16 lowercase hex digits, the FNV-1a (64
+  bit) of that entry's bytes; `volume` (> 0, mm³) of the solid; `source`,
+  the imported file's name (informational, at most 1024 bytes). The loader
+  reads the entry, compares its hash before parsing it, and refuses the
+  project ("damaged") when the entry is missing, does not match, is not a
+  valid solid or no longer has the recorded volume (within 1e-6). Writers
+  name the entry after the step's own id; readers accept any `imports/`
+  entry the step names, but each entry for one step only (two steps naming
+  one entry make the file damaged: a crafted file must not make the loader
+  read and keep one entry many times). Size limits: at most 256 MiB per
+  entry and 512 MiB of imported geometry per project
+  (`doc::kMaxImportedBodyBytes`, `doc::kMaxImportedGeometryBytes`). The
+  loader reads no more than that; the writer refuses to save more (a plain
+  message) rather than write a file it could not open, and the importer
+  refuses parts that would not fit.
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 
@@ -189,7 +236,7 @@ named by a lowercase UUID):
 
 | File | Content |
 |---|---|
-| `<session>.openshape` | A normal project file as above, written without the `geometry/` cache. |
+| `<session>.openshape` | A normal project file as above, written without the `geometry/` cache (with `imports/`: imported geometry is part of the model). |
 | `<session>.json` | Sidecar: `{ "format": "OpenShapeRecovery", "version": 1, "originalPath", "title", "savedAt" (Unix ms), "appVersion" }`. `originalPath` is the user's file (UTF-8, empty if never saved). |
 | `<session>.lock` | A `QLockFile`: the session's app is running. A lock whose process is gone marks a crashed session, whose copy is offered for restoring. |
 

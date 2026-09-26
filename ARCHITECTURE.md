@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert)
+        │         │   Pattern, Insert, Head, Hole)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
@@ -187,6 +187,16 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   passes through must be a wall and the volume must change by exactly
   cross-section x distance, else `ErrorCode::Unsupported` and the caller
   uses `pushPullFace`.
+- `extrudeFacesDrafted` (Profiles.h, `DraftExtrude.cpp`): a straight prism
+  whose side faces `BRepOffsetAPI_DraftAngle` tilts about the profile's
+  plane (planes stay planes, cylinders become cones, corners stay sharp).
+  Before any kernel work the far end is checked analytically: lines
+  shorten by inset x tan(turn / 2) at each corner, circles and arcs around
+  the material shrink by the inset, around holes they grow; an edge that
+  would vanish refuses the draft with a plain message
+  (`BRepOffsetAPI_MakeOffset` could answer this, but crashed in its medial
+  axis on a square with a small round hole). After it, a positive draft
+  must remove volume and a negative one add some.
 - `offsetCurves` (Profiles.h): offsets one connected chain of planar curves
   (`BRepOffsetAPI_MakeOffset`, sharp corners) for the sketch Offset action.
 - `pointOnFace` (a point inside a flat face, away from holes) and
@@ -195,7 +205,36 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Profiles.h`: planar curves (lines, circles, counter-clockwise arcs) →
   regions (see Sketches).
 - `TopoSignature.h`: interim topological naming (see below).
-- `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export.
+- `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export. Both STEP
+  directions go through an XCAF document (`STEPCAFControl_*`): export writes
+  one product per body named after it (each body wrapped in a compound of
+  its own, so bodies sharing a kernel shape stay separate and a moved body
+  is no assembly), in mm, inches or meters (`StepWriteOptions`); import
+  flattens assemblies with their placements, names each solid after its
+  product (a part without a name takes its assembly's; OCCT's placeholder
+  "Open CASCADE STEP translator ..." is no name), converts any unit to mm,
+  closes closed shells into solids, repairs damaged solids with ShapeFix
+  (or skips them) and reports open surfaces and curves as warnings. Curves
+  on round faces (cylinders, cones, spheres, tori) are rebuilt from the 3D
+  edges: the file's are rounded (OCCT writes 13 digits) and made the first
+  push/pull on an imported fillet produce unorientable faces.
+- **Booleans never modify their arguments** (`runBoolean`,
+  `SetNonDestructive`): OCCT otherwise updates argument shapes in place, and
+  Shapes are shared and immutable (cached step outputs, imported geometry).
+- `Holes.h`: `drillHoles` cuts any number of round holes in one boolean
+  (`HoleCut`: entry point, direction, diameter, depth or through all, and a
+  counterbore or countersink head; `drillShaft = false` cuts only the head
+  on an existing hole, whose depth or through-all is then given). Tools are
+  analytic cylinders and cones (the shaft starts inside the head, a
+  countersink cone runs on past the hole's wall, halfway to a blind hole's
+  bottom at most, so no faces coincide). Checked: sizes before any kernel call, then the
+  cut must remove something and no more than the tools hold. `headVolume`
+  is the exact ring or frustum a head takes from solid material;
+  `materialDepth` measures along a line how much material follows a
+  surface point, `emptyDepth` how much empty space follows a point (a
+  hole's depth from its opening; 0 inside material). The side is read from
+  the normal of the first face hit: `BRepClass3d_SolidClassifier` crashed
+  inside Extrema on a plain holed plate.
 
 ## Document model (`document/`)
 
@@ -219,12 +258,20 @@ Document (UUID, display unit)
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
   (base features when they make a new body); PushPull, Fillet, Chamfer,
-  Shell, Hole (drilled at a circular rim), Move (a translation plus an
+  Shell, Hole (at a circular rim: a plain cylinder such as a heat-set
+  insert's pilot hole, or a counterbore / countersink for a screw head,
+  whose exact ring or frustum volume is verified, and which measures the
+  existing hole's depth first (`geom::emptyDepth`); sizes from
+  `document/Fasteners`, the one place for screw and insert tables with
+  their sources), Holes (the Hole tool: holes at points on a flat face,
+  stored in the face's frame like a sketch on it, so they follow the face;
+  diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
-  OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
+  OffsetFace, Split and SplitPiece (below), Copy (a base feature: another
   body's current shape mirrored or moved — Mirror / Pattern with "Separate
-  bodies"). Planes, axes and directions are stored as geometry, not as
+  bodies") and Imported (a base feature holding a STEP-imported solid's
+  exact geometry; projects store it in `imports/`, see Files). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
@@ -451,8 +498,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the same documents and operations with and without the worker
   (`AsyncPreview.RandomSessionsMatchSynchronousOnes`). Operations
   created while previews are asynchronous get the scheduler
-  (`PreviewSchedulerScope` in `rebuildOperation`), so Pattern's and the
-  insert's first previews are computed on the worker too. An operation
+  (`PreviewSchedulerScope` in `rebuildOperation`), so Pattern's, the
+  insert's and the counterbore's first previews are computed on the worker
+  too. An operation
   without `clone()` keeps synchronous previews. The UI reads selection
   facts (`selectionSummary`, which face actions to offer) from a cache
   keyed by the selection and its bodies' shape revisions, so a drag step
@@ -467,10 +515,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
   the preview is known); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
-  Sketch, Align and Delete face; a single cylindrical face (hole, shaft) arms
+  Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
-  Chamfer; a hole rim also offers the heat-set insert; one edge offers Align).
+  Chamfer; a hole rim also offers the heat-set insert, Counterbore and
+  Countersink: `HeadOperation`, M2-M6 screw presets in the value chip, a
+  radial arrow for the diameter and, for a counterbore, one into the hole
+  for the depth; the screw size chosen last is kept; one edge offers Align).
   One body (double-click, or its Model-panel row) arms Move and offers Rotate,
   Mirror, Pattern and Duplicate (`BodyTool`; Duplicate is also Ctrl+D and a
   button in the body's expanded Model-panel row; the copy comes out selected
@@ -487,6 +538,33 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   tool bodies); the first selected body is kept and Swap exchanges the two.
   A body built from the other (a Copy or SplitPiece of it) cannot be its
   tool: Union and Intersect then keep the result in the copy instead.
+- **Hole tool:** "Hole" on a single flat face (or the palette) arms
+  `HoleOperation` (no arrows; the value chip sits at the current hole via
+  `labelAnchor()`). Clicks on that face (picked as faces only) add holes:
+  `snap()` puts a click within two pick tolerances onto the face's center
+  (of its outline's bounding rectangle, `geom::faceOutline`) or a straight
+  edge's middle, and otherwise lines X and Y up with those, with circles on
+  the face and with the holes placed so far (a snap that lands off the
+  face, e.g. the center of a ring-shaped face, is not taken); hovering shows
+  where the hole would go. A click on a placed hole makes it the current
+  one; Remove hole drops it. A position typed off the face fails the preview
+  with "Hole N is off the face" (the step's own "no longer lies on its
+  face" is for upstream changes), so Apply waits for a pending preview
+  (`commitNeedsPreview`). Previews run on the preview worker like the
+  others. Snapping (hover and clicks) tests points against the outline's
+  boundary segments (`geom::outlineContains`: curved edges as chords within
+  1e-5 of the face's size), not the kernel's classifier, so hovering never
+  waits for a preview's kernel call (it did for 110 ms on the enclosure's
+  wall); the preview itself checks the holes exactly (`faceContains`).
+  Hole again keeps the placed holes. The chip
+  edits one field at a time (`field:` actions, Tab = `nextField`):
+  diameter, depth (when not through all) and the current hole's X / Y from
+  the face's reference corner (the outline's minimum corner) or from the
+  hole before it. Screw size (M2-M6) x fit (close / normal per ISO 273, or
+  tap) sets the diameter; Counterbore / Countersink use the size's head
+  table. Everything placed is one Holes step; Esc leaves the tool; the
+  settings are remembered for the next face (`HoleSettings`). The chip's
+  actions wrap at 460 px (a hidden row measures their natural width).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -495,7 +573,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Extrude options:** Symmetric makes the value the total thickness
   (`displayOffset` = value / 2); "Up to face" makes the next face click set
   the distance to a parallel flat face (`ExtrudeOperation::extendToFace`,
-  stored as a plain distance). Push/pull steps from the UI set `keepEdges`.
+  stored as a plain distance). "Draft" makes the value chip edit the draft
+  angle instead (degrees; the operation's second "handle" without an arrow,
+  so grabbing the arrow returns to the distance); the step stores
+  `draftAngle` and the Model panel always offers it. Push/pull steps from
+  the UI set `keepEdges`.
 - **Mirror / Pattern:** Mirror waits for a flat face (or an origin plane from
   the action bar) and has no value; Apply or Enter commits. Pattern previews
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
@@ -528,7 +610,45 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   command line) makes `Theme.controlHeight` 44 and shows the Pen switch. The
   flag itself lives in `InteractionController::touchLayout()` (AppController
   only reads and sets it), so the on-canvas targets of the sketch session and
-  the QML controls can never disagree.
+  the QML controls can never disagree. **Touch wording:** hints, prompts and
+  messages are written for mouse and keyboard; in the touch layout
+  `interact::touchWording()` (Qt-free, `interaction/TouchWording`) rewrites
+  them — hand-written versions of known sentences ("Shift-click adds more" →
+  "tap more to add them", "Esc ends the line" → "tap Line again to end the
+  line", "Enter applies" → "✓ applies") and word rules (click → tap) —
+  for messages at their source in the interaction layer
+  (`InteractionController::forInput`: tool explanations, the sketch
+  session's messages, instructions returned in a `Status`), and through
+  `touchWording()` in `Main.qml`'s `hintText()` for hints and prompts. Only
+  the app's own texts are reworded: `AppController::notifyMessage` passes
+  messages on as they are, so a file, project or body name in one ("Exported
+  Click lid.stl") is never changed. The help card has a touch text per row
+  (`Theme.touch`). `tests/test_touch_wording.cpp` collects every sketch
+  hint, tool explanation and operation prompt, the QML hints and the help
+  rows, and fails on a mouse or keyboard word left in a touch text. No
+  information lives only in a tooltip (tooltips are off in the touch
+  layout; what they said is on the help card). A finger or pen tap on
+  empty space gives up an Align or Mirror still waiting for its target (a
+  mouse keeps waiting).
+- **Window-size layout (phones, Split View):** the QML layout follows the
+  window, not the device. `Theme.compact` (window narrower than 600 or
+  shorter than 500 logical px, bound live from `Main.qml`) turns the
+  Create/Modify/Combine palette and the sketch's Draw/Edit palette into a
+  strip along the bottom edge that scrolls sideways (the same buttons and
+  object names: a `GridLayout` whose `flow` switches), hides the Model panel
+  behind a **Model** button (it slides in from the right; `historyOpen`),
+  folds the view buttons into a menu behind a **View** button next to the
+  axis marker (`viewMenuOpen`; the same buttons, in columns when short),
+  makes action rows scroll sideways (`ScrollRow.qml`) and the hint one line
+  (a tap shows all of it). Positions derive from the window size
+  (`Main.stripTop`, `bottomStackTop`), never from each other in a circle.
+  **Safe areas:** `Theme.safeTop/Right/Bottom/Left` come from Qt's
+  `SafeArea` attached type (Qt 6.9+: the Dynamic Island or notch, rounded
+  corners, the home indicator), or from `--safe-area` on the desktop;
+  controls keep `Theme.insetTop/...` from the window edges while the 3D view
+  fills the whole window (`ApplicationWindow` padding 0). Overlays center
+  their cards in the safe rectangle. Regular windows (desktop, iPad full
+  screen) look as before.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -536,7 +656,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the UI shows them in the value chip while a manipulator is active and in the
   selection action bar otherwise (`barAction_<id>` object names, used by the
   acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
-  pushpull, fillet, chamfer, shell, offset, move, rotate, mirror, pattern,
+  pushpull, fillet, chamfer, shell, offset, hole, move, rotate, mirror, pattern,
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 
@@ -568,8 +688,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   locked after a fault, and a later fault on the other thread froze the app
   (`KernelThreads.FaultsOnTwoThreadsInTurnAreAllContained`). On POSIX
   (macOS, iPad) handlers belong to the process, so a kernel call installs
-  a dispatcher instead that hands a fault to OCCT only on the thread in the
-  kernel call; a crash on any other thread meanwhile reaches the crash log
+  a dispatcher instead that hands a fault to OCCT only when the faulting
+  thread is inside a kernel try block (`Standard_ErrorHandler::IsInTryBlock`,
+  per thread); a crash on any other thread meanwhile reaches the crash log
   and the system's crash report as before
   (`KernelThreads.FaultOnAnotherThreadDuringAKernelCallIsNotTheKernels`). The tight
   bounding-box cache in `ShapeData` is guarded by it too (a
@@ -641,7 +762,9 @@ preview arriving) change neither (TD-18). Hovering a row
 calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
 body, other steps their new faces (`facesCreatedBy`, falling back to
 `facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
-body row calls `selectBody(id, additive)`. The QML `HistoryPanel` edits values through
+body row calls `selectBody(id, additive)` (Shift toggles); a tap on it in
+the touch layout calls `addBodyToSelection` (`BodyPick::Add`: adds, never
+takes out, so tapping the row again to fold it keeps the body selected). The QML `HistoryPanel` edits values through
 `setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
 mode: an edit that breaks a later step is kept, the step is marked failed
 with its user message, and undo restores the value. Base features cannot be
@@ -652,7 +775,25 @@ hides it).
 ## Files (`io/`)
 
 `.openshape` = ZIP: `document.json` (source of truth), `metadata.json`,
-`geometry/<body>.brep` (cache), optional `thumbnail.png`. Versioned with a
+`imports/<step>.brep` (the geometry of Imported steps: source of truth,
+also in recovery copies), `geometry/<body>.brep` (cache), optional
+`thumbnail.png` (written on Save: `InteractionController::renderThumbnail`
+draws the visible bodies' display meshes on the CPU — `interaction/Thumbnail`,
+a z-buffered rasterizer with the viewport's lighting and edges, 2 x 2
+samples per pixel, isometric and framed, independent of the current view,
+the GPU and any window, so automated runs and iPadOS behave the same; the
+UI encodes it as PNG. Measured: 18 ms for the 21-body, 1528-face model whose
+full save takes 134 ms; `io::readProjectThumbnail` opens the ZIP directory
+and reads only that entry, for the start screen). `documentFromJson` takes an `EntryReader` for the imports;
+the loader checks each against the hash, validity and volume its step
+recorded before any modeling sees it (the BRep text is read with stream
+exceptions on: OCCT's reader looped forever on a cut-off text). Imported
+geometry has a budget shared by importer, writer and loader
+(`doc::kMaxImportedBodyBytes` per step, `doc::kMaxImportedGeometryBytes`
+per project): `importBodies` refuses parts beyond it, `buildProjectArchive`
+refuses to write more, and `loadProject` reads each `imports/` entry at
+most once (an entry named by two steps is refused) and no more than the
+budget in all. Versioned with a
 migration table; newer versions are refused with a clear message. Readers
 treat files as untrusted: size limits, entry-name validation (no traversal),
 a JSON nesting limit (256), strict JSON schema checks (a wrong type is an
@@ -702,13 +843,56 @@ no worker thread is used.
 new documents, sketch grid snapping, recovery interval), recent files
 (`io/RecentFiles`: most recent first; the menu shows the 10 newest that
 exist, and a file that is gone never pushes an existing one out; the File
-menu rereads the list as it opens, `refreshRecentFiles()`) and the
+menu rereads the list as it opens, `refreshRecentFiles()`; with an app
+folder, entries into its old location — iOS gives an updated app a new data
+folder — follow it, `io::rebasedIntoFolder`, as does a recovery copy's
+project path) and the
 window's place (frame + client rectangle + maximized; restored by client
 area and clamped to today's screens by `fitToScreens`). `main.cpp` points
 QSettings at a temporary INI file (and recovery copies at a temporary
 folder) for `--acceptance`, `--demo` and `--screenshot`, or at
 `--data-dir`. `app/CrashLog` writes one log line on an unhandled exception
 (Windows, with module + offset) or `std::terminate`.
+
+**Import STEP** (File menu, Ctrl+I): `AppController::importStep` reads the
+file (`geom::importStep`), `InteractionController::importBodies` adds one
+body per solid (an `Imported` base step, unique names, "Imported 1" when
+the file has none) as one `CompositeCommand` and fits the view; the message
+says how many bodies came in and what was skipped. `importStepAsProject`
+does the same into a new document (the current one stays if the file
+cannot be read). Native file dialogs cannot be clicked by the acceptance
+run: `AppController::setNextFileChoice` hands it the file, and
+`window.chooseFile(dialog, accept)` runs the dialog's accept code with it.
+
+**Home** (the start screen, `HomeScreen.qml`, z 90: over the model and
+its panels, under dialogs and the restore prompt): `AppController::homeVisible`
+is set by `main.cpp` at launch without a file (never in automated runs; the
+`home` demo scene shows it) and by File → Home; New, Open, opening a
+recent project, importing as a project and restoring a recovery copy clear
+it (Esc and Back return to the open document). `homeProjects` lists the
+recent files with name, folder, date and a preview source, and on iPadOS
+also the projects in the app's Documents folder (`io::homeProjects`).
+Previews come from `ui/ThumbnailProvider` (`image://thumbnail/<mtime>/<path>`,
+loaded off the GUI thread with `io::readProjectThumbnail`; the time stamp
+makes a re-saved project show its new preview). The path in the source is
+base64url of its UTF-8 (`ui/ThumbnailSource`, Qt Core only, tested in
+`test_uistate`): Qt hands a provider its id partly percent-decoded, which
+broke percent-encoded paths outside ASCII. Cards are the tap
+targets; ⋯, a long press or a right click open "Remove from list"
+(`removeRecentFile`, `io::withoutRecentFile`). The grid takes as many
+columns as fit (two on a phone in portrait) and gets denser in short
+windows (a phone in landscape). While Home is shown the keys for the model
+(Undo, Redo, Ctrl+D, B, K, F, Delete) do nothing, and closing an overlay
+over it (Help, About, Preferences, the unsaved question) gives the keys
+back to Home (`focusViewUnlessPanel`).
+
+**Messages** (`AppController::message`, the toast in `Main.qml`) are drawn
+above everything, Home and the dialogs included (z 130; they take no
+input), and wrap to the window's width (a phone). Every `Text` that shows
+a string from a file (body, step and sketch names, sources, messages,
+project names and folders, recent files) sets `textFormat: Text.PlainText`:
+Qt's automatic format would render markup in a STEP product name as HTML
+(and could load remote images).
 
 **Dialogs are overlays** in the window, not native message boxes (touch-sized,
 clickable by the acceptance run): `UnsavedOverlay` (Save / Don't Save /
@@ -718,7 +902,13 @@ While `UnsavedOverlay` or `RecoveryOverlay` is shown (`window.modalOpen`)
 the window's shortcuts are disabled, as behind a native modal dialog, and
 `UnsavedOverlay.ask()` ignores a second request: the pending action is the
 one the user is being asked about.
-Only file choosers stay native (`FileDialog`). After a menu or overlay
+Only file choosers stay native (`FileDialog`) — on the desktop. On iOS and
+Android (`AppController::savesToAppFolder`: the app's Documents folder,
+which the Files app shows; `--app-folder` on the desktop) there is no save
+dialog: `SaveNameOverlay` asks for a name (`projectFileBaseName` makes it a
+safe file name) and `saveInAppFolder` writes `<folder>/<name>.openshape`;
+exports go to `<folder>/Exports/<title>.<ext>` (`exportToAppFolder`); Open
+stays Qt's `FileDialog` (the system document picker there). After a menu or overlay
 closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
 them on a hidden menu separator after the Open Recent sub-menu).
 
@@ -748,10 +938,27 @@ them on a hidden menu separator after the Open Recent sub-menu).
   bar, Align, Rotate rings, Pattern, Mirror, two-/three-finger taps and the
   touch layout, the About box, trim/slot/fillet/offset in a sketch,
   symmetric and up-to-face extrusions, a fillet carried by a push, a hole
-  resized by its diameter and deleted; scenarios `recovery` (a real crash
+  resized by its diameter and deleted; `compact` (the window resized live to
+  an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
+  Model panel, View menu, a box pushed by touch, Undo / Redo with their
+  messages, a body row tapped twice, the sketch strip; the runner
+  restores the run's window size for the next scenario); `appfolder`
+  (saving by name and exporting as on an iPhone or iPad, into a temporary
+  app folder; the export message keeps a name with "Click" in it in the
+  touch layout); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
-  `recent` and `preferences`. `clickItem` lays out freshly created
+  `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I
+  and Home, the saved thumbnail, Home's cards, menu, long press and
+  buttons; then in a 402 x 874 window: Help over Home, a damaged file's
+  message above Home, a long message wrapped, markup in a STEP name shown
+  as text) and `userguide` (the help card's link to
+  docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
+  it, so no browser opens). The whole run also passes at the CI Mac's
+  1024x653 (`--size 1024x653`): clicks on model points that a panel or the
+  value chip may cover in a small window pick a free point of the same edge
+  (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the
+  item (both directions) to bring it on screen, and lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go). Before each step the runner
   waits until camera animations end and previews (computed on the worker)
@@ -761,8 +968,8 @@ them on a hidden menu separator after the Open Recent sub-menu).
   drag with 81 Model panel rows.
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
   previews, tessellation, recompute and bounding boxes on a filleted part,
-  and the GUI thread during a push/pull drag on the enclosure (previews on
-  the GUI thread and on the worker);
+  and the GUI thread during a push/pull drag and while hovering in the
+  Hole tool on the enclosure (previews on the GUI thread and on the worker);
   `scripts/dev/` has a Win32 input driver and a live log watcher (see
   BUILDING.md, "Developer tools").
 

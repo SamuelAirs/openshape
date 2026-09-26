@@ -4,8 +4,11 @@
 
 #pragma once
 
+#include "core/Math.h"
+
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
+#include <QtCore/QSize>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
@@ -51,6 +54,8 @@ public:
 
     QQuickWindow* window() const { return window_; }
     ui::AppController& app() const { return *app_; }
+    // Where screenshots go (files for review can go there too).
+    const QString& outputDir() const { return outputDir_; }
 
     // Input helpers (window-local logical coordinates).
     void mouseMove(QPointF p, Qt::MouseButtons held = Qt::NoButton);
@@ -66,8 +71,13 @@ public:
     // Flickable around it (the tool palette in a short window) so it is on
     // screen, as a user would; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
-    // A QML item by objectName (declared items and generated delegates), or null.
+    // A QML item by objectName (declared items and generated delegates; a
+    // visible one when two share the name), or null.
     QQuickItem* findItem(const QString& objectName) const;
+    // Resizes the window (logical px; below the desktop minimum too, e.g. a
+    // phone). The next scenario starts at the size the run started with.
+    void resizeWindow(int width, int height);
+    QSize initialWindowSize() const { return initialSize_; }
 
     // The document's body `index`. If an earlier failure left fewer bodies,
     // records a failure and abandons the rest of the current scenario
@@ -75,6 +85,13 @@ public:
     const doc::Body& body(std::size_t index);
     // Where a model point appears in the window.
     QPointF screenPoint(double x, double y, double z) const;
+    // The first of these model points (e.g. along one edge) that a click
+    // reaches in the 3D view, not under a panel or the value chip; the first
+    // if none does. Small windows (the CI Mac's 1024x653, TD-35) put the chip
+    // over the point a large window leaves free.
+    QPointF uncoveredScreenPoint(const std::vector<Vec3>& candidates) const;
+    // The item a click at `p` reaches (topmost visible, taking mouse buttons).
+    QQuickItem* itemAt(QPointF p) const;
     double bodyHeight() const;
     double bodyVolume() const;
     void check(bool condition, const QString& description, const QString& actual = {});
@@ -104,6 +121,9 @@ private:
     QStringList summary_;
     int animationWaitMs_ = 0; // for a camera animation to end before the next step
     int previewWaitMs_ = 0;   // for previews (computed on the worker) to be shown
+    QSize initialSize_;
+    QSize initialMinimum_;
+    QString initialAppFolder_;
     QPointF lastClick_;
     bool hasLastClick_ = false;
     double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)
@@ -111,7 +131,8 @@ private:
 
 // A named part of the acceptance run. Scenarios run by `order` (then name);
 // each one after the first starts from a new, empty document (touch and pen
-// mode off, millimeters, isometric view, no overlays open).
+// mode off, millimeters, isometric view, no overlays open, the window at the
+// size the run started with).
 //
 // To add one, create src/app/acceptance/<Name>.cpp (CMake picks it up) with
 //

@@ -24,15 +24,23 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
+    // The card stays clear of a phone's Dynamic Island, rounded corners and
+    // home indicator (Theme.safe*; zero on the desktop).
+    Item {
+        id: safeRect
+        anchors { fill: parent; topMargin: Theme.safeTop; rightMargin: Theme.safeRight
+                  bottomMargin: Theme.safeBottom; leftMargin: Theme.safeLeft }
+    }
+
     Panel {
-        anchors.centerIn: parent
+        anchors.centerIn: safeRect
         opacity: 1
-        width: Math.min(parent.width - 48, 560)
-        height: Math.min(parent.height - 48, content.implicitHeight + 48)
+        width: Math.min(safeRect.width - (Theme.compact ? 16 : 48), 560)
+        height: Math.min(safeRect.height - (Theme.compact ? 16 : 48), content.implicitHeight + 2 * (Theme.compact ? 16 : 24))
 
         Flickable {
             anchors.fill: parent
-            anchors.margins: 24
+            anchors.margins: Theme.compact ? 16 : 24
             contentHeight: content.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -46,12 +54,13 @@ Rectangle {
                     Layout.fillWidth: true
                     Text {
                         objectName: "aboutVersion"
+                        Layout.fillWidth: true
                         text: "OpenShape " + Qt.application.version
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: Theme.text
+                        wrapMode: Text.WordWrap
                     }
-                    Item { Layout.fillWidth: true }
                     ActionButton { text: "Close"; onClicked: overlay.visible = false }
                 }
                 Text {
@@ -90,7 +99,7 @@ Rectangle {
                             text: modelData[0]
                             color: Theme.text
                             font.pixelSize: 13
-                            Layout.preferredWidth: 190
+                            Layout.preferredWidth: Theme.compact ? 130 : 190
                             wrapMode: Text.WordWrap
                         }
                         Text {

@@ -7,6 +7,7 @@
 #include "commands/Command.h"
 #include "core/Camera.h"
 #include "document/Document.h"
+#include "geometry/Exchange.h"
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
 #include "interaction/Operation.h"
@@ -14,6 +15,7 @@
 #include "interaction/RenderScene.h"
 #include "interaction/SceneCache.h"
 #include "interaction/SketchSession.h"
+#include "interaction/Thumbnail.h"
 #include "selection/Picking.h"
 #include "selection/Selection.h"
 
@@ -22,6 +24,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace os::interact {
@@ -139,6 +142,19 @@ public:
 
     // ---- Actions ----
     Status createBox(double size);
+    // One body per imported shape, each starting with an Imported step, as
+    // one undo step. Names stay unique ("Bracket 2"); unnamed shapes become
+    // "Imported 1", "Imported 2", ... The view fits everything afterwards.
+    // `source` is the file name shown on the steps. Refused, with a plain
+    // message and nothing changed, when the project could not keep the
+    // geometry: more than doc::kMaxImportedBodyBytes for one body, or more
+    // than `maxGeometryBytes` of imported geometry in the document with it
+    // (lower only in tests).
+    Status importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source,
+                        std::uint64_t maxGeometryBytes = doc::kMaxImportedGeometryBytes);
+    // The picture a saved project carries: the visible bodies from the
+    // isometric direction, framed (not the current view). Empty without bodies.
+    ThumbnailImage renderThumbnail(int size);
     bool undo();
     bool redo();
     // Deletes the selected bodies, as one undo step. A body that other bodies
@@ -191,8 +207,17 @@ public:
     // (a body, a sketch, or the faces a step created or modified). nullopt clears.
     void setHistoryHighlight(const std::optional<Uuid>& id);
     const std::optional<Uuid>& historyHighlight() const { return historyHighlight_; }
-    // Selects a body from the model panel; `additive` adds it (e.g. to combine).
-    Status selectBody(const Uuid& bodyId, bool additive);
+    // How a Model panel row selects its body: Replace (a click), Toggle
+    // (Shift-click: adds it, or takes it out again) or Add (a tap in the touch
+    // layout: adds it, e.g. to combine; tapping a selected body's row again,
+    // say to fold the row, keeps it selected and its tool running).
+    enum class BodyPick { Replace, Toggle, Add };
+    Status selectBody(const Uuid& bodyId, BodyPick how);
+    // `additive`: Toggle, otherwise Replace.
+    Status selectBody(const Uuid& bodyId, bool additive)
+    {
+        return selectBody(bodyId, additive ? BodyPick::Toggle : BodyPick::Replace);
+    }
     // A tool chosen from the palette: runs it if the selection fits, otherwise
     // explains what to select. Ids: pushpull, fillet, chamfer, shell, move,
     // union, subtract, intersect, measure.
@@ -236,7 +261,10 @@ public:
     // ---- Notifications ----
     std::function<void()> onViewChanged;                 // needs redraw
     std::function<void()> onStateChanged;                // selection/operation/undo state changed
-    std::function<void(const std::string&)> onMessage;   // user-facing message
+    // User-facing message. Instructions (what to click or select) come already
+    // worded for touch in the touch layout (TouchWording); body, sketch and
+    // file names in messages are never reworded, so they are passed on as they are.
+    std::function<void(const std::string&)> onMessage;
 
 private:
     enum class DragMode { None, Pending, Orbit, Pan, Manipulator, Sketch };
@@ -271,6 +299,11 @@ private:
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
+    // How far (mm, at `point`) the Hole tool's clicks snap: two pick tolerances.
+    double holeSnapDistance(const Vec3& point, const InputProfile& profile) const
+    {
+        return profile.pickTolerance * 2 * camera_.pixelSize(point);
+    }
     void rebuildOperation();
     void refreshHistoryHighlight();
     // Deletes these bodies (one undo step), hiding those others are built from.
@@ -285,6 +318,10 @@ private:
     void notifyView();
     void notifyState();
     void message(const std::string& text);
+    // An instruction written for mouse and keyboard ("Click a flat face ..."),
+    // worded for touch in the touch layout. Only for the app's own texts: the
+    // word rules would also change a name that happens to contain "click".
+    std::string forInput(std::string_view instruction) const;
 
     doc::Document* document_;
     cmd::UndoStack* undoStack_;
@@ -308,6 +345,11 @@ private:
     bool sketchGridSnap_ = true;
     bool touchLayout_ = false;
     std::size_t insertPreset_ = 2; // M3
+    // What a hole rim's Hole step makes: Plain = the heat-set insert's pilot
+    // hole, or a counterbore / countersink (with the screw preset).
+    doc::HoleKind rimHoleKind_ = doc::HoleKind::Plain;
+    std::size_t screwPreset_ = doc::kDefaultScrew;
+    HoleSettings holeSettings_; // what the Hole tool used last
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
     // Faces (of the current body shape) the highlighted step created or changed.

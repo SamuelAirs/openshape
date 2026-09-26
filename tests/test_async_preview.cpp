@@ -9,6 +9,8 @@
 #include "commands/Command.h"
 #include "commands/DocumentCommands.h"
 #include "document/Document.h"
+#include "document/Fasteners.h"
+#include "geometry/Holes.h"
 #include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
@@ -17,7 +19,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +48,15 @@ double meshHeight(const geom::Mesh& mesh)
         hi = std::max(hi, double(mesh.positions[i]));
     }
     return hi - lo;
+}
+
+// The volume a closed mesh encloses (divergence theorem).
+double meshVolume(const geom::Mesh& mesh)
+{
+    double v = 0;
+    for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3)
+        v += mesh.vertex(mesh.indices[t]).dot(mesh.vertex(mesh.indices[t + 1]).cross(mesh.vertex(mesh.indices[t + 2])));
+    return std::abs(v) / 6;
 }
 
 double meshWidth(const geom::Mesh& mesh)
@@ -610,6 +623,140 @@ TEST(AsyncPreview, ParameterChangeDropsEarlierResults)
     EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 140.0, 1e-4); // 4 copies 40 mm apart
     ASSERT_TRUE(h.controller.waitForPreview());
     EXPECT_NEAR(meshWidth(*pattern->previewMesh()), 170.0, 1e-4);
+}
+
+// The Hole tool previews on the worker. Its Apply waits for a pending
+// preview, which says which hole is off the face (the step's own refusal is
+// worded for upstream changes). A counterbore on the hole's rim previews on
+// the worker from the start.
+TEST(AsyncPreview, HoleToolAndCounterborePreviewOnTheWorker)
+{
+    AsyncHarness h; // a 20 mm box, (-10,-10,0) .. (10,10,20)
+    h.clickAt(h.screen({0, 0, 20}));
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const auto* hole = dynamic_cast<const HoleOperation*>(h.controller.operation());
+    ASSERT_NE(hole, nullptr);
+    h.clickAt(h.screen({0.3, 0.2, 20})); // snaps to the face's center
+    ASSERT_EQ(hole->positions().size(), 1u);
+    EXPECT_TRUE(hole->previewPending()) << "the hole was previewed on the GUI thread";
+    EXPECT_TRUE(hole->canCommit()) << "a pending preview counts as committable";
+    // Hovering on while it computes: where the next hole would snap to is
+    // found without the kernel (which the worker may hold).
+    const std::uint64_t kernelCalls = geom::kernelCallsOnThisThread();
+    for (int i = 0; i < 5; ++i)
+        h.controller.pointerMove(AsyncHarness::at(h.screen({-6.0 + 3 * i, 4, 20}), PointerButton::None));
+    EXPECT_EQ(geom::kernelCallsOnThisThread(), kernelCalls) << "hovering in the Hole tool made kernel calls";
+    EXPECT_TRUE(hole->hover().has_value());
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(hole->hasPreview());
+    EXPECT_TRUE(hole->error().empty()) << hole->error();
+    const double d = hole->diameter();
+    const double drilled = 8000.0 - kPi * d * d / 4 * 20; // through all
+    EXPECT_NEAR(meshVolume(*hole->previewMesh()), drilled, 2.0);
+
+    // X typed off the face; Enter while its preview computes waits for it.
+    ASSERT_TRUE(h.controller.triggerAction("field:x").ok());
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_EQ(hole->field(), HoleOperation::Field::X);
+    EXPECT_NEAR(hole->value(), 10.0, 1e-9) << "the center, 10 mm from the corner";
+    h.worker().setJobDelayForTesting(150ms);
+    EXPECT_EQ(h.controller.setValueText("40"), "");
+    ASSERT_TRUE(hole->previewPending());
+    EXPECT_TRUE(hole->commitNeedsPreview());
+    const std::string lastStep = h.stack.undoLabel();
+    (void)h.controller.keyPress(Key::Enter);
+    ASSERT_EQ(h.controller.operation(), hole) << "the tool ended";
+    EXPECT_EQ(h.stack.undoLabel(), lastStep) << "a hole off the face was applied";
+    EXPECT_FALSE(hole->previewPending()) << "Apply did not wait for the preview";
+    EXPECT_NE(hole->error().find("off the face"), std::string::npos) << hole->error();
+    EXPECT_FALSE(hole->canCommit());
+
+    // Back to the center, applied while its preview computes.
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(hole->previewPending());
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_EQ(h.stack.undoLabel(), "Hole");
+    EXPECT_NEAR(geom::volume(h.body().shape()), drilled, 1e-3);
+    ASSERT_TRUE(h.controller.waitForPreview());
+    h.worker().setJobDelayForTesting(0ms);
+
+    // A counterbore on the hole's top rim.
+    h.clickAt(h.screen({d / 2, 0, 20}));
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Edge);
+    ASSERT_TRUE(h.controller.waitForPreview()); // the fillet's
+    ASSERT_TRUE(h.controller.triggerAction("counterbore").ok());
+    const auto* head = dynamic_cast<const HeadOperation*>(h.controller.operation());
+    ASSERT_NE(head, nullptr);
+    EXPECT_TRUE(head->previewPending()) << "the preset's preview was computed on the GUI thread";
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(head->hasPreview());
+    EXPECT_TRUE(head->error().empty()) << head->error();
+    const doc::ScrewSize& m4 = doc::metricScrews()[3];
+    ASSERT_TRUE(h.controller.triggerAction("preset:3").ok());
+    EXPECT_TRUE(head->previewPending());
+    geom::HoleCut cut;
+    cut.diameter = d;
+    cut.drillShaft = false;
+    cut.throughAll = true;
+    cut.head = geom::HoleHead::Counterbore;
+    cut.headDiameter = m4.counterboreDiameter;
+    cut.headDepth = m4.counterboreDepth;
+    const double counterbored = drilled - geom::headVolume(cut);
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_NEAR(meshVolume(*head->previewMesh()), counterbored, 3.0);
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    const auto rows = h.controller.historyRows();
+    EXPECT_TRUE(std::any_of(rows.begin(), rows.end(), [](const HistoryRow& r) { return r.name == "Counterbore"; }))
+        << "no Counterbore step";
+    EXPECT_NEAR(geom::volume(h.body().shape()), counterbored, 1e-3);
+}
+
+// Extrude with a draft on the worker: the copy computes the draft the chip
+// edits, and Enter while the preview computes applies the typed angle.
+TEST(AsyncPreview, ExtrudeDraftPreviewsOnTheWorker)
+{
+    AsyncHarness h;
+    ASSERT_TRUE(h.controller.startSketch().ok()); // nothing selected: the XY plane
+    h.controller.skipAnimation();
+    SketchSession& session = *h.controller.sketchSession();
+    auto sketchScreen = [&](Vec2 local) { return h.screen(session.sketch().plane().toWorld(local)); };
+    h.controller.setSketchTool(SketchTool::Rectangle);
+    h.clickAt(sketchScreen({30, 30}));
+    h.controller.pointerMove(AsyncHarness::at(sketchScreen({36, 36}), PointerButton::None));
+    EXPECT_EQ(session.typeIntoInput("10"), "");
+    session.focusNextInput();
+    EXPECT_EQ(session.typeIntoInput("10"), "");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    const Uuid sketchId = session.sketchId();
+    h.controller.finishSketch();
+    const sketch::Plane plane = h.document.sketch(sketchId)->plane();
+
+    h.clickAt(h.screen(plane.toWorld({35, 35})));
+    const auto* extrude = dynamic_cast<const ExtrudeOperation*>(h.controller.operation());
+    ASSERT_NE(extrude, nullptr);
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(h.controller.triggerAction("draft").ok());
+    ASSERT_TRUE(extrude->editingDraft());
+    auto frustum = [](double degrees) {
+        const double t = 10 * std::tan(degrees * kPi / 180), top = (10 - 2 * t) * (10 - 2 * t);
+        return 10.0 / 3 * (100 + top + std::sqrt(100 * top));
+    };
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    EXPECT_TRUE(extrude->previewPending());
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(extrude->hasPreview());
+    EXPECT_NEAR(meshVolume(*extrude->previewMesh()), frustum(5), 0.05);
+
+    h.worker().setJobDelayForTesting(200ms);
+    EXPECT_EQ(h.controller.setValueText("8"), "");
+    ASSERT_TRUE(extrude->previewPending());
+    EXPECT_FALSE(extrude->commitNeedsPreview()) << "no body under the sketch: no automatic choice";
+    EXPECT_TRUE(extrude->canCommit()) << "a pending preview counts as committable";
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[1]->shape()), frustum(8), 1e-3);
+    ASSERT_TRUE(h.controller.waitForPreview());
 }
 
 // Hovering sketch profiles while a preview computes: the pick tests the

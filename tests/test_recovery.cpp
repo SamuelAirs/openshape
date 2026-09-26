@@ -438,3 +438,31 @@ TEST(RecentFiles, OnlyFilesThatStillExist)
     const std::vector<std::string> list{aText, (dir.path / "gone.openshape").string(), unicode, dir.path.string()};
     EXPECT_EQ(io::existingRecentFiles(list), (std::vector<std::string>{aText, unicode})) << "folders are not files";
 }
+
+TEST(RecentFiles, FollowTheAppFolderWhenAnUpdateMovesIt)
+{
+    // iOS gives an updated app a new data folder id: a remembered project in
+    // the old Documents is the same file in the new one.
+    const std::string oldDocs = "/var/mobile/Containers/Data/Application/1111-AAAA/Documents";
+    const std::string newDocs = "/var/mobile/Containers/Data/Application/2222-BBBB/Documents";
+    std::set<std::string> files{newDocs + "/Bracket.openshape", newDocs + "/Parts/Lid.openshape"};
+    const auto exists = [&](const std::string& p) { return files.contains(p); };
+    EXPECT_EQ(io::rebasedIntoFolder(oldDocs + "/Bracket.openshape", newDocs, exists), newDocs + "/Bracket.openshape");
+    EXPECT_EQ(io::rebasedIntoFolder(oldDocs + "/Parts/Lid.openshape", newDocs, exists), newDocs + "/Parts/Lid.openshape")
+        << "subfolders too";
+    EXPECT_EQ(io::rebasedIntoFolder("/private" + oldDocs + "/Bracket.openshape", newDocs + "/", exists),
+              newDocs + "/Bracket.openshape")
+        << "/private/var is /var; a trailing / on the folder is fine";
+
+    // Left as they are: an existing file, a file that is not in the new folder
+    // either, another folder, a path outside it, and no app folder.
+    files.insert(oldDocs + "/Here.openshape");
+    EXPECT_EQ(io::rebasedIntoFolder(oldDocs + "/Here.openshape", newDocs, exists), oldDocs + "/Here.openshape");
+    EXPECT_EQ(io::rebasedIntoFolder(oldDocs + "/Gone.openshape", newDocs, exists), oldDocs + "/Gone.openshape");
+    const std::string otherApp = "/var/mobile/Containers/Data/Application/1111-AAAA/Library/Bracket.openshape";
+    EXPECT_EQ(io::rebasedIntoFolder(otherApp, newDocs, exists), otherApp) << "the folder's own name must match";
+    const std::string elsewhere = "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Parts/Old/Bracket.openshape";
+    EXPECT_EQ(io::rebasedIntoFolder(elsewhere, newDocs, exists), elsewhere) << "more than the id differs";
+    EXPECT_EQ(io::rebasedIntoFolder(oldDocs + "/Bracket.openshape", "", exists), oldDocs + "/Bracket.openshape");
+    EXPECT_EQ(io::rebasedIntoFolder(oldDocs, newDocs, exists), oldDocs) << "the folder itself is not a project";
+}

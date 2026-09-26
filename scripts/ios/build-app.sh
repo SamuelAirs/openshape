@@ -3,10 +3,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-# Generates the Xcode project for the iPad app and builds an (unsigned)
-# archive for devices: <build-dir>/OpenShape.xcarchive. Signing happens
-# when the archive is exported (scripts/ios/testflight.sh), or open the
-# project in Xcode to run it on a connected iPad.
+# Generates the Xcode project for the iOS app (universal: iPhone and iPad)
+# and builds an (unsigned) archive for devices: <build-dir>/OpenShape.xcarchive.
+# Signing happens when the archive is exported (scripts/ios/testflight.sh),
+# or open the project in Xcode to run it on a connected iPhone or iPad.
 #
 # Usage (macOS, repository root):
 #   scripts/ios/build-app.sh <qt-ios-dir> <deps-prefix> [build-dir]
@@ -33,7 +33,7 @@ mkdir -p "$BUILD"
 
 # Qt is linked statically: Qt's CMake scans the QML files and links the
 # plugin of every module they import. One it cannot link would stop the app
-# at startup on the iPad, so that fails the build here.
+# at startup on the device, so that fails the build here.
 imports="$BUILD/src/app/.qt/qml_imports/openshape_conf.cmake"
 if [ ! -f "$imports" ]; then
     echo "error: Qt did not scan the QML imports ($imports missing): the app would start without its QML plugins"
@@ -76,3 +76,11 @@ plutil -p "$APP/Info.plist"
 for f in Assets.car PrivacyInfo.xcprivacy; do
     test -e "$APP/$f" || { echo "error: the app bundle lacks $f"; exit 1; }
 done
+# One universal app: Xcode writes TARGETED_DEVICE_FAMILY into UIDeviceFamily
+# (1 = iPhone, 2 = iPad).
+families=$(plutil -extract UIDeviceFamily json -o - "$APP/Info.plist" 2>/dev/null || echo none)
+echo "Device families: $families"
+case "$families" in
+    *1*2*) ;;
+    *) echo "error: the app is not universal (UIDeviceFamily $families; expected 1 and 2)"; exit 1 ;;
+esac

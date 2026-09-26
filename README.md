@@ -1,89 +1,142 @@
 # OpenShape
 
-*Open source CAD based 3D design software specialized for touch operation and
-3D printing.*
+**Direct-modeling CAD for makers and 3D printing.** Push and pull faces,
+sketch a profile and extrude it, and type exact sizes as you go, in the
+spirit of Shapr3D. Free and open source (MPL-2.0), built on the
+OpenCASCADE solid-modeling kernel.
 
-**Precise solid CAD that feels direct.** Select a face, pull the arrow, type
-`15`, press Enter — the part is now exactly 15 mm taller. Undo it. Round an
-edge by typing its radius. Save, reopen, export STEP and STL for your slicer.
+![OpenShape with a small project box: rounded corners, 2 mm walls and a cable hole whose diameter is being typed](docs/images/hero.png)
 
-OpenShape is an original open-source CAD application for makers, 3D-printing
-users and product designers, built on the OpenCASCADE exact B-rep kernel with
-a Qt Quick interface designed for mouse, touch and stylus.
+*A 60 × 40 × 25 mm project box made from a box: three sizes typed, the
+corners rounded, the body shelled, a cable hole cut, and now the hole's
+diameter set to 10.4 mm for print clearance. Every step in the Model panel
+(right) can still be changed.*
 
-> Status: early development (Milestones 0–2 complete, editable history, first
-> maker tools). Windows is the first verified platform; iPad is planned. See
-> [PROJECT_STATUS.md](PROJECT_STATUS.md).
+**[Download for Windows](https://github.com/SamuelAirs/openshape/releases)** ·
+[User guide](docs/USER_GUIDE.md) · [Build from source](BUILDING.md) ·
+[Report a bug](https://github.com/SamuelAirs/openshape/issues)
 
-## What works today
+> **Early pre-release (0.1).** OpenShape is young: it does the things below,
+> but expect rough edges. It keeps recovery copies of unsaved work, and bug
+> reports are very welcome.
 
-- Create boxes; click any flat face to see the part's size to the opposite
-  side, then drag the arrow or type the new size (units and arithmetic:
-  `25`, `1in`, `20+5`; `+5` / `-5` change it by that much)
-- Fillet and chamfer edges (drag or type the size); shell a body
-- Sketch on the ground, an origin plane or any flat face: lines, rectangles,
-  circles and arcs with snapping, horizontal/vertical inference and typed
-  dimensions; constraints (parallel, perpendicular, equal, tangent,
-  concentric, midpoint, …) and construction lines; slots, trim, rounded
-  corners and offsets; click a dimension to change it; sketch on a sketch
-  to add to it
-- Extrude or revolve closed sketch profiles into new bodies, or join/cut into
-  a body; extrude symmetrically or up to a face
-- Move, rotate, align (face to face, edge to edge, hole to shaft, or onto the
-  build plate), mirror and pattern bodies
-- Combine bodies: union, subtract, intersect (select bodies by double-click
-  or in the Model panel; Shift adds)
-- Direct face edits: select a hole, fillet or chamfer and press Delete to
-  remove it; click a hole's wall and type its new diameter; pushing a face
-  takes its rounded edges along
-- Heat-set insert pilot holes (M2–M5 presets)
-- Live previews; failures explained in plain language, never corrupting the model
-- Undo/redo for every change
-- Model panel: hover a step to see what it made; click a step to change its
-  values later
-- Orbit, pan, zoom, standard views, orthographic/perspective
-- Hover highlighting, face/edge/body selection; a touch layout (bigger
-  controls, Pen switch) when used by touch; with a pen, the pen draws and
-  fingers only navigate
-- `.openshape` project files that reopen with their full history (sketches stay editable)
-- Measure wall thickness, distances and angles between faces/edges
-- STEP export (and import in the kernel), STL and 3MF export for slicers
-- `F1` (or the `?` button) shows every gesture, shortcut and tool
+## What it does
 
-## Quick start
+**Modeling**
+- Click a flat face: it shows the part's size to the opposite side (height,
+  width, depth). Drag the arrow or type the new size; `+5` / `-5` change it
+  by that much. Fillets and chamfers around the face move with it (on
+  straight walls).
+- Fillet and chamfer edges, shell a body to a wall thickness, offset a face.
+- Click a hole's wall and type its new diameter; select a hole, fillet or
+  chamfer and press Delete to remove it (the faces around it close the gap).
+- Extrude sketch profiles (a distance, both sides, or up to a face; as a new
+  body, joined, or cut, also through everything) or revolve them.
+- Lengths accept units and arithmetic: `25`, `1in`, `2,5cm`, `20+5`,
+  `(10+2)*3`.
 
-See [BUILDING.md](BUILDING.md). In the app: **Add a box** (or press `B`),
-click the top face (it shows the height, 20 mm), drag the arrow or type the
-new height, e.g. `35`, press **Enter**.
+**Sketching**
+- Sketch on the ground, an origin plane or any flat face.
+- Line, rectangle, center rectangle, polygon, circle, arc, tangent arc and
+  slot; trim, round a corner, offset, mirror and pattern curves.
+- Type sizes while drawing; click a dimension later to change it.
+- Constraints (horizontal, vertical, parallel, perpendicular, equal,
+  tangent, concentric, midpoint, symmetric, distances, angles …) shown as
+  small glyphs, and a "Fully defined" status.
 
-Or sketch: press `K` (Sketch), click the origin, type `60`, `Tab`, `30`,
-`Enter`, click **Finish sketch**, click inside the rectangle, type `5`,
-`Enter` — a 60 × 30 × 5 mm plate.
+**Bodies**
+- Move, rotate (also about an edge or a hole), align one body to another or
+  lay a face on the build plate.
+- Mirror and pattern (in a row or around an axis), joined or as separate
+  bodies; duplicate; split a body that fell apart into pieces.
+- Union, subtract and intersect.
+- The Model panel lists every step: change its values later, suppress,
+  delete or hide it. Everything can be undone.
 
-| Action | Mouse | Touch |
-|---|---|---|
-| Orbit | drag empty space (left or right button) | one-finger drag |
-| Pan | Shift+drag or middle-drag | two-finger drag |
-| Zoom | wheel | pinch |
-| Select | click (Shift/Ctrl adds) | tap (taps add; tap empty space to clear) |
-| Select body | double-click | double-tap |
-| Apply / cancel | Enter / Esc | ✓ / ✕ |
-| Stop drawing lines | right-click or Esc | ✕ |
-| Undo / redo | Ctrl+Z / Ctrl+Y | two-finger tap / three-finger tap |
-| Help | F1 | ? button |
+**Print helpers**
+- Heat-set insert holes (M2 to M5 presets, depth adjustable).
+- Hole diameters typed directly, e.g. for a tolerance.
+- Measure: a clicked face shows its size to the opposite face; two faces or
+  edges show their distance, gap or angle.
+- Export STL or 3MF for your slicer (millimeters; 3MF keeps each body a
+  separate object).
+
+**Files**
+- `.openshape` project files keep the full history: sketches and steps stay
+  editable after reopening.
+- STEP export for other CAD programs; recent files; preferences (units,
+  sketch grid snapping, recovery copies).
+
+**Reliability**
+- Unsaved work is copied in the background and offered again after a crash.
+- When a step cannot be done, OpenShape says why in plain words, often with
+  a size that works, and the model stays as it was.
+- The tools are exercised through the real window by an automated test
+  run, and random modeling sessions check undo, redo and save/open.
+
+## Platforms
+
+| Platform | Status |
+|---|---|
+| Windows (64-bit; tested on Windows 11) | Installer and portable zip on the [Releases page](https://github.com/SamuelAirs/openshape/releases) |
+| iPad and iPhone | In development: the app builds in CI; TestFlight testing is pending |
+| macOS | Builds and passes the tests in CI; no download yet |
+| Linux | Not tried yet (see [BUILDING.md](BUILDING.md)) |
+
+OpenShape has a touch layout (larger controls, one finger orbits, two
+fingers pan and zoom, two- and three-finger taps undo and redo) and a pen
+mode; on Windows the touch layout appears once you touch the screen. So far
+it has been tested with simulated touch input, not yet on a real tablet.
+
+## Download and install (Windows)
+
+1. Open the [Releases page](https://github.com/SamuelAirs/openshape/releases)
+   and download `OpenShape-<version>-windows-x64-setup.exe` (or the `.zip`
+   to run it without installing).
+2. Run the installer. It installs for your user only (no administrator
+   rights needed) and adds OpenShape to the Start menu.
+3. The installer is **not code-signed yet**, so Windows SmartScreen may say
+   "Windows protected your PC": click **More info**, then **Run anyway**.
+   `SHA256SUMS.txt` on the release lets you check the download.
+
+## Quick start: your first printed part
+
+A 60 × 30 × 5 mm mounting plate with two 6 mm holes:
+
+1. **Sketch.** Press `K` (or click **Sketch**, then **Top (XY)**): you are
+   drawing on the ground with the Rectangle tool. Click where the red and
+   green axes cross, type `60`, press `Tab`, type `30`, press `Enter`. Click
+   **Finish sketch**.
+2. **Extrude.** Click inside the rectangle, type `5`, press `Enter`: a
+   5 mm thick plate.
+3. **Holes.** Click the plate's top face and press `K` to sketch on it.
+   Press `C` (Circle), click where a hole goes, type `6`, `Enter`; again for
+   the second hole. Click **Finish sketch**.
+4. **Cut.** Click inside one circle, `Shift`-click the other, type `-5`,
+   press `Enter`: two holes through the plate. (Once the value is negative
+   the extrude is a cut, and a **Through all** button appears for cutting
+   through any thickness.)
+5. **Print.** **File → Export 3MF…** (or **Export STL…**), open the file in
+   your slicer (it is in millimeters) and print. **File → Save** keeps the
+   editable project.
+
+The [user guide](docs/USER_GUIDE.md) explains every tool, gesture and
+shortcut; in the app, press `F1` or the **?** button for the same on one
+card.
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — how it is built
-- [ROADMAP.md](ROADMAP.md) — milestones and progress
-- [BUILDING.md](BUILDING.md) — tested build steps
-- [CONTRIBUTING.md](CONTRIBUTING.md) — rules and conventions
-- [THIRD_PARTY.md](THIRD_PARTY.md) — dependencies and licenses
-- [docs/](docs/) — technology evaluation, file format, topological naming,
-  technical debt, development log
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): using OpenShape
+- [BUILDING.md](BUILDING.md): building, testing and packaging from source
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute
+- [ARCHITECTURE.md](ARCHITECTURE.md): how the code is organized
+- [ROADMAP.md](ROADMAP.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md):
+  where the project stands
+- [docs/](docs/): file format, licensing, technical debt, development log
 
 ## License
 
-[Mozilla Public License 2.0](LICENSE). Third-party components keep their
-own licenses ([THIRD_PARTY.md](THIRD_PARTY.md)); what this means for
-distribution is in [docs/LICENSING.md](docs/LICENSING.md).
+OpenShape is free software under the [Mozilla Public License 2.0](LICENSE).
+Third-party components keep their own licenses: see
+[THIRD_PARTY.md](THIRD_PARTY.md), and [docs/LICENSING.md](docs/LICENSING.md)
+for what that means for distribution.

@@ -14,10 +14,12 @@
 #include <zip.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 namespace os::io {
@@ -95,15 +97,17 @@ Status addEntry(zip_t* archive, const std::string& name, const std::string& data
     return okStatus();
 }
 
-Result<std::string> readEntry(zip_t* archive, zip_int64_t index)
+// At most `maxBytes` (checked before anything is allocated).
+Result<std::string> readEntry(zip_t* archive, zip_int64_t index, std::uint64_t maxBytes = kMaxEntryBytes)
 {
     using R = Result<std::string>;
     zip_stat_t st;
     zip_stat_init(&st);
     if (zip_stat_index(archive, static_cast<zip_uint64_t>(index), 0, &st) != 0 || !(st.valid & ZIP_STAT_SIZE))
         return R::failureFrom(formatError("zip_stat_index failed"));
-    if (st.size > kMaxEntryBytes)
-        return R::failureFrom(formatError("entry too large: " + std::to_string(st.size)));
+    if (st.size > std::min(maxBytes, kMaxEntryBytes))
+        return R::failureFrom(formatError("entry too large: " + std::to_string(st.size) + " bytes, at most "
+                                          + std::to_string(std::min(maxBytes, kMaxEntryBytes))));
     zip_file_t* file = zip_fopen_index(archive, static_cast<zip_uint64_t>(index), 0);
     if (!file)
         return R::failureFrom(formatError("zip_fopen_index failed"));
@@ -194,7 +198,38 @@ json documentToJson(const doc::Document& document)
             {"bodies", bodies}};
 }
 
-Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input)
+namespace {
+
+// An Imported step's geometry, from the archive: it must parse, be a valid
+// solid and still have the volume recorded when it was imported (so a
+// damaged or swapped entry is caught here, not in a later modeling step).
+Status loadImportedGeometry(doc::ImportedFeature& feature, const EntryReader& readEntry)
+{
+    if (!readEntry)
+        return formatError("imported geometry " + feature.loadedEntry() + " without an archive to read it from");
+    auto text = readEntry(feature.loadedEntry());
+    if (!text)
+        return formatError("imported geometry " + feature.loadedEntry() + ": " + text.developerMessage());
+    // Damage is caught here, before the kernel parses anything.
+    if (doc::ImportedFeature::hashOf(text.value()) != feature.loadedHash())
+        return formatError("imported geometry " + feature.loadedEntry() + " does not match its hash");
+    auto shape = geom::fromBrepString(text.value());
+    if (!shape)
+        return formatError("imported geometry " + feature.loadedEntry() + " unreadable: " + shape.developerMessage());
+    if (geom::solids(shape.value()).empty() || !geom::isValid(shape.value()))
+        return formatError("imported geometry " + feature.loadedEntry() + " is not a valid solid");
+    const double volume = geom::volume(shape.value());
+    const double recorded = feature.volume;
+    if (!(std::abs(volume - recorded) <= 1e-6 * std::max(1.0, recorded)))
+        return formatError("imported geometry " + feature.loadedEntry() + " has volume " + std::to_string(volume)
+                           + ", recorded " + std::to_string(recorded));
+    feature.setLoadedShape(shape.value(), text.value());
+    return okStatus();
+}
+
+} // namespace
+
+Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const EntryReader& readEntry)
 {
     using R = Result<std::unique_ptr<doc::Document>>;
     if (!input.is_object())
@@ -281,6 +316,9 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input)
             auto feature = doc::createFeature(*kind, *featureId);
             if (Status s = feature->readParams(f["params"]); !s)
                 return R::failureFrom(s);
+            if (auto* imported = dynamic_cast<doc::ImportedFeature*>(feature.get()))
+                if (Status s = loadImportedGeometry(*imported, readEntry); !s)
+                    return R::failureFrom(s);
             if (f.contains("name") && f["name"].is_string())
                 feature->setName(f["name"].get<std::string>());
             if (f.contains("suppressed") && f["suppressed"].is_boolean())
@@ -305,18 +343,50 @@ ProjectData serializeProject(const doc::Document& document, const SaveOptions& o
                              {"application", "OpenShape"},
                              {"applicationVersion", kAppVersion}}
                             .dump(2);
+    // Imported geometry is part of the model (not a cache): always written.
+    for (const auto& body : document.bodies())
+        for (const auto& feature : body->features())
+            if (const auto* imported = dynamic_cast<const doc::ImportedFeature*>(feature.get()))
+                data.imports.emplace_back(imported->entryName(), imported->brepText());
     if (options.includeGeometryCache) {
         for (const auto& body : document.bodies())
             if (!body->shape().isNull())
                 data.geometry.emplace_back(body->id().toString(), geom::toBrepString(body->shape()));
     }
     data.thumbnailPng = options.thumbnailPng;
+    data.maxImportedGeometryBytes = options.maxImportedGeometryBytes;
     return data;
 }
+
+namespace {
+
+// The loader reads no more imported geometry than this (LoadOptions): a
+// project holding more could never be opened again, so it is not written.
+Status checkImportedGeometrySize(const ProjectData& data)
+{
+    std::uint64_t total = 0;
+    for (const auto& [entry, brep] : data.imports) {
+        total += brep.size();
+        if (brep.size() > doc::kMaxImportedBodyBytes || total > data.maxImportedGeometryBytes) {
+            const auto mb = [](std::uint64_t bytes) { return std::to_string((bytes + (1u << 20) - 1) >> 20); };
+            return Status::failure(ErrorCode::FileWriteError,
+                                   "The imported bodies are too large to keep in one project (at most "
+                                       + mb(data.maxImportedGeometryBytes) + " MB, " + mb(doc::kMaxImportedBodyBytes)
+                                       + " MB each). Delete some of them and save again.",
+                                   "imported geometry too large: " + entry + " has " + std::to_string(brep.size())
+                                       + " bytes, " + std::to_string(total) + " so far");
+        }
+    }
+    return okStatus();
+}
+
+} // namespace
 
 Result<std::string> buildProjectArchive(const ProjectData& data)
 {
     using R = Result<std::string>;
+    if (Status s = checkImportedGeometrySize(data); !s)
+        return R::failureFrom(s);
     int errorCode = 0;
     zip_source_t* memory = zip_source_buffer_create(nullptr, 0, 0, nullptr);
     if (!memory)
@@ -344,6 +414,9 @@ Result<std::string> buildProjectArchive(const ProjectData& data)
         return fail(s);
     if (Status s = addEntry(archive, "metadata.json", data.metadataJson); !s)
         return fail(s);
+    for (const auto& [entry, brep] : data.imports)
+        if (Status s = addEntry(archive, entry, brep); !s)
+            return fail(s);
     for (const auto& [bodyId, brep] : data.geometry)
         if (Status s = addEntry(archive, "geometry/" + bodyId + ".brep", brep); !s)
             return fail(s);
@@ -419,7 +492,7 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
     return okStatus();
 }
 
-Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path)
+Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path, const LoadOptions& options)
 {
     using R = Result<std::unique_ptr<doc::Document>>;
     ScopedTimer timer("loadProject");
@@ -457,12 +530,16 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
         return R::failureFrom(formatError("bad entry count"));
 
     zip_int64_t documentIndex = -1;
+    std::map<std::string, zip_int64_t> importEntries;
     for (zip_int64_t i = 0; i < count; ++i) {
         const char* name = zip_get_name(archive.archive, static_cast<zip_uint64_t>(i), ZIP_FL_ENC_GUESS);
         if (!name || !isSafeArchiveEntryName(name))
             return R::failureFrom(formatError(std::string("unsafe entry name: ") + (name ? name : "<null>")));
-        if (std::string(name) == "document.json")
+        const std::string entry(name);
+        if (entry == "document.json")
             documentIndex = i;
+        else if (entry.rfind("imports/", 0) == 0)
+            importEntries.emplace(entry, i);
     }
     if (documentIndex < 0)
         return R::failureFrom(formatError("document.json missing"));
@@ -476,10 +553,28 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
     if (root.is_discarded())
         return R::failureFrom(formatError("document.json is not valid JSON"));
 
+    // Imported geometry is read only when a step names it, each entry once
+    // (saving gives every step its own: two naming one is a crafted file,
+    // which would otherwise make us read and keep it again and again), and
+    // no more than the budget for imported geometry in all.
+    std::set<std::string> importsRead;
+    std::uint64_t importBytes = 0;
+    const EntryReader readImport = [&](const std::string& name) -> Result<std::string> {
+        const auto it = importEntries.find(name);
+        if (it == importEntries.end())
+            return Result<std::string>::failure(ErrorCode::FileFormatError, "Missing geometry.", "no entry " + name);
+        if (!importsRead.insert(name).second)
+            return Result<std::string>::failureFrom(formatError(name + " is named by more than one step"));
+        const std::uint64_t left = options.maxImportedGeometryBytes - std::min(importBytes, options.maxImportedGeometryBytes);
+        auto brep = readEntry(archive.archive, it->second, std::min(doc::kMaxImportedBodyBytes, left));
+        if (brep)
+            importBytes += brep.value().size();
+        return brep;
+    };
     // The reader checks every type it reads; this is the net under that.
     Result<std::unique_ptr<doc::Document>> document = R::failure(ErrorCode::FileFormatError, "", "");
     try {
-        document = documentFromJson(root);
+        document = documentFromJson(root, readImport);
     } catch (const std::exception& e) {
         return R::failureFrom(formatError(std::string("exception while reading document.json: ") + e.what()));
     }
@@ -490,6 +585,38 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
             OS_LOG(Warning, File) << "body '" << body->name() << "' has failing features after load";
     OS_LOG(Info, File) << "loaded project " << pathString(path);
     return document;
+}
+
+Result<std::vector<unsigned char>> readProjectThumbnail(const std::filesystem::path& path)
+{
+    using R = Result<std::vector<unsigned char>>;
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec))
+        return R::failure(ErrorCode::FileNotFound, "The project file could not be found.", "not a file: " + pathString(path));
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size == 0 || size > kMaxProjectFileBytes)
+        return R::failure(ErrorCode::FileFormatError, "This is not an OpenShape project.", "bad file size: " + pathString(path));
+    int error = 0;
+    ZipArchive archive;
+    archive.archive = zip_open(pathString(path).c_str(), ZIP_RDONLY, &error); // UTF-8 names on Windows too
+    if (!archive.archive)
+        return R::failure(ErrorCode::FileFormatError, "This is not an OpenShape project.",
+                          "zip_open failed (" + std::to_string(error) + "): " + pathString(path));
+    const zip_int64_t index = zip_name_locate(archive.archive, "thumbnail.png", 0);
+    if (index < 0)
+        return R::failure(ErrorCode::FileFormatError, "This project has no preview.", "no thumbnail.png");
+    zip_stat_t st;
+    zip_stat_init(&st);
+    if (zip_stat_index(archive.archive, zip_uint64_t(index), 0, &st) != 0 || !(st.valid & ZIP_STAT_SIZE)
+        || st.size > kMaxThumbnailBytes || st.size < 8)
+        return R::failure(ErrorCode::FileFormatError, "This project's preview is damaged.", "thumbnail.png size");
+    auto bytes = readEntry(archive.archive, index);
+    if (!bytes)
+        return R::failureFrom(bytes);
+    static const unsigned char kSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    if (std::memcmp(bytes.value().data(), kSignature, 8) != 0)
+        return R::failure(ErrorCode::FileFormatError, "This project's preview is damaged.", "thumbnail.png is not a PNG");
+    return R::success(std::vector<unsigned char>(bytes.value().begin(), bytes.value().end()));
 }
 
 } // namespace os::io

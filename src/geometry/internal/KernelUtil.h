@@ -12,6 +12,7 @@
 #include "geometry/Shape.h"
 
 #include <Standard_ErrorHandler.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <Standard_Failure.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Dir.hxx>
@@ -66,9 +67,10 @@ void installKernelSignalHandlers();
 // back as OCCT's does, without OCCT's mutex, which a jump leaves locked (a
 // fault on a second thread would then wait forever). On POSIX handlers
 // belong to the process, so a dispatcher is installed instead: it hands a
-// fault to OCCT only on the thread inside the kernel call (the kernel lock
-// owner) and to the handler from before on any other thread (e.g. a crash
-// on the GUI thread while the preview worker is in the kernel).
+// fault to OCCT only when the faulting thread is inside a kernel try block
+// (Standard_ErrorHandler::IsInTryBlock, per thread) and to the handler from
+// before otherwise (e.g. a crash on the GUI thread while the preview worker
+// is in the kernel). On both, a fault outside any try block stays a crash.
 //
 // It also holds the kernel lock (see KernelLock below) for its lifetime.
 class KernelSignalScope {
@@ -140,6 +142,8 @@ auto guarded(const char* operation, const char* userMessage, Fn&& fn) -> decltyp
 // Normalizes a kernel result: unwraps single-solid compounds, rejects empty
 // results, and runs the B-rep validity checker.
 Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage);
+// What BRepCheck rejects, for logs: "FACE: BRepCheck_UnorientableShape x3; ...".
+std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const TopoDS_Shape& shape);
 
 inline gp_Dir toDir(const Vec3& v) { return gp_Dir(v.x, v.y, v.z); }
 

@@ -34,7 +34,7 @@ pacman -S --needed --noconfirm \
 ```
 
 Verified versions: GCC 16.2.0, CMake 4.4.3, Ninja 1.13.2, OCCT 7.9.3,
-Qt 6.11.2, GTest 1.18.0, nlohmann-json 3.12.0, libzip 1.11.4, Eigen 5.0.1.
+Qt 6.11.2 (6.9 or newer is required: `SafeArea`), GTest 1.18.0, nlohmann-json 3.12.0, libzip 1.11.4, Eigen 5.0.1.
 The PlaneGCS sketch solver is vendored in `third_party/planegcs` and built
 from source (as a C++23 shared library) automatically.
 
@@ -75,8 +75,11 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch   # the tablet layout (bigger controls, Pen switch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 820x1180 --demo combine --screenshot ipad.png   # iPad portrait layout
+./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo bracket --screenshot phone.png   # iPhone 16 Pro, portrait
+./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 874x402 --safe-area 0,62,21,62 --demo sketch --screenshot phone-landscape.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-crash   # then start with --data-dir some-dir: it offers the box
@@ -88,10 +91,36 @@ Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
 `sketch`, `sketchdone`, `extrude`, `bracket`, `revolve`, `combine` (two bodies
 selected), `history` (a fillet step highlighted from the Model panel),
 `rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews),
+`holes` (the Hole tool with two countersunk holes, the second one's Y being
+typed),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
-the constraint glyphs). Without `--screenshot` the window stays open.
+the constraint glyphs) and `home` (the start screen with four saved
+projects and their previews; try `--touch --size 402x874`, `874x402` and
+`1180x820` for phones and the iPad) and `enclosure` (a 60 x 40 x 25 mm
+project box built from a box: sizes typed, corners rounded, shelled, a
+cable hole cut, and the hole's diameter being set to 10.4 mm; the
+README's picture). Panels to look at (layout checks at phone
+sizes): `help`, `about`, `preferences`, `savename` (the overlay open),
+`modelpanel` (the compact layout's Model panel open on the `history` scene)
+and `viewmenu` (the compact View menu open on `combine`). Without
+`--screenshot` the window stays open. A normal start without a file opens on Home; automated runs
+(`--acceptance`, `--demo`, `--screenshot`) start in an empty document.
+
+**Phone and Split View layouts.** Below 600 logical px wide or 500 tall the
+window gets the compact layout (tools in a strip along the bottom, Model and
+View buttons); `--size WxH` sets any size (also below the desktop minimum),
+e.g. 402x874 / 874x402 (iPhone 16 Pro), 375x667 (a small iPhone), 500x800
+(half an iPad in Split View), 1180x820 / 820x1180 (iPad Air 11"). A window
+resized while it runs switches layouts live. `--safe-area top,right,bottom,left`
+(logical px) simulates a phone's safe-area insets and shades them, with the
+Dynamic Island and the home indicator drawn in: iPhone 16 Pro portrait
+`62,0,34,0`, landscape `0,62,21,62` (an iPad: `24,0,20,0`).
+`--app-folder <dir>` saves and exports as on an iPhone or iPad: Save asks for
+a name only and writes `<dir>/<name>.openshape`, exports go to
+`<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
+demo scene shows that prompt.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log; those computed on
 the preview worker thread start with `[worker]`, and GUI-thread blocks
@@ -293,14 +322,16 @@ workflow artifact. The Windows icon is made from the SVG with
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,
   bounding boxes and recovery copies / full saves on a 21-face filleted part
-  (and saves on a 21-body, 1528-face model), then the same plus a fillet
-  drag and hover picking (1200 pointer positions over the part) on a
-  249-face enclosure (shelled, rounded, 95 vent holes with chamfers, screw
-  bosses; 25k triangles). Last, the GUI thread during a 20-step push/pull
-  drag on the enclosure's rim (pointer moves 16 ms apart: per move the
-  controller plus what the UI reads back, and delivering finished previews
-  between moves), once with previews on the GUI thread and once on the
-  preview worker. Numbers in PROJECT_STATUS.md:
+  (and saves and the project thumbnail on a 21-body, 1528-face model),
+  then the same plus a fillet drag and hover picking (1200 pointer
+  positions over the part) on a 249-face enclosure (shelled, rounded, 95
+  vent holes with chamfers, screw bosses; 25k triangles). Last, the GUI
+  thread during a 20-step push/pull drag on the enclosure's rim (pointer
+  moves 16 ms apart: per move the controller plus what the UI reads back,
+  and delivering finished previews between moves), once with previews on
+  the GUI thread and once on the preview worker, and the same for the Hole
+  tool on the enclosure's front wall (two clicks, each followed by 15 hover
+  moves while its preview computes). Numbers in PROJECT_STATUS.md:
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
@@ -346,6 +377,17 @@ workflow artifact. The Windows icon is made from the SVG with
   (pointer moves, drags, waits for the kernel), `SLOW` kernel work on the
   GUI thread (commits, undo), `WORKER` slow previews on the worker thread
   (the window stays responsive meanwhile).
+
+- **`scripts/dev/doc_screenshots.sh`** — retakes the screenshots in
+  `docs/images/` (README.md, docs/USER_GUIDE.md) from the demo scenes
+  (1400x900; `tablet.png` with `--touch --size 1180x820`) and passes each
+  through `scripts/dev/shrink_png.py`, which drops the opaque alpha channel
+  and recompresses (13-22 % smaller, the same pixels; standard-library
+  Python). Run it from the repository root with the toolchain on `PATH`
+  after a UI change, keep the mouse pointer away from where the window
+  opens (a tooltip under it would be in the picture), and look at every
+  image; `bash scripts/dev/doc_screenshots.sh hero tablet` retakes only
+  those.
 
 ## macOS and iPad — prepared, not yet verified
 

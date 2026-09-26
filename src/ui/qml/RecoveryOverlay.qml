@@ -29,15 +29,23 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
+    // The card stays clear of a phone's Dynamic Island, rounded corners and
+    // home indicator (Theme.safe*; zero on the desktop).
+    Item {
+        id: safeRect
+        anchors { fill: parent; topMargin: Theme.safeTop; rightMargin: Theme.safeRight
+                  bottomMargin: Theme.safeBottom; leftMargin: Theme.safeLeft }
+    }
+
     Panel {
-        anchors.centerIn: parent
+        anchors.centerIn: safeRect
         opacity: 1
-        width: Math.min(parent.width - 32, 600)
-        height: Math.min(parent.height - 32, content.implicitHeight + 48)
+        width: Math.min(safeRect.width - (Theme.compact ? 16 : 32), 600)
+        height: Math.min(safeRect.height - (Theme.compact ? 16 : 32), content.implicitHeight + 2 * (Theme.compact ? 16 : 24))
 
         Flickable {
             anchors.fill: parent
-            anchors.margins: 24
+            anchors.margins: Theme.compact ? 16 : 24
             contentHeight: content.implicitHeight
             clip: true
             interactive: contentHeight > height
@@ -94,6 +102,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     text: row.modelData.title
+                                    textFormat: Text.PlainText // a project's name
                                     color: Theme.text
                                     font.pixelSize: 14
                                     font.weight: Font.DemiBold
@@ -102,6 +111,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     text: row.modelData.time + " · " + row.modelData.detail
+                                    textFormat: Text.PlainText
                                     color: Theme.mutedText
                                     font.pixelSize: 12
                                     elide: Text.ElideMiddle

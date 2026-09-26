@@ -8,8 +8,9 @@ import QtQuick.Layouts
 import OpenShape
 
 // The model tree: sketches, bodies and each body's steps, in order. Hovering
-// a row highlights its geometry in the view; clicking a body selects it
-// (Shift adds another, e.g. to combine); clicking a step edits its values.
+// a row highlights its geometry in the view (so does an expanded row: touch
+// has no hover); clicking a body selects it (Shift, or any tap in the touch
+// layout, adds another, e.g. to combine); clicking a step edits its values.
 // Failures and warnings are shown in place with an explanation.
 Panel {
     id: panel
@@ -19,12 +20,16 @@ Panel {
     property bool collapsed: false
     property string expandedId: ""
     signal finished()
+    // Close in the compact layout (the panel slides away; Main.qml decides).
+    signal closeRequested()
+    // Collapsing is for the regular layout; a compact window closes the panel.
+    readonly property bool folded: collapsed && !Theme.compact
 
     onExpandedIdChanged: app.highlightHistoryItem(expandedId)
 
     width: 290
-    height: collapsed ? header.height + 2 * Theme.panelPadding
-                      : Math.min(maximumHeight, header.height + list.contentHeight + 3 * Theme.panelPadding)
+    height: folded ? header.height + 2 * Theme.panelPadding
+                   : Math.min(maximumHeight, header.height + list.contentHeight + 3 * Theme.panelPadding)
 
     ColumnLayout {
         anchors.fill: parent
@@ -37,15 +42,21 @@ Panel {
             SectionLabel { text: "Model" }
             Item { Layout.fillWidth: true }
             ActionButton {
+                objectName: "historyPanelHide"
                 compact: true
-                text: panel.collapsed ? "Show" : "Hide"
-                onClicked: panel.collapsed = !panel.collapsed
+                text: Theme.compact ? "Close" : panel.collapsed ? "Show" : "Hide"
+                onClicked: {
+                    if (Theme.compact)
+                        panel.closeRequested()
+                    else
+                        panel.collapsed = !panel.collapsed
+                }
             }
         }
 
         ListView {
             id: list
-            visible: !panel.collapsed
+            visible: !panel.folded
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -79,7 +90,13 @@ Panel {
                         const owner = panel
                         const data = row.modelData
                         const wasExpanded = row.expanded
-                        if (data.kind === "body" && data.visible)
+                        // Shift adds a body (to combine them) or takes it out
+                        // again; a tap in the touch layout adds it (as taps in
+                        // the view do) and never takes it out, so tapping the
+                        // row again to fold it keeps the body selected.
+                        if (data.kind === "body" && data.visible && owner.app.touchMode)
+                            owner.app.addBodyToSelection(data.id)
+                        else if (data.kind === "body" && data.visible)
                             owner.app.selectBody(data.id, (mouse.modifiers & Qt.ShiftModifier) !== 0)
                         owner.expandedId = wasExpanded ? "" : data.id
                     }
@@ -108,8 +125,11 @@ Panel {
                             radius: 3.5
                             color: row.failed ? Theme.error : row.warned ? "#E0A030" : row.inactive ? "#B8BEC6" : "#4CAF6A"
                         }
+                        // Names and messages come from files (STEP product
+                        // names, projects): shown as plain text, never as HTML.
                         Text {
                             text: row.modelData.name
+                            textFormat: Text.PlainText
                             font.pixelSize: 13
                             font.weight: row.isFeature ? Font.Normal : Font.DemiBold
                             font.strikeout: row.modelData.status === "suppressed"
@@ -118,6 +138,7 @@ Panel {
                         Text {
                             Layout.fillWidth: true
                             text: row.modelData.detail
+                            textFormat: Text.PlainText
                             elide: Text.ElideRight
                             font.pixelSize: 12
                             color: Theme.mutedText
@@ -136,6 +157,7 @@ Panel {
                         Layout.fillWidth: true
                         text: row.modelData.status === "blocked" && row.modelData.message.length === 0
                               ? "Not computed" : row.modelData.message
+                        textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         font.pixelSize: 11
                         color: row.failed ? Theme.error : row.warned ? "#9A6A00" : Theme.mutedText
@@ -216,8 +238,10 @@ Panel {
                     }
 
                     // Actions for the expanded row.
-                    Row {
+                    // (Wraps in a narrow, compact panel.)
+                    Flow {
                         visible: row.expanded
+                        Layout.fillWidth: true
                         spacing: 4
                         ActionButton {
                             compact: true

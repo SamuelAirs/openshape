@@ -188,6 +188,81 @@ bool benchGuiDrag(interact::InteractionController& controller, int face, bool as
     return true;
 }
 
+// The Hole tool on the enclosure's front wall: each click places a hole and
+// starts its preview (a boolean on the whole part), then the pointer hovers
+// on over the face, 16 ms apart, for 15 moves. Hovering shows where the next
+// hole would snap to; asking the kernel whether points lie on the face made
+// it wait while a preview's kernel call ran (110 ms), so it tests the face's
+// outline instead (geom::outlineContains).
+bool benchHoleHover(interact::InteractionController& controller, bool async)
+{
+    using interact::PointerButton;
+    using interact::PointerEvent;
+    using Clock = std::chrono::steady_clock;
+    auto at = [](Vec2 p, PointerButton button) {
+        PointerEvent e;
+        e.position = p;
+        e.button = button;
+        return e;
+    };
+    auto since = [](Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); };
+    if (async)
+        controller.enableAsyncPreviews({});
+    else
+        controller.disableAsyncPreviews();
+    controller.setStandardView(StandardView::Isometric, false);
+    controller.fitAll(false);
+    auto click = [&](const Vec3& world) {
+        const Vec2 p = controller.camera().project(world);
+        controller.pointerMove(at(p, PointerButton::None));
+        const auto t0 = Clock::now();
+        controller.pointerPress(at(p, PointerButton::Left));
+        controller.pointerRelease(at(p, PointerButton::Left));
+        (void)controller.renderScene();
+        return since(t0);
+    };
+    (void)click({0, -40, 12}); // the front wall's outer face
+    if (!controller.triggerAction("hole").ok() || !dynamic_cast<const interact::HoleOperation*>(controller.operation())) {
+        std::printf("Hole tool: the front wall was not selected (%s)\n",
+                    controller.operation() ? controller.operation()->title().c_str() : "no operation");
+        return false;
+    }
+    geom::resetInteractiveKernelWaits();
+    double worstClick = 0, worstHover = 0, total = 0;
+    int moves = 0;
+    for (int k = 0; k < 2; ++k) {
+        worstClick = std::max(worstClick, click({-20.0 + 40.0 * k, -40, 12}));
+        for (int i = 0; i < 15; ++i) {
+            const Vec3 w{-30.0 + 4.0 * i, -40, 9.0 + (i % 3)};
+            const auto t0 = Clock::now();
+            controller.pointerMove(at(controller.camera().project(w), PointerButton::None));
+            (void)controller.renderScene();
+            const double move = since(t0);
+            total += move;
+            ++moves;
+            worstHover = std::max(worstHover, move);
+            while (since(t0) < 16.0) {
+                if (controller.previewBusy() && controller.deliverPreviews())
+                    (void)controller.renderScene();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+    }
+    (void)controller.waitForPreview();
+    const auto* hole = dynamic_cast<const interact::HoleOperation*>(controller.operation());
+    const geom::KernelWaits waits = geom::interactiveKernelWaits();
+    std::printf("Hole tool on the front wall, 2 clicks each followed by 15 hover moves (previews on the %s): click longest "
+                "%.1f ms; hover per move avg %.1f ms, longest %.1f ms; GUI waits for the kernel %llu (longest %.1f ms); "
+                "%zu holes, preview %s\n",
+                async ? "worker" : "GUI thread", worstClick, total / moves, worstHover,
+                static_cast<unsigned long long>(waits.count), waits.longestMs, hole ? hole->positions().size() : 0u,
+                hole && hole->hasPreview() && hole->error().empty() ? "ok" : "missing");
+    controller.cancelOperation();
+    controller.cancelOperation();
+    controller.disableAsyncPreviews();
+    return hole && hole->positions().size() == 2;
+}
+
 // A realistic maker part: a 120 x 80 x 40 mm enclosure with rounded corners,
 // shelled open at the top (2 mm walls), a floor with a 10 x 6 grid of vent
 // holes (one sketch, one through-all cut), four screw bosses with pilot
@@ -397,9 +472,11 @@ int benchEnclosure()
     geom::setInteractiveThread();
     const bool syncOk = benchGuiDrag(controller, rimNow, false);
     const bool asyncOk = benchGuiDrag(controller, rimNow, true);
+    const bool holeSyncOk = benchHoleHover(controller, false);
+    const bool holeAsyncOk = benchHoleHover(controller, true);
     const double snapshot = timeMs([&] { (void)document.snapshot(); });
     std::printf("document snapshot for the worker (once per document state): %.3f ms\n", snapshot);
-    return syncOk && asyncOk ? 0 : 1;
+    return syncOk && asyncOk && holeSyncOk && holeAsyncOk ? 0 : 1;
 }
 
 } // namespace
@@ -535,6 +612,14 @@ int main()
     timeSaves("heavy model");
     const double heavySnapshot = timeMs([&] { (void)document.snapshot(); });
     std::printf("heavy model: document snapshot for the preview worker %.3f ms\n", heavySnapshot);
+
+    // 6. The thumbnail a Save adds (CPU rendering of the display meshes; the
+    //    PNG encoding in the app adds a few ms, logged at debug level).
+    interact::InteractionController controller(document, stack);
+    controller.setViewportSize({1200, 800});
+    const double meshes = timeMs([&] { (void)controller.renderThumbnail(256); }); // tessellates once, as the view does
+    const double thumbnail = timeMs([&] { (void)controller.renderThumbnail(256); });
+    std::printf("heavy model thumbnail 256 px: %.1f ms (first call with tessellation %.1f ms)\n", thumbnail, meshes);
     std::filesystem::remove_all(dir);
     return benchEnclosure();
 }

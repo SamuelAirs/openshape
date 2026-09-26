@@ -55,6 +55,13 @@ Result<std::vector<PlanarCurve>> offsetCurves(const PlaneFrame& plane, const std
 
 // Sweeps faces along `vector` and fuses the prisms into one shape.
 Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector);
+// The same with the side walls drafted by `draftAngle` (radians): positive
+// narrows the section as it goes along `vector` (like a mold draft: outer
+// walls lean in, holes widen), negative widens it; corners stay sharp, so a
+// square becomes a pyramid frustum and a circle a cone frustum. Refused with
+// a plain message when the section would close up (or lose an edge) before
+// the end. A zero angle is extrudeFaces. (DraftExtrude.cpp)
+Result<Shape> extrudeFacesDrafted(const std::vector<Shape>& faces, const Vec3& vector, double draftAngle);
 
 // Revolves faces around an axis (in their plane) by `angle` radians and fuses
 // the results. Fails if a face crosses the axis.
