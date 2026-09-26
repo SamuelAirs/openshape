@@ -62,6 +62,17 @@ if(OPENSHAPE_OWN_OCCT)
     find_package(OpenCASCADE REQUIRED CONFIG
         PATHS "${OPENSHAPE_OCCT_PREFIX}/lib/cmake/opencascade" NO_DEFAULT_PATH)
     message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: OpenShape's own build in ${OPENSHAPE_OCCT_PREFIX}")
+    # Tests run with this OCCT first on PATH, whatever the caller's PATH is:
+    # MSYS2's OCCT (same version) would otherwise load silently and the
+    # tests would check the wrong kernel. TEST_LAUNCHER (CMake 3.29) also
+    # covers GoogleTest's test discovery; test_geometry checks which
+    # TKernel was loaded (tests/test_occt_build.cpp).
+    if(CMAKE_VERSION VERSION_LESS 3.29)
+        message(FATAL_ERROR "OPENSHAPE_OWN_OCCT needs CMake 3.29 or newer (TEST_LAUNCHER)")
+    endif()
+    file(TO_NATIVE_PATH "${OPENSHAPE_OCCT_PREFIX}/bin" openshape_occt_bin_native)
+    set(OPENSHAPE_OCCT_TEST_LAUNCHER
+        "${CMAKE_COMMAND}" -E env --modify "PATH=path_list_prepend:${openshape_occt_bin_native}" --)
 else()
     find_package(OpenCASCADE REQUIRED)
 endif()

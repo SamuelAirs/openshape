@@ -62,6 +62,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 endif()
 
 if(OPENSHAPE_BUILD_TESTS)
+    if(OPENSHAPE_OWN_OCCT)
+        # Release builds: ctest runs the app with OpenShape's own OCCT first on PATH.
+        set_target_properties(openshape PROPERTIES TEST_LAUNCHER "${OPENSHAPE_OCCT_TEST_LAUNCHER}")
+    endif()
     # End-to-end GUI acceptance run (needs a desktop session; label "gui").
     add_test(NAME acceptance_gui
              COMMAND openshape --acceptance ${CMAKE_BINARY_DIR}/acceptance)

@@ -149,13 +149,17 @@ in the repository root.
 
 2. **Release build and tests** — the preset `msys2-ucrt64-release` finds OCCT
    in `$OPENSHAPE_OCCT_PREFIX`, default `%USERPROFILE%\opt\occt-7.9.3-openshape`
-   (only there: the system's OCCT is never picked up). Tests need the own
-   OCCT first on `PATH`:
+   (only there: the system's OCCT is never picked up). `ctest` runs the
+   tests with the own OCCT first on `PATH` (a `TEST_LAUNCHER`; needs CMake
+   3.29), and `OcctBuild.TestsLoadOpenShapesOwnOcct` fails if any OCCT
+   toolkit is loaded from elsewhere (MSYS2's has the same version and would
+   otherwise load silently). Running a test program or `OpenShape.exe` from
+   the build folder by hand needs `PATH=$HOME/opt/occt-7.9.3-openshape/bin:$PATH`.
 
    ```bash
    cmake --preset msys2-ucrt64-release -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
-   cmake --build build/msys2-ucrt64-release
-   PATH=$HOME/opt/occt-7.9.3-openshape/bin:$PATH ctest --test-dir build/msys2-ucrt64-release -LE gui
+   cmake --build build/msys2-ucrt64-release -j 3
+   ctest --test-dir build/msys2-ucrt64-release -LE gui -j 3
    ```
 
 3. **Package** (with the license gate; fails for a release build that would

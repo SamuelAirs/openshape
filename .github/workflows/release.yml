@@ -110,8 +110,9 @@ jobs:
       - name: Build
         run: bash scripts/ci/run-logged.sh build cmake --build build/msys2-ucrt64-release
       - name: Test (headless, against the own OpenCASCADE)
+        # ctest puts the own OCCT first on PATH (TEST_LAUNCHER), and
+        # OcctBuild.TestsLoadOpenShapesOwnOcct fails if MSYS2's OCCT loads.
         run: |
-          export PATH="$(cygpath -u "$OPENSHAPE_OCCT_PREFIX")/bin:$PATH"
           bash scripts/ci/run-logged.sh test ctest --test-dir build/msys2-ucrt64-release -LE gui --output-on-failure
           grep -E "tests passed" "$LOGS/test.log" | sed 's/^/::notice title=Windows release tests::/'
 
