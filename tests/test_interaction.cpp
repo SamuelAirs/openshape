@@ -646,14 +646,35 @@ TEST(Interaction, DoubleClickSelectsBodyAndDeleteRemovesIt)
     EXPECT_EQ(h.document.bodies().size(), 1u);
 }
 
+// The point under the cursor stays there. In perspective the zoom heads for
+// the surface under the cursor (not the target's depth), so the eye closes
+// in on that point by the zoom factor and never passes through it.
 TEST(Interaction, WheelZoomsTowardCursor)
 {
-    Harness h;
-    ASSERT_TRUE(h.controller.createBox(20).ok());
-    h.controller.fitAll(false);
-    const double before = h.controller.camera().orthoHeight;
-    h.controller.wheel({600, 400}, 2);
-    EXPECT_LT(h.controller.camera().orthoHeight, before);
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Harness h;
+        h.controller.setProjection(projection);
+        ASSERT_TRUE(h.controller.createBox(20).ok());
+        h.controller.fitAll(false);
+        const Vec3 onFace{6, -10, 14}; // the front face, off the view's center and the target's depth
+        const Vec2 cursor = h.screen(onFace);
+        const double heightBefore = h.controller.camera().orthoHeight;
+        const double distanceBefore = (h.controller.camera().eye() - onFace).length();
+        h.controller.wheel(cursor, 2);
+        const Vec2 after = h.screen(onFace);
+        EXPECT_NEAR(after.x, cursor.x, 1e-6);
+        EXPECT_NEAR(after.y, cursor.y, 1e-6);
+        const double factor = 0.85 * 0.85;
+        if (projection == Camera::Projection::Orthographic) {
+            EXPECT_NEAR(h.controller.camera().orthoHeight, heightBefore * factor, 1e-9);
+        } else {
+            EXPECT_NEAR((h.controller.camera().eye() - onFace).length(), distanceBefore * factor, 1e-6);
+            for (int i = 0; i < 80; ++i)
+                h.controller.wheel(cursor, 1);
+            EXPECT_GT(h.controller.camera().depthOf(onFace), 0.0) << "never through the face";
+            EXPECT_NEAR((h.screen(onFace) - cursor).length(), 0.0, 1e-6);
+        }
+    }
 }
 
 TEST(Interaction, PanWithMiddleButton)

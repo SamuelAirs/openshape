@@ -3,9 +3,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-layout(location = 0) in vec3 vNormal; // world
-layout(location = 1) in vec3 vWorld;
-layout(location = 0) out vec4 fragColor;
+// A flat quad on the ground plane (z = 0): the grid and contact shadows are
+// drawn per pixel on it (grid.frag, shadow.frag).
+layout(location = 0) in vec3 position;
+layout(location = 0) out vec3 vWorld;
 
 // Shared by every shader (ViewportRenderer.cpp, UniformData).
 layout(std140, binding = 0) uniform Frame {
@@ -24,30 +25,21 @@ layout(std140, binding = 0) uniform Frame {
     vec4 fade;    // x: grid radius, y: axis radius, z/w: eye distances where the grid starts/ends fading (0: never); shadows: x blur
 };
 
+// Moves a point along its view ray by `params.w` device pixels' worth of
+// depth (negative: away from the viewer, so a body's bottom face lying on
+// the ground hides the grid instead of fighting it).
+vec4 biasedClip(vec3 p)
+{
+    vec4 v = view * vec4(p, 1.0);
+    if (eye.w > 0.5)
+        v.xyz *= max(1.0 - params.w * camera.x, 0.0);
+    else
+        v.z += params.w * camera.x;
+    return proj * v;
+}
+
 void main()
 {
-    vec3 n = normalize(vNormal);
-    vec3 toViewer = eye.w > 0.5 ? normalize(eye.xyz - vWorld) : eye.xyz;
-    // Two-sided without relying on winding (backends differ in Y-flip): the
-    // side we see faces us.
-    if (dot(n, toViewer) < 0.0)
-        n = -n;
-
-    if (params2.x > 0.5) {
-        // Tint / overlay: mostly flat, with a hint of shape.
-        float shade = 0.82 + 0.18 * dot(n, toViewer);
-        fragColor = vec4(color.rgb * shade, color.a);
-        return;
-    }
-
-    // Studio lighting in world space (core/Lighting.h, StudioLighting::shade):
-    // sky/ground ambient (up-facing faces lightest, down-facing darkest), a
-    // key light from above, a gentle fill from the viewer, a soft highlight.
-    float ambient = mix(lights.y, lights.x, n.z * 0.5 + 0.5);
-    float key = max(dot(n, light.xyz), 0.0);
-    float fill = max(dot(n, toViewer), 0.0);
-    vec3 halfway = normalize(light.xyz + toViewer);
-    float highlight = pow(max(dot(n, halfway), 0.0), gloss.y);
-    vec3 lit = color.rgb * (ambient + lights.z * key + lights.w * fill) + vec3(gloss.x * highlight);
-    fragColor = vec4(lit, color.a);
+    vWorld = position;
+    gl_Position = biasedClip(position);
 }

@@ -68,6 +68,13 @@ void AcceptanceRunner::click(QPointF p, Qt::KeyboardModifiers mods)
     mouseRelease(p, Qt::LeftButton, mods);
 }
 
+void AcceptanceRunner::wheel(QPointF p, int notches)
+{
+    mouseMove(p);
+    QWindowSystemInterface::handleWheelEvent(window_, p, window_->mapToGlobal(p), QPoint(), QPoint(0, 120 * notches));
+    QWindowSystemInterface::flushWindowSystemEvents(); // delivered now, like the other input helpers
+}
+
 void AcceptanceRunner::drag(QPointF from, QPointF to, int steps)
 {
     mouseMove(from);
@@ -1037,6 +1044,7 @@ void AcceptanceRunner::start()
 {
     initialSize_ = window_->size();
     initialMinimum_ = window_->minimumSize();
+    startedInPerspective_ = app_->perspective();
     initialAppFolder_ = app_->appFolder();
     std::vector<AcceptanceScenario> scenarios = acceptanceScenarios();
     scenarios.insert(scenarios.begin(), AcceptanceScenario{QStringLiteral("core"), 0, [](AcceptanceRunner& r) {
@@ -1095,6 +1103,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
         window_->resize(initialSize_);
         window_->setMinimumSize(initialMinimum_);
     }
+    app_->setPerspective(true); // the default (a scenario may have switched)
     app_->newDocument();
     app_->setDisplayUnit(QStringLiteral("mm"));
     app_->setView(QStringLiteral("iso"));

@@ -1683,3 +1683,32 @@ TEST(SketchInteraction, AngleDimensionBetweenTwoLines)
     EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6);
     EXPECT_TRUE(h.messages.empty());
 }
+
+// A circle drawn on a box's top plane but beside the box floats in front of
+// the box's far edges: in both projections a click on it selects its
+// profile (in perspective an edge behind it on screen used to win).
+TEST(SketchInteraction, ProfileBesideABoxWinsOverAnEdgeBehindIt)
+{
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Harness h;
+        h.controller.setProjection(projection);
+        ASSERT_TRUE(h.controller.createBox(20).ok());
+        h.controller.skipAnimation();
+        h.controller.fitAll(false);
+        h.click(h.controller.camera().project({0, 0, 20}));
+        ASSERT_TRUE(h.controller.startSketch().ok());
+        h.controller.skipAnimation();
+        h.controller.setSketchTool(SketchTool::Circle);
+        h.click(h.controller.camera().project({17, 0, 20}));
+        h.move(h.controller.camera().project({19, 0, 20}));
+        h.type("6");
+        ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+        h.controller.finishSketch();
+        h.controller.skipAnimation();
+        h.controller.setStandardView(StandardView::Isometric, false);
+        h.controller.fitAll(false);
+        h.click(h.controller.camera().project({17, 0, 20}));
+        ASSERT_NE(h.controller.operation(), nullptr);
+        EXPECT_EQ(h.controller.operation()->title(), "Extrude");
+    }
+}

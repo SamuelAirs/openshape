@@ -61,6 +61,9 @@ AppController::AppController(QObject* parent)
     preferences_ = loadPreferences(settings);
     document_->setDisplayUnit(preferences_.defaultUnit);
     interaction_->setSketchGridSnap(preferences_.sketchGridSnap);
+    // Perspective unless the user chose orthographic last time (automated
+    // runs read a fresh settings file: perspective).
+    interaction_->setProjection(loadPerspective(settings) ? Camera::Projection::Perspective : Camera::Projection::Orthographic);
 
     recoveryDebounce_.setSingleShot(true);
     recoveryDebounce_.setInterval(kRecoveryDebounceMs);
@@ -891,7 +894,14 @@ void AppController::fitAll() { interaction_->fitAll(true); }
 
 void AppController::togglePerspective()
 {
-    interaction_->setProjection(perspective() ? Camera::Projection::Orthographic : Camera::Projection::Perspective);
+    setPerspective(!perspective());
+}
+
+void AppController::setPerspective(bool on)
+{
+    interaction_->setProjection(on ? Camera::Projection::Perspective : Camera::Projection::Orthographic);
+    QSettings settings;
+    savePerspective(settings, on);
 }
 
 void AppController::setDisplayUnit(const QString& symbol)

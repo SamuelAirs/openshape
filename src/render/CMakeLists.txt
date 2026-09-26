@@ -18,4 +18,7 @@ qt_add_shaders(openshape_render "openshape_shaders"
         shaders/mesh.frag
         shaders/line.vert
         shaders/line.frag
+        shaders/grid.vert
+        shaders/grid.frag
+        shaders/shadow.frag
 )

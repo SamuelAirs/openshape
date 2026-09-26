@@ -91,6 +91,20 @@ void InteractionController::setStandardView(StandardView view, bool animate)
     }
 }
 
+void InteractionController::setViewAngles(double yaw, double pitch, bool animate)
+{
+    Camera to = camera_;
+    to.yaw = std::remainder(yaw, 2 * kPi);
+    to.pitch = std::clamp(pitch, -kPi / 2, kPi / 2);
+    if (animate) {
+        startAnimation(to);
+    } else {
+        animation_.reset();
+        camera_ = to;
+        notifyView();
+    }
+}
+
 void InteractionController::setProjection(Camera::Projection projection)
 {
     if (camera_.projection == projection)
@@ -463,7 +477,7 @@ void InteractionController::cancelPointer()
 void InteractionController::wheel(Vec2 position, double steps)
 {
     animation_.reset();
-    camera_.zoomAt(position, std::pow(kWheelZoomPerStep, steps));
+    zoomAt(position, std::pow(kWheelZoomPerStep, steps));
     notifyView();
 }
 
@@ -472,8 +486,24 @@ void InteractionController::pinch(Vec2 center, double scale)
     if (scale <= 0)
         return;
     animation_.reset();
-    camera_.zoomAt(center, 1.0 / scale);
+    zoomAt(center, 1.0 / scale);
     notifyView();
+}
+
+void InteractionController::zoomAt(Vec2 screen, double factor)
+{
+    // In perspective the zoom heads for the surface under the pointer: the
+    // target first moves along the view axis to that surface's depth (the
+    // image does not change), so the point under the pointer stays there and
+    // zooming in approaches it without ever passing through it.
+    if (camera_.projection == Camera::Projection::Perspective) {
+        const auto hit = sel::pickFace(pickTargets(), camera_, screen);
+        if (const double depth = hit.hit() ? camera_.depthOf(hit.point) : 0.0; depth > 1e-6) {
+            camera_.target = camera_.eye() + camera_.forward() * depth;
+            camera_.distance = depth;
+        }
+    }
+    camera_.zoomAt(screen, factor);
 }
 
 void InteractionController::twoFingerPan(Vec2 from, Vec2 to)
@@ -1987,17 +2017,42 @@ RenderScene InteractionController::renderScene() const
         }
     }
 
-    // Grid on the XY plane, spaced for the current zoom.
-    const double minor = snapIncrement(camera_.pixelSize(camera_.target), 14.0);
-    scene.grid.minorStep = minor;
-    scene.grid.majorStep = minor * 10;
-    const double major = scene.grid.majorStep;
-    scene.grid.center = {std::round(camera_.target.x / major) * major, std::round(camera_.target.y / major) * major, 0};
-    const double visible = std::max(camera_.viewportSize.x, camera_.viewportSize.y) * camera_.pixelSize(camera_.target);
-    scene.grid.halfLines = std::clamp(static_cast<int>(std::ceil(visible / minor)), 10, 150);
-    const double gridReach = scene.grid.halfLines * minor * 1.5 + (scene.grid.center - camera_.sceneCenter).length();
-    scene.camera.sceneRadius = std::max(scene.camera.sceneRadius, gridReach);
+    scene.grid = groundGrid();
+    // Everything drawn on the ground (the axes reach furthest) stays inside
+    // the clipping range.
+    const double groundReach = scene.grid.axisRadius + (scene.grid.center - camera_.sceneCenter).length();
+    scene.camera.sceneRadius = std::max(scene.camera.sceneRadius, groundReach);
     return scene;
+}
+
+RenderGrid InteractionController::groundGrid() const
+{
+    RenderGrid grid;
+    // Lines spaced for the current zoom, around the target.
+    const double minor = snapIncrement(camera_.pixelSize(camera_.target), 14.0);
+    grid.minorStep = minor;
+    grid.majorStep = minor * 10;
+    const double major = grid.majorStep;
+    grid.center = {std::round(camera_.target.x / major) * major, std::round(camera_.target.y / major) * major, 0};
+    // About a view's width around the target at this zoom, and at least twice
+    // as far as any corner of the visible bodies' footprint: the grid only
+    // starts fading at half its radius, so the lines under a model never do.
+    const double visible = std::max(camera_.viewportSize.x, camera_.viewportSize.y) * camera_.pixelSize(camera_.target);
+    double radius = std::clamp(visible, 10 * minor, 150 * minor);
+    if (visibleBox_.valid) {
+        for (const double x : {visibleBox_.min.x, visibleBox_.max.x})
+            for (const double y : {visibleBox_.min.y, visibleBox_.max.y})
+                radius = std::max(radius, 2 * std::hypot(x - grid.center.x, y - grid.center.y));
+    }
+    grid.radius = radius;
+    grid.axisRadius = radius * 1.5; // the axes stay readable further out
+    // In perspective the far side, towards the horizon, fades sooner.
+    if (camera_.projection == Camera::Projection::Perspective) {
+        const double toCenter = (camera_.eye() - grid.center).length();
+        grid.eyeFadeStart = toCenter + 0.3 * radius;
+        grid.eyeFadeEnd = toCenter + radius;
+    }
+    return grid;
 }
 
 std::vector<sel::PickTarget> InteractionController::pickTargets() const
@@ -2015,14 +2070,17 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     sel::PickOptions options;
     options.edgeTolerance = profile.pickTolerance;
     const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
-    if (body.kind == sel::PickKind::Edge)
-        return body; // edges are the smallest targets; keep them reachable
     const sel::PickResult region = pickProfile(screen);
+    const double slack = camera_.pixelSize(region.point) * 2;
+    const bool consumed = region.hit() && !document_->dependentFeatures(region.bodyId).empty();
+    // Edges are the smallest targets: keep them reachable, unless a sketch
+    // not used yet lies clearly in front of the edge (a circle drawn beside
+    // a box, with the box's far edge passing behind it on screen).
+    if (body.kind == sel::PickKind::Edge)
+        return region.hit() && !consumed && region.depth + slack < body.depth ? region : body;
     // A sketch lying on a face is "on top" of it. A sketch already used by a
     // step only wins where it lies on the surface hit: otherwise, e.g. the
     // circle over a hole it cut, it would hide the body behind it.
-    const double slack = camera_.pixelSize(region.point) * 2;
-    const bool consumed = region.hit() && !document_->dependentFeatures(region.bodyId).empty();
     if (region.hit()
         && (!body.hit() || (consumed ? std::abs(region.depth - body.depth) <= slack : region.depth <= body.depth + slack)))
         return region;
@@ -2933,17 +2991,23 @@ void InteractionController::afterDocumentEdit()
 
 void InteractionController::updateSceneBounds()
 {
-    geom::BoundingBox total;
-    for (const auto& body : document_->bodies()) {
-        const auto box = geom::approximateBoundingBox(body->shape());
-        if (!box.valid)
-            continue;
+    auto add = [](geom::BoundingBox& total, const geom::BoundingBox& box) {
         if (!total.valid) {
             total = box;
         } else {
             total.min = {std::min(total.min.x, box.min.x), std::min(total.min.y, box.min.y), std::min(total.min.z, box.min.z)};
             total.max = {std::max(total.max.x, box.max.x), std::max(total.max.y, box.max.y), std::max(total.max.z, box.max.z)};
         }
+    };
+    geom::BoundingBox total;
+    visibleBox_ = {};
+    for (const auto& body : document_->bodies()) {
+        const auto box = geom::approximateBoundingBox(body->shape());
+        if (!box.valid)
+            continue;
+        add(total, box);
+        if (body->isVisible())
+            add(visibleBox_, box);
     }
     if (total.valid) {
         camera_.sceneCenter = total.center();

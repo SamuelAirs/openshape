@@ -83,6 +83,54 @@ TEST(Picking, TouchToleranceIsLarger)
     EXPECT_EQ(sel::pick(s.targets, s.camera, p, touch).kind, sel::PickKind::Edge);
 }
 
+// In perspective, along a long edge the place on the projected segment is
+// not the place on the edge: the point must be the one under the cursor, or
+// the occlusion test throws out the visible edge (a Rotate click on a box's
+// edge picked the face behind it).
+TEST(Picking, LongEdgeAnywhereAlongItInBothProjections)
+{
+    const geom::Shape bar = geom::makeBox({0, 0, 0}, {200, 20, 10}).value();
+    auto mesh = std::make_shared<const geom::Mesh>(geom::tessellate(bar));
+    const Uuid id = Uuid::generate();
+    const std::vector<sel::PickTarget> targets{{id, mesh, std::make_shared<const sel::PickAccelerator>(*mesh)}};
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Camera camera;
+        camera.projection = projection;
+        camera.viewportSize = {1200, 800};
+        camera.fit({0, 0, 0}, {200, 20, 10});
+        for (const double x : {15.0, 60.0, 100.0, 140.0, 185.0}) {
+            const Vec3 onEdge{x, 0, 10}; // the top front edge
+            const Vec2 p = camera.project(onEdge);
+            const auto hit = sel::pick(targets, camera, p);
+            ASSERT_EQ(hit.kind, sel::PickKind::Edge) << "x " << x;
+            const auto info = geom::edgeInfo(bar, hit.index);
+            EXPECT_NEAR(info->midpoint.y, 0.0, 1e-6);
+            EXPECT_NEAR(info->midpoint.z, 10.0, 1e-6);
+            EXPECT_NEAR((camera.project(hit.point) - p).length(), 0.0, 1e-6) << "the point under the cursor";
+            EXPECT_NEAR(hit.point.x, x, 1e-6);
+        }
+    }
+}
+
+// The center of a box face lies on the diagonal its two triangles share: a
+// click there picks that face, not the one behind it (nor a hidden edge).
+TEST(Picking, FaceCentersInBothProjections)
+{
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Scene s;
+        s.camera.projection = projection;
+        s.camera.fit({-10, -10, 0}, {10, 10, 20});
+        for (const auto& [center, normal] : {std::pair<Vec3, Vec3>{{0, 0, 20}, {0, 0, 1}},
+                                             std::pair<Vec3, Vec3>{{0, -10, 10}, {0, -1, 0}},
+                                             std::pair<Vec3, Vec3>{{10, 0, 10}, {1, 0, 0}}}) {
+            const auto hit = sel::pick(s.targets, s.camera, s.camera.project(center));
+            ASSERT_EQ(hit.kind, sel::PickKind::Face);
+            EXPECT_EQ(hit.index, s.faceWithNormal(normal));
+            EXPECT_NEAR((hit.point - center).length(), 0.0, 1e-6);
+        }
+    }
+}
+
 TEST(Picking, HiddenBackEdgeIsNotPicked)
 {
     Scene s;

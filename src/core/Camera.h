@@ -10,9 +10,11 @@ namespace os {
 
 enum class StandardView { Front, Back, Left, Right, Top, Bottom, Isometric };
 
-// Z-up turntable camera. Pure math: shared by picking, interaction and the
-// renderer. Screen coordinates are logical (device-independent) pixels with
-// the origin at the top-left and y pointing down.
+// Z-up turntable camera, perspective by default (depth cues: a box cannot
+// flip in the viewer's mind), orthographic optional. Pure math: shared by
+// picking, interaction and the renderer. Screen coordinates are logical
+// (device-independent) pixels with the origin at the top-left and y pointing
+// down.
 class Camera {
 public:
     enum class Projection { Orthographic, Perspective };
@@ -23,7 +25,7 @@ public:
     double orthoHeight = 80.0;      // mm visible vertically (orthographic)
     double distance = 150.0;        // eye-target distance (perspective)
     double fovY = 0.61;             // radians (~35 degrees)
-    Projection projection = Projection::Orthographic;
+    Projection projection = Projection::Perspective;
 
     Vec2 viewportSize{800, 600};    // logical pixels
     // Bounding sphere of everything that must not be clipped.

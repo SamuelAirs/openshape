@@ -16,6 +16,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QLockFile>
 #include <QtCore/QMap>
+#include <QtCore/QScopeGuard>
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
@@ -435,6 +436,32 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
     }
 }
 
+// --view: a standard view (iso, front, back, left, right, top, bottom) or
+// "yaw,pitch" in degrees (yaw 0 looks from +X, -90 from the front; pitch 90
+// from above), then everything framed: screenshots from any angle.
+bool applyView(os::ui::AppController& app, const QString& view)
+{
+    auto& interaction = app.interaction();
+    static const QMap<QString, os::StandardView> named{
+        {QStringLiteral("iso"), os::StandardView::Isometric}, {QStringLiteral("front"), os::StandardView::Front},
+        {QStringLiteral("back"), os::StandardView::Back},     {QStringLiteral("left"), os::StandardView::Left},
+        {QStringLiteral("right"), os::StandardView::Right},   {QStringLiteral("top"), os::StandardView::Top},
+        {QStringLiteral("bottom"), os::StandardView::Bottom}};
+    if (const auto it = named.find(view); it != named.end()) {
+        interaction.setStandardView(*it, false);
+    } else {
+        const QStringList parts = view.split(QLatin1Char(','));
+        bool okYaw = false, okPitch = false;
+        const double yaw = parts.size() == 2 ? parts[0].trimmed().toDouble(&okYaw) : 0.0;
+        const double pitch = parts.size() == 2 ? parts[1].trimmed().toDouble(&okPitch) : 0.0;
+        if (!okYaw || !okPitch)
+            return false;
+        interaction.setViewAngles(yaw * os::kPi / 180.0, pitch * os::kPi / 180.0, false);
+    }
+    interaction.fitAll(false);
+    return true;
+}
+
 // ---- Remembered window -------------------------------------------------------------------
 
 // Tracks the window's normal (not maximized) place while it runs, so the
@@ -556,6 +583,13 @@ int main(int argc, char* argv[])
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
                                         QStringLiteral("file"));
+    QCommandLineOption viewOption(QStringLiteral("view"),
+                                  QStringLiteral("With --demo: look from this direction, framed: iso, front, back, left, right, top, "
+                                                 "bottom, or yaw,pitch in degrees (e.g. 30,20; yaw -90 is the front)."),
+                                  QStringLiteral("view"));
+    QCommandLineOption projectionOption(QStringLiteral("projection"),
+                                        QStringLiteral("Start in this projection: perspective or orthographic (not remembered)."),
+                                        QStringLiteral("kind"));
     QCommandLineOption acceptanceOption(QStringLiteral("acceptance"),
                                         QStringLiteral("Run the end-to-end acceptance script, write screenshots to <dir>, exit with the failure count."),
                                         QStringLiteral("dir"));
@@ -590,6 +624,8 @@ int main(int argc, char* argv[])
     parser.addOption(appFolderOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
+    parser.addOption(viewOption);
+    parser.addOption(projectionOption);
     parser.addOption(screenshotOption);
     parser.addOption(dataDirOption);
     parser.addOption(simulateCrashOption);
@@ -683,6 +719,14 @@ int main(int argc, char* argv[])
     controller.startRecovery(recoveryDir);
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
+    if (parser.isSet(projectionOption)) {
+        const QString kind = parser.value(projectionOption);
+        if (kind == QLatin1String("perspective") || kind == QLatin1String("orthographic"))
+            controller.interaction().setProjection(kind == QLatin1String("perspective") ? os::Camera::Projection::Perspective
+                                                                                       : os::Camera::Projection::Orthographic);
+        else
+            OS_LOG(Warning, App) << "--projection expects perspective or orthographic";
+    }
     // Home at launch without a file (never in automated runs, which start
     // from an empty document; the "home" demo shows it).
     if (!automated && parser.positionalArguments().isEmpty())
@@ -753,10 +797,16 @@ int main(int argc, char* argv[])
     } else if (parser.isSet(demoOption) || parser.isSet(screenshotOption)) {
         const QString demo = parser.value(demoOption);
         const QString shot = parser.value(screenshotOption);
+        const QString view = parser.value(viewOption);
         // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, window, demo, dataDir] {
+        QTimer::singleShot(600, &controller, [&controller, window, demo, view, dataDir] {
             if (demo.isEmpty())
                 return;
+            // Seen from --view once the scene is built (below).
+            const auto lookFromView = qScopeGuard([&controller, &view] {
+                if (!view.isEmpty() && !applyView(controller, view))
+                    OS_LOG(Warning, App) << "--view expects a view name (iso, front, top, ...) or yaw,pitch in degrees";
+            });
             // Panels to look at (layout checks at phone sizes): the help card,
             // About, Preferences; the compact layout's Model panel and View menu.
             static const QMap<QString, QPair<QString, const char*>> panels{
