@@ -43,7 +43,10 @@ first, tested version. Their follow-ups are the next tasks below.
   TestFlight to their iPad Air 11" (M2, iPadOS 26.6.1). Written: the macOS
   CI job (build, tests, Metal screenshot, acceptance run), `ipad.yml` and
   `scripts/ios/*` (iOS libraries, Qt for iOS, unsigned archive, cloud-signed
-  TestFlight upload), an App Store icon. Not run yet: see docs/IPAD.md.
+  TestFlight upload), an App Store icon. Verified on CI: the Mac app
+  builds and passes all tests; the iPad app archive builds (43 MB).
+  Signing/TestFlight waits for the owner's Apple Developer enrollment
+  (pending since 2026-09-25) and the secrets (docs/IPAD.md).
 - **Waiting on the owner:** the Apple-side setup in docs/IPAD.md section 1
   (App ID, app record, API key, four GitHub secrets); an OK to download
   OpenCASCADE's source to this PC to rebuild it without FFmpeg/FreeImage
@@ -258,4 +261,5 @@ the face edits). Build with
 |---|---|---|---|
 | Windows 11 x64 (MSYS2 UCRT64, D3D11) | ✅ | ✅ | ✅ |
 | Linux | ⬜ | ⬜ | ⬜ |
-| macOS | ⬜ | ⬜ | ⬜ |
+| macOS 15 (CI, Xcode 26.3, Metal) | ✅ | ✅ 239/239 | 🟡 screenshot; acceptance 127/144 in a 1024x653 window |
+| iPadOS (CI archive, arm64, 17+) | ✅ | — | ⬜ waits for TestFlight |

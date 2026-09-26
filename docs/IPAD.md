@@ -1,10 +1,19 @@
 # Running OpenShape on an iPad
 
-**Status (2026-09-25): prepared on Windows; the Mac and iPad builds have
-not run yet.** The owner's MacBook is too old for current Xcode, so the
-iPad app is built on GitHub's Macs (free for a public repository) and
-delivered through **TestFlight**; no Mac is needed. The owner's iPad: iPad
-Air 11-inch (M2), iPadOS 26.6.1.
+**Status (2026-09-25):** the owner's MacBook is too old for current Xcode,
+so the iPad app is built on GitHub's Macs (free for a public repository)
+and delivered through **TestFlight**; no Mac is needed. The owner's iPad:
+iPad Air 11-inch (M2), iPadOS 26.6.1.
+
+| Step | State |
+|---|---|
+| Mac app (Xcode 26.3, Apple Clang 17, `-Werror`) | ✅ builds; 239/239 tests; Metal screenshot renders |
+| Mac real-UI acceptance run (1024x653 window) | 🟡 127/144 checks (small-window failures being fixed) |
+| iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
+| Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
+| iPad app archive (`build-app.sh`) | ✅ 43 MB, arm64, iPadOS 17+, icon and privacy manifest |
+| Signing + TestFlight upload (`testflight.sh`) | ⬜ waits for the owner's Apple Developer enrollment and the secrets |
+| Running on the iPad | ⬜ |
 
 What is ready:
 
