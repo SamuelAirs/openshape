@@ -17,6 +17,12 @@ Item {
     // The widest it may be (a phone's width): the actions below the field
     // then scroll sideways.
     property real maximumWidth: Infinity
+    // A phone held sideways: the actions beside the field, so the chip is a
+    // single bar (it docks in the top bar's row or above the hint).
+    property bool singleRow: false
+    // Where the field and the actions sit when the chip is wider than they
+    // are: toward the arrow tip (Qt.AlignLeft when the chip is right of it).
+    property int alignment: Qt.AlignHCenter
     signal finished()
 
     width: column.implicitWidth
@@ -42,12 +48,19 @@ Item {
     }
     Component.onCompleted: syncFromModel()
 
-    ColumnLayout {
+    // One column: the field, an error, the actions. In a single row the
+    // actions sit beside the field and an error goes below both.
+    GridLayout {
         id: column
-        spacing: 6
+        columns: chip.singleRow ? 2 : 1
+        rowSpacing: 6
+        columnSpacing: 6
 
         Panel {
-            Layout.alignment: Qt.AlignHCenter
+            id: fieldPanel
+            Layout.row: 0
+            Layout.column: 0
+            Layout.alignment: chip.alignment
             implicitWidth: row.implicitWidth + 2 * Theme.panelPadding
             implicitHeight: Theme.controlHeight + 2 * Theme.panelPadding
             border.color: errorText.text.length > 0 ? Theme.error : Theme.panelBorder
@@ -143,6 +156,9 @@ Item {
         Text {
             id: errorText
             objectName: "valueChipError"
+            Layout.row: 1
+            Layout.column: 0
+            Layout.columnSpan: chip.singleRow ? 2 : 1
             Layout.alignment: Qt.AlignHCenter
             Layout.maximumWidth: Math.min(320, chip.maximumWidth)
             visible: text.length > 0
@@ -158,6 +174,8 @@ Item {
         // acceptance run clicks the visible one.
         Row {
             id: actionMeasure
+            Layout.row: 3
+            Layout.column: 0
             visible: false
             spacing: 4
             Repeater {
@@ -170,7 +188,9 @@ Item {
             }
         }
         Flow {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.row: 2
+            Layout.column: 0
+            Layout.alignment: chip.alignment
             Layout.preferredWidth: Math.min(actionMeasure.implicitWidth, 460)
             spacing: 4
             visible: !Theme.compact && chip.app.contextActions.length > 1
@@ -180,8 +200,11 @@ Item {
             }
         }
         ScrollRow {
-            Layout.alignment: Qt.AlignHCenter
-            maximumWidth: chip.maximumWidth
+            Layout.row: chip.singleRow ? 0 : 2
+            Layout.column: chip.singleRow ? 1 : 0
+            Layout.alignment: chip.singleRow ? Qt.AlignVCenter : chip.alignment
+            maximumWidth: chip.singleRow ? Math.max(0, Math.floor(chip.maximumWidth - fieldPanel.implicitWidth - column.columnSpacing) - 1)
+                                         : chip.maximumWidth
             fadeColor: Theme.background
             spacing: 4
             visible: Theme.compact && chip.app.contextActions.length > 1

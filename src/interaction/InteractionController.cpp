@@ -196,6 +196,8 @@ void InteractionController::pointerPress(const PointerEvent& event)
     drag_.press = event;
     drag_.last = event.position;
     drag_.mode = DragMode::Pending;
+    lastPress_ = event.position;
+    lastPressCamera_ = camera_;
 
     if (event.device == PointerDevice::Pen && !penMode_) {
         penMode_ = true;
@@ -862,6 +864,166 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
     const Vec3 anchor = handle.anchor(operation_->handleOffset(active));
     const double px = camera_.pixelSize(anchor);
     return camera_.project(anchor + handle.direction() * (style.totalPx() * px));
+}
+
+namespace {
+
+// Screen bounds of world points (points behind the eye are left out).
+class ScreenBounds {
+public:
+    explicit ScreenBounds(const Camera& camera) : viewProjection_(camera.viewProjection()), viewport_(camera.viewportSize) {}
+
+    std::optional<Vec2> project(const Vec3& p) const
+    {
+        const Vec4 clip = viewProjection_ * Vec4{p.x, p.y, p.z, 1.0};
+        if (clip.w <= 1e-9)
+            return std::nullopt;
+        return Vec2{(clip.x / clip.w + 1) * 0.5 * viewport_.x, (1 - clip.y / clip.w) * 0.5 * viewport_.y};
+    }
+    void add(const Vec3& p)
+    {
+        if (const auto s = project(p))
+            include(ScreenRect::around(*s));
+    }
+    void include(const ScreenRect& r) { rect = rect ? rect->united(r) : r; }
+
+    void addFace(const geom::Mesh& mesh, int face)
+    {
+        if (face < 0 || face >= mesh.faceCount())
+            return;
+        for (std::uint32_t t = mesh.faceTriangleOffset[std::size_t(face)]; t < mesh.faceTriangleOffset[std::size_t(face) + 1]; ++t)
+            for (std::size_t k = 0; k < 3; ++k)
+                add(mesh.vertex(mesh.indices[3 * std::size_t(t) + k]));
+    }
+    void addEdge(const geom::Mesh& mesh, int edge)
+    {
+        for (const auto& polyline : mesh.edges)
+            if (polyline.edgeIndex == edge)
+                for (std::size_t i = 0; i + 2 < polyline.points.size(); i += 3)
+                    add({polyline.points[i], polyline.points[i + 1], polyline.points[i + 2]});
+    }
+    // All of a mesh (a body, a sketch region): the corners of its box, cheap
+    // for any size and never smaller than the mesh on screen.
+    void addMesh(const geom::Mesh& mesh)
+    {
+        if (mesh.vertexCount() == 0)
+            return;
+        Vec3 lo = mesh.vertex(0), hi = lo;
+        for (std::size_t i = 1; i < mesh.vertexCount(); ++i) {
+            const Vec3 v = mesh.vertex(i);
+            lo = {std::min(lo.x, v.x), std::min(lo.y, v.y), std::min(lo.z, v.z)};
+            hi = {std::max(hi.x, v.x), std::max(hi.y, v.y), std::max(hi.z, v.z)};
+        }
+        for (int c = 0; c < 8; ++c)
+            add({c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z});
+    }
+
+    std::optional<ScreenRect> rect;
+
+private:
+    Mat4 viewProjection_;
+    Vec2 viewport_;
+};
+
+bool sameView(const Camera& a, const Camera& b)
+{
+    return a.target.x == b.target.x && a.target.y == b.target.y && a.target.z == b.target.z && a.yaw == b.yaw
+        && a.pitch == b.pitch && a.orthoHeight == b.orthoHeight && a.distance == b.distance && a.fovY == b.fovY
+        && a.projection == b.projection && a.viewportSize.x == b.viewportSize.x && a.viewportSize.y == b.viewportSize.y;
+}
+
+} // namespace
+
+std::optional<ScreenRect> InteractionController::keepClearRect() const
+{
+    if (session_)
+        return std::nullopt;
+    ScreenBounds selected(camera_);
+    auto addItem = [&](sel::SelectionKind kind, const Uuid& id, int index) {
+        if (kind == sel::SelectionKind::SketchProfile) {
+            const auto* entry = scene_.sketch(id);
+            if (entry && index >= 0 && std::size_t(index) < entry->meshes.size() && entry->meshes[std::size_t(index)])
+                selected.addMesh(*entry->meshes[std::size_t(index)]);
+            return;
+        }
+        const auto mesh = scene_.mesh(id);
+        if (!mesh)
+            return;
+        switch (kind) {
+        case sel::SelectionKind::Face: selected.addFace(*mesh, index); break;
+        case sel::SelectionKind::Edge: selected.addEdge(*mesh, index); break;
+        case sel::SelectionKind::Body: selected.addMesh(*mesh); break;
+        case sel::SelectionKind::Vertex:
+        case sel::SelectionKind::SketchEntity:
+        case sel::SelectionKind::SketchProfile:
+        case sel::SelectionKind::ConstructionPlane: break;
+        }
+    };
+    for (const auto& item : selection_.items())
+        addItem(item.kind, item.bodyId, item.index);
+    // Align's target is shown like a selection, and so kept clear like one.
+    if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get()); align && align->hasTarget()) {
+        if (align->targetKind() == geom::SubShapeKind::Face)
+            addItem(sel::SelectionKind::Face, align->targetBody(), align->targetIndex());
+        else if (align->targetKind() == geom::SubShapeKind::Edge)
+            addItem(sel::SelectionKind::Edge, align->targetBody(), align->targetIndex());
+    }
+
+    ScreenBounds all(camera_);
+    if (selected.rect)
+        all.include(*selected.rect);
+    if (operation_) {
+        const ArrowStyle arrowStyle;
+        const int handles = operation_->handleCount();
+        // What the arrow moves (a pushed face, a moved body) is also where the
+        // arrow has taken it: the selection moved by the arrow's travel.
+        if (const int active = operation_->activeHandle(); selected.rect && active >= 0 && active < handles) {
+            const LinearManipulator handle = operation_->handle(active);
+            const auto from = all.project(handle.base());
+            const auto to = all.project(handle.anchor(operation_->handleOffset(active)));
+            if (from && to)
+                all.include(selected.rect->translated(*to - *from));
+        }
+        for (int i = 0; i < handles; ++i) {
+            const LinearManipulator handle = operation_->handle(i);
+            const Vec3 anchor = handle.anchor(operation_->handleOffset(i));
+            ScreenBounds arrow(camera_);
+            arrow.add(anchor);
+            arrow.add(anchor + handle.direction() * (arrowStyle.totalPx() * camera_.pixelSize(anchor)));
+            if (arrow.rect)
+                all.include(arrow.rect->inflated(arrowStyle.headRadiusPx));
+        }
+        const RingStyle ringStyle;
+        for (int i = 0; i < operation_->ringCount(); ++i)
+            if (const auto center = all.project(operation_->ring(i).center()))
+                all.include(ScreenRect::around(*center).inflated(ringStyle.radiusPx + ringStyle.widthPx));
+        // A value without an arrow (the Hole tool's current hole).
+        if (handles == 0 && operation_->ringCount() == 0)
+            if (const auto anchor = operation_->labelAnchor())
+                if (const auto at = all.project(*anchor))
+                    all.include(ScreenRect::around(*at).inflated(12));
+    }
+    if (lastPress_ && sameView(lastPressCamera_, camera_))
+        all.include(ScreenRect::around(*lastPress_));
+    if (!all.rect)
+        return std::nullopt;
+    return all.rect->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y});
+}
+
+ChipPlacement InteractionController::placeValueChip(const ChipPlacementInput& input) const
+{
+    // A new selection chooses afresh; the same one keeps its spot.
+    const auto& items = selection_.items();
+    const bool same = items.size() == chipSelection_.size()
+                   && std::equal(items.begin(), items.end(), chipSelection_.begin(),
+                                 [](const sel::SelectionItem& a, const sel::SelectionItem& b) { return a.sameTarget(b); });
+    if (!same) {
+        chipSelection_ = items;
+        chipSpot_ = ChipSpot::None;
+    }
+    const ChipPlacement placement = interact::placeValueChip(input, chipSpot_);
+    chipSpot_ = placement.spot;
+    return placement;
 }
 
 std::vector<InteractionController::AxisMark> InteractionController::axisTriad() const

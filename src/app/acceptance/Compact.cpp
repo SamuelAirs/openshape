@@ -236,15 +236,15 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 4);
     // ---- Undo / Redo: touch has no tooltip, so a message says what they did,
     // readable even with the value chip where the message rests: the model
-    // panned down by two fingers puts the arrow tip, and so the chip, there.
+    // panned up by two fingers docks the chip above the hint, away from it.
     steps.push_back([&r] {
-        r.app().interaction().twoFingerPan({200, 300}, {200, 750});
+        r.app().interaction().twoFingerPan({200, 600}, {200, 330});
     });
     steps.push_back([&r, s] {
         const QRectF chip = sceneRect(r, QStringLiteral("valueChip"));
         const QRectF status = sceneRect(r, QStringLiteral("statusColumn"));
         r.check(shown(r, QStringLiteral("valueChip")) && chip.bottom() > status.top() - 20,
-                "compact: panned down, the value chip sits just above the hint", rectText(chip));
+                "compact: panned up, the value chip docks just above the hint", rectText(chip));
         s->label = r.app().undoText();
         r.check(r.app().canUndo() && !s->label.isEmpty(), "compact: something to undo", s->label);
         r.check(r.clickItem(QStringLiteral("undoButton")), "compact: Undo button");
@@ -260,7 +260,7 @@ Steps steps(AcceptanceRunner& r)
         const double height = bodyHeight(r);
         r.check(std::abs(height - 30.0) < 1e-9, "compact: Redo pushes the top to 30 mm again", AcceptanceRunner::num(height));
         checkToast(r, QStringLiteral("Redo ") + s->label, QStringLiteral("compact: Redo"));
-        r.app().interaction().twoFingerPan({200, 750}, {200, 300}); // back
+        r.app().interaction().twoFingerPan({200, 330}, {200, 600}); // back
         // ---- A tap on the body's row selects it; a second tap folds the row
         // and keeps the body selected.
         r.check(r.clickItem(QStringLiteral("modelPanelButton")), "compact: Model button again");

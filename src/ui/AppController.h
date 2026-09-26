@@ -12,6 +12,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
+#include <QtCore/QRectF>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QVariantList>
@@ -54,6 +55,11 @@ class AppController : public QObject {
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
+    // What the value chip must not cover (InteractionController::keepClearRect):
+    // a rect in window coordinates, or null when there is nothing.
+    Q_PROPERTY(QVariant keepClearRect READ keepClearRect NOTIFY viewChanged)
+    // An arrow or ring is being dragged (a docked value chip keeps its side).
+    Q_PROPERTY(bool manipulatorDragging READ manipulatorDragging NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
@@ -128,6 +134,8 @@ public:
     QString operationPrompt() const;
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
+    QVariant keepClearRect() const;
+    bool manipulatorDragging() const;
     QVariantList axisTriad() const;
     bool touchMode() const;
     void setTouchMode(bool on);
@@ -254,6 +262,11 @@ public:
     Q_INVOKABLE QString touchWording(const QString& text) const;
     Q_INVOKABLE void commitOperation();
     Q_INVOKABLE void cancelOperation();
+    // Where the value chip goes (interact::placeValueChip). `layout`: area
+    // (rect), avoid (rects), size, tip (point), fieldCenter, keepClear (rect
+    // or null), compact, touch, frozen. Returns {x, y, spot, clear}. The spot
+    // is remembered for the selection (the chip does not jump).
+    Q_INVOKABLE QVariantMap placeValueChip(const QVariantMap& layout) const;
     // Returns an error message ("" on success). Previews live as the user types.
     Q_INVOKABLE QString setValueText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);

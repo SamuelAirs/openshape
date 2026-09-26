@@ -11,6 +11,7 @@
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
 #include "interaction/Operation.h"
+#include "interaction/OverlayPlacement.h"
 #include "interaction/RenderScene.h"
 #include "interaction/SceneCache.h"
 #include "interaction/SketchSession.h"
@@ -118,6 +119,20 @@ public:
     std::string operationValueText() const;
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
+    // What the value editor must not cover, on screen: the selection (its
+    // faces, edges, profiles or bodies, also where the operation's arrow has
+    // moved them: a pushed face, a moved body), the arrows and rings, a
+    // hole's position (Hole tool) and the last press, while the view has not
+    // moved since. Clipped to the viewport; nullopt when there is nothing (or
+    // in sketch mode, which has no value editor).
+    std::optional<ScreenRect> keepClearRect() const;
+    // An arrow or ring is being dragged.
+    bool manipulatorDragging() const { return drag_.mode == DragMode::Manipulator; }
+    // Where the value editor goes (interact::placeValueChip). The spot is
+    // remembered for the current selection, so the chip keeps its place while
+    // it stays clear (and a docked one its side during a drag); a new
+    // selection chooses afresh.
+    ChipPlacement placeValueChip(const ChipPlacementInput& input) const;
 
     // Where the world axes point on screen, for the orientation marker:
     // X, Y, Z in that order; `direction` is foreshortened (y down), `depth`
@@ -299,6 +314,13 @@ private:
     // Faces (of the current body shape) the highlighted step created or changed.
     Uuid highlightBody_;
     std::vector<int> highlightFaces_;
+    // The last press in the view and the view it was made in (the value
+    // editor keeps clear of it until the view moves).
+    std::optional<Vec2> lastPress_;
+    Camera lastPressCamera_;
+    // The value editor's spot, for this selection (placeValueChip).
+    mutable ChipSpot chipSpot_ = ChipSpot::None;
+    mutable std::vector<sel::SelectionItem> chipSelection_;
 
     struct Drag {
         DragMode mode = DragMode::None;
