@@ -15,6 +15,9 @@
 #   installer and the zip are made, then the installer; tags use the
 #   release-signing policy (approved by hand in SignPath), other runs
 #   test-signing. Without them every step runs as before, unsigned.
+# - Every run also checks the release notes template (both variants) and
+#   the signature check (pe-signature.py self-test), which otherwise would
+#   only run when a tag is published or a file signed.
 # Failed steps report their error lines as annotations, which anyone can
 # read (scripts/ci/run-logged.sh); results are summarized as notices.
 name: Release
@@ -100,6 +103,14 @@ jobs:
             esac
           fi
           echo "::notice title=Version::OpenShape $version (${GITHUB_REF_NAME})"
+      # The release notes template and scripts/ci/install-notes.sh, both
+      # variants, on every run: a tag reaches "Publish the GitHub Release"
+      # only after the whole build, so a broken template must fail here,
+      # within the first minutes (ctest runs the same check).
+      - name: Check the release notes (signed and unsigned)
+        run: |
+          bash scripts/ci/run-logged.sh release-notes bash scripts/ci/test-install-notes.sh
+          grep -E "^test-install-notes: " "$LOGS/release-notes.log" | sed 's/^/::notice title=Release notes::/'
 
       # A release that SignPath signs with the SignPath Foundation
       # certificate builds OpenCASCADE in the same run instead of restoring
@@ -141,6 +152,14 @@ jobs:
           bash scripts/ci/run-logged.sh package bash scripts/package-windows.sh build/msys2-ucrt64-release dist/OpenShape
           grep -E "^Packaged " "$LOGS/package.log" | sed 's/^/::notice title=Package::/'
           grep -E "^License gate: (PASS|FAIL)" "$LOGS/package.log" | sed 's/^/::notice title=License gate::/'
+      # The check that use-signed.sh applies to each file SignPath returns,
+      # tried on made-up signed copies of this OpenShape.exe, on every run
+      # (signed or not), so that a broken check shows up before anyone is
+      # asked to approve a signing request (ctest runs it on the build too).
+      - name: Check the signature check (self-test on OpenShape.exe)
+        run: |
+          bash scripts/ci/run-logged.sh pe-signature python scripts/windows/pe-signature.py self-test dist/OpenShape/OpenShape.exe
+          grep -E "^pe-signature self-test: " "$LOGS/pe-signature.log" | sed 's/^/::notice title=Signature check::/'
 
       # Code signing (docs/CODE_SIGNING.md). SignPath signs only files of
       # this run: each is uploaded as a workflow artifact, SignPath checks

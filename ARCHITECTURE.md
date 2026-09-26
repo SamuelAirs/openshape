@@ -891,6 +891,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   apart from the signature and Windows accepts the signature (updating
   `SHA256SUMS.txt`). The release notes (`scripts/ci/install-notes.sh` from
   `packaging/windows/release-notes.md`) say whether a release is signed.
+  Both scripts are also checked on every Release run and by ctest on
+  Windows (`scripts/ci/test-install-notes.sh`, `pe-signature.py self-test`),
+  since otherwise they would only run when a tag is published.
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 

@@ -47,7 +47,9 @@ For a release tag `v<version>` the workflow:
    signed program is built from comes from this run;
 2. builds OpenShape (release preset, warnings as errors) and runs the
    headless tests;
-3. packages it and runs the license gate (no GPL code may ship);
+3. packages it and runs the license gate (no GPL code may ship), and tries
+   the check of step 5 on made-up signed copies of the packaged program
+   (it must accept only the copy that differs by a signature alone);
 4. uploads `OpenShape.exe` as a workflow artifact and submits it to
    SignPath. SignPath verifies with GitHub that the artifact was built by
    this workflow run from this repository and tag on GitHub-hosted runners,
@@ -119,8 +121,9 @@ can be reported to support@signpath.io.
 
 ## For the maintainer
 
-What to do once, to switch signing on. Until the last step the release
-workflow keeps producing unsigned releases exactly as before.
+What to do once, to switch signing on. Until step 4 the release workflow
+keeps producing unsigned releases exactly as before; step 7 brings the
+documentation up to date after the first signed release.
 
 ### 1. Before applying
 
@@ -221,6 +224,24 @@ then fails without publishing anything). The release notes then say the
 files are signed, and the notices show
 `Signed: ... (release-signing): SignPath Foundation; Valid`. Check the
 downloaded installer as in [Checking a signed release](#checking-a-signed-release).
+
+### 7. After the first signed release
+
+The install instructions already cover both cases (README.md, "Download and
+install"; docs/USER_GUIDE.md, "Install" and "Troubleshooting": the
+SmartScreen advice is for unsigned releases), and each release's own notes
+say whether it is signed. What still describes signing as "not yet" and
+needs updating then (or ask the AI assistant to do it):
+
+- the *Status* paragraph at the top of this page;
+- docs/TECHNICAL_DEBT.md: close TD-44 (keep the unsigned `Uninstall.exe` as
+  its own item if it is still unsigned);
+- docs/LICENSING.md: the paragraph on code signing ("switches on once the
+  project is accepted");
+- CHANGELOG.md: note that Windows releases are now code-signed;
+- PROJECT_STATUS.md and ROADMAP.md, where they list code signing as open;
+- docs/MANUAL_TESTS.md needs no change (it covers both), but do its
+  "Install" check once with the signed installer.
 
 ### If something goes wrong
 

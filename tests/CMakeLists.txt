@@ -48,3 +48,42 @@ openshape_add_test(test_robustness test_stress.cpp test_kernel_crash.cpp test_pr
     test_pick_accelerator.cpp)
 target_link_libraries(test_robustness PRIVATE openshape_interaction openshape_io libzip::zip)
 target_compile_definitions(test_robustness PRIVATE OPENSHAPE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# The Windows release scripts (docs/CODE_SIGNING.md), which otherwise only
+# run when a tag is released: the release notes template in both variants
+# (signed, unsigned), and the check that a file SignPath returns is the sent
+# program plus a signature, run on the OpenShape.exe built here. release.yml
+# runs both itself as well. Windows only, like the release; a test whose
+# interpreter is missing is left out, with a message.
+if(WIN32)
+    # The bash of the MSYS2 or Git shell, never WSL's launcher in System32.
+    get_filename_component(openshape_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(openshape_msys_usr_bin "${openshape_compiler_bin}/../../usr/bin")
+    find_program(OPENSHAPE_BASH bash PATHS "${openshape_msys_usr_bin}")
+    if(OPENSHAPE_BASH MATCHES "[Ss]ystem32|WindowsApps")
+        unset(OPENSHAPE_BASH CACHE)
+        find_program(OPENSHAPE_BASH bash PATHS "${openshape_msys_usr_bin}" NO_DEFAULT_PATH)
+    endif()
+    if(OPENSHAPE_BASH)
+        add_test(NAME release_notes_template
+                 COMMAND "${OPENSHAPE_BASH}" "${PROJECT_SOURCE_DIR}/scripts/ci/test-install-notes.sh")
+        # awk, grep and tr from beside that bash, whichever shell ctest runs in.
+        get_filename_component(openshape_bash_dir "${OPENSHAPE_BASH}" DIRECTORY)
+        set_tests_properties(release_notes_template PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${openshape_bash_dir}")
+    else()
+        message(STATUS "No bash found: the release notes test (release_notes_template) is left out")
+    endif()
+
+    if(OPENSHAPE_BUILD_APP)
+        set(Python3_FIND_REGISTRY LAST) # prefer the MSYS2 Python on PATH
+        find_package(Python3 COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME release_pe_signature_selftest
+                     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/windows/pe-signature.py"
+                             self-test $<TARGET_FILE:openshape>)
+        else()
+            message(STATUS "No Python 3 found: the signature check test (release_pe_signature_selftest) is left out")
+        endif()
+    endif()
+endif()

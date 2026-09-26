@@ -95,10 +95,11 @@ it has been tested with simulated touch input, not yet on a real tablet.
    to run it without installing).
 2. Run the installer. It installs for your user only (no administrator
    rights needed) and adds OpenShape to the Start menu.
-3. Releases are **not code-signed yet** (each release's notes say whether it
-   is), so Windows SmartScreen may say "Windows protected your PC": click
-   **More info**, then **Run anyway**. `SHA256SUMS.txt` on the release lets
-   you check the download.
+3. Each release's notes say whether it is code-signed
+   ([Code signing policy](#code-signing-policy)). If it is not, Windows
+   SmartScreen may say "Windows protected your PC": click **More info**,
+   then **Run anyway**. `SHA256SUMS.txt` on the release lets you check the
+   download.
 
 ## Code signing policy
 

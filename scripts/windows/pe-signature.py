@@ -66,13 +66,22 @@ def certificate_table(data):
     return struct.unpack_from("<II", data, entry)
 
 
-def normalized(data):
-    """The file with its CheckSum and Certificate Table entry zeroed."""
-    checksum, entry = layout(data)
-    out = bytearray(data)
-    out[checksum:checksum + 4] = bytes(4)
-    out[entry:entry + 8] = bytes(8)
-    return out
+CHUNK = 1 << 20
+
+
+def first_difference(a, b, end, skip):
+    """The first offset below `end` at which a and b differ, not counting
+    the byte ranges in `skip` ((start, stop) pairs); None if there is none.
+    Compares 1 MiB slices at a time, never a whole copy of a file (release
+    programs are tens of megabytes, a debug OpenShape.exe over 100)."""
+    start = 0
+    for lo, hi in sorted(skip) + [(end, end)]:
+        for s in range(start, lo, CHUNK):
+            e = min(s + CHUNK, lo)
+            if a[s:e] != b[s:e]:
+                return next(i for i in range(s, e) if a[i] != b[i])
+        start = max(start, hi)
+    return None
 
 
 def compare(unsigned, signed):
@@ -103,10 +112,13 @@ def compare(unsigned, signed):
                 f"{len(unsigned)} bytes: content was added or removed")
     if any(signed[len(unsigned):offset]):
         return "the padding before the signature is not zeros"
-    a = normalized(unsigned)
-    b = normalized(signed)[:len(unsigned)]
-    if a != b:
-        first = next(i for i in range(len(a)) if a[i] != b[i])
+    # Everything else byte for byte. The two header fields are where the
+    # unsigned file's layout puts them: the bytes that layout is read from
+    # are compared too, so a signed file with another layout differs there.
+    checksum, entry = layout(unsigned)
+    first = first_difference(unsigned, signed, len(unsigned),
+                             [(checksum, checksum + 4), (entry, entry + 8)])
+    if first is not None:
         return f"the files differ at byte {first} (not only by the signature): a different program"
     return None
 
@@ -128,40 +140,55 @@ def fake_signed(unsigned, payload=b"\x30\x82" + bytes(300), checksum=0x1234ABCD)
     out += cert
     struct.pack_into("<I", out, checksum_at, checksum)
     struct.pack_into("<II", out, entry, offset, len(cert))
-    return bytes(out)
+    return out
+
+
+def patched(data, fmt, at, *values):
+    """A copy of data with struct.pack(fmt, *values) written at `at`."""
+    out = bytearray(data)
+    struct.pack_into(fmt, out, at, *values)
+    return out
+
+
+def flipped(data, at):
+    """A copy of data with the lowest bit of byte `at` inverted."""
+    out = bytearray(data)
+    out[at] ^= 0x01
+    return out
 
 
 def self_test(path):
+    """compare() on made-up signed copies of a real program. Each copy is
+    made when its check runs, so at most a few copies of the file are in
+    memory at once (ctest runs this on the debug OpenShape.exe)."""
     unsigned = read(path)
     good = fake_signed(unsigned)
     offset, size = certificate_table(good)
-    checks = [("signed copy (only a signature added)", good, True)]
-
-    flipped = bytearray(good)
-    flipped[len(unsigned) // 2] ^= 0x01
-    checks.append(("one byte of the program changed", bytes(flipped), False))
-
-    checks.append(("a byte appended after the signature", good + b"\0", False))
-
-    shortened = fake_signed(unsigned[:-8])
-    checks.append(("the program's last bytes cut off", shortened, False))
-
-    longer = fake_signed(unsigned + b"\x90" * 16)
-    checks.append(("16 bytes added to the program", longer, False))
-
-    no_entry = bytearray(good)
-    struct.pack_into("<II", no_entry, layout(good)[1], 0, 0)
-    checks.append(("Certificate Table entry cleared", bytes(no_entry), False))
-
-    wrong_type = bytearray(good)
-    struct.pack_into("<H", wrong_type, offset + 6, 1)
-    checks.append(("certificate of another type (X.509)", bytes(wrong_type), False))
-
-    checks.append(("the unsigned file compared with itself", unsigned, False))
+    checksum, entry = layout(unsigned)
+    padding = offset - len(unsigned)
+    # (name, whether compare() must accept it, how to make it)
+    checks = [
+        ("signed copy (only a signature added)", True, lambda: good),
+        ("one byte of the program changed", False, lambda: flipped(good, len(unsigned) // 2)),
+        ("the last byte of the program changed", False, lambda: flipped(good, len(unsigned) - 1)),
+        # The two header fields may differ, but not a byte next to them.
+        ("the byte before the CheckSum changed", False, lambda: flipped(good, checksum - 1)),
+        ("the byte after the CheckSum changed", False, lambda: flipped(good, checksum + 4)),
+        ("the byte after the Certificate Table entry changed", False, lambda: flipped(good, entry + 8)),
+        ("a byte appended after the signature", False, lambda: good + b"\0"),
+        ("the program's last bytes cut off", False, lambda: fake_signed(unsigned[:-8])),
+        ("16 bytes added to the program", False, lambda: fake_signed(unsigned + b"\x90" * 16)),
+        ("Certificate Table entry cleared", False, lambda: patched(good, "<II", entry, 0, 0)),
+        ("certificate of another type (X.509)", False, lambda: patched(good, "<H", offset + 6, 1)),
+        ("the unsigned file compared with itself", False, lambda: unsigned),
+    ]
+    if padding:
+        checks.append(("padding before the signature not zeros", False,
+                       lambda: patched(good, "<B", len(unsigned), 1)))
 
     failures = 0
-    for name, candidate, should_pass in checks:
-        reason = compare(unsigned, candidate)
+    for name, should_pass, make in checks:
+        reason = compare(unsigned, make())
         ok = (reason is None) == should_pass
         failures += not ok
         verdict = "accepted" if reason is None else f"refused: {reason}"
@@ -171,8 +198,9 @@ def self_test(path):
     failures += not ok
     print(f"[{'PASS' if ok else 'FAIL'}] an already signed file as the unsigned one: "
           f"{'refused: ' + twice if twice else 'accepted'}")
-    print(f"pe-signature self-test: {failures} failed ({os.path.basename(path)}, "
-          f"{len(unsigned)} bytes, made-up signature {size} bytes at {offset})")
+    print(f"pe-signature self-test: {failures} failed of {len(checks) + 1} "
+          f"({os.path.basename(path)}, {len(unsigned)} bytes, made-up signature "
+          f"{size} bytes at {offset}, {padding} bytes of padding)")
     return failures
 
 
