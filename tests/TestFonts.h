@@ -47,6 +47,33 @@ inline std::string registerTestFont(const std::string& id)
     return {};
 }
 
+// A bold font for the Bold switch, registered under `id`: the bundled Noto
+// Sans Bold, else a system bold font. Returns the file used, or "".
+inline std::string registerTestBoldFont(const std::string& id)
+{
+    static std::string used;
+    if (!used.empty() && geom::hasFont(id))
+        return used;
+    const std::string candidates[] = {
+        std::string(OPENSHAPE_SOURCE_DIR) + "/resources/fonts/NotoSans-Bold.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    };
+    for (const std::string& path : candidates) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in)
+            continue;
+        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (geom::registerFont(id, std::move(bytes))) {
+            used = path;
+            return used;
+        }
+    }
+    return {};
+}
+
 } // namespace os::test
 
 // Registers the test font under `id`, or skips the test when there is none.

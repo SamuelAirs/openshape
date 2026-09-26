@@ -213,6 +213,34 @@ TEST(TextInteraction, DebossTurnedAndRemembered)
     EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
 }
 
+// With a bold font built in, Bold switches to it (stored as its font id).
+TEST(TextInteraction, BoldWhenABoldFontIsThere)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    if (test::registerTestBoldFont(doc::kTextFontBold).empty())
+        GTEST_SKIP() << "no bold font for the test";
+    TextHarness h;
+    h.plateWithTopSelected();
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_EQ(h.controller.setOperationText("Bold"), "");
+    ASSERT_TRUE(h.offers("bold"));
+    ASSERT_TRUE(h.controller.triggerAction("bold").ok());
+    EXPECT_TRUE(h.tool()->bold());
+    EXPECT_TRUE(h.tool()->hasPreview()) << h.tool()->error();
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto* step = dynamic_cast<const doc::TextFeature*>(h.document.body(h.body)->features().back().get());
+    ASSERT_NE(step, nullptr);
+    EXPECT_EQ(step->font, doc::kTextFontBold);
+    const double bold = letterArea("Bold", 10, doc::kTextFontBold);
+    EXPECT_GT(bold, letterArea("Bold", 10) * 1.1) << "bold strokes are wider";
+    EXPECT_NEAR(h.volume() - 9000, bold * 1.0, 1e-5 * bold);
+    const auto rows = h.controller.historyRows();
+    bool listed = false;
+    for (const auto& r : rows)
+        listed = listed || (r.name == "Text" && r.detail.find("Bold") != std::string::npos);
+    EXPECT_TRUE(listed);
+}
+
 // The arrow sets the depth: dragged out it raises the text, in it cuts.
 TEST(TextInteraction, TheArrowSetsTheDepth)
 {
