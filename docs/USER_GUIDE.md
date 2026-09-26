@@ -291,9 +291,11 @@ face flat on the ground (the build plate). `Enter` applies.
   or shaft; the value is the total angle, and 360° spaces the copies
   evenly). **+ copy** and **− copy** change how many (the number after ×
   counts the original too).
-- **Separate bodies** (both tools) makes each copy its own body instead of
-  joining them, and the copies follow the original when you change it
-  later.
+- Copies that touch or overlap the original join it (a half part mirrored
+  across its own face becomes one symmetric body). Copies that would not
+  touch it become **separate bodies**, each independent: changing or moving
+  the original later changes no copy, and the other way round. The
+  **Separate bodies** button shows which it will be; click it to switch.
 
 ### Duplicate and split
 
@@ -301,8 +303,8 @@ face flat on the ground (the build plate). `Enter` applies.
   independent copy in place and selects it with the Move arrows, ready to
   drag away.
 - A body cut into separate pieces is marked in the Model panel; **Split
-  into bodies** makes each piece its own body. The pieces still follow the
-  history of the body they came from.
+  into bodies** makes each piece its own, independent body (with a copy of
+  the history it came from).
 
 ### Union, subtract, intersect
 
@@ -317,7 +319,9 @@ undo.
 ### Deleting and hiding
 
 Select a body and press `Delete` (or **Delete**). A body that other bodies
-are built from (split pieces, separate copies) is hidden instead. **Hide**
+are built from (a subtracted tool body you showed again, or split pieces
+and separate copies in projects saved by OpenShape 0.1) is hidden
+instead. **Hide**
 and **Show** are in the body's Model-panel row. Hidden bodies are not
 exported.
 

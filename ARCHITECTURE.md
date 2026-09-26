@@ -257,11 +257,14 @@ Document (UUID, display unit)
   stored in the face's frame like a sketch on it, so they follow the face;
   diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
-  body), Mirror and Pattern (copies joined into the body), DeleteFaces,
-  OffsetFace, Split and SplitPiece (below), Copy (a base feature: another
-  body's current shape mirrored or moved — Mirror / Pattern with "Separate
-  bodies") and Imported (a base feature holding a STEP-imported solid's
-  exact geometry; projects store it in `imports/`, see Files). Planes, axes and directions are stored as geometry, not as
+  body), Mirror (the image joined into the body; with `keepOriginal` off the
+  body becomes its image: the last step of a mirror copy) and Pattern
+  (copies joined into the body), DeleteFaces, OffsetFace, Split (below),
+  SplitPiece and Copy (base features that follow another body: split-off
+  pieces and "Separate bodies" copies in files from before independent
+  copies; they still load and compute, the UI no longer makes them) and
+  Imported (a base feature holding a STEP-imported solid's exact geometry;
+  projects store it in `imports/`, see Files). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
@@ -271,14 +274,17 @@ Document (UUID, display unit)
 - **Split into bodies** (`cmd::makeSplitBodyCommand`, one undo step): a
   `Split` step keeps the body's largest piece and records every piece's
   `geom::SolidSignature` (volume, centroid, box); each other piece becomes a
-  new body whose base `SplitPiece` step takes piece *k* from the parent's
-  shape just before that Split step. Both use `SplitFeature::assign`
+  new, independent body: a copy of the body's history
+  (`DuplicateBodyCommand`, with its own hidden copies of the sketches and
+  consumed tools it uses) ending in a `Split` step that lists that piece
+  first, so it keeps that piece. Pieces are found by `SplitFeature::assign`
   (`geom::matchSolids`: the kept piece picks first, then the closest pairs,
-  rejecting pieces that moved more than their size), so they always agree.
-  Pieces that appear upstream later stay in the parent; a piece that is gone
-  (the body is whole again) fails with a message. `SplitPiece` depends on the
-  parent body, so `recomputeDependents` (transitive) carries upstream edits
-  — a sketch dimension, a tool body — through the parent to every piece.
+  rejecting pieces that moved more than their size). Pieces that appear
+  upstream later stay in the body whose history grew them; editing one
+  piece (or the body it came from) never changes another. Files from
+  before independent pieces hold `SplitPiece` bodies (piece *k* of the
+  parent's shape just before its Split step, following every upstream edit
+  through `recomputeDependents`); they still load and compute as before.
 - `Document::preview(body, feature)` evaluates a feature without mutating
   anything; interactive previews use it.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
@@ -358,10 +364,19 @@ Combine steps consumed (copied hidden, recursively) — then every reference is
 re-pointed at the copies (`Feature::remapReferences`, sketch attachments and
 host bodies). Editing the copy (a step, its sketch, its tool) never changes
 the source, nor the other way round. The other bodies a history builds on
-(the parent of a split-off piece, the source of a mirror copy) stay shared.
+(in files from before independent copies: the parent of a split-off piece,
+the source of a mirror copy) stay shared.
 What is copied depends on the kind of reference, never on visibility (a tool
 shown again is still consumed; a hidden source is still shared). The copy's
 id is fixed at construction so the UI can select it and redo recreates it.
+The same command makes Mirror and Pattern copies and split-off pieces (a
+name and one more step after the cloned history: a Mirror step keeping only
+the image, a Move step, a Split step; `makeCopyBodiesCommand` groups several
+into one undo step) and refuses when that step fails or changes nothing.
+The cloned steps **take over the source's results** (`Body::adoptResults`,
+`Document::addBody`'s `computeFrom`: the shapes are shared, only the added
+step is computed): 10 pattern copies of a 14-step body took 18 ms instead of
+about 3.3 s (333 ms per recompute of that history).
 
 ## Interaction (`interaction/`)
 
@@ -456,7 +471,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (typed `+5` / `-5` are relative to it); `checkValue()` (refuse a value
   before any kernel call, e.g. a thickness of 0);
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
-  the preview is known); `canCommit()`; `clearPreview()`.
+  the preview is known: an extrusion's new body, Mirror's and Pattern's
+  separate bodies); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
   Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
@@ -474,13 +490,15 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   or Intersect, that leaves new pieces says so in a message:
   `suggestSplit`). The Delete key deletes the selected bodies in one undo
   step (`deleteBodies`), except a body that others are built from
-  (`Document::bodiesUsing`: split-off pieces, separate copies, bodies that
-  consumed it as a tool): that one is hidden instead, with a message, and a
+  (`Document::bodiesUsing`: bodies that consumed it as a tool; in files from
+  before independent copies also its split-off pieces and separate copies):
+  that one is hidden instead, with a message, and a
   hidden one cannot be deleted (its Model-panel row says why). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
-  A body built from the other (a Copy or SplitPiece of it) cannot be its
-  tool: Union and Intersect then keep the result in the copy instead.
+  A body built from the other (a Copy or SplitPiece of it, in older files)
+  cannot be its tool: Union and Intersect then keep the result in the copy
+  instead.
 - **Hole tool:** "Hole" on a single flat face (or the palette) arms
   `HoleOperation` (no arrows; the value chip sits at the current hole via
   `labelAnchor()`). Clicks on that face (picked as faces only) add holes:
@@ -518,12 +536,22 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the action bar) and has no value; Apply or Enter commits. Pattern previews
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
   spacing (angle when circular), ± copy changes the count, and clicking an
-  edge or a hole/shaft sets the direction or axis. Both commit one step with
-  the copies joined into the body — or, with the "Separate bodies" option,
-  one new body per copy (one undo step) whose base `Copy` step is the source
-  body's current shape mirrored or moved, so the copies follow every later
-  change of the source. Their preview shows the source and the copies side
-  by side, unfused (`Operation::computePreview`); at most 100 copies.
+  edge or a hole/shaft sets the direction or axis. Copies that touch or
+  overlap the body are joined into it (one Mirror or Pattern step: a half
+  part mirrored across its own face becomes one symmetric body). Copies
+  that would not touch it (the joined preview has more pieces than the
+  body: `reconsider`, as for an extrusion's new body) become **separate,
+  independent bodies** as in Shapr3D, unless there would be more than 100;
+  the "Separate bodies" option shows the choice and overrides it both ways
+  (`separateIsAutomatic()` tells which). Each separate copy is a new body
+  (one undo step for all, named like new bodies) made by
+  `DuplicateBodyCommand`: the source's history cloned, then a Mirror step
+  with `keepOriginal` off or a Move step named "Pattern copy". Editing or
+  moving the source later never changes a copy, nor the other way round.
+  Their preview shows the source and the copies side by side, unfused
+  (`Operation::computePreview`); a message says what happened ("Mirrored as
+  a separate body: the image does not touch the original."), and so does
+  the hint line before.
 - **Profiles in model mode:** sketch regions are pickable (a region lying on a
   face wins over the face; a consumed sketch's region only when it is
   coplanar with the body face hit, so used sketches do not steal clicks);
@@ -828,7 +856,10 @@ them on a hidden menu separator after the Open Recent sub-menu).
   restores the run's window size for the next scenario); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
-  touch layout); scenarios `recovery` (a real crash
+  touch layout); `copies` (Mirror and Pattern clicked on a box off the
+  origin: separate bodies without asking, the hint line and the toggle,
+  then the original's top face pushed twice while the copies stay as they
+  were); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I

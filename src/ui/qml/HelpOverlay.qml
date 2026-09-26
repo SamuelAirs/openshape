@@ -159,15 +159,15 @@ Rectangle {
                              "Rotate, then tap a straight edge or a hole (one ring around it), or a corner or circle (the rings move there); Center pivot goes back"],
                             ["Duplicate", "Body → Duplicate (Ctrl+D), or Duplicate in its Model panel row; drag the copy away",
                              "Body → Duplicate, or Duplicate in its Model panel row; drag the copy away"],
-                            ["Split into bodies", "A body in separate pieces (e.g. cut in two) → Split into bodies: each piece becomes a body that still follows the history"],
+                            ["Split into bodies", "A body in separate pieces (e.g. cut in two) → Split into bodies: each piece becomes a body of its own, with a copy of the history"],
                             ["Align", "Face or edge → Align, then click the face or edge to line it up with",
                              "Face or edge → Align, then tap the face or edge to line it up with (empty space gives up)"],
                             ["Mirror", "Body → Mirror, then click a flat face or choose a plane",
                              "Body → Mirror, then tap a flat face or choose a plane (empty space gives up)"],
                             ["Pattern", "Body → Pattern: Linear or Circular, type the spacing, ± copy"],
-                            ["Copies as bodies", "Mirror or Pattern → Separate bodies: each copy is its own body and follows the original when it changes"],
-                            ["Delete a body", "Double-click it, press Delete; a body that pieces or copies are built from is hidden instead",
-                             "Double-tap it → Delete; a body that pieces or copies are built from is hidden instead"],
+                            ["Copies as bodies", "Mirror or Pattern: copies that don't touch the original become bodies of their own (independent: changing one changes no other); Separate bodies switches it"],
+                            ["Delete a body", "Double-click it, press Delete; a body another body is built from is hidden instead",
+                             "Double-tap it → Delete; a body another body is built from is hidden instead"],
                             ["Union / subtract / intersect", "Select two bodies → Union, Subtract or Intersect (Swap picks which is cut)"]
                         ]
                     }

@@ -710,10 +710,12 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
         },
         [] {},
         [=, this] {
-            check(std::abs(geom::volume(body(1).shape()) - 3 * 8000.0) < 1e-3,
-                  "Enter: three copies of the box", num(geom::volume(body(1).shape())));
+            // 5 mm apart, the copies do not touch the box: separate bodies.
+            check(app_->bodyCount() == 4 && std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3
+                      && std::abs(geom::volume(body(3).shape()) - 8000.0) < 1e-3,
+                  "Enter: two copies of the box beside it, as bodies of their own", QString::number(app_->bodyCount()));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
+            check(app_->bodyCount() == 2 && std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
             check(clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
             check(app_->operationTitle() == QStringLiteral("Mirror") && !app_->operationPrompt().isEmpty(),
                   "Mirror asks for a plane", app_->operationPrompt());

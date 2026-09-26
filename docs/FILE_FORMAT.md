@@ -118,7 +118,14 @@ Rules:
   "Y"` (the sketch's own axes through its origin) and `"angle"` in radians
   (0, 2π].
 - `Mirror` params: `{ "origin": [x, y, z], "normal": [x, y, z] }` — the body
-  plus its mirror image across that plane, joined.
+  plus its mirror image across that plane, joined; or `{ "keepOriginal":
+  false, "plane": { "origin": [x, y, z], "normal": [x, y, z] } }` — the body
+  replaced by its mirror image alone (the last step of a copy made by Mirror
+  as a separate body). The image's plane is nested under `"plane"` so that
+  builds that predate `keepOriginal` refuse the file ("invalid mirror")
+  instead of joining the image to the body. Readers refuse a
+  `keepOriginal` that is not a boolean, an image with a top-level plane and
+  a joined mirror with a nested one; files without the field are joined.
 - `Pattern` params: `{ "layout": "Linear", "count", "direction": [x, y, z],
   "spacing" }` or `{ "layout": "Circular", "count", "axisOrigin": [x, y, z],
   "axis": [x, y, z], "angle" }` (radians; 2π spaces copies evenly). `count`
@@ -143,14 +150,24 @@ Rules:
   `{ "volume", "centroid": [x, y, z], "min": [x, y, z], "max": [x, y, z] }`
   (volume > 0, center of mass, bounding box) as the pieces were when the body
   was split into bodies. The body keeps `pieces[0]`, plus any piece its input
-  gained since; the other recorded pieces are the first steps of other
-  bodies. Pieces are found again by nearest signature (`geom::matchSolids`).
+  gained since; the other recorded pieces go. Split into bodies gives the
+  body a Split step keeping its largest piece, and makes each other piece a
+  body of its own whose history is a copy of the body's (new ids, its own
+  hidden copies of the sketches and consumed tool bodies) ending in a Split
+  step that lists that piece first. Pieces are found again by nearest
+  signature (`geom::matchSolids`).
 - `SplitPiece` params: `{ "body": uuid, "split": uuid, "piece" }` — a base
   feature: piece `piece` (≥ 1) of the Split step `split` of body `body`,
   taken from that body's shape just before the step. It fails (with a
   message) when the piece no longer exists or is no longer separate, when the
-  split step is suppressed or deleted, or when the body is gone.
-- `Copy` params (a base feature: Mirror / Pattern with "Separate bodies"):
+  split step is suppressed or deleted, or when the body is gone. Written by
+  builds before independent pieces (2026-09-26); still read and computed
+  exactly as before, no longer written.
+- `Copy` params (a base feature: Mirror / Pattern with "Separate bodies" in
+  builds before independent copies, 2026-09-26; still read and computed
+  exactly as before, no longer written — copies are now bodies with a copy
+  of the source's history ending in a `Mirror` step with `keepOriginal`
+  false or a `Move` step named "Pattern copy"):
   `{ "body": uuid, "mirror": { "origin": [x, y, z], "normal": [x, y, z] } }`
   — the mirror image of that body's current shape — or `{ "body": uuid,
   "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
