@@ -80,18 +80,36 @@ Windows, macOS, the iPad build and the new release workflow.
   last click hit (this diagnosed the CI Mac's small-window failures: tools
   waiting for a face now pick faces, not edges or sketch profiles).
 - **iPad.** Unused Qt Controls styles no longer linked (TD-36): 50 → 47 MB.
-  The Mac CI acceptance run (a 1024x653 window) now passes every check
-  (CI #32; it had 17 failures): TD-35 resolved.
+  The Mac CI acceptance run improved from 127/144 to 135/144 (TD-35).
 
 **CI status:** CI #31 (Windows, macOS), iPad #20 and Release #1 green for
 `cc1838c`; `aa4b8d3` (holes) pushed after that. The macOS acceptance step
 is informational (TD-35).
 
-**Still running when this was written** (merged as they finish, this report
-updated): STEP import + thumbnails + a start screen; the universal
-iPhone/iPad app with a compact layout (your iPhone 16 Pro and the iPhone
-Duo); previews off the GUI thread (TD-1); README with screenshots and
-docs/USER_GUIDE.md.
+**Since the first draft (merged, 885/885 real-UI checks in 24 scenarios,
+432 headless tests):** STEP import (Ctrl+I; exact geometry stored in the
+project), 256 px project thumbnails and a Home screen with recent projects;
+the **universal iPhone + iPad app** (compact layout below 600x500 px that
+adapts live to folding/Split View, safe areas, touch-worded hints, saving
+into the app's folder on iOS); README with screenshots and
+docs/USER_GUIDE.md; a first-extrusion hint bug fixed. The Mac CI
+acceptance run passes every check (TD-35 resolved).
+
+**Not finished (usage limit reached ~09:40):**
+- CI #34 (the STEP/Home merge) was still in its Windows test step after
+  20+ minutes (locally all tests pass in 25 s): check the annotations with
+  `python scripts/dev/ci_status.py status`; a test from that merge
+  (test_step / test_import / test_home / thumbnails) probably hangs on the
+  runner.
+- The previews-off-the-GUI-thread track (TD-1) was still running in its
+  worktree; merge it only after review and a full run.
+- The README/user guide don't mention Home, STEP import, the hole tools
+  or the phone layout yet; screenshots predate them.
+- v0.1.0 is not tagged yet (wait for a green CI; `git tag v0.1.0 && git
+  push origin v0.1.0` publishes the pre-release through release.yml).
+- An invisible OpenShape.exe (offscreen) holds the automation lock so no
+  UI test grabs your mouse while you work: end it in Task Manager when you
+  want automated UI runs again.
 
 **Decisions made for you (all reversible):**
 - Installer: per user (no admin), desktop shortcut off by default,
@@ -107,9 +125,7 @@ docs/USER_GUIDE.md.
   `src/document/Fasteners.cpp`, if you want e.g. +0.2 mm).
 - The app always uses the light color scheme (dark Windows made menus black).
 - The House AI service was paused overnight (with your OK) to free memory
-  for parallel builds; it is restarted when the session ends. If it is not
-  running, a reboot (it starts automatically) or `Start-Service HouseAI`
-  brings it back.
+  for parallel builds; it was started again at ~09:40 (running).
 
 **Incident:** an installer test run by an agent deleted your desktop
 shortcut (`OneDrive\Desktop\OpenShape.lnk`). It was recreated with the
@@ -124,8 +140,8 @@ refuse to run a setup that could touch the real desktop.
    worth it now, or later?
 3. Screw holes: add an FDM clearance allowance by default (e.g. +0.2 mm)?
 4. Text emboss/deboss needs a bundled font: OK to use Noto Sans (SIL OFL)?
-5. When Apple approves your enrollment: docs/IPAD.md section 1 (about 10
-   minutes) switches on TestFlight for iPad and iPhone.
+5. Apple access is approved: follow docs/IPAD.md section 1 (about 10
+   minutes) to switch on TestFlight for iPhone and iPad.
 
 **Try first:** docs/MANUAL_TESTS.md (new: holes, bodies, recovery,
 Preferences, the installer).
