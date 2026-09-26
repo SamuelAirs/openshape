@@ -507,6 +507,12 @@ ApplicationWindow {
             return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)
             return "Add a box, or start a sketch."
+        if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
+            return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
+        if (app.operationActive && app.operationTitle.startsWith("Countersink"))
+            return "Pick the screw size (90° heads), or drag the arrow / type the diameter at the surface · Enter applies"
+        if (app.operationActive && app.operationTitle.startsWith("Heat-set insert"))
+            return "Pick the insert size · drag the arrow or type the pilot hole's depth · Enter applies"
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
         if (app.operationActive && app.operationTitle === "Move" && app.contextActions.some(a => a.id === "split"))

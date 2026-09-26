@@ -252,6 +252,10 @@ private:
     bool sketchGridSnap_ = true;
     bool touchLayout_ = false;
     std::size_t insertPreset_ = 2; // M3
+    // What a hole rim's Hole step makes: Plain = the heat-set insert's pilot
+    // hole, or a counterbore / countersink (with the screw preset).
+    doc::HoleKind rimHoleKind_ = doc::HoleKind::Plain;
+    std::size_t screwPreset_ = doc::kDefaultScrew;
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
     // Faces (of the current body shape) the highlighted step created or changed.

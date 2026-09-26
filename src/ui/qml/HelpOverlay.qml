@@ -102,6 +102,7 @@ Rectangle {
                             ["Resize a hole", "Click its wall, type the new diameter"],
                             ["Remove a hole or fillet", "Select its face(s), press Delete"],
                             ["Insert for a screw", "Hole rim → Heat-set insert"],
+                            ["Seat for a screw head", "Hole rim → Counterbore or Countersink, pick M2–M6 or type the diameter; a counterbore's arrow into the hole sets its depth"],
                             ["Measure", "Select two faces or edges"],
                             ["Apply / cancel", "Enter / Esc (or ✓ / ✕)"]
                         ]

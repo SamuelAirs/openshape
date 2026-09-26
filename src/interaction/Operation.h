@@ -539,6 +539,49 @@ private:
     double diameter_ = 0;
 };
 
+// Counterbore or countersink for a screw head on an existing round hole (at
+// its rim). Screw presets (M2-M6, doc::metricScrews) set the sizes; the
+// radial arrow (handle 0) sets the diameter, a counterbore's arrow into the
+// hole (handle 1) its depth. Typed values go to the active arrow.
+class HeadOperation final : public Operation {
+public:
+    static std::unique_ptr<HeadOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
+                                                 doc::HoleKind kind, std::size_t presetIndex);
+
+    std::string title() const override;
+    std::string valueLabel() const override { return activeHandle() == 1 ? "Depth" : "Diameter"; }
+    bool allowsNegative() const override { return false; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Hole; }
+    doc::HoleKind holeKind() const { return kind_; }
+
+    int handleCount() const override { return kind_ == doc::HoleKind::Counterbore ? 2 : 1; }
+    LinearManipulator handle(int index) const override;
+    double handleOffset(int index) const override;
+    void setActiveHandle(int index) override;
+    double displayOffset(double value) const override { return activeHandle() == 1 ? value : value / 2; }
+    double valueFromOffset(double offset) const override { return activeHandle() == 1 ? offset : 2 * offset; }
+
+    // The screw preset the sizes came from (none once a size is typed or dragged).
+    std::optional<std::size_t> presetIndex() const;
+    void setPreset(std::size_t index, const doc::Document& document);
+    double diameter() const { return activeHandle() == 1 ? diameter_ : value(); }
+    double depth() const { return activeHandle() == 1 ? value() : depth_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    HeadOperation(Uuid bodyId, LinearManipulator m, doc::EdgeRef rim, doc::HolePlacement placement, doc::HoleKind kind)
+        : Operation(bodyId, std::move(m)), rim_(std::move(rim)), placement_(placement), kind_(kind) {}
+    doc::EdgeRef rim_;
+    doc::HolePlacement placement_;
+    doc::HoleKind kind_;
+    Vec3 radial_; // the diameter arrow's direction
+    std::size_t presetIndex_ = doc::kDefaultScrew;
+    double diameter_ = 0; // the value of whichever handle is not active
+    double depth_ = 0;
+};
+
 // Shell: hollows the body through the selected faces. The arrow starts on the
 // first face and points into the material; its length is the wall thickness.
 class ShellOperation final : public Operation {

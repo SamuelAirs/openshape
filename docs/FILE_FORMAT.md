@@ -118,10 +118,19 @@ Rules:
 - `DeleteFaces` params: `{ "faces": [faceRef…] }` — removed and healed.
   `OffsetFace` params: `{ "face": faceRef, "distance" }` (positive: the body
   grows along the face's outward normal).
-- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset" }` — a
-  cylindrical hole centered on a circular rim edge, drilled into the
-  material (the direction comes from the flat face next to the rim);
-  `preset` is an informational label such as "M3 heat-set insert".
+- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset", "type"?,
+  "angle"? }` — made at a circular rim edge, into the material (the
+  direction comes from the flat face next to the rim); `preset` is an
+  informational label such as "M3 heat-set insert" or "M3". `type` is
+  absent (or `"Plain"`) for a cylinder of `diameter` x `depth` (heat-set
+  insert pilot holes; files from before counterbores compute exactly as
+  before); `"Counterbore"`: the same cylinder as a screw head's seat on the
+  existing hole (refused when not wider than the hole or reaching through
+  the part); `"Countersink"`: a cone of `diameter` at the surface with the
+  included `angle` (radians, 90 degrees for metric screws) down to the hole,
+  written **without** `depth`, so builds that predate countersinks refuse
+  the file instead of drilling a plain hole of the countersink's diameter.
+  Unknown `type` values are refused.
 - `Split` params: `{ "pieces": [solid…] }` (at least two), where a solid is
   `{ "volume", "centroid": [x, y, z], "min": [x, y, z], "max": [x, y, z] }`
   (volume > 0, center of mass, bounding box) as the pieces were when the body

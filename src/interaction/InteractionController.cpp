@@ -730,8 +730,13 @@ void InteractionController::rebuildOperation()
         std::vector<int> edges;
         for (const auto& item : selection_.items())
             edges.push_back(item.index);
-        if (edgeOperationKind_ == doc::FeatureKind::Hole && edges.size() == 1)
-            operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
+        if (edgeOperationKind_ == doc::FeatureKind::Hole && edges.size() == 1) {
+            if (rimHoleKind_ == doc::HoleKind::Plain)
+                operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
+            else
+                operation_ = HeadOperation::create(*document_, *selection_.singleBody(), edges.front(), rimHoleKind_,
+                                                   screwPreset_);
+        }
         if (!operation_) {
             if (edgeOperationKind_ == doc::FeatureKind::Hole)
                 edgeOperationKind_ = doc::FeatureKind::Fillet;
@@ -1186,14 +1191,23 @@ std::vector<ContextAction> InteractionController::contextActions() const
         if (selection_.size() == 1)
             if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
                 rim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
-        if (rim)
-            actions.push_back({"insert", "Heat-set insert", edgeOperationKind_ == doc::FeatureKind::Hole});
+        if (rim) {
+            const bool hole = edgeOperationKind_ == doc::FeatureKind::Hole;
+            actions.push_back({"insert", "Heat-set insert", hole && rimHoleKind_ == doc::HoleKind::Plain});
+            actions.push_back({"counterbore", "Counterbore", hole && rimHoleKind_ == doc::HoleKind::Counterbore});
+            actions.push_back({"countersink", "Countersink", hole && rimHoleKind_ == doc::HoleKind::Countersink});
+        }
         if (selection_.size() == 1)
             actions.push_back({"align", "Align", false});
         if (const auto* insert = dynamic_cast<const InsertOperation*>(operation_.get())) {
             const auto& presets = doc::heatSetInsertPresets();
             for (std::size_t i = 0; i < presets.size(); ++i)
                 actions.push_back({"preset:" + std::to_string(i), presets[i].name, insert->presetIndex() == i});
+        }
+        if (const auto* head = dynamic_cast<const HeadOperation*>(operation_.get())) {
+            const auto& screws = doc::metricScrews();
+            for (std::size_t i = 0; i < screws.size(); ++i)
+                actions.push_back({"preset:" + std::to_string(i), screws[i].name, head->presetIndex() == i});
         }
     }
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
@@ -1420,8 +1434,11 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "sketch")
         return startSketch();
-    if (id == "insert") {
+    if (id == "insert" || id == "counterbore" || id == "countersink") {
         edgeOperationKind_ = doc::FeatureKind::Hole;
+        rimHoleKind_ = id == "counterbore"   ? doc::HoleKind::Counterbore
+                     : id == "countersink" ? doc::HoleKind::Countersink
+                                           : doc::HoleKind::Plain;
         rebuildOperation();
         notifyState();
         notifyView();
@@ -1434,9 +1451,17 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyView();
         return okStatus();
     }
+    if (auto* head = dynamic_cast<HeadOperation*>(operation_.get()); head && id.rfind("preset:", 0) == 0) {
+        screwPreset_ = std::stoul(id.substr(7));
+        head->setPreset(screwPreset_, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "fillet" || id == "chamfer") {
         const auto kind = id == "fillet" ? doc::FeatureKind::Fillet : doc::FeatureKind::Chamfer;
-        const double keep = operation_ ? operation_->value() : 0.0;
+        // A fillet's radius carries over to a chamfer (not a hole's size).
+        const double keep = dynamic_cast<const EdgeOperation*>(operation_.get()) ? operation_->value() : 0.0;
         edgeOperationKind_ = kind;
         rebuildOperation();
         if (operation_ && keep > 0)
@@ -1999,7 +2024,13 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Move: return "Move";
     case doc::FeatureKind::Combine: return "Combine";
     case doc::FeatureKind::Revolve: return "Revolve";
-    case doc::FeatureKind::Hole: return "Hole";
+    case doc::FeatureKind::Hole:
+        switch (static_cast<const doc::HoleFeature&>(f).holeKind) {
+        case doc::HoleKind::Plain: return "Hole";
+        case doc::HoleKind::Counterbore: return "Counterbore";
+        case doc::HoleKind::Countersink: return "Countersink";
+        }
+        return "Hole";
     case doc::FeatureKind::Mirror: return "Mirror";
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
@@ -2058,7 +2089,9 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     }
     case doc::FeatureKind::Hole: {
         const auto& h = static_cast<const doc::HoleFeature&>(f);
-        std::string text = "\xC3\x98" + formatLength(h.diameter, unit) + " \xC3\x97 " + formatLength(h.depth, unit);
+        std::string text = "\xC3\x98" + formatLength(h.diameter, unit)
+                         + (h.holeKind == doc::HoleKind::Countersink ? dot + formatAngle(h.angle)
+                                                                     : " \xC3\x97 " + formatLength(h.depth, unit));
         if (!h.preset.empty())
             text += dot + h.preset;
         return text;

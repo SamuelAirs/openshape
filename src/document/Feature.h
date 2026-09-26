@@ -6,6 +6,7 @@
 
 #include "core/Result.h"
 #include "core/Uuid.h"
+#include "document/Fasteners.h"
 #include "geometry/Shape.h"
 #include "geometry/TopoSignature.h"
 
@@ -445,16 +446,25 @@ public:
     Result<geom::Shape> toolSolid(const geom::Shape& input, const EvalContext& context) const;
 };
 
-// A cylindrical hole drilled at the rim of an existing circular edge (for
-// example to turn a hole into a heat-set insert pilot hole). The rim gives
-// the center; the flat face next to it gives the drilling direction.
+// What a Hole step at a rim makes. Plain: a cylinder of `diameter` x `depth`
+// (e.g. a heat-set insert's pilot hole; steps from older files). Counterbore:
+// the same cylinder as a screw head's seat, refused when it is not wider than
+// the hole or would reach through the part. Countersink: a cone of
+// `diameter` at the surface and included `angle`, down to the hole.
+enum class HoleKind { Plain, Counterbore, Countersink };
+std::string_view toString(HoleKind kind);
+
+// Made at the rim of an existing round hole (a circular edge where it meets a
+// flat face): the rim gives the center, the flat face the drilling direction.
 class HoleFeature final : public Feature {
 public:
     using Feature::Feature;
     EdgeRef rim;
-    double diameter = 4.0; // mm
-    double depth = 6.0;    // mm
-    std::string preset;    // e.g. "M3 heat-set insert" (informational)
+    HoleKind holeKind = HoleKind::Plain;
+    double diameter = 4.0;       // mm (a countersink's diameter at the surface)
+    double depth = 6.0;          // mm (not used by a countersink: its angle sets it)
+    double angle = kPi / 2;      // countersink included angle, radians
+    std::string preset;          // e.g. "M3 heat-set insert" (informational)
 
     FeatureKind kind() const override { return FeatureKind::Hole; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new HoleFeature(*this)); }
@@ -472,15 +482,6 @@ struct HolePlacement {
     double rimRadius = 0;
 };
 std::optional<HolePlacement> holePlacement(const geom::Shape& shape, int edgeIndex);
-
-// Typical pilot holes for brass heat-set inserts (community rules of thumb,
-// not a standard: check your insert's datasheet).
-struct InsertPreset {
-    const char* name;  // "M3"
-    double diameter;   // mm
-    double depth;      // mm
-};
-const std::vector<InsertPreset>& heatSetInsertPresets();
 
 // Revolves sketch profiles around the sketch's own X or Y axis (through the
 // sketch origin): new body, or joined to / cut from the body it belongs to.

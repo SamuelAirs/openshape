@@ -791,6 +791,100 @@ std::unique_ptr<doc::Feature> InsertOperation::makeFeature(double value) const
     return feature;
 }
 
+// ---- Counterbore / countersink ------------------------------------------------------
+
+std::unique_ptr<HeadOperation> HeadOperation::create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
+                                                     doc::HoleKind kind, std::size_t presetIndex)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || kind == doc::HoleKind::Plain)
+        return nullptr;
+    const auto placement = doc::holePlacement(body->shape(), rimEdge);
+    const auto signature = geom::captureEdgeSignature(body->shape(), rimEdge);
+    if (!placement || !signature)
+        return nullptr;
+    // The diameter arrow lies in the face, along its horizontal direction
+    // (world X on a floor or ceiling), like a sketch's X axis there.
+    const Vec3 n = placement->direction * -1.0;
+    Vec3 radial = Vec3{0, 0, 1}.cross(n);
+    if (radial.length() < 1e-6)
+        radial = n.z > 0 ? Vec3{1, 0, 0} : Vec3{-1, 0, 0};
+    radial = radial.normalized();
+    auto op = std::unique_ptr<HeadOperation>(new HeadOperation(bodyId, LinearManipulator(placement->center, radial),
+                                                               doc::EdgeRef{rimEdge, *signature}, *placement, kind));
+    op->radial_ = radial;
+    op->setPreset(std::min(presetIndex, doc::metricScrews().size() - 1), document);
+    return op;
+}
+
+std::string HeadOperation::title() const
+{
+    const std::string name = kind_ == doc::HoleKind::Counterbore ? "Counterbore" : "Countersink";
+    const auto preset = presetIndex();
+    return preset ? name + " " + doc::metricScrews()[*preset].name : name;
+}
+
+LinearManipulator HeadOperation::handle(int index) const
+{
+    if (index == 1)
+        return LinearManipulator(placement_.center, placement_.direction);
+    return LinearManipulator(placement_.center, radial_);
+}
+
+double HeadOperation::handleOffset(int index) const
+{
+    return index == 1 ? depth() : diameter() / 2;
+}
+
+void HeadOperation::setActiveHandle(int index)
+{
+    if (index == activeHandle() || index < 0 || index >= handleCount())
+        return;
+    // The value moves to its field; the other handle's field becomes the value.
+    const double d = diameter(), h = depth();
+    Operation::setActiveHandle(index);
+    diameter_ = d;
+    depth_ = h;
+    setStoredValue(index == 1 ? h : d);
+}
+
+std::optional<std::size_t> HeadOperation::presetIndex() const
+{
+    const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
+    const bool counterbore = kind_ == doc::HoleKind::Counterbore;
+    const double d = counterbore ? screw.counterboreDiameter : screw.countersinkDiameter;
+    if (std::abs(diameter() - d) > 1e-9 || (counterbore && std::abs(depth() - screw.counterboreDepth) > 1e-9))
+        return std::nullopt;
+    return presetIndex_;
+}
+
+void HeadOperation::setPreset(std::size_t index, const doc::Document& document)
+{
+    presetIndex_ = std::min(index, doc::metricScrews().size() - 1);
+    const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
+    diameter_ = kind_ == doc::HoleKind::Counterbore ? screw.counterboreDiameter : screw.countersinkDiameter;
+    depth_ = screw.counterboreDepth;
+    setValue(activeHandle() == 1 ? depth_ : diameter_, document); // preview right away
+}
+
+std::unique_ptr<doc::Feature> HeadOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::HoleFeature>();
+    feature->rim = rim_;
+    feature->holeKind = kind_;
+    feature->diameter = activeHandle() == 1 ? diameter_ : value;
+    if (kind_ == doc::HoleKind::Counterbore)
+        feature->depth = activeHandle() == 1 ? value : depth_;
+    feature->angle = doc::kCountersinkAngleDegrees * kPi / 180.0;
+    // Named after the screw only while the sizes are the preset's.
+    const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
+    const bool counterbore = kind_ == doc::HoleKind::Counterbore;
+    const bool matches = std::abs(feature->diameter - (counterbore ? screw.counterboreDiameter : screw.countersinkDiameter)) < 1e-9
+                      && (!counterbore || std::abs(feature->depth - screw.counterboreDepth) < 1e-9);
+    feature->preset = matches ? screw.name : "";
+    return feature;
+}
+
 // ---- Shell -----------------------------------------------------------------------
 
 std::unique_ptr<ShellOperation> ShellOperation::create(const doc::Document& document, const Uuid& bodyId,

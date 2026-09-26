@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert)
+        │         │   Pattern, Insert, Head)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
@@ -148,6 +148,18 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   regions (see Sketches).
 - `TopoSignature.h`: interim topological naming (see below).
 - `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export.
+- `Holes.h`: `drillHoles` cuts any number of round holes in one boolean
+  (`HoleCut`: entry point, direction, diameter, depth or through all, and a
+  counterbore or countersink head; `drillShaft = false` cuts only the head
+  on an existing hole). Tools are analytic cylinders and cones (the shaft
+  starts inside the head, a countersink cone runs on past the hole's wall,
+  so no faces coincide). Checked: sizes before any kernel call, then the
+  cut must remove something and no more than the tools hold. `headVolume`
+  is the exact ring or frustum a head takes from solid material;
+  `materialDepth` measures along a line how much material follows a
+  surface point (the side is read from the normal of the first face hit:
+  `BRepClass3d_SolidClassifier` crashed inside Extrema on a plain holed
+  plate).
 
 ## Document model (`document/`)
 
@@ -167,7 +179,11 @@ Document (UUID, display unit)
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
   (base features when they make a new body); PushPull, Fillet, Chamfer,
-  Shell, Hole (drilled at a circular rim), Move (a translation plus an
+  Shell, Hole (at a circular rim: a plain cylinder such as a heat-set
+  insert's pilot hole, or a counterbore / countersink for a screw head,
+  whose exact ring or frustum volume is verified; sizes from
+  `document/Fasteners`, the one place for screw and insert tables with
+  their sources), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
   OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
@@ -359,7 +375,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Sketch, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
-  Chamfer; a hole rim also offers the heat-set insert; one edge offers Align).
+  Chamfer; a hole rim also offers the heat-set insert, Counterbore and
+  Countersink: `HeadOperation`, M2-M6 screw presets in the value chip, a
+  radial arrow for the diameter and, for a counterbore, one into the hole
+  for the depth; the screw size chosen last is kept; one edge offers Align).
   One body (double-click, or its Model-panel row) arms Move and offers Rotate,
   Mirror, Pattern and Duplicate (`BodyTool`; Duplicate is also Ctrl+D and a
   button in the body's expanded Model-panel row; the copy comes out selected

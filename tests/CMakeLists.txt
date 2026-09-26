@@ -17,10 +17,10 @@ target_link_libraries(test_core PRIVATE openshape_core)
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
 
-openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_sketch_features.cpp test_attachment.cpp test_3mf.cpp test_recovery.cpp)
+openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_sketch_features.cpp test_attachment.cpp test_3mf.cpp test_recovery.cpp test_holes.cpp)
 target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)
 
-openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_bodies.cpp)
+openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_bodies.cpp test_holes_interaction.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
 
 openshape_add_test(test_sketch test_sketch.cpp)
