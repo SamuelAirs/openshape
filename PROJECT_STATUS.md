@@ -89,6 +89,43 @@ first, tested version. Their follow-ups are the next tasks below.
   so their shortcut runs the fix. Shapr3D is the reference for UX questions.
   Push in batches (CI minutes on a private repo bill at 2x).
 
+## Overnight plan (2026-09-25 → 26)
+
+Goal: a shippable application — installable, reliable, complete enough for
+real printable parts, discoverable. Executed in batches; after each batch:
+merge, build with warnings as errors, all tests (headless + real UI),
+commit, push, CI green before the next risky change.
+
+- **Batch 0 (done):** the real-UI acceptance run is split into
+  self-registering scenarios (one file per feature area, `--scenario`), and
+  automated GUI runs take a machine-wide lock so parallel work never runs
+  two at once.
+- **Batch 1 (parallel worktrees):**
+  1. *Release engineering:* OCCT rebuilt without FFmpeg/FreeImage (TD-17),
+     release preset, `.ico` icon and version info in the `.exe`, per-user
+     NSIS installer (Start menu, uninstaller, `.openshape` association),
+     portable zip, license gate (no GPL DLLs), size (TD-6) and packaging
+     speed (TD-34), `release.yml` (tag → GitHub Release).
+  2. *App shell & reliability:* recovery autosave + restore after a crash,
+     remembered window geometry, recent files, preferences, high-DPI check.
+  3. *Sketch toolkit part 3:* center rectangle, polygon, tangent arc,
+     constraint icons, sketch mirror/pattern (TD-28), coplanar sketches
+     (TD-27).
+  4. *Bodies & copies:* split pieces into bodies (TD-22), mirror/pattern as
+     separate bodies (TD-26), duplicate a body, rotate about a picked edge
+     or point (TD-24).
+  5. *Robustness & speed:* save/open and undo/redo stress tests, a project
+     file fuzz test, BVH picking (TD-2, TD-20), a bigger benchmark part,
+     kernel-failure messages audit.
+- **Batch 2:** holes & print helpers (counterbore/countersink, extrude with
+  draft, text emboss); STEP import in the UI, thumbnails, start screen with
+  recent projects; responsiveness (previews on a worker thread TD-1/TD-4,
+  TD-18, TD-19; measured before/after); iPad (TD-35, TD-36, safe areas,
+  Files open/save, touch-aware hints).
+- **Batch 3:** first-run guidance, help card and shortcut reference; README
+  with screenshots and `docs/USER_GUIDE.md`; v0.1.0 tag → GitHub Release
+  (pre-release); final package; morning report.
+
 ## What works (verified)
 
 - Build: Windows 11, MSYS2 UCRT64, GCC 16.2, Qt 6.11.2, OCCT 7.9.3, Direct3D 11
