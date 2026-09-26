@@ -6,6 +6,7 @@
 
 #include "core/Result.h"
 #include "geometry/Shape.h"
+#include "geometry/TopoSignature.h"
 
 #include <optional>
 #include <string>
@@ -63,6 +64,16 @@ Result<Shape> mirrored(const Shape& shape, const Vec3& planeOrigin, const Vec3& 
 Result<Shape> mirrorJoined(const Shape& shape, const Vec3& planeOrigin, const Vec3& planeNormal);
 // The shape and one copy per motion, fused in a single boolean pass.
 Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& copies);
+
+// ---- Separate pieces -----------------------------------------------------------
+// The separate solids a shape is made of, each as its own shape (in a stable
+// order for a given shape). Empty for a null shape.
+std::vector<Shape> solids(const Shape& shape);
+// Where a solid is and how big (for matchSolids, TopoSignature.h).
+SolidSignature solidSignature(const Shape& solid);
+// One shape made of these solids, not fused (one solid stays a plain solid;
+// several make a multi-piece shape with the usual "separate pieces" warning).
+Result<Shape> gatherSolids(const std::vector<Shape>& solids);
 
 
 // ---- Queries ----------------------------------------------------------------

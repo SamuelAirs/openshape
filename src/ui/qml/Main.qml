@@ -446,6 +446,8 @@ ApplicationWindow {
             return "Add a box, or start a sketch."
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
+        if (app.operationActive && app.operationTitle === "Move" && app.contextActions.some(a => a.id === "split"))
+            return "This body is in separate pieces: Split into bodies makes each piece a body · drag an arrow to move it"
         if (app.operationActive && app.operationTitle === "Move")
             return "Drag an arrow or type a distance · Duplicate (Ctrl+D) makes a copy to drag away · "
                  + "Shift+double-click another body to combine them"

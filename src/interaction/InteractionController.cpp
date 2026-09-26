@@ -776,12 +776,21 @@ Status InteractionController::commitOperation()
         alignRequested_ = false; // done: the source face/edge offers its usual tools again
     if (kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern)
         bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    const Uuid target = operation_->bodyId();
+    const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
+    const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
     }
     operation_.reset();
+    // A cut that split the body in two: say how to make each piece a body
+    // (not automatic: the pieces may belong together).
+    if (const doc::Body* after = piecesBefore > 0 ? document_->body(target) : nullptr;
+        after && after->shape().solidCount() > piecesBefore && !after->hasFailures())
+        message(after->name() + " is now in " + std::to_string(after->shape().solidCount())
+                + " separate pieces. To make each piece a body, select it and choose Split into bodies.");
     // Edges consumed by a fillet/chamfer no longer exist; a face that was
     // pushed still does and stays selected for the next push.
     if (clearSelection)
@@ -1028,6 +1037,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({"mirror", "Mirror", dynamic_cast<const MirrorOperation*>(operation_.get()) != nullptr});
             actions.push_back({"pattern", "Pattern", dynamic_cast<const PatternOperation*>(operation_.get()) != nullptr});
             actions.push_back({"duplicate", "Duplicate", false});
+            if (const doc::Body* body = document_->body(selection_.items().front().bodyId); body && body->shape().solidCount() > 1)
+                actions.push_back({"split", "Split into bodies", false});
         }
         if (selection_.size() >= 2) {
             // The first body is kept; the others are the tools.
@@ -1126,6 +1137,13 @@ Status InteractionController::triggerAction(const std::string& id)
                                    "Select one body to duplicate: double-click it, or click it in the Model panel.",
                                    "duplicate without one body selected");
         return duplicateBody(*body);
+    }
+    if (id == "split") {
+        const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) ? std::nullopt : selection_.singleBody();
+        if (!body)
+            return Status::failure(ErrorCode::InvalidArgument, "Select the body to split into its separate pieces.",
+                                   "split without one body selected");
+        return splitBody(*body);
     }
     if (id == "move" || id == "rotate" || id == "mirror" || id == "pattern") {
         bodyTool_ = id == "rotate" ? BodyTool::Rotate : id == "mirror" ? BodyTool::Mirror
@@ -1762,6 +1780,8 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
     case doc::FeatureKind::OffsetFace: return "Offset face";
+    case doc::FeatureKind::Split: return "Split";
+    case doc::FeatureKind::SplitPiece: return "Piece";
     }
     return "Step";
 }
@@ -1833,6 +1853,15 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     case doc::FeatureKind::OffsetFace: {
         const double d = static_cast<const doc::OffsetFaceFeature&>(f).distance;
         return (d >= 0 ? "+" : "") + formatLength(d, unit);
+    }
+    case doc::FeatureKind::Split: {
+        const auto n = static_cast<const doc::SplitFeature&>(f).pieces.size();
+        return "Keeps 1 of " + std::to_string(n) + " pieces";
+    }
+    case doc::FeatureKind::SplitPiece: {
+        const auto& p = static_cast<const doc::SplitPieceFeature&>(f);
+        const doc::Body* source = document.body(p.sourceBody);
+        return "Piece " + std::to_string(p.piece + 1) + " of " + (source ? source->name() : std::string("a deleted body"));
     }
     case doc::FeatureKind::Mirror: {
         const auto& m = static_cast<const doc::MirrorFeature&>(f);
@@ -1910,6 +1939,7 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             bodyRow.status = HistoryRow::Status::Warning;
             bodyRow.message = "Made of " + std::to_string(body->shape().solidCount())
                             + " separate pieces; they move and combine together.";
+            bodyRow.canSplit = true;
         }
         rows.push_back(std::move(bodyRow));
 
@@ -1925,9 +1955,15 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.detail = featureDetail(f, unit, *document_);
             row.canDelete = i > 0;
             row.canSuppress = i > 0;
+            // A later split into bodies dealt with the pieces a step left.
+            bool splitLater = false;
+            for (std::size_t k = i + 1; k < features.size(); ++k)
+                splitLater = splitLater
+                          || (features[k]->kind() == doc::FeatureKind::Split
+                              && body->state(static_cast<int>(k)).status == doc::FeatureStatus::Ok);
             switch (state.status) {
             case doc::FeatureStatus::Ok:
-                row.status = state.note.empty() ? HistoryRow::Status::Ok : HistoryRow::Status::Warning;
+                row.status = state.note.empty() || splitLater ? HistoryRow::Status::Ok : HistoryRow::Status::Warning;
                 break;
             case doc::FeatureStatus::Failed: row.status = HistoryRow::Status::Failed; break;
             case doc::FeatureStatus::NotComputed: row.status = HistoryRow::Status::NotComputed; break;
@@ -1936,6 +1972,9 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.message = state.status == doc::FeatureStatus::Suppressed ? "Suppressed"
                         : state.status == doc::FeatureStatus::Ok         ? state.note
                                                                          : state.userMessage;
+            // A step that left the body in pieces (and it still is): offer the split there too.
+            row.canSplit = state.status == doc::FeatureStatus::Ok && state.output.solidCount() > 1
+                        && body->shape().solidCount() > 1 && !body->hasFailures();
             for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
                     row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
@@ -2092,6 +2131,31 @@ Status InteractionController::duplicateBody(const Uuid& bodyId)
     alignRequested_ = false;
     if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, copy, -1))
         selection_.set(*item);
+    afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::splitBody(const Uuid& bodyId)
+{
+    if (session_)
+        return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "split in sketch mode");
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    auto command = cmd::makeSplitBodyCommand(*document_, bodyId);
+    if (!command) {
+        message(command.userMessage());
+        return Status::failureFrom(command);
+    }
+    const std::size_t before = document_->bodies().size();
+    Status status = undoStack_->push(std::move(command.value()), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    operation_.reset();
+    const std::size_t made = document_->bodies().size() - before;
+    message(made == 1 ? std::string("Split into 2 bodies.") : "Split into " + std::to_string(made + 1) + " bodies.");
     afterDocumentEdit();
     return status;
 }

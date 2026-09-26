@@ -2,9 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// Bodies and copies: Duplicate (value chip, Ctrl+D, Model panel row).
+// Bodies and copies: Duplicate (value chip, Ctrl+D, Model panel row), Split
+// into bodies (value chip, Model panel), Mirror / Pattern as separate bodies,
+// Rotate about a picked edge.
 
 #include "app/AcceptanceRunner.h"
+#include "commands/DocumentCommands.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
 #include "ui/AppController.h"
@@ -93,6 +96,86 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(r.app().bodyCount() == 3, "the row's Duplicate adds a body", QString::number(r.app().bodyCount()));
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 2, "undo removes it");
+        },
+
+        // ---- Split into bodies ------------------------------------------------------
+        // Set up (not what is tested): a 60 x 20 x 5 plate cut in two by a
+        // 4 mm slot (a hidden tool body).
+        [&r] {
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+            r.app().newDocument();
+            auto& stack = r.app().interaction().undoStack();
+            auto& document = r.app().document();
+            auto plate = std::make_unique<doc::BoxFeature>();
+            plate->origin = {-30, -10, 0};
+            plate->size = {60, 20, 5};
+            auto slot = std::make_unique<doc::BoxFeature>();
+            slot->origin = {-2, -15, -5};
+            slot->size = {4, 30, 30};
+            auto plateCommand = std::make_unique<cmd::CreateBodyCommand>("Body 1", std::move(plate));
+            auto slotCommand = std::make_unique<cmd::CreateBodyCommand>("Slot", std::move(slot));
+            const Uuid plateId = plateCommand->bodyId();
+            const Uuid slotId = slotCommand->bodyId();
+            auto combine = std::make_unique<doc::CombineFeature>();
+            combine->toolBody = slotId;
+            combine->mode = doc::CombineMode::Subtract;
+            const bool built = stack.push(std::move(plateCommand), document).ok() && stack.push(std::move(slotCommand), document).ok()
+                            && stack.push(std::make_unique<cmd::AddFeatureCommand>(plateId, std::move(combine)), document).ok()
+                            && stack.push(std::make_unique<cmd::SetBodyVisibilityCommand>(slotId, false), document).ok();
+            r.app().interaction().documentChanged();
+            r.app().interaction().fitAll(false);
+            r.check(built && r.body(0).shape().solidCount() == 2, "split: a plate cut in two by a slot");
+        },
+        [] {}, [] {},
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "Model panel row selects the plate");
+            r.check(r.findItem(QStringLiteral("action_split")) != nullptr, "a body in pieces offers Split into bodies");
+        },
+        [&r, num] {
+            r.check(r.clickItem(QStringLiteral("action_split")), "Split into bodies button");
+            r.check(r.app().bodyCount() == 3, "one more body (plate, hidden slot, piece)", QString::number(r.app().bodyCount()));
+            if (r.app().bodyCount() != 3)
+                return;
+            r.check(std::abs(geom::volume(r.body(0).shape()) - 2800.0) < 1e-6 && r.body(0).shape().solidCount() == 1,
+                    "the plate keeps one 28 mm piece", num(geom::volume(r.body(0).shape())));
+            r.check(std::abs(geom::volume(r.body(2).shape()) - 2800.0) < 1e-6
+                        && std::abs(geom::boundingBox(r.body(2).shape()).min.x - 2.0) < 1e-6,
+                    "the other piece is a body of its own", num(geom::volume(r.body(2).shape())));
+            r.screenshot(QStringLiteral("bodies_02_split"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().bodyCount() == 2 && r.body(0).shape().solidCount() == 2, "undo: one body in two pieces again");
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("historySplit_") + idOf(r.body(0))),
+                    "Split into bodies right under the body's warning in the Model panel");
+            r.check(r.app().bodyCount() == 3, "it splits too", QString::number(r.app().bodyCount()));
+        },
+        [&r] {
+            // An upstream edit through the Model panel: both pieces follow.
+            const QString box = QString::fromStdString(r.body(0).features().front()->id().toString());
+            r.check(r.clickItem(QStringLiteral("historyRow_") + box), "the plate's Box step in the Model panel");
+        },
+        [&r] {
+            const QString box = QString::fromStdString(r.body(0).features().front()->id().toString());
+            r.check(r.clickItem(QStringLiteral("historyParam_") + box + QStringLiteral("_height")), "its height field");
+            r.type(QStringLiteral("8"));
+            r.key(Qt::Key_Return);
+        },
+        [] {},
+        [&r, num] {
+            if (r.app().bodyCount() != 3) {
+                r.check(false, "three bodies after the split", QString::number(r.app().bodyCount()));
+                return;
+            }
+            const double plate = geom::volume(r.body(0).shape());
+            const double piece = geom::volume(r.body(2).shape());
+            r.check(std::abs(plate - 4480.0) < 1e-6 && std::abs(piece - 4480.0) < 1e-6,
+                    "an 8 mm plate: both pieces follow", num(plate) + QStringLiteral(" / ") + num(piece));
+            r.check(!r.body(2).hasFailures(), "the piece has no failed step");
+            r.screenshot(QStringLiteral("bodies_03_split_follows"));
         },
     };
 }

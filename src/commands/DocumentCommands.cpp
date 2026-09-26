@@ -5,8 +5,10 @@
 #include "commands/DocumentCommands.h"
 
 #include "document/Document.h"
+#include "geometry/Modeling.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <map>
 
@@ -86,6 +88,8 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
     case doc::FeatureKind::OffsetFace: return "Offset face";
+    case doc::FeatureKind::Split: return "Split into bodies";
+    case doc::FeatureKind::SplitPiece: return "Split piece";
     }
     return "Add step";
 }
@@ -232,6 +236,57 @@ void DuplicateBodyCommand::undo(doc::Document& document)
         document.removeBody((*it)->id());
     for (auto it = sketches_.rbegin(); it != sketches_.rend(); ++it)
         document.removeSketch(it->id());
+}
+
+// ---- Split into bodies ------------------------------------------------------------
+
+Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId)
+{
+    using R = Result<std::unique_ptr<Command>>;
+    const doc::Body* body = document.body(bodyId);
+    if (!body)
+        return R::failureFrom(missingBody());
+    std::vector<geom::Shape> solids = geom::solids(body->shape());
+    if (solids.size() < 2)
+        return R::failure(ErrorCode::InvalidArgument, "This body is in one piece; there is nothing to split.",
+                          "split: " + std::to_string(solids.size()) + " solid(s)");
+    // The body keeps its largest piece; the others follow by size, then by
+    // position, so the order is the same every time.
+    std::vector<geom::SolidSignature> pieces;
+    for (const geom::Shape& s : solids)
+        pieces.push_back(geom::solidSignature(s));
+    std::sort(pieces.begin(), pieces.end(), [](const geom::SolidSignature& a, const geom::SolidSignature& b) {
+        if (std::abs(a.volume - b.volume) > 1e-6 * std::max(a.volume, b.volume))
+            return a.volume > b.volume;
+        if (std::abs(a.centroid.x - b.centroid.x) > 1e-9)
+            return a.centroid.x < b.centroid.x;
+        if (std::abs(a.centroid.y - b.centroid.y) > 1e-9)
+            return a.centroid.y < b.centroid.y;
+        return a.centroid.z < b.centroid.z;
+    });
+
+    auto split = std::make_unique<doc::SplitFeature>();
+    split->pieces = pieces;
+    const Uuid splitId = split->id();
+    std::vector<std::unique_ptr<Command>> steps;
+    steps.push_back(std::make_unique<AddFeatureCommand>(bodyId, std::move(split)));
+    std::vector<std::string> names;
+    for (std::size_t k = 1; k < pieces.size(); ++k) {
+        std::string name;
+        for (int n = 1; name.empty(); ++n) {
+            const std::string candidate = "Body " + std::to_string(n);
+            if (document.uniqueBodyName(candidate) == candidate
+                && std::find(names.begin(), names.end(), candidate) == names.end())
+                name = candidate;
+        }
+        names.push_back(name);
+        auto piece = std::make_unique<doc::SplitPieceFeature>();
+        piece->sourceBody = bodyId;
+        piece->splitFeature = splitId;
+        piece->piece = static_cast<int>(k);
+        steps.push_back(std::make_unique<CreateBodyCommand>(name, std::move(piece)));
+    }
+    return R::success(std::make_unique<CompositeCommand>("Split into bodies", std::move(steps)));
 }
 
 // ---- DeleteBody -----------------------------------------------------------------

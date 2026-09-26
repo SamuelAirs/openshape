@@ -141,6 +141,24 @@ Panel {
                         color: row.failed ? Theme.error : row.warned ? "#9A6A00" : Theme.mutedText
                     }
 
+                    // A body in separate pieces: make each piece a body (right
+                    // under the warning on the body; on the step that caused it
+                    // while that step is expanded).
+                    ActionButton {
+                        objectName: "historySplit_" + row.modelData.id
+                        compact: true
+                        visible: row.modelData.canSplit && (row.modelData.kind === "body" || row.expanded)
+                        text: "Split into bodies"
+                        onClicked: {
+                            // Splitting rebuilds the rows (and this delegate): capture first.
+                            const owner = panel
+                            const body = row.modelData.bodyId
+                            owner.expandedId = ""
+                            owner.app.splitBody(body)
+                            owner.finished()
+                        }
+                    }
+
                     // Editable values of the expanded step.
                     Repeater {
                         model: row.expanded ? row.modelData.parameters : []

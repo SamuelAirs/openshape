@@ -45,6 +45,9 @@ struct HistoryRow {
     bool visible = true;    // bodies and sketches
     bool canDelete = true;
     bool canSuppress = false;
+    // The body (or the step that left it) is in several pieces: offer
+    // "Split into bodies" (for the body `id`, or `parentId` for a step).
+    bool canSplit = false;
     std::vector<Parameter> parameters;
 };
 
@@ -158,6 +161,9 @@ public:
     // An independent copy of the body, in place, then selected with the Move
     // arrows so it can be dragged away (Shapr3D's Duplicate).
     Status duplicateBody(const Uuid& bodyId);
+    // A body in several separate pieces becomes one body per piece (it keeps
+    // the largest); they stay linked to its history.
+    Status splitBody(const Uuid& bodyId);
     // Model panel hover/expansion: highlights what a row refers to in the view
     // (a body, a sketch, or the faces a step created or modified). nullopt clears.
     void setHistoryHighlight(const std::optional<Uuid>& id);

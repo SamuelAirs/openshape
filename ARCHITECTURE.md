@@ -168,14 +168,25 @@ Document (UUID, display unit)
   (base features when they make a new body); PushPull, Fillet, Chamfer,
   Shell, Hole (drilled at a circular rim), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
-  body), Mirror and Pattern (copies joined into the body), DeleteFaces and
-  OffsetFace. Planes, axes and directions are stored as geometry, not as
+  body), Mirror and Pattern (copies joined into the body), DeleteFaces,
+  OffsetFace, Split and SplitPiece (below). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
 - A successful step can carry a `FeatureState::note` (from `Result`
   warnings, e.g. "The body is now in 2 separate pieces."); the Model panel
-  shows it in amber.
+  shows it in amber (unless a later Split step dealt with the pieces).
+- **Split into bodies** (`cmd::makeSplitBodyCommand`, one undo step): a
+  `Split` step keeps the body's largest piece and records every piece's
+  `geom::SolidSignature` (volume, centroid, box); each other piece becomes a
+  new body whose base `SplitPiece` step takes piece *k* from the parent's
+  shape just before that Split step. Both use `SplitFeature::assign`
+  (`geom::matchSolids`: the kept piece picks first, then the closest pairs,
+  rejecting pieces that moved more than their size), so they always agree.
+  Pieces that appear upstream later stay in the parent; a piece that is gone
+  (the body is whole again) fails with a message. `SplitPiece` depends on the
+  parent body, so `recomputeDependents` (transitive) carries upstream edits
+  — a sketch dimension, a tool body — through the parent to every piece.
 - `Document::preview(body, feature)` evaluates a feature without mutating
   anything; interactive previews use it.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
@@ -320,7 +331,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   One body (double-click, or its Model-panel row) arms Move and offers Rotate,
   Mirror, Pattern and Duplicate (`BodyTool`; Duplicate is also Ctrl+D and a
   button in the body's expanded Model-panel row; the copy comes out selected
-  with the Move arrows, ready to drag away). Two or more bodies offer Union / Subtract /
+  with the Move arrows, ready to drag away), and "Split into bodies" when it
+  is in several pieces (also under the body's warning in the Model panel and
+  on the expanded step that left the pieces; a committed step that leaves
+  new pieces says so in a message). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits

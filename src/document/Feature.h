@@ -27,7 +27,8 @@ class Document;
 class Body;
 
 enum class FeatureKind {
-    Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace
+    Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
+    Split, SplitPiece
 };
 
 // What a feature may consult besides its input shape.
@@ -312,6 +313,53 @@ public:
     Status setParameter(std::string_view key, double value) override;
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
+};
+
+// The step that split a body into bodies: of the separate pieces its input is
+// made of, the body keeps one. `pieces` describes every piece as it was when
+// the body was split, pieces[0] being the one kept; the others became bodies
+// of their own (SplitPieceFeature). Pieces are found again by where they are
+// and how big (geom::matchSolids), so upstream edits carry through. Pieces
+// that appear later (a new cut) stay in this body: nothing disappears.
+class SplitFeature final : public Feature {
+public:
+    using Feature::Feature;
+    std::vector<geom::SolidSignature> pieces;
+
+    // For each recorded piece, its solid among `solids` (or -1). The body and
+    // its split-off pieces all use this, so they agree on who gets what.
+    std::vector<int> assign(const std::vector<geom::Shape>& solids) const;
+
+    FeatureKind kind() const override { return FeatureKind::Split; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new SplitFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// The first step of a body split off another: piece `piece` of the source
+// body's shape just before its Split step (`splitFeature`). Follows every
+// upstream edit of the source; fails with a clear message when the piece is
+// no longer separate or no longer exists.
+class SplitPieceFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sourceBody;
+    Uuid splitFeature;
+    int piece = 1; // index into the split's pieces (0 is the one the source keeps)
+
+    FeatureKind kind() const override { return FeatureKind::SplitPiece; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new SplitPieceFeature(*this)); }
+    bool isBaseFeature() const override { return true; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sourceBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
 // Hollows the body, opening the referenced faces, with walls of `thickness`.

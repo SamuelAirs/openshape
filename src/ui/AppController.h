@@ -162,6 +162,7 @@ public:
     Q_INVOKABLE void selectBody(const QString& bodyId, bool additive);
     // Model panel row actions for a body.
     Q_INVOKABLE void duplicateBody(const QString& bodyId);
+    Q_INVOKABLE void splitBody(const QString& bodyId);
     // Tool palette: runs a tool if the selection fits, otherwise explains it.
     Q_INVOKABLE void runTool(const QString& id);
 

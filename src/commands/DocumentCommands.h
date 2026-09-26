@@ -73,6 +73,13 @@ private:
     std::vector<std::unique_ptr<doc::Body>> bodies_; // copies: consumed tools first, the copy last
 };
 
+// Splits a body that is in several separate pieces into bodies, as one undo
+// step: a Split step keeps its largest piece, and every other piece becomes a
+// new body (named like new bodies) whose first step is that piece of this
+// body (SplitPieceFeature). They stay linked: upstream edits update every
+// piece. Fails when the body is in one piece.
+Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId);
+
 class DeleteBodyCommand final : public Command {
 public:
     explicit DeleteBodyCommand(Uuid bodyId) : bodyId_(bodyId) {}
