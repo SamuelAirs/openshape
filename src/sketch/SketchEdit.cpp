@@ -292,6 +292,19 @@ SlotIds addSlot(Sketch& s, Vec2 a, Vec2 b, double radius, EntityId reuseA, Entit
     return ids;
 }
 
+CenterRectangleIds addCenterRectangle(Sketch& s, Vec2 center, Vec2 corner, EntityId reuseCenter)
+{
+    CenterRectangleIds ids;
+    const Vec2 half = corner - center;
+    if (std::abs(half.x) < kEps || std::abs(half.y) < kEps)
+        return ids;
+    ids.rectangle = addRectangle(s, center * 2.0 - corner, corner);
+    ids.diagonal = s.addLine(ids.rectangle.corners[0], ids.rectangle.corners[2], true);
+    ids.center = reuseCenter != kNoEntity && s.point(reuseCenter) ? reuseCenter : s.addPoint(center);
+    s.addConstraint({ConstraintKind::Midpoint, ids.center, ids.diagonal});
+    return ids;
+}
+
 Result<EntityId> filletCorner(Sketch& s, EntityId corner, double radius)
 {
     std::vector<EntityId> lines;

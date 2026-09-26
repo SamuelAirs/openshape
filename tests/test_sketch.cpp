@@ -533,3 +533,43 @@ TEST(SketchEdit, PointOnCircleConstraint)
         found = found || c.kind == ConstraintKind::PointOnCircle;
     EXPECT_TRUE(found);
 }
+
+TEST(SketchEdit, CenterRectangleStaysCentered)
+{
+    Sketch s;
+    const auto ids = addCenterRectangle(s, {0, 0}, {17, 9}, kOriginId);
+    ASSERT_EQ(ids.center, kOriginId);
+    ASSERT_NE(ids.diagonal, kNoEntity);
+    EXPECT_TRUE(s.line(ids.diagonal)->construction);
+    const auto& c = ids.rectangle.corners;
+    EXPECT_NEAR((pos(s, c[0]) - Vec2{-17, -9}).length(), 0.0, 1e-12);
+    EXPECT_NEAR((pos(s, c[2]) - Vec2{17, 9}).length(), 0.0, 1e-12);
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 2) << "width and height";
+    const EntityId width = s.addConstraint({ConstraintKind::HorizontalDistance, c[0], c[1], 40.0});
+    s.addConstraint({ConstraintKind::VerticalDistance, c[1], c[2], 20.0});
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0);
+    EXPECT_NEAR((pos(s, c[0]) - Vec2{-20, -10}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((pos(s, c[2]) - Vec2{20, 10}).length(), 0.0, 1e-9);
+    // A new width grows both sides equally.
+    s.constraint(width)->value = 60.0;
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_NEAR(pos(s, c[0]).x, -30.0, 1e-9);
+    EXPECT_NEAR(pos(s, c[1]).x, 30.0, 1e-9);
+    EXPECT_NEAR(pos(s, c[3]).y, 10.0, 1e-9);
+    // Round trip.
+    auto back = Sketch::fromJson(s.toJson());
+    ASSERT_TRUE(back.ok()) << back.developerMessage();
+    EXPECT_EQ(back.value().lines().size(), 5u);
+    EXPECT_EQ(back.value().constraints().size(), s.constraints().size());
+    ASSERT_TRUE(solve(back.value()).ok);
+    EXPECT_EQ(back.value().solveReport().degreesOfFreedom, 0);
+    // A center away from existing points gets its own point; a flat drag is refused.
+    Sketch t;
+    const auto free = addCenterRectangle(t, {5, 5}, {8, 7});
+    ASSERT_TRUE(solve(t).ok);
+    EXPECT_EQ(t.solveReport().degreesOfFreedom, 4);
+    EXPECT_EQ(addCenterRectangle(t, {5, 5}, {8, 5}).center, kNoEntity);
+    (void)free;
+}

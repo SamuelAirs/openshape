@@ -946,3 +946,58 @@ TEST(SketchInteraction, OffsetSelectedCurves)
     EXPECT_FALSE(h.session().isOffsetting());
     EXPECT_EQ(h.session().sketch().lines().size(), 8u);
 }
+
+TEST(SketchInteraction, CenterRectangleTypedAndExtruded)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::CenterRectangle);
+    h.click(h.sketchScreen({0, 0})); // the center, on the origin
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({14, 7}));
+    h.type("40");
+    h.session().focusNextInput();
+    h.type("20");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_FALSE(h.session().isDrawing());
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 5u) << "four sides and the construction diagonal";
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Midpoint), 1u);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0);
+    EXPECT_NEAR(largestRegion(s), 800.0, 1e-6);
+    double minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    for (const auto& [id, p] : s.points()) {
+        minX = std::min(minX, p.position.x);
+        maxX = std::max(maxX, p.position.x);
+        minY = std::min(minY, p.position.y);
+        maxY = std::max(maxY, p.position.y);
+    }
+    EXPECT_NEAR(minX, -20, 1e-9);
+    EXPECT_NEAR(maxX, 20, 1e-9);
+    EXPECT_NEAR(minY, -10, 1e-9);
+    EXPECT_NEAR(maxY, 10, 1e-9);
+
+    // Editing the width keeps the rectangle centered on the origin.
+    sketch::EntityId width = sketch::kNoEntity;
+    for (const auto& [id, c] : s.constraints())
+        if (c.kind == sketch::ConstraintKind::HorizontalDistance)
+            width = id;
+    ASSERT_NE(width, sketch::kNoEntity);
+    EXPECT_EQ(h.session().setDimension(width, "60"), "");
+    EXPECT_NEAR(largestRegion(h.session().sketch()), 1200.0, 1e-6);
+
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({5, 5, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("10"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    const auto bb = geom::boundingBox(h.document.bodies()[0]->shape());
+    EXPECT_NEAR(bb.min.x, -30, 1e-6);
+    EXPECT_NEAR(bb.max.x, 30, 1e-6);
+    EXPECT_NEAR(bb.min.y, -10, 1e-6);
+    EXPECT_NEAR(bb.max.y, 10, 1e-6);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 12000, 1e-4);
+    EXPECT_TRUE(h.messages.empty());
+}

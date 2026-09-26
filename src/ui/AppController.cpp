@@ -196,6 +196,7 @@ QString AppController::sketchTool() const
     case interact::SketchTool::Arc: return QStringLiteral("arc");
     case interact::SketchTool::Slot: return QStringLiteral("slot");
     case interact::SketchTool::Trim: return QStringLiteral("trim");
+    case interact::SketchTool::CenterRectangle: return QStringLiteral("centerRectangle");
     }
     return {};
 }
@@ -293,6 +294,8 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::Slot);
     else if (name == QLatin1String("trim"))
         interaction_->setSketchTool(interact::SketchTool::Trim);
+    else if (name == QLatin1String("centerRectangle"))
+        interaction_->setSketchTool(interact::SketchTool::CenterRectangle);
 }
 
 QString AppController::sketchType(const QString& text)

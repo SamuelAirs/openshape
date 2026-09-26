@@ -21,7 +21,7 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim };
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {

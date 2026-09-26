@@ -24,6 +24,17 @@ struct SlotIds {
 // `a` and `b`. Existing center points can be reused.
 SlotIds addSlot(Sketch& sketch, Vec2 a, Vec2 b, double radius, EntityId reuseA = kNoEntity, EntityId reuseB = kNoEntity);
 
+struct CenterRectangleIds {
+    RectangleIds rectangle; // corners[0] is opposite `corner`, corners[2] is `corner`
+    EntityId center = kNoEntity;
+    EntityId diagonal = kNoEntity; // construction line corners[0] -> corners[2]
+};
+// An axis-aligned rectangle around `center` with one corner at `corner`. The
+// center stays the midpoint of a construction diagonal, so the rectangle
+// stays centered when its width or height changes. An existing center point
+// (e.g. the origin) can be reused.
+CenterRectangleIds addCenterRectangle(Sketch& sketch, Vec2 center, Vec2 corner, EntityId reuseCenter = kNoEntity);
+
 // Rounds the corner where exactly two lines meet at `corner` with a tangent
 // arc. The corner point stays, on both lines' extensions (the "virtual
 // sharp"), so dimensions to it keep working. Returns the new arc.

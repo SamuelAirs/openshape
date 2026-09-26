@@ -54,7 +54,8 @@ Item {
             }
         }
         if (!(event.modifiers & Qt.ControlModifier)) {
-            const tools = { "l": "line", "r": "rectangle", "c": "circle", "a": "arc", "o": "slot", "t": "trim", "s": "select" }
+            const tools = { "l": "line", "r": "rectangle", "e": "centerRectangle", "c": "circle", "a": "arc", "o": "slot",
+                            "t": "trim", "s": "select" }
             const tool = tools[event.text.toLowerCase()]
             if (tool !== undefined && !app.sketchDrawing) {
                 app.setSketchTool(tool)
@@ -101,6 +102,7 @@ Item {
                     { id: "select", label: "Select", key: "S" },
                     { id: "line", label: "Line", key: "L" },
                     { id: "rectangle", label: "Rectangle", key: "R" },
+                    { id: "centerRectangle", label: "Center rect", key: "E" },
                     { id: "circle", label: "Circle", key: "C" },
                     { id: "arc", label: "Arc", key: "A" },
                     { id: "slot", label: "Slot", key: "O" },

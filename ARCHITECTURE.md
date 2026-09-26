@@ -271,9 +271,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Sketch mode:** `startSketch()` creates a sketch on the selected planar face
   (host body recorded) or the XY plane, animates the view to face it, and hands
   input to a `SketchSession`. The session edits a working copy; tools are
-  Select, Line, Rectangle, Circle, Arc (3-point: start, end, then bend; a
-  typed radius locks it), Slot (two centers, then the width) and Trim (click
-  a piece, previewed red). Selected curves offer Offset (a mode: the pointer
+  Select, Line, Rectangle, Center rectangle (the center is the midpoint of a
+  construction diagonal, so it stays centered), Circle, Arc (3-point: start,
+  end, then bend; a typed radius locks it), Slot (two centers, then the
+  width) and Trim (click a piece, previewed red). Selected curves offer Offset (a mode: the pointer
   picks the side, a typed distance fixes it, click/Enter applies); selected
   corner points offer Fillet. Starting a sketch on a plane where a visible sketch
   already lies (exactly coplanar), or with one of its profiles selected,

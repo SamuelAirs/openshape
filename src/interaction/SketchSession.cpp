@@ -265,6 +265,7 @@ void SketchSession::beginShape(const Snap& at)
     focusedInput_ = 0;
     switch (tool_) {
     case SketchTool::Rectangle:
+    case SketchTool::CenterRectangle:
         inputs_ = {{"width", "W", "", false, 0}, {"height", "H", "", false, 0}};
         break;
     case SketchTool::Circle:
@@ -310,6 +311,12 @@ Vec2 SketchSession::constrainedCursor() const
             c.x = a.x + sign(c.x - a.x) * *w;
         if (const auto h = input("height"))
             c.y = a.y + sign(c.y - a.y) * *h;
+        break;
+    case SketchTool::CenterRectangle: // the anchor is the center: typed sizes are full widths
+        if (const auto w = input("width"))
+            c.x = a.x + sign(c.x - a.x) * *w / 2;
+        if (const auto h = input("height"))
+            c.y = a.y + sign(c.y - a.y) * *h / 2;
         break;
     case SketchTool::Line:
         if (const auto len = input("length")) {
@@ -423,6 +430,28 @@ bool SketchSession::finishShape(const Snap& endSnap)
         if (input("height"))
             next.addConstraint({sketch::ConstraintKind::VerticalDistance, ids.corners[1], ids.corners[2], b.y - a.y});
         if (!commit(std::move(next), "Rectangle"))
+            return false;
+        resetShape();
+        return true;
+    }
+    case SketchTool::CenterRectangle: {
+        const Vec2 center = start.position, corner = end.position;
+        if (std::abs(corner.x - center.x) < kTiny || std::abs(corner.y - center.y) < kTiny) {
+            message("Move away from the center to give the rectangle some width and height.");
+            return false;
+        }
+        const auto ids = sketch::addCenterRectangle(next, center, corner, start.point);
+        if (ids.center == sketch::kNoEntity)
+            return false;
+        const auto& corners = ids.rectangle.corners;
+        if (end.point != sketch::kNoEntity && end.point != ids.center)
+            next.addConstraint({sketch::ConstraintKind::Coincident, corners[2], end.point});
+        const Vec2 low = next.point(corners[0])->position;
+        if (input("width"))
+            next.addConstraint({sketch::ConstraintKind::HorizontalDistance, corners[0], corners[1], corner.x - low.x});
+        if (input("height"))
+            next.addConstraint({sketch::ConstraintKind::VerticalDistance, corners[1], corners[2], corner.y - low.y});
+        if (!commit(std::move(next), "Center rectangle"))
             return false;
         resetShape();
         return true;
@@ -1212,6 +1241,8 @@ std::string SketchSession::hintText() const
         return "Click the piece of a curve to remove (up to where other curves cross it)";
     case SketchTool::Rectangle:
         return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle";
+    case SketchTool::CenterRectangle:
+        return anchor_ ? "Click a corner, or type width, Tab, height, Enter" : "Click the center of the rectangle";
     case SketchTool::Circle:
         return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center";
     case SketchTool::Line:
@@ -1291,7 +1322,8 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
 
     // Live inputs of the shape being drawn.
     if (anchor_ && cursorValid_) {
-        const Vec2 a = anchor_->position;
+        // A center rectangle spans from the corner opposite the cursor.
+        const Vec2 a = tool_ == SketchTool::CenterRectangle ? anchor_->position * 2.0 - constrainedCursor() : anchor_->position;
         const Vec2 c = constrainedCursor();
         for (std::size_t i = 0; i < inputs_.size(); ++i) {
             const Input& in = inputs_[i];
@@ -1420,6 +1452,14 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
             const Vec2 corners[4] = {a, {c.x, a.y}, c, {a.x, c.y}};
             for (int i = 0; i < 4; ++i)
                 out.lines.push_back({plane.toWorld(corners[i]), plane.toWorld(corners[(i + 1) % 4]), SketchStyle::Preview});
+            break;
+        }
+        case SketchTool::CenterRectangle: {
+            const Vec2 o = a * 2.0 - c; // the opposite corner
+            const Vec2 corners[4] = {o, {c.x, o.y}, c, {o.x, c.y}};
+            for (int i = 0; i < 4; ++i)
+                out.lines.push_back({plane.toWorld(corners[i]), plane.toWorld(corners[(i + 1) % 4]), SketchStyle::Preview});
+            out.lines.push_back({plane.toWorld(o), plane.toWorld(c), SketchStyle::Guide});
             break;
         }
         case SketchTool::Circle:
