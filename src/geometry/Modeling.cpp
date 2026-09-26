@@ -286,7 +286,7 @@ std::optional<double> largestWorkingSize(SizedOperation operation, const Shape& 
     }
     using Clock = std::chrono::steady_clock;
     const auto start = Clock::now();
-    const auto budget = std::chrono::milliseconds(400);
+    const auto budget = std::chrono::milliseconds(600);
     double lo = failed * 0.02;
     std::optional<double> largest;
     if (!works(lo)) {

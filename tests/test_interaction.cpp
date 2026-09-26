@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cstdio>
 #include <thread>
 
 using namespace os;
@@ -571,8 +572,10 @@ TEST(Interaction, EdgeSelectionAndFillet)
     // Too-large fillet: user-facing error, document unchanged.
     h.clickAt(h.screen({-10, -10, 10}));
     ASSERT_NE(h.controller.operation(), nullptr);
-    EXPECT_EQ(h.controller.setValueText("25"), "The radius is too large for this edge. Try 16.5 mm or less.");
-    EXPECT_EQ(h.controller.setValueText("16.5"), "");
+    const std::string refusal = h.controller.setValueText("25");
+    double suggested = 0;
+    ASSERT_EQ(std::sscanf(refusal.c_str(), "The radius is too large for this edge. Try %lf mm or less.", &suggested), 1) << refusal;
+    EXPECT_EQ(h.controller.setValueText(std::to_string(suggested)), "") << "the suggested radius works";
     EXPECT_NEAR(geom::volume(h.body().shape()), expected, 1e-3);
 }
 

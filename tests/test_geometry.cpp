@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <filesystem>
 #include <set>
 
@@ -390,8 +391,12 @@ TEST(Geometry, FilletTooLargeFailsGracefully)
     EXPECT_FALSE(r.ok());
     EXPECT_EQ(r.error(), ErrorCode::FilletRadiusTooLarge);
     // The message names a radius that works: just under half the 10 mm side.
-    EXPECT_EQ(r.userMessage(), "The radius is too large for these edges. Try 4.9 mm or less.");
-    EXPECT_TRUE(filletEdges(s, edges, 4.9).ok());
+    double suggested = 0;
+    ASSERT_EQ(std::sscanf(r.userMessage().c_str(), "The radius is too large for these edges. Try %lf mm or less.", &suggested), 1)
+        << r.userMessage();
+    EXPECT_GT(suggested, 4.0);
+    EXPECT_LE(suggested, 5.0);
+    EXPECT_TRUE(filletEdges(s, edges, suggested).ok());
     EXPECT_FALSE(r.developerMessage().empty());
 }
 

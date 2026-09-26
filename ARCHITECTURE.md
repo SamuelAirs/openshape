@@ -125,7 +125,7 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   body…", "The copies land on top of the original…"); features reword the
   kernel layer's generic text for their context (`reworded()` in
   `Feature.cpp`). A fillet, chamfer or shell the kernel refuses is retried
-  by bisection (≤ 8 attempts, 400 ms budget, last answer cached for drags)
+  by bisection (≤ 8 attempts, 600 ms budget, last answer cached for drags)
   to name a size that works ("The radius is too large for this edge. Try
   2.9 mm or less."); an edge between tangent faces is reported as having no
   corner to round. Suggested sizes are in mm (the kernel layer does not
