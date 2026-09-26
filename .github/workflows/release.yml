@@ -1,0 +1,168 @@
+# The Windows release (BUILDING.md, "Release"): OpenShape's own OpenCASCADE
+# without GPL FFmpeg (scripts/windows/build-occt.sh; over an hour on the
+# first run, cached afterwards), the release build, headless tests, the
+# package with its license gate, then the installer and the portable zip,
+# and a silent install/uninstall test of the installer.
+# - A tag v<version> (the version in CMakeLists.txt, optionally with a
+#   suffix such as -rc1) publishes a GitHub Release with those files, marked
+#   pre-release for 0.x versions and suffixed tags.
+# - Manual runs and pushes to main that change the packaging upload the
+#   files as a workflow artifact instead, so the pipeline is exercised
+#   before the first tag.
+# Failed steps report their error lines as annotations, which anyone can
+# read (scripts/ci/run-logged.sh); results are summarized as notices.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    # Path filters apply to branch pushes only (tags always run).
+    paths:
+      - 'scripts/windows/**'
+      - 'packaging/**'
+      - 'scripts/package-windows.sh'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release create
+
+# Queue instead of cancelling: a cancelled first run would lose the
+# OpenCASCADE build before it is cached.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      LOGS: ${{ github.workspace }}/ci-logs
+      OCCT_VERSION: 7.9.3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            curl
+            patch
+            diffutils
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-freetype
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-declarative
+            mingw-w64-ucrt-x86_64-qt6-shadertools
+            mingw-w64-ucrt-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-gtest
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-libzip
+            mingw-w64-ucrt-x86_64-eigen3
+            mingw-w64-ucrt-x86_64-ntldd
+            mingw-w64-ucrt-x86_64-nsis
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Version and paths
+        id: version
+        run: |
+          version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' CMakeLists.txt | head -n 1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The CMake release preset and the package scripts read this.
+          echo "OPENSHAPE_OCCT_PREFIX=$(cygpath -m "$RUNNER_TEMP")/occt-$OCCT_VERSION-openshape" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag=${GITHUB_REF_NAME}
+            case "${tag#v}" in
+              "$version"|"$version"-*) ;;
+              *) echo "::error title=Version::tag $tag does not match the version in CMakeLists.txt ($version)"; exit 1 ;;
+            esac
+          fi
+          echo "::notice title=Version::OpenShape $version (${GITHUB_REF_NAME})"
+
+      - name: Restore OpenCASCADE (own build)
+        id: occt
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.OPENSHAPE_OCCT_PREFIX }}
+          key: occt-${{ env.OCCT_VERSION }}-windows-ucrt64-${{ hashFiles('scripts/windows/build-occt.sh') }}
+      - name: Build OpenCASCADE without GPL dependencies
+        if: steps.occt.outputs.cache-hit != 'true'
+        run: |
+          export OCCT_WORK_DIR="$(cygpath -m "$RUNNER_TEMP")/occt-work"
+          bash scripts/ci/run-logged.sh occt bash scripts/windows/build-occt.sh "$OPENSHAPE_OCCT_PREFIX" 4
+          echo "::notice title=OpenCASCADE::built: $(grep '^Toolkits:' "$OPENSHAPE_OCCT_PREFIX/BUILD-INFO.txt")"
+      - name: Save OpenCASCADE
+        if: steps.occt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.OPENSHAPE_OCCT_PREFIX }}
+          key: ${{ steps.occt.outputs.cache-primary-key }}
+
+      - name: Configure (release preset)
+        run: bash scripts/ci/run-logged.sh configure cmake --preset msys2-ucrt64-release -DOPENSHAPE_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: bash scripts/ci/run-logged.sh build cmake --build build/msys2-ucrt64-release
+      - name: Test (headless, against the own OpenCASCADE)
+        run: |
+          export PATH="$(cygpath -u "$OPENSHAPE_OCCT_PREFIX")/bin:$PATH"
+          bash scripts/ci/run-logged.sh test ctest --test-dir build/msys2-ucrt64-release -LE gui --output-on-failure
+          grep -E "tests passed" "$LOGS/test.log" | sed 's/^/::notice title=Windows release tests::/'
+
+      - name: Package (with the license gate)
+        run: |
+          bash scripts/ci/run-logged.sh package bash scripts/package-windows.sh build/msys2-ucrt64-release dist/OpenShape
+          grep -E "^Packaged " "$LOGS/package.log" | sed 's/^/::notice title=Package::/'
+          grep -E "^License gate: (PASS|FAIL)" "$LOGS/package.log" | sed 's/^/::notice title=License gate::/'
+      - name: Installer and zip
+        run: |
+          bash scripts/ci/run-logged.sh installer bash scripts/windows/make-installer.sh dist/OpenShape dist
+          grep -E "^(Installer|Zip|Package): " "$LOGS/installer.log" | tr '\n' ';' | sed 's/^/::notice title=Release files::/'
+          echo
+      - name: Test the installer (silent install, upgrade, uninstall)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter 'OpenShape-*-setup.exe' | Select-Object -First 1
+          & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 `
+              -Setup $setup.FullName -InstallDir "$env:RUNNER_TEMP\install test\OpenShape" -PackageDir dist\OpenShape
+          $failed = $LASTEXITCODE
+          if ($failed -ne 0) { Write-Output "::error title=Installer test::$failed checks failed (see the step log)" }
+          else { Write-Output "::notice title=Installer test::silent install, upgrade and uninstall passed" }
+          exit $failed
+
+      - name: Upload the release files (no release)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenShape-${{ steps.version.outputs.version }}-windows-x64
+          path: |
+            dist/OpenShape-*-setup.exe
+            dist/OpenShape-*.zip
+            dist/SHA256SUMS.txt
+            dist/license-gate.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          version=${tag#v}
+          prerelease=()
+          case "$version" in 0.*|*-*) prerelease=(--prerelease) ;; esac
+          sed -e "s/@VERSION@/$version/g" -e "s/@APP_VERSION@/$APP_VERSION/g" -e "s/@TAG@/$tag/g" \
+              packaging/windows/release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
+              dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt
+          echo "::notice title=GitHub Release::$tag published ${prerelease[*]}"

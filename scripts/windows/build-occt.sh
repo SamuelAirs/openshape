@@ -173,4 +173,4 @@ if grep -iE '^\s*libTK[A-Za-z0-9]+\.dll' <<<"$deps" | tr '\\' '/' | grep -viF "$
 fi
 echo "libTKDESTEP.dll dependencies (besides Windows):"
 grep -viE '=> [a-z]:.windows.|not found' <<<"$deps" | awk 'NF >= 3 { print "  " $1 }' | sort -u
-echo "== done: $PREFIX ($(du -sh "$PREFIX" | cut -f1)); work dir $WORK ($(du -sh "$WORK" | cut -f1))"
+echo "== done: $PREFIX ($(du -sh "$PREFIX" | cut -f1)); sources and build tree in $WORK"

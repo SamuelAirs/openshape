@@ -33,8 +33,9 @@ version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt" | 
 exe_version=$(powershell.exe -NoProfile -Command "(Get-Item '$(cygpath -w "$PKG/OpenShape.exe")').VersionInfo.ProductVersion" | tr -d '\r')
 [ "$exe_version" = "$version" ] || { echo "$PKG/OpenShape.exe is version '$exe_version', CMakeLists.txt says $version: package again"; exit 1; }
 
-# Only GPL-free packages are distributed. A release package names its OCCT
-# build in THIRD_PARTY_LICENSES.txt; the gate needs that prefix.
+# Only GPL-free packages are distributed. The gate compares the packaged
+# OCCT DLLs with OpenShape's OCCT build: $OPENSHAPE_OCCT_PREFIX, by default
+# the CMake release preset's.
 occt_prefix=${OPENSHAPE_OCCT_PREFIX:-}
 if [ -z "$occt_prefix" ]; then
     # The CMake preset's default. MSYS2's bash does not always inherit
