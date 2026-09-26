@@ -28,6 +28,7 @@
 #include <QtQuickControls2/QQuickStyle>
 
 #include <cstdio>
+#include <iterator>
 #include <memory>
 #include <mutex>
 
@@ -265,12 +266,13 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         // second one's Y being typed.
         app.createBox(20);
         interaction.fitAll(false);
-        for (const os::Vec3& p : {os::Vec3{3, -3, 20}, os::Vec3{0, 0, 20}, os::Vec3{-5, 5, 20}}) {
+        const os::Vec3 taps[] = {{3, -3, 20}, {0, 0, 20}, {-5, 5, 20}}; // the face, then two holes
+        for (std::size_t i = 0; i < std::size(taps); ++i) {
             os::interact::PointerEvent tap;
-            tap.position = interaction.camera().project(p);
+            tap.position = interaction.camera().project(taps[i]);
             interaction.pointerPress(tap);
             interaction.pointerRelease(tap);
-            if (p.x == 3)
+            if (i == 0)
                 (void)interaction.triggerAction("hole");
         }
         (void)interaction.triggerAction("head:countersink");

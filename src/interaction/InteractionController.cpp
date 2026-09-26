@@ -439,6 +439,10 @@ void InteractionController::pointerLeave()
         notifyView();
         return;
     }
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get()); hole && hole->hover()) {
+        hole->setHover(std::nullopt);
+        notifyView();
+    }
     if (hover_.hit() || hoveredHandle_ >= 0 || hoveredRing_ >= 0) {
         hover_ = {};
         hoveredHandle_ = -1;

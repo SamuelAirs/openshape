@@ -221,7 +221,12 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
                     r.app().operationValueLabel());
             r.type(QStringLiteral("4"));
         },
-        [&r] { r.check(r.clickItem(QStringLiteral("action_field:y")), "hole tool: Y field"); },
+        [&r] {
+            // Tab in the chip goes on to Y, its current value selected.
+            r.key(Qt::Key_Tab);
+            r.check(r.app().operationValueLabel() == QStringLiteral("Y from corner"), "hole tool: Tab goes to Y",
+                    r.app().operationValueLabel());
+        },
         [&r] {
             r.type(QStringLiteral("15"));
         },
@@ -230,6 +235,16 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
             r.check(tool && tool->livePositions(tool->value()).size() == 2
                         && (tool->livePositions(tool->value())[1] - Vec2{-6, 5}).length() < 1e-9,
                     "hole tool: the typed position (-6, 5)");
+            r.check(r.clickItem(QStringLiteral("action_field:diameter")), "hole tool: back to the diameter");
+        },
+        [&r] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("Diameter"), "hole tool: the chip shows the diameter",
+                    r.app().operationValueLabel());
+            r.check(r.clickItem(QStringLiteral("action_field:y")), "hole tool: Y field");
+        },
+        [&r] {
+            r.check(r.app().operationValueText() == QStringLiteral("15.00 mm"), "hole tool: Y kept its typed value",
+                    r.app().operationValueText());
             r.check(r.clickItem(QStringLiteral("action_fit:close")), "hole tool: Close fit");
         },
         [&r] {
