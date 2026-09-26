@@ -25,6 +25,8 @@ if(WIN32)
     configure_file(openshape.rc.in ${CMAKE_CURRENT_BINARY_DIR}/openshape.rc @ONLY)
     target_sources(openshape PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/openshape.rc)
     set_property(SOURCE ${CMAKE_CURRENT_BINARY_DIR}/openshape.rc APPEND PROPERTY OBJECT_DEPENDS ${OPENSHAPE_ICON_FILE})
+    # The "release" acceptance scenario reads the running exe's version resource.
+    target_link_libraries(openshape PRIVATE version)
 endif()
 # With a static Qt (iOS), Qt scans the app's QML to link the plugins of the
 # modules it imports; the QML lives in src/ui, not beside main.cpp. Without
