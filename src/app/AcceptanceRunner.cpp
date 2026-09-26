@@ -61,6 +61,8 @@ void AcceptanceRunner::mouseRelease(QPointF p, Qt::MouseButton button, Qt::Keybo
 
 void AcceptanceRunner::click(QPointF p, Qt::KeyboardModifiers mods)
 {
+    lastClick_ = p;
+    hasLastClick_ = true;
     mouseMove(p);
     mousePress(p, Qt::LeftButton, mods);
     mouseRelease(p, Qt::LeftButton, mods);
@@ -221,6 +223,42 @@ void AcceptanceRunner::check(bool condition, const QString& description, const Q
     }
     OS_LOG(Info, App) << (condition ? "[PASS] " : "[FAIL] ") << description.toStdString()
                       << (actual.isEmpty() ? "" : " (" + actual.toStdString() + ")");
+    if (!condition && hasLastClick_)
+        OS_LOG(Info, App) << "       last click " << describeClick().toStdString();
+}
+
+// Where the last click went: the UI item under it and what the 3D view
+// picks there, so a failure on another machine (e.g. the CI Mac's small
+// window, TD-35) can be diagnosed from the log alone.
+QString AcceptanceRunner::describeClick() const
+{
+    // The topmost visible item under the point that takes mouse buttons.
+    std::function<QQuickItem*(QQuickItem*)> itemAt = [&](QQuickItem* item) -> QQuickItem* {
+        const QList<QQuickItem*> children = item->childItems();
+        for (auto it = children.rbegin(); it != children.rend(); ++it) {
+            QQuickItem* child = *it;
+            if (!child->isVisible() || child->opacity() <= 0.0)
+                continue;
+            if (!child->clip() || child->contains(child->mapFromScene(lastClick_)))
+                if (QQuickItem* hit = itemAt(child))
+                    return hit;
+        }
+        return item->acceptedMouseButtons() != Qt::NoButton && item->contains(item->mapFromScene(lastClick_)) ? item : nullptr;
+    };
+    QString path;
+    for (QQuickItem* item = itemAt(window_->contentItem()); item && item != window_->contentItem(); item = item->parentItem()) {
+        const QString name = item->objectName().isEmpty() ? QString::fromLatin1(item->metaObject()->className()) : item->objectName();
+        path = path.isEmpty() ? name : name + QLatin1Char('>') + path;
+    }
+    const auto& hover = app_->interaction().hover();
+    const char* kinds[] = {"nothing", "a face", "an edge", "a sketch profile"};
+    return QStringLiteral("at %1,%2 in a %3x%4 window: %5; the view picks %6 there")
+        .arg(lastClick_.x(), 0, 'f', 0)
+        .arg(lastClick_.y(), 0, 'f', 0)
+        .arg(window_->width())
+        .arg(window_->height())
+        .arg(path.isEmpty() ? QStringLiteral("no item") : path)
+        .arg(QString::fromLatin1(kinds[int(hover.kind)]) + (hover.hit() ? QStringLiteral(" #%1").arg(hover.index) : QString()));
 }
 
 void AcceptanceRunner::screenshot(const QString& name)
@@ -877,6 +915,10 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             key(Qt::Key_Escape);
             key(Qt::Key_Escape);
             app_->interaction().fitAll(false);
+            // In small windows the fitted view is too far out: a click on the
+            // wall would pick the rim edge. Zoom in on the hole (TD-35).
+            const QPointF hole = screenPoint(30, 10, 3);
+            app_->interaction().wheel({hole.x(), hole.y()}, 4);
         },
         [=, this] {
             click(screenPoint(30 - 2 * 0.7071, 10 + 2 * 0.7071, 3));

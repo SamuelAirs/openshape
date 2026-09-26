@@ -87,6 +87,7 @@ private:
     void beginScenario(const QString& name, bool reset);
     void endScenario();
     std::vector<Step> coreScenario();
+    QString describeClick() const;
 
     QQuickWindow* window_;
     ui::AppController* app_;
@@ -101,6 +102,8 @@ private:
     int scenarioChecks_ = 0;
     int scenarioFailures_ = 0;
     QStringList summary_;
+    QPointF lastClick_;
+    bool hasLastClick_ = false;
     double holeBlockVolume_ = 0; // the right block before its hole (face-edit checks)
 };
 
