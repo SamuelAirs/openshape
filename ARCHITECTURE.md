@@ -367,7 +367,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   arrow follows the plane normal. For sketches on a body, pulling out joins
   and pushing in cuts, unless overridden (New body / Join / Cut). An
   automatic join whose preview would add separate pieces becomes a new body
-  (`Operation::reconsider` revises automatic choices after a preview).
+  (`Operation::reconsider` revises automatic choices after a preview), and
+  so does an automatic cut that would remove nothing (a profile beside the
+  body pushed in: `reconsiderRefusal` on `ErrorCode::NoEffect`). A cut
+  chosen explicitly is refused with the reason instead.
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as

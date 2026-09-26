@@ -200,9 +200,24 @@ TEST(FailureMessages, CutThatMissesTheBodyIsRefused)
     EXPECT_EQ(scene.document.body(body)->features().size(), 1u);
     EXPECT_NEAR(geom::volume(scene.document.body(body)->shape()), volume, 1e-6);
 
-    // The live preview says the same and cannot be applied.
+    // Dragged in beside the body, the automatic choice becomes a new body
+    // (as a join that misses does): nothing is refused.
     auto op = interact::ExtrudeOperation::create(scene.document, sketchId, {scene.profileAt(sketchId, {40, 10})}, {40, 10, 10});
     ASSERT_NE(op, nullptr);
+    op->setValue(-5, scene.document);
+    EXPECT_EQ(op->mode(), doc::ExtrudeMode::NewBody);
+    EXPECT_TRUE(op->error().empty()) << op->error();
+    EXPECT_TRUE(op->canCommit());
+    ASSERT_TRUE(scene.stack.push(op->makeCommand(scene.document), scene.document).ok());
+    ASSERT_EQ(scene.document.bodies().size(), 2u);
+    const auto pin = geom::boundingBox(scene.document.bodies().back()->shape());
+    EXPECT_NEAR(pin.min.z, 5.0, 1e-6);
+    EXPECT_NEAR(pin.max.z, 10.0, 1e-6);
+    EXPECT_NEAR(geom::volume(scene.document.bodies().back()->shape()), kPi * 9 * 5, 1e-3);
+    ASSERT_TRUE(scene.stack.undo(scene.document));
+
+    // Chosen explicitly, a cut that misses is refused with the reason.
+    op->setModeOverride(doc::ExtrudeMode::Cut);
     op->setValue(-5, scene.document);
     EXPECT_EQ(op->mode(), doc::ExtrudeMode::Cut);
     EXPECT_EQ(op->error(), status.userMessage());

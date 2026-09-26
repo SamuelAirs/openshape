@@ -108,6 +108,9 @@ protected:
     // ...and may be revised once the preview result is known; returning true
     // recomputes the preview with the revised choice.
     virtual bool reconsider(const geom::Shape& /*result*/, const doc::Document& /*document*/) { return false; }
+    // ...or once the preview was refused (e.g. an automatic cut that misses
+    // the body: ErrorCode::NoEffect).
+    virtual bool reconsiderRefusal(ErrorCode /*code*/) { return false; }
 
 private:
     Uuid bodyId_;
@@ -565,6 +568,7 @@ protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     void resetAutomaticChoices() override { autoNewBody_ = false; }
     bool reconsider(const geom::Shape& result, const doc::Document& document) override;
+    bool reconsiderRefusal(ErrorCode code) override;
 
 private:
     ExtrudeOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles)
