@@ -68,9 +68,12 @@ built from it contains GPL libraries OpenShape never uses. Therefore:
   and CI keep MSYS2's package; only the release preset
   (`msys2-ucrt64-release`) is distributable.
 - **License gate** (`scripts/windows/license-gate.sh`, run by the package
-  and installer scripts and in `release.yml`): every bundled executable and
-  DLL is traced by content to OpenShape's build, the own OCCT build or an
-  MSYS2 package, whose license field must not be GPL-only; packages that
+  and installer scripts and in `release.yml`): every bundled file
+  (executables, DLLs, QML modules, data) is traced by content to
+  OpenShape's build, OpenShape's own texts (LICENSE, README, THIRD_PARTY,
+  PlaneGCS's COPYING.LIB, compared with the repository; the generated
+  THIRD_PARTY_LICENSES.txt and qt.conf), the own OCCT build or an MSYS2
+  package, whose license field must not be GPL-only; packages that
   mix GPL with other terms for their tools (Qt, xz, gettext-runtime, GMP,
   libiconv) are reviewed and listed in the script; the GCC runtime
   (GPL-3.0 with the GCC Runtime Library Exception: `libgcc_s_seh-1`,

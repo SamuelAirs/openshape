@@ -449,9 +449,9 @@ disk. Saves are atomic (temp file + rename). See
 - **Package → release files:** `scripts/package-windows.sh` (windeployqt plus
   one recursive `ntldd` scan of the entry points; generates
   THIRD_PARTY_LICENSES.txt with each library's license text and source
-  location) → `scripts/windows/license-gate.sh` (traces every binary to
-  OpenShape's build, the own OCCT build or an MSYS2 package, and fails on
-  GPL-licensed ones; mandatory for release builds) →
+  location) → `scripts/windows/license-gate.sh` (traces every packaged file to
+  OpenShape's build or texts, the own OCCT build or an MSYS2 package, and
+  fails on GPL-licensed ones; mandatory for release builds) →
   `scripts/windows/make-installer.sh` (NSIS installer from
   `packaging/windows/openshape.nsi`, portable zip, SHA256SUMS.txt) →
   `scripts/windows/test-installer.ps1` (silent install, upgrade, uninstall,

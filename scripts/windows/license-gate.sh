@@ -7,8 +7,12 @@
 # fails when the package contains anything GPL-licensed, so a release can
 # never ship GPL code by accident (docs/LICENSING.md, TD-17).
 #
-# Every executable and DLL must be traced to its origin (by content):
+# Every file in the package (binaries, QML modules, data) must be traced to
+# its origin (by content):
 #   - OpenShape.exe and libplanegcs.dll: OpenShape's build (MPL-2.0; PlaneGCS LGPL-2.1+)
+#   - OpenShape's texts next to them: copies of LICENSE, README.md,
+#     THIRD_PARTY.md and third_party/planegcs/COPYING.LIB (compared with the
+#     repository), and the generated THIRD_PARTY_LICENSES.txt and qt.conf
 #   - OCCT's toolkits from <own-occt-prefix>/bin (scripts/windows/build-occt.sh)
 #   - a file of an MSYS2 package (ucrt64/bin, Qt's plugin and QML folders),
 #     whose license field (pacman) is then checked:
@@ -67,15 +71,29 @@ while read -r file; do
     fail "known GPL library: $file"
 done < <(cd "$PKG" && find . -type f | sed 's|^\./||' | grep -iE "(^|/)[^/]*($GPL_NAMES)[^/]*$" || true)
 
-# 2. Origin of every binary.
+# 2. Origin of every file.
+repo=$(cd "$(dirname "$0")/../.." && pwd)
+declare -A own_copies=( # package file -> the repository file it is a copy of
+    [LICENSE.txt]=LICENSE
+    [README.md]=README.md
+    [THIRD_PARTY.md]=THIRD_PARTY.md
+    [PlaneGCS-COPYING.LIB.txt]=third_party/planegcs/COPYING.LIB
+)
 declare -A origin    # package-relative path -> source file (MSYS2) or a label
 msys_sources=()
-mapfile -t binaries < <(cd "$PKG" && find . -type f \( -iname '*.dll' -o -iname '*.exe' \) | sed 's|^\./||' | sort)
-for rel in "${binaries[@]}"; do
+mapfile -t files < <(cd "$PKG" && find . -type f | sed 's|^\./||' | sort)
+binary_count=0
+for rel in "${files[@]}"; do
     name=${rel##*/}
+    case "$name" in *.[dD][lL][lL]|*.[eE][xX][eE]) binary_count=$((binary_count + 1)) ;; esac
     case "$rel" in
         OpenShape.exe|libplanegcs.dll) origin[$rel]="OpenShape build"; continue ;;
+        THIRD_PARTY_LICENSES.txt|qt.conf) origin[$rel]="OpenShape text"; continue ;; # written by package-windows.sh
     esac
+    if [ -n "${own_copies[$rel]:-}" ]; then
+        if cmp -s "$PKG/$rel" "$repo/${own_copies[$rel]}"; then origin[$rel]="OpenShape text"; continue; fi
+        fail "$rel differs from the repository's ${own_copies[$rel]} (package again)"; continue
+    fi
     if [ -n "$own_bin" ] && [ "$rel" = "$name" ] && [ -f "$own_bin/$name" ]; then
         if cmp -s "$PKG/$rel" "$own_bin/$name"; then origin[$rel]="OCCT (own build)"; continue; fi
         fail "$rel differs from $own_bin/$name"; continue
@@ -169,16 +187,16 @@ reviewed_used=()
 for pkg in "${packages[@]}"; do
     verdict_of[$pkg]=$(classify "${license[$pkg]:-unknown}")
 done
-for rel in "${binaries[@]}"; do
+for rel in "${files[@]}"; do
     src=${origin[$rel]:-}
-    case "$src" in ''|"OpenShape build"|"OCCT (own build)") continue ;; esac
+    case "$src" in ''|"OpenShape build"|"OpenShape text"|"OCCT (own build)") continue ;; esac
     pkg=${owner[$src]:-}
     name=${rel##*/}
     if [ -z "$pkg" ]; then
         fail "$rel: no MSYS2 package owns $src"
         continue
     fi
-    if [[ " $GCC_RUNTIME " == *" $name "* ]]; then
+    if [ "$rel" = "$name" ] && [[ " $GCC_RUNTIME " == *" $name "* ]]; then
         continue
     fi
     short=${pkg#mingw-w64-ucrt-x86_64-}
@@ -196,10 +214,14 @@ for rel in "${binaries[@]}"; do
 done
 
 own_count=0
-for rel in "${binaries[@]}"; do
-    case "${origin[$rel]:-}" in "OpenShape build"|"OCCT (own build)") own_count=$((own_count + 1)) ;; esac
+text_count=0
+for rel in "${files[@]}"; do
+    case "${origin[$rel]:-}" in
+        "OpenShape build"|"OCCT (own build)") own_count=$((own_count + 1)) ;;
+        "OpenShape text") text_count=$((text_count + 1)) ;;
+    esac
 done
-echo "License gate: ${#binaries[@]} binaries: $own_count from OpenShape's and OCCT's own builds, the rest from ${#packages[@]} MSYS2 packages"
+echo "License gate: ${#files[@]} files ($binary_count binaries): $own_count from OpenShape's and OCCT's own builds, $text_count OpenShape texts, the rest from ${#packages[@]} MSYS2 packages"
 for pkg in "${packages[@]}"; do
     printf '  %-48s %-6s %s\n' "${pkg#mingw-w64-ucrt-x86_64-}" "${verdict_of[$pkg]}" "${license[$pkg]}"
 done
