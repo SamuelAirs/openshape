@@ -60,11 +60,15 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     - Split into bodies: cut a plate in two (a sketch across it, extruded
       as a cut through the plate): a message says it is now in pieces and
       the row turns amber. Click "Split into bodies": each piece is its own
-      body. Now delete the bigger one: it is hidden instead, and the
-      message says which body is built from it.
-    - Separate bodies: select a body, Mirror or Pattern, switch on
-      "Separate bodies", apply: each copy is its own body (click them one
-      by one). Push/pull the original: the copies follow.
+      body. Push/pull one piece, then the other: each changes alone. Delete
+      the body you split: the other piece stays.
+    - Separate bodies (the report from the iPhone): move a box away from
+      the middle, Mirror, "Across YZ": "Separate bodies" lights up by itself
+      and the line at the bottom says the image will be a separate body.
+      Apply, then push/pull the original's top face: the image stays as it
+      was (and the other way round). Pattern the box: 5 mm apart the copies
+      are separate bodies; type the box's width as the spacing and they
+      join. Mirror a box across its own face: one body.
     - Rotate about an edge: select a body, Rotate, click one of its straight
       edges: a single ring appears around that edge; type `90`, Enter. Try
       again clicking near a corner (the rings move there), a hole's wall

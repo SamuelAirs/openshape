@@ -320,10 +320,9 @@ undo.
 
 Select a body and press `Delete` (or **Delete**). A body that other bodies
 are built from (a subtracted tool body you showed again, or split pieces
-and separate copies in projects saved by OpenShape 0.1) is hidden
-instead. **Hide**
-and **Show** are in the body's Model-panel row. Hidden bodies are not
-exported.
+and separate copies in projects saved by OpenShape 0.1) is hidden instead.
+**Hide** and **Show** are in the body's Model-panel row. Hidden bodies are
+not exported.
 
 ---
 
