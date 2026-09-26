@@ -63,6 +63,21 @@ Rectangle {
                         + "value and press Enter. Every value accepts units and arithmetic: 25, 1in, 20+5, (10+2)*3."
                 }
 
+                // The whole line is the link (so a tap anywhere on it opens the
+                // guide); as wide as its text, wrapping on narrow windows.
+                Text {
+                    objectName: "helpGuideLink"
+                    readonly property string url: "https://github.com/SamuelAirs/openshape/blob/main/docs/USER_GUIDE.md"
+                    Layout.maximumWidth: content.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 13
+                    textFormat: Text.StyledText
+                    linkColor: Theme.accent
+                    onLinkActivated: (link) => Qt.openUrlExternally(link)
+                    text: "<a href=\"" + url + "\">Step by step, with pictures: the user guide "
+                        + "(github.com/SamuelAirs/openshape, docs/USER_GUIDE.md)</a>"
+                }
+
                 GridLayout {
                     Layout.fillWidth: true
                     columns: 2

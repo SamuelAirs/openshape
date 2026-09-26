@@ -8,3 +8,4 @@ compile_commands.json
 CMakeUserPresets.json
 /dist/
 .claude/worktrees/
+__pycache__/
