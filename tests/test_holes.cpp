@@ -12,6 +12,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
+
 using namespace os;
 
 namespace {
@@ -108,9 +110,9 @@ TEST(Holes, ScrewTablesAreConsistent)
     const auto& screws = doc::metricScrews();
     ASSERT_EQ(screws.size(), 6u);
     EXPECT_STREQ(screws[doc::kDefaultScrew].name, "M3");
-    EXPECT_DOUBLE_EQ(doc::holeDiameterFor(screws[2], doc::HoleFit::Close), 3.2); // ISO 273 fine
-    EXPECT_DOUBLE_EQ(doc::holeDiameterFor(screws[2], doc::HoleFit::Normal), 3.4); // ISO 273 medium
-    EXPECT_DOUBLE_EQ(doc::holeDiameterFor(screws[2], doc::HoleFit::Tap), 2.5);
+    EXPECT_DOUBLE_EQ(doc::holeDiameterFor(screws[2], doc::HoleFit::Close, 0.0), 3.2); // ISO 273 fine
+    EXPECT_DOUBLE_EQ(doc::holeDiameterFor(screws[2], doc::HoleFit::Normal, 0.0), 3.4); // ISO 273 medium
+    EXPECT_DOUBLE_EQ(doc::holeDiameterFor(screws[2], doc::HoleFit::Tap, 0.0), 2.5);
     EXPECT_EQ(doc::holeFitLabel(screws[2], doc::HoleFit::Tap), "M3 tap");
     for (const auto& s : screws) {
         // Every seat is wider than the screw's clearance hole, and grows with the size.
@@ -121,6 +123,42 @@ TEST(Holes, ScrewTablesAreConsistent)
         EXPECT_GT(s.counterboreDepth, s.nominal) << s.name; // ISO 4762 head height k = d
         EXPECT_GT(s.countersinkDiameter, s.clearanceNormal) << s.name;
     }
+}
+
+// The FDM print allowance goes onto what a screw passes through and its
+// head's seat, never onto tap drills or heat-set insert pilots.
+TEST(Holes, PrintAllowanceWidensClearanceAndHeadPresetsOnly)
+{
+    const auto& m3 = doc::metricScrews()[doc::kDefaultScrew];
+    EXPECT_DOUBLE_EQ(doc::kDefaultHoleAllowance, 0.2);
+    struct Expected {
+        double allowance, close, normal, tap, counterbore, countersink;
+    };
+    for (const Expected& e : {Expected{0.0, 3.2, 3.4, 2.5, 6.5, 6.72}, Expected{0.2, 3.4, 3.6, 2.5, 6.7, 6.92},
+                              Expected{0.5, 3.7, 3.9, 2.5, 7.0, 7.22}}) {
+        EXPECT_NEAR(doc::holeDiameterFor(m3, doc::HoleFit::Close, e.allowance), e.close, 1e-12) << e.allowance;
+        EXPECT_NEAR(doc::holeDiameterFor(m3, doc::HoleFit::Normal, e.allowance), e.normal, 1e-12) << e.allowance;
+        EXPECT_NEAR(doc::holeDiameterFor(m3, doc::HoleFit::Tap, e.allowance), e.tap, 1e-12) << e.allowance;
+        EXPECT_NEAR(doc::counterboreDiameterFor(m3, e.allowance), e.counterbore, 1e-12) << e.allowance;
+        EXPECT_NEAR(doc::countersinkDiameterFor(m3, e.allowance), e.countersink, 1e-12) << e.allowance;
+    }
+    // Every size: exactly the allowance more, the tap drill unchanged.
+    for (const auto& s : doc::metricScrews()) {
+        EXPECT_NEAR(doc::holeDiameterFor(s, doc::HoleFit::Close, 0.2) - s.clearanceClose, 0.2, 1e-12) << s.name;
+        EXPECT_NEAR(doc::holeDiameterFor(s, doc::HoleFit::Normal, 0.2) - s.clearanceNormal, 0.2, 1e-12) << s.name;
+        EXPECT_DOUBLE_EQ(doc::holeDiameterFor(s, doc::HoleFit::Tap, 0.5), s.tapDrill) << s.name;
+    }
+    // The preset names say so; tap drills have none.
+    EXPECT_EQ(doc::holeFitLabel(m3, doc::HoleFit::Close, 0.2), "M3 close fit +0.2 mm");
+    EXPECT_EQ(doc::holeFitLabel(m3, doc::HoleFit::Normal, 0.0), "M3 normal fit");
+    EXPECT_EQ(doc::holeFitLabel(m3, doc::HoleFit::Tap, 0.2), "M3 tap");
+    EXPECT_EQ(doc::allowanceSuffix(0.25), " +0.25 mm");
+    // Out of range or not a number: the default.
+    EXPECT_DOUBLE_EQ(doc::validHoleAllowance(0.0), 0.0);
+    EXPECT_DOUBLE_EQ(doc::validHoleAllowance(1.0), 1.0);
+    EXPECT_DOUBLE_EQ(doc::validHoleAllowance(0.35), 0.35);
+    for (double bad : {-0.1, 1.01, 50.0, std::nan(""), HUGE_VAL})
+        EXPECT_DOUBLE_EQ(doc::validHoleAllowance(bad), doc::kDefaultHoleAllowance) << bad;
 }
 
 TEST(Holes, MaterialDepthAlongAHole)

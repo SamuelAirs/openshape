@@ -110,7 +110,8 @@ std::vector<AcceptanceRunner::Step> heads(AcceptanceRunner& r, std::shared_ptr<S
             r.check(r.clickItem(QStringLiteral("action_counterbore")), "holes: Counterbore action");
             r.check(r.app().operationTitle() == QStringLiteral("Counterbore M3"), "holes: an M3 counterbore to start with",
                     r.app().operationTitle());
-            r.check(r.app().operationValueText() == QStringLiteral("6.50 mm"), "holes: M3 counterbore is 6.5 mm (DIN 974-1)",
+            r.check(r.app().operationValueText() == QStringLiteral("6.70 mm"),
+                    "holes: M3 counterbore is 6.7 mm (DIN 974-1's 6.5 + the 0.2 mm print allowance)",
                     r.app().operationValueText());
         },
         [&r] {
@@ -145,12 +146,13 @@ std::vector<AcceptanceRunner::Step> heads(AcceptanceRunner& r, std::shared_ptr<S
             r.check(r.app().operationTitle() == QStringLiteral("Countersink M5"), "holes: the last screw size is kept",
                     r.app().operationTitle());
             r.check(r.clickItem(QStringLiteral("action_preset:2")), "holes: M3 preset");
-            r.check(r.app().operationValueText() == QStringLiteral("6.72 mm"), "holes: M3 countersink is 6.72 mm (ISO 10642)",
+            r.check(r.app().operationValueText() == QStringLiteral("6.92 mm"),
+                    "holes: M3 countersink is 6.92 mm (ISO 10642's 6.72 + the 0.2 mm print allowance)",
                     r.app().operationValueText());
         },
         [&r, s] {
             r.key(Qt::Key_Return);
-            const double R = 3.36, rr = 1.7, h = R - rr;
+            const double R = 3.46, rr = 1.7, h = R - rr;
             const double expected = s->holed - (frustum(R, rr, h) - kPi * rr * rr * h);
             r.check(std::abs(r.bodyVolume() - expected) < 1e-3, "holes: a 90-degree countersink removes its frustum",
                     AcceptanceRunner::num(r.bodyVolume()));
@@ -252,11 +254,12 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
         },
         [&r] {
             const auto* tool = holeTool(r);
-            r.check(tool && std::abs(tool->diameter() - 3.2) < 1e-9, "hole tool: M3 close fit is 3.2 mm (ISO 273)");
+            r.check(tool && std::abs(tool->diameter() - 3.4) < 1e-9,
+                    "hole tool: M3 close fit is 3.4 mm (ISO 273's 3.2 + the 0.2 mm print allowance)");
             r.screenshot(QStringLiteral("hole_tool_preview"));
             r.key(Qt::Key_Return);
-            const double h = 3.36 - 1.6;
-            const double oneHole = kPi * 1.6 * 1.6 * 5 + frustum(3.36, 1.6, h) - kPi * 1.6 * 1.6 * h;
+            const double h = 3.46 - 1.7;
+            const double oneHole = kPi * 1.7 * 1.7 * 5 + frustum(3.46, 1.7, h) - kPi * 1.7 * 1.7 * h;
             r.check(std::abs(r.bodyVolume() - (2000 - 2 * oneHole)) < 1e-3, "hole tool: two countersunk M3 holes through the plate",
                     AcceptanceRunner::num(r.bodyVolume()));
             r.check(r.body(0).features().size() == 3, "hole tool: one step for both holes");
@@ -330,7 +333,8 @@ std::vector<AcceptanceRunner::Step> faceToolSteps(AcceptanceRunner& r)
         [&r] {
             r.check(r.clickItem(QStringLiteral("action_fit:normal")), "hole face: Normal fit");
             const auto* tool = holeTool(r);
-            r.check(tool && std::abs(tool->diameter() - 4.5) < 1e-9, "hole face: M4 normal fit is 4.5 mm (ISO 273)",
+            r.check(tool && std::abs(tool->diameter() - 4.7) < 1e-9,
+                    "hole face: M4 normal fit is 4.7 mm (ISO 273's 4.5 + the 0.2 mm print allowance)",
                     tool ? AcceptanceRunner::num(tool->diameter()) : QString());
             r.check(tool && tool->settings().throughAll, "hole face: through all to start with");
         },
@@ -395,7 +399,7 @@ std::vector<AcceptanceRunner::Step> faceToolSteps(AcceptanceRunner& r)
         [&r] {
             r.screenshot(QStringLiteral("hole_tool_face_preview"));
             r.key(Qt::Key_Return);
-            const double rr = 2.25, R = 4.0;
+            const double rr = 2.35, R = 4.1; // M4 normal fit 4.5 and counterbore 8.0, each + 0.2
             const double oneHole = kPi * rr * rr * 8 + kPi * (R * R - rr * rr) * 4.4;
             r.check(std::abs(r.bodyVolume() - (4000 - 2 * oneHole)) < 1e-3,
                     "hole face: two M4 counterbored holes 8 mm deep", AcceptanceRunner::num(r.bodyVolume()));

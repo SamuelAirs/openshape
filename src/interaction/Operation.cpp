@@ -794,7 +794,7 @@ std::unique_ptr<doc::Feature> InsertOperation::makeFeature(double value) const
 // ---- Counterbore / countersink ------------------------------------------------------
 
 std::unique_ptr<HeadOperation> HeadOperation::create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
-                                                     doc::HoleKind kind, std::size_t presetIndex)
+                                                     doc::HoleKind kind, std::size_t presetIndex, double allowance)
 {
     const doc::Body* body = document.body(bodyId);
     if (!body || kind == doc::HoleKind::Plain)
@@ -813,8 +813,27 @@ std::unique_ptr<HeadOperation> HeadOperation::create(const doc::Document& docume
     auto op = std::unique_ptr<HeadOperation>(new HeadOperation(bodyId, LinearManipulator(placement->center, radial),
                                                                doc::EdgeRef{rimEdge, *signature}, *placement, kind));
     op->radial_ = radial;
+    op->allowance_ = doc::validHoleAllowance(allowance);
     op->setPreset(std::min(presetIndex, doc::metricScrews().size() - 1), document);
     return op;
+}
+
+double HeadOperation::presetDiameter(std::size_t index) const
+{
+    const doc::ScrewSize& screw = doc::metricScrews()[std::min(index, doc::metricScrews().size() - 1)];
+    return kind_ == doc::HoleKind::Counterbore ? doc::counterboreDiameterFor(screw, allowance_)
+                                               : doc::countersinkDiameterFor(screw, allowance_);
+}
+
+void HeadOperation::setAllowance(double allowance, const doc::Document& document)
+{
+    allowance = doc::validHoleAllowance(allowance);
+    if (std::abs(allowance - allowance_) < 1e-12)
+        return;
+    const bool fromPreset = presetIndex().has_value();
+    allowance_ = allowance;
+    if (fromPreset)
+        setPreset(presetIndex_, document); // a typed size stays as typed
 }
 
 std::string HeadOperation::title() const
@@ -852,8 +871,8 @@ std::optional<std::size_t> HeadOperation::presetIndex() const
 {
     const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
     const bool counterbore = kind_ == doc::HoleKind::Counterbore;
-    const double d = counterbore ? screw.counterboreDiameter : screw.countersinkDiameter;
-    if (std::abs(diameter() - d) > 1e-9 || (counterbore && std::abs(depth() - screw.counterboreDepth) > 1e-9))
+    if (std::abs(diameter() - presetDiameter(presetIndex_)) > 1e-9
+        || (counterbore && std::abs(depth() - screw.counterboreDepth) > 1e-9))
         return std::nullopt;
     return presetIndex_;
 }
@@ -862,7 +881,7 @@ void HeadOperation::setPreset(std::size_t index, const doc::Document& document)
 {
     presetIndex_ = std::min(index, doc::metricScrews().size() - 1);
     const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
-    diameter_ = kind_ == doc::HoleKind::Counterbore ? screw.counterboreDiameter : screw.countersinkDiameter;
+    diameter_ = presetDiameter(presetIndex_);
     depth_ = screw.counterboreDepth;
     setValue(activeHandle() == 1 ? depth_ : diameter_, document); // preview right away
 }
@@ -879,9 +898,9 @@ std::unique_ptr<doc::Feature> HeadOperation::makeFeature(double value) const
     // Named after the screw only while the sizes are the preset's.
     const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
     const bool counterbore = kind_ == doc::HoleKind::Counterbore;
-    const bool matches = std::abs(feature->diameter - (counterbore ? screw.counterboreDiameter : screw.countersinkDiameter)) < 1e-9
+    const bool matches = std::abs(feature->diameter - presetDiameter(presetIndex_)) < 1e-9
                       && (!counterbore || std::abs(feature->depth - screw.counterboreDepth) < 1e-9);
-    feature->preset = matches ? screw.name : "";
+    feature->preset = matches ? screw.name + doc::allowanceSuffix(allowance_) : "";
     return feature;
 }
 
@@ -907,6 +926,7 @@ std::unique_ptr<HoleOperation> HoleOperation::create(const doc::Document& docume
     op->facePoint_ = geom::pointOnFace(shape, faceIndex, info->centroid).value_or(info->centroid);
     op->settings_ = settings;
     op->settings_.screw = std::min(settings.screw, doc::metricScrews().size() - 1);
+    op->settings_.allowance = doc::validHoleAllowance(settings.allowance);
     op->depth_ = settings.depth;
     op->applyPreset();
     op->setStoredValue(op->diameter_);
@@ -980,7 +1000,28 @@ void HoleOperation::storeValue()
 
 double HoleOperation::presetDiameter() const
 {
-    return doc::holeDiameterFor(doc::metricScrews()[settings_.screw], settings_.fit);
+    return doc::holeDiameterFor(doc::metricScrews()[settings_.screw], settings_.fit, settings_.allowance);
+}
+
+double HoleOperation::headDiameter() const
+{
+    const doc::ScrewSize& screw = doc::metricScrews()[settings_.screw];
+    return settings_.head == doc::HoleKind::Countersink ? doc::countersinkDiameterFor(screw, settings_.allowance)
+                                                        : doc::counterboreDiameterFor(screw, settings_.allowance);
+}
+
+void HoleOperation::setAllowance(double allowance, const doc::Document& document)
+{
+    allowance = doc::validHoleAllowance(allowance);
+    if (std::abs(allowance - settings_.allowance) < 1e-12)
+        return;
+    storeValue();
+    const bool fromPreset = std::abs(diameter_ - presetDiameter()) < 1e-9;
+    settings_.allowance = allowance;
+    if (fromPreset)
+        applyPreset(); // a typed diameter stays as typed
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
 }
 
 void HoleOperation::applyPreset()
@@ -1161,12 +1202,12 @@ std::unique_ptr<doc::Feature> HoleOperation::makeFeature(double value) const
     feature->throughAll = settings_.throughAll;
     const doc::ScrewSize& screw = doc::metricScrews()[settings_.screw];
     feature->head = settings_.head;
-    feature->headDiameter = settings_.head == doc::HoleKind::Countersink ? screw.countersinkDiameter : screw.counterboreDiameter;
+    feature->headDiameter = headDiameter();
     feature->headDepth = screw.counterboreDepth;
     feature->headAngle = doc::kCountersinkAngleDegrees * kPi / 180.0;
     // Named after the screw only while the diameter is the preset's.
     if (std::abs(feature->diameter - presetDiameter()) < 1e-9)
-        feature->preset = doc::holeFitLabel(screw, settings_.fit);
+        feature->preset = doc::holeFitLabel(screw, settings_.fit, settings_.allowance);
     return feature;
 }
 

@@ -129,7 +129,8 @@ Rules:
 - `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset", "type"?,
   "angle"? }` — made at a circular rim edge, into the material (the
   direction comes from the flat face next to the rim); `preset` is an
-  informational label such as "M3 heat-set insert" or "M3". `type` is
+  informational label such as "M3 heat-set insert", "M3" or "M3 +0.2 mm"
+  (a head seat with the 3D-printing allowance, already in `diameter`). `type` is
   absent (or `"Plain"`) for a cylinder of `diameter` x `depth` (heat-set
   insert pilot holes; files from before counterbores compute exactly as
   before); `"Counterbore"`: the same cylinder as a screw head's seat on the
@@ -167,7 +168,10 @@ Rules:
   `depth` only when `throughAll` is false. `head` is `"Counterbore"`
   (with `headDiameter`, `headDepth`) or `"Countersink"` (with
   `headDiameter`, `headAngle` in radians); absent: no head. `preset` is an
-  informational label such as "M3 normal fit".
+  informational label such as "M3 normal fit" or, with the 3D-printing
+  hole allowance from Preferences, "M3 normal fit +0.2 mm": the diameters
+  are always stored as drilled (allowance included), so a file does not
+  depend on the preference of the machine that opens it.
 - `Imported` params (a base feature: a body imported from a STEP file):
   `{ "geometry": "imports/<feature uuid>.brep", "hash", "volume", "source" }`
   — the archive entry holding the exact geometry (millimeters, placed as in

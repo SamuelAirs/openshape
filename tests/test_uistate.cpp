@@ -90,12 +90,16 @@ TEST(AppSettings, PreferencesRoundTripAndDefaults)
     EXPECT_EQ(defaults.defaultUnit, LengthUnit::Millimeter);
     EXPECT_TRUE(defaults.sketchGridSnap);
     EXPECT_EQ(defaults.recoveryIntervalSeconds, 60);
+    EXPECT_DOUBLE_EQ(defaults.holeAllowance, 0.2) << "the FDM allowance the owner chose";
 
-    savePreferences(settings, {LengthUnit::Inch, false, 0});
+    savePreferences(settings, {LengthUnit::Inch, false, 0, 0.35});
     const Preferences loaded = loadPreferences(settings);
     EXPECT_EQ(loaded.defaultUnit, LengthUnit::Inch);
     EXPECT_FALSE(loaded.sketchGridSnap);
     EXPECT_EQ(loaded.recoveryIntervalSeconds, 0) << "recovery copies off";
+    EXPECT_DOUBLE_EQ(loaded.holeAllowance, 0.35);
+    savePreferences(settings, {LengthUnit::Inch, false, 0, 0.0});
+    EXPECT_DOUBLE_EQ(loadPreferences(settings).holeAllowance, 0.0) << "no allowance: the standard sizes";
 
     // Stored values are untrusted: anything unexpected is the default.
     settings.setValue(QStringLiteral("preferences/defaultUnit"), QStringLiteral("furlong"));
@@ -105,8 +109,12 @@ TEST(AppSettings, PreferencesRoundTripAndDefaults)
     settings.setValue(QStringLiteral("preferences/recoveryIntervalSeconds"), QStringLiteral("soon"));
     EXPECT_EQ(loadPreferences(settings).recoveryIntervalSeconds, 60);
     for (int interval : kRecoveryIntervals) {
-        savePreferences(settings, {LengthUnit::Millimeter, true, interval});
+        savePreferences(settings, {LengthUnit::Millimeter, true, interval, 0.2});
         EXPECT_EQ(loadPreferences(settings).recoveryIntervalSeconds, interval);
+    }
+    for (const QVariant& bad : {QVariant(-0.1), QVariant(1.5), QVariant(QStringLiteral("wide")), QVariant(QStringLiteral("nan"))}) {
+        settings.setValue(QStringLiteral("preferences/holeAllowanceMm"), bad);
+        EXPECT_DOUBLE_EQ(loadPreferences(settings).holeAllowance, 0.2) << bad.toString().toStdString();
     }
 }
 

@@ -108,6 +108,11 @@ public:
     // tap areas and sit further apart.
     bool touchLayout() const { return touchLayout_; }
     void setTouchLayout(bool on);
+    // Preferences: the FDM print allowance (mm, 0-1) added to screw clearance
+    // hole and head seat presets (doc::kDefaultHoleAllowance); an open Hole,
+    // counterbore or countersink tool showing a preset follows at once.
+    double holeAllowance() const { return holeSettings_.allowance; }
+    void setHoleAllowance(double mm);
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }

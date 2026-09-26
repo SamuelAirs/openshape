@@ -61,6 +61,7 @@ AppController::AppController(QObject* parent)
     preferences_ = loadPreferences(settings);
     document_->setDisplayUnit(preferences_.defaultUnit);
     interaction_->setSketchGridSnap(preferences_.sketchGridSnap);
+    interaction_->setHoleAllowance(preferences_.holeAllowance);
 
     recoveryDebounce_.setSingleShot(true);
     recoveryDebounce_.setInterval(kRecoveryDebounceMs);
@@ -1293,6 +1294,33 @@ void AppController::setRecoveryInterval(int seconds)
         recoveryDeadline_.start(seconds * 1000);
     }
     emit preferencesChanged();
+}
+
+void AppController::setHoleAllowance(double mm)
+{
+    if (!std::isfinite(mm) || mm < 0.0 || mm > doc::kMaxHoleAllowance)
+        return;
+    mm = std::round(mm * 1000.0) / 1000.0; // a micrometer is plenty for a printer
+    if (std::abs(mm - preferences_.holeAllowance) < 1e-12)
+        return;
+    preferences_.holeAllowance = mm;
+    interaction_->setHoleAllowance(mm);
+    savePreferences();
+    emit preferencesChanged();
+    emit stateChanged(); // an open Hole tool's preset diameter changed
+}
+
+QString AppController::setHoleAllowanceText(const QString& text)
+{
+    // Always millimeters here, whatever the document's unit ("0.2" = 0.2 mm);
+    // a unit can still be typed ("0.01in").
+    const auto parsed = parseLength(text.toStdString(), LengthUnit::Millimeter);
+    if (!parsed.millimeters)
+        return q(parsed.error);
+    if (!(*parsed.millimeters >= 0.0) || *parsed.millimeters > doc::kMaxHoleAllowance + 1e-9)
+        return QStringLiteral("The allowance must be between 0 and 1 mm.");
+    setHoleAllowance(std::clamp(*parsed.millimeters, 0.0, doc::kMaxHoleAllowance));
+    return {};
 }
 
 } // namespace os::ui

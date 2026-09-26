@@ -96,6 +96,8 @@ class AppController : public QObject {
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
     // Seconds; 0 = no recovery copies. One of kRecoveryIntervals.
     Q_PROPERTY(int recoveryInterval READ recoveryInterval WRITE setRecoveryInterval NOTIFY preferencesChanged)
+    // Millimeters (0-1) added to screw clearance hole and head seat presets.
+    Q_PROPERTY(double holeAllowance READ holeAllowance WRITE setHoleAllowance NOTIFY preferencesChanged)
     // iPhone / iPad: projects are saved by name into the app's own folder
     // (Documents, which the Files app shows) and exports go to its Exports
     // folder: iOS has no save dialog (Qt's FileDialog opens only). False on
@@ -162,6 +164,11 @@ public:
     void setSketchGridSnap(bool on);
     int recoveryInterval() const { return preferences_.recoveryIntervalSeconds; }
     void setRecoveryInterval(int seconds);
+    double holeAllowance() const { return preferences_.holeAllowance; }
+    // Ignored outside 0-1 mm; applied at once (an open Hole tool follows).
+    void setHoleAllowance(double mm);
+    // Text typed in Preferences ("0.25", "0.3 mm"): "" when taken, else why not.
+    Q_INVOKABLE QString setHoleAllowanceText(const QString& text);
 
     // ---- Recovery copies (see io/Recovery.h) ----
     // Starts this run's recovery session in `directory`; until then no copies

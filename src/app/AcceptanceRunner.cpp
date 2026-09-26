@@ -1083,6 +1083,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     app_->setDefaultUnit(QStringLiteral("mm"));
     app_->setSketchGridSnap(true);
     app_->setRecoveryInterval(60);
+    app_->setHoleAllowance(doc::kDefaultHoleAllowance);
     app_->setPenMode(false);
     app_->setTouchMode(false);
     // The window a scenario may have made phone-sized (Compact) comes back,

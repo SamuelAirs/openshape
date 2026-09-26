@@ -253,7 +253,13 @@ Document (UUID, display unit)
   whose exact ring or frustum volume is verified, and which measures the
   existing hole's depth first (`geom::emptyDepth`); sizes from
   `document/Fasteners`, the one place for screw and insert tables with
-  their sources), Holes (the Hole tool: holes at points on a flat face,
+  their sources and for the **FDM hole allowance**: `holeDiameterFor`,
+  `counterboreDiameterFor` and `countersinkDiameterFor` add it — a
+  Preferences value, 0.2 mm by default, 0-1 mm — to clearance fits and
+  head seats, never to tap drills or heat-set insert pilots (already
+  sized for printing); steps store the resulting diameter, so files do
+  not depend on the preference, and the preset's name says it, e.g. "M3
+  close fit +0.2 mm"), Holes (the Hole tool: holes at points on a flat face,
   stored in the face's frame like a sketch on it, so they follow the face;
   diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
@@ -498,7 +504,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the face's reference corner (the outline's minimum corner) or from the
   hole before it. Screw size (M2-M6) x fit (close / normal per ISO 273, or
   tap) sets the diameter; Counterbore / Countersink use the size's head
-  table. Everything placed is one Holes step; Esc leaves the tool; the
+  table (clearance fits and heads plus the print allowance,
+  `HoleSettings::allowance`). Everything placed is one Holes step; Esc leaves the tool; the
   settings are remembered for the next face (`HoleSettings`). The chip's
   actions wrap at 460 px (a hidden row measures their natural width).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
@@ -723,7 +730,10 @@ Measured (bench_session): a copy of a 21-body, 1528-face model takes about
 no worker thread is used.
 
 **Settings** (`ui/AppSettings`, QSettings): preferences (default unit for
-new documents, sketch grid snapping, recovery interval), recent files
+new documents, sketch grid snapping, recovery interval, the hole allowance
+for 3D printing: `InteractionController::setHoleAllowance` passes it to the
+Hole tool and the counterbore / countersink presets, and an open tool
+showing a preset follows at once; a typed diameter stays as typed), recent files
 (`io/RecentFiles`: most recent first; the menu shows the 10 newest that
 exist, and a file that is gone never pushes an existing one out; the File
 menu rereads the list as it opens, `refreshRecentFiles()`; with an app

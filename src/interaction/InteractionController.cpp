@@ -775,7 +775,7 @@ void InteractionController::rebuildOperation()
                 operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
             else
                 operation_ = HeadOperation::create(*document_, *selection_.singleBody(), edges.front(), rimHoleKind_,
-                                                   screwPreset_);
+                                                   screwPreset_, holeSettings_.allowance);
         }
         if (!operation_) {
             if (edgeOperationKind_ == doc::FeatureKind::Hole)
@@ -2163,6 +2163,22 @@ void InteractionController::setTouchLayout(bool on)
     touchLayout_ = on;
     if (session_)
         session_->setLargeTargets(on);
+    notifyView();
+}
+
+void InteractionController::setHoleAllowance(double mm)
+{
+    mm = doc::validHoleAllowance(mm);
+    if (std::abs(mm - holeSettings_.allowance) < 1e-12)
+        return;
+    holeSettings_.allowance = mm;
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get()))
+        hole->setAllowance(mm, *document_);
+    else if (auto* head = dynamic_cast<HeadOperation*>(operation_.get()))
+        head->setAllowance(mm, *document_);
+    else
+        return;
+    notifyState();
     notifyView();
 }
 

@@ -544,13 +544,15 @@ private:
 };
 
 // Counterbore or countersink for a screw head on an existing round hole (at
-// its rim). Screw presets (M2-M6, doc::metricScrews) set the sizes; the
+// its rim). Screw presets (M2-M6, doc::metricScrews) set the sizes, their
+// diameters plus the print allowance (doc::kDefaultHoleAllowance); the
 // radial arrow (handle 0) sets the diameter, a counterbore's arrow into the
 // hole (handle 1) its depth. Typed values go to the active arrow.
 class HeadOperation final : public Operation {
 public:
     static std::unique_ptr<HeadOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
-                                                 doc::HoleKind kind, std::size_t presetIndex);
+                                                 doc::HoleKind kind, std::size_t presetIndex,
+                                                 double allowance = doc::kDefaultHoleAllowance);
 
     std::string title() const override;
     std::string valueLabel() const override { return activeHandle() == 1 ? "Depth" : "Diameter"; }
@@ -570,6 +572,10 @@ public:
     void setPreset(std::size_t index, const doc::Document& document);
     double diameter() const { return activeHandle() == 1 ? diameter_ : value(); }
     double depth() const { return activeHandle() == 1 ? value() : depth_; }
+    // The print allowance changed (Preferences): sizes from a preset follow it.
+    void setAllowance(double allowance, const doc::Document& document);
+    // The preset's head diameter, allowance included.
+    double presetDiameter(std::size_t index) const;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
@@ -577,6 +583,7 @@ protected:
 private:
     HeadOperation(Uuid bodyId, LinearManipulator m, doc::EdgeRef rim, doc::HolePlacement placement, doc::HoleKind kind)
         : Operation(bodyId, std::move(m)), rim_(std::move(rim)), placement_(placement), kind_(kind) {}
+    double allowance_ = doc::kDefaultHoleAllowance;
     doc::EdgeRef rim_;
     doc::HolePlacement placement_;
     doc::HoleKind kind_;
@@ -593,6 +600,9 @@ struct HoleSettings {
     bool throughAll = true;
     double depth = 10;                        // mm, when not through all
     doc::HoleKind head = doc::HoleKind::Plain; // Plain = no counterbore / countersink
+    // The print allowance (a preference, set by the controller): added to
+    // clearance and head diameters from presets, not to tap drills.
+    double allowance = doc::kDefaultHoleAllowance;
 };
 
 // The Hole tool: round holes drilled into one flat face where the user
@@ -645,8 +655,12 @@ public:
     void nextField(const doc::Document& document);
     void setScrew(std::size_t index, const doc::Document& document);
     void setFit(doc::HoleFit fit, const doc::Document& document);
-    // The diameter the screw size and fit give (the presets).
+    // The print allowance changed (Preferences): a preset diameter follows it.
+    void setAllowance(double allowance, const doc::Document& document);
+    // The diameter the screw size and fit give (the presets, allowance included).
     double presetDiameter() const;
+    // The counterbore / countersink diameter the screw size gives (allowance included).
+    double headDiameter() const;
     void setThroughAll(bool throughAll, const doc::Document& document);
     void setHead(doc::HoleKind head, const doc::Document& document);
     bool fromLastHole() const { return fromLastHole_; }
