@@ -75,7 +75,7 @@ jobs:
           bash scripts/ci/run-logged.sh app bash scripts/ios/build-app.sh ~/Qt/$QT_VERSION/ios ~/openshape-ios-deps build/ios
           app=build/ios/OpenShape.xcarchive/Products/Applications/OpenShape.app
           echo "::notice title=iPad app::$(du -sh $app | cut -f1), build $OPENSHAPE_BUILD_NUMBER, iPadOS $(plutil -extract MinimumOSVersion raw $app/Info.plist)+, $(lipo -archs $app/OpenShape)"
-          echo "::notice title=QML plugins linked::$(tr '\n' ' ' < build/ios/qml-plugins.txt)"
+          echo "::notice title=QML modules linked::$(tr '\n' ' ' < build/ios/qml-modules.txt) ."
 
       - name: Upload to TestFlight
         if: env.HAS_SIGNING == 'true' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[testflight]'))

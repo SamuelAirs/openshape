@@ -15,7 +15,6 @@
 #include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
-#include <QtGui/QScreen>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlExtensionPlugin>
 #include <QtQuick/QQuickWindow>
@@ -328,14 +327,6 @@ int main(int argc, char* argv[])
         controller.openProject(QUrl::fromLocalFile(parser.positionalArguments().constFirst()));
 
     if (parser.isSet(acceptanceOption)) {
-        // The script's click points assume the default 1400x900 window. A
-        // smaller screen (a CI Mac's is 1024x768) would shrink a framed
-        // window; a frameless one keeps its size (partly off screen).
-        const QSize scriptSize(1400, 900);
-        const QSize available = window->screen() ? window->screen()->availableSize() : scriptSize;
-        if (available.width() < scriptSize.width() || available.height() < scriptSize.height())
-            window->setFlag(Qt::FramelessWindowHint);
-        window->resize(scriptSize);
         auto* runner = new os::app::AcceptanceRunner(window, &controller, parser.value(acceptanceOption), &controller);
         runner->start();
     } else if (parser.isSet(demoOption) || parser.isSet(screenshotOption)) {

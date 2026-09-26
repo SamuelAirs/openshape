@@ -21,13 +21,29 @@ DEPS=${2:?usage: build-app.sh <qt-ios-dir> <deps-prefix> [build-dir]}
 BUILD=${3:-build/ios}
 DEPS=$(cd "$DEPS" && pwd)
 HOST_QT=${QT_HOST_PATH:-$(cd "$QT/.." && pwd)/macos}
+mkdir -p "$BUILD"
 
 "$QT/bin/qt-cmake" -S . -B "$BUILD" -G Xcode \
     -DQT_HOST_PATH="$HOST_QT" \
     -DOPENSHAPE_BUILD_TESTS=OFF \
     -DCMAKE_PREFIX_PATH="$DEPS" -DCMAKE_FIND_ROOT_PATH="$DEPS" \
     -DCMAKE_XCODE_GENERATE_SCHEME=ON \
-    ${OPENSHAPE_BUILD_NUMBER:+-DOPENSHAPE_BUILD_NUMBER="$OPENSHAPE_BUILD_NUMBER"}
+    ${OPENSHAPE_BUILD_NUMBER:+-DOPENSHAPE_BUILD_NUMBER="$OPENSHAPE_BUILD_NUMBER"} \
+    2>&1 | tee "$BUILD/configure.log"
+
+# Qt is linked statically: Qt's CMake scans the QML files and links the
+# plugin of every module they import. One it cannot link would stop the app
+# at startup on the iPad, so that fails the build here.
+imports=$(find "$BUILD" -path '*qml_imports*' -name '*.cmake' | head -n 1)
+if [ -n "$imports" ]; then
+    # Entries look like "CLASSNAME;QtQuick2Plugin;NAME;QtQuick;PATH;...".
+    sed -nE 's/.*[";]NAME;([^;"]*).*/\1/p' "$imports" | sort -u > "$BUILD/qml-modules.txt"
+fi
+echo "QML modules linked: $(tr '\n' ' ' < "$BUILD/qml-modules.txt" 2>/dev/null)"
+if grep -q "will not be linked" "$BUILD/configure.log"; then
+    echo "error: a QML plugin will not be linked (see the configure output above)"
+    exit 1
+fi
 
 rm -rf "$BUILD/OpenShape.xcarchive"
 xcodebuild -project "$BUILD/OpenShape.xcodeproj" -scheme openshape -configuration Release \
@@ -43,8 +59,3 @@ plutil -p "$APP/Info.plist"
 for f in Assets.car PrivacyInfo.xcprivacy; do
     test -e "$APP/$f" || { echo "error: the app bundle lacks $f"; exit 1; }
 done
-# Qt is linked statically: every QML module the UI imports must have its
-# plugin imported at build time, or the app fails to start on the iPad.
-find "$BUILD" -name '*qml_plugin_import*.cpp' -exec grep -h 'Q_IMPORT_QML_PLUGIN' {} + | sort -u \
-    | sed -e 's/Q_IMPORT_QML_PLUGIN(\(.*\))/\1/' > "$BUILD/qml-plugins.txt"
-echo "QML plugins linked: $(tr '\n' ' ' < "$BUILD/qml-plugins.txt")"
