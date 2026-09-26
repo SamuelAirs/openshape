@@ -291,3 +291,52 @@ TEST(StepImport, EmptyGarbageAndTruncatedFilesFailPlainly)
     for (const auto& p : {empty, garbage, good, truncated})
         std::filesystem::remove(p);
 }
+
+TEST(StepImport, TooManySolidsAreRefusedBeforeAnyIsRepaired)
+{
+    // One product holding five solids.
+    std::vector<Shape> boxes;
+    for (int i = 0; i < 5; ++i)
+        boxes.push_back(box({i * 20.0, 0, 0}, {10, 10, 10}));
+    auto five = gatherSolids(boxes);
+    ASSERT_TRUE(five.ok());
+    const auto rack = stepFile("rack.step");
+    ASSERT_TRUE(exportStep({{"Rack", five.value()}}, rack).ok());
+    StepReadOptions options;
+    options.maxSolids = 4;
+    auto refused = importStep(rack, options);
+    ASSERT_FALSE(refused.ok());
+    EXPECT_EQ(refused.error(), ErrorCode::Unsupported);
+    EXPECT_EQ(refused.userMessage(), "This STEP file has more than 4 solids, too many to import as bodies.");
+    options.maxSolids = 5;
+    auto taken = importStep(rack, options);
+    ASSERT_TRUE(taken.ok()) << taken.developerMessage();
+    EXPECT_EQ(taken.value().size(), 5u);
+
+    // Closed shells count (they become solids), open surfaces do not.
+    const auto shells = stepFile("shells.step");
+    ASSERT_TRUE(exportStep({{"A", box({0, 0, 0}, {10, 10, 10})}, {"B", box({20, 0, 0}, {10, 10, 10})}}, shells,
+                           {StepUnit::Millimeter, true})
+                    .ok());
+    options.maxSolids = 1;
+    EXPECT_FALSE(importStep(shells, options).ok());
+    options.maxSolids = 2;
+    auto closed = importStep(shells, options);
+    ASSERT_TRUE(closed.ok()) << closed.developerMessage();
+    EXPECT_EQ(closed.value().size(), 2u);
+
+    PlaneFrame plane;
+    plane.origin = {0, 0, 50};
+    auto regions = findRegions(plane, {{PlanarCurve::Kind::Circle, {}, {}, {0, 0, 50}, 5.0}});
+    ASSERT_TRUE(regions.ok());
+    ASSERT_EQ(regions.value().size(), 1u);
+    const auto mixed = stepFile("mixed_limit.step");
+    ASSERT_TRUE(exportStep({{"Block", box({0, 0, 0}, {10, 10, 10})}, {"Disc", regions.value()[0].face}}, mixed).ok());
+    options.maxSolids = 1;
+    auto one = importStep(mixed, options);
+    ASSERT_TRUE(one.ok()) << one.developerMessage();
+    EXPECT_EQ(one.value().size(), 1u);
+    EXPECT_EQ(one.warnings().size(), 1u);
+    for (const auto& p : {rack, shells, mixed})
+        std::filesystem::remove(p);
+}

@@ -939,10 +939,42 @@ Status InteractionController::createBox(double size)
     return status;
 }
 
-Status InteractionController::importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source)
+Status InteractionController::importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source,
+                                          std::uint64_t maxGeometryBytes)
 {
     if (shapes.empty())
         return Status::failure(ErrorCode::InvalidArgument, "There is nothing to import.", "importBodies: no shapes");
+    // What the project will have to store (the Imported steps' BRep text,
+    // made now once and kept for saving): refused here, before anything
+    // changes, rather than a project that cannot be saved.
+    std::uint64_t stored = 0;
+    for (const auto& body : document_->bodies())
+        for (const auto& f : body->features())
+            if (const auto* imported = dynamic_cast<const doc::ImportedFeature*>(f.get()))
+                stored += imported->brepText().size();
+    std::uint64_t adding = 0;
+    std::vector<std::unique_ptr<doc::ImportedFeature>> features;
+    for (const geom::NamedShape& shape : shapes) {
+        if (shape.shape.isNull())
+            continue;
+        auto feature = std::make_unique<doc::ImportedFeature>();
+        feature->setShape(shape.shape);
+        feature->source = source;
+        const std::uint64_t bytes = feature->brepText().size();
+        adding += bytes;
+        if (bytes > doc::kMaxImportedBodyBytes || stored + adding > maxGeometryBytes) {
+            const auto mb = [](std::uint64_t n) { return std::to_string((n + (1u << 20) - 1) >> 20); };
+            Status tooLarge = Status::failure(
+                ErrorCode::Unsupported,
+                "These parts are too large to keep in a project (at most " + mb(maxGeometryBytes) + " MB of imported geometry, "
+                    + mb(doc::kMaxImportedBodyBytes) + " MB per body). Nothing was imported.",
+                "importBodies: " + std::to_string(bytes) + " bytes for one body, " + std::to_string(stored + adding)
+                    + " in all");
+            message(tooLarge.userMessage());
+            return tooLarge;
+        }
+        features.push_back(std::move(feature));
+    }
     if (session_)
         finishSketch();
     // Like clicking elsewhere: a pending value is applied first.
@@ -955,6 +987,7 @@ Status InteractionController::importBodies(const std::vector<geom::NamedShape>& 
     auto isTaken = [&](const std::string& name) { return std::find(taken.begin(), taken.end(), name) != taken.end(); };
     int unnamed = 1;
     std::vector<std::unique_ptr<cmd::Command>> steps;
+    std::size_t next = 0;
     for (const geom::NamedShape& shape : shapes) {
         if (shape.shape.isNull())
             continue;
@@ -969,10 +1002,7 @@ Status InteractionController::importBodies(const std::vector<geom::NamedShape>& 
                 name = base + " " + std::to_string(n);
         }
         taken.push_back(name);
-        auto feature = std::make_unique<doc::ImportedFeature>();
-        feature->setShape(shape.shape);
-        feature->source = source;
-        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(name, std::move(feature)));
+        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(name, std::move(features[next++])));
     }
     if (steps.empty())
         return Status::failure(ErrorCode::InvalidArgument, "There is nothing to import.", "importBodies: only null shapes");

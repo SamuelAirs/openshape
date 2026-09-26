@@ -9,18 +9,15 @@
 
 namespace os::ui {
 
-// "image://thumbnail/<stamp>/<percent-encoded project path>": the preview a
-// project file carries (io::readProjectThumbnail reads only that entry). The
-// stamp (the file's modification time) makes a re-saved project load its new
-// preview instead of Qt's cached one. A file without a usable preview gives
-// a null image (QML then shows its placeholder). Loaded off the GUI thread.
+// The preview a project file carries (io::readProjectThumbnail reads only
+// that entry), for image sources made by ui::thumbnailSource
+// ("image://thumbnail/<stamp>/<encoded project path>", ui/ThumbnailSource.h).
+// A file without a usable preview gives a null image (QML then shows its
+// placeholder). Loaded off the GUI thread.
 class ThumbnailProvider final : public QQuickImageProvider {
 public:
     ThumbnailProvider();
     QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
-
-    // The image source for a project file.
-    static QString sourceFor(const QString& path, qint64 stamp);
 };
 
 } // namespace os::ui

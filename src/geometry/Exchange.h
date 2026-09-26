@@ -38,6 +38,16 @@ struct StepWriteOptions {
 Status exportStep(const std::vector<NamedShape>& shapes, const std::filesystem::path& path,
                   const StepWriteOptions& options = {});
 
+// Upper bound for neutral files we are willing to parse.
+inline constexpr std::uintmax_t kMaxImportFileBytes = 512ull * 1024 * 1024;
+// At most this many solids are taken from one file (a larger assembly is
+// refused rather than freezing the app with tens of thousands of bodies).
+inline constexpr std::size_t kMaxImportSolids = 2000;
+
+struct StepReadOptions {
+    std::size_t maxSolids = kMaxImportSolids; // lower only in tests
+};
+
 // Reads the closed solids of a STEP file, in millimeters whatever unit the
 // file uses (inches, meters, ...), placed as in the file (assemblies are
 // flattened with their placements). Each solid is one NamedShape named after
@@ -45,8 +55,10 @@ Status exportStep(const std::vector<NamedShape>& shapes, const std::filesystem::
 // several solids); the name is empty when the file gives none. Closed shells
 // (surface models) become solids; open surfaces, loose faces, curves and
 // invalid solids are skipped and reported in plain language as warnings of
-// the Result. Fails with a plain message when nothing usable is left.
-Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path);
+// the Result. Fails with a plain message when nothing usable is left, and
+// when the file holds more than `maxSolids` solids (counted before any is
+// checked or repaired, so a huge file is refused at once).
+Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path, const StepReadOptions& options = {});
 
 struct StlOptions {
     bool binary = true;
@@ -54,11 +66,5 @@ struct StlOptions {
     double angularDeflection = 0.2; // radians
 };
 Status exportStl(const std::vector<NamedShape>& shapes, const std::filesystem::path& path, const StlOptions& options = {});
-
-// Upper bound for neutral files we are willing to parse.
-inline constexpr std::uintmax_t kMaxImportFileBytes = 512ull * 1024 * 1024;
-// At most this many solids are taken from one file (a larger assembly is
-// refused rather than freezing the app with tens of thousands of bodies).
-inline constexpr std::size_t kMaxImportSolids = 2000;
 
 } // namespace os::geom

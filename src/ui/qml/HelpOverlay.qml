@@ -42,16 +42,18 @@ Rectangle {
                 width: parent.width
                 spacing: 16
 
+                // The title wraps in a narrow window (a phone), so Close stays on screen.
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
+                        Layout.fillWidth: true
                         text: "How OpenShape works"
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: Theme.text
+                        wrapMode: Text.WordWrap
                     }
-                    Item { Layout.fillWidth: true }
-                    ActionButton { text: "Close"; onClicked: overlay.visible = false }
+                    ActionButton { objectName: "helpClose"; text: "Close"; onClicked: overlay.visible = false }
                 }
 
                 Text {
@@ -65,7 +67,7 @@ Rectangle {
 
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: 2
+                    columns: content.width < 560 ? 1 : 2 // one column on a phone
                     columnSpacing: 32
                     rowSpacing: 16
 

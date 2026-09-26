@@ -151,7 +151,14 @@ Rules:
   project ("damaged") when the entry is missing, does not match, is not a
   valid solid or no longer has the recorded volume (within 1e-6). Writers
   name the entry after the step's own id; readers accept any `imports/`
-  entry the step names.
+  entry the step names, but each entry for one step only (two steps naming
+  one entry make the file damaged: a crafted file must not make the loader
+  read and keep one entry many times). Size limits: at most 256 MiB per
+  entry and 512 MiB of imported geometry per project
+  (`doc::kMaxImportedBodyBytes`, `doc::kMaxImportedGeometryBytes`). The
+  loader reads no more than that; the writer refuses to save more (a plain
+  message) rather than write a file it could not open, and the importer
+  refuses parts that would not fit.
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
   `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Imported`. Unknown

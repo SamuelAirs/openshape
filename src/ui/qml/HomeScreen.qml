@@ -222,6 +222,7 @@ Rectangle {
             Text {
                 width: parent.width - menuButton.width
                 text: card.project.name || ""
+                textFormat: Text.PlainText // file names are shown as they are
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
                 color: Theme.text
@@ -230,6 +231,7 @@ Rectangle {
             Text {
                 width: parent.width - menuButton.width
                 text: card.project.modified || ""
+                textFormat: Text.PlainText
                 font.pixelSize: 12
                 color: Theme.mutedText
                 elide: Text.ElideRight
@@ -237,6 +239,7 @@ Rectangle {
             Text {
                 width: parent.width
                 text: card.project.folder || ""
+                textFormat: Text.PlainText
                 font.pixelSize: 11
                 color: Theme.mutedText
                 elide: Text.ElideMiddle

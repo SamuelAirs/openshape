@@ -135,8 +135,13 @@ public:
     // One body per imported shape, each starting with an Imported step, as
     // one undo step. Names stay unique ("Bracket 2"); unnamed shapes become
     // "Imported 1", "Imported 2", ... The view fits everything afterwards.
-    // `source` is the file name shown on the steps.
-    Status importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source);
+    // `source` is the file name shown on the steps. Refused, with a plain
+    // message and nothing changed, when the project could not keep the
+    // geometry: more than doc::kMaxImportedBodyBytes for one body, or more
+    // than `maxGeometryBytes` of imported geometry in the document with it
+    // (lower only in tests).
+    Status importBodies(const std::vector<geom::NamedShape>& shapes, const std::string& source,
+                        std::uint64_t maxGeometryBytes = doc::kMaxImportedGeometryBytes);
     // The picture a saved project carries: the visible bodies from the
     // isometric direction, framed (not the current view). Empty without bodies.
     ThumbnailImage renderThumbnail(int size);

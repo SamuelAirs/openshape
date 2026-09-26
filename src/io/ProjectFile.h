@@ -35,6 +35,7 @@ inline constexpr std::uintmax_t kMaxProjectFileBytes = 1024ull * 1024 * 1024;
 inline constexpr std::uint64_t kMaxEntryBytes = 256ull * 1024 * 1024;
 inline constexpr std::int64_t kMaxEntries = 10000;
 inline constexpr std::uint64_t kMaxThumbnailBytes = 4ull * 1024 * 1024;
+static_assert(doc::kMaxImportedBodyBytes <= kMaxEntryBytes, "an imported body must fit in one archive entry");
 
 nlohmann::json documentToJson(const doc::Document& document);
 // Reads one archive entry by name for documentFromJson (the geometry of
@@ -49,6 +50,10 @@ struct SaveOptions {
     std::vector<unsigned char> thumbnailPng; // empty = no thumbnail
     bool includeGeometryCache = true;
     bool announce = true; // log "saved project" at Info level (recovery copies stay quiet)
+    // Imported geometry the project may hold in all (each step at most
+    // doc::kMaxImportedBodyBytes): more fails the save plainly, rather than
+    // writing a file that could not be opened again. Lower only in tests.
+    std::uint64_t maxImportedGeometryBytes = doc::kMaxImportedGeometryBytes;
 };
 
 Status saveProject(const doc::Document& document, const std::filesystem::path& path, const SaveOptions& options = {});
@@ -63,12 +68,20 @@ struct ProjectData {
     std::vector<std::pair<std::string, std::string>> imports;  // entry name, BRep text (always written)
     std::vector<std::pair<std::string, std::string>> geometry; // body id, BRep text
     std::vector<unsigned char> thumbnailPng;
+    std::uint64_t maxImportedGeometryBytes = doc::kMaxImportedGeometryBytes; // checked by buildProjectArchive
 };
 ProjectData serializeProject(const doc::Document& document, const SaveOptions& options = {});
 Result<std::string> buildProjectArchive(const ProjectData& data);
 // Writes <path>.tmp, then renames it over `path`: a reader never sees half a file.
 Status writeFileAtomically(const std::filesystem::path& path, const std::string& bytes);
-Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path);
+
+struct LoadOptions {
+    // Imported geometry read from imports/ in all (each entry at most
+    // doc::kMaxImportedBodyBytes, and read once: two steps naming one entry
+    // make the file damaged). Lower only in tests.
+    std::uint64_t maxImportedGeometryBytes = doc::kMaxImportedGeometryBytes;
+};
+Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path, const LoadOptions& options = {});
 
 // Only the thumbnail.png of a project (the start screen shows many): reads
 // the archive's directory and that one entry, nothing else. Fails when the

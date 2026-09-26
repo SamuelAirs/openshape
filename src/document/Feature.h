@@ -11,6 +11,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -385,6 +386,12 @@ public:
     std::vector<Uuid> dependencies() const override { return {sourceBody}; }
     void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
+
+// How much imported geometry a project holds (the BRep text it stores):
+// per Imported step and in all. Imports beyond it are refused, saving it
+// fails plainly, and the loader reads no more (io/ProjectFile).
+inline constexpr std::uint64_t kMaxImportedBodyBytes = 256ull * 1024 * 1024;
+inline constexpr std::uint64_t kMaxImportedGeometryBytes = 512ull * 1024 * 1024;
 
 // The first step of a body imported from a file (STEP): its exact geometry
 // as imported (millimeters, placed as in the file). Projects store the

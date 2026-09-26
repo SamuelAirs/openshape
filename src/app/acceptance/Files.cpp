@@ -6,13 +6,18 @@
 // inches, undo, push/pull on an imported body, a damaged file, save and
 // reopen with a thumbnail; Home (File -> Home): cards with previews, the
 // card menu (button and long press), opening, New project, Open..., Import
-// STEP..., Back and Esc. Native file dialogs cannot be clicked: the scenario
-// hands the prepared file to AppController::setNextFileChoice, and the
-// button or menu item runs the dialog's onAccepted code with it.
+// STEP..., Back and Esc; then, in a phone-sized window: Help closed over
+// Home leaves the keys with Home, a damaged file chosen on Home shows its
+// message above Home, and a long message (what an import skipped) wraps;
+// names from the file are shown as plain text. Native file dialogs cannot
+// be clicked: the scenario hands the prepared file to
+// AppController::setNextFileChoice, and the button or menu item runs the
+// dialog's onAccepted code with it.
 
 #include "app/AcceptanceRunner.h"
 #include "geometry/Exchange.h"
 #include "geometry/Modeling.h"
+#include "geometry/Profiles.h"
 #include "io/ProjectFile.h"
 #include "interaction/InteractionController.h"
 #include "ui/AppController.h"
@@ -34,6 +39,8 @@ namespace {
 
 using Steps = std::vector<AcceptanceRunner::Step>;
 
+const QString kNameB = QStringLiteral("files_b José Ж");
+
 void wait(Steps& steps, int count)
 {
     for (int i = 0; i < count; ++i)
@@ -44,6 +51,9 @@ struct State {
     QString dir;
     QString step;    // "Bracket" 40 x 20 x 10 and "Pin" 10 x 10 x 30, written in inches
     QString garbage; // not a STEP file
+    QString mixed;   // a solid named "<b>Block</b>" and an open disc
+    QSize windowSize;
+    QSize minimumSize;
     QString project;
     QString projectB;
     QPointF pressAt;
@@ -54,6 +64,16 @@ struct State {
 std::filesystem::path toPath(const QString& file)
 {
     return std::filesystem::path(file.toStdWString());
+}
+
+// Every Text item in the visual tree (declared ones and generated delegates).
+void collectTexts(QQuickItem* item, QList<QQuickItem*>& out)
+{
+    if (item->inherits("QQuickText"))
+        out << item;
+    const QList<QQuickItem*> children = item->childItems();
+    for (QQuickItem* child : children)
+        collectTexts(child, out);
 }
 
 double volumeOf(AcceptanceRunner& r, std::size_t index)
@@ -174,7 +194,9 @@ Steps steps(AcceptanceRunner& r)
 
     // ---- Home: recent projects with previews ------------------------------------------
     steps.push_back([&r, &app, s] {
-        s->projectB = s->dir + QStringLiteral("/files_b.openshape");
+        // A name outside ASCII: its preview must still load (Qt hands the
+        // image provider its source partly decoded).
+        s->projectB = s->dir + QLatin1Char('/') + kNameB + QStringLiteral(".openshape");
         QFile::remove(s->projectB);
         // Only this scenario's projects in the list (others ran before it).
         app.clearRecentFiles();
@@ -192,7 +214,7 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 4); // previews load in the background
     steps.push_back([&r, &app] {
         const QVariantList projects = app.homeProjects();
-        r.check(projects.size() == 2 && projects[0].toMap()[QStringLiteral("name")] == QStringLiteral("files_b"),
+        r.check(projects.size() == 2 && projects[0].toMap()[QStringLiteral("name")] == kNameB,
                 "Home lists the recent projects, newest first", QString::number(projects.size()));
         QQuickItem* first = r.findItem(QStringLiteral("homeCard_0"));
         QQuickItem* second = r.findItem(QStringLiteral("homeCard_1"));
@@ -200,7 +222,9 @@ Steps steps(AcceptanceRunner& r)
         QQuickItem* preview = r.findItem(QStringLiteral("homeThumbnail_0"));
         r.check(preview && preview->property("status").toInt() == 1 /* Image.Ready */
                     && preview->property("sourceSize").toSize().width() > 0,
-                "the card shows the project's preview");
+                "the card shows the project's preview (a name outside ASCII)");
+        QQuickItem* previewA = r.findItem(QStringLiteral("homeThumbnail_1"));
+        r.check(previewA && previewA->property("status").toInt() == 1, "and the other card its own");
         r.check(first && first->width() >= 150, "cards are touch-sized", first ? QString::number(first->width()) : QString());
         r.screenshot(QStringLiteral("files_04_home"));
         r.check(r.clickItem(QStringLiteral("homeCardMenu_1")), "a card's ⋯ menu");
@@ -232,7 +256,7 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app] {
         r.check(app.homeVisible(), "Esc closes only the menu");
         r.check(r.clickItem(QStringLiteral("homeCard_0")), "tap a project card");
-        r.check(!app.homeVisible() && app.documentTitle() == QStringLiteral("files_b"), "it opens, and Home closes",
+        r.check(!app.homeVisible() && app.documentTitle() == kNameB, "it opens, and Home closes",
                 app.documentTitle());
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Home again)");
     });
@@ -294,6 +318,124 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app] {
         r.check(!app.homeVisible() && app.bodyCount() == 2 && !app.canRedo() && app.undoText() == QStringLiteral("Import 2 bodies"),
                 "a new project with the imported bodies", QString::number(app.bodyCount()));
+    });
+
+    // ---- On a phone: Help over Home, messages over Home, long messages -----------------
+    steps.push_back([&r, &app, s] {
+        // A solid named with markup and an open surface (which is skipped).
+        s->mixed = s->dir + QStringLiteral("/files_mixed.step");
+        QFile::remove(s->mixed);
+        geom::PlaneFrame plane;
+        plane.origin = {0, 0, 40};
+        auto disc = geom::findRegions(plane, {{geom::PlanarCurve::Kind::Circle, {}, {}, {0, 0, 40}, 8.0}});
+        r.check(disc.ok() && disc.value().size() == 1, "an open disc to skip");
+        if (disc.ok() && disc.value().size() == 1) {
+            const Status written = geom::exportStep({{"<b>Block</b>", geom::makeBox({0, 0, 0}, {30, 20, 10}).value()},
+                                                     {"Disc", disc.value()[0].face}},
+                                                    toPath(s->mixed));
+            r.check(written.ok(), "a STEP file with a solid and an open surface");
+        }
+        app.newDocument(); // nothing unsaved to ask about
+        app.setHomeVisible(true);
+        s->windowSize = r.window()->size();
+        s->minimumSize = r.window()->minimumSize();
+        r.window()->setMinimumSize({});
+        r.window()->resize(402, 874);
+    });
+    wait(steps, 3);
+    steps.push_back([&r, &app] {
+        r.check(r.window()->width() == 402, "a phone-sized window", QString::number(r.window()->width()));
+        r.screenshot(QStringLiteral("files_05_phone_home"));
+        r.key(Qt::Key_F1);
+        QQuickItem* help = r.findItem(QStringLiteral("helpOverlay"));
+        r.check(help && help->isVisible(), "F1 opens Help over Home");
+        QQuickItem* close = r.findItem(QStringLiteral("helpClose"));
+        const QPointF right = close ? close->mapToScene(QPointF(close->width(), 0)) : QPointF();
+        r.check(close && right.x() <= r.window()->width() - 24, "Help's Close button is on a phone's screen",
+                QString::number(right.x()));
+        r.screenshot(QStringLiteral("files_05b_phone_help"));
+        r.check(r.clickItem(QStringLiteral("helpClose")), "Help's Close button");
+        r.check(help && !help->isVisible(), "it closes Help");
+        QQuickItem* home = r.findItem(QStringLiteral("homeScreen"));
+        r.check(app.homeVisible() && home && home->hasActiveFocus(), "closing Help gives the keys back to Home");
+        r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+        r.key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+        r.check(app.bodyCount() == 0 && !app.sketchMode() && !app.dirty(), "B and K do nothing to the model behind Home");
+    });
+    steps.push_back([&r, &app, s] {
+        s->messages.clear();
+        s->listening = QObject::connect(&app, &ui::AppController::message, &app, [s](const QString& t) { s->messages << t; });
+        app.setNextFileChoice(QUrl::fromLocalFile(s->garbage));
+        r.check(r.clickItem(QStringLiteral("homeImport")), "Import STEP… on Home with a damaged file");
+        r.check(app.homeVisible() && app.bodyCount() == 0, "Home stays");
+        r.check(!s->messages.isEmpty() && s->messages.last().contains(QStringLiteral("STEP")), "a message says why",
+                s->messages.isEmpty() ? QString() : s->messages.last());
+    });
+    wait(steps, 2); // the message fades in
+    steps.push_back([&r, s] {
+        QQuickItem* toast = r.findItem(QStringLiteral("toast"));
+        QQuickItem* text = r.findItem(QStringLiteral("toastText"));
+        QQuickItem* home = r.findItem(QStringLiteral("homeScreen"));
+        const QString shown = text ? text->property("text").toString() : QString();
+        r.check(!s->messages.isEmpty() && shown == s->messages.last(), "the message shows why", shown);
+        r.check(toast && home && toast->isVisible() && toast->z() > home->z(), "the message is above Home",
+                toast && home ? QStringLiteral("z %1 over %2").arg(toast->z()).arg(home->z()) : QString());
+        // And it is what the window shows there (the dark message, not Home).
+        if (toast) {
+            const QImage shot = r.window()->grabWindow();
+            const QPointF at = toast->mapToScene(QPointF(12, toast->height() / 2)) * shot.devicePixelRatio();
+            const QRgb pixel = shot.pixel(at.toPoint());
+            r.check(qGray(pixel) < 90, "the message is drawn over Home", QString::number(qGray(pixel)));
+        }
+        r.screenshot(QStringLiteral("files_06_phone_home_message"));
+    });
+    steps.push_back([&r, &app, s] {
+        s->messages.clear();
+        app.setNextFileChoice(QUrl::fromLocalFile(s->mixed));
+        r.check(r.clickItem(QStringLiteral("homeImport")), "Import STEP… on Home with a solid and a surface");
+        r.check(!app.homeVisible() && app.bodyCount() == 1, "the solid becomes a new project's body",
+                QString::number(app.bodyCount()));
+        r.check(app.bodyCount() == 1 && r.body(0).name() == "<b>Block</b>", "named as in the file",
+                app.bodyCount() == 1 ? QString::fromStdString(r.body(0).name()) : QString());
+        r.check(!s->messages.isEmpty() && s->messages.last().contains(QStringLiteral("Skipped 1 open surface")),
+                "the message says what was skipped", s->messages.isEmpty() ? QString() : s->messages.last());
+        QObject::disconnect(s->listening);
+    });
+    wait(steps, 3);
+    steps.push_back([&r, s] {
+        QQuickItem* toast = r.findItem(QStringLiteral("toast"));
+        QQuickItem* text = r.findItem(QStringLiteral("toastText"));
+        const QString shown = text ? text->property("text").toString() : QString();
+        r.check(toast && text && toast->isVisible() && !s->messages.isEmpty() && shown == s->messages.last(),
+                "the long message is shown", shown);
+        if (toast && text) {
+            const QPointF left = toast->mapToScene(QPointF(0, 0));
+            r.check(left.x() >= 0 && left.x() + toast->width() <= r.window()->width(), "it fits the phone's width",
+                    QStringLiteral("x %1, width %2").arg(left.x()).arg(toast->width()));
+            r.check(text->property("lineCount").toInt() >= 2 && text->height() + 16 <= toast->height(),
+                    "wrapped onto more lines inside the message", QString::number(text->property("lineCount").toInt()));
+        }
+        // Names from the file are shown as they are, never as HTML (Text's
+        // automatic format would render the markup, and could load images).
+        int showing = 0;
+        bool plain = true;
+        QList<QQuickItem*> texts;
+        collectTexts(r.window()->contentItem(), texts);
+        for (QQuickItem* item : texts)
+            if (item->property("text").toString().contains(QStringLiteral("<b>Block</b>"))) {
+                ++showing;
+                plain = plain && item->property("textFormat").toInt() == 0; // Text.PlainText
+            }
+        r.check(showing >= 2 && plain, "the markup in the name is shown as text (Model panel, message)",
+                QString::number(showing) + QStringLiteral(" items"));
+        r.screenshot(QStringLiteral("files_07_phone_long_message"));
+        // Back to the usual window for the scenarios after this one.
+        r.window()->resize(s->windowSize);
+        r.window()->setMinimumSize(s->minimumSize);
+    });
+    wait(steps, 3);
+    steps.push_back([&r, s] {
+        r.check(r.window()->size() == s->windowSize, "the window has its size back");
     });
     return steps;
 }

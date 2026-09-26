@@ -358,3 +358,81 @@ TEST(ImportedBody, UndoRedoDuplicateAndSave)
         EXPECT_NEAR(geom::volume(body->shape()), kPlateVolume, 1e-6 * kPlateVolume) << body->name();
     std::filesystem::remove(path);
 }
+
+TEST(ImportedBody, ImportedGeometryIsReadOnceAndWithinItsBudget)
+{
+    doc::Document d;
+    cmd::UndoStack stack;
+    const geom::Shape plate = importedPlate();
+    auto moved = geom::translated(plate, {100, 0, 0});
+    ASSERT_TRUE(moved.ok());
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    steps.push_back(importCommand("Plate", plate));
+    steps.push_back(importCommand("Plate 2", moved.value()));
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::CompositeCommand>("Import 2 bodies", std::move(steps)), d).ok());
+    const auto path = temp("two.openshape");
+    ASSERT_TRUE(io::saveProject(d, path).ok());
+    const Entries good = readZip(path);
+    std::uint64_t total = 0;
+    std::vector<std::string> names;
+    for (const auto& [name, data] : good)
+        if (name.rfind("imports/", 0) == 0) {
+            total += data.size();
+            names.push_back(name);
+        }
+    ASSERT_EQ(names.size(), 2u);
+
+    // The loader reads no more imported geometry than its budget.
+    io::LoadOptions budget;
+    budget.maxImportedGeometryBytes = total;
+    auto loaded = io::loadProject(path, budget);
+    ASSERT_TRUE(loaded.ok()) << loaded.developerMessage();
+    EXPECT_EQ(loaded.value()->bodies().size(), 2u);
+    budget.maxImportedGeometryBytes = total - 1;
+    auto over = io::loadProject(path, budget);
+    ASSERT_FALSE(over.ok());
+    EXPECT_EQ(over.error(), ErrorCode::FileFormatError);
+    EXPECT_EQ(over.userMessage(), "This project file is damaged or not an OpenShape project.");
+
+    // Saving refuses what the loader would not read (the file is not touched).
+    const auto other = temp("too_large.openshape");
+    io::SaveOptions small;
+    small.maxImportedGeometryBytes = total - 1;
+    const Status refused = io::saveProject(d, other, small);
+    ASSERT_FALSE(refused.ok());
+    EXPECT_EQ(refused.error(), ErrorCode::FileWriteError);
+    EXPECT_NE(refused.userMessage().find("too large to keep in one project"), std::string::npos) << refused.userMessage();
+    EXPECT_FALSE(std::filesystem::exists(other));
+    small.maxImportedGeometryBytes = total;
+    EXPECT_TRUE(io::saveProject(d, other, small).ok());
+
+    // A crafted file whose steps all name one entry (each would read it and
+    // keep a copy: many steps and a large entry exhaust memory) is refused.
+    Entries crafted;
+    for (const auto& [name, data] : good) {
+        if (name == names[1])
+            continue;
+        if (name != "document.json") {
+            crafted.emplace_back(name, data);
+            continue;
+        }
+        auto json = nlohmann::json::parse(data);
+        const nlohmann::json first = json["bodies"][0]["features"][0]["params"];
+        for (int copy = 0; copy < 50; ++copy) {
+            nlohmann::json body = json["bodies"][0];
+            body["id"] = Uuid::generate().toString();
+            body["features"][0]["id"] = Uuid::generate().toString();
+            json["bodies"].push_back(body);
+        }
+        json["bodies"][1]["features"][0]["params"] = first;
+        crafted.emplace_back(name, json.dump());
+    }
+    const auto sharing = temp("sharing.openshape");
+    writeZip(sharing, crafted);
+    auto shared = io::loadProject(sharing);
+    ASSERT_FALSE(shared.ok());
+    EXPECT_EQ(shared.userMessage(), "This project file is damaged or not an OpenShape project.");
+    EXPECT_NE(shared.developerMessage().find("more than one step"), std::string::npos) << shared.developerMessage();
+    for (const auto& p : {path, other, sharing})
+        std::filesystem::remove(p);
+}

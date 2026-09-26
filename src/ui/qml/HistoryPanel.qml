@@ -108,8 +108,11 @@ Panel {
                             radius: 3.5
                             color: row.failed ? Theme.error : row.warned ? "#E0A030" : row.inactive ? "#B8BEC6" : "#4CAF6A"
                         }
+                        // Names and messages come from files (STEP product
+                        // names, projects): shown as plain text, never as HTML.
                         Text {
                             text: row.modelData.name
+                            textFormat: Text.PlainText
                             font.pixelSize: 13
                             font.weight: row.isFeature ? Font.Normal : Font.DemiBold
                             font.strikeout: row.modelData.status === "suppressed"
@@ -118,6 +121,7 @@ Panel {
                         Text {
                             Layout.fillWidth: true
                             text: row.modelData.detail
+                            textFormat: Text.PlainText
                             elide: Text.ElideRight
                             font.pixelSize: 12
                             color: Theme.mutedText
@@ -136,6 +140,7 @@ Panel {
                         Layout.fillWidth: true
                         text: row.modelData.status === "blocked" && row.modelData.message.length === 0
                               ? "Not computed" : row.modelData.message
+                        textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         font.pixelSize: 11
                         color: row.failed ? Theme.error : row.warned ? "#9A6A00" : Theme.mutedText

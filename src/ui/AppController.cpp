@@ -10,7 +10,7 @@
 #include "io/ProjectFile.h"
 #include "io/RecentFiles.h"
 #include "ui/RecoverySession.h"
-#include "ui/ThumbnailProvider.h"
+#include "ui/ThumbnailSource.h"
 
 #include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
@@ -1068,7 +1068,7 @@ void AppController::updateRecentFiles()
         map.insert(QStringLiteral("name"), info.completeBaseName());
         map.insert(QStringLiteral("folder"), QDir::toNativeSeparators(info.absolutePath()));
         map.insert(QStringLiteral("modified"), QLocale().toString(modified, QLocale::ShortFormat));
-        map.insert(QStringLiteral("thumbnail"), ThumbnailProvider::sourceFor(info.absoluteFilePath(), modified.toMSecsSinceEpoch()));
+        map.insert(QStringLiteral("thumbnail"), thumbnailSource(info.absoluteFilePath(), modified.toMSecsSinceEpoch()));
         map.insert(QStringLiteral("removable"),
                    std::any_of(recent.begin(), recent.end(), [&](const std::string& r) { return io::sameRecentPath(r, file); }));
         home.append(map);

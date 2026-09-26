@@ -164,3 +164,30 @@ TEST(ImportInteraction, PushPullFilletCombineAndExportAgain)
         ASSERT_TRUE(h.controller.undo());
     EXPECT_TRUE(h.document.bodies().empty());
 }
+
+TEST(ImportInteraction, PartsTooLargeForAProjectAreRefused)
+{
+    Harness h;
+    const auto blocks = importedBlocks();
+    ASSERT_EQ(blocks.size(), 3u);
+    // What one block's geometry takes in a project.
+    doc::ImportedFeature probe;
+    probe.setShape(blocks[0].shape);
+    const std::uint64_t one = probe.brepText().size();
+    ASSERT_GT(one, 100u);
+
+    EXPECT_FALSE(h.controller.importBodies({blocks[0]}, "blocks.step", one - 1).ok());
+    EXPECT_TRUE(h.document.bodies().empty()) << "nothing imported";
+    EXPECT_FALSE(h.stack.canUndo());
+    ASSERT_FALSE(h.messages.empty());
+    EXPECT_NE(h.messages.back().find("too large to keep in a project"), std::string::npos) << h.messages.back();
+
+    // Within the budget it comes in; the next import counts what is there already.
+    ASSERT_TRUE(h.controller.importBodies({blocks[0]}, "blocks.step", one + one / 2).ok());
+    EXPECT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_FALSE(h.controller.importBodies({blocks[0]}, "blocks.step", one + one / 2).ok());
+    EXPECT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_EQ(h.stack.undoLabel(), "Import Block");
+    ASSERT_TRUE(h.controller.importBodies({blocks[0]}, "blocks.step", 2 * one).ok());
+    EXPECT_EQ(h.document.bodies().size(), 2u);
+}

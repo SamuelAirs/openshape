@@ -514,7 +514,13 @@ full save takes 134 ms; `io::readProjectThumbnail` opens the ZIP directory
 and reads only that entry, for the start screen). `documentFromJson` takes an `EntryReader` for the imports;
 the loader checks each against the hash, validity and volume its step
 recorded before any modeling sees it (the BRep text is read with stream
-exceptions on: OCCT's reader looped forever on a cut-off text). Versioned with a
+exceptions on: OCCT's reader looped forever on a cut-off text). Imported
+geometry has a budget shared by importer, writer and loader
+(`doc::kMaxImportedBodyBytes` per step, `doc::kMaxImportedGeometryBytes`
+per project): `importBodies` refuses parts beyond it, `buildProjectArchive`
+refuses to write more, and `loadProject` reads each `imports/` entry at
+most once (an entry named by two steps is refused) and no more than the
+budget in all. Versioned with a
 migration table; newer versions are refused with a clear message. Readers
 treat files as untrusted: size limits, entry-name validation (no traversal),
 strict JSON schema checks, duplicate-UUID rejection; nothing is extracted to
@@ -590,11 +596,25 @@ recent files with name, folder, date and a preview source, and on iPadOS
 also the projects in the app's Documents folder (`io::homeProjects`).
 Previews come from `ui/ThumbnailProvider` (`image://thumbnail/<mtime>/<path>`,
 loaded off the GUI thread with `io::readProjectThumbnail`; the time stamp
-makes a re-saved project show its new preview). Cards are the tap
+makes a re-saved project show its new preview). The path in the source is
+base64url of its UTF-8 (`ui/ThumbnailSource`, Qt Core only, tested in
+`test_uistate`): Qt hands a provider its id partly percent-decoded, which
+broke percent-encoded paths outside ASCII. Cards are the tap
 targets; ⋯, a long press or a right click open "Remove from list"
 (`removeRecentFile`, `io::withoutRecentFile`). The grid takes as many
 columns as fit (two on a phone in portrait) and gets denser in short
-windows (a phone in landscape).
+windows (a phone in landscape). While Home is shown the keys for the model
+(Undo, Redo, Ctrl+D, B, K, F, Delete) do nothing, and closing an overlay
+over it (Help, About, Preferences, the unsaved question) gives the keys
+back to Home (`focusViewUnlessPanel`).
+
+**Messages** (`AppController::message`, the toast in `Main.qml`) are drawn
+above everything, Home and the dialogs included (z 130; they take no
+input), and wrap to the window's width (a phone). Every `Text` that shows
+a string from a file (body, step and sketch names, sources, messages,
+project names and folders, recent files) sets `textFormat: Text.PlainText`:
+Qt's automatic format would render markup in a STEP product name as HTML
+(and could load remote images).
 
 **Dialogs are overlays** in the window, not native message boxes (touch-sized,
 clickable by the acceptance run): `UnsavedOverlay` (Save / Don't Save /
@@ -629,7 +649,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I
   and Home, the saved thumbnail, Home's cards, menu, long press and
-  buttons). `clickItem` lays out freshly created
+  buttons; then in a 402 x 874 window: Help over Home, a damaged file's
+  message above Home, a long message wrapped, markup in a STEP name shown
+  as text). `clickItem` lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag

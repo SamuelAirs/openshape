@@ -278,6 +278,19 @@ std::string describe(const Skipped& skipped)
     return text;
 }
 
+// How many solids solidsOf could make of a part (solids, and shells that are
+// closed), counted without checking or repairing any: cheap, so a file with
+// too many is refused before the slow part.
+std::size_t candidateSolids(const TopoDS_Shape& shape)
+{
+    std::size_t count = 0;
+    for (TopExp_Explorer ex(shape, TopAbs_SOLID); ex.More(); ex.Next())
+        ++count;
+    for (TopExp_Explorer ex(shape, TopAbs_SHELL, TopAbs_SOLID); ex.More(); ex.Next())
+        count += BRep_Tool::IsClosed(TopoDS::Shell(ex.Current())) ? 1 : 0;
+    return count;
+}
+
 // The closed solids of one part; what cannot become a solid is counted.
 std::vector<TopoDS_Shape> solidsOf(const TopoDS_Shape& shape, Skipped& skipped)
 {
@@ -373,7 +386,7 @@ Status exportStep(const std::vector<NamedShape>& shapes, const std::filesystem::
     return okStatus();
 }
 
-Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path)
+Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path, const StepReadOptions& options)
 {
     using R = Result<std::vector<NamedShape>>;
     std::error_code ec;
@@ -412,6 +425,18 @@ Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path)
         for (TDF_LabelSequence::Iterator it(roots); it.More(); it.Next())
             collectParts(it.Value(), TopLoc_Location(), std::string(), parts, 0);
 
+        // Too many solids: refused before any is checked or repaired (that
+        // takes a while for each, on the GUI thread).
+        std::size_t candidates = 0;
+        for (const Part& part : parts) {
+            candidates += candidateSolids(part.shape);
+            if (candidates > options.maxSolids)
+                return R::failure(ErrorCode::Unsupported,
+                                  "This STEP file has more than " + std::to_string(options.maxSolids)
+                                      + " solids, too many to import as bodies.",
+                                  "importStep: too many solids in " + pathString(path));
+        }
+
         std::vector<NamedShape> out;
         Skipped skipped;
         for (const Part& part : parts) {
@@ -423,11 +448,6 @@ Result<std::vector<NamedShape>> importStep(const std::filesystem::path& path)
                     name = solids.size() == 1 ? part.name : part.name + " " + std::to_string(k + 1);
                 out.push_back({std::move(name), makeShape(solids[k])});
             }
-            if (out.size() > kMaxImportSolids)
-                return R::failure(ErrorCode::Unsupported,
-                                  "This STEP file has more than " + std::to_string(kMaxImportSolids)
-                                      + " solids, too many to import as bodies.",
-                                  "importStep: too many solids in " + pathString(path));
         }
         const std::string what = describe(skipped);
         OS_LOG(Info, File) << "imported STEP " << pathString(path) << ": " << out.size() << " solids from " << parts.size()

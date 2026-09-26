@@ -4,11 +4,12 @@
 
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
-# What the app remembers (settings, recent files, window place) and recovery
-# sessions: Qt Core only, so tests/test_uistate needs no GUI.
+# What the app remembers (settings, recent files, window place), recovery
+# sessions and Home's preview sources: Qt Core only, so tests/test_uistate needs no GUI.
 add_library(openshape_uistate STATIC
     AppSettings.cpp AppSettings.h
     RecoverySession.cpp RecoverySession.h
+    ThumbnailSource.cpp ThumbnailSource.h
 )
 target_link_libraries(openshape_uistate PUBLIC openshape_io Qt6::Core)
 target_include_directories(openshape_uistate PUBLIC ${PROJECT_SOURCE_DIR}/src)

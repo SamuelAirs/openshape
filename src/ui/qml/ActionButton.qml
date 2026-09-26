@@ -23,6 +23,7 @@ AbstractButton {
     contentItem: Text {
         id: label
         text: control.text
+        textFormat: Text.PlainText // labels may hold names from files ("Back to <project>")
         font.pixelSize: control.fontSize
         font.weight: control.accent || control.checked ? Font.DemiBold : Font.Normal
         color: control.accent ? "white" : control.checked ? Theme.accent : Theme.text

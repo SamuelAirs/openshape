@@ -96,6 +96,7 @@ Item {
             spacing: 2
             Text {
                 text: overlay.app.sketchName
+                textFormat: Text.PlainText // a name from the project
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
                 color: Theme.text

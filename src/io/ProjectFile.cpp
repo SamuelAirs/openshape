@@ -18,6 +18,7 @@
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 namespace os::io {
@@ -95,15 +96,17 @@ Status addEntry(zip_t* archive, const std::string& name, const std::string& data
     return okStatus();
 }
 
-Result<std::string> readEntry(zip_t* archive, zip_int64_t index)
+// At most `maxBytes` (checked before anything is allocated).
+Result<std::string> readEntry(zip_t* archive, zip_int64_t index, std::uint64_t maxBytes = kMaxEntryBytes)
 {
     using R = Result<std::string>;
     zip_stat_t st;
     zip_stat_init(&st);
     if (zip_stat_index(archive, static_cast<zip_uint64_t>(index), 0, &st) != 0 || !(st.valid & ZIP_STAT_SIZE))
         return R::failureFrom(formatError("zip_stat_index failed"));
-    if (st.size > kMaxEntryBytes)
-        return R::failureFrom(formatError("entry too large: " + std::to_string(st.size)));
+    if (st.size > std::min(maxBytes, kMaxEntryBytes))
+        return R::failureFrom(formatError("entry too large: " + std::to_string(st.size) + " bytes, at most "
+                                          + std::to_string(std::min(maxBytes, kMaxEntryBytes))));
     zip_file_t* file = zip_fopen_index(archive, static_cast<zip_uint64_t>(index), 0);
     if (!file)
         return R::failureFrom(formatError("zip_fopen_index failed"));
@@ -324,12 +327,39 @@ ProjectData serializeProject(const doc::Document& document, const SaveOptions& o
                 data.geometry.emplace_back(body->id().toString(), geom::toBrepString(body->shape()));
     }
     data.thumbnailPng = options.thumbnailPng;
+    data.maxImportedGeometryBytes = options.maxImportedGeometryBytes;
     return data;
 }
+
+namespace {
+
+// The loader reads no more imported geometry than this (LoadOptions): a
+// project holding more could never be opened again, so it is not written.
+Status checkImportedGeometrySize(const ProjectData& data)
+{
+    std::uint64_t total = 0;
+    for (const auto& [entry, brep] : data.imports) {
+        total += brep.size();
+        if (brep.size() > doc::kMaxImportedBodyBytes || total > data.maxImportedGeometryBytes) {
+            const auto mb = [](std::uint64_t bytes) { return std::to_string((bytes + (1u << 20) - 1) >> 20); };
+            return Status::failure(ErrorCode::FileWriteError,
+                                   "The imported bodies are too large to keep in one project (at most "
+                                       + mb(data.maxImportedGeometryBytes) + " MB, " + mb(doc::kMaxImportedBodyBytes)
+                                       + " MB each). Delete some of them and save again.",
+                                   "imported geometry too large: " + entry + " has " + std::to_string(brep.size())
+                                       + " bytes, " + std::to_string(total) + " so far");
+        }
+    }
+    return okStatus();
+}
+
+} // namespace
 
 Result<std::string> buildProjectArchive(const ProjectData& data)
 {
     using R = Result<std::string>;
+    if (Status s = checkImportedGeometrySize(data); !s)
+        return R::failureFrom(s);
     int errorCode = 0;
     zip_source_t* memory = zip_source_buffer_create(nullptr, 0, 0, nullptr);
     if (!memory)
@@ -435,7 +465,7 @@ Status saveProject(const doc::Document& document, const std::filesystem::path& p
     return okStatus();
 }
 
-Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path)
+Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& path, const LoadOptions& options)
 {
     using R = Result<std::unique_ptr<doc::Document>>;
     ScopedTimer timer("loadProject");
@@ -494,12 +524,23 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
     if (root.is_discarded())
         return R::failureFrom(formatError("document.json is not valid JSON"));
 
-    // Imported geometry is read only when a step names it.
+    // Imported geometry is read only when a step names it, each entry once
+    // (saving gives every step its own: two naming one is a crafted file,
+    // which would otherwise make us read and keep it again and again), and
+    // no more than the budget for imported geometry in all.
+    std::set<std::string> importsRead;
+    std::uint64_t importBytes = 0;
     const EntryReader readImport = [&](const std::string& name) -> Result<std::string> {
         const auto it = importEntries.find(name);
         if (it == importEntries.end())
             return Result<std::string>::failure(ErrorCode::FileFormatError, "Missing geometry.", "no entry " + name);
-        return readEntry(archive.archive, it->second);
+        if (!importsRead.insert(name).second)
+            return Result<std::string>::failureFrom(formatError(name + " is named by more than one step"));
+        const std::uint64_t left = options.maxImportedGeometryBytes - std::min(importBytes, options.maxImportedGeometryBytes);
+        auto brep = readEntry(archive.archive, it->second, std::min(doc::kMaxImportedBodyBytes, left));
+        if (brep)
+            importBytes += brep.value().size();
+        return brep;
     };
     auto document = documentFromJson(root, readImport);
     if (!document)

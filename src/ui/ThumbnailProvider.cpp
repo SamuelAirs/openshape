@@ -5,8 +5,8 @@
 #include "ui/ThumbnailProvider.h"
 
 #include "io/ProjectFile.h"
+#include "ui/ThumbnailSource.h"
 
-#include <QtCore/QUrl>
 #include <QtGui/QImage>
 
 namespace os::ui {
@@ -16,20 +16,13 @@ ThumbnailProvider::ThumbnailProvider()
 {
 }
 
-QString ThumbnailProvider::sourceFor(const QString& path, qint64 stamp)
-{
-    return QStringLiteral("image://thumbnail/%1/%2")
-        .arg(stamp)
-        .arg(QString::fromLatin1(QUrl::toPercentEncoding(path)));
-}
-
 QImage ThumbnailProvider::requestImage(const QString& id, QSize* size, const QSize& requestedSize)
 {
-    const qsizetype slash = id.indexOf(QLatin1Char('/'));
-    const QString path = QUrl::fromPercentEncoding(id.mid(slash + 1).toLatin1());
+    const QString path = thumbnailPathFromId(id);
     QImage image;
-    if (auto png = io::readProjectThumbnail(std::filesystem::path(path.toStdWString())))
-        image = QImage::fromData(png.value().data(), int(png.value().size()), "PNG");
+    if (!path.isEmpty())
+        if (auto png = io::readProjectThumbnail(std::filesystem::path(path.toStdWString())))
+            image = QImage::fromData(png.value().data(), int(png.value().size()), "PNG");
     if (!image.isNull() && requestedSize.isValid())
         image = image.scaled(requestedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     if (size)
