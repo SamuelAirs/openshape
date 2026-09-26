@@ -29,6 +29,7 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QSysInfo>
 #include <QtCore/QUrl>
+#include <QtGui/QGuiApplication>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
@@ -150,12 +151,14 @@ Steps recoverySteps(AcceptanceRunner& r)
         r.check(app.saveProjectAs(QUrl::fromLocalFile(saved)), "Save As");
         r.check(app.recoveryCopyFile().isEmpty(), "saving removes the recovery copy");
         r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+        r.check(app.recoveryCopyFile().isEmpty(), "an edit after saving: not copied at once");
+        // Switching to another app (or the iPad home screen) copies right away.
+        if (auto* gui = qobject_cast<QGuiApplication*>(QCoreApplication::instance()))
+            emit gui->applicationStateChanged(Qt::ApplicationInactive);
+        const auto copy = loadCopy(app.recoveryCopyFile());
+        r.check(copy && copy->bodies().size() == 2, "leaving the app copies the unsaved work immediately");
     });
-    wait(steps, kDebounceSteps);
-    steps.push_back([&r, &app] {
-        r.check(!app.recoveryCopyFile().isEmpty(), "an edit after saving: copied again");
-        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu");
-    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu"); });
     steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("newMenuItem")), "File → New with unsaved changes"); });
     wait(steps, 2);
     steps.push_back([&r, &app] {

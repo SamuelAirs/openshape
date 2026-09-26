@@ -18,6 +18,7 @@
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
 #include <QtCore/QVariantMap>
+#include <QtGui/QGuiApplication>
 
 #include <algorithm>
 #include <cmath>
@@ -62,6 +63,13 @@ AppController::AppController(QObject* parent)
     connect(&recoveryDeadline_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
     // Every path that changes the document ends in stateChanged.
     connect(this, &AppController::stateChanged, this, &AppController::noteEdits);
+    // Leaving the app (another window, the iPad home screen, which may end the
+    // app without warning): copy unsaved work now rather than in a few seconds.
+    if (auto* gui = qobject_cast<QGuiApplication*>(QCoreApplication::instance()))
+        connect(gui, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+            if (state != Qt::ApplicationActive)
+                writeRecoveryCopy(); // no-op when the copy is current or copies are off
+        });
 
     attach();
     interaction_->fitAll(false);

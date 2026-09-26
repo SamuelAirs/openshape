@@ -418,8 +418,10 @@ caller-supplied "is this session alive?" check, adopts and removes them.
 holds `<session>.lock`; a lock whose process is gone is stale, and taking it
 also stops a second instance from offering the same copy. `AppController`
 watches `UndoStack::revision()` (bumped by push/undo/redo/clear) on every
-`stateChanged`: while `dirty()`, a copy is written 3 s after the last edit
-and at least every `recoveryInterval` (Preferences; 0 = off). Save, New,
+`stateChanged`: while `dirty()`, a copy is written 3 s after the last edit,
+at least every `recoveryInterval` (Preferences; 0 = off), and at once when
+the app stops being the active one (`applicationStateChanged`: another
+window, or the iPad home screen, after which iPadOS may end the app). Save, New,
 Open, undo back to the saved state and a clean exit (the session's
 destructor) remove it. At startup (not in automated runs)
 `checkForRecovery()` fills `recoveryItems`, which `RecoveryOverlay.qml`
