@@ -89,7 +89,8 @@ Rectangle {
                         ["PlaneGCS (from FreeCAD)", "LGPL-2.1", "sketch constraints"],
                         ["Eigen", "MPL-2.0", "linear algebra"],
                         ["libzip", "BSD-3-Clause", "project files"],
-                        ["nlohmann/json", "MIT", "project files"]
+                        ["nlohmann/json", "MIT", "project files"],
+                        ["Noto Sans (font)", "SIL Open Font License 1.1", "letters for raised and cut-in text"]
                     ]
                     delegate: RowLayout {
                         required property var modelData
@@ -125,7 +126,7 @@ Rectangle {
                     text: "These libraries and the ones they use (such as FreeType, HarfBuzz, ICU and zlib) keep their own licenses. "
                         + (Qt.platform.os === "windows"
                            ? "The full license texts and where to get each library's source code come with OpenShape "
-                             + "(LICENSE.txt, THIRD_PARTY_LICENSES.txt and PlaneGCS-COPYING.LIB.txt next to OpenShape.exe)."
+                             + "(LICENSE.txt, THIRD_PARTY_LICENSES.txt, PlaneGCS-COPYING.LIB.txt and NotoSans-OFL.txt next to OpenShape.exe)."
                            : "Each library's license and source are listed in "
                              + "<a href=\"https://github.com/SamuelAirs/openshape/blob/main/THIRD_PARTY.md\">THIRD_PARTY.md</a> "
                              + "in the source code repository.")

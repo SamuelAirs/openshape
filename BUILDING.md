@@ -92,7 +92,8 @@ Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
 selected), `history` (a fillet step highlighted from the Model panel),
 `rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews),
 `holes` (the Hole tool with two countersunk holes, the second one's Y being
-typed),
+typed), `text` (the Text tool: "Hello" raised 1 mm on a 20 x 20 x 5 plate,
+4 mm capitals, being previewed; needs the built-in font, see below),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
@@ -123,6 +124,17 @@ a name only and writes `<dir>/<name>.openshape`, exports go to
 demo scene shows that prompt.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
+
+**The Text tool's font.** Noto Sans (`resources/fonts/`, see its README) is
+built into the executable when the files are there at CMake's configure
+time (re-run the configure step after adding them; without them CMake
+warns and the tool says text is not available). For development only,
+`OPENSHAPE_TEXT_FONT=<file.ttf>` makes a build without them use another
+font in its place (verified: `OPENSHAPE_TEXT_FONT=C:/Windows/Fonts/arial.ttf
+OpenShape.exe --acceptance out-dir --scenario text` passes 39/39). The
+text tests (`test_text*.cpp`) use the file named by `OPENSHAPE_TEST_FONT`
+if set, else the bundled font from the source tree, else a system font
+(Arial, DejaVu Sans; `tests/TestFonts.h`), and skip only when there is none.
 
 Where the app keeps things (Windows):
 

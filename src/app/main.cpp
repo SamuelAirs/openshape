@@ -378,6 +378,28 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
         interaction.setValueText("15");
         return;
     }
+    if (demo == QLatin1String("text")) {
+        // The Text tool on a 20 x 20 x 5 plate's top: "Hello" raised 1 mm,
+        // 4 mm capitals, being previewed (needs the built-in font).
+        app.createBox(20);
+        interaction.fitAll(false);
+        os::interact::PointerEvent top;
+        top.position = interaction.camera().project({3, -3, 20});
+        interaction.pointerPress(top);
+        interaction.pointerRelease(top);
+        interaction.setValueText("5");
+        (void)interaction.commitOperation();
+        interaction.fitAll(false);
+        top.position = interaction.camera().project({3, -3, 5});
+        interaction.pointerPress(top);
+        interaction.pointerRelease(top);
+        (void)interaction.triggerAction("text");
+        (void)interaction.setOperationText("Hello");
+        (void)interaction.triggerAction("field:size");
+        interaction.setValueText("4");
+        (void)interaction.triggerAction("field:depth");
+        return;
+    }
     if (demo == QLatin1String("rotate")) {
         // A body in Rotate mode with a 30 degree preview about Z.
         app.createBox(20);
@@ -550,7 +572,7 @@ int main(int argc, char* argv[])
     QCommandLineOption demoOption(QStringLiteral("demo"),
                                   QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
                                                  "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
-                                                 "polygon, constraints, holes, home, enclosure; panels: help, about, preferences, modelpanel, viewmenu, "
+                                                 "polygon, constraints, holes, text, home, enclosure; panels: help, about, preferences, modelpanel, viewmenu, "
                                                  "savename)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),

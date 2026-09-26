@@ -11,8 +11,9 @@
 # its origin (by content):
 #   - OpenShape.exe and libplanegcs.dll: OpenShape's build (MPL-2.0; PlaneGCS LGPL-2.1+)
 #   - OpenShape's texts next to them: copies of LICENSE, README.md,
-#     THIRD_PARTY.md and third_party/planegcs/COPYING.LIB (compared with the
-#     repository), and the generated THIRD_PARTY_LICENSES.txt and qt.conf
+#     THIRD_PARTY.md, third_party/planegcs/COPYING.LIB and the bundled
+#     font's resources/fonts/OFL.txt (compared with the repository), and the
+#     generated THIRD_PARTY_LICENSES.txt and qt.conf
 #   - OCCT's toolkits from <own-occt-prefix>/bin (scripts/windows/build-occt.sh)
 #   - a file of an MSYS2 package (ucrt64/bin, Qt's plugin and QML folders),
 #     whose license field (pacman) is then checked:
@@ -78,6 +79,7 @@ declare -A own_copies=( # package file -> the repository file it is a copy of
     [README.md]=README.md
     [THIRD_PARTY.md]=THIRD_PARTY.md
     [PlaneGCS-COPYING.LIB.txt]=third_party/planegcs/COPYING.LIB
+    [NotoSans-OFL.txt]=resources/fonts/OFL.txt # the font built into OpenShape.exe (SIL OFL 1.1)
 )
 declare -A origin    # package-relative path -> source file (MSYS2) or a label
 msys_sources=()

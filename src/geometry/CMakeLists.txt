@@ -12,6 +12,7 @@ add_library(openshape_geometry STATIC
     Profiles.cpp Profiles.h
     Shape.cpp Shape.h
     Tessellation.cpp Tessellation.h
+    Text.cpp Text.h
     TopoSignature.cpp TopoSignature.h
     internal/KernelUtil.h
     internal/ShapeData.h
@@ -23,6 +24,7 @@ target_link_libraries(openshape_geometry
         TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKFillet TKOffset TKFeat TKMesh
         TKDE TKXSBase TKDESTEP TKDESTL
         TKCDF TKLCAF TKCAF TKXCAF # STEP product names (XCAF document)
+        TKService TKV3d # text: Font_FTFont (FreeType) and StdPrs_BRepFont (glyphs as faces)
 )
 target_include_directories(openshape_geometry SYSTEM PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 # OCCT headers use M_PI, which strict ISO mode hides on MinGW/MSVC.

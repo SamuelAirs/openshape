@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert, Head, Hole)
+        │         │   Pattern, Insert, Head, Hole, Text)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
@@ -40,7 +40,7 @@ Technology choices and the alternatives considered are in
         ▼
  document/  Document → Sketches + Bodies → Feature history (Box, PushPull,
         │            Fillet, Chamfer, Shell, Extrude, Revolve, Hole, Move,
-        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace);
+        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace, Text, …);
         │            SketchProfiles bridge
         ├──────────────────────────────┐
         ▼                              ▼
@@ -225,6 +225,28 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   hole's depth from its opening; 0 inside material). The side is read from
   the normal of the first face hit: `BRepClass3d_SolidClassifier` crashed
   inside Extrema on a plain holed plate.
+- `Text.h` (emboss / deboss): fonts are **registered by id from bytes**
+  (`registerFont`; the UI layer passes the Noto Sans built into the
+  executable, tests a file from the source tree or the system); the
+  geometry layer never looks for system fonts, and FreeType's fallback to
+  other fonts is off, so a step makes the same letters everywhere.
+  `StdPrs_BRepFont` (TKV3d; `Font_BRepFont` is an alias) only initializes
+  from a file path, so a small subclass feeds its `Font_FTFont` (TKService,
+  FreeType) from memory with the same scale (72 pt at 4800 dpi: one em is
+  the requested size). Glyphs are laid out with the font's advances and
+  kerning (no shaping: one line, left to right). `size` is the **capital
+  height**: the em size is `size` / (an "H"'s height per em, measured once
+  per font). Each glyph instance is copied (repeated letters share a cached
+  shape) and its wires re-oriented by `ShapeFix_Face::FixOrientation`
+  (FreeType outlines run clockwise); counters (O, A, B) are holes in the
+  faces. `embossText` extrudes the faces 0.05 mm from inside the material
+  (raised) or from above the surface (cut), so no tool face coincides with
+  the face, fuses or cuts them in one boolean, and checks the volume
+  changed the right way by no more than the letters' area x |depth|
+  (tests: exactly area x depth, 1e-5 relative). `checkText` refuses, in
+  plain words, empty text, line breaks, control characters, invalid UTF-8,
+  more than 200 characters, a character the font lacks, a size outside
+  0.5-1000 mm and a font that is not registered.
 
 ## Document model (`document/`)
 
@@ -261,7 +283,13 @@ Document (UUID, display unit)
   not depend on the preference, and the preset's name says it, e.g. "M3
   close fit +0.2 mm"), Holes (the Hole tool: holes at points on a flat face,
   stored in the face's frame like a sketch on it, so they follow the face;
-  diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
+  diameter, depth or through all, optional counterbore / countersink),
+  Text (one line of text raised from or cut into a flat face, centered at
+  a point in the face's frame like the Hole tool's, so it follows the face;
+  words, capital height, signed depth, angle and a font id; the words are
+  a *string parameter* — `Feature::textParameters()` /
+  `setTextParameter`, `cmd::SetTextParameterCommand` — which the Model
+  panel edits like the numbers), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
   OffsetFace, Split and SplitPiece (below), Copy (a base feature: another
@@ -464,7 +492,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
   the preview is known); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
-  Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
+  Sketch, Hole, Text, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
   Chamfer; a hole rim also offers the heat-set insert, Counterbore and
@@ -508,6 +536,24 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `HoleSettings::allowance`). Everything placed is one Holes step; Esc leaves the tool; the
   settings are remembered for the next face (`HoleSettings`). The chip's
   actions wrap at 460 px (a hidden row measures their natural width).
+- **Text tool:** "Text" on a single flat face (or the palette) arms
+  `TextOperation` when a font is registered (otherwise it says text is not
+  available). The text starts at the face's center; clicks on that face
+  (faces only) move it, snapping like the Hole tool (`snap()`: the center,
+  the straight edges' middles, else lined up with them). One arrow at the
+  text's center along the face normal sets the signed depth (out = emboss,
+  in = deboss; Emboss / Deboss flip the sign). The chip edits one field at
+  a time (`field:depth|size|angle`, Tab = `nextField`; grabbing the arrow
+  returns to the depth), `angle:0/90/180/270` set the angle, Bold switches
+  to Noto Sans Bold when it is built in. The words are typed in a text
+  field in the chip (`InteractionController::setOperationText`, previewed
+  at once): it takes the keys when the tool opens (on a tablet the keyboard
+  comes up); while the tool is open, letters and Backspace/Delete typed in
+  the view go to it (B / K / F and Delete face are off), numbers to the
+  value field. The chip sits beside the letters, not over them
+  (`textCorners()`). Enter with nothing typed says "Type the text first."
+  One Text step; the settings (words, size, depth, angle, bold) are
+  remembered for the next face (`TextSettings`).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -598,7 +644,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the UI shows them in the value chip while a manipulator is active and in the
   selection action bar otherwise (`barAction_<id>` object names, used by the
   acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
-  pushpull, fillet, chamfer, shell, offset, hole, move, rotate, mirror, pattern,
+  pushpull, fillet, chamfer, shell, offset, hole, text, move, rotate, mirror, pattern,
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 
@@ -648,7 +694,9 @@ All draws share one dynamic uniform buffer with per-draw offsets.
 
 `InteractionController::historyRows()` flattens sketches, bodies and each
 body's features into rows (name, detail, status — ok, warning, failed,
-blocked, suppressed — explanation, editable length parameters). Hovering a row
+blocked, suppressed — explanation, editable parameters: lengths, angles,
+counts, and strings such as a Text step's words, `Parameter::isText`, which
+`setFeatureParameter` takes as typed). Hovering a row
 calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
 body, other steps their new faces (`facesCreatedBy`, falling back to
 `facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
@@ -845,7 +893,11 @@ them on a hidden menu separator after the Open Recent sub-menu).
   and Home, the saved thumbnail, Home's cards, menu, long press and
   buttons; then in a 402 x 874 window: Help over Home, a damaged file's
   message above Home, a long message wrapped, markup in a STEP name shown
-  as text) and `userguide` (the help card's link to
+  as text), `hole_allowance` (the 3D-printing allowance clicked and typed in
+  Preferences, then a Hole tool preset drilled with it), `text` (the Text
+  tool on a plate: typed words, size, depth, applied, edited in the Model
+  panel, undone, saved and reopened, then cut in from the palette) and
+  `userguide` (the help card's link to
   docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
   it, so no browser opens). The whole run also passes at the CI Mac's
   1024x653 (`--size 1024x653`): clicks on model points that a panel or the
@@ -866,6 +918,14 @@ them on a hidden menu separator after the Open Recent sub-menu).
   used by the app's `--version`, the About card, the log and project files'
   `metadata.json`); the macOS/iPad bundle and the Windows version resource
   take it from CMake too.
+- **The Text tool's font:** `resources/fonts/` (Noto Sans Regular and Bold,
+  SIL OFL 1.1; see its README) is embedded in the executable when present
+  (`qt_add_resources` in `src/app/CMakeLists.txt`, checked at configure
+  time); `AppController` registers the bytes with `geom::registerFont` at
+  startup. Without the file the build still works and the tool says text is
+  not available; `OPENSHAPE_TEXT_FONT` lets a development build use another
+  font file in its place. `scripts/package-windows.sh` ships `OFL.txt` as
+  `NotoSans-OFL.txt` and the license gate compares it with the repository.
 - **Windows resources:** `src/app/openshape.rc.in` (icon
   `resources/icons/openshape.ico`, made from the SVG by
   `scripts/windows/make-icon.py`, and VERSIONINFO) is configured and compiled

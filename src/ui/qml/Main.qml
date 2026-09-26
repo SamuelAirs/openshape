@@ -103,6 +103,22 @@ ApplicationWindow {
                     event.accepted = true
                 return
             }
+            // The Text tool: letters (and Backspace) go to its text field,
+            // never to shortcuts or Delete (which would remove the face);
+            // a number goes to the value (depth, size or angle) as elsewhere.
+            if (window.app.operationTakesText && !(event.modifiers & Qt.ControlModifier)) {
+                if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) {
+                    valueChip.eraseText()
+                    event.accepted = true
+                    return
+                }
+                if (event.text.length > 0 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127
+                        && "0123456789.-+(".indexOf(event.text) < 0) {
+                    valueChip.typeText(event.text)
+                    event.accepted = true
+                    return
+                }
+            }
             // Typing a number while an operation is armed goes straight into
             // the value field (no need to click it first).
             if (window.app.operationActive && window.app.valueLabelVisible && event.text.length === 1
@@ -149,19 +165,24 @@ ApplicationWindow {
         onActivated: window.app.homeVisible ? window.confirmDiscard(() => window.chooseImportFile(true))
                                             : window.chooseImportFile(false)
     }
-    // Keys for the view: never while Home covers it (whatever has the focus).
-    Shortcut { sequence: "F"; enabled: viewport.activeFocus && !window.app.homeVisible; onActivated: window.app.fitAll() }
+    // Keys for the view: never while Home covers it (whatever has the focus),
+    // nor while the Text tool takes letters.
+    Shortcut {
+        sequence: "F"
+        enabled: viewport.activeFocus && !window.app.homeVisible && !window.app.operationTakesText
+        onActivated: window.app.fitAll()
+    }
     Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
     Shortcut {
         sequence: "B"
-        enabled: viewport.activeFocus && !window.app.sketchMode && !window.app.homeVisible
+        enabled: viewport.activeFocus && !window.app.sketchMode && !window.app.homeVisible && !window.app.operationTakesText
         onActivated: window.app.createBox(20)
     }
     // Duplicate the selected body (the copy is selected, ready to drag away).
     Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode && !window.app.homeVisible; onActivated: window.app.triggerAction("duplicate") }
     Shortcut {
         sequence: "K"
-        enabled: viewport.activeFocus && window.app.canStartSketch && !window.app.homeVisible
+        enabled: viewport.activeFocus && window.app.canStartSketch && !window.app.homeVisible && !window.app.operationTakesText
         onActivated: window.app.startSketch()
     }
 
@@ -471,6 +492,7 @@ ApplicationWindow {
                     { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
                     { id: "offset", label: "Offset", tip: "Move a face with its neighbours following; a hole or shaft takes its new diameter (e.g. print tolerance)." },
                     { id: "hole", label: "Hole", tip: "Drill holes for screws into a flat face: click where each goes (snaps to the center and edge middles), type X / Y, pick M2-M6 and the fit, add a counterbore or countersink." },
+                    { id: "text", label: "Text", tip: "Raise text from a flat face or cut it in: select the face, type the words, click where they go; drag the arrow out (emboss) or in (deboss)." },
                     { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
                     { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
                     { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
@@ -853,6 +875,9 @@ ApplicationWindow {
         if (app.operationActive && app.operationTitle === "Hole")
             return "Click to add holes (they snap to the center and edge middles and line up with each other) · "
                  + "X / Y (Tab) type the current hole's position · click a hole to pick it (Remove hole drops it) · Enter applies"
+        if (app.operationActive && app.operationTitle === "Text")
+            return "Click the face to move the text (it snaps to the center and edge middles) · drag the arrow out to raise it, "
+                 + "in to cut it · Size is the capital letters' height · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
             return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Countersink"))

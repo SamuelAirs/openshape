@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "geometry/Exchange.h"
+#include "geometry/Text.h"
 #include "interaction/TouchWording.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
@@ -18,6 +19,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
@@ -51,12 +53,47 @@ std::filesystem::path withExtension(std::filesystem::path path, const char* exte
     return path;
 }
 
+// The Text tool's fonts: Noto Sans, built into the executable
+// (src/app/CMakeLists.txt), registered with the geometry layer once. A
+// development build without it may name a font file in OPENSHAPE_TEXT_FONT
+// to try the tool (resources/fonts/README.md).
+void registerTextFonts()
+{
+    static bool done = false;
+    if (done)
+        return;
+    done = true;
+    const std::pair<const char*, const char*> fonts[] = {
+        {doc::kTextFontRegular, ":/openshape/fonts/NotoSans-Regular.ttf"},
+        {doc::kTextFontBold, ":/openshape/fonts/NotoSans-Bold.ttf"},
+    };
+    for (const auto& [id, resource] : fonts) {
+        QFile file(QString::fromLatin1(resource));
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        if (!geom::registerFont(id, file.readAll().toStdString()))
+            OS_LOG(Warning, App) << "the built-in font " << id << " could not be read";
+    }
+    if (geom::hasFont(doc::kTextFontRegular))
+        return;
+    const QString substitute = qEnvironmentVariable("OPENSHAPE_TEXT_FONT");
+    QFile file(substitute);
+    if (!substitute.isEmpty() && file.open(QIODevice::ReadOnly)
+        && geom::registerFont(doc::kTextFontRegular, file.readAll().toStdString())) {
+        OS_LOG(Warning, App) << "text uses " << substitute.toStdString()
+                             << " in place of the built-in Noto Sans (OPENSHAPE_TEXT_FONT, for development only)";
+        return;
+    }
+    OS_LOG(Warning, App) << "no font for text: resources/fonts/NotoSans-Regular.ttf was not built in; the Text tool is not available";
+}
+
 } // namespace
 
 AppController::AppController(QObject* parent)
     : QObject(parent), document_(std::make_unique<doc::Document>()), undoStack_(std::make_unique<cmd::UndoStack>()),
       interaction_(std::make_unique<interact::InteractionController>(*document_, *undoStack_))
 {
+    registerTextFonts();
     QSettings settings;
     preferences_ = loadPreferences(settings);
     document_->setDisplayUnit(preferences_.defaultUnit);
@@ -173,6 +210,16 @@ bool AppController::operationHasValue() const
 QString AppController::operationPrompt() const
 {
     return interaction_->operation() ? q(interaction_->operation()->prompt()) : QString();
+}
+
+bool AppController::operationTakesText() const
+{
+    return interaction_->operationTakesText();
+}
+
+QString AppController::operationText() const
+{
+    return q(interaction_->operationText());
 }
 
 QPointF AppController::valueLabelPosition() const
@@ -469,6 +516,7 @@ QVariantList AppController::history() const
             pm.insert(QStringLiteral("key"), q(p.key));
             pm.insert(QStringLiteral("label"), q(p.label));
             pm.insert(QStringLiteral("value"), q(p.valueText));
+            pm.insert(QStringLiteral("isText"), p.isText);
             params.append(pm);
         }
         map.insert(QStringLiteral("parameters"), params);
@@ -867,6 +915,11 @@ void AppController::cancelOperation() { interaction_->cancelOperation(); }
 QString AppController::setValueText(const QString& text)
 {
     return q(interaction_->setValueText(text.toStdString()));
+}
+
+QString AppController::setOperationText(const QString& text)
+{
+    return q(interaction_->setOperationText(text.toStdString()));
 }
 
 void AppController::triggerAction(const QString& id)

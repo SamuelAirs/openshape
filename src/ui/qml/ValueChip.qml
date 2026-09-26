@@ -34,6 +34,32 @@ Item {
             field.text = app.operationValueText
             errorText.text = app.operationError
         }
+        if (!textField.activeFocus && textField.text !== app.operationText)
+            textField.text = app.operationText
+    }
+
+    // The Text tool: its words are typed in the text field, which takes the
+    // keys as soon as the tool opens (on a tablet the keyboard comes up).
+    readonly property bool takesText: app.operationTakesText
+    onTakesTextChanged: if (takesText) Qt.callLater(chip.focusText)
+    function focusText() {
+        if (!chip.takesText)
+            return
+        textField.text = app.operationText
+        textField.forceActiveFocus()
+        textField.cursorPosition = textField.text.length
+    }
+    // Keys typed while the view has the focus (after a click on the face).
+    function typeText(characters) {
+        focusText()
+        textField.insert(textField.cursorPosition, characters)
+        errorText.text = chip.app.setOperationText(textField.text)
+    }
+    function eraseText() {
+        focusText()
+        if (textField.cursorPosition > 0)
+            textField.remove(textField.cursorPosition - 1, textField.cursorPosition)
+        errorText.text = chip.app.setOperationText(textField.text)
     }
 
     Connections {
@@ -45,6 +71,66 @@ Item {
     ColumnLayout {
         id: column
         spacing: 6
+
+        // The Text tool's words (the value field below is the depth, size or angle).
+        Panel {
+            Layout.alignment: Qt.AlignHCenter
+            visible: chip.takesText
+            implicitWidth: textRow.implicitWidth + 2 * Theme.panelPadding
+            implicitHeight: Theme.controlHeight + 2 * Theme.panelPadding
+            border.color: errorText.text.length > 0 && textField.activeFocus ? Theme.error : Theme.panelBorder
+
+            RowLayout {
+                id: textRow
+                anchors.centerIn: parent
+                spacing: 6
+                Text {
+                    text: "Text"
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                    Layout.leftMargin: 6
+                }
+                TextField {
+                    id: textField
+                    objectName: "textToolField"
+                    implicitWidth: Math.max(120, Math.min(250, chip.maximumWidth - 90))
+                    implicitHeight: Theme.controlHeight
+                    font.pixelSize: 15
+                    placeholderText: "Type the text"
+                    selectByMouse: true
+                    color: Theme.text
+                    background: Rectangle {
+                        radius: 8
+                        color: textField.activeFocus ? "white" : Theme.fieldIdle
+                        border.color: textField.activeFocus ? Theme.accent : "transparent"
+                        border.width: 1.5
+                    }
+                    onTextEdited: errorText.text = chip.app.setOperationText(text)
+                    Keys.onReturnPressed: apply()
+                    Keys.onEnterPressed: apply()
+                    // Tab goes on to the value (depth, size or angle).
+                    Keys.onTabPressed: {
+                        field.forceActiveFocus()
+                        field.selectAll()
+                    }
+                    Keys.onEscapePressed: {
+                        textField.focus = false
+                        chip.finished()
+                        chip.syncFromModel()
+                    }
+                    function apply() {
+                        errorText.text = chip.app.setOperationText(text)
+                        if (errorText.text.length === 0) {
+                            // Nothing typed: the app says so and the tool stays.
+                            textField.focus = false
+                            chip.app.commitOperation()
+                            chip.finished()
+                            chip.syncFromModel()
+                        }
+                    }
+                }
+            }
+        }
 
         Panel {
             Layout.alignment: Qt.AlignHCenter

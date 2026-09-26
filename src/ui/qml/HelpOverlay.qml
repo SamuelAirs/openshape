@@ -146,7 +146,9 @@ Rectangle {
                              "Hole tool: X / Y (the next field) from the face's corner, or From last hole; tap a hole to pick it again, Remove hole drops it"],
                             ["Insert for a screw", "Hole rim → Heat-set insert"],
                             ["Seat for a screw head", "Hole rim → Counterbore or Countersink, pick M2–M6 or type the diameter; a counterbore's arrow into the hole sets its depth"],
-                            ["Holes that fit when printed", "Screw sizes add the hole allowance (0.2 mm unless changed in Preferences) to clearance holes, counterbores and countersinks; Tap and heat-set insert sizes already assume printing; typed sizes are used exactly"],
+                            ["Text on a face", "Flat face → Text: type the words (Noto Sans), click where they go (snaps to the center and edge middles); drag the arrow out to raise them (emboss) or in to cut them (deboss); Size is the height of capital letters; 0° / 90° / 180° / 270° or type an angle; change the words later in the Model panel",
+                             "Flat face → Text: type the words (Noto Sans), tap where they go (snaps to the center and edge middles); drag the arrow out to raise them (emboss) or in to cut them (deboss), or Emboss / Deboss; Size is the height of capital letters; 0° / 90° / 180° / 270° or type an angle; change the words later in the Model panel"],
+                            ["Holes that fit when printed","Screw sizes add the hole allowance (0.2 mm unless changed in Preferences) to clearance holes, counterbores and countersinks; Tap and heat-set insert sizes already assume printing; typed sizes are used exactly"],
                             ["Measure", "Select two faces or edges"],
                             ["Apply / cancel", "Enter / Esc (or ✓ / ✕)", "✓ / ✕ beside the value"],
                             ["When a step can't be done", "The red text says why and what to try, e.g. the largest radius that fits"]

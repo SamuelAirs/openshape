@@ -471,9 +471,14 @@ values.
 ### Holes that fit
 
 Printed holes often come out a little smaller than modeled, depending on
-the printer. Click the hole's wall and type the diameter you need (for
-example `3.4` for an M3 screw that must slide through); the Model panel
-keeps the value, so you can change it after a test print.
+the printer. The screw sizes of the **Hole** tool, **Counterbore** and
+**Countersink** therefore add a **hole allowance** of 0.2 mm to the
+standard diameters (M3 close fit: 3.2 mm by ISO 273, drilled at 3.4 mm).
+Change it in **File → Preferences… → Hole allowance for 3D printing**
+(0 for the standard sizes, up to 1 mm); the **Tap** and heat-set insert
+sizes already assume printed plastic and never get it. A diameter you type
+is used exactly: click the hole's wall and type the diameter you need; the
+Model panel keeps the value, so you can change it after a test print.
 
 ### Heat-set inserts
 
@@ -497,6 +502,24 @@ keeps the value, so you can change it after a test print.
 
 These are common rules of thumb, not a standard: check your inserts'
 datasheet.
+
+### Text: labels raised or cut in
+
+1. Click a flat face, then **Text** (on the face's buttons, or in the
+   Modify tools).
+2. Type the words in the **Text** box (one line). They appear at the
+   middle of the face in Noto Sans; click the face to move them (they snap
+   to the middle and to the middles of the edges).
+3. Drag the arrow out to raise the letters (**Emboss**) or in to cut them
+   into the face (**Deboss**), or type the depth. **Size** is the height of
+   the capital letters in mm; **Angle** turns the text (or use **0°**,
+   **90°**, **180°**, **270°**).
+4. Press `Enter` (or ✓). The step appears as **Text** in the Model panel,
+   where the words, size, depth and angle can be changed later; the text
+   follows its face when earlier steps move it.
+
+As a starting point for printing, try capitals of 5 mm or more and a depth
+of 0.6–1 mm.
 
 ### Orientation
 

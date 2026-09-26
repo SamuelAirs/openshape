@@ -202,7 +202,8 @@ Panel {
                                 implicitHeight: 30
                                 text: paramRow.modelData.value
                                 font.pixelSize: 13
-                                horizontalAlignment: TextInput.AlignRight
+                                // Text (a Text step's words) reads from the left; numbers line up on the right.
+                                horizontalAlignment: paramRow.modelData.isText ? TextInput.AlignLeft : TextInput.AlignRight
                                 selectByMouse: true
                                 background: Rectangle {
                                     radius: 6

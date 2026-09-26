@@ -129,6 +129,22 @@ private:
     bool rejectIfFeatureFails_;
 };
 
+// Changes a step's string parameter (a Text step's text), like SetParameterCommand.
+class SetTextParameterCommand final : public Command {
+public:
+    SetTextParameterCommand(Uuid featureId, std::string key, std::string value, bool rejectIfFeatureFails = true);
+    std::string label() const override { return "Change " + key_; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    Uuid featureId_;
+    std::string key_;
+    std::string newValue_;
+    std::string oldValue_;
+    bool rejectIfFeatureFails_;
+};
+
 class SetBodyVisibilityCommand final : public Command {
 public:
     SetBodyVisibilityCommand(Uuid bodyId, bool visible) : bodyId_(bodyId), visible_(visible) {}

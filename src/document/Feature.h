@@ -30,7 +30,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece, Copy, Holes, Imported
+    Split, SplitPiece, Copy, Holes, Imported, Text
 };
 
 // What a feature may consult besides its input shape.
@@ -72,6 +72,14 @@ struct ParameterInfo {
     double value = 0;   // canonical units (mm / radians)
 };
 
+// An editable string (a Text step's text), edited in the Model panel like
+// the scalars.
+struct TextParameterInfo {
+    std::string key;
+    std::string label;
+    std::string value; // UTF-8
+};
+
 // One step of a body's modeling history. A feature is a pure function of its
 // parameters and the body's shape before it (the *input*). Features never
 // hold kernel state between evaluations; results are cached by Body.
@@ -97,6 +105,10 @@ public:
     virtual std::vector<ParameterInfo> parameters() const = 0;
     virtual Status setParameter(std::string_view key, double value) = 0;
     std::optional<double> parameter(std::string_view key) const;
+    // Editable strings (none for most steps).
+    virtual std::vector<TextParameterInfo> textParameters() const { return {}; }
+    virtual Status setTextParameter(std::string_view key, const std::string& value);
+    std::optional<std::string> textParameter(std::string_view key) const;
 
     virtual void writeParams(nlohmann::json& out) const = 0;
     virtual Status readParams(const nlohmann::json& in) = 0;
@@ -560,6 +572,39 @@ public:
     Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
     std::vector<ParameterInfo> parameters() const override;
     Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// The fonts text can use: ids the app registers with geom::registerFont at
+// startup (the bundled Noto Sans, SIL Open Font License). Files store the id.
+inline constexpr const char* kTextFontRegular = "NotoSans-Regular";
+inline constexpr const char* kTextFontBold = "NotoSans-Bold";
+
+// Text raised from (depth > 0, joined) or cut into (depth < 0) a flat face:
+// one line of UTF-8 in a registered font, `size` its capital height,
+// centered at `position` in the face's frame (holeFrame, like the Hole
+// tool's points, so the text follows the face when an upstream step moves
+// it) and turned by `angle` from the frame's x axis. The center must still
+// lie on the face.
+class TextFeature final : public Feature {
+public:
+    using Feature::Feature;
+    FaceRef face;
+    Vec2 position;             // in holeFrame(face) coordinates, mm
+    std::string text;          // UTF-8, one line
+    double size = 10;          // mm: the height of capital letters
+    double depth = 1;          // mm: > 0 raised (emboss), < 0 cut in (deboss)
+    double angle = 0;          // radians, counter-clockwise seen from outside the face
+    std::string font = kTextFontRegular;
+
+    FeatureKind kind() const override { return FeatureKind::Text; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new TextFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    std::vector<TextParameterInfo> textParameters() const override;
+    Status setTextParameter(std::string_view key, const std::string& value) override;
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
 };

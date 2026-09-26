@@ -10,6 +10,7 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Holes.h"
 #include "geometry/Modeling.h"
+#include "geometry/Text.h"
 
 #include <nlohmann/json.hpp>
 
@@ -44,6 +45,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Copy: return "Copy";
     case FeatureKind::Holes: return "Holes";
     case FeatureKind::Imported: return "Imported";
+    case FeatureKind::Text: return "Text";
     }
     return "Unknown";
 }
@@ -54,7 +56,7 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
                           FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
-                          FeatureKind::Copy, FeatureKind::Holes, FeatureKind::Imported})
+                          FeatureKind::Copy, FeatureKind::Holes, FeatureKind::Imported, FeatureKind::Text})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -82,6 +84,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Copy: return std::make_unique<CopyFeature>(id);
     case FeatureKind::Holes: return std::make_unique<HolesFeature>(id);
     case FeatureKind::Imported: return std::make_unique<ImportedFeature>(id);
+    case FeatureKind::Text: return std::make_unique<TextFeature>(id);
     }
     return nullptr;
 }
@@ -97,6 +100,20 @@ std::optional<double> Feature::parameter(std::string_view key) const
         if (p.key == key)
             return p.value;
     return std::nullopt;
+}
+
+std::optional<std::string> Feature::textParameter(std::string_view key) const
+{
+    for (const auto& p : textParameters())
+        if (p.key == key)
+            return p.value;
+    return std::nullopt;
+}
+
+Status Feature::setTextParameter(std::string_view key, const std::string&)
+{
+    return Status::failure(ErrorCode::InvalidArgument, "This value cannot be edited.",
+                           "unknown text parameter '" + std::string(key) + "'");
 }
 
 std::unique_ptr<Feature> Feature::cloneWithNewId() const
@@ -1759,6 +1776,148 @@ Status RevolveFeature::readParams(const json& in)
     mode = probe.mode;
     angle = *a;
     axis = ax == "Y" ? SketchAxis::Y : SketchAxis::X;
+    return okStatus();
+}
+
+// ---- Text (emboss / deboss) -------------------------------------------------------
+
+namespace {
+// Stored text is kept to a sane size (the geometry takes at most
+// geom::kMaxTextLength characters; a longer one fails the step with a message).
+constexpr std::size_t kMaxStoredTextBytes = 4096;
+
+Status checkDepth(double value)
+{
+    if (!std::isfinite(value) || std::abs(value) < 1e-3)
+        return Status::failure(ErrorCode::InvalidArgument,
+                               "The depth must not be zero: positive raises the text, negative cuts it in.", "text depth 0");
+    if (std::abs(value) > 10000)
+        return Status::failure(ErrorCode::InvalidArgument, "The depth is too large.", "text depth " + std::to_string(value));
+    return okStatus();
+}
+} // namespace
+
+Result<geom::Shape> TextFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    using R = Result<geom::Shape>;
+    const auto index = geom::resolveFace(input, face.signature, face.indexHint);
+    const auto frame = index ? holeFrame(input, *index) : std::nullopt;
+    if (!frame)
+        return R::failure(ErrorCode::InvalidReference, "The face this text was placed on no longer exists.",
+                          "Text: face unresolved");
+    const Vec3 center = frame->toWorld(position);
+    if (!geom::faceContains(input, *index, center))
+        return R::failure(ErrorCode::InvalidReference, "The text no longer lies on its face.", "Text: center off the face");
+    const Vec3 along = frame->xAxis * std::cos(angle) + frame->yAxis * std::sin(angle);
+    return geom::embossText(input, geom::TextSpec{text, font, size}, geom::TextFrame{center, along, frame->normal}, depth);
+}
+
+std::vector<ParameterInfo> TextFeature::parameters() const
+{
+    return {{"size", "Size", ParameterKind::Length, size},
+            {"depth", "Depth", ParameterKind::Length, depth},
+            {"angle", "Angle", ParameterKind::Angle, angle}};
+}
+
+Status TextFeature::setParameter(std::string_view key, double value)
+{
+    if (key == "size") {
+        if (!(value >= geom::kMinCapHeight) || !(value <= geom::kMaxCapHeight))
+            return Status::failure(ErrorCode::InvalidArgument,
+                                   "The size (the height of capital letters) must be between 0.5 and 1000 mm.",
+                                   "text size " + std::to_string(value));
+        size = value;
+        return okStatus();
+    }
+    if (key == "depth") {
+        if (Status s = checkDepth(value); !s)
+            return s;
+        depth = value;
+        return okStatus();
+    }
+    if (key == "angle") {
+        if (!std::isfinite(value) || std::abs(value) > 1000)
+            return Status::failure(ErrorCode::InvalidArgument, "Type an angle in degrees.", "text angle");
+        angle = std::remainder(value, 2 * kPi);
+        if (angle < -1e-12)
+            angle += 2 * kPi;
+        if (std::abs(angle) < 1e-12 || std::abs(angle - 2 * kPi) < 1e-12)
+            angle = 0;
+        return okStatus();
+    }
+    return unknownParameter(key);
+}
+
+std::vector<TextParameterInfo> TextFeature::textParameters() const
+{
+    return {{"text", "Text", text}};
+}
+
+Status TextFeature::setTextParameter(std::string_view key, const std::string& value)
+{
+    if (key != "text")
+        return Feature::setTextParameter(key, value);
+    if (value.size() > kMaxStoredTextBytes)
+        return Status::failure(ErrorCode::InvalidArgument, "The text is too long.", "text too long");
+    // Refuse what could never be made (nothing typed, a character the font
+    // does not have), rather than keep a step that can only fail.
+    if (std::string why = geom::checkText(geom::TextSpec{value, font, size}); !why.empty())
+        return Status::failure(ErrorCode::InvalidArgument, why, "text: " + why);
+    text = value;
+    return okStatus();
+}
+
+void TextFeature::writeParams(json& out) const
+{
+    out["face"] = faceRefToJson(face);
+    out["position"] = json::array({position.x, position.y});
+    out["text"] = text;
+    out["size"] = size;
+    out["depth"] = depth;
+    out["angle"] = angle;
+    out["font"] = font;
+}
+
+Status TextFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains invalid text.", std::string("Text: ") + why);
+    };
+    const auto ref = faceRefFromJson(in, "face");
+    if (!ref)
+        return bad("face");
+    if (!in.contains("position") || !in["position"].is_array() || in["position"].size() != 2 || !in["position"][0].is_number()
+        || !in["position"][1].is_number())
+        return bad("position");
+    const Vec2 p{in["position"][0].get<double>(), in["position"][1].get<double>()};
+    if (!std::isfinite(p.x) || !std::isfinite(p.y))
+        return bad("position");
+    if (!in.contains("text") || !in["text"].is_string())
+        return bad("text");
+    std::string t = in["text"].get<std::string>();
+    if (t.empty() || t.size() > kMaxStoredTextBytes)
+        return bad("text length");
+    if (!in.contains("font") || !in["font"].is_string())
+        return bad("font");
+    std::string f = in["font"].get<std::string>();
+    if (f.empty() || f.size() > 128)
+        return bad("font name");
+    const auto s = numberFrom(in, "size");
+    if (!s || !(*s >= geom::kMinCapHeight) || !(*s <= geom::kMaxCapHeight))
+        return bad("size");
+    const auto d = numberFrom(in, "depth");
+    if (!d || !checkDepth(*d))
+        return bad("depth");
+    const auto a = numberFrom(in, "angle");
+    if (!a || !std::isfinite(*a) || std::abs(*a) > 1000)
+        return bad("angle");
+    face = *ref;
+    position = p;
+    text = std::move(t);
+    font = std::move(f);
+    size = *s;
+    depth = *d;
+    angle = *a;
     return okStatus();
 }
 

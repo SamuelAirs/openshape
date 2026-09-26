@@ -52,6 +52,9 @@ class AppController : public QObject {
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
+    // The Text tool: the chip shows a text field for the words (setOperationText).
+    Q_PROPERTY(bool operationTakesText READ operationTakesText NOTIFY stateChanged)
+    Q_PROPERTY(QString operationText READ operationText NOTIFY stateChanged)
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
@@ -128,6 +131,8 @@ public:
     bool operationCanCommit() const;
     bool operationHasValue() const;
     QString operationPrompt() const;
+    bool operationTakesText() const;
+    QString operationText() const;
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariantList axisTriad() const;
@@ -263,6 +268,8 @@ public:
     Q_INVOKABLE void cancelOperation();
     // Returns an error message ("" on success). Previews live as the user types.
     Q_INVOKABLE QString setValueText(const QString& text);
+    // The Text tool's words (previewed at once); returns the error, or "".
+    Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
     Q_INVOKABLE void setView(const QString& name);
     Q_INVOKABLE void fitAll();

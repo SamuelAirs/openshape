@@ -35,7 +35,8 @@ struct HistoryRow {
     struct Parameter {
         std::string key;
         std::string label;
-        std::string valueText; // formatted in the display unit
+        std::string valueText; // formatted in the display unit (a string parameter: as it is)
+        bool isText = false;   // a string (a Text step's text), not a number
     };
 
     Kind kind = Kind::Body;
@@ -121,6 +122,11 @@ public:
     // showing the thickness) a leading + or - changes it by that much.
     std::string setValueText(const std::string& text);
     std::string operationValueText() const;
+    // The Text tool takes words as well as values: the text (UTF-8, as
+    // typed), previewed at once. Returns the error, or "".
+    bool operationTakesText() const;
+    std::string operationText() const;
+    std::string setOperationText(const std::string& text);
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
 
@@ -248,7 +254,7 @@ private:
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
-    // How far (mm, at `point`) the Hole tool's clicks snap: two pick tolerances.
+    // How far (mm, at `point`) the Hole and Text tools' clicks snap: two pick tolerances.
     double holeSnapDistance(const Vec3& point, const InputProfile& profile) const
     {
         return profile.pickTolerance * 2 * camera_.pixelSize(point);
@@ -299,6 +305,7 @@ private:
     doc::HoleKind rimHoleKind_ = doc::HoleKind::Plain;
     std::size_t screwPreset_ = doc::kDefaultScrew;
     HoleSettings holeSettings_; // what the Hole tool used last
+    TextSettings textSettings_; // what the Text tool used last
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
     // Faces (of the current body shape) the highlighted step created or changed.
