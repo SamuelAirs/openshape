@@ -119,8 +119,9 @@ Rectangle {
                     HelpSection {
                         title: "Sketch"
                         rows: [
-                            ["Tools", "S select · L line · R rectangle · E center rectangle · C circle · A arc · O slot · T trim"],
+                            ["Tools", "S select · L line · R rectangle · E center rectangle · P polygon · C circle · A arc · O slot · T trim"],
                             ["Center rectangle", "Click the center, then a corner (or type width, Tab, height): it stays centered"],
+                            ["Polygon", "Click the center, move to the middle of a side; type the size across flats, Tab for the number of sides; − / + (or the - / + keys) change the sides"],
                             ["Slot", "Click both centers, then move or type the width"],
                             ["Trim", "Click the piece of a curve to cut away (it shows red first)"],
                             ["Round a corner", "Select the corner point → Fillet, then click R to change it"],

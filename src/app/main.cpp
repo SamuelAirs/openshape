@@ -186,6 +186,37 @@ void runDemo(os::ui::AppController& app, const QString& demo)
         interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, at({40, -8}), {}});
         return;
     }
+    if (demo == QLatin1String("polygon")) {
+        // A center rectangle, and a hexagon being drawn (size typed, sides shown).
+        using os::interact::SketchTool;
+        (void)interaction.startSketch();
+        interaction.skipAnimation();
+        auto at = [&](os::Vec2 local) {
+            return interaction.camera().project(interaction.sketchSession()->sketch().plane().toWorld(local));
+        };
+        auto moveTo = [&](os::Vec2 local) {
+            interaction.pointerMove({os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, at(local), {}});
+        };
+        auto clickAt = [&](os::Vec2 local) {
+            os::interact::PointerEvent e;
+            e.position = at(local);
+            moveTo(local);
+            interaction.pointerPress(e);
+            interaction.pointerRelease(e);
+        };
+        interaction.setSketchTool(SketchTool::CenterRectangle);
+        clickAt({0, 0});
+        moveTo({20, 10});
+        interaction.sketchSession()->typeIntoInput("40");
+        interaction.sketchSession()->focusNextInput();
+        interaction.sketchSession()->typeIntoInput("20");
+        interaction.keyPress(os::interact::Key::Enter);
+        interaction.setSketchTool(SketchTool::Polygon);
+        clickAt({45, 0});
+        moveTo({55, 0});
+        interaction.sketchSession()->typeIntoInput("16");
+        return;
+    }
     if (demo == QLatin1String("mirror") || demo == QLatin1String("pattern")) {
         // Mirror across the cube's +X face, or the default linear pattern.
         app.createBox(20);

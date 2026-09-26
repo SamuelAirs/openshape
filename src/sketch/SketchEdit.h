@@ -35,6 +35,24 @@ struct CenterRectangleIds {
 // (e.g. the origin) can be reused.
 CenterRectangleIds addCenterRectangle(Sketch& sketch, Vec2 center, Vec2 corner, EntityId reuseCenter = kNoEntity);
 
+struct PolygonIds {
+    EntityId center = kNoEntity;
+    EntityId outer = kNoEntity; // construction circle through the corners
+    EntityId inner = kNoEntity; // construction circle touching the sides: its diameter is the size across flats
+    std::vector<EntityId> corners;
+    std::vector<EntityId> sides; // sides[0] has its middle at `sideMiddle`
+};
+// A regular polygon around `center` with the middle of one side at
+// `sideMiddle` (counterclockwise corners). It stays regular under edits: the
+// corners lie on the outer construction circle and all sides are equal. The
+// inner circle touches the first side, so a diameter on it sizes the polygon
+// across flats. An existing center point can be reused.
+inline constexpr int kMinPolygonSides = 3;
+inline constexpr int kMaxPolygonSides = 64;
+PolygonIds addPolygon(Sketch& sketch, Vec2 center, Vec2 sideMiddle, int sides, EntityId reuseCenter = kNoEntity);
+// The corners addPolygon would create (for previews).
+std::vector<Vec2> polygonCorners(Vec2 center, Vec2 sideMiddle, int sides);
+
 // Rounds the corner where exactly two lines meet at `corner` with a tangent
 // arc. The corner point stays, on both lines' extensions (the "virtual
 // sharp"), so dimensions to it keep working. Returns the new arc.

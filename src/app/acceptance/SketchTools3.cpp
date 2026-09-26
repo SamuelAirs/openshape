@@ -14,6 +14,7 @@
 #include "interaction/InteractionController.h"
 #include "ui/AppController.h"
 
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
 #include <cmath>
@@ -108,7 +109,62 @@ std::vector<AcceptanceRunner::Step> centerRectangle(AcceptanceRunner& r)
     return steps;
 }
 
+// ---- Polygon -------------------------------------------------------------------------
+
+std::vector<AcceptanceRunner::Step> polygon(AcceptanceRunner& r)
+{
+    auto sides = [&r] {
+        const auto* session = r.app().interaction().sketchSession();
+        return session ? session->polygonSides() : 0;
+    };
+    std::vector<AcceptanceRunner::Step> steps{
+        startSketch(r),
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("tool_polygon")), "Polygon tool button");
+            r.check(r.app().sketchTool() == QStringLiteral("polygon"), "the polygon tool is active", r.app().sketchTool());
+            const QQuickItem* counter = r.findItem(QStringLiteral("sketchCounter"));
+            r.check(counter && counter->isVisible(), "the side count is shown with -/+ buttons");
+            r.check(r.app().sketchCounterText() == QStringLiteral("6 sides"), "six sides by default", r.app().sketchCounterText());
+        },
+        [&r, sides] {
+            r.check(r.clickItem(QStringLiteral("sketchCounterPlus")), "+ button");
+            r.check(r.clickItem(QStringLiteral("sketchCounterPlus")), "+ button again");
+            r.check(sides() == 8, "two more sides", QString::number(sides()));
+            r.check(r.clickItem(QStringLiteral("sketchCounterMinus")), "- button");
+            r.key(Qt::Key_Minus, Qt::NoModifier, QStringLiteral("-"));
+            r.check(sides() == 6, "- button and - key: back to six", QString::number(sides()));
+        },
+        [&r] {
+            r.click(r.screenPoint(0, 0, 0)); // the center, on the origin
+            r.mouseMove(r.screenPoint(12, 0.3, 0)); // straight right: the first side is vertical
+            r.check(r.app().sketchDrawing(), "the first click places the center");
+            r.type(QStringLiteral("10")); // across flats
+            r.key(Qt::Key_Return);
+            const auto* s = activeSketch(r);
+            r.check(s && s->lines().size() == 6 && s->circles().size() == 2, "a hexagon with its two construction circles",
+                    s ? QString::number(s->lines().size()) : QString());
+            r.check(r.app().sketchStatus() == QStringLiteral("Fully defined"), "centered, sized and upright: fully defined",
+                    r.app().sketchStatus());
+            double maxX = -1e9, farthest = 0;
+            if (s)
+                for (const auto& [id, p] : s->points()) {
+                    maxX = std::max(maxX, p.position.x);
+                    farthest = std::max(farthest, p.position.length());
+                }
+            r.check(std::abs(maxX - 5) < 1e-6 && std::abs(farthest - 10 / std::sqrt(3.0)) < 1e-6,
+                    "10 across flats: a flat at x = 5, corners 5.7735 from the center",
+                    AcceptanceRunner::num(maxX) + QStringLiteral(" / ") + AcceptanceRunner::num(farthest));
+            r.screenshot(QStringLiteral("sketch3_polygon"));
+        },
+    };
+    const double hexagon = 6 * 25 * std::tan(kPi / 6);
+    append(steps, finishAndExtrude(r, 0, 1, QStringLiteral("5"), hexagon * 5, QStringLiteral("hexagon")));
+    return steps;
+}
+
 const bool registeredCenterRectangle = registerAcceptanceScenario({QStringLiteral("sketch3_centerrect"), 60, centerRectangle});
+const bool registeredPolygon = registerAcceptanceScenario({QStringLiteral("sketch3_polygon"), 61, polygon});
 
 } // namespace
 } // namespace os::app

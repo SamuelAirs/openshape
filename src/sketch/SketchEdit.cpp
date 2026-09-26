@@ -305,6 +305,46 @@ CenterRectangleIds addCenterRectangle(Sketch& s, Vec2 center, Vec2 corner, Entit
     return ids;
 }
 
+std::vector<Vec2> polygonCorners(Vec2 center, Vec2 sideMiddle, int sides)
+{
+    std::vector<Vec2> out;
+    const Vec2 toSide = sideMiddle - center;
+    const double apothem = toSide.length();
+    if (sides < kMinPolygonSides || sides > kMaxPolygonSides || apothem < kEps)
+        return out;
+    const double half = kPi / sides;
+    const double circumradius = apothem / std::cos(half);
+    const double first = angleOf(toSide) - half; // the first side runs from here to angleOf(toSide) + half
+    for (int i = 0; i < sides; ++i)
+        out.push_back(center + unitAt(first + 2 * half * i) * circumradius);
+    return out;
+}
+
+PolygonIds addPolygon(Sketch& s, Vec2 center, Vec2 sideMiddle, int sides, EntityId reuseCenter)
+{
+    PolygonIds ids;
+    const auto corners = polygonCorners(center, sideMiddle, sides);
+    if (corners.empty())
+        return ids;
+    ids.center = reuseCenter != kNoEntity && s.point(reuseCenter) ? reuseCenter : s.addPoint(center);
+    const double apothem = (sideMiddle - center).length();
+    ids.outer = s.addCircle(ids.center, (corners[0] - center).length(), true);
+    ids.inner = s.addCircle(ids.center, apothem, true);
+    for (const Vec2 p : corners)
+        ids.corners.push_back(s.addPoint(p));
+    for (int i = 0; i < sides; ++i)
+        ids.sides.push_back(s.addLine(ids.corners[i], ids.corners[(i + 1) % sides]));
+    // Corners on one circle and equal sides make it regular (for any count;
+    // equal sides around an inner circle alone would let an even polygon
+    // flex, like a rhombus around a circle).
+    for (const EntityId corner : ids.corners)
+        s.addConstraint({ConstraintKind::PointOnCircle, corner, ids.outer});
+    for (int i = 1; i < sides; ++i)
+        s.addConstraint({ConstraintKind::Equal, ids.sides[0], ids.sides[i]});
+    s.addConstraint({ConstraintKind::Tangent, ids.sides[0], ids.inner});
+    return ids;
+}
+
 Result<EntityId> filletCorner(Sketch& s, EntityId corner, double radius)
 {
     std::vector<EntityId> lines;

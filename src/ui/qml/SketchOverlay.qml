@@ -23,6 +23,12 @@ Item {
     function handleKey(event) {
         if (!app.sketchMode)
             return false
+        // +/- step the counter (a polygon's sides) unless a value is being typed.
+        if (app.sketchCounterVisible && typing.length === 0 && !(event.modifiers & Qt.ControlModifier)
+                && (event.text === "+" || event.text === "=" || event.text === "-")) {
+            app.stepSketchCounter(event.text === "-" ? -1 : 1)
+            return true
+        }
         if (app.sketchDrawing) {
             if (event.key === Qt.Key_Tab) {
                 app.focusNextSketchInput()
@@ -54,8 +60,8 @@ Item {
             }
         }
         if (!(event.modifiers & Qt.ControlModifier)) {
-            const tools = { "l": "line", "r": "rectangle", "e": "centerRectangle", "c": "circle", "a": "arc", "o": "slot",
-                            "t": "trim", "s": "select" }
+            const tools = { "l": "line", "r": "rectangle", "e": "centerRectangle", "p": "polygon", "c": "circle",
+                            "a": "arc", "o": "slot", "t": "trim", "s": "select" }
             const tool = tools[event.text.toLowerCase()]
             if (tool !== undefined && !app.sketchDrawing) {
                 app.setSketchTool(tool)
@@ -103,6 +109,7 @@ Item {
                     { id: "line", label: "Line", key: "L" },
                     { id: "rectangle", label: "Rectangle", key: "R" },
                     { id: "centerRectangle", label: "Center rect", key: "E" },
+                    { id: "polygon", label: "Polygon", key: "P" },
                     { id: "circle", label: "Circle", key: "C" },
                     { id: "arc", label: "Arc", key: "A" },
                     { id: "slot", label: "Slot", key: "O" },
@@ -152,6 +159,47 @@ Item {
         }
     }
 
+    // A count with -/+ buttons (a polygon's sides): touch has no +/- keys.
+    Panel {
+        id: counterPanel
+        objectName: "sketchCounter"
+        anchors { horizontalCenter: toolbar.horizontalCenter; top: toolbar.bottom; topMargin: 42 }
+        visible: overlay.app.sketchCounterVisible
+        width: counterRow.implicitWidth + 2 * Theme.panelPadding
+        height: Theme.controlHeight + 2 * Theme.panelPadding
+        Row {
+            id: counterRow
+            anchors.centerIn: parent
+            spacing: 4
+            ActionButton {
+                objectName: "sketchCounterMinus"
+                text: "\u2212"
+                onClicked: overlay.app.stepSketchCounter(-1)
+                ToolTip.visible: hovered
+                ToolTip.text: "Fewer (-)"
+                ToolTip.delay: 500
+            }
+            Text {
+                objectName: "sketchCounterText"
+                width: Math.max(implicitWidth, 64)
+                height: parent.height
+                text: overlay.app.sketchCounterText
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                font.pixelSize: 13
+                color: Theme.text
+            }
+            ActionButton {
+                objectName: "sketchCounterPlus"
+                text: "+"
+                onClicked: overlay.app.stepSketchCounter(1)
+                ToolTip.visible: hovered
+                ToolTip.text: "More (+)"
+                ToolTip.delay: 500
+            }
+        }
+    }
+
     // ------------------------------------------------------------ labels
     Repeater {
         model: overlay.app.sketchLabels
@@ -169,7 +217,7 @@ Item {
                 id: pill
                 readonly property bool isHint: labelItem.modelData.kind === "hint"
                 readonly property bool isInput: labelItem.modelData.kind === "input"
-                width: label.implicitWidth + (isHint ? 12 : 16)
+                width: label.implicitWidth + (caption.visible ? caption.implicitWidth + 4 : 0) + (isHint ? 12 : 16)
                 height: isHint ? 20 : 24
                 radius: height / 2
                 color: isHint ? "transparent"
@@ -177,14 +225,26 @@ Item {
                 border.color: isInput && labelItem.modelData.focused ? Theme.accent
                             : isHint ? "transparent" : Theme.panelBorder
                 border.width: isInput && labelItem.modelData.focused ? 1.5 : 1
-                Text {
-                    id: label
+                Row {
                     anchors.centerIn: parent
-                    text: pill.isInput && labelItem.modelData.focused && overlay.typing.length > 0
-                          ? overlay.typing : labelItem.modelData.text
-                    font.pixelSize: pill.isHint ? 11 : 12
-                    font.weight: labelItem.modelData.locked ? Font.DemiBold : Font.Normal
-                    color: pill.isHint ? Theme.accent : Theme.text
+                    spacing: 4
+                    Text {
+                        id: label
+                        text: pill.isInput && labelItem.modelData.focused && overlay.typing.length > 0
+                              ? overlay.typing : labelItem.modelData.text
+                        font.pixelSize: pill.isHint ? 11 : 12
+                        font.weight: labelItem.modelData.locked ? Font.DemiBold : Font.Normal
+                        color: pill.isHint ? Theme.accent : Theme.text
+                    }
+                    // What the value is ("across flats", "sides").
+                    Text {
+                        id: caption
+                        visible: text.length > 0
+                        text: labelItem.modelData.caption !== undefined ? labelItem.modelData.caption : ""
+                        font.pixelSize: 11
+                        color: Theme.mutedText
+                        anchors.verticalCenter: label.verticalCenter
+                    }
                 }
                 MouseArea {
                     anchors.fill: parent

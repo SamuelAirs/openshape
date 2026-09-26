@@ -197,6 +197,7 @@ QString AppController::sketchTool() const
     case interact::SketchTool::Slot: return QStringLiteral("slot");
     case interact::SketchTool::Trim: return QStringLiteral("trim");
     case interact::SketchTool::CenterRectangle: return QStringLiteral("centerRectangle");
+    case interact::SketchTool::Polygon: return QStringLiteral("polygon");
     }
     return {};
 }
@@ -219,6 +220,28 @@ bool AppController::sketchDrawing() const
     return s && (s->isDrawing() || s->isOffsetting()); // typed values go to the shape or the offset
 }
 
+bool AppController::sketchCounterVisible() const
+{
+    const auto* s = interaction_->sketchSession();
+    return s && s->counter().has_value();
+}
+
+QString AppController::sketchCounterText() const
+{
+    const auto* s = interaction_->sketchSession();
+    const auto counter = s ? s->counter() : std::nullopt;
+    return counter ? QStringLiteral("%1 %2").arg(counter->value).arg(q(counter->label)) : QString();
+}
+
+void AppController::stepSketchCounter(int delta)
+{
+    if (auto* s = interaction_->sketchSession()) {
+        s->stepCounter(delta);
+        emit stateChanged();
+        emit viewChanged();
+    }
+}
+
 QVariantList AppController::sketchLabels() const
 {
     QVariantList list;
@@ -233,6 +256,7 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("key"), q(label.key));
         map.insert(QStringLiteral("constraint"), int(label.constraint));
         map.insert(QStringLiteral("text"), q(label.text));
+        map.insert(QStringLiteral("caption"), q(label.caption));
         map.insert(QStringLiteral("x"), label.screen.x);
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
@@ -296,6 +320,8 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::Trim);
     else if (name == QLatin1String("centerRectangle"))
         interaction_->setSketchTool(interact::SketchTool::CenterRectangle);
+    else if (name == QLatin1String("polygon"))
+        interaction_->setSketchTool(interact::SketchTool::Polygon);
 }
 
 QString AppController::sketchType(const QString& text)

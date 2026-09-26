@@ -1001,3 +1001,68 @@ TEST(SketchInteraction, CenterRectangleTypedAndExtruded)
     EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 12000, 1e-4);
     EXPECT_TRUE(h.messages.empty());
 }
+
+TEST(SketchInteraction, PolygonToolSidesAndAcrossFlats)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Polygon);
+    ASSERT_TRUE(h.session().counter().has_value());
+    EXPECT_EQ(h.session().counter()->value, 6) << "hexagons by default";
+    EXPECT_EQ(h.session().counter()->label, "sides");
+    h.click(h.sketchScreen({0, 0})); // the center, on the origin
+    ASSERT_TRUE(h.session().isDrawing());
+    h.move(h.sketchScreen({12, 0.2})); // straight to the right: the first side is vertical
+    // The size label says what it measures.
+    bool captioned = false;
+    for (const auto& label : h.session().labels(h.controller.camera()))
+        captioned = captioned || (label.key == "size" && label.caption == "across flats");
+    EXPECT_TRUE(captioned);
+    h.type("10"); // across flats
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 6u);
+    EXPECT_EQ(s.circles().size(), 2u);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Vertical), 1u);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0) << "centered, sized and aligned";
+    const double hexagon = 6 * 25 * std::tan(kPi / 6);
+    EXPECT_NEAR(largestRegion(s), hexagon, 1e-6);
+    double maxX = -1e9;
+    for (const auto& [id, l] : s.lines())
+        maxX = std::max(maxX, s.point(l.start)->position.x);
+    EXPECT_NEAR(maxX, 5.0, 1e-9) << "a flat at x = 5";
+
+    // Fewer sides with -, then a typed count: an octagon 20 across flats, elsewhere.
+    EXPECT_TRUE(h.session().stepCounter(-1));
+    EXPECT_EQ(h.session().polygonSides(), 5);
+    EXPECT_TRUE(h.session().stepCounter(+1));
+    h.click(h.sketchScreen({40, 0}));
+    h.move(h.sketchScreen({47, 3}));
+    h.type("20");
+    h.session().focusNextInput();
+    EXPECT_NE(h.session().typeIntoInput("2"), "") << "too few sides";
+    h.type("8");
+    EXPECT_EQ(h.session().polygonSides(), 8);
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_EQ(h.session().sketch().lines().size(), 14u);
+    const auto regions = doc::sketchRegions(h.session().sketch());
+    ASSERT_TRUE(regions.ok());
+    ASSERT_EQ(regions.value().size(), 2u);
+    double octagon = 0;
+    for (const auto& r : regions.value())
+        if (std::abs(r.area - hexagon) > 1e-6)
+            octagon = r.area;
+    EXPECT_NEAR(octagon, 8 * 100 * std::tan(kPi / 8), 1e-6);
+    EXPECT_EQ(h.session().polygonSides(), 8) << "remembered for the next polygon";
+
+    // Extrude the hexagon 5 mm.
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({0, 1, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), hexagon * 5, 1e-4);
+    EXPECT_TRUE(h.messages.empty());
+}

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 namespace os::interact {
@@ -168,7 +169,7 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
     const double pixel = camera.pixelSize(working_.plane().toWorld(*local));
     const double step = snapIncrement(pixel, 10.0);
     Vec2 p = *local;
-    if (anchor_ && tool_ == SketchTool::Line) {
+    if (anchor_ && (tool_ == SketchTool::Line || tool_ == SketchTool::Polygon)) {
         const Vec2 d = p - anchor_->position;
         if (d.length() > 4 * pixel) {
             const double angle = std::atan2(std::abs(d.y), std::abs(d.x)) * 180.0 / kPi;
@@ -274,6 +275,9 @@ void SketchSession::beginShape(const Snap& at)
     case SketchTool::Line:
         inputs_ = {{"length", "L", "", false, 0}};
         break;
+    case SketchTool::Polygon: // the size across flats, then (Tab) the number of sides
+        inputs_ = {{"size", "The size", "", false, 0}, {"sides", "Sides", "", false, 0}};
+        break;
     case SketchTool::Arc:  // the radius input appears once the end is placed
     case SketchTool::Slot: // the width input appears once the second center is placed
     case SketchTool::Trim:
@@ -332,6 +336,14 @@ Vec2 SketchSession::constrainedCursor() const
             const double l = d.length();
             d = l > 1e-9 ? d * (1.0 / l) : Vec2{1, 0};
             c = a + d * (*dia / 2);
+        }
+        break;
+    case SketchTool::Polygon: // the cursor is the middle of a side: half the size across flats away
+        if (const auto size = input("size")) {
+            Vec2 d = c - a;
+            const double l = d.length();
+            d = l > 1e-9 ? d * (1.0 / l) : Vec2{1, 0};
+            c = a + d * (*size / 2);
         }
         break;
     case SketchTool::Arc:
@@ -452,6 +464,27 @@ bool SketchSession::finishShape(const Snap& endSnap)
         if (input("height"))
             next.addConstraint({sketch::ConstraintKind::VerticalDistance, corners[1], corners[2], corner.y - low.y});
         if (!commit(std::move(next), "Center rectangle"))
+            return false;
+        resetShape();
+        return true;
+    }
+    case SketchTool::Polygon: {
+        if ((end.position - start.position).length() < kTiny) {
+            message("Move away from the center to give the polygon a size.");
+            return false;
+        }
+        const auto ids = sketch::addPolygon(next, start.position, end.position, polygonSides_, start.point);
+        if (ids.sides.empty())
+            return false;
+        // The pointer straight beside or above the center (shown as a guide)
+        // makes the first side vertical or horizontal.
+        if (end.horizontal)
+            next.addConstraint({sketch::ConstraintKind::Vertical, ids.sides[0]});
+        else if (end.vertical)
+            next.addConstraint({sketch::ConstraintKind::Horizontal, ids.sides[0]});
+        if (const auto size = input("size"))
+            next.addConstraint({sketch::ConstraintKind::Diameter, ids.inner, sketch::kNoEntity, *size});
+        if (!commit(std::move(next), "Polygon"))
             return false;
         resetShape();
         return true;
@@ -803,6 +836,31 @@ bool SketchSession::keyPress(Key key)
     return false;
 }
 
+// ---- Counters -------------------------------------------------------------------------------
+
+std::optional<SketchCounter> SketchSession::counter() const
+{
+    if (tool_ == SketchTool::Polygon)
+        return SketchCounter{"sides", polygonSides_};
+    return std::nullopt;
+}
+
+bool SketchSession::stepCounter(int delta)
+{
+    if (tool_ != SketchTool::Polygon)
+        return false;
+    const int sides = std::clamp(polygonSides_ + delta, sketch::kMinPolygonSides, sketch::kMaxPolygonSides);
+    if (sides == polygonSides_)
+        return false;
+    polygonSides_ = sides;
+    for (auto& in : inputs_)
+        if (in.key == "sides") { // the typed count gives way to the new one
+            in.text.clear();
+            in.locked = false;
+        }
+    return true;
+}
+
 // ---- Typed values -------------------------------------------------------------------------
 
 std::string SketchSession::typeIntoInput(const std::string& text)
@@ -822,6 +880,20 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
         in.text = text;
         if (text.empty()) {
             in.locked = false;
+            return {};
+        }
+        if (key == "sides") {
+            // A count, not a length.
+            char* rest = nullptr;
+            const long n = std::strtol(text.c_str(), &rest, 10);
+            if (rest == text.c_str() || *rest != '\0' || n < sketch::kMinPolygonSides || n > sketch::kMaxPolygonSides) {
+                in.locked = false;
+                return "The number of sides must be a whole number from " + std::to_string(sketch::kMinPolygonSides) + " to "
+                     + std::to_string(sketch::kMaxPolygonSides) + ".";
+            }
+            polygonSides_ = int(n);
+            in.locked = true;
+            in.value = double(n);
             return {};
         }
         const auto parsed = parseLength(text, document_.displayUnit());
@@ -1243,6 +1315,10 @@ std::string SketchSession::hintText() const
         return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle";
     case SketchTool::CenterRectangle:
         return anchor_ ? "Click a corner, or type width, Tab, height, Enter" : "Click the center of the rectangle";
+    case SketchTool::Polygon:
+        return anchor_ ? "The pointer sets the middle of a side \xC2\xB7 type the size across flats, Tab for the sides "
+                         "\xC2\xB7 +/- change the sides"
+                       : "Click the center of the polygon \xC2\xB7 +/- change the number of sides";
     case SketchTool::Circle:
         return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center";
     case SketchTool::Line:
@@ -1353,6 +1429,16 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 const auto slot = slotShape();
                 measured = slot ? 2 * slot->radius : 0;
                 label.screen = screen(cursor_.position) + Vec2{40, -18};
+            } else if (in.key == "size") {
+                measured = 2 * (c - a).length();
+                label.caption = polygonSides_ % 2 == 0 ? "across flats" : "inner \xC3\x98";
+                label.screen = screen(c) + Vec2{56, -18};
+            } else if (in.key == "sides") {
+                label.caption = "sides";
+                label.screen = screen(a) + Vec2{0, 30};
+                label.text = in.locked ? in.text : std::to_string(polygonSides_);
+                out.push_back(label);
+                continue;
             }
             label.text = in.locked ? in.text : trimmed(measured, unit);
             out.push_back(label);
@@ -1465,6 +1551,17 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
         case SketchTool::Circle:
             addCircle(a, (c - a).length(), SketchStyle::Preview);
             break;
+        case SketchTool::Polygon: {
+            const auto corners = sketch::polygonCorners(a, c, polygonSides_);
+            for (std::size_t i = 0; i < corners.size(); ++i)
+                out.lines.push_back({plane.toWorld(corners[i]), plane.toWorld(corners[(i + 1) % corners.size()]),
+                                     SketchStyle::Preview});
+            if (!corners.empty()) {
+                addCircle(a, (c - a).length(), SketchStyle::Guide);
+                out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Guide});
+            }
+            break;
+        }
         case SketchTool::Line:
             out.lines.push_back({plane.toWorld(a), plane.toWorld(c), SketchStyle::Preview});
             break;

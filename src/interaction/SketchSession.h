@@ -21,7 +21,7 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle };
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle, Polygon };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
@@ -30,9 +30,17 @@ struct SketchLabel {
     std::string key;                          // Input: "width", "height", "diameter", "length"
     sketch::EntityId constraint = sketch::kNoEntity; // Dimension: constraint id
     std::string text;
+    std::string caption; // what the value is, shown after it in muted text ("across flats", "sides")
     Vec2 screen;
     bool focused = false; // Input that receives typed digits
     bool locked = false;  // Input whose value the user typed
+};
+
+// A whole number with -/+ buttons for the active tool or mode (a polygon's
+// sides, a pattern's copies): touch needs buttons, keyboards use +/-.
+struct SketchCounter {
+    std::string label; // "sides", "copies"
+    int value = 0;
 };
 
 // Editing session for one sketch. Holds a working copy that tools modify;
@@ -65,6 +73,11 @@ public:
     void hover(const PointerEvent& event, const Camera& camera);
     void leave();
     bool keyPress(Key key);
+
+    // Polygon tool: the number of sides (kept for the next polygon).
+    int polygonSides() const { return polygonSides_; }
+    std::optional<SketchCounter> counter() const;
+    bool stepCounter(int delta);
 
     // ---- Typed values ----
     bool hasInputs() const { return !inputs_.empty(); }
@@ -158,6 +171,7 @@ private:
     sketch::EntityId chainStart_ = sketch::kNoEntity;   // first point of a line chain
     std::vector<Input> inputs_;
     std::size_t focusedInput_ = 0;
+    int polygonSides_ = 6;
 
     // Press tracking.
     bool pressed_ = false;

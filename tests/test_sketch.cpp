@@ -573,3 +573,78 @@ TEST(SketchEdit, CenterRectangleStaysCentered)
     EXPECT_EQ(addCenterRectangle(t, {5, 5}, {8, 5}).center, kNoEntity);
     (void)free;
 }
+
+namespace {
+// Side lengths and corner distances from the center of a polygon.
+void expectRegular(const Sketch& s, const PolygonIds& ids, double apothem)
+{
+    const int n = int(ids.corners.size());
+    const double side = 2 * apothem * std::tan(kPi / n);
+    const double circumradius = apothem / std::cos(kPi / n);
+    const Vec2 c = pos(s, ids.center);
+    for (int i = 0; i < n; ++i) {
+        const auto* l = s.line(ids.sides[i]);
+        EXPECT_NEAR((pos(s, l->end) - pos(s, l->start)).length(), side, 1e-7) << "side " << i;
+        EXPECT_NEAR((pos(s, ids.corners[i]) - c).length(), circumradius, 1e-7) << "corner " << i;
+    }
+}
+} // namespace
+
+TEST(SketchEdit, PolygonStaysRegular)
+{
+    // A hexagon on the origin, the middle of its first side at (5, 0): 10 across flats.
+    Sketch s;
+    const auto ids = addPolygon(s, {0, 0}, {5, 0}, 6, kOriginId);
+    ASSERT_EQ(ids.corners.size(), 6u);
+    ASSERT_EQ(ids.sides.size(), 6u);
+    EXPECT_EQ(ids.center, kOriginId);
+    EXPECT_TRUE(s.circle(ids.outer)->construction);
+    EXPECT_TRUE(s.circle(ids.inner)->construction);
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 2) << "size and rotation";
+    expectRegular(s, ids, 5.0);
+    // The first side is vertical at x = 5.
+    EXPECT_NEAR(pos(s, s.line(ids.sides[0])->start).x, 5.0, 1e-9);
+    EXPECT_NEAR(pos(s, s.line(ids.sides[0])->end).x, 5.0, 1e-9);
+
+    // Across flats 20 and a vertical first side: fully defined.
+    const EntityId size = s.addConstraint({ConstraintKind::Diameter, ids.inner, kNoEntity, 20.0});
+    s.addConstraint({ConstraintKind::Vertical, ids.sides[0]});
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 0);
+    expectRegular(s, ids, 10.0);
+    // Opposite sides are 20 apart (x = 10 and x = -10).
+    EXPECT_NEAR(pos(s, s.line(ids.sides[3])->start).x, -10.0, 1e-9);
+
+    // Dragging a corner of a free polygon keeps it regular.
+    s.remove(size);
+    ASSERT_TRUE(solveDragging(s, ids.corners[1], {9, 14}).ok);
+    const double apothem = s.circle(ids.inner)->radius;
+    EXPECT_GT(apothem, 10.5);
+    expectRegular(s, ids, apothem);
+
+    // Round trip.
+    auto back = Sketch::fromJson(s.toJson());
+    ASSERT_TRUE(back.ok()) << back.developerMessage();
+    EXPECT_EQ(back.value().lines().size(), 6u);
+    EXPECT_EQ(back.value().circles().size(), 2u);
+    EXPECT_EQ(back.value().constraints().size(), s.constraints().size());
+}
+
+TEST(SketchEdit, PolygonOddCountsAndLimits)
+{
+    Sketch s;
+    const auto pentagon = addPolygon(s, {10, 10}, {10, 14}, 5);
+    ASSERT_EQ(pentagon.sides.size(), 5u);
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, 4) << "center, size, rotation";
+    expectRegular(s, pentagon, 4.0);
+    // Side 0 is horizontal (its middle is straight above the center).
+    const auto* first = s.line(pentagon.sides[0]);
+    EXPECT_NEAR(pos(s, first->start).y, 14.0, 1e-9);
+    EXPECT_NEAR(pos(s, first->end).y, 14.0, 1e-9);
+    EXPECT_TRUE(addPolygon(s, {0, 0}, {5, 0}, 2).sides.empty());
+    EXPECT_TRUE(addPolygon(s, {0, 0}, {5, 0}, kMaxPolygonSides + 1).sides.empty());
+    EXPECT_TRUE(addPolygon(s, {0, 0}, {0, 0}, 6).sides.empty());
+    EXPECT_EQ(polygonCorners({0, 0}, {1, 0}, 64).size(), 64u);
+}

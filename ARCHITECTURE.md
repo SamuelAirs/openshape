@@ -272,7 +272,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (host body recorded) or the XY plane, animates the view to face it, and hands
   input to a `SketchSession`. The session edits a working copy; tools are
   Select, Line, Rectangle, Center rectangle (the center is the midpoint of a
-  construction diagonal, so it stays centered), Circle, Arc (3-point: start,
+  construction diagonal, so it stays centered), Polygon (regular: corners on
+  a construction circle and equal sides; an inner construction circle
+  touching one side carries the size across flats; a `SketchCounter` shows
+  the side count with -/+ buttons), Circle, Arc (3-point: start,
   end, then bend; a typed radius locks it), Slot (two centers, then the
   width) and Trim (click a piece, previewed red). Selected curves offer Offset (a mode: the pointer
   picks the side, a typed distance fixes it, click/Enter applies); selected
