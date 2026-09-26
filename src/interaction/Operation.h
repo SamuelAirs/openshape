@@ -91,6 +91,9 @@ public:
 
 protected:
     virtual std::unique_ptr<doc::Feature> makeFeature(double value) const = 0;
+    // The previewed result for `value`: by default makeFeature evaluated on
+    // the preview body (Mirror/Pattern with separate bodies show the copies instead).
+    virtual Result<geom::Shape> computePreview(double value, const doc::Document& document) const;
     // Changes the stored value without recomputing the preview.
     void setStoredValue(double value) { value_ = value; }
     // Drops the preview and error (e.g. when a needed pick is undone).
@@ -292,12 +295,20 @@ public:
     Status setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
     // normalAxis 0: across YZ (flips X), 1: across XZ (flips Y), 2: across XY (flips Z).
     void setOriginPlane(int normalAxis, const doc::Document& document);
+    // "Separate bodies": the mirror image becomes a body of its own that
+    // follows this one (a Copy step) instead of joining it.
+    bool separate() const { return separate_; }
+    void setSeparate(bool separate, const doc::Document& document);
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
     bool neutralIsIdentity() const override { return false; }
 
 private:
+    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies() const;
+    bool separate_ = false;
     MirrorOperation(Uuid bodyId, const Vec3& center) : Operation(bodyId, LinearManipulator(center, {0, 0, 1})) {}
     struct Plane {
         Vec3 origin, normal;
@@ -330,6 +341,11 @@ public:
     void setCount(int count, const doc::Document& document);
     // A straight edge (linear direction) or a round face/edge (circular axis).
     Status setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
+    // "Separate bodies": every copy becomes a body of its own that follows
+    // this one (a Copy step) instead of joining it (at most 100 copies).
+    bool separate() const { return separate_; }
+    void setSeparate(bool separate, const doc::Document& document);
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
 
     int handleCount() const override { return circular_ ? 0 : 1; }
     LinearManipulator handle(int index) const override;
@@ -339,8 +355,11 @@ public:
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
 
 private:
+    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies(double value) const;
+    bool separate_ = false;
     PatternOperation(Uuid bodyId, const Vec3& center, const Vec3& size)
         : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center), size_(size) {}
     Vec3 axisVectorFor() const;
@@ -356,7 +375,9 @@ private:
 
 // Rotate: X/Y/Z rings through the body's center. Drag a ring or type an
 // angle (degrees) for the active ring; one axis per step (switching rings
-// starts over). Commits as a Move step with a rotation, named "Rotate".
+// starts over). A clicked straight edge becomes the axis (one ring around
+// it); a clicked corner or circle moves the rings' pivot there. Commits as a
+// Move step with a rotation, named "Rotate".
 class RotateOperation final : public Operation {
 public:
     static std::unique_ptr<RotateOperation> create(const doc::Document& document, const Uuid& bodyId);
@@ -368,19 +389,34 @@ public:
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Move; }
 
     int handleCount() const override { return 0; }
-    int ringCount() const override { return 3; }
+    int ringCount() const override { return axis_ ? 1 : 3; }
     RingManipulator ring(int index) const override;
-    int handleAxis(int index) const override { return index; }
+    // Ring colors: X/Y/Z, or the accent for a picked axis along none of them.
+    int handleAxis(int index) const override;
     void setActiveHandle(int index) override;
+    // The pivot (the rings' center, a point on the axis).
     const Vec3& center() const { return center_; }
+    // A picked axis (unit; its largest component positive), if any.
+    const std::optional<Vec3>& axis() const { return axis_; }
+
+    // Turn about the line through `point` along `direction` (a picked
+    // straight edge). The typed or dragged angle is kept.
+    void setAxis(const Vec3& point, const Vec3& direction, const doc::Document& document);
+    // X/Y/Z rings through `point` (a picked corner or circle center).
+    void setPivot(const Vec3& point, const doc::Document& document);
+    // Back to X/Y/Z rings through the body's center.
+    void resetPivot(const doc::Document& document);
+    bool hasCustomPivot() const { return axis_.has_value() || (center_ - bodyCenter_).length() > 1e-12; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double degrees) const override;
 
 private:
     RotateOperation(Uuid bodyId, const Vec3& center)
-        : Operation(bodyId, LinearManipulator(center, {0, 0, 1})), center_(center) {}
+        : Operation(bodyId, LinearManipulator(center, {0, 0, 1})), center_(center), bodyCenter_(center) {}
     Vec3 center_;
+    Vec3 bodyCenter_;
+    std::optional<Vec3> axis_;
 };
 
 // Move: X/Y/Z arrows at the body's center. Drag any arrow or type a value

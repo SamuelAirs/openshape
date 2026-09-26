@@ -226,17 +226,26 @@ void InteractionController::pointerPress(const PointerEvent& event)
             notifyView();
             return;
         }
-        if (const int ring = ringAt(event.position, event.device); ring >= 0) {
-            operation_->setActiveHandle(ring); // a different ring starts from zero
-            drag_.mode = DragMode::Manipulator;
+        // A ring is grabbed once the pointer moves (pointerMove). A click on
+        // it activates it - or, where it crosses an edge or a hole or shaft,
+        // picks that (Rotate about it: the rings often cross the body).
+        if (const int ring = ringAt(event.position, event.device); ring >= 0)
             drag_.ring = ring;
-            drag_.ringHandle = operation_->ring(ring);
-            drag_.ringHandle.beginDrag(camera_, event.position, operation_->value() * kPi / 180.0);
-            hover_ = {};
-            notifyState();
-            notifyView();
-        }
     }
+}
+
+void InteractionController::grabPendingRing()
+{
+    const int ring = drag_.ring;
+    operation_->setActiveHandle(ring); // a different ring starts from zero
+    drag_.mode = DragMode::Manipulator;
+    drag_.ringHandle = operation_->ring(ring);
+    drag_.ringHandle.beginDrag(camera_, drag_.press.position, operation_->value() * kPi / 180.0);
+    hover_ = {};
+    hoveredHandle_ = -1;
+    hoveredRing_ = -1;
+    notifyState();
+    notifyView();
 }
 
 int InteractionController::ringAt(Vec2 screen, PointerDevice device) const
@@ -292,6 +301,11 @@ void InteractionController::pointerMove(const PointerEvent& event)
         return;
     }
     const auto profile = InputProfile::forDevice(drag_.press.device);
+    if (drag_.mode == DragMode::Pending && drag_.ring >= 0 && operation_) {
+        if ((event.position - drag_.press.position).length() < profile.dragThreshold)
+            return;
+        grabPendingRing(); // then this move turns it (below)
+    }
     if (drag_.mode == DragMode::Pending) {
         if ((event.position - drag_.press.position).length() < profile.dragThreshold)
             return;
@@ -347,7 +361,9 @@ void InteractionController::pointerRelease(const PointerEvent& event)
 {
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
+    const int pendingRing = mode == DragMode::Pending ? drag_.ring : -1;
     drag_.mode = DragMode::None;
+    drag_.ring = -1;
     if (press.device == PointerDevice::Touch && penMode_) {
         notifyView(); // a finger only navigated (or merely tapped)
         return;
@@ -365,7 +381,22 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     }
     // Only a left click or a tap selects (and applies a pending value); right
     // and middle buttons orbit/pan when dragged and do nothing on a click.
-    if (mode == DragMode::Pending && press.button == PointerButton::Left)
+    // In Rotate, what a click on a ring crosses may be what the user wants to
+    // turn about: an edge, or a hole or shaft (a round face).
+    bool axisUnderRing = false;
+    if (pendingRing >= 0 && dynamic_cast<const RotateOperation*>(operation_.get())) {
+        const sel::PickResult hit = pickAt(press.position, InputProfile::forDevice(press.device));
+        const doc::Body* body = hit.hit() ? document_->body(hit.bodyId) : nullptr;
+        axisUnderRing = hit.kind == sel::PickKind::Edge
+                     || (hit.kind == sel::PickKind::Face && body && [&] {
+                            const auto face = geom::faceInfo(body->shape(), hit.index);
+                            return face && face->hasAxis();
+                        }());
+    }
+    if (pendingRing >= 0 && operation_ && !axisUnderRing) {
+        operation_->setActiveHandle(pendingRing); // clicking a ring makes it the active one
+        notifyState();
+    } else if (mode == DragMode::Pending && press.button == PointerButton::Left)
         click(press);
     else if (mode == DragMode::Manipulator)
         notifyState();
@@ -568,6 +599,46 @@ void InteractionController::click(const PointerEvent& event)
         notifyState();
         notifyView();
         return;
+    }
+    // Rotate: a straight edge becomes the axis (one ring around it); a corner
+    // (an edge clicked near its end) or a circle moves the pivot there. The
+    // angle is kept. Other clicks behave as usual.
+    if (auto* rotate = dynamic_cast<RotateOperation*>(operation_.get()); rotate && hit.kind == sel::PickKind::Edge) {
+        const doc::Body* body = document_->body(hit.bodyId);
+        if (const auto edge = body ? geom::edgeInfo(body->shape(), hit.index) : std::nullopt) {
+            std::optional<Vec3> corner;
+            // The corner zones never cover a whole short edge (a finger's
+            // zone is 36 px): its middle still picks the axis.
+            const double onScreen = (camera_.project(edge->start) - camera_.project(edge->end)).length();
+            double nearest = std::min(profile.pickTolerance * 2, onScreen / 4);
+            if ((edge->start - edge->end).length() > 1e-9) // closed curves have no corners
+                for (const Vec3& end : {edge->start, edge->end})
+                    if (const double d = (camera_.project(end) - event.position).length(); d <= nearest) {
+                        nearest = d;
+                        corner = end;
+                    }
+            if (corner)
+                rotate->setPivot(*corner, *document_);
+            else if (edge->kind == geom::CurveKind::Line)
+                rotate->setAxis(edge->midpoint, edge->tangent, *document_);
+            else if (edge->kind == geom::CurveKind::Circle)
+                rotate->setPivot(edge->center, *document_);
+            else
+                message("Turn about a straight edge, or click a corner or a circle to move the pivot there.");
+            notifyState();
+            notifyView();
+            return;
+        }
+    }
+    // ...and a hole or shaft (a round face) gives its axis.
+    if (auto* rotate = dynamic_cast<RotateOperation*>(operation_.get()); rotate && hit.kind == sel::PickKind::Face) {
+        const doc::Body* body = document_->body(hit.bodyId);
+        if (const auto face = body ? geom::faceInfo(body->shape(), hit.index) : std::nullopt; face && face->hasAxis()) {
+            rotate->setAxis(face->axisOrigin, face->axisDirection, *document_);
+            notifyState();
+            notifyView();
+            return;
+        }
     }
 
     if (operation_ && operation_->canCommit()) {
@@ -776,18 +847,32 @@ Status InteractionController::commitOperation()
         alignRequested_ = false; // done: the source face/edge offers its usual tools again
     if (kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern)
         bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    const Uuid target = operation_->bodyId();
+    const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
+    const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
     }
     operation_.reset();
+    suggestSplit(target, piecesBefore);
     // Edges consumed by a fillet/chamfer no longer exist; a face that was
     // pushed still does and stays selected for the next push.
     if (clearSelection)
         selection_.clear();
     afterDocumentEdit();
     return status;
+}
+
+void InteractionController::suggestSplit(const Uuid& bodyId, int piecesBefore)
+{
+    // A cut that split the body in two: say how to make each piece a body
+    // (not automatic: the pieces may belong together).
+    if (const doc::Body* after = piecesBefore > 0 ? document_->body(bodyId) : nullptr;
+        after && after->shape().solidCount() > piecesBefore && !after->hasFailures())
+        message(after->name() + " is now in " + std::to_string(after->shape().solidCount())
+                + " separate pieces. To make each piece a body, select it and choose Split into bodies.");
 }
 
 void InteractionController::cancelOperation()
@@ -885,13 +970,101 @@ Status InteractionController::deleteSelectedBodies()
     if (bodies.empty())
         return Status::failure(ErrorCode::InvalidArgument, "Select a body to delete.", "delete without body selection");
     selection_.clear();
-    for (const auto& id : bodies) {
-        Status status = undoStack_->push(std::make_unique<cmd::DeleteBodyCommand>(id), *document_);
-        if (!status)
-            message(status.userMessage());
+    Status status = deleteBodies(bodies);
+    if (!status)
+        message(status.userMessage());
+    return status;
+}
+
+namespace {
+
+// "A", "A and B", "A, B and C", "A, B and 3 more".
+std::string nameList(const std::vector<std::string>& names)
+{
+    std::string out;
+    const std::size_t shown = names.size() > 3 ? 2 : names.size();
+    for (std::size_t i = 0; i < shown; ++i)
+        out += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
+    if (shown < names.size())
+        out += " and " + std::to_string(names.size() - shown) + " more";
+    return out;
+}
+
+} // namespace
+
+Status InteractionController::deleteBodies(const std::vector<Uuid>& bodies)
+{
+    auto contains = [](const std::vector<Uuid>& list, const Uuid& id) { return std::find(list.begin(), list.end(), id) != list.end(); };
+    // Bodies built from a body that stays (a piece split off it, its separate
+    // copy, a body that consumed it as a tool) would break: it is hidden
+    // instead. Repeated until stable, since keeping one can keep its sources.
+    std::vector<Uuid> remove;
+    for (const Uuid& id : bodies)
+        if (document_->body(id) && !contains(remove, id))
+            remove.push_back(id);
+    std::vector<Uuid> kept;
+    for (bool again = true; again;) {
+        again = false;
+        for (auto it = remove.begin(); it != remove.end(); ++it) {
+            const auto users = document_->bodiesUsing(*it);
+            if (std::any_of(users.begin(), users.end(), [&](const Uuid& user) { return !contains(remove, user); })) {
+                kept.push_back(*it);
+                remove.erase(it);
+                again = true;
+                break;
+            }
+        }
     }
+    const std::vector<Uuid> deleted = remove;
+    // The bodies built from others go first, so every deletion leaves the rest
+    // intact (and undo restores sources before what is built from them).
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    while (!remove.empty()) {
+        auto leaf = std::find_if(remove.begin(), remove.end(), [&](const Uuid& id) {
+            const auto users = document_->bodiesUsing(id);
+            return std::none_of(users.begin(), users.end(), [&](const Uuid& user) { return contains(remove, user); });
+        });
+        if (leaf == remove.end())
+            leaf = remove.begin(); // a cycle (only in a hand-edited file)
+        steps.push_back(std::make_unique<cmd::DeleteBodyCommand>(*leaf));
+        remove.erase(leaf);
+    }
+    std::vector<std::string> hiddenNames, userNames;
+    for (const Uuid& id : kept) {
+        const doc::Body* body = document_->body(id);
+        if (body->isVisible()) {
+            steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(id, false));
+            hiddenNames.push_back(body->name());
+        }
+        for (const Uuid& user : document_->bodiesUsing(id))
+            if (const doc::Body* u = document_->body(user); u && !contains(kept, user) && !contains(deleted, user)
+                && std::find(userNames.begin(), userNames.end(), u->name()) == userNames.end())
+                userNames.push_back(u->name());
+    }
+    if (steps.empty()) {
+        if (kept.empty())
+            return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "delete: unknown bodies");
+        const doc::Body& first = *document_->body(kept.front());
+        return Status::failure(ErrorCode::InvalidArgument,
+                               first.name() + " cannot be deleted: " + nameList(userNames)
+                                   + (userNames.size() == 1 ? " is" : " are") + " built from it.",
+                               "delete: other bodies depend on it");
+    }
+    std::unique_ptr<cmd::Command> command;
+    if (steps.size() == 1)
+        command = std::move(steps.front());
+    else
+        command = std::make_unique<cmd::CompositeCommand>(kept.empty() ? "Delete bodies" : "Delete", std::move(steps));
+    Status status = undoStack_->push(std::move(command), *document_);
+    if (!status)
+        return status;
+    operation_.reset();
+    if (!hiddenNames.empty())
+        message(nameList(hiddenNames) + (hiddenNames.size() == 1 ? " is" : " are") + " hidden, not deleted: "
+                + nameList(userNames) + (userNames.size() == 1 ? " is" : " are") + " built from "
+                + (hiddenNames.size() == 1 ? "it." : "them."));
     afterDocumentEdit();
-    return okStatus();
+    return status;
 }
 
 Status InteractionController::deleteSelectedFaces()
@@ -929,6 +1102,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"plane:0", "Across YZ", mirror->originPlane() == 0});
         actions.push_back({"plane:1", "Across XZ", mirror->originPlane() == 1});
         actions.push_back({"plane:2", "Across XY", mirror->originPlane() == 2});
+        actions.push_back({"separate", "Separate bodies", mirror->separate()});
         if (mirror->canCommit())
             actions.push_back({"apply", "Apply", false});
         actions.push_back({"move", "Move", false});
@@ -945,6 +1119,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
                                pattern->axisIndex() == axis});
         actions.push_back({"fewer", "\xE2\x88\x92 copy", false});
         actions.push_back({"more", "+ copy", false});
+        actions.push_back({"separate", "Separate bodies", pattern->separate()});
         return actions;
     }
     if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get())) {
@@ -1024,9 +1199,15 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
         if (selection_.size() == 1) {
             actions.push_back({"move", "Move", dynamic_cast<const MoveOperation*>(operation_.get()) != nullptr});
-            actions.push_back({"rotate", "Rotate", dynamic_cast<const RotateOperation*>(operation_.get()) != nullptr});
+            const auto* rotate = dynamic_cast<const RotateOperation*>(operation_.get());
+            actions.push_back({"rotate", "Rotate", rotate != nullptr});
+            if (rotate && rotate->hasCustomPivot())
+                actions.push_back({"pivotCenter", "Center pivot", false});
             actions.push_back({"mirror", "Mirror", dynamic_cast<const MirrorOperation*>(operation_.get()) != nullptr});
             actions.push_back({"pattern", "Pattern", dynamic_cast<const PatternOperation*>(operation_.get()) != nullptr});
+            actions.push_back({"duplicate", "Duplicate", false});
+            if (const doc::Body* body = document_->body(selection_.items().front().bodyId); body && body->shape().solidCount() > 1)
+                actions.push_back({"split", "Split into bodies", false});
         }
         if (selection_.size() >= 2) {
             // The first body is kept; the others are the tools.
@@ -1117,6 +1298,22 @@ Status InteractionController::triggerAction(const std::string& id)
         return combineSelectedBodies(id == "union" ? doc::CombineMode::Union
                                      : id == "subtract" ? doc::CombineMode::Subtract
                                                         : doc::CombineMode::Intersect);
+    if (id == "duplicate") {
+        // The selected body, or the body of the selected faces/edges.
+        const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) ? std::nullopt : selection_.singleBody();
+        if (!body)
+            return Status::failure(ErrorCode::InvalidArgument,
+                                   "Select one body to duplicate: double-click it, or click it in the Model panel.",
+                                   "duplicate without one body selected");
+        return duplicateBody(*body);
+    }
+    if (id == "split") {
+        const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) ? std::nullopt : selection_.singleBody();
+        if (!body)
+            return Status::failure(ErrorCode::InvalidArgument, "Select the body to split into its separate pieces.",
+                                   "split without one body selected");
+        return splitBody(*body);
+    }
     if (id == "move" || id == "rotate" || id == "mirror" || id == "pattern") {
         bodyTool_ = id == "rotate" ? BodyTool::Rotate : id == "mirror" ? BodyTool::Mirror
                   : id == "pattern" ? BodyTool::Pattern : BodyTool::Move;
@@ -1142,6 +1339,27 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "apply")
         return commitOperation();
+    if (id == "pivotCenter") {
+        auto* rotate = dynamic_cast<RotateOperation*>(operation_.get());
+        if (!rotate)
+            return Status::failure(ErrorCode::InvalidArgument, "Center pivot belongs to Rotate.", "pivotCenter without rotate");
+        rotate->resetPivot(*document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (id == "separate") {
+        if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get()))
+            mirror->setSeparate(!mirror->separate(), *document_);
+        else if (auto* pattern = dynamic_cast<PatternOperation*>(operation_.get()))
+            pattern->setSeparate(!pattern->separate(), *document_);
+        else
+            return Status::failure(ErrorCode::InvalidArgument, "Separate bodies is an option of Mirror and Pattern.",
+                                   "separate without mirror/pattern");
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get()); mirror && id.rfind("plane:", 0) == 0) {
         mirror->setOriginPlane(std::stoi(id.substr(6)), *document_);
         notifyState();
@@ -1477,7 +1695,7 @@ RenderScene InteractionController::renderScene() const
             for (int k = 0; k <= segments; ++k)
                 rr.points.push_back(ring.pointAt(camera_, 2 * kPi * k / segments));
             rr.marker = ring.pointAt(camera_, active ? operation_->value() * kPi / 180.0 : 0.0);
-            rr.axis = i;
+            rr.axis = operation_->handleAxis(i);
             if (!operation_->error().empty() && active)
                 rr.state = HandleState::Error;
             else if (drag_.mode == DragMode::Manipulator && drag_.ring == i)
@@ -1777,8 +1995,36 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
     case doc::FeatureKind::OffsetFace: return "Offset face";
+    case doc::FeatureKind::Split: return "Split";
+    case doc::FeatureKind::SplitPiece: return "Piece";
+    case doc::FeatureKind::Copy: return static_cast<const doc::CopyFeature&>(f).mirror ? "Mirror copy" : "Copy";
     }
     return "Step";
+}
+
+// "about Z" for rotations about an axis parallel to X, Y or Z, else "turn".
+std::string rotationText(double angle, const Vec3& axisVector)
+{
+    const Vec3 a = axisVector.normalized();
+    const double c[3] = {a.x, a.y, a.z};
+    int axis = -1;
+    for (int k = 0; k < 3; ++k)
+        if (std::abs(c[k]) > 0.9999)
+            axis = k;
+    const double shown = axis >= 0 && c[axis] < 0 ? -angle : angle;
+    return formatAngle(shown) + (axis >= 0 ? std::string(" about ") + "XYZ"[axis] : std::string(" turn"));
+}
+
+// "Across YZ" for origin planes, else "Across a face".
+std::string mirrorPlaneText(const Vec3& origin, const Vec3& normal)
+{
+    const Vec3 n = normal.normalized();
+    static const char* planes[] = {"YZ", "XZ", "XY"};
+    const double c[3] = {n.x, n.y, n.z};
+    for (int k = 0; k < 3; ++k)
+        if (std::abs(c[k]) > 0.9999 && origin.length() < 1e-9)
+            return std::string("Across ") + planes[k];
+    return "Across a face";
 }
 
 std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Document& document)
@@ -1821,17 +2067,8 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     case doc::FeatureKind::Move: {
         const auto& m = static_cast<const doc::MoveFeature&>(f);
         std::string text;
-        if (m.rotates) {
-            // "90.0° about Z" for axis rotations, "37.5° turn" for Align's free axes.
-            const Vec3 a = m.rotationAxis.normalized();
-            const double c[3] = {a.x, a.y, a.z};
-            int axis = -1;
-            for (int k = 0; k < 3; ++k)
-                if (std::abs(c[k]) > 0.9999)
-                    axis = k;
-            const double shown = axis >= 0 && c[axis] < 0 ? -m.rotationAngle : m.rotationAngle;
-            text = formatAngle(shown) + (axis >= 0 ? std::string(" about ") + "XYZ"[axis] : std::string(" turn"));
-        }
+        if (m.rotates) // "90.0° about Z" for axis rotations, "37.5° turn" for Align's free axes
+            text = rotationText(m.rotationAngle, m.rotationAxis);
         const Vec3 t = m.translation;
         if (!m.rotates || t.length() > 1e-9) {
             char buf[128];
@@ -1849,15 +2086,32 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         const double d = static_cast<const doc::OffsetFaceFeature&>(f).distance;
         return (d >= 0 ? "+" : "") + formatLength(d, unit);
     }
+    case doc::FeatureKind::Split: {
+        const auto n = static_cast<const doc::SplitFeature&>(f).pieces.size();
+        return "Keeps 1 of " + std::to_string(n) + " pieces";
+    }
+    case doc::FeatureKind::SplitPiece: {
+        const auto& p = static_cast<const doc::SplitPieceFeature&>(f);
+        const doc::Body* source = document.body(p.sourceBody);
+        return "Piece " + std::to_string(p.piece + 1) + " of " + (source ? source->name() : std::string("a deleted body"));
+    }
     case doc::FeatureKind::Mirror: {
         const auto& m = static_cast<const doc::MirrorFeature&>(f);
-        const Vec3 n = m.planeNormal.normalized();
-        static const char* planes[] = {"YZ", "XZ", "XY"};
-        const double c[3] = {n.x, n.y, n.z};
-        for (int k = 0; k < 3; ++k)
-            if (std::abs(c[k]) > 0.9999 && m.planeOrigin.length() < 1e-9)
-                return std::string("Across ") + planes[k];
-        return "Across a face";
+        return mirrorPlaneText(m.planeOrigin, m.planeNormal);
+    }
+    case doc::FeatureKind::Copy: {
+        const auto& c = static_cast<const doc::CopyFeature&>(f);
+        const doc::Body* source = document.body(c.sourceBody);
+        const std::string of = "Of " + (source ? source->name() : std::string("a deleted body"));
+        if (c.mirror)
+            return of + dot + mirrorPlaneText(c.planeOrigin, c.planeNormal);
+        if (std::abs(c.motion.angle) > 1e-12)
+            return of + dot + rotationText(c.motion.angle, c.motion.axis);
+        const Vec3 t = c.motion.translation;
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "%.2f, %.2f, %.2f %s", fromMillimeters(t.x, unit), fromMillimeters(t.y, unit),
+                      fromMillimeters(t.z, unit), std::string(unitSymbol(unit)).c_str());
+        return of + dot + buf;
     }
     case doc::FeatureKind::Pattern: {
         const auto& pt = static_cast<const doc::PatternFeature&>(f);
@@ -1925,6 +2179,19 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             bodyRow.status = HistoryRow::Status::Warning;
             bodyRow.message = "Made of " + std::to_string(body->shape().solidCount())
                             + " separate pieces; they move and combine together.";
+            bodyRow.canSplit = true;
+        }
+        // Bodies built from this one (split-off pieces, separate copies, a body
+        // that consumed it as a tool) would break if it were deleted: Delete
+        // hides it instead, and a hidden one stays.
+        if (const auto users = document_->bodiesUsing(body->id()); !users.empty()) {
+            std::vector<std::string> names;
+            for (const Uuid& user : users)
+                names.push_back(document_->body(user)->name());
+            const std::string built = nameList(names) + (names.size() == 1 ? " is" : " are") + " built from it";
+            bodyRow.canDelete = body->isVisible();
+            if (bodyRow.message.empty())
+                bodyRow.message = body->isVisible() ? built + ": Delete hides it instead." : "Kept hidden: " + built + ".";
         }
         rows.push_back(std::move(bodyRow));
 
@@ -1940,9 +2207,15 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.detail = featureDetail(f, unit, *document_);
             row.canDelete = i > 0;
             row.canSuppress = i > 0;
+            // A later split into bodies dealt with the pieces a step left.
+            bool splitLater = false;
+            for (std::size_t k = i + 1; k < features.size(); ++k)
+                splitLater = splitLater
+                          || (features[k]->kind() == doc::FeatureKind::Split
+                              && body->state(static_cast<int>(k)).status == doc::FeatureStatus::Ok);
             switch (state.status) {
             case doc::FeatureStatus::Ok:
-                row.status = state.note.empty() ? HistoryRow::Status::Ok : HistoryRow::Status::Warning;
+                row.status = state.note.empty() || splitLater ? HistoryRow::Status::Ok : HistoryRow::Status::Warning;
                 break;
             case doc::FeatureStatus::Failed: row.status = HistoryRow::Status::Failed; break;
             case doc::FeatureStatus::NotComputed: row.status = HistoryRow::Status::NotComputed; break;
@@ -1951,6 +2224,9 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.message = state.status == doc::FeatureStatus::Suppressed ? "Suppressed"
                         : state.status == doc::FeatureStatus::Ok         ? state.note
                                                                          : state.userMessage;
+            // A step that left the body in pieces (and it still is): offer the split there too.
+            row.canSplit = state.status == doc::FeatureStatus::Ok && state.output.solidCount() > 1
+                        && body->shape().solidCount() > 1 && !body->hasFailures();
             for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
                     row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
@@ -2030,10 +2306,7 @@ Status InteractionController::setBodyVisible(const Uuid& bodyId, bool visible)
 
 Status InteractionController::deleteBody(const Uuid& bodyId)
 {
-    Status status = undoStack_->push(std::make_unique<cmd::DeleteBodyCommand>(bodyId), *document_);
-    if (status)
-        afterDocumentEdit();
-    return status;
+    return deleteBodies({bodyId}); // the selection drops deleted or hidden bodies itself
 }
 
 Status InteractionController::deleteSketch(const Uuid& sketchId)
@@ -2056,10 +2329,20 @@ Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
     if (selection_.size() < 2 || !selection_.allOfKind(sel::SelectionKind::Body))
         return Status::failure(ErrorCode::InvalidArgument, kSelectTwoBodies, "combine without two bodies");
     // The first selected body is the target; every other one is a tool.
-    const Uuid target = selection_.items()[0].bodyId;
+    Uuid target = selection_.items()[0].bodyId;
+    // A copy or split-off piece is built from its source, so it cannot be a
+    // tool of it. Union and intersect give the same shape either way round:
+    // then the copy keeps the result and the source becomes its tool.
+    if (selection_.size() == 2 && mode != doc::CombineMode::Subtract) {
+        const Uuid other = selection_.items()[1].bodyId;
+        if (document_->dependsOn(other, target) && !document_->dependsOn(target, other))
+            target = other;
+    }
     std::vector<std::unique_ptr<cmd::Command>> steps;
-    for (std::size_t i = 1; i < selection_.size(); ++i) {
+    for (std::size_t i = 0; i < selection_.size(); ++i) {
         const Uuid tool = selection_.items()[i].bodyId;
+        if (tool == target)
+            continue;
         if (document_->dependsOn(tool, target)) {
             const std::string text = "These bodies already depend on each other.";
             message(text);
@@ -2072,14 +2355,74 @@ Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
         steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(tool, false));
     }
     const char* label = mode == doc::CombineMode::Union ? "Union" : mode == doc::CombineMode::Subtract ? "Subtract" : "Intersect";
+    const int piecesBefore = document_->body(target) ? document_->body(target)->shape().solidCount() : 0;
     Status status = undoStack_->push(std::make_unique<cmd::CompositeCommand>(label, std::move(steps)), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
     }
     operation_.reset();
+    // A subtract (or intersect) that cut the body in pieces. A union of
+    // bodies that do not touch was meant to hold them together: no hint.
+    if (mode != doc::CombineMode::Union)
+        suggestSplit(target, piecesBefore);
     if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, target, -1))
         selection_.set(*item);
+    afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::duplicateBody(const Uuid& bodyId)
+{
+    if (session_)
+        return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "duplicate in sketch mode");
+    if (!document_->body(bodyId))
+        return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "duplicate: unknown body");
+    // Like clicking elsewhere: a pending value is applied first.
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(bodyId);
+    const Uuid copy = command->copyId();
+    Status status = undoStack_->push(std::move(command), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    // The copy sits on the source: select it with the Move arrows to drag it away.
+    operation_.reset();
+    bodyTool_ = BodyTool::Move;
+    alignRequested_ = false;
+    if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, copy, -1))
+        selection_.set(*item);
+    afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::splitBody(const Uuid& bodyId)
+{
+    // Every failure is reported here (the Model panel's button ignores the Status).
+    if (session_) {
+        message("Finish the sketch first.");
+        return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "split in sketch mode");
+    }
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    auto command = cmd::makeSplitBodyCommand(*document_, bodyId);
+    if (!command) {
+        message(command.userMessage());
+        return Status::failureFrom(command);
+    }
+    const std::size_t before = document_->bodies().size();
+    Status status = undoStack_->push(std::move(command.value()), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    operation_.reset();
+    const std::size_t made = document_->bodies().size() - before;
+    message(made == 1 ? std::string("Split into 2 bodies.") : "Split into " + std::to_string(made + 1) + " bodies.");
     afterDocumentEdit();
     return status;
 }

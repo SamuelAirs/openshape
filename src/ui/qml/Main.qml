@@ -83,6 +83,8 @@ ApplicationWindow {
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
     Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
+    // Duplicate the selected body (the copy is selected, ready to drag away).
+    Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode; onActivated: window.app.triggerAction("duplicate") }
     Shortcut {
         sequence: "K"
         enabled: viewport.activeFocus && window.app.canStartSketch
@@ -295,7 +297,7 @@ ApplicationWindow {
                     { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
                     { id: "offset", label: "Offset", tip: "Move a face with its neighbours following; a hole or shaft takes its new diameter (e.g. print tolerance)." },
                     { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
-                    { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z: drag a ring (15° steps, Alt for 1°) or type an angle." },
+                    { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
                     { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
                     { id: "pattern", label: "Pattern", tip: "Repeat a body in a row or around an axis (holes and shafts work as axes)." },
                     { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another (or lay a face on the ground)." }
@@ -507,19 +509,25 @@ ApplicationWindow {
             return "Add a box, or start a sketch."
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
+        if (app.operationActive && app.operationTitle === "Move" && app.contextActions.some(a => a.id === "split"))
+            return "This body is in separate pieces: Split into bodies makes each piece a body · drag an arrow to move it"
         if (app.operationActive && app.operationTitle === "Move")
-            return "Drag an arrow or type a distance · Shift+double-click another body to combine them"
+            return "Drag an arrow or type a distance · Duplicate (Ctrl+D) makes a copy to drag away · "
+                 + "Shift+double-click another body to combine them"
         if (app.operationActive && app.operationTitle === "Rotate")
-            return "Drag a ring (15° steps, Alt for 1°) or type an angle · Enter applies"
+            return "Drag a ring (15° steps, Alt for 1°) or type an angle · click an edge or hole to turn about it, "
+                 + "a corner or circle to move the pivot · Enter applies"
         if (app.operationActive && app.operationTitle === "Push/Pull" && app.operationValueLabel !== "Distance")
             return "Drag the arrow or type the new " + app.operationValueLabel.toLowerCase()
                  + " · +5 or -5 changes it by that much · Enter applies"
         if (app.operationActive && app.operationTitle === "Offset")
             return "Drag the arrow or type the new value · Enter applies · Delete removes the face instead"
         if (app.operationActive && app.operationTitle === "Mirror")
-            return "Enter or Apply mirrors it · click another flat face or choose a plane to change it"
+            return "Enter or Apply mirrors it · click another flat face or choose a plane to change it · "
+                 + "Separate bodies keeps the image as its own body"
         if (app.operationActive && app.operationTitle === "Pattern")
-            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · Enter applies"
+            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · "
+                 + "Separate bodies makes each copy a body · Enter applies"
         if (app.operationActive && (app.operationTitle === "Fillet" || app.operationTitle === "Chamfer"))
             return "Drag the arrow, or just type a value · Shift-click to add more edges"
         if (app.operationActive && app.operationTitle === "Shell")

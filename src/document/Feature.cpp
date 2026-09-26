@@ -12,6 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace os::doc {
@@ -35,6 +36,9 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Pattern: return "Pattern";
     case FeatureKind::DeleteFaces: return "DeleteFaces";
     case FeatureKind::OffsetFace: return "OffsetFace";
+    case FeatureKind::Split: return "Split";
+    case FeatureKind::SplitPiece: return "SplitPiece";
+    case FeatureKind::Copy: return "Copy";
     }
     return "Unknown";
 }
@@ -44,7 +48,8 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
     for (FeatureKind k : {FeatureKind::Box, FeatureKind::PushPull, FeatureKind::Fillet, FeatureKind::Chamfer,
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
-                          FeatureKind::DeleteFaces, FeatureKind::OffsetFace})
+                          FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
+                          FeatureKind::Copy})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -67,6 +72,9 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Pattern: return std::make_unique<PatternFeature>(id);
     case FeatureKind::DeleteFaces: return std::make_unique<DeleteFacesFeature>(id);
     case FeatureKind::OffsetFace: return std::make_unique<OffsetFaceFeature>(id);
+    case FeatureKind::Split: return std::make_unique<SplitFeature>(id);
+    case FeatureKind::SplitPiece: return std::make_unique<SplitPieceFeature>(id);
+    case FeatureKind::Copy: return std::make_unique<CopyFeature>(id);
     }
     return nullptr;
 }
@@ -84,7 +92,21 @@ std::optional<double> Feature::parameter(std::string_view key) const
     return std::nullopt;
 }
 
+std::unique_ptr<Feature> Feature::cloneWithNewId() const
+{
+    auto copy = clone();
+    copy->id_ = Uuid::generate();
+    return copy;
+}
+
 namespace {
+
+// Duplicating a body: `id` becomes its copy's id when that object was copied too.
+void remap(Uuid& id, const std::map<Uuid, Uuid>& copies)
+{
+    if (const auto it = copies.find(id); it != copies.end())
+        id = it->second;
+}
 
 Status unknownParameter(std::string_view key)
 {
@@ -305,6 +327,11 @@ Result<geom::Shape> CombineFeature::compute(const geom::Shape& input, const Eval
 Status CombineFeature::setParameter(std::string_view key, double)
 {
     return unknownParameter(key);
+}
+
+void CombineFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(toolBody, copies);
 }
 
 void CombineFeature::writeParams(json& out) const
@@ -635,6 +662,241 @@ Status PatternFeature::readParams(const json& in)
     return okStatus();
 }
 
+// ---- Split into bodies ------------------------------------------------------------
+
+namespace {
+
+json solidToJson(const geom::SolidSignature& s)
+{
+    return {{"volume", s.volume}, {"centroid", vecToJson(s.centroid)}, {"min", vecToJson(s.min)}, {"max", vecToJson(s.max)}};
+}
+
+std::optional<geom::SolidSignature> solidFromJson(const json& in)
+{
+    const auto volume = numberFrom(in, "volume");
+    const auto centroid = vecFromJson(in, "centroid");
+    const auto min = vecFromJson(in, "min");
+    const auto max = vecFromJson(in, "max");
+    if (!volume || !(*volume > 0) || !centroid || !min || !max)
+        return std::nullopt;
+    return geom::SolidSignature{*volume, *centroid, *min, *max};
+}
+
+std::vector<geom::SolidSignature> signaturesOf(const std::vector<geom::Shape>& solids)
+{
+    std::vector<geom::SolidSignature> out;
+    out.reserve(solids.size());
+    for (const geom::Shape& s : solids)
+        out.push_back(geom::solidSignature(s));
+    return out;
+}
+
+} // namespace
+
+std::vector<int> SplitFeature::assign(const std::vector<geom::Shape>& solids) const
+{
+    return geom::matchSolids(signaturesOf(solids), pieces);
+}
+
+Result<geom::Shape> SplitFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    if (pieces.empty())
+        return Result<geom::Shape>::failure(ErrorCode::InvalidArgument, "This split has no pieces.", "Split: no pieces");
+    const std::vector<geom::Shape> solids = geom::solids(input);
+    const std::vector<int> owner = assign(solids);
+    if (owner[0] < 0)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                            "The piece this body kept after the split no longer exists.",
+                                            "Split: kept piece unresolved among " + std::to_string(solids.size()) + " solids");
+    // The kept piece, plus pieces nobody claims (they appeared after the
+    // split): they stay here rather than vanish.
+    std::vector<geom::Shape> kept{solids[std::size_t(owner[0])]};
+    for (std::size_t j = 0; j < solids.size(); ++j)
+        if (std::find(owner.begin(), owner.end(), static_cast<int>(j)) == owner.end())
+            kept.push_back(solids[j]);
+    return geom::gatherSolids(kept);
+}
+
+Status SplitFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void SplitFeature::writeParams(json& out) const
+{
+    json list = json::array();
+    for (const auto& p : pieces)
+        list.push_back(solidToJson(p));
+    out["pieces"] = list;
+}
+
+Status SplitFeature::readParams(const json& in)
+{
+    if (!in.contains("pieces") || !in["pieces"].is_array() || in["pieces"].size() < 2 || in["pieces"].size() > 10000)
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid split.", "Split: pieces");
+    std::vector<geom::SolidSignature> list;
+    for (const auto& p : in["pieces"]) {
+        const auto signature = solidFromJson(p);
+        if (!signature)
+            return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid split.", "Split: bad piece");
+        list.push_back(*signature);
+    }
+    pieces = std::move(list);
+    return okStatus();
+}
+
+Result<geom::Shape> SplitPieceFeature::compute(const geom::Shape&, const EvalContext& context) const
+{
+    using R = Result<geom::Shape>;
+    const Body* source = context.document ? context.document->body(sourceBody) : nullptr;
+    if (!source)
+        return R::failure(ErrorCode::InvalidReference, "The body this piece was split from no longer exists.",
+                          "SplitPiece: source body " + sourceBody.toString() + " missing");
+    const int index = source->featureIndex(splitFeature);
+    const auto* split = index >= 0 ? dynamic_cast<const SplitFeature*>(source->features()[std::size_t(index)].get()) : nullptr;
+    if (!split)
+        return R::failure(ErrorCode::InvalidReference,
+                          "The split this piece came from was deleted from " + source->name() + ".",
+                          "SplitPiece: split step " + splitFeature.toString() + " missing");
+    if (split->isSuppressed())
+        return R::failure(ErrorCode::InvalidReference,
+                          "The split of " + source->name() + " is suppressed, so this piece is still part of it.",
+                          "SplitPiece: split suppressed");
+    if (piece < 1 || piece >= static_cast<int>(split->pieces.size()))
+        return R::failure(ErrorCode::InvalidReference, "This piece no longer exists.", "SplitPiece: piece index out of range");
+    const geom::Shape shape = source->shapeBefore(index);
+    if (shape.isNull())
+        return R::failure(ErrorCode::InvalidReference,
+                          "This piece cannot be built because " + source->name() + " could not be built.",
+                          "SplitPiece: source shape before the split is null");
+    const std::vector<geom::Shape> solids = geom::solids(shape);
+    const std::vector<int> owner = split->assign(solids);
+    const int mine = owner[std::size_t(piece)];
+    if (mine < 0)
+        return R::failure(ErrorCode::InvalidReference,
+                          "This piece is no longer separate from " + source->name() + ", or no longer exists.",
+                          "SplitPiece: piece " + std::to_string(piece) + " unresolved among " + std::to_string(solids.size())
+                              + " solids");
+    return R::success(solids[std::size_t(mine)]);
+}
+
+Status SplitPieceFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void SplitPieceFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sourceBody, copies);
+    remap(splitFeature, copies);
+}
+
+void SplitPieceFeature::writeParams(json& out) const
+{
+    out["body"] = sourceBody.toString();
+    out["split"] = splitFeature.toString();
+    out["piece"] = piece;
+}
+
+Status SplitPieceFeature::readParams(const json& in)
+{
+    const auto body = in.contains("body") && in["body"].is_string() ? Uuid::parse(in["body"].get<std::string>()) : std::nullopt;
+    const auto split = in.contains("split") && in["split"].is_string() ? Uuid::parse(in["split"].get<std::string>()) : std::nullopt;
+    const auto index = intFrom(in, "piece");
+    if (!body || !split || !index || *index < 1)
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid split-off piece.", "SplitPiece: params");
+    sourceBody = *body;
+    splitFeature = *split;
+    piece = *index;
+    return okStatus();
+}
+
+// ---- Copy (Mirror / Pattern as separate bodies) ------------------------------------
+
+Result<geom::Shape> CopyFeature::compute(const geom::Shape&, const EvalContext& context) const
+{
+    using R = Result<geom::Shape>;
+    const Body* source = context.document ? context.document->body(sourceBody) : nullptr;
+    if (!source)
+        return R::failure(ErrorCode::InvalidReference, "The body this is a copy of no longer exists.",
+                          "Copy: source body " + sourceBody.toString() + " missing");
+    const geom::Shape& shape = source->shape();
+    if (shape.isNull())
+        return R::failure(ErrorCode::InvalidReference,
+                          "This copy cannot be built because " + source->name() + " could not be built.",
+                          "Copy: source shape is null");
+    if (mirror)
+        return geom::mirrored(shape, planeOrigin, planeNormal);
+    if (motion.isIdentity())
+        return R::success(shape);
+    return geom::transformed(shape, motion);
+}
+
+Status CopyFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void CopyFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sourceBody, copies);
+}
+
+void CopyFeature::writeParams(json& out) const
+{
+    out["body"] = sourceBody.toString();
+    if (mirror) {
+        out["mirror"] = json{{"origin", vecToJson(planeOrigin)}, {"normal", vecToJson(planeNormal)}};
+        return;
+    }
+    out["translation"] = vecToJson(motion.translation);
+    if (std::abs(motion.angle) > 0)
+        out["rotation"] = json{{"center", vecToJson(motion.center)}, {"axis", vecToJson(motion.axis)}, {"angle", motion.angle}};
+}
+
+Status CopyFeature::readParams(const json& in)
+{
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid copy of a body.", std::string("Copy: ") + why);
+    };
+    const auto body = in.contains("body") && in["body"].is_string() ? Uuid::parse(in["body"].get<std::string>()) : std::nullopt;
+    if (!body)
+        return bad("body");
+    if (in.contains("mirror")) {
+        const json& m = in["mirror"];
+        const auto origin = m.is_object() ? vecFromJson(m, "origin") : std::nullopt;
+        const auto normal = m.is_object() ? vecFromJson(m, "normal") : std::nullopt;
+        if (!origin || !normal || normal->length() < 1e-9)
+            return bad("mirror plane");
+        sourceBody = *body;
+        mirror = true;
+        planeOrigin = *origin;
+        planeNormal = *normal;
+        motion = {};
+        return okStatus();
+    }
+    const auto translation = vecFromJson(in, "translation");
+    if (!translation)
+        return bad("translation");
+    geom::RigidMotion m;
+    m.translation = *translation;
+    if (in.contains("rotation")) {
+        const json& r = in["rotation"];
+        const auto center = r.is_object() ? vecFromJson(r, "center") : std::nullopt;
+        const auto axis = r.is_object() ? vecFromJson(r, "axis") : std::nullopt;
+        const auto angle = r.is_object() ? numberFrom(r, "angle") : std::nullopt;
+        if (!center || !axis || axis->length() < 1e-9 || !angle)
+            return bad("rotation");
+        m.center = *center;
+        m.axis = *axis;
+        m.angle = *angle;
+    }
+    sourceBody = *body;
+    mirror = false;
+    motion = m;
+    return okStatus();
+}
+
 // ---- Shell ----------------------------------------------------------------------
 
 Result<geom::Shape> ShellFeature::compute(const geom::Shape& input, const EvalContext&) const
@@ -756,6 +1018,11 @@ Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const Eval
     case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
     }
     return tool;
+}
+
+void ExtrudeFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sketchId, copies);
 }
 
 std::vector<ParameterInfo> ExtrudeFeature::parameters() const
@@ -935,6 +1202,11 @@ Result<geom::Shape> RevolveFeature::compute(const geom::Shape& input, const Eval
     case ExtrudeMode::Cut: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract);
     }
     return tool;
+}
+
+void RevolveFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sketchId, copies);
 }
 
 std::vector<ParameterInfo> RevolveFeature::parameters() const

@@ -6,6 +6,8 @@
 
 #include "geometry/Modeling.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace os::geom {
@@ -112,6 +114,54 @@ std::optional<int> resolveEdge(const Shape& shape, const EdgeSignature& signatur
     if (best && bestScore > 1.0)
         return std::nullopt;
     return best;
+}
+
+double solidDistance(const SolidSignature& a, const SolidSignature& b)
+{
+    const double size = std::max({(a.max - a.min).length(), (b.max - b.min).length(), 1e-6});
+    const double centroidTerm = (a.centroid - b.centroid).length() / size;
+    const double boxTerm = ((a.min - b.min).length() + (a.max - b.max).length()) / (2 * size);
+    const double volumeTerm = std::abs(a.volume - b.volume) / std::max({a.volume, b.volume, 1e-12});
+    return centroidTerm + 0.5 * boxTerm + 0.5 * volumeTerm;
+}
+
+std::vector<int> matchSolids(const std::vector<SolidSignature>& current, const std::vector<SolidSignature>& wanted)
+{
+    // Beyond this a piece has moved or changed more than its own size: it is
+    // another piece, not this one.
+    constexpr double kMaxDistance = 1.5;
+    std::vector<int> result(wanted.size(), -1);
+    std::vector<bool> used(current.size(), false);
+    if (wanted.empty())
+        return result;
+    double best = kMaxDistance;
+    for (std::size_t j = 0; j < current.size(); ++j)
+        if (const double d = solidDistance(wanted[0], current[j]); d <= best) {
+            best = d;
+            result[0] = static_cast<int>(j);
+        }
+    if (result[0] >= 0)
+        used[std::size_t(result[0])] = true;
+    struct Pair {
+        double distance;
+        std::size_t wanted, current;
+    };
+    std::vector<Pair> pairs;
+    for (std::size_t i = 1; i < wanted.size(); ++i)
+        for (std::size_t j = 0; j < current.size(); ++j)
+            if (const double d = solidDistance(wanted[i], current[j]); d <= kMaxDistance)
+                pairs.push_back({d, i, j});
+    std::sort(pairs.begin(), pairs.end(), [](const Pair& p, const Pair& q) {
+        return p.distance != q.distance ? p.distance < q.distance
+             : p.wanted != q.wanted     ? p.wanted < q.wanted
+                                        : p.current < q.current;
+    });
+    for (const Pair& p : pairs)
+        if (result[p.wanted] < 0 && !used[p.current]) {
+            result[p.wanted] = static_cast<int>(p.current);
+            used[p.current] = true;
+        }
+    return result;
 }
 
 } // namespace os::geom

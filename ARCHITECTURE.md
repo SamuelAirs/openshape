@@ -169,14 +169,27 @@ Document (UUID, display unit)
   (base features when they make a new body); PushPull, Fillet, Chamfer,
   Shell, Hole (drilled at a circular rim), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
-  body), Mirror and Pattern (copies joined into the body), DeleteFaces and
-  OffsetFace. Planes, axes and directions are stored as geometry, not as
+  body), Mirror and Pattern (copies joined into the body), DeleteFaces,
+  OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
+  body's current shape mirrored or moved — Mirror / Pattern with "Separate
+  bodies"). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
 - A successful step can carry a `FeatureState::note` (from `Result`
   warnings, e.g. "The body is now in 2 separate pieces."); the Model panel
-  shows it in amber.
+  shows it in amber (unless a later Split step dealt with the pieces).
+- **Split into bodies** (`cmd::makeSplitBodyCommand`, one undo step): a
+  `Split` step keeps the body's largest piece and records every piece's
+  `geom::SolidSignature` (volume, centroid, box); each other piece becomes a
+  new body whose base `SplitPiece` step takes piece *k* from the parent's
+  shape just before that Split step. Both use `SplitFeature::assign`
+  (`geom::matchSolids`: the kept piece picks first, then the closest pairs,
+  rejecting pieces that moved more than their size), so they always agree.
+  Pieces that appear upstream later stay in the parent; a piece that is gone
+  (the body is whole again) fails with a message. `SplitPiece` depends on the
+  parent body, so `recomputeDependents` (transitive) carries upstream edits
+  — a sketch dimension, a tool body — through the parent to every piece.
 - `Document::preview(body, feature)` evaluates a feature without mutating
   anything; interactive previews use it.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
@@ -235,6 +248,19 @@ never pointers, so they survive objects being destroyed and recreated.
 too-large fillet never enters history. `UndoStack` discards the redo branch on
 a new command, tracks the clean state for "unsaved changes", and caps depth.
 
+`DuplicateBodyCommand` makes an independent copy ("<name> copy"): the
+history is cloned with fresh ids (`Feature::cloneWithNewId`), and what
+belongs to that history alone is copied too — the sketches its steps use
+(copied hidden, so they do not sit on the source's) and the tool bodies its
+Combine steps consumed (copied hidden, recursively) — then every reference is
+re-pointed at the copies (`Feature::remapReferences`, sketch attachments and
+host bodies). Editing the copy (a step, its sketch, its tool) never changes
+the source, nor the other way round. The other bodies a history builds on
+(the parent of a split-off piece, the source of a mirror copy) stay shared.
+What is copied depends on the kind of reference, never on visibility (a tool
+shown again is still consumed; a hidden source is still shared). The copy's
+id is fixed at construction so the UI can select it and redo recreates it.
+
 ## Interaction (`interaction/`)
 
 `InteractionController` owns the camera, the tessellation cache
@@ -292,7 +318,15 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   and typed values. `MoveOperation` uses this for X/Y/Z (axis-colored).
   `RotateOperation` exposes three `RingManipulator`s instead (`ringCount()`:
   constant screen size, the angle unwrapped past ±180°, a screen-space
-  fallback when a ring is seen edge-on; 15° snaps, Alt for 1°).
+  fallback when a ring is seen edge-on; 15° snaps, Alt for 1°). Clicking a
+  straight edge (of any body) or a hole/shaft makes it the axis — one ring around it, its
+  direction's largest component positive; clicking an edge near its end (a
+  corner) or a circular edge moves the X/Y/Z rings' pivot there; "Center
+  pivot" goes back. The typed or dragged angle is kept. It is stored as the
+  usual Move step with a rotation center and axis (no file format change).
+  A ring is grabbed only once the pointer moves: a click on a ring activates
+  it, except over an edge in Rotate, where it picks the edge (the rings
+  cover edges near the body's center).
 - **Operation hooks** (`Operation.h`): `prompt()` while a further pick is
   needed (Align's target, Mirror's plane); `labelAnchor()` for a value editor
   without an arrow; `neutralValue()` (what Esc returns to, e.g. a hole's
@@ -308,9 +342,21 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
   Chamfer; a hole rim also offers the heat-set insert; one edge offers Align).
   One body (double-click, or its Model-panel row) arms Move and offers Rotate,
-  Mirror and Pattern (`BodyTool`). Two or more bodies offer Union / Subtract /
+  Mirror, Pattern and Duplicate (`BodyTool`; Duplicate is also Ctrl+D and a
+  button in the body's expanded Model-panel row; the copy comes out selected
+  with the Move arrows, ready to drag away), and "Split into bodies" when it
+  is in several pieces (also under the body's warning in the Model panel and
+  on the expanded step that left the pieces; a committed step, or a Subtract
+  or Intersect, that leaves new pieces says so in a message:
+  `suggestSplit`). The Delete key deletes the selected bodies in one undo
+  step (`deleteBodies`), except a body that others are built from
+  (`Document::bodiesUsing`: split-off pieces, separate copies, bodies that
+  consumed it as a tool): that one is hidden instead, with a message, and a
+  hidden one cannot be deleted (its Model-panel row says why). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
+  A body built from the other (a Copy or SplitPiece of it) cannot be its
+  tool: Union and Intersect then keep the result in the copy instead.
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -325,7 +371,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
   spacing (angle when circular), ± copy changes the count, and clicking an
   edge or a hole/shaft sets the direction or axis. Both commit one step with
-  the copies joined into the body.
+  the copies joined into the body — or, with the "Separate bodies" option,
+  one new body per copy (one undo step) whose base `Copy` step is the source
+  body's current shape mirrored or moved, so the copies follow every later
+  change of the source. Their preview shows the source and the copies side
+  by side, unfused (`Operation::computePreview`); at most 100 copies.
 - **Profiles in model mode:** sketch regions are pickable (a region lying on a
   face wins over the face; a consumed sketch's region only when it is
   coplanar with the body face hit, so used sketches do not steal clicks);
@@ -393,7 +443,9 @@ body row calls `selectBody(id, additive)`. The QML `HistoryPanel` edits values t
 `setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
 mode: an edit that breaks a later step is kept, the step is marked failed
 with its user message, and undo restores the value. Base features cannot be
-deleted or suppressed; sketches used by features cannot be deleted.
+deleted or suppressed; sketches used by features cannot be deleted, and
+neither can hidden bodies other bodies are built from (Delete on a shown one
+hides it).
 
 ## Files (`io/`)
 
@@ -498,6 +550,7 @@ them on a hidden menu separator after the Open Recent sub-menu).
 - Tessellation and previews run synchronously on the GUI thread.
 - Picking is brute force (no BVH).
 - Only linear per-body history. Features may depend on sketches and (Combine)
-  on other bodies; `Document::recomputeDependents` propagates changes and
-  `dependsOn` prevents cycles.
+  on other bodies; `Document::recomputeDependents` propagates changes
+  transitively (a body that changed updates the bodies built on it in turn)
+  and `dependsOn` prevents cycles.
 - QRhi comes from `Qt6::GuiPrivate`: binaries are tied to the Qt version.

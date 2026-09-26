@@ -65,6 +65,10 @@ public:
     std::uint64_t sketchRevision(const Uuid& id) const;
     // Features (in any body) that depend on a document object.
     std::vector<Uuid> dependentFeatures(const Uuid& objectId) const;
+    // Other bodies with a step that depends on a document object (directly):
+    // for a body, the pieces split off it, its separate copies and the bodies
+    // that consumed it as a Combine tool. In document order.
+    std::vector<Uuid> bodiesUsing(const Uuid& objectId) const;
     // True if `bodyId` (transitively) uses `otherBodyId` (or is it).
     bool dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const;
     std::string nextSketchName() const;
@@ -80,6 +84,11 @@ public:
     void removeListener(int handle);
 
     std::string nextBodyName() const;
+    // Names for `count` new bodies at once ("Body 3", "Body 4", ...).
+    std::vector<std::string> nextBodyNames(std::size_t count) const;
+    // `base` if no body (sketch) has that name yet, else "base 2", "base 3", ...
+    std::string uniqueBodyName(const std::string& base) const;
+    std::string uniqueSketchName(const std::string& base) const;
 
 private:
     void changed();

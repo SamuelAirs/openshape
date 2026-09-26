@@ -599,6 +599,48 @@ Result<Shape> repeatJoined(const Shape& shape, const std::vector<RigidMotion>& c
     });
 }
 
+std::vector<Shape> solids(const Shape& shape)
+{
+    std::vector<Shape> out;
+    if (shape.isNull())
+        return out;
+    const auto& map = shape.data()->solids;
+    for (int i = 1; i <= map.Extent(); ++i)
+        out.push_back(makeShape(map(i)));
+    return out;
+}
+
+SolidSignature solidSignature(const Shape& solid)
+{
+    SolidSignature signature;
+    if (solid.isNull())
+        return signature;
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(occ(solid), props);
+    signature.volume = props.Mass();
+    signature.centroid = fromPnt(props.CentreOfMass());
+    const BoundingBox box = approximateBoundingBox(solid);
+    signature.min = box.min;
+    signature.max = box.max;
+    return signature;
+}
+
+Result<Shape> gatherSolids(const std::vector<Shape>& pieces)
+{
+    const char* userMessage = "Unable to separate the pieces of this body.";
+    if (pieces.empty())
+        return Result<Shape>::failure(ErrorCode::EmptyResult, userMessage, "gatherSolids: no solids");
+    return guarded("gatherSolids", userMessage, [&]() -> Result<Shape> {
+        BRep_Builder builder;
+        TopoDS_Compound compound;
+        builder.MakeCompound(compound);
+        for (const Shape& piece : pieces)
+            if (!piece.isNull())
+                builder.Add(compound, occ(piece));
+        return finishSolid(compound, "gatherSolids", userMessage);
+    });
+}
+
 Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double distance)
 {
     using R = Result<Shape>;

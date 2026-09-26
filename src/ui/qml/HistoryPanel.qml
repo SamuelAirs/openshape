@@ -57,7 +57,6 @@ Panel {
             delegate: Rectangle {
                 id: row
                 required property var modelData
-                objectName: "historyRow_" + modelData.id
                 readonly property bool isFeature: modelData.kind === "feature"
                 readonly property bool expanded: panel.expandedId === modelData.id
                 readonly property bool failed: modelData.status === "failed"
@@ -95,6 +94,10 @@ Panel {
                     spacing: 4
 
                     RowLayout {
+                        // The row's title line: what a click on the row hits
+                        // (the acceptance run clicks its center; an expanded
+                        // row's action buttons sit below it).
+                        objectName: "historyRow_" + row.modelData.id
                         Layout.fillWidth: true
                         spacing: 6
                         Rectangle {
@@ -136,6 +139,24 @@ Panel {
                         wrapMode: Text.WordWrap
                         font.pixelSize: 11
                         color: row.failed ? Theme.error : row.warned ? "#9A6A00" : Theme.mutedText
+                    }
+
+                    // A body in separate pieces: make each piece a body (right
+                    // under the warning on the body; on the step that caused it
+                    // while that step is expanded).
+                    ActionButton {
+                        objectName: "historySplit_" + row.modelData.id
+                        compact: true
+                        visible: row.modelData.canSplit && (row.modelData.kind === "body" || row.expanded)
+                        text: "Split into bodies"
+                        onClicked: {
+                            // Splitting rebuilds the rows (and this delegate): capture first.
+                            const owner = panel
+                            const body = row.modelData.bodyId
+                            owner.expandedId = ""
+                            owner.app.splitBody(body)
+                            owner.finished()
+                        }
                     }
 
                     // Editable values of the expanded step.
@@ -206,6 +227,20 @@ Panel {
                         }
                         ActionButton {
                             compact: true
+                            objectName: "historyDuplicate_" + row.modelData.id
+                            visible: row.modelData.kind === "body"
+                            text: "Duplicate"
+                            onClicked: {
+                                // Duplicating rebuilds the rows (and this delegate): capture first.
+                                const owner = panel
+                                const id = row.modelData.id
+                                owner.expandedId = ""
+                                owner.app.duplicateBody(id)
+                                owner.finished()
+                            }
+                        }
+                        ActionButton {
+                            compact: true
                             visible: row.modelData.kind !== "feature"
                             text: row.modelData.visible ? "Hide" : "Show"
                             onClicked: panel.app.setHistoryItemVisible(row.modelData.kind, row.modelData.id, !row.modelData.visible)
@@ -217,6 +252,9 @@ Panel {
                             onClicked: panel.app.setFeatureSuppressed(row.modelData.id, row.modelData.status !== "suppressed")
                         }
                         ActionButton {
+                            // A body others are built from is hidden instead
+                            // (the controller says so); a hidden one has no Delete.
+                            objectName: "historyDelete_" + row.modelData.id
                             compact: true
                             visible: row.modelData.canDelete
                             text: "Delete"

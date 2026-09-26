@@ -395,6 +395,9 @@ QVariantList AppController::history() const
         map.insert(QStringLiteral("visible"), row.visible);
         map.insert(QStringLiteral("canDelete"), row.canDelete);
         map.insert(QStringLiteral("canSuppress"), row.canSuppress);
+        map.insert(QStringLiteral("canSplit"), row.canSplit);
+        // The body a row belongs to (itself for a body row).
+        map.insert(QStringLiteral("bodyId"), q((row.kind == interact::HistoryRow::Kind::Feature ? row.parentId : row.id).toString()));
         QVariantList params;
         for (const auto& p : row.parameters) {
             QVariantMap pm;
@@ -479,6 +482,21 @@ void AppController::selectBody(const QString& bodyId, bool additive)
 {
     if (const auto id = uuidOf(bodyId))
         (void)interaction_->selectBody(*id, additive); // failures explain themselves via message()
+}
+
+void AppController::duplicateBody(const QString& bodyId)
+{
+    if (const auto id = uuidOf(bodyId)) {
+        const Status status = interaction_->duplicateBody(*id);
+        if (!status)
+            notifyMessage(q(status.userMessage()));
+    }
+}
+
+void AppController::splitBody(const QString& bodyId)
+{
+    if (const auto id = uuidOf(bodyId))
+        (void)interaction_->splitBody(*id); // failures explain themselves via message()
 }
 
 void AppController::runTool(const QString& id)

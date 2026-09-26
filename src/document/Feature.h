@@ -11,6 +11,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -26,7 +27,8 @@ class Document;
 class Body;
 
 enum class FeatureKind {
-    Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace
+    Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
+    Split, SplitPiece, Copy
 };
 
 // What a feature may consult besides its input shape.
@@ -94,8 +96,15 @@ public:
     virtual Status readParams(const nlohmann::json& in) = 0;
 
     // Ids of other document objects this feature depends on (beyond its own
-    // body's preceding history). Empty for all current feature kinds.
+    // body's preceding history): sketches, other bodies, their steps.
     virtual std::vector<Uuid> dependencies() const { return {}; }
+
+    // A copy with a fresh id (duplicating a body: ids stay unique).
+    std::unique_ptr<Feature> cloneWithNewId() const;
+    // Duplicating a body: references to sketches, bodies and steps that were
+    // copied along are pointed at their copies (ids found in `copies`).
+    // Every feature with dependencies() must implement it.
+    virtual void remapReferences(const std::map<Uuid, Uuid>& /*copies*/) {}
 
 protected:
     Feature(const Feature&) = default;
@@ -204,6 +213,7 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {toolBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
 // Moves the body by a translation (a history step, so it stays editable).
@@ -305,6 +315,77 @@ public:
     Status readParams(const nlohmann::json& in) override;
 };
 
+// The step that split a body into bodies: of the separate pieces its input is
+// made of, the body keeps one. `pieces` describes every piece as it was when
+// the body was split, pieces[0] being the one kept; the others became bodies
+// of their own (SplitPieceFeature). Pieces are found again by where they are
+// and how big (geom::matchSolids), so upstream edits carry through. Pieces
+// that appear later (a new cut) stay in this body: nothing disappears.
+class SplitFeature final : public Feature {
+public:
+    using Feature::Feature;
+    std::vector<geom::SolidSignature> pieces;
+
+    // For each recorded piece, its solid among `solids` (or -1). The body and
+    // its split-off pieces all use this, so they agree on who gets what.
+    std::vector<int> assign(const std::vector<geom::Shape>& solids) const;
+
+    FeatureKind kind() const override { return FeatureKind::Split; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new SplitFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// The first step of a body split off another: piece `piece` of the source
+// body's shape just before its Split step (`splitFeature`). Follows every
+// upstream edit of the source; fails with a clear message when the piece is
+// no longer separate or no longer exists.
+class SplitPieceFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sourceBody;
+    Uuid splitFeature;
+    int piece = 1; // index into the split's pieces (0 is the one the source keeps)
+
+    FeatureKind kind() const override { return FeatureKind::SplitPiece; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new SplitPieceFeature(*this)); }
+    bool isBaseFeature() const override { return true; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sourceBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
+};
+
+// The first step of a body made by Mirror or Pattern with "Separate bodies":
+// the source body's current shape, mirrored across a plane or moved by a
+// rigid motion. It follows every change of the source body.
+class CopyFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sourceBody;
+    bool mirror = false;
+    Vec3 planeOrigin;             // mirror
+    Vec3 planeNormal{1, 0, 0};    // mirror
+    geom::RigidMotion motion;     // otherwise
+
+    FeatureKind kind() const override { return FeatureKind::Copy; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new CopyFeature(*this)); }
+    bool isBaseFeature() const override { return true; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sourceBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
+};
+
 // Hollows the body, opening the referenced faces, with walls of `thickness`.
 class ShellFeature final : public Feature {
 public:
@@ -357,6 +438,7 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sketchId}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 
     // The extruded tool solid alone (before join/cut). `input` sizes
     // through-all cuts.
@@ -422,6 +504,7 @@ public:
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sketchId}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
 } // namespace os::doc

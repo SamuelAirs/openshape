@@ -55,8 +55,8 @@ Rules:
 - **All stored lengths are millimeters** and all angles radians, regardless of
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
-- The first feature of every body must be a base feature (`Box`, or
-  `Extrude` / `Revolve` with mode `NewBody`).
+- The first feature of every body must be a base feature (`Box`,
+  `SplitPiece`, `Copy`, or `Extrude` / `Revolve` with mode `NewBody`).
 - Sketch entity ids are integers unique within their sketch; id 1 is always
   the fixed origin point. `nextId` is the next unused id. Sketch coordinates
   are millimeters in the plane's (xAxis, yAxis) frame.
@@ -114,9 +114,26 @@ Rules:
   cylindrical hole centered on a circular rim edge, drilled into the
   material (the direction comes from the flat face next to the rim);
   `preset` is an informational label such as "M3 heat-set insert".
+- `Split` params: `{ "pieces": [solid…] }` (at least two), where a solid is
+  `{ "volume", "centroid": [x, y, z], "min": [x, y, z], "max": [x, y, z] }`
+  (volume > 0, center of mass, bounding box) as the pieces were when the body
+  was split into bodies. The body keeps `pieces[0]`, plus any piece its input
+  gained since; the other recorded pieces are the first steps of other
+  bodies. Pieces are found again by nearest signature (`geom::matchSolids`).
+- `SplitPiece` params: `{ "body": uuid, "split": uuid, "piece" }` — a base
+  feature: piece `piece` (≥ 1) of the Split step `split` of body `body`,
+  taken from that body's shape just before the step. It fails (with a
+  message) when the piece no longer exists or is no longer separate, when the
+  split step is suppressed or deleted, or when the body is gone.
+- `Copy` params (a base feature: Mirror / Pattern with "Separate bodies"):
+  `{ "body": uuid, "mirror": { "origin": [x, y, z], "normal": [x, y, z] } }`
+  — the mirror image of that body's current shape — or `{ "body": uuid,
+  "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
+  (applied before the translation) — the body's shape moved. It follows
+  every change of that body and fails with a message when the body is gone.
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

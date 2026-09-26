@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace os::cmd {
 
@@ -45,6 +46,40 @@ private:
     std::unique_ptr<doc::Feature> prototype_;
     int index_;
 };
+
+// Duplicates a body as an independent copy named "<name> copy": its history
+// with fresh ids, plus what belongs to that history alone - the sketches its
+// steps use (copied hidden) and the tool bodies its Combine steps consumed
+// (copied hidden, recursively), all re-pointed at the copies. Editing the
+// copy never changes the source, nor the other way round. The other bodies
+// the history builds on (the body a piece was split off, a separate copy's
+// source) stay shared, shown or hidden: the copy follows them like the
+// source does.
+class DuplicateBodyCommand final : public Command {
+public:
+    explicit DuplicateBodyCommand(Uuid sourceId) : sourceId_(sourceId) {}
+    std::string label() const override { return "Duplicate"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+    // The new body's id, fixed at construction (redo recreates the same identity).
+    const Uuid& copyId() const { return copyId_; }
+
+private:
+    Status plan(const doc::Document& document);
+
+    Uuid sourceId_;
+    Uuid copyId_ = Uuid::generate();
+    bool planned_ = false;
+    std::vector<sketch::Sketch> sketches_;           // copies, in document order
+    std::vector<std::unique_ptr<doc::Body>> bodies_; // copies: consumed tools first, the copy last
+};
+
+// Splits a body that is in several separate pieces into bodies, as one undo
+// step: a Split step keeps its largest piece, and every other piece becomes a
+// new body (named like new bodies) whose first step is that piece of this
+// body (SplitPieceFeature). They stay linked: upstream edits update every
+// piece. Fails when the body is in one piece.
+Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId);
 
 class DeleteBodyCommand final : public Command {
 public:

@@ -78,9 +78,11 @@ field (`-Wmissing-field-initializers`) fails CI.
 
 **A new history step (feature kind)**
 1. `document/Feature.h/.cpp`: the class (`compute`, `parameters` /
-   `setParameter`, `writeParams` / `readParams`, `clone`, `dependencies` if
-   it reads sketches or other bodies); append to `FeatureKind`; add it to
-   `toString`, `featureKindFromString` and `createFeature`.
+   `setParameter`, `writeParams` / `readParams`, `clone`, `dependencies` and
+   `remapReferences` if it reads sketches, other bodies or their steps —
+   Duplicate re-points copied references through it); append to
+   `FeatureKind`; add it to `toString`, `featureKindFromString` and
+   `createFeature`.
 2. `commands/DocumentCommands.cpp`: its undo label.
 3. `interaction/InteractionController.cpp`: `featureTitle` and
    `featureDetail` (Model panel).
