@@ -88,6 +88,8 @@ Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
 `sketch`, `sketchdone`, `extrude`, `bracket`, `revolve`, `combine` (two bodies
 selected), `history` (a fillet step highlighted from the Model panel),
 `rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews),
+`holes` (the Hole tool with two countersunk holes, the second one's Y being
+typed),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:

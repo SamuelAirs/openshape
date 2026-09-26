@@ -7,6 +7,7 @@
 #include "commands/Command.h"
 #include "core/Uuid.h"
 #include "document/Feature.h"
+#include "geometry/Holes.h"
 #include "geometry/Mesh.h"
 #include "geometry/Modeling.h"
 #include "interaction/Manipulator.h"
@@ -542,6 +543,151 @@ private:
     double diameter_ = 0;
 };
 
+// Counterbore or countersink for a screw head on an existing round hole (at
+// its rim). Screw presets (M2-M6, doc::metricScrews) set the sizes; the
+// radial arrow (handle 0) sets the diameter, a counterbore's arrow into the
+// hole (handle 1) its depth. Typed values go to the active arrow.
+class HeadOperation final : public Operation {
+public:
+    static std::unique_ptr<HeadOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
+                                                 doc::HoleKind kind, std::size_t presetIndex);
+
+    std::string title() const override;
+    std::string valueLabel() const override { return activeHandle() == 1 ? "Depth" : "Diameter"; }
+    bool allowsNegative() const override { return false; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Hole; }
+    doc::HoleKind holeKind() const { return kind_; }
+
+    int handleCount() const override { return kind_ == doc::HoleKind::Counterbore ? 2 : 1; }
+    LinearManipulator handle(int index) const override;
+    double handleOffset(int index) const override;
+    void setActiveHandle(int index) override;
+    double displayOffset(double value) const override { return activeHandle() == 1 ? value : value / 2; }
+    double valueFromOffset(double offset) const override { return activeHandle() == 1 ? offset : 2 * offset; }
+
+    // The screw preset the sizes came from (none once a size is typed or dragged).
+    std::optional<std::size_t> presetIndex() const;
+    void setPreset(std::size_t index, const doc::Document& document);
+    double diameter() const { return activeHandle() == 1 ? diameter_ : value(); }
+    double depth() const { return activeHandle() == 1 ? value() : depth_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+
+private:
+    HeadOperation(Uuid bodyId, LinearManipulator m, doc::EdgeRef rim, doc::HolePlacement placement, doc::HoleKind kind)
+        : Operation(bodyId, std::move(m)), rim_(std::move(rim)), placement_(placement), kind_(kind) {}
+    doc::EdgeRef rim_;
+    doc::HolePlacement placement_;
+    doc::HoleKind kind_;
+    Vec3 radial_; // the diameter arrow's direction
+    std::size_t presetIndex_ = doc::kDefaultScrew;
+    double diameter_ = 0; // the value of whichever handle is not active
+    double depth_ = 0;
+};
+
+// What the Hole tool remembers between uses (a new face starts with these).
+struct HoleSettings {
+    std::size_t screw = doc::kDefaultScrew;   // doc::metricScrews() row
+    doc::HoleFit fit = doc::HoleFit::Normal;  // clearance (ISO 273) or tap drill
+    bool throughAll = true;
+    double depth = 10;                        // mm, when not through all
+    doc::HoleKind head = doc::HoleKind::Plain; // Plain = no counterbore / countersink
+};
+
+// The Hole tool: round holes drilled into one flat face where the user
+// clicks or taps (each click adds one; all of them are one step). Clicks
+// snap to the face's center (of its outline's bounding rectangle) and the
+// middles of its straight edges, and otherwise line up (in X or Y) with
+// those, with circles on the face and with the holes placed so far; a snap
+// that would put the hole off the face is not taken. The value chip edits
+// one field at a time: the diameter (screw size x fit presets), the depth,
+// or the current hole's X / Y offset from the face's reference corner (the
+// outline's minimum corner in the face frame) or from the hole placed before
+// it. Clicking a placed hole makes it the current one; Remove hole drops it.
+class HoleOperation final : public Operation {
+public:
+    enum class Field { Diameter, Depth, X, Y };
+    static std::unique_ptr<HoleOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex,
+                                                 const HoleSettings& settings);
+
+    std::string title() const override { return "Hole"; }
+    std::string valueLabel() const override;
+    bool allowsNegative() const override { return field_ == Field::X || field_ == Field::Y; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Holes; }
+    std::string prompt() const override;
+    bool canCommit() const override { return !positions_.empty() && error().empty() && hasPreview(); }
+    // Esc leaves the tool (there is no value to fall back to).
+    double neutralValue() const override { return value(); }
+    int handleCount() const override { return 0; }
+    std::optional<Vec3> labelAnchor() const override;
+
+    int faceIndex() const { return face_.indexHint; }
+    const doc::HoleFrame& frame() const { return frame_; }
+    const std::vector<Vec2>& positions() const { return positions_; }
+    int current() const { return current_; }
+    Field field() const { return field_; }
+    const HoleSettings& settings() const { return settings_; }
+    double diameter() const { return field_ == Field::Diameter ? value() : diameter_; }
+    // The point a click at `world` (on the face) would use, and what it
+    // snapped to ("center", "midpoint", "aligned" or "").
+    std::pair<Vec2, std::string> snap(const Vec3& world, double snapDistance) const;
+    // Adds a hole at the snapped point, or makes a placed hole under the
+    // point the current one. Returns what it snapped to.
+    std::string placeAt(const Vec3& world, double snapDistance, const doc::Document& document);
+    // Hover feedback: where a click would place the next hole (nullopt: none).
+    void setHover(std::optional<Vec2> point) { hover_ = point; }
+    const std::optional<Vec2>& hover() const { return hover_; }
+    // Where the current hole's X / Y are measured from (face frame).
+    Vec2 reference() const;
+
+    void setField(Field field, const doc::Document& document);
+    void nextField(const doc::Document& document);
+    void setScrew(std::size_t index, const doc::Document& document);
+    void setFit(doc::HoleFit fit, const doc::Document& document);
+    // The diameter the screw size and fit give (the presets).
+    double presetDiameter() const;
+    void setThroughAll(bool throughAll, const doc::Document& document);
+    void setHead(doc::HoleKind head, const doc::Document& document);
+    bool fromLastHole() const { return fromLastHole_; }
+    void setFromLastHole(bool on, const doc::Document& document);
+    // Removes the current hole; the one placed before it (or the next) becomes current.
+    void removeCurrent(const doc::Document& document);
+
+    // The holes' positions with the active field's `value` applied.
+    std::vector<Vec2> livePositions(double value) const;
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    // Before the first hole: the body as it is (no error, nothing to apply
+    // yet). A hole off the face (typed there) fails with a message.
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
+    bool neutralIsIdentity() const override { return false; }
+
+private:
+    HoleOperation(Uuid bodyId, doc::FaceRef face, doc::HoleFrame frame)
+        : Operation(bodyId, LinearManipulator(frame.origin, frame.normal)), face_(std::move(face)), frame_(frame) {}
+    // The active field's value written to where it belongs.
+    void storeValue();
+    double fieldValue(Field field) const;
+    // Applies the screw preset to the diameter (and the head sizes).
+    void applyPreset();
+    bool onFace(Vec2 p) const;
+    geom::Shape shape_; // the body as the tool started (previews never change it)
+    doc::FaceRef face_;
+    doc::HoleFrame frame_;
+    geom::FaceOutline outline_;
+    Vec3 facePoint_; // a point on the face (where the value chip sits before the first hole)
+    HoleSettings settings_;
+    Field field_ = Field::Diameter;
+    double diameter_ = 3.4; // the fields that are not active
+    double depth_ = 10;
+    std::vector<Vec2> positions_;
+    int current_ = -1;
+    bool fromLastHole_ = false;
+    std::optional<Vec2> hover_;
+};
+
 // Shell: hollows the body through the selected faces. The arrow starts on the
 // first face and points into the material; its length is the wall thickness.
 class ShellOperation final : public Operation {
@@ -573,9 +719,23 @@ public:
 
     std::string title() const override { return "Extrude"; }
     // Symmetric: the value is the total thickness, centered on the sketch.
-    std::string valueLabel() const override { return symmetric_ ? "Thickness" : "Distance"; }
-    bool allowsNegative() const override { return !symmetric_; }
+    std::string valueLabel() const override
+    {
+        return editingDraft() ? "Draft" : symmetric_ ? "Thickness" : "Distance";
+    }
+    bool allowsNegative() const override { return editingDraft() || !symmetric_; }
+    bool isAngle() const override { return editingDraft(); }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Extrude; }
+    // The draft is a second field of the value chip (Draft action; no arrow
+    // of its own): value() is then the angle in degrees, positive narrowing
+    // away from the sketch. Grabbing the arrow goes back to the distance.
+    bool editingDraft() const { return activeHandle() == 1; }
+    void setActiveHandle(int index) override;
+    double distance() const { return editingDraft() ? distance_ : value(); }
+    double draftDegrees() const { return editingDraft() ? value() : draftDegrees_; }
+    LinearManipulator handle(int) const override { return manipulator(); }
+    double handleOffset(int) const override { return displayOffset(distance()); }
+    bool canCommit() const override { return distance() != 0.0 && error().empty() && hasPreview(); }
     Uuid previewBody() const override;
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
     double displayOffset(double value) const override { return symmetric_ ? value / 2 : value; }
@@ -605,6 +765,8 @@ protected:
     void resetAutomaticChoices() override { autoNewBody_ = false; }
     bool reconsider(const geom::Shape& result, const doc::Document& document) override;
     bool reconsiderRefusal(ErrorCode code) override;
+    // A draft of 0 still previews the extrusion.
+    bool neutralIsIdentity() const override { return !editingDraft(); }
 
 private:
     ExtrudeOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles)
@@ -617,6 +779,8 @@ private:
     bool throughAll_ = false;
     bool symmetric_ = false;
     bool pickingTarget_ = false;
+    double distance_ = 0;     // while the draft is being edited
+    double draftDegrees_ = 0; // while the distance is being edited
 };
 
 } // namespace os::interact

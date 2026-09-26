@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert)
+        │         │   Pattern, Insert, Head, Hole)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
@@ -177,6 +177,16 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   passes through must be a wall and the volume must change by exactly
   cross-section x distance, else `ErrorCode::Unsupported` and the caller
   uses `pushPullFace`.
+- `extrudeFacesDrafted` (Profiles.h, `DraftExtrude.cpp`): a straight prism
+  whose side faces `BRepOffsetAPI_DraftAngle` tilts about the profile's
+  plane (planes stay planes, cylinders become cones, corners stay sharp).
+  Before any kernel work the far end is checked analytically: lines
+  shorten by inset x tan(turn / 2) at each corner, circles and arcs around
+  the material shrink by the inset, around holes they grow; an edge that
+  would vanish refuses the draft with a plain message
+  (`BRepOffsetAPI_MakeOffset` could answer this, but crashed in its medial
+  axis on a square with a small round hole). After it, a positive draft
+  must remove volume and a negative one add some.
 - `offsetCurves` (Profiles.h): offsets one connected chain of planar curves
   (`BRepOffsetAPI_MakeOffset`, sharp corners) for the sketch Offset action.
 - `pointOnFace` (a point inside a flat face, away from holes) and
@@ -186,6 +196,20 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   regions (see Sketches).
 - `TopoSignature.h`: interim topological naming (see below).
 - `Exchange.h`: STEP AP214 import/export, binary/ASCII STL export.
+- `Holes.h`: `drillHoles` cuts any number of round holes in one boolean
+  (`HoleCut`: entry point, direction, diameter, depth or through all, and a
+  counterbore or countersink head; `drillShaft = false` cuts only the head
+  on an existing hole, whose depth or through-all is then given). Tools are
+  analytic cylinders and cones (the shaft starts inside the head, a
+  countersink cone runs on past the hole's wall, halfway to a blind hole's
+  bottom at most, so no faces coincide). Checked: sizes before any kernel call, then the
+  cut must remove something and no more than the tools hold. `headVolume`
+  is the exact ring or frustum a head takes from solid material;
+  `materialDepth` measures along a line how much material follows a
+  surface point, `emptyDepth` how much empty space follows a point (a
+  hole's depth from its opening; 0 inside material). The side is read from
+  the normal of the first face hit: `BRepClass3d_SolidClassifier` crashed
+  inside Extrema on a plain holed plate.
 
 ## Document model (`document/`)
 
@@ -209,7 +233,14 @@ Document (UUID, display unit)
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
   (base features when they make a new body); PushPull, Fillet, Chamfer,
-  Shell, Hole (drilled at a circular rim), Move (a translation plus an
+  Shell, Hole (at a circular rim: a plain cylinder such as a heat-set
+  insert's pilot hole, or a counterbore / countersink for a screw head,
+  whose exact ring or frustum volume is verified, and which measures the
+  existing hole's depth first (`geom::emptyDepth`); sizes from
+  `document/Fasteners`, the one place for screw and insert tables with
+  their sources), Holes (the Hole tool: holes at points on a flat face,
+  stored in the face's frame like a sketch on it, so they follow the face;
+  diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror and Pattern (copies joined into the body), DeleteFaces,
   OffsetFace, Split and SplitPiece (below), and Copy (a base feature: another
@@ -411,10 +442,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
   the preview is known); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
-  Sketch, Align and Delete face; a single cylindrical face (hole, shaft) arms
+  Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
-  Chamfer; a hole rim also offers the heat-set insert; one edge offers Align).
+  Chamfer; a hole rim also offers the heat-set insert, Counterbore and
+  Countersink: `HeadOperation`, M2-M6 screw presets in the value chip, a
+  radial arrow for the diameter and, for a counterbore, one into the hole
+  for the depth; the screw size chosen last is kept; one edge offers Align).
   One body (double-click, or its Model-panel row) arms Move and offers Rotate,
   Mirror, Pattern and Duplicate (`BodyTool`; Duplicate is also Ctrl+D and a
   button in the body's expanded Model-panel row; the copy comes out selected
@@ -431,6 +465,26 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   tool bodies); the first selected body is kept and Swap exchanges the two.
   A body built from the other (a Copy or SplitPiece of it) cannot be its
   tool: Union and Intersect then keep the result in the copy instead.
+- **Hole tool:** "Hole" on a single flat face (or the palette) arms
+  `HoleOperation` (no arrows; the value chip sits at the current hole via
+  `labelAnchor()`). Clicks on that face (picked as faces only) add holes:
+  `snap()` puts a click within two pick tolerances onto the face's center
+  (of its outline's bounding rectangle, `geom::faceOutline`) or a straight
+  edge's middle, and otherwise lines X and Y up with those, with circles on
+  the face and with the holes placed so far (a snap that lands off the
+  face, e.g. the center of a ring-shaped face, is not taken); hovering shows
+  where the hole would go. A click on a placed hole makes it the current
+  one; Remove hole drops it. A position typed off the face fails the preview
+  with "Hole N is off the face" (the step's own "no longer lies on its
+  face" is for upstream changes). Hole again keeps the placed holes. The chip
+  edits one field at a time (`field:` actions, Tab = `nextField`):
+  diameter, depth (when not through all) and the current hole's X / Y from
+  the face's reference corner (the outline's minimum corner) or from the
+  hole before it. Screw size (M2-M6) x fit (close / normal per ISO 273, or
+  tap) sets the diameter; Counterbore / Countersink use the size's head
+  table. Everything placed is one Holes step; Esc leaves the tool; the
+  settings are remembered for the next face (`HoleSettings`). The chip's
+  actions wrap at 460 px (a hidden row measures their natural width).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -439,7 +493,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Extrude options:** Symmetric makes the value the total thickness
   (`displayOffset` = value / 2); "Up to face" makes the next face click set
   the distance to a parallel flat face (`ExtrudeOperation::extendToFace`,
-  stored as a plain distance). Push/pull steps from the UI set `keepEdges`.
+  stored as a plain distance). "Draft" makes the value chip edit the draft
+  angle instead (degrees; the operation's second "handle" without an arrow,
+  so grabbing the arrow returns to the distance); the step stores
+  `draftAngle` and the Model panel always offers it. Push/pull steps from
+  the UI set `keepEdges`.
 - **Mirror / Pattern:** Mirror waits for a flat face (or an origin plane from
   the action bar) and has no value; Apply or Enter commits. Pattern previews
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
@@ -479,7 +537,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the UI shows them in the value chip while a manipulator is active and in the
   selection action bar otherwise (`barAction_<id>` object names, used by the
   acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
-  pushpull, fillet, chamfer, shell, offset, move, rotate, mirror, pattern,
+  pushpull, fillet, chamfer, shell, offset, hole, move, rotate, mirror, pattern,
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 

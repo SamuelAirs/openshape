@@ -215,6 +215,11 @@ private:
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
+    // How far (mm, at `point`) the Hole tool's clicks snap: two pick tolerances.
+    double holeSnapDistance(const Vec3& point, const InputProfile& profile) const
+    {
+        return profile.pickTolerance * 2 * camera_.pixelSize(point);
+    }
     void rebuildOperation();
     void refreshHistoryHighlight();
     // Deletes these bodies (one undo step), hiding those others are built from.
@@ -252,6 +257,11 @@ private:
     bool sketchGridSnap_ = true;
     bool touchLayout_ = false;
     std::size_t insertPreset_ = 2; // M3
+    // What a hole rim's Hole step makes: Plain = the heat-set insert's pilot
+    // hole, or a counterbore / countersink (with the screw preset).
+    doc::HoleKind rimHoleKind_ = doc::HoleKind::Plain;
+    std::size_t screwPreset_ = doc::kDefaultScrew;
+    HoleSettings holeSettings_; // what the Hole tool used last
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
     // Faces (of the current body shape) the highlighted step created or changed.

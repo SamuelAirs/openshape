@@ -6,6 +6,7 @@
 
 #include "core/Result.h"
 #include "core/Uuid.h"
+#include "document/Fasteners.h"
 #include "geometry/Shape.h"
 #include "geometry/TopoSignature.h"
 
@@ -28,7 +29,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece, Copy
+    Split, SplitPiece, Copy, Holes
 };
 
 // What a feature may consult besides its input shape.
@@ -432,6 +433,10 @@ public:
     // Centered on the sketch plane: |distance| is the total thickness, half
     // on each side (through-all cuts go through both ways).
     bool symmetric = false;
+    // Side walls tilted by this angle (radians): positive narrows the shape
+    // as it goes away from the sketch (both ways when symmetric), negative
+    // widens it; 0 = straight walls (steps from older files).
+    double draftAngle = 0;
 
     FeatureKind kind() const override { return FeatureKind::Extrude; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ExtrudeFeature(*this)); }
@@ -449,16 +454,25 @@ public:
     Result<geom::Shape> toolSolid(const geom::Shape& input, const EvalContext& context) const;
 };
 
-// A cylindrical hole drilled at the rim of an existing circular edge (for
-// example to turn a hole into a heat-set insert pilot hole). The rim gives
-// the center; the flat face next to it gives the drilling direction.
+// What a Hole step at a rim makes. Plain: a cylinder of `diameter` x `depth`
+// (e.g. a heat-set insert's pilot hole; steps from older files). Counterbore:
+// the same cylinder as a screw head's seat, refused when it is not wider than
+// the hole or would reach through the part. Countersink: a cone of
+// `diameter` at the surface and included `angle`, down to the hole.
+enum class HoleKind { Plain, Counterbore, Countersink };
+std::string_view toString(HoleKind kind);
+
+// Made at the rim of an existing round hole (a circular edge where it meets a
+// flat face): the rim gives the center, the flat face the drilling direction.
 class HoleFeature final : public Feature {
 public:
     using Feature::Feature;
     EdgeRef rim;
-    double diameter = 4.0; // mm
-    double depth = 6.0;    // mm
-    std::string preset;    // e.g. "M3 heat-set insert" (informational)
+    HoleKind holeKind = HoleKind::Plain;
+    double diameter = 4.0;       // mm (a countersink's diameter at the surface)
+    double depth = 6.0;          // mm (not used by a countersink: its angle sets it)
+    double angle = kPi / 2;      // countersink included angle, radians
+    std::string preset;          // e.g. "M3 heat-set insert" (informational)
 
     FeatureKind kind() const override { return FeatureKind::Hole; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new HoleFeature(*this)); }
@@ -469,6 +483,46 @@ public:
     Status readParams(const nlohmann::json& in) override;
 };
 
+// Round holes drilled into a flat face at points on it (the Hole tool), all
+// alike: a diameter, a depth or through all, and optionally a counterbore or
+// countersink for the screw head. The face is found again on every
+// recompute; the points are in the face's plane frame (holeFrame: the world
+// origin projected onto the face, as for a sketch on it), so the holes ride
+// along when an upstream step moves the face. A point that no longer lies on
+// the face fails the step with a message.
+class HolesFeature final : public Feature {
+public:
+    using Feature::Feature;
+    FaceRef face;
+    std::vector<Vec2> positions; // in holeFrame(face) coordinates, mm
+    double diameter = 3.4;       // mm
+    double depth = 10;           // mm, when not through all
+    bool throughAll = true;
+    HoleKind head = HoleKind::Plain; // Plain = no head
+    double headDiameter = 6.5;   // counterbore / countersink diameter
+    double headDepth = 3.4;      // counterbore depth
+    double headAngle = kPi / 2;  // countersink included angle, radians
+    std::string preset;          // e.g. "M3 normal fit" (informational)
+
+    FeatureKind kind() const override { return FeatureKind::Holes; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new HolesFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+};
+
+// The frame holes on a flat face are placed in: on the face's plane, origin
+// the world origin projected onto it, x axis horizontal (world X on floors),
+// like a sketch started on that face. nullopt for a face that is not flat.
+struct HoleFrame {
+    Vec3 origin, xAxis, yAxis, normal; // normal: the face's outward normal
+    Vec3 toWorld(Vec2 p) const { return origin + xAxis * p.x + yAxis * p.y; }
+    Vec2 toLocal(const Vec3& w) const { return {(w - origin).dot(xAxis), (w - origin).dot(yAxis)}; }
+};
+std::optional<HoleFrame> holeFrame(const geom::Shape& shape, int faceIndex);
+
 // Where a hole at a circular rim starts and which way it goes into the body.
 struct HolePlacement {
     Vec3 center;
@@ -476,15 +530,6 @@ struct HolePlacement {
     double rimRadius = 0;
 };
 std::optional<HolePlacement> holePlacement(const geom::Shape& shape, int edgeIndex);
-
-// Typical pilot holes for brass heat-set inserts (community rules of thumb,
-// not a standard: check your insert's datasheet).
-struct InsertPreset {
-    const char* name;  // "M3"
-    double diameter;   // mm
-    double depth;      // mm
-};
-const std::vector<InsertPreset>& heatSetInsertPresets();
 
 // Revolves sketch profiles around the sketch's own X or Y axis (through the
 // sketch origin): new body, or joined to / cut from the body it belongs to.

@@ -85,7 +85,13 @@ Rules:
 - `Extrude` may carry `"throughAll": true` (cuts only): the cut extends
   through the whole body in the direction of `distance`; and
   `"symmetric": true`: centered on the sketch plane, `|distance|` being the
-  total thickness.
+  total thickness; and `"draft": { "angle": radians, "distance" }` (absent
+  = no draft; |angle| <= 89 degrees): the side walls lean in by that angle
+  as they go away from the sketch (both ways when symmetric; negative leans
+  out), corners staying sharp. A drafted extrusion writes its `distance`
+  **only** inside `draft` (both places: refused), so builds that predate
+  drafts refuse the file ("invalid extrusion") instead of extruding
+  straight walls. A draft with `throughAll` is refused.
 - `PushPull` params: `{ "face": faceRef, "distance" }` plus optional
   `"keepEdges": true` (fillets and chamfers around the face move with it
   where possible; steps without it are the plain prism + boolean).
@@ -118,10 +124,19 @@ Rules:
 - `DeleteFaces` params: `{ "faces": [faceRef…] }` — removed and healed.
   `OffsetFace` params: `{ "face": faceRef, "distance" }` (positive: the body
   grows along the face's outward normal).
-- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset" }` — a
-  cylindrical hole centered on a circular rim edge, drilled into the
-  material (the direction comes from the flat face next to the rim);
-  `preset` is an informational label such as "M3 heat-set insert".
+- `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset", "type"?,
+  "angle"? }` — made at a circular rim edge, into the material (the
+  direction comes from the flat face next to the rim); `preset` is an
+  informational label such as "M3 heat-set insert" or "M3". `type` is
+  absent (or `"Plain"`) for a cylinder of `diameter` x `depth` (heat-set
+  insert pilot holes; files from before counterbores compute exactly as
+  before); `"Counterbore"`: the same cylinder as a screw head's seat on the
+  existing hole (refused when not wider than the hole or reaching through
+  the part); `"Countersink"`: a cone of `diameter` at the surface with the
+  included `angle` (radians, 90 degrees for metric screws) down to the hole,
+  written **without** `depth`, so builds that predate countersinks refuse
+  the file instead of drilling a plain hole of the countersink's diameter.
+  Unknown `type` values are refused.
 - `Split` params: `{ "pieces": [solid…] }` (at least two), where a solid is
   `{ "volume", "centroid": [x, y, z], "min": [x, y, z], "max": [x, y, z] }`
   (volume > 0, center of mass, bounding box) as the pieces were when the body
@@ -139,9 +154,21 @@ Rules:
   "translation": [x, y, z] }` plus an optional `"rotation"` like `Move`'s
   (applied before the translation) — the body's shape moved. It follows
   every change of that body and fails with a message when the body is gone.
+- `Holes` params: `{ "face": faceRef, "positions": [[x, y], ...],
+  "diameter", "throughAll", "depth"?, "head"?, "headDiameter"?,
+  "headDepth"?, "headAngle"?, "preset" }` — round holes drilled into a flat
+  face (the Hole tool; one step for the set, 1 to 1000 positions). The
+  positions are in the face's frame: on its plane, origin the world origin
+  projected onto it, x axis horizontal (world X on floors; the same frame
+  as a sketch started on the face), so the holes follow the face when an
+  upstream step moves it; a position no longer on the face fails the step.
+  `depth` only when `throughAll` is false. `head` is `"Counterbore"`
+  (with `headDiameter`, `headDepth`) or `"Countersink"` (with
+  `headDiameter`, `headAngle` in radians); absent: no head. `preset` is an
+  informational label such as "M3 normal fit".
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

@@ -4,7 +4,9 @@
 
 # The only library allowed to include OpenCASCADE headers.
 add_library(openshape_geometry STATIC
+    DraftExtrude.cpp
     Exchange.cpp Exchange.h
+    Holes.cpp Holes.h
     Mesh.h
     Modeling.cpp Modeling.h KernelSignals.h
     Profiles.cpp Profiles.h

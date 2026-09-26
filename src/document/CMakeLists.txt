@@ -5,6 +5,7 @@
 add_library(openshape_document STATIC
     Body.cpp Body.h
     Document.cpp Document.h
+    Fasteners.cpp Fasteners.h
     Feature.cpp Feature.h
     JsonHelpers.cpp JsonHelpers.h
     SketchProfiles.cpp SketchProfiles.h

@@ -296,6 +296,7 @@ ApplicationWindow {
                     { id: "chamfer", label: "Chamfer", tip: "Bevel edges: select them, drag or type the size." },
                     { id: "shell", label: "Shell", tip: "Hollow a body through the selected face(s)." },
                     { id: "offset", label: "Offset", tip: "Move a face with its neighbours following; a hole or shaft takes its new diameter (e.g. print tolerance)." },
+                    { id: "hole", label: "Hole", tip: "Drill holes for screws into a flat face: click where each goes (snaps to the center and edge middles), type X / Y, pick M2-M6 and the fit, add a counterbore or countersink." },
                     { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
                     { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
                     { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
@@ -508,6 +509,9 @@ ApplicationWindow {
             return app.operationPrompt
         if (app.operationActive && app.operationTitle === "Align")
             return "Drag the arrow or type an offset · Flip turns it around · click another face to re-aim · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Draft")
+            return "Type the draft angle: positive narrows the walls away from the sketch, negative widens them · "
+                 + "the arrow (or Draft again) goes back to the distance · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Thickness")
             return "Drag the arrow or type the total thickness (half on each side of the sketch) \u00b7 Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
@@ -516,6 +520,15 @@ ApplicationWindow {
             return "Click inside a closed sketch shape to extrude it \u00b7 double-click it to edit the sketch"
         if (app.bodyCount === 0)
             return "Add a box, or start a sketch."
+        if (app.operationActive && app.operationTitle === "Hole")
+            return "Click to add holes (they snap to the center and edge middles and line up with each other) · "
+                 + "X / Y (Tab) type the current hole's position · click a hole to pick it (Remove hole drops it) · Enter applies"
+        if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
+            return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
+        if (app.operationActive && app.operationTitle.startsWith("Countersink"))
+            return "Pick the screw size (90° heads), or drag the arrow / type the diameter at the surface · Enter applies"
+        if (app.operationActive && app.operationTitle.startsWith("Heat-set insert"))
+            return "Pick the insert size · drag the arrow or type the pilot hole's depth · Enter applies"
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
         if (app.operationActive && app.operationTitle === "Move" && app.contextActions.some(a => a.id === "split"))

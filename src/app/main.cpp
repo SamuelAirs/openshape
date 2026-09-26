@@ -29,6 +29,7 @@
 #include <QtQuickControls2/QQuickStyle>
 
 #include <cstdio>
+#include <iterator>
 #include <memory>
 #include <mutex>
 
@@ -259,6 +260,25 @@ void runDemo(os::ui::AppController& app, const QString& demo)
             interaction.pointerRelease(face);
         }
         interaction.fitAll(false);
+        return;
+    }
+    if (demo == QLatin1String("holes")) {
+        // The Hole tool on the cube's top: two countersunk M3 holes, the
+        // second one's Y being typed.
+        app.createBox(20);
+        interaction.fitAll(false);
+        const os::Vec3 taps[] = {{3, -3, 20}, {0, 0, 20}, {-5, 5, 20}}; // the face, then two holes
+        for (std::size_t i = 0; i < std::size(taps); ++i) {
+            os::interact::PointerEvent tap;
+            tap.position = interaction.camera().project(taps[i]);
+            interaction.pointerPress(tap);
+            interaction.pointerRelease(tap);
+            if (i == 0)
+                (void)interaction.triggerAction("hole");
+        }
+        (void)interaction.triggerAction("head:countersink");
+        (void)interaction.triggerAction("field:y");
+        interaction.setValueText("15");
         return;
     }
     if (demo == QLatin1String("rotate")) {

@@ -439,6 +439,10 @@ void InteractionController::pointerLeave()
         notifyView();
         return;
     }
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get()); hole && hole->hover()) {
+        hole->setHover(std::nullopt);
+        notifyView();
+    }
     if (hover_.hit() || hoveredHandle_ >= 0 || hoveredRing_ >= 0) {
         hover_ = {};
         hoveredHandle_ = -1;
@@ -530,6 +534,17 @@ void InteractionController::updateHover(const PointerEvent& event)
     const int handle = handleAt(event.position, event.device);
     const int ring = handle >= 0 ? -1 : ringAt(event.position, event.device);
     const sel::PickResult hit = handle >= 0 || ring >= 0 ? sel::PickResult{} : operationPickAt(event.position, profile);
+    // The Hole tool shows where a click would put the next hole (snapped).
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get())) {
+        std::optional<Vec2> at;
+        if (hit.kind == sel::PickKind::Face && hit.bodyId == hole->bodyId() && hit.index == hole->faceIndex())
+            at = hole->snap(hit.point, holeSnapDistance(hit.point, profile)).first;
+        const auto& before = hole->hover();
+        if (at.has_value() != before.has_value() || (at && (*at - *before).length() > 1e-9)) {
+            hole->setHover(at);
+            notifyView();
+        }
+    }
     if (!sameHover(hit, hover_) || handle != hoveredHandle_ || ring != hoveredRing_) {
         hover_ = hit;
         hoveredHandle_ = handle;
@@ -556,6 +571,15 @@ void InteractionController::click(const PointerEvent& event)
         } else if (!hit.hit() && align->canCommit()) {
             (void)commitOperation();
         }
+        notifyState();
+        notifyView();
+        return;
+    }
+    // Hole tool: a click on its face adds a hole there (or picks a placed
+    // one); elsewhere it applies, as clicking elsewhere does.
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get());
+        hole && hit.kind == sel::PickKind::Face && hit.bodyId == hole->bodyId() && hit.index == hole->faceIndex()) {
+        (void)hole->placeAt(hit.point, holeSnapDistance(hit.point, profile), *document_);
         notifyState();
         notifyView();
         return;
@@ -710,6 +734,10 @@ void InteractionController::rebuildOperation()
     }
     if (selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody()) {
         const auto& first = selection_.items().front();
+        if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::Holes)
+            operation_ = HoleOperation::create(*document_, first.bodyId, first.index, holeSettings_);
+        if (!operation_ && faceOperationKind_ == doc::FeatureKind::Holes)
+            faceOperationKind_ = doc::FeatureKind::PushPull; // not a flat face
         if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::OffsetFace)
             operation_ = OffsetFaceOperation::create(*document_, first.bodyId, first.index);
         if (!operation_ && selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
@@ -730,8 +758,13 @@ void InteractionController::rebuildOperation()
         std::vector<int> edges;
         for (const auto& item : selection_.items())
             edges.push_back(item.index);
-        if (edgeOperationKind_ == doc::FeatureKind::Hole && edges.size() == 1)
-            operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
+        if (edgeOperationKind_ == doc::FeatureKind::Hole && edges.size() == 1) {
+            if (rimHoleKind_ == doc::HoleKind::Plain)
+                operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
+            else
+                operation_ = HeadOperation::create(*document_, *selection_.singleBody(), edges.front(), rimHoleKind_,
+                                                   screwPreset_);
+        }
         if (!operation_) {
             if (edgeOperationKind_ == doc::FeatureKind::Hole)
                 edgeOperationKind_ = doc::FeatureKind::Fillet;
@@ -847,6 +880,8 @@ Status InteractionController::commitOperation()
         alignRequested_ = false; // done: the source face/edge offers its usual tools again
     if (kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern)
         bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get()))
+        holeSettings_ = hole->settings();
     const Uuid target = operation_->bodyId();
     const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
     const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
@@ -1122,6 +1157,31 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"separate", "Separate bodies", pattern->separate()});
         return actions;
     }
+    if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get())) {
+        const auto& screws = doc::metricScrews();
+        const HoleSettings& s = hole->settings();
+        const bool preset = std::abs(hole->diameter() - hole->presetDiameter()) < 1e-9;
+        for (std::size_t i = 0; i < screws.size(); ++i)
+            actions.push_back({"size:" + std::to_string(i), screws[i].name, preset && s.screw == i});
+        actions.push_back({"fit:close", "Close fit", preset && s.fit == doc::HoleFit::Close});
+        actions.push_back({"fit:normal", "Normal fit", preset && s.fit == doc::HoleFit::Normal});
+        actions.push_back({"fit:tap", "Tap", preset && s.fit == doc::HoleFit::Tap});
+        actions.push_back({"throughAll", "Through all", s.throughAll});
+        actions.push_back({"head:counterbore", "Counterbore", s.head == doc::HoleKind::Counterbore});
+        actions.push_back({"head:countersink", "Countersink", s.head == doc::HoleKind::Countersink});
+        using Field = HoleOperation::Field;
+        actions.push_back({"field:diameter", "\xC3\x98", hole->field() == Field::Diameter});
+        if (!s.throughAll)
+            actions.push_back({"field:depth", "Depth", hole->field() == Field::Depth});
+        if (hole->current() >= 0) {
+            actions.push_back({"field:x", "X", hole->field() == Field::X});
+            actions.push_back({"field:y", "Y", hole->field() == Field::Y});
+            actions.push_back({"removeHole", "Remove hole", false});
+        }
+        if (hole->positions().size() >= 2)
+            actions.push_back({"fromLast", "From last hole", hole->fromLastHole()});
+        return actions;
+    }
     if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get())) {
         actions.push_back({"flip", "Flip", align->flipped()});
         if (align->canUseGround())
@@ -1153,6 +1213,10 @@ std::vector<ContextAction> InteractionController::contextActions() const
                 actions.push_back({"throughAll", "Through all", extrude->throughAll()});
         }
         actions.push_back({"symmetric", "Symmetric", extrude->symmetric()});
+        // The draft angle is typed in the chip; the button shows it when set.
+        const double draft = extrude->draftDegrees();
+        actions.push_back({"draft", draft == 0 ? std::string("Draft") : "Draft " + formatAngle(draft * kPi / 180.0),
+                           extrude->editingDraft()});
         actions.push_back({"upToFace", "Up to face", extrude->pickingTarget()});
         actions.push_back({"editSketch", "Edit sketch", false});
         return actions;
@@ -1173,6 +1237,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
         if (single && planar)
             actions.push_back({"sketch", "Sketch", false});
+        if (single && planar)
+            actions.push_back({"hole", "Hole", false});
         if (single && !planar)
             actions.push_back({"offset", "Offset", operation_->featureKind() == doc::FeatureKind::OffsetFace});
         if (single)
@@ -1186,14 +1252,23 @@ std::vector<ContextAction> InteractionController::contextActions() const
         if (selection_.size() == 1)
             if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
                 rim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
-        if (rim)
-            actions.push_back({"insert", "Heat-set insert", edgeOperationKind_ == doc::FeatureKind::Hole});
+        if (rim) {
+            const bool hole = edgeOperationKind_ == doc::FeatureKind::Hole;
+            actions.push_back({"insert", "Heat-set insert", hole && rimHoleKind_ == doc::HoleKind::Plain});
+            actions.push_back({"counterbore", "Counterbore", hole && rimHoleKind_ == doc::HoleKind::Counterbore});
+            actions.push_back({"countersink", "Countersink", hole && rimHoleKind_ == doc::HoleKind::Countersink});
+        }
         if (selection_.size() == 1)
             actions.push_back({"align", "Align", false});
         if (const auto* insert = dynamic_cast<const InsertOperation*>(operation_.get())) {
             const auto& presets = doc::heatSetInsertPresets();
             for (std::size_t i = 0; i < presets.size(); ++i)
                 actions.push_back({"preset:" + std::to_string(i), presets[i].name, insert->presetIndex() == i});
+        }
+        if (const auto* head = dynamic_cast<const HeadOperation*>(operation_.get())) {
+            const auto& screws = doc::metricScrews();
+            for (std::size_t i = 0; i < screws.size(); ++i)
+                actions.push_back({"preset:" + std::to_string(i), screws[i].name, head->presetIndex() == i});
         }
     }
     if (selection_.allOfKind(sel::SelectionKind::Body)) {
@@ -1235,6 +1310,55 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyState();
         notifyView();
         return status;
+    }
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get())) {
+        using Field = HoleOperation::Field;
+        bool handled = true;
+        if (id.rfind("size:", 0) == 0)
+            hole->setScrew(std::stoul(id.substr(5)), *document_);
+        else if (id == "fit:close" || id == "fit:normal" || id == "fit:tap")
+            hole->setFit(id == "fit:close" ? doc::HoleFit::Close : id == "fit:tap" ? doc::HoleFit::Tap : doc::HoleFit::Normal,
+                         *document_);
+        else if (id == "throughAll")
+            hole->setThroughAll(!hole->settings().throughAll, *document_);
+        else if (id == "head:counterbore" || id == "head:countersink")
+            hole->setHead(id == "head:counterbore" ? doc::HoleKind::Counterbore : doc::HoleKind::Countersink, *document_);
+        else if (id == "field:diameter" || id == "field:depth" || id == "field:x" || id == "field:y")
+            hole->setField(id == "field:depth" ? Field::Depth
+                           : id == "field:x" ? Field::X
+                           : id == "field:y" ? Field::Y
+                                             : Field::Diameter,
+                           *document_);
+        else if (id == "nextField")
+            hole->nextField(*document_);
+        else if (id == "fromLast")
+            hole->setFromLastHole(!hole->fromLastHole(), *document_);
+        else if (id == "removeHole")
+            hole->removeCurrent(*document_);
+        else if (id == "hole") {
+            // Hole again (palette or face): keep the holes placed so far.
+        } else
+            handled = false;
+        if (handled) {
+            holeSettings_ = hole->settings();
+            notifyState();
+            notifyView();
+            return okStatus();
+        }
+    }
+    if (id == "hole") {
+        faceOperationKind_ = doc::FeatureKind::Holes;
+        rebuildOperation();
+        if (!dynamic_cast<HoleOperation*>(operation_.get())) {
+            const std::string text = "Holes are drilled into a flat face: select one, then Hole.";
+            message(text);
+            notifyState();
+            notifyView();
+            return Status::failure(ErrorCode::InvalidArgument, text, "hole: not a flat face");
+        }
+        notifyState();
+        notifyView();
+        return okStatus();
     }
     if (id == "revolve" || id == "extrude" || id.rfind("axis:", 0) == 0) {
         if (!selection_.allOfKind(sel::SelectionKind::SketchProfile))
@@ -1279,6 +1403,13 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "symmetric") {
         extrude->setSymmetric(!extrude->symmetric(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "draft") {
+        // The chip now edits the draft (again: back to the distance).
+        extrude->setActiveHandle(extrude->editingDraft() ? 0 : 1);
         notifyState();
         notifyView();
         return okStatus();
@@ -1420,8 +1551,11 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "sketch")
         return startSketch();
-    if (id == "insert") {
+    if (id == "insert" || id == "counterbore" || id == "countersink") {
         edgeOperationKind_ = doc::FeatureKind::Hole;
+        rimHoleKind_ = id == "counterbore"   ? doc::HoleKind::Counterbore
+                     : id == "countersink" ? doc::HoleKind::Countersink
+                                           : doc::HoleKind::Plain;
         rebuildOperation();
         notifyState();
         notifyView();
@@ -1434,9 +1568,17 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyView();
         return okStatus();
     }
+    if (auto* head = dynamic_cast<HeadOperation*>(operation_.get()); head && id.rfind("preset:", 0) == 0) {
+        screwPreset_ = std::stoul(id.substr(7));
+        head->setPreset(screwPreset_, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "fillet" || id == "chamfer") {
         const auto kind = id == "fillet" ? doc::FeatureKind::Fillet : doc::FeatureKind::Chamfer;
-        const double keep = operation_ ? operation_->value() : 0.0;
+        // A fillet's radius carries over to a chamfer (not a hole's size).
+        const double keep = dynamic_cast<const EdgeOperation*>(operation_.get()) ? operation_->value() : 0.0;
         edgeOperationKind_ = kind;
         rebuildOperation();
         if (operation_ && keep > 0)
@@ -1713,6 +1855,33 @@ RenderScene InteractionController::renderScene() const
             guide.points.push_back({push->thickness()->to, SketchStyle::Measure});
             scene.sketches.push_back(std::move(guide));
         }
+        // The Hole tool: the current hole (whose X / Y the chip edits, with
+        // lines from where they are measured) and where a click would add one.
+        if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get())) {
+            RenderSketch guide;
+            guide.editing = true;
+            const doc::HoleFrame& frame = hole->frame();
+            const double r = hole->diameter() / 2;
+            auto circle = [&](Vec2 c, SketchStyle style) {
+                constexpr int segments = 48;
+                for (int i = 0; i < segments; ++i) {
+                    const double a0 = 2 * kPi * i / segments, a1 = 2 * kPi * (i + 1) / segments;
+                    guide.lines.push_back({frame.toWorld(c + Vec2{std::cos(a0), std::sin(a0)} * r),
+                                           frame.toWorld(c + Vec2{std::cos(a1), std::sin(a1)} * r), style});
+                }
+                guide.points.push_back({frame.toWorld(c), style});
+            };
+            if (hole->current() >= 0) {
+                const Vec2 c = hole->livePositions(hole->value())[std::size_t(hole->current())];
+                const Vec2 from = hole->reference();
+                circle(c, SketchStyle::Selected);
+                guide.lines.push_back({frame.toWorld(from), frame.toWorld({c.x, from.y}), SketchStyle::Dimension});
+                guide.lines.push_back({frame.toWorld({c.x, from.y}), frame.toWorld(c), SketchStyle::Dimension});
+            }
+            if (hole->hover())
+                circle(*hole->hover(), SketchStyle::Hovered);
+            scene.sketches.push_back(std::move(guide));
+        }
     }
 
     // Grid on the XY plane, spaced for the current zoom.
@@ -1764,7 +1933,8 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
 sel::PickResult InteractionController::operationPickAt(Vec2 screen, const InputProfile& profile) const
 {
     const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get());
-    if (dynamic_cast<const MirrorOperation*>(operation_.get()) || (extrude && extrude->pickingTarget()))
+    if (dynamic_cast<const MirrorOperation*>(operation_.get()) || (extrude && extrude->pickingTarget())
+        || dynamic_cast<const HoleOperation*>(operation_.get()))
         return sel::pickFace(pickTargets(), camera_, screen);
     if (dynamic_cast<const AlignOperation*>(operation_.get())) {
         sel::PickOptions options;
@@ -1999,7 +2169,13 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Move: return "Move";
     case doc::FeatureKind::Combine: return "Combine";
     case doc::FeatureKind::Revolve: return "Revolve";
-    case doc::FeatureKind::Hole: return "Hole";
+    case doc::FeatureKind::Hole:
+        switch (static_cast<const doc::HoleFeature&>(f).holeKind) {
+        case doc::HoleKind::Plain: return "Hole";
+        case doc::HoleKind::Counterbore: return "Counterbore";
+        case doc::HoleKind::Countersink: return "Countersink";
+        }
+        return "Hole";
     case doc::FeatureKind::Mirror: return "Mirror";
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
@@ -2007,6 +2183,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Split: return "Split";
     case doc::FeatureKind::SplitPiece: return "Piece";
     case doc::FeatureKind::Copy: return static_cast<const doc::CopyFeature&>(f).mirror ? "Mirror copy" : "Copy";
+    case doc::FeatureKind::Holes: return static_cast<const doc::HolesFeature&>(f).positions.size() == 1 ? "Hole" : "Holes";
     }
     return "Step";
 }
@@ -2058,7 +2235,20 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     }
     case doc::FeatureKind::Hole: {
         const auto& h = static_cast<const doc::HoleFeature&>(f);
-        std::string text = "\xC3\x98" + formatLength(h.diameter, unit) + " \xC3\x97 " + formatLength(h.depth, unit);
+        std::string text = "\xC3\x98" + formatLength(h.diameter, unit)
+                         + (h.holeKind == doc::HoleKind::Countersink ? dot + formatAngle(h.angle)
+                                                                     : " \xC3\x97 " + formatLength(h.depth, unit));
+        if (!h.preset.empty())
+            text += dot + h.preset;
+        return text;
+    }
+    case doc::FeatureKind::Holes: {
+        const auto& h = static_cast<const doc::HolesFeature&>(f);
+        std::string text = h.positions.size() == 1 ? std::string() : std::to_string(h.positions.size()) + " \xC3\x97 ";
+        text += "\xC3\x98" + formatLength(h.diameter, unit) + dot
+              + (h.throughAll ? std::string("Through all") : formatLength(h.depth, unit) + " deep");
+        if (h.head != doc::HoleKind::Plain)
+            text += dot + std::string(h.head == doc::HoleKind::Counterbore ? "Counterbore" : "Countersink");
         if (!h.preset.empty())
             text += dot + h.preset;
         return text;
@@ -2147,6 +2337,8 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
                                : formatLength(e.symmetric ? std::abs(e.distance) : e.distance, unit);
         if (e.symmetric)
             extent += " symmetric";
+        if (e.draftAngle != 0)
+            extent += dot + "Draft " + formatAngle(e.draftAngle);
         return extent + dot + mode;
     }
     }
@@ -2570,6 +2762,11 @@ Status InteractionController::runTool(const std::string& id)
             return triggerAction("align");
         return explain("Click the face or edge of the body to move (a flat or round face, a straight edge or a circle), "
                        "then Align, then the face or edge to align it to.");
+    }
+    if (id == "hole") {
+        if (faces && selection_.size() == 1)
+            return triggerAction("hole");
+        return explain("Click a flat face, then Hole, then click or tap where each hole goes.");
     }
     if (id == "measure")
         return explain("Select two faces or edges (Shift-click the second); the distance and angle appear at the bottom left.");
