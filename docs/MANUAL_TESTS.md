@@ -53,6 +53,7 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     projects. File → Preferences… (Ctrl+,): units for new documents, grid
     snapping in sketches, how often recovery copies are kept.
 
-## On the iPad
+## On the iPad and iPhone
 
-See [IPAD.md](IPAD.md), "What to test on the iPad".
+See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the
+iPhone".

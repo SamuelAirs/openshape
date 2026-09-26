@@ -1,4 +1,4 @@
-# The iPad app, built on a GitHub-hosted Mac (docs/IPAD.md): the libraries
+# The iOS app (universal: iPhone and iPad), built on a GitHub-hosted Mac (docs/IPAD.md): the libraries
 # for iOS (OpenCASCADE takes about half an hour; cached afterwards), Qt for
 # iOS (cached), then an unsigned archive of the app. Pushes to main - or a
 # commit whose message contains [testflight] - then sign it and upload it to
@@ -70,11 +70,11 @@ jobs:
           path: ~/Qt
           key: ${{ steps.qt.outputs.cache-primary-key }}
 
-      - name: Build the iPad app (unsigned archive)
+      - name: Build the iOS app for iPhone and iPad (unsigned archive)
         run: |
           bash scripts/ci/run-logged.sh app bash scripts/ios/build-app.sh ~/Qt/$QT_VERSION/ios ~/openshape-ios-deps build/ios
           app=build/ios/OpenShape.xcarchive/Products/Applications/OpenShape.app
-          echo "::notice title=iPad app::$(du -sh $app | cut -f1), build $OPENSHAPE_BUILD_NUMBER, iPadOS $(plutil -extract MinimumOSVersion raw $app/Info.plist)+, $(lipo -archs $app/OpenShape)"
+          echo "::notice title=iOS app (iPhone + iPad)::$(du -sh $app | cut -f1), build $OPENSHAPE_BUILD_NUMBER, iOS $(plutil -extract MinimumOSVersion raw $app/Info.plist)+, device families $(plutil -extract UIDeviceFamily json -o - $app/Info.plist), $(lipo -archs $app/OpenShape)"
           echo "::notice title=QML modules linked::$(tr '\n' ' ' < build/ios/qml-modules.txt) ."
           echo "::notice title=Controls styles not linked (TD-36)::$(cat build/ios/src/app/.qt/qml_imports/openshape_dropped_styles.txt) ."
           echo "::notice title=QML import scan (start)::$(head -c 1500 build/ios/src/app/.qt/qml_imports/openshape_conf.cmake | tr '\n%' ' _')"
