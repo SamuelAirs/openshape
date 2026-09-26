@@ -384,7 +384,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
   the preview is known); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
-  Sketch, Align and Delete face; a single cylindrical face (hole, shaft) arms
+  Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
   Chamfer; a hole rim also offers the heat-set insert, Counterbore and
