@@ -8,14 +8,23 @@ function(openshape_add_test name)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE GTest::gtest_main)
     openshape_set_warnings(${name})
+    if(OPENSHAPE_OWN_OCCT)
+        # Release builds: run (and list) the tests against OpenShape's own
+        # OCCT build, not whichever OCCT comes first on PATH.
+        set_target_properties(${name} PROPERTIES TEST_LAUNCHER "${OPENSHAPE_OCCT_TEST_LAUNCHER}")
+    endif()
     gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
 endfunction()
 
-openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp)
+openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp test_version.cpp)
 target_link_libraries(test_core PRIVATE openshape_core)
+target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJECT_VERSION}")
 
-openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp)
+openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_build.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
+if(OPENSHAPE_OWN_OCCT)
+    target_compile_definitions(test_geometry PRIVATE OPENSHAPE_OWN_OCCT_BIN="${OPENSHAPE_OCCT_PREFIX}/bin")
+endif()
 
 openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_sketch_features.cpp test_attachment.cpp test_3mf.cpp test_recovery.cpp)
 target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)

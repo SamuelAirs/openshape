@@ -45,6 +45,7 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
+                        objectName: "aboutVersion"
                         text: "OpenShape " + Qt.application.version
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
@@ -102,11 +103,23 @@ Rectangle {
                     }
                 }
                 Text {
+                    objectName: "aboutLicenseFiles"
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     color: Theme.mutedText
                     font.pixelSize: 12
-                    text: "The full license texts come with the app (LICENSE.txt, THIRD_PARTY.md, PlaneGCS-COPYING.LIB.txt)."
+                    textFormat: Text.StyledText
+                    linkColor: Theme.accent
+                    onLinkActivated: (link) => Qt.openUrlExternally(link)
+                    // Only the Windows package (scripts/package-windows.sh) carries
+                    // the license files; other builds point to the repository.
+                    text: "These libraries and the ones they use (such as FreeType, HarfBuzz, ICU and zlib) keep their own licenses. "
+                        + (Qt.platform.os === "windows"
+                           ? "The full license texts and where to get each library's source code come with OpenShape "
+                             + "(LICENSE.txt, THIRD_PARTY_LICENSES.txt and PlaneGCS-COPYING.LIB.txt next to OpenShape.exe)."
+                           : "Each library's license and source are listed in "
+                             + "<a href=\"https://github.com/SamuelAirs/openshape/blob/main/THIRD_PARTY.md\">THIRD_PARTY.md</a> "
+                             + "in the source code repository.")
                 }
             }
         }

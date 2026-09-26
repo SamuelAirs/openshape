@@ -139,16 +139,151 @@ bash scripts/package-windows.sh
 
 Don't build while the script runs: it copies from the build folder.
 
-This produces `dist/OpenShape/` (≈290 MB, 364 files, ~5 minutes): the
+This produces `dist/OpenShape/` (≈290 MB, 361 files, ~80 s): the
 stripped executable, Qt (via `windeployqt6`), OCCT, PlaneGCS and runtime
 DLLs, Qt plugins, QML modules, a `qt.conf`, and license files, including
 THIRD_PARTY_LICENSES.txt with the license texts of all bundled MSYS2
 packages (generated with `pacman`). Verified 2026-09-25 by
 running the packaged `OpenShape.exe` with `PATH` reduced to
 `C:\Windows\System32`, including the full `--acceptance` run (103/103).
-No installer yet, and not distributable yet (TD-17).
+This package of the development build links MSYS2's OCCT and therefore GPL
+FFmpeg: the script says `License gate: FAIL - not distributable` (details in
+`build/msys2-ucrt64/license-gate.txt`). For something to distribute, see
+step 6.
 
-### 6. Developer tools
+### 6. Release: GPL-free build, installer and zip (verified)
+
+The package from step 5 links MSYS2's OpenCASCADE, which pulls in GPL
+FFmpeg: it is for local use only. A distributable release uses OpenShape's
+own OCCT build (docs/LICENSING.md). All commands from Git Bash with both
+MSYS2 bin folders first (`export PATH=$HOME/msys64/ucrt64/bin:$HOME/msys64/usr/bin:$PATH`),
+in the repository root.
+
+1. **OpenCASCADE without FFmpeg/FreeImage** (once; ~26 minutes with 6 jobs on
+   this PC, probably over an hour on a 4-core CI runner). Needs `patch` (Git Bash has
+   it; in MSYS2: `pacman -S patch`) and MSYS2's FreeType:
+
+   ```bash
+   scripts/windows/build-occt.sh $HOME/opt/occt-7.9.3-openshape 6
+   ```
+
+   It downloads the OCCT 7.9.3 tag and MSYS2's patches (SHA-256 checked),
+   builds only the toolkits OpenShape links (28 DLLs, no TKOpenGl), installs
+   them into the prefix and checks that `libTKDESTEP.dll`'s dependencies
+   contain no GPL library. Sources and build tree stay in
+   `$HOME/opt/occt-7.9.3-openshape-work` (635 MB; the prefix is 169 MB):
+   delete it, or keep it for a quick rerun (unchanged sources and options
+   are not rebuilt; the rerun still reinstalls the headers, ~10 minutes).
+
+2. **Release build and tests** — the preset `msys2-ucrt64-release` finds OCCT
+   in `$OPENSHAPE_OCCT_PREFIX`, default `%USERPROFILE%\opt\occt-7.9.3-openshape`
+   (only there: the system's OCCT is never picked up). `ctest` runs the
+   tests with the own OCCT first on `PATH` (a `TEST_LAUNCHER`; needs CMake
+   3.29), and `OcctBuild.TestsLoadOpenShapesOwnOcct` fails if any OCCT
+   toolkit is loaded from elsewhere (MSYS2's has the same version and would
+   otherwise load silently). Running a test program or `OpenShape.exe` from
+   the build folder by hand needs `PATH=$HOME/opt/occt-7.9.3-openshape/bin:$PATH`.
+
+   ```bash
+   cmake --preset msys2-ucrt64-release -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
+   cmake --build build/msys2-ucrt64-release -j 3
+   ctest --test-dir build/msys2-ucrt64-release -LE gui -j 3
+   ```
+
+3. **Package** (with the license gate; fails for a release build that would
+   ship anything GPL):
+
+   ```bash
+   bash scripts/package-windows.sh build/msys2-ucrt64-release dist/OpenShape
+   ```
+
+   → `dist/OpenShape/` (269 files, 158 MB, 45 s; the dev package of step 5
+   has 361 files, 291 MB). It ends with `License gate: PASS`; the report
+   lists the 24 bundled MSYS2 packages with their licenses.
+
+4. **Installer, zip, checksums** (`pacman -S mingw-w64-ucrt-x86_64-nsis`; the
+   zip uses MSYS2's Python):
+
+   ```bash
+   bash scripts/windows/make-installer.sh dist/OpenShape dist
+   ```
+
+   → `dist/OpenShape-<version>-windows-x64-setup.exe` (41 MB),
+   `dist/OpenShape-<version>-windows-x64.zip` (61 MB), `dist/SHA256SUMS.txt`.
+   The installer is per user (no administrator rights):
+   `%LOCALAPPDATA%\Programs\OpenShape`, Start-menu entry, optional desktop
+   shortcut (last page; `/DESKTOP` when silent), Apps & features entry,
+   `.openshape` association; installing over an existing version replaces
+   it; uninstalling keeps projects, settings and `%LOCALAPPDATA%\OpenShape`.
+   Silent: `setup.exe /S [/DESKTOP] /D=C:\path` (`/D` last, unquoted);
+   `Uninstall.exe /S`.
+
+5. **Installer test** (installs into a test folder, checks files, registry,
+   association and shortcuts, starts the installed app with `PATH` reduced
+   to `C:\Windows\System32`, upgrades over it — also while it runs —,
+   uninstalls and checks that everything is gone; refuses to run where
+   OpenShape is installed):
+
+   ```bash
+   env OPENSHAPE_TEST_DESKTOP_DIR=build/installer-test/desktop bash scripts/windows/make-installer.sh dist/OpenShape build/installer-test
+   ```
+
+   It must print `TEST BUILD: desktop shortcut goes to ...` (the setup's
+   Comments field then names that folder). Both installer tests refuse a
+   setup that is not such a test build for their `-TestDesktopDir`: a
+   release build puts its shortcut on the real desktop, replacing the
+   owner's own `OpenShape.lnk` when the box is ticked and deleting it when
+   it is unticked or uninstalled. (On 2026-09-26 a run of the dialog test
+   with a setup built without the variable did exactly that, before this
+   check existed.)
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -PackageDir dist\OpenShape -TestDesktopDir build\installer-test\desktop -Screenshot build\installer-test\installed.png -TestRunningApp
+   ```
+
+   Verified 2026-09-25: 42/42 checks. The test installer puts its desktop
+   shortcut into the given folder, not on the real desktop (where the
+   owner's own `OpenShape.lnk` must stay untouched — the test checks that);
+   `release.yml` runs the test without the app launches. The uninstaller's
+   temporary copy (`%TEMP%\~nsu*.tmp`) stays until Windows cleans up.
+
+   The dialogs (license page, folder page, finish page checkboxes, "Run
+   OpenShape", the "OpenShape is running" Retry box, the uninstaller's
+   pages) are clicked through by UI Automation, without moving the mouse;
+   it holds OpenShape's automation lock meanwhile and needs a desktop
+   session:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer-dialogs.ps1 -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -TestDesktopDir build\installer-test\desktop
+   ```
+
+   Run on 2026-09-26: 53 of 56 checks passed (license text, folder page,
+   finish-page defaults, "Run OpenShape" starting the app, upgrade offering
+   the installed folder and showing the shortcut ticked, unticking removing
+   it, Retry after closing the running app, the uninstaller's dialog
+   removing files, registry entries and shortcuts). The 3 failures: the
+   setup was not a test build (see above), so the shortcut went to the
+   real desktop, replacing and then deleting the owner's `OpenShape.lnk`.
+   Only the test-build check was added after that run (checked against a
+   test and a release setup, not in a full run).
+
+6. **The packaged app's full acceptance run**, with nothing but Windows on
+   `PATH` (verified 2026-09-25: 174/174 checks — core, views, release — in
+   29 s). From PowerShell:
+
+   ```powershell
+   $env:PATH = 'C:\Windows\System32'; dist\OpenShape\OpenShape.exe --acceptance build\acceptance-dist
+   ```
+
+The version is `project(OpenShape VERSION ...)` in `CMakeLists.txt`. A tag
+`v<version>` pushed to GitHub runs `.github/workflows/release.yml`, which does
+all of the above and publishes a GitHub Release (pre-release for 0.x);
+manual runs and packaging changes on `main` only upload the files as a
+workflow artifact. The Windows icon is made from the SVG with
+`python scripts/windows/make-icon.py` (needs MSYS2's `rsvg-convert`,
+`pacman -S mingw-w64-ucrt-x86_64-librsvg`).
+
+### 7. Developer tools
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,
   bounding boxes and recovery copies / full saves on a 21-face filleted part

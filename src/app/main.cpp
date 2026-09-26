@@ -5,6 +5,7 @@
 #include "app/AcceptanceRunner.h"
 #include "app/CrashLog.h"
 #include "core/Log.h"
+#include "core/Version.h"
 #include "geometry/Modeling.h"
 #include "ui/AppController.h"
 #include "ui/AppSettings.h"
@@ -416,7 +417,7 @@ int main(int argc, char* argv[])
     QGuiApplication application(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationName(QStringLiteral("OpenShape"));
-    QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QGuiApplication::setApplicationVersion(QString::fromLatin1(os::kAppVersion));
 #if !defined(Q_OS_IOS) // iPadOS shows the bundle's icon (and would need the SVG plugin)
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
 #endif
@@ -500,7 +501,7 @@ int main(int argc, char* argv[])
     if (qEnvironmentVariable("OPENSHAPE_LOG").compare(QLatin1String("debug"), Qt::CaseInsensitive) == 0)
         os::setMinimumLogLevel(os::LogLevel::Debug);
 
-    OS_LOG(Info, App) << "OpenShape 0.1.0 starting";
+    OS_LOG(Info, App) << "OpenShape " << os::kAppVersion << " starting";
     if (!dataDir.isEmpty())
         OS_LOG(Info, App) << "settings and recovery copies in " << QDir::toNativeSeparators(dataDir).toStdString();
 

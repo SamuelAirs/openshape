@@ -4,6 +4,7 @@
 
 #include "TestHelpers.h"
 
+#include "core/Version.h"
 #include "io/ProjectFile.h"
 
 #include <nlohmann/json.hpp>
@@ -208,6 +209,31 @@ TEST(ProjectFile, SafeEntryNames)
     EXPECT_FALSE(io::isSafeArchiveEntryName("C:/Windows/x"));
     EXPECT_FALSE(io::isSafeArchiveEntryName("a\\b"));
     EXPECT_FALSE(io::isSafeArchiveEntryName("./a"));
+}
+
+// metadata.json names the application version that wrote the file (CMake's
+// PROJECT_VERSION via core/Version.h, not a hard-coded string).
+TEST(ProjectFile, MetadataRecordsApplicationVersion)
+{
+    const auto path = tempPath("metadata.openshape");
+    ASSERT_TRUE(io::saveProject(*mvpDocument(), path).ok());
+
+    int err = 0;
+    zip_t* z = zip_open(path.string().c_str(), ZIP_RDONLY, &err);
+    ASSERT_NE(z, nullptr);
+    zip_stat_t st;
+    ASSERT_EQ(zip_stat(z, "metadata.json", 0, &st), 0);
+    std::string text(static_cast<size_t>(st.size), '\0');
+    zip_file_t* f = zip_fopen(z, "metadata.json", 0);
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(zip_fread(f, text.data(), st.size), static_cast<zip_int64_t>(st.size));
+    zip_fclose(f);
+    zip_close(z);
+
+    const auto metadata = nlohmann::json::parse(text);
+    EXPECT_EQ(metadata["application"], "OpenShape");
+    EXPECT_EQ(metadata["applicationVersion"], kAppVersion);
+    EXPECT_EQ(metadata["version"], io::kProjectFormatVersion);
 }
 
 TEST(ProjectFile, SaveOverwritesExisting)

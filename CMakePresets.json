@@ -19,6 +19,15 @@
       }
     },
     {
+      "name": "msys2-ucrt64-release",
+      "inherits": "msys2-ucrt64",
+      "displayName": "Windows release / MSYS2 UCRT64 with OpenShape's own OCCT (scripts/windows/build-occt.sh)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "OPENSHAPE_OWN_OCCT": "ON"
+      }
+    },
+    {
       "name": "linux",
       "displayName": "Linux (system packages)",
       "generator": "Ninja",
@@ -46,6 +55,10 @@
     {
       "name": "msys2-ucrt64-debug",
       "configurePreset": "msys2-ucrt64-debug"
+    },
+    {
+      "name": "msys2-ucrt64-release",
+      "configurePreset": "msys2-ucrt64-release"
     },
     {
       "name": "linux",

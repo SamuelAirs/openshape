@@ -5,7 +5,7 @@ A ZIP archive (deflate) with these entries:
 | Entry | Required | Content |
 |---|---|---|
 | `document.json` | yes | The parametric document. **Source of truth.** |
-| `metadata.json` | no | `{ "format", "version", "application", "applicationVersion" }` |
+| `metadata.json` | no | `{ "format", "version", "application", "applicationVersion" }`; `applicationVersion` is the version of the OpenShape that wrote the file (CMake's project version, e.g. `"0.1.0"`); informational, not used when reading. |
 | `geometry/<body-uuid>.brep` | no | OCCT BRep text of each body's current shape. A cache for external tools and future fast-open; ignored on load (bodies are recomputed from features). |
 | `thumbnail.png` | no | Preview image (not written yet). |
 

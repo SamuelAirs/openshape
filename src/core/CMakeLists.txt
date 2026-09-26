@@ -11,5 +11,8 @@ add_library(openshape_core STATIC
     Units.cpp Units.h
     Uuid.cpp Uuid.h
 )
-target_include_directories(openshape_core PUBLIC ${PROJECT_SOURCE_DIR}/src)
+# core/Version.h is generated from the project version (CMakeLists.txt).
+configure_file(Version.h.in ${PROJECT_BINARY_DIR}/generated/core/Version.h @ONLY)
+target_sources(openshape_core PRIVATE ${PROJECT_BINARY_DIR}/generated/core/Version.h)
+target_include_directories(openshape_core PUBLIC ${PROJECT_SOURCE_DIR}/src ${PROJECT_BINARY_DIR}/generated)
 openshape_set_warnings(openshape_core)

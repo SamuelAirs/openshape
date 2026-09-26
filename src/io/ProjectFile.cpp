@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "core/Timer.h"
+#include "core/Version.h"
 #include "document/JsonHelpers.h"
 #include "geometry/Modeling.h"
 
@@ -302,7 +303,7 @@ ProjectData serializeProject(const doc::Document& document, const SaveOptions& o
     data.metadataJson = json{{"format", kProjectFormatName},
                              {"version", kProjectFormatVersion},
                              {"application", "OpenShape"},
-                             {"applicationVersion", "0.1.0"}}
+                             {"applicationVersion", kAppVersion}}
                             .dump(2);
     if (options.includeGeometryCache) {
         for (const auto& body : document.bodies())

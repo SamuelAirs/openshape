@@ -19,6 +19,16 @@ qt_add_resources(openshape "openshape_icons"
     FILES ${PROJECT_SOURCE_DIR}/resources/icons/openshape.svg
 )
 set_target_properties(openshape PROPERTIES OUTPUT_NAME "OpenShape")
+if(WIN32)
+    # Icon and version information of OpenShape.exe (Explorer, shortcuts,
+    # the installer). The .ico is made from the SVG by scripts/windows/make-icon.py.
+    set(OPENSHAPE_ICON_FILE "${PROJECT_SOURCE_DIR}/resources/icons/openshape.ico")
+    configure_file(openshape.rc.in ${CMAKE_CURRENT_BINARY_DIR}/openshape.rc @ONLY)
+    target_sources(openshape PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/openshape.rc)
+    set_property(SOURCE ${CMAKE_CURRENT_BINARY_DIR}/openshape.rc APPEND PROPERTY OBJECT_DEPENDS ${OPENSHAPE_ICON_FILE})
+    # The "release" acceptance scenario reads the running exe's version resource.
+    target_link_libraries(openshape PRIVATE version)
+endif()
 # With a static Qt (iOS), Qt scans the app's QML to link the plugins of the
 # modules it imports; the QML lives in src/ui, not beside main.cpp. Without
 # this the iPad app linked no QML plugins at all (the scan found nothing).
@@ -79,6 +89,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 endif()
 
 if(OPENSHAPE_BUILD_TESTS)
+    if(OPENSHAPE_OWN_OCCT)
+        # Release builds: ctest runs the app with OpenShape's own OCCT first on PATH.
+        set_target_properties(openshape PROPERTIES TEST_LAUNCHER "${OPENSHAPE_OCCT_TEST_LAUNCHER}")
+    endif()
     # End-to-end GUI acceptance run (needs a desktop session; label "gui").
     add_test(NAME acceptance_gui
              COMMAND openshape --acceptance ${CMAKE_BINARY_DIR}/acceptance)

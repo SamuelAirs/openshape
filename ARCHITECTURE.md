@@ -651,6 +651,40 @@ them on a hidden menu separator after the Open Recent sub-menu).
   `scripts/dev/` has a Win32 input driver and a live log watcher (see
   BUILDING.md, "Developer tools").
 
+## Builds and releases
+
+- **Version:** one number, `project(OpenShape VERSION x.y.z)` in the top-level
+  `CMakeLists.txt`. `core/Version.h` is generated from it (`os::kAppVersion`,
+  used by the app's `--version`, the About card, the log and project files'
+  `metadata.json`); the macOS/iPad bundle and the Windows version resource
+  take it from CMake too.
+- **Windows resources:** `src/app/openshape.rc.in` (icon
+  `resources/icons/openshape.ico`, made from the SVG by
+  `scripts/windows/make-icon.py`, and VERSIONINFO) is configured and compiled
+  by windres on Windows only (`enable_language(RC)` there). Warning flags
+  apply to C++ sources only (`cmake/CompilerWarnings.cmake`).
+- **Two OpenCASCADE builds on Windows:** the dev preset `msys2-ucrt64` and CI
+  use MSYS2's package; the release preset `msys2-ucrt64-release`
+  (`OPENSHAPE_OWN_OCCT=ON`) uses OpenShape's own build of the same version
+  (`scripts/windows/build-occt.sh`: same source and MSYS2 patches, only the
+  toolkits OpenShape links, no FFmpeg/FreeImage/TBB/VTK/Tcl/OpenGL), found in
+  `$OPENSHAPE_OCCT_PREFIX` (default `%USERPROFILE%\opt\occt-7.9.3-openshape`).
+  MSYS2's package links a GPL FFmpeg into the STEP translator's
+  dependencies, so only the release build can be distributed.
+- **Package → release files:** `scripts/package-windows.sh` (windeployqt plus
+  one recursive `ntldd` scan of the entry points; generates
+  THIRD_PARTY_LICENSES.txt with each library's license text and source
+  location) → `scripts/windows/license-gate.sh` (traces every packaged file to
+  OpenShape's build or texts, the own OCCT build or an MSYS2 package, and
+  fails on GPL-licensed ones; mandatory for release builds) →
+  `scripts/windows/make-installer.sh` (NSIS installer from
+  `packaging/windows/openshape.nsi`, portable zip, SHA256SUMS.txt) →
+  `scripts/windows/test-installer.ps1` (silent install, upgrade, uninstall,
+  checks) and `scripts/windows/test-installer-dialogs.ps1` (the same through
+  the dialogs, clicked by UI Automation; both only accept a test build of
+  the setup, whose desktop shortcut goes to a test folder). `.github/workflows/release.yml` runs the whole chain and
+  publishes tags `v*` as GitHub Releases.
+
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
 - Tessellation and previews run synchronously on the GUI thread.

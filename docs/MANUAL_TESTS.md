@@ -1,6 +1,6 @@
 # Manual test pass
 
-What the owner is asked to try by hand (last updated 2026-09-25). Anything
+What the owner is asked to try by hand (last updated 2026-09-26). Anything
 odd: a screenshot and a sentence is plenty. Starting the app with
 `OPENSHAPE_LOG=debug` lets Claude read the log afterwards
 (`%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log`).
@@ -52,6 +52,29 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     close and start again: same place. File → Open Recent lists your last
     projects. File → Preferences… (Ctrl+,): units for new documents, grid
     snapping in sketches, how often recovery copies are kept.
+
+## The Windows installer (optional)
+
+`scripts/windows/test-installer.ps1` (silent) and
+`scripts/windows/test-installer-dialogs.ps1` (clicks through the dialogs)
+check the installer automatically; this is the real thing, once, by hand.
+Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
+`dist/` after BUILDING.md, "Release").
+
+1. **Install.** Windows SmartScreen warns (the installer is not signed yet):
+   "More info" → "Run anyway". No administrator prompt should appear. Click
+   through: the license page shows the MPL-2.0, the folder is
+   `%LOCALAPPDATA%\Programs\OpenShape`. On the last page "Create a desktop
+   shortcut" is off. **Leave it off** if you want to keep your current
+   desktop shortcut to `dist\OpenShape`: both are called `OpenShape`, so
+   ticking it replaces yours (and uninstalling removes it).
+2. **Use it.** Start OpenShape from the Start menu; save a project, then
+   double-click the `.openshape` file in Explorer: it opens in OpenShape and
+   shows the OpenShape icon.
+3. **Install again while OpenShape is open.** The installer says OpenShape
+   is running: close it, click Retry; the installation finishes.
+4. **Uninstall** from Settings → Apps → Installed apps → OpenShape. The
+   Start-menu entry and the file association are gone; your projects stay.
 
 ## On the iPad
 
