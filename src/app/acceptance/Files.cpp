@@ -4,9 +4,11 @@
 
 // Files: File -> Import STEP... (and Ctrl+I) with a STEP file written in
 // inches, undo, push/pull on an imported body, a damaged file, save and
-// reopen. Native file dialogs cannot be clicked: the scenario hands the
-// prepared file to AppController::setNextFileChoice, and the menu item runs
-// the dialog's onAccepted code with it.
+// reopen with a thumbnail; Home (File -> Home): cards with previews, the
+// card menu (button and long press), opening, New project, Open..., Import
+// STEP..., Back and Esc. Native file dialogs cannot be clicked: the scenario
+// hands the prepared file to AppController::setNextFileChoice, and the
+// button or menu item runs the dialog's onAccepted code with it.
 
 #include "app/AcceptanceRunner.h"
 #include "geometry/Exchange.h"
@@ -43,6 +45,8 @@ struct State {
     QString step;    // "Bracket" 40 x 20 x 10 and "Pin" 10 x 10 x 30, written in inches
     QString garbage; // not a STEP file
     QString project;
+    QString projectB;
+    QPointF pressAt;
     QStringList messages;
     QMetaObject::Connection listening;
 };
@@ -167,6 +171,127 @@ Steps steps(AcceptanceRunner& r)
     });
     wait(steps, 3);
     steps.push_back([&r] { r.screenshot(QStringLiteral("files_02_reopened")); });
+
+    // ---- Home: recent projects with previews ------------------------------------------
+    steps.push_back([&r, &app, s] {
+        s->projectB = s->dir + QStringLiteral("/files_b.openshape");
+        QFile::remove(s->projectB);
+        app.newDocument();
+        r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+        r.check(app.saveProjectAs(QUrl::fromLocalFile(s->projectB)), "save a second project (B)");
+        r.check(!app.homeVisible(), "no Home in automated runs until asked");
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Home)");
+    });
+    steps.push_back([&r, &app] {
+        r.check(r.clickItem(QStringLiteral("homeMenuItem")), "File → Home");
+        r.check(app.homeVisible(), "Home is shown");
+    });
+    wait(steps, 4); // previews load in the background
+    steps.push_back([&r, &app] {
+        const QVariantList projects = app.homeProjects();
+        r.check(projects.size() == 2 && projects[0].toMap()[QStringLiteral("name")] == QStringLiteral("files_b"),
+                "Home lists the recent projects, newest first", QString::number(projects.size()));
+        QQuickItem* first = r.findItem(QStringLiteral("homeCard_0"));
+        QQuickItem* second = r.findItem(QStringLiteral("homeCard_1"));
+        r.check(first && second && first->isVisible() && second->isVisible(), "one card each");
+        QQuickItem* preview = r.findItem(QStringLiteral("homeThumbnail_0"));
+        r.check(preview && preview->property("status").toInt() == 1 /* Image.Ready */
+                    && preview->property("sourceSize").toSize().width() > 0,
+                "the card shows the project's preview");
+        r.check(first && first->width() >= 150, "cards are touch-sized", first ? QString::number(first->width()) : QString());
+        r.screenshot(QStringLiteral("files_04_home"));
+        r.check(r.clickItem(QStringLiteral("homeCardMenu_1")), "a card's ⋯ menu");
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        r.check(r.clickItem(QStringLiteral("homeRemove_1")), "Remove from list");
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        r.check(app.homeProjects().size() == 1 && app.recentFiles().size() == 1, "the project leaves the list",
+                QString::number(app.homeProjects().size()));
+        r.check(QFileInfo::exists(s->project), "but the file stays");
+        // A long press (touch) opens the same menu.
+        QQuickItem* card = r.findItem(QStringLiteral("homeCard_0"));
+        if (card) {
+            s->pressAt = card->mapToScene(QPointF(card->width() / 2, card->height() / 3));
+            r.mousePress(s->pressAt);
+        }
+    });
+    wait(steps, 4); // 640 ms > the 500 ms press-and-hold
+    steps.push_back([&r, s] {
+        r.mouseRelease(s->pressAt);
+        QQuickItem* remove = r.findItem(QStringLiteral("homeRemove_0"));
+        r.check(remove && remove->isVisible(), "a long press opens the card's menu");
+        r.key(Qt::Key_Escape);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        r.check(app.homeVisible(), "Esc closes only the menu");
+        r.check(r.clickItem(QStringLiteral("homeCard_0")), "tap a project card");
+        r.check(!app.homeVisible() && app.documentTitle() == QStringLiteral("files_b"), "it opens, and Home closes",
+                app.documentTitle());
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Home again)");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("homeMenuItem")), "File → Home (New project)"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        r.check(r.clickItem(QStringLiteral("homeNew")), "New project button");
+        r.check(!app.homeVisible() && app.bodyCount() == 0 && app.documentTitle() == QStringLiteral("Untitled"),
+                "an empty new document");
+        QQuickItem* empty = r.findItem(QStringLiteral("emptyState"));
+        r.check(empty && empty->isVisible(), "with the \"Start with a shape\" card");
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Open from Home)");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("homeMenuItem")), "File → Home (Open)"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        app.setNextFileChoice(QUrl::fromLocalFile(s->project));
+        r.check(r.clickItem(QStringLiteral("homeOpen")), "Open… button");
+        r.check(!app.homeVisible() && app.documentTitle() == QStringLiteral("files_imported") && app.bodyCount() == 4,
+                "it opens the chosen project", app.documentTitle());
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Import from Home)");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("homeMenuItem")), "File → Home (Import)"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        app.setNextFileChoice(QUrl::fromLocalFile(s->step));
+        r.check(r.clickItem(QStringLiteral("homeImport")), "Import STEP… button");
+        r.check(!app.homeVisible() && app.documentTitle() == QStringLiteral("Untitled") && app.bodyCount() == 2,
+                "a new document with the imported bodies", QString::number(app.bodyCount()));
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Back)");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("homeMenuItem")), "File → Home (Back)"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        r.check(r.clickItem(QStringLiteral("homeBack")), "Back to the model");
+        r.check(!app.homeVisible() && app.bodyCount() == 2, "the document is still there");
+        app.setHomeVisible(true);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        r.key(Qt::Key_Escape);
+        r.check(!app.homeVisible(), "Esc leaves Home too");
+        r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+        r.check(app.bodyCount() == 3 && app.dirty(), "B adds a box: unsaved changes");
+        app.setHomeVisible(true);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        r.key(Qt::Key_Z, Qt::ControlModifier);
+        r.check(app.bodyCount() == 3, "Ctrl+Z does nothing behind Home", QString::number(app.bodyCount()));
+        // Ctrl+I on Home starts a new project, asking about the unsaved box first.
+        app.setNextFileChoice(QUrl::fromLocalFile(s->step));
+        r.key(Qt::Key_I, Qt::ControlModifier);
+        QQuickItem* question = r.findItem(QStringLiteral("unsavedDialog"));
+        r.check(question && question->isVisible(), "Ctrl+I on Home asks about unsaved changes");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("unsavedDiscard")), "Don't Save"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        r.check(!app.homeVisible() && app.bodyCount() == 2 && !app.canRedo() && app.undoText() == QStringLiteral("Import 2 bodies"),
+                "a new project with the imported bodies", QString::number(app.bodyCount()));
+    });
     return steps;
 }
 

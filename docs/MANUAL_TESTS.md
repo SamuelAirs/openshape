@@ -52,6 +52,12 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     close and start again: same place. File → Open Recent lists your last
     projects. File → Preferences… (Ctrl+,): units for new documents, grid
     snapping in sketches, how often recovery copies are kept.
+11. **Home and STEP.** Start OpenShape from the shortcut: Home shows your
+    recent projects with pictures (save a project once to give it one).
+    Tap a card to open it; ⋯ (or a right click) → Remove from list. File →
+    Home comes back to it. Import STEP… with a part from another program
+    (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
+    size and names; push/pull a face and round an edge of it, save, reopen.
 
 ## On the iPad
 

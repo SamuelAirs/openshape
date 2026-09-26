@@ -62,6 +62,21 @@ std::vector<std::string> withRecentFile(std::vector<std::string> list, const std
     return out;
 }
 
+std::vector<std::string> withoutRecentFile(std::vector<std::string> list, const std::string& path)
+{
+    std::erase_if(list, [&](const std::string& entry) { return sameRecentPath(entry, path); });
+    return list;
+}
+
+std::vector<std::string> homeProjects(const std::vector<std::string>& recent, const std::vector<std::string>& folder)
+{
+    std::vector<std::string> out = recent;
+    for (const std::string& file : folder)
+        if (std::none_of(out.begin(), out.end(), [&](const std::string& known) { return sameRecentPath(known, file); }))
+            out.push_back(file);
+    return out;
+}
+
 std::vector<std::string> existingRecentFiles(const std::vector<std::string>& list)
 {
     std::vector<std::string> out;

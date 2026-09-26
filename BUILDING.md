@@ -91,7 +91,11 @@ selected), `history` (a fillet step highlighted from the Model panel),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
-the constraint glyphs). Without `--screenshot` the window stays open.
+the constraint glyphs) and `home` (the start screen with four saved
+projects and their previews; try `--touch --size 402x874`, `874x402` and
+`1180x820` for phones and the iPad). Without `--screenshot` the window
+stays open. A normal start without a file opens on Home; automated runs
+(`--acceptance`, `--demo`, `--screenshot`) start in an empty document.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log.
 

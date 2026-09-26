@@ -83,6 +83,13 @@ class AppController : public QObject {
     // File → Open Recent: {path, name, folder}, most recent first, existing
     // files only (as of the last refreshRecentFiles(), open or save).
     Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
+    // The start screen (Home): shown at launch without a file and from File ->
+    // Home; opening, New and importing as a project close it.
+    Q_PROPERTY(bool homeVisible READ homeVisible WRITE setHomeVisible NOTIFY homeChanged)
+    // What Home lists: {path, name, folder, modified, thumbnail (image source),
+    // removable}: the recent files, and on iPadOS also the projects in the
+    // app's Documents folder.
+    Q_PROPERTY(QVariantList homeProjects READ homeProjects NOTIFY recentFilesChanged)
     // File → Preferences… (stored in QSettings, applied at once).
     Q_PROPERTY(QString defaultUnit READ defaultUnit WRITE setDefaultUnit NOTIFY preferencesChanged)
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
@@ -138,6 +145,9 @@ public:
     QVariantList history() const;
     QVariantList recoveryItems() const;
     QVariantList recentFiles() const { return recentFiles_; }
+    bool homeVisible() const { return homeVisible_; }
+    void setHomeVisible(bool visible);
+    QVariantList homeProjects() const { return homeProjects_; }
     QString defaultUnit() const;
     void setDefaultUnit(const QString& symbol);
     bool sketchGridSnap() const { return preferences_.sketchGridSnap; }
@@ -180,6 +190,8 @@ public:
 
     Q_INVOKABLE bool openRecent(const QString& path);
     Q_INVOKABLE void clearRecentFiles();
+    // Home: "Remove from list" (the file stays where it is).
+    Q_INVOKABLE void removeRecentFile(const QString& path);
     // Rereads the list and drops files that are gone (e.g. deleted in
     // Explorer while the app runs); the File menu calls it as it opens.
     Q_INVOKABLE void refreshRecentFiles();
@@ -260,6 +272,7 @@ signals:
     void touchModeChanged();
     void recoveryChanged();
     void recentFilesChanged();
+    void homeChanged();
     void preferencesChanged();
 
 private:
@@ -292,6 +305,8 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
+    QVariantList homeProjects_;
+    bool homeVisible_ = false;
     QUrl nextFileChoice_;
 };
 

@@ -58,13 +58,14 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- shortcuts
-    Shortcut { sequences: [StandardKey.Undo]; enabled: !window.modalOpen; onActivated: window.app.undo() }
+    // Undo, redo and duplicate act on the model: not while Home covers it.
+    Shortcut { sequences: [StandardKey.Undo]; enabled: !window.modalOpen && !window.app.homeVisible; onActivated: window.app.undo() }
     // StandardKey.Redo is Ctrl+Y on Windows but Ctrl+Shift+Z elsewhere; accept
     // both everywhere. On Windows the duplicate makes Qt report the match as
     // ambiguous, so handle that signal too.
     Shortcut {
         sequences: [StandardKey.Redo, "Ctrl+Y"]
-        enabled: !window.modalOpen
+        enabled: !window.modalOpen && !window.app.homeVisible
         onActivated: window.app.redo()
         onActivatedAmbiguously: window.app.redo()
     }
@@ -81,12 +82,18 @@ ApplicationWindow {
         onActivated: window.confirmDiscard(() => window.app.newDocument())
     }
     Shortcut { sequence: "Ctrl+,"; enabled: !window.modalOpen; onActivated: preferencesOverlay.open() }
-    Shortcut { sequence: "Ctrl+I"; enabled: !window.modalOpen; onActivated: window.chooseImportFile(false) }
+    // From Home, an import starts a new project (like its Import STEP button).
+    Shortcut {
+        sequence: "Ctrl+I"
+        enabled: !window.modalOpen
+        onActivated: window.app.homeVisible ? window.confirmDiscard(() => window.chooseImportFile(true))
+                                            : window.chooseImportFile(false)
+    }
     Shortcut { sequence: "F"; enabled: viewport.activeFocus; onActivated: window.app.fitAll() }
     Shortcut { sequence: "F1"; enabled: !window.modalOpen; onActivated: helpOverlay.toggle() }
     Shortcut { sequence: "B"; enabled: viewport.activeFocus && !window.app.sketchMode; onActivated: window.app.createBox(20) }
     // Duplicate the selected body (the copy is selected, ready to drag away).
-    Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode; onActivated: window.app.triggerAction("duplicate") }
+    Shortcut { sequence: "Ctrl+D"; enabled: !window.app.sketchMode && !window.app.homeVisible; onActivated: window.app.triggerAction("duplicate") }
     Shortcut {
         sequence: "K"
         enabled: viewport.activeFocus && window.app.canStartSketch
@@ -97,7 +104,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay]
+        const panels = [unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay, homeScreen]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -218,6 +225,8 @@ ApplicationWindow {
         onClosed: window.focusViewUnlessPanel()
         // Sub-menu entries are made by this delegate: name them for the acceptance run.
         delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
+        MenuItem { objectName: "homeMenuItem"; text: "Home"; onTriggered: window.app.homeVisible = true }
+        MenuSeparator {}
         MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
         MenuItem { text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
         Menu {
@@ -570,9 +579,10 @@ ApplicationWindow {
 
     // ---------------------------------------------------------------- empty state
     Column {
+        objectName: "emptyState"
         anchors.centerIn: parent
         spacing: 14
-        visible: window.app.bodyCount === 0 && window.app.sketchCount === 0 && !window.app.sketchMode
+        visible: window.app.bodyCount === 0 && window.app.sketchCount === 0 && !window.app.sketchMode && !window.app.homeVisible
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Start with a shape"
@@ -623,6 +633,21 @@ ApplicationWindow {
         x: Math.max(Theme.margin, fitsRight ? tipX + 28 : tipX - 28 - width)
         y: Math.max(topBar.y + topBar.height + 8, Math.min(window.height - height - 70, tipY - 24))
         onFinished: viewport.forceActiveFocus()
+    }
+
+    // ---------------------------------------------------------------- home
+    // The start screen: at launch without a file, and File -> Home.
+    HomeScreen {
+        id: homeScreen
+        objectName: "homeScreen"
+        app: window.app
+        anchors.fill: parent
+        z: 90 // over the model and its panels; dialogs and the restore prompt go above
+        onNewRequested: window.confirmDiscard(() => window.app.newDocument())
+        onOpenRequested: window.confirmDiscard(() => window.chooseFile(openDialog, (url) => window.app.openProject(url)))
+        onImportRequested: window.confirmDiscard(() => window.chooseImportFile(true))
+        onProjectRequested: (path) => window.confirmDiscard(() => window.app.openRecent(path))
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
     // ---------------------------------------------------------------- help

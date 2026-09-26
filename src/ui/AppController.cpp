@@ -10,6 +10,7 @@
 #include "io/ProjectFile.h"
 #include "io/RecentFiles.h"
 #include "ui/RecoverySession.h"
+#include "ui/ThumbnailProvider.h"
 
 #include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
@@ -19,6 +20,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QVariantMap>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
@@ -567,6 +569,7 @@ void AppController::newDocument()
     undoStack_ = std::move(stack);
     path_.clear();
     documentReplaced();
+    setHomeVisible(false);
     emit documentChanged();
     emit stateChanged();
     emit viewChanged();
@@ -587,6 +590,7 @@ bool AppController::openProject(const QUrl& url)
     undoStack_ = std::move(stack);
     path_ = QString::fromStdWString(path.wstring());
     documentReplaced();
+    setHomeVisible(false);
     rememberRecentFile(path_);
     for (const auto& body : document_->bodies())
         if (body->hasFailures()) {
@@ -973,6 +977,7 @@ bool AppController::restoreRecovery(const QString& sessionText)
     undoStack_ = std::move(stack);
     path_ = QString::fromStdString(entry.info.originalPath);
     documentReplaced();
+    setHomeVisible(false);
     // The copy stays (now as this run's) until the document is saved or discarded.
     if (const Status adopted = recovery_->adopt(session, entry.info); adopted) {
         copyRevision_ = undoStack_->revision();
@@ -1037,7 +1042,8 @@ void AppController::updateRecentFiles()
 {
     QSettings settings;
     QVariantList list;
-    for (const std::string& file : io::existingRecentFiles(toStd(loadRecentFiles(settings)))) {
+    const std::vector<std::string> recent = io::existingRecentFiles(toStd(loadRecentFiles(settings)));
+    for (const std::string& file : recent) {
         const QFileInfo info(QString::fromStdString(file));
         QVariantMap map;
         map.insert(QStringLiteral("path"), info.absoluteFilePath());
@@ -1045,10 +1051,53 @@ void AppController::updateRecentFiles()
         map.insert(QStringLiteral("folder"), info.absoluteDir().dirName());
         list.append(map);
     }
-    if (list == recentFiles_)
+    // Home: the same files with previews and dates, plus (iPadOS) the
+    // projects in the app's Documents folder, which the Files app shows.
+    std::vector<std::string> folder;
+#if defined(Q_OS_IOS)
+    const QDir documents(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
+    for (const QFileInfo& info : documents.entryInfoList({QStringLiteral("*.openshape")}, QDir::Files, QDir::Time))
+        folder.push_back(info.absoluteFilePath().toStdString());
+#endif
+    QVariantList home;
+    for (const std::string& file : io::homeProjects(recent, folder)) {
+        const QFileInfo info(QString::fromStdString(file));
+        const QDateTime modified = info.lastModified();
+        QVariantMap map;
+        map.insert(QStringLiteral("path"), info.absoluteFilePath());
+        map.insert(QStringLiteral("name"), info.completeBaseName());
+        map.insert(QStringLiteral("folder"), QDir::toNativeSeparators(info.absolutePath()));
+        map.insert(QStringLiteral("modified"), QLocale().toString(modified, QLocale::ShortFormat));
+        map.insert(QStringLiteral("thumbnail"), ThumbnailProvider::sourceFor(info.absoluteFilePath(), modified.toMSecsSinceEpoch()));
+        map.insert(QStringLiteral("removable"),
+                   std::any_of(recent.begin(), recent.end(), [&](const std::string& r) { return io::sameRecentPath(r, file); }));
+        home.append(map);
+    }
+    if (list == recentFiles_ && home == homeProjects_)
         return; // the menu keeps its items
     recentFiles_ = list;
+    homeProjects_ = home;
     emit recentFilesChanged();
+}
+
+void AppController::setHomeVisible(bool visible)
+{
+    if (visible)
+        updateRecentFiles(); // files saved, moved or deleted meanwhile
+    if (visible == homeVisible_)
+        return;
+    homeVisible_ = visible;
+    emit homeChanged();
+}
+
+void AppController::removeRecentFile(const QString& path)
+{
+    QSettings settings;
+    QStringList files;
+    for (const std::string& f : io::withoutRecentFile(toStd(loadRecentFiles(settings)), path.toStdString()))
+        files.append(QString::fromStdString(f));
+    saveRecentFiles(settings, files);
+    updateRecentFiles();
 }
 
 void AppController::refreshRecentFiles()

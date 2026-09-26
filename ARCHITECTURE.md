@@ -580,6 +580,22 @@ cannot be read). Native file dialogs cannot be clicked by the acceptance
 run: `AppController::setNextFileChoice` hands it the file, and
 `window.chooseFile(dialog, accept)` runs the dialog's accept code with it.
 
+**Home** (the start screen, `HomeScreen.qml`, z 90: over the model and
+its panels, under dialogs and the restore prompt): `AppController::homeVisible`
+is set by `main.cpp` at launch without a file (never in automated runs; the
+`home` demo scene shows it) and by File → Home; New, Open, opening a
+recent project, importing as a project and restoring a recovery copy clear
+it (Esc and Back return to the open document). `homeProjects` lists the
+recent files with name, folder, date and a preview source, and on iPadOS
+also the projects in the app's Documents folder (`io::homeProjects`).
+Previews come from `ui/ThumbnailProvider` (`image://thumbnail/<mtime>/<path>`,
+loaded off the GUI thread with `io::readProjectThumbnail`; the time stamp
+makes a re-saved project show its new preview). Cards are the tap
+targets; ⋯, a long press or a right click open "Remove from list"
+(`removeRecentFile`, `io::withoutRecentFile`). The grid takes as many
+columns as fit (two on a phone in portrait) and gets denser in short
+windows (a phone in landscape).
+
 **Dialogs are overlays** in the window, not native message boxes (touch-sized,
 clickable by the acceptance run): `UnsavedOverlay` (Save / Don't Save /
 Cancel before New, Open, Open Recent, Restore and closing),
@@ -611,7 +627,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   resized by its diameter and deleted; scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
-  `recent` and `preferences`. `clickItem` lays out freshly created
+  `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I
+  and Home, the saved thumbnail, Home's cards, menu, long press and
+  buttons). `clickItem` lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
   still sat where Fillet was about to go).
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag

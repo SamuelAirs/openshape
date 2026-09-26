@@ -35,8 +35,10 @@ qt_add_qml_module(openshape_ui
         qml/PreferencesOverlay.qml
         qml/RecoveryOverlay.qml
         qml/UnsavedOverlay.qml
+        qml/HomeScreen.qml
     SOURCES
         AppController.cpp AppController.h
+        ThumbnailProvider.cpp ThumbnailProvider.h
         ViewportItem.cpp ViewportItem.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)

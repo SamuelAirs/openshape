@@ -160,7 +160,7 @@ Rectangle {
                         title: "Files"
                         rows: [
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S"],
-                            ["Recent projects", "File → Open Recent"],
+                            ["Recent projects", "Home (at start, or File → Home): tap a project to open it; ⋯, a long press or a right click removes it from the list · File → Open Recent"],
                             ["For printing", "File → Export STL or 3MF"],
                             ["For other CAD", "File → Export STEP"],
                             ["From other CAD", "File → Import STEP… (Ctrl+I): each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size"],

@@ -8,6 +8,7 @@
 #include "geometry/Modeling.h"
 #include "ui/AppController.h"
 #include "ui/AppSettings.h"
+#include "ui/ThumbnailProvider.h"
 
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
@@ -17,6 +18,7 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
+#include <QtCore/QUrl>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
@@ -79,12 +81,34 @@ void installLogging(const QString& dir)
 
 // Scripted demo used for screenshots and smoke tests: builds the Milestone 0
 // state (cube, top face selected, push/pull preview to a 35 mm height).
-void runDemo(os::ui::AppController& app, const QString& demo)
+// `dataDir` is the run's scratch folder (where "home" saves its projects).
+void runDemo(os::ui::AppController& app, const QString& demo, const QString& dataDir = {})
 {
     auto& interaction = app.interaction();
     interaction.fitAll(false);
     if (demo == QLatin1String("empty"))
         return;
+    if (demo == QLatin1String("home")) {
+        // Home with a few saved projects (and their previews).
+        const QString dir = (dataDir.isEmpty() ? QDir::tempPath() : dataDir) + QStringLiteral("/projects");
+        QDir().mkpath(dir);
+        auto save = [&](const QString& name) {
+            (void)app.saveProjectAs(QUrl::fromLocalFile(dir + QLatin1Char('/') + name + QStringLiteral(".openshape")));
+            app.newDocument();
+        };
+        runDemo(app, QStringLiteral("committed"));
+        save(QStringLiteral("Tall block"));
+        for (int i = 0; i < 3; ++i)
+            app.createBox(20);
+        save(QStringLiteral("Three blocks"));
+        runDemo(app, QStringLiteral("fillet"));
+        app.commitOperation();
+        save(QStringLiteral("Rounded block"));
+        runDemo(app, QStringLiteral("bracket"));
+        save(QStringLiteral("Mounting bracket"));
+        app.setHomeVisible(true);
+        return;
+    }
     if (demo == QLatin1String("revolve")) {
         using P = os::interact::InteractionController::SketchPlane;
         (void)interaction.startSketch(P::Front);
@@ -431,7 +455,8 @@ int main(int argc, char* argv[])
     parser.addVersionOption();
     QCommandLineOption demoOption(QStringLiteral("demo"),
                                   QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
-                                                 "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern)."),
+                                                 "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
+                                                 "home)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
@@ -543,7 +568,12 @@ int main(int argc, char* argv[])
     controller.startRecovery(recoveryDir);
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
+    // Home at launch without a file (never in automated runs, which start
+    // from an empty document; the "home" demo shows it).
+    if (!automated && parser.positionalArguments().isEmpty())
+        controller.setHomeVisible(true);
     QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("thumbnail"), new os::ui::ThumbnailProvider); // the engine owns it
     engine.setInitialProperties({{QStringLiteral("app"), QVariant::fromValue(&controller)}});
     engine.loadFromModule("OpenShape", "Main");
     if (engine.rootObjects().isEmpty()) {
@@ -590,9 +620,9 @@ int main(int argc, char* argv[])
         const QString demo = parser.value(demoOption);
         const QString shot = parser.value(screenshotOption);
         // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, demo] {
+        QTimer::singleShot(600, &controller, [&controller, demo, dataDir] {
             if (!demo.isEmpty())
-                runDemo(controller, demo);
+                runDemo(controller, demo, dataDir);
         });
         if (!shot.isEmpty()) {
             QTimer::singleShot(1600, window, [window, shot] {

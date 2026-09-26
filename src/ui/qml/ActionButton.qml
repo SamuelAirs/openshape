@@ -10,6 +10,9 @@ AbstractButton {
 
     property bool accent: false
     property bool compact: false
+    // A framed button on a plain background (Home), rather than in a panel.
+    property bool outlined: false
+    property int fontSize: compact ? 12 : 13
 
     implicitHeight: compact ? (Theme.touch ? 40 : 30) : Theme.controlHeight
     implicitWidth: Math.max(implicitHeight, label.implicitWidth + (compact ? 20 : 24))
@@ -20,7 +23,7 @@ AbstractButton {
     contentItem: Text {
         id: label
         text: control.text
-        font.pixelSize: control.compact ? 12 : 13
+        font.pixelSize: control.fontSize
         font.weight: control.accent || control.checked ? Font.DemiBold : Font.Normal
         color: control.accent ? "white" : control.checked ? Theme.accent : Theme.text
         horizontalAlignment: Text.AlignHCenter
@@ -33,8 +36,8 @@ AbstractButton {
              : control.pressed ? Theme.pressed
              : control.checked ? Theme.checked
              : control.hovered ? Theme.hover
-             : control.compact ? Theme.panel : "transparent"
-        border.color: control.compact && !control.checked ? Theme.panelBorder : "transparent"
+             : control.compact || control.outlined ? Theme.panel : "transparent"
+        border.color: (control.compact || control.outlined) && !control.checked ? Theme.panelBorder : "transparent"
         Behavior on color { ColorAnimation { duration: 90 } }
     }
 }
