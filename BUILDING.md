@@ -123,8 +123,10 @@ No installer yet, and not distributable yet (TD-17).
 ### 6. Developer tools
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute
-  and bounding boxes on a 21-face filleted part (numbers in
-  PROJECT_STATUS.md):
+  and bounding boxes on a 21-face filleted part, then the same plus a
+  fillet drag and hover picking (1200 pointer positions over the part) on
+  a 249-face enclosure (shelled, rounded, 95 vent holes with chamfers,
+  screw bosses; 25k triangles). Numbers in PROJECT_STATUS.md:
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
