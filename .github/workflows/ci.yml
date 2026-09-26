@@ -1,7 +1,10 @@
-# Mirrors the build verified locally in BUILDING.md (MSYS2 UCRT64).
-# A run takes 6-11 minutes and private-repo Windows minutes bill at 2x, so:
-# push in batches; documentation-only pushes skip CI; a newer push to the
-# same branch cancels a run still in progress.
+# Windows: mirrors the build verified locally in BUILDING.md (MSYS2 UCRT64).
+# macOS: Apple Clang and Homebrew packages; also runs the app once (Metal)
+# and the real-UI acceptance run. The iPad build is ipad.yml.
+# A run takes 6-11 minutes (the repository is public, so the minutes are
+# free); documentation-only pushes skip CI; a newer push to the same branch
+# cancels a run still in progress. Failed steps report their error lines as
+# annotations, which anyone can read (scripts/ci/run-logged.sh).
 name: CI
 
 on:
@@ -21,7 +24,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -40,25 +43,42 @@ jobs:
             mingw-w64-ucrt-x86_64-libzip
             mingw-w64-ucrt-x86_64-eigen3
       - name: Configure
-        run: cmake --preset msys2-ucrt64 -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
+        run: bash scripts/ci/run-logged.sh configure cmake --preset msys2-ucrt64 -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
       - name: Build
-        run: cmake --build build/msys2-ucrt64
+        run: bash scripts/ci/run-logged.sh build cmake --build build/msys2-ucrt64
       - name: Test (headless; the GUI acceptance run needs a desktop session)
-        run: ctest --test-dir build/msys2-ucrt64 -LE gui --output-on-failure
+        run: bash scripts/ci/run-logged.sh test ctest --test-dir build/msys2-ucrt64 -LE gui --output-on-failure
 
-  # The macOS build (Apple Clang, Homebrew packages): the first step toward
-  # the iPad. Skipped while the repository is private, where macOS minutes
-  # bill at 10x; free for public repositories.
   macos:
-    if: ${{ !github.event.repository.private }}
-    runs-on: macos-14
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      LOGS: ${{ github.workspace }}/ci-logs
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Select Xcode 26 (as the iPad build)
+        run: bash scripts/ci/select-xcode.sh
       - name: Install dependencies
-        run: brew install ninja opencascade qt nlohmann-json libzip eigen googletest
+        run: bash scripts/ci/run-logged.sh brew brew install ninja opencascade qtbase qtdeclarative qtshadertools qtsvg nlohmann-json libzip eigen googletest
       - name: Configure
-        run: cmake --preset macos -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
+        run: bash scripts/ci/run-logged.sh configure cmake --preset macos -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
       - name: Build
-        run: cmake --build build/macos
+        run: bash scripts/ci/run-logged.sh build cmake --build build/macos
       - name: Test (headless)
-        run: ctest --test-dir build/macos -LE gui --output-on-failure
+        run: |
+          bash scripts/ci/run-logged.sh test ctest --test-dir build/macos -LE gui --output-on-failure
+          grep -E "tests passed" "$LOGS/test.log" | sed 's/^/::notice title=macOS tests::/'
+      - name: Screenshot (Metal)
+        run: |
+          bash scripts/ci/run-logged.sh screenshot perl -e 'alarm 120; exec @ARGV' \
+            build/macos/bin/OpenShape.app/Contents/MacOS/OpenShape --demo bracket --screenshot "$LOGS/macos-bracket.png"
+          python3 scripts/ci/png_stats.py "$LOGS/macos-bracket.png" --github
+      - name: GUI acceptance run (real UI, synthetic input)
+        continue-on-error: true
+        run: |
+          bash scripts/ci/run-logged.sh acceptance ctest --test-dir build/macos -L gui --output-on-failure
+          grep -E "tests passed|checks|passed" "$LOGS/acceptance.log" | tail -n 3 | sed 's/^/::notice title=macOS acceptance::/'

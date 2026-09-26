@@ -1,10 +1,10 @@
 # Running OpenShape on an iPad
 
-**Status (2026-09-25): prepared on Windows, not yet built on a Mac.** Every
-command below still has to be run for real; expect a few fixes on the way.
-The easiest route: open Claude Code on the Mac in this repository and ask it
-to "build OpenShape for my iPad following docs/IPAD.md" — it can run the
-steps and fix what comes up.
+**Status (2026-09-25): prepared on Windows; the Mac and iPad builds have
+not run yet.** The owner's MacBook is too old for current Xcode, so the
+iPad app is built on GitHub's Macs (free for a public repository) and
+delivered through **TestFlight**; no Mac is needed. The owner's iPad: iPad
+Air 11-inch (M2), iPadOS 26.6.1.
 
 What is ready:
 
@@ -16,103 +16,110 @@ What is ready:
 - Build settings for Apple platforms: warning flags Clang accepts, the
   PlaneGCS solver built as a static library on iOS, an app bundle with an
   iPad `Info.plist` (`src/app/ios/Info.plist.in`: iPad only, all
-  orientations, projects visible in the Files app).
-- A `macos` CMake preset and a macOS CI job (Apple Clang, Homebrew packages).
-  The job runs once the GitHub repository is public (it is skipped on a
-  private repository, where macOS minutes are expensive).
+  orientations, projects visible in the Files app, no export-compliance
+  question), an App Store icon (`src/app/ios/Assets.xcassets`, rendered
+  from `resources/icons/openshape.svg`), archive-friendly install settings.
+- CI (`.github/workflows/`):
+  - `ci.yml`, job `macos`: the Mac app with Apple Clang and Homebrew
+    packages, the headless tests, one Metal screenshot (summarized as
+    numbers by `scripts/ci/png_stats.py`) and the real-UI acceptance run.
+  - `ipad.yml`: the iOS libraries (`scripts/ios/build-deps.sh`; cached),
+    Qt 6.11.2 for iOS (`scripts/ios/install-qt.sh`; cached), an unsigned
+    archive of the app (`scripts/ios/build-app.sh`), then signing and the
+    TestFlight upload (`scripts/ios/testflight.sh`).
 
-## What you need
+## 1. One-time setup (the owner, about 10 minutes)
 
-- A Mac with **Xcode** (free, App Store) and its command line tools
-  (`xcode-select --install`).
-- **Homebrew** (<https://brew.sh>).
-- **Qt 6.8 or newer for macOS and iOS**: the Qt Online Installer
-  (<https://www.qt.io/download-open-source>, free Qt account) with the
-  "macOS" and "iOS" components of one Qt version. (Alternative:
-  `pip install aqtinstall`, then `aqt install-qt mac desktop 6.8.3` and
-  `aqt install-qt mac ios 6.8.3`.)
-- Your **Apple ID** (free) for signing, and the iPad with a cable.
+Needs the paid Apple Developer Program (the owner has it).
 
-## 1. The desktop app on the Mac (checks the code on Apple's compiler)
+1. **Team ID:** developer.apple.com → Account → Membership details → copy
+   the 10-character Team ID.
+2. **App ID:** Certificates, IDs & Profiles → Identifiers → **+** → App IDs →
+   App → Description `OpenShape`, Bundle ID **Explicit**
+   `io.github.samuelairs.openshape` → Continue → Register. (If Apple refuses
+   the identifier, choose another and change it in `src/app/CMakeLists.txt`.)
+3. **App record:** appstoreconnect.apple.com → Apps → **+** → New App →
+   iOS, name `OpenShape` (names are unique store-wide; if taken, e.g.
+   `OpenShape CAD` — the home screen still says OpenShape), language,
+   the bundle ID from step 2, SKU `openshape`, Full Access → Create.
+4. **API key:** App Store Connect → Users and Access → Integrations → App
+   Store Connect API (Request Access the first time) → Team Keys → **+** →
+   name `GitHub`, access **Admin** (Xcode's cloud signing needs it to create
+   the distribution certificate) → Generate. Download the `.p8` file (only
+   possible once) and note the **Key ID** and the **Issuer ID** above the
+   list. The key can be revoked there at any time.
+5. **GitHub secrets:** github.com/SamuelAirs/openshape → Settings → Secrets
+   and variables → Actions → New repository secret, four times:
+   `APPLE_TEAM_ID`, `APP_STORE_CONNECT_KEY_ID`,
+   `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_KEY` (the whole text
+   of the `.p8` file, including the BEGIN and END lines). Secrets are not
+   visible to anyone, and pull requests from forks cannot read them.
+6. **iPad:** install **TestFlight** from the App Store and sign in with the
+   developer account's Apple ID.
+7. **After the first upload:** App Store Connect → OpenShape → TestFlight →
+   Internal Testing → **+** → a group (e.g. `Me`) with automatic
+   distribution → add yourself. Later builds then arrive by themselves.
+
+## 2. Getting a new build onto the iPad
+
+Every push to `main` that changes code runs `ipad.yml` (so does a commit
+whose message contains `[testflight]` on another branch). With the secrets
+set, it uploads build number = the workflow's run number. Apple processes
+it (usually 5–30 minutes; an e-mail says when), then TestFlight on the
+iPad offers **Install** / **Update**. TestFlight builds expire after 90
+days. The first run builds OpenCASCADE for iOS (about half an hour); later
+runs take its cached copy.
+
+## 3. Reading CI results (anyone, no sign-in)
+
+GitHub shows job logs only to signed-in users, but for a public
+repository the run and job status and the annotations are public. Failed
+steps put their error lines and last lines into annotations
+(`scripts/ci/run-logged.sh`); successful ones add notices (test counts,
+screenshot numbers, app size, minimum iPadOS).
 
 ```bash
-brew install cmake ninja opencascade qt nlohmann-json libzip eigen googletest
+curl -s "https://api.github.com/repos/SamuelAirs/openshape/actions/runs?head_sha=$(git rev-parse HEAD)"
+curl -s https://api.github.com/repos/SamuelAirs/openshape/actions/runs/<run id>/jobs
+curl -s https://api.github.com/repos/SamuelAirs/openshape/check-runs/<job id>/annotations
+```
+
+Anonymous API calls are limited to 60 per hour per IP address.
+
+## 4. Alternative: building on a Mac with Xcode
+
+For a Mac with a current Xcode (26 or newer), e.g. to run the app on a
+connected iPad from Xcode or to debug it there. The commands are the ones
+CI runs; see `.github/workflows/` for the exact sequence.
+
+The desktop app (checks the code on Apple's compiler):
+
+```bash
+brew install ninja opencascade qtbase qtdeclarative qtshadertools qtsvg nlohmann-json libzip eigen googletest
 cmake --preset macos
 cmake --build build/macos
 ctest --test-dir build/macos -LE gui
 open build/macos/bin/OpenShape.app
 ```
 
-## 2. The libraries, built for iOS (static, arm64)
-
-Homebrew's libraries are for macOS; iOS needs its own builds of
-OpenCASCADE (with FreeType, which its STEP translator pulls in) and libzip.
-Install everything into one folder:
+The iPad app:
 
 ```bash
-export DEPS=$HOME/openshape-ios-deps
-IOS="-G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 -DCMAKE_BUILD_TYPE=Release"
-```
-
-Sources: OpenCASCADE 7.9.x (<https://github.com/Open-Cascade-SAS/OCCT>, tag
-`V7_9_x`), FreeType (<https://gitlab.freedesktop.org/freetype/freetype>),
-libzip (<https://libzip.org>), nlohmann/json and Eigen (header-only).
-
-```bash
-# FreeType
-cmake -S freetype -B build-freetype $IOS -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$DEPS \
-  -DFT_DISABLE_ZLIB=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
-cmake --build build-freetype --target install
-
-# OpenCASCADE (no Draw, no OpenGL: OpenShape draws with Qt)
-cmake -S OCCT -B build-occt $IOS -DBUILD_LIBRARY_TYPE=Static -DINSTALL_DIR=$DEPS \
-  -DBUILD_MODULE_Draw=OFF -DUSE_TK=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF \
-  -DUSE_FREETYPE=ON -D3RDPARTY_FREETYPE_DIR=$DEPS \
-  -DUSE_FREEIMAGE=OFF -DUSE_FFMPEG=OFF -DUSE_TBB=OFF -DUSE_VTK=OFF -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF
-cmake --build build-occt --target install
-
-# libzip (zlib comes with the iOS SDK)
-cmake -S libzip -B build-libzip $IOS -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$DEPS \
-  -DENABLE_COMMONCRYPTO=OFF -DENABLE_GNUTLS=OFF -DENABLE_MBEDTLS=OFF -DENABLE_OPENSSL=OFF \
-  -DENABLE_BZIP2=OFF -DENABLE_LZMA=OFF -DENABLE_ZSTD=OFF \
-  -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOC=OFF
-cmake --build build-libzip --target install
-
-# Header-only libraries
-cmake -S json -B build-json -DJSON_BuildTests=OFF -DCMAKE_INSTALL_PREFIX=$DEPS && cmake --build build-json --target install
-cmake -S eigen -B build-eigen -DCMAKE_INSTALL_PREFIX=$DEPS && cmake --build build-eigen --target install
-```
-
-OpenCASCADE also ships its own iOS script (`adm/scripts/ios_build.sh`) if
-the commands above need adjusting. OpenCASCADE is the long step (about an
-hour).
-
-## 3. OpenShape for iOS, in Xcode
-
-```bash
-~/Qt/6.8.3/ios/bin/qt-cmake -S . -B build/ios -G Xcode \
-  -DOPENSHAPE_BUILD_TESTS=OFF -DCMAKE_PREFIX_PATH=$DEPS -DCMAKE_FIND_ROOT_PATH=$DEPS
+scripts/ios/build-deps.sh ~/openshape-ios-deps       # static arm64 libraries, ~30+ min
+scripts/ios/install-qt.sh 6.11.2 ~/Qt                # or the Qt Online Installer (macOS + iOS)
+scripts/ios/build-app.sh ~/Qt/6.11.2/ios ~/openshape-ios-deps
 open build/ios/OpenShape.xcodeproj
 ```
 
-In Xcode: choose the `openshape` scheme and your iPad as the destination.
-Under the target's **Signing & Capabilities**, pick your **Personal Team**
-(your Apple ID). If the bundle identifier `io.github.samuelairs.openshape`
-is refused, change it (e.g. add your name). Press **Run**.
-
-On the iPad, the first time: **Settings → Privacy & Security → Developer
-Mode** (turn on, restart). After the first install: **Settings → General →
-VPN & Device Management** → trust your developer certificate.
-
-With a free Apple ID the app stops opening after 7 days: run it from Xcode
-again. The paid Apple Developer Program ($99/year) makes that a year and
-allows TestFlight and the App Store.
+In Xcode: the `openshape` scheme, your iPad as the destination, Signing &
+Capabilities → your team → **Run**. On the iPad, the first time: Settings
+→ Privacy & Security → **Developer Mode** (on, restart).
 
 ## Expected rough edges
 
 - Open and Save: projects live in the app's Documents folder, which the
   Files app shows under "On My iPad → OpenShape". How Qt's file dialogs
-  behave on iPadOS needs testing.
+  behave on iPadOS (especially saving) needs testing.
 - No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
 - Typing values: tap the value field for the on-screen keyboard (typing
   without tapping needs a hardware keyboard).
@@ -140,4 +147,5 @@ relinking.
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
    Files app.
 7. Rotate the iPad: the layout follows; the tool palette scrolls when short.
-8. Note anything slow, hard to hit, or missing — with a screenshot.
+8. Note anything slow, hard to hit, or missing — with a screenshot
+   (TestFlight: take a screenshot and share it as feedback, or send it).

@@ -1,0 +1,93 @@
+# The iPad app, built on a GitHub-hosted Mac (docs/IPAD.md): the libraries
+# for iOS (OpenCASCADE takes about half an hour; cached afterwards), Qt for
+# iOS (cached), then an unsigned archive of the app. Pushes to main - or a
+# commit whose message contains [testflight] - then sign it and upload it to
+# TestFlight, once the signing secrets are set (APPLE_TEAM_ID,
+# APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY).
+# Failed steps report their error lines as annotations (scripts/ci/run-logged.sh).
+name: iPad
+
+on:
+  push:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'scripts/dev/**']
+  workflow_dispatch:
+
+# Queue instead of cancelling: a cancelled first run would lose the
+# OpenCASCADE build before it is cached.
+concurrency:
+  group: ipad-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ipad:
+    runs-on: macos-15
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+    env:
+      QT_VERSION: 6.11.2
+      LOGS: ${{ github.workspace }}/ci-logs
+      OPENSHAPE_BUILD_NUMBER: ${{ github.run_number }}
+      HAS_SIGNING: ${{ secrets.APP_STORE_CONNECT_KEY != '' && secrets.APPLE_TEAM_ID != '' }}
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode 26
+        run: bash scripts/ci/select-xcode.sh
+      - name: Install build tools
+        run: bash scripts/ci/run-logged.sh brew brew install ninja
+
+      - name: Restore the iOS libraries
+        id: deps
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/openshape-ios-deps
+          key: ios-deps-${{ hashFiles('scripts/ios/build-deps.sh') }}
+      - name: Build the iOS libraries (OpenCASCADE, FreeType, libzip, json, Eigen)
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: bash scripts/ci/run-logged.sh deps bash scripts/ios/build-deps.sh ~/openshape-ios-deps "$RUNNER_TEMP/ios-deps-work"
+      - name: Save the iOS libraries
+        if: steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/openshape-ios-deps
+          key: ${{ steps.deps.outputs.cache-primary-key }}
+
+      - name: Restore Qt
+        id: qt
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Qt
+          key: qt-${{ env.QT_VERSION }}-ios-macos
+      - name: Install Qt for iOS and macOS
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: bash scripts/ci/run-logged.sh qt bash scripts/ios/install-qt.sh "$QT_VERSION" ~/Qt
+      - name: Save Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Qt
+          key: ${{ steps.qt.outputs.cache-primary-key }}
+
+      - name: Build the iPad app (unsigned archive)
+        run: |
+          bash scripts/ci/run-logged.sh app bash scripts/ios/build-app.sh ~/Qt/$QT_VERSION/ios ~/openshape-ios-deps build/ios
+          app=build/ios/OpenShape.xcarchive/Products/Applications/OpenShape.app
+          echo "::notice title=iPad app::$(du -sh $app | cut -f1), build $OPENSHAPE_BUILD_NUMBER, iPadOS $(plutil -extract MinimumOSVersion raw $app/Info.plist)+, $(lipo -archs $app/OpenShape)"
+
+      - name: Upload to TestFlight
+        if: env.HAS_SIGNING == 'true' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[testflight]'))
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: |
+          export ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$ASC_KEY" > "$ASC_KEY_PATH"
+          bash scripts/ci/run-logged.sh testflight bash scripts/ios/testflight.sh build/ios/OpenShape.xcarchive "$RUNNER_TEMP/testflight"
+          echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER uploaded; it appears in TestFlight after Apple's processing (usually 5-30 minutes)"
+      - name: No TestFlight upload
+        if: env.HAS_SIGNING != 'true'
+        run: echo "::notice title=TestFlight::not uploaded - the signing secrets are not set (docs/IPAD.md)"

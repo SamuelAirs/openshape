@@ -74,6 +74,14 @@ TEST(Units, CommaDecimal)
     EXPECT_DOUBLE_EQ(mm("2,5"), 2.5);
 }
 
+TEST(Units, NumberForms)
+{
+    EXPECT_DOUBLE_EQ(mm(".5"), 0.5);
+    EXPECT_DOUBLE_EQ(mm("1."), 1.0);
+    EXPECT_DOUBLE_EQ(mm("0.1"), 0.1);
+    EXPECT_DOUBLE_EQ(mm("1234567.125"), 1234567.125);
+}
+
 TEST(Units, RejectsBadInput)
 {
     EXPECT_TRUE(rejects(""));

@@ -1,7 +1,7 @@
 # Project status
 
-_Last updated: 2026-09-25, end of the first long session (hands-on testing
-with the owner, then the owner's five priorities). New here? Read "Handoff"
+_Last updated: 2026-09-25, second session: the iPad build moved to GitHub's
+Macs + TestFlight (the owner has no usable Mac). New here? Read "Handoff"
 first._
 
 ## Current milestone
@@ -20,7 +20,7 @@ first, tested version. Their follow-ups are the next tasks below.
   rebuilt from it. If the working tree is not clean, someone changed it
   after this note.
 - **Verify first:** build, `ctest --test-dir build/msys2-ucrt64 -LE gui`
-  (238 pass), then — only when nobody is using the mouse —
+  (239 pass), then — only when nobody is using the mouse —
   `ctest --test-dir build/msys2-ucrt64 -L gui` (147 real-UI checks, ~30 s).
 - **Last session (2026-09-25):** the owner modeled hands-on while the debug
   log was watched; everything they reported was fixed (right-click ends a
@@ -37,20 +37,26 @@ first, tested version. Their follow-ups are the next tasks below.
   symmetric and up to a face; push/pull takes fillets and chamfers along;
   touch layout with a Pen switch; About box; license list in the package;
   iPad build prepared (docs/IPAD.md) but not yet run on a Mac.
-- **Waiting on the owner:** making the GitHub repository public (they said
-  they will); an OK to download OpenCASCADE's source (~60 MB, from
-  github.com/Open-Cascade-SAS/OCCT) to rebuild it without FFmpeg/FreeImage
-  for a distributable Windows package (TD-17); the iPad steps on their Mac.
+- **iPad via GitHub + TestFlight (2026-09-25, in progress):** the owner's
+  MacBook is too old for current Xcode, so the iPad app is built on GitHub's
+  Macs (the repository is public now, so they are free) and delivered with
+  TestFlight to their iPad Air 11" (M2, iPadOS 26.6.1). Written: the macOS
+  CI job (build, tests, Metal screenshot, acceptance run), `ipad.yml` and
+  `scripts/ios/*` (iOS libraries, Qt for iOS, unsigned archive, cloud-signed
+  TestFlight upload), an App Store icon. Not run yet: see docs/IPAD.md.
+- **Waiting on the owner:** the Apple-side setup in docs/IPAD.md section 1
+  (App ID, app record, API key, four GitHub secrets); an OK to download
+  OpenCASCADE's source to this PC to rebuild it without FFmpeg/FreeImage
+  for a distributable Windows package (TD-17).
 - **Owner decisions:** the license is **MPL-2.0** (chosen 2026-09-25; see
   docs/LICENSING.md). No product decision is pending. Their global git
   `user.email` is malformed but they don't mind; this repository sets its
   own (GitHub noreply address).
-- **CI is green:** the owner checked the Actions page on 2026-09-25 (runs
-  #3–#8 passed, 6–11 min each). Results are only visible there: the
-  repository is private and `gh` is not installed here, so ask the owner
-  when a result matters. Once the repository is public, anyone (including
-  Claude) can read the results through the public API, and the macOS job
-  (skipped while private) starts running.
+- **CI:** Windows runs #3–#11 passed (6–11 min each). The repository is
+  public now: run/job status and annotations can be read through the public
+  API without a login (docs/IPAD.md, "Reading CI results"); failed steps
+  report their error lines there. The macOS job and `ipad.yml` have not
+  run yet.
 - **Working with the owner:** they test hands-on and report issues while you
   watch the log (`OPENSHAPE_LOG=debug`, `scripts/dev/watch_log.py`). For each
   report: reproduce, fix, add a check that clicks the fixed path, re-package
@@ -155,8 +161,8 @@ the GUI thread (TD-1). Re-measure with `bench_session` (BUILDING.md,
   movement, two-finger tap = undo, three-finger tap = redo), pen mode with a
   Pen switch, and the touch layout are implemented and tested with synthetic
   Qt touch events; not yet tried on real touch hardware or an iPad.
-- iPad: build settings, Info.plist and a step-by-step guide (docs/IPAD.md);
-  never built on a Mac yet. macOS CI job waits for the repository to be public.
+- iPad: build settings, Info.plist, icon, CI workflows that build it on a
+  GitHub Mac and upload it to TestFlight (docs/IPAD.md); not run yet.
 - Disconnected pieces: flagged in the Model panel, not yet split into bodies (TD-22).
 
 ## Broken / missing
@@ -216,8 +222,9 @@ the GUI thread (TD-1). Re-measure with `bench_session` (BUILDING.md,
 ## Next concrete tasks (owner priorities)
 
 1. The owner's test pass (docs/MANUAL_TESTS.md): act on what they report.
-2. iPad: run docs/IPAD.md on the owner's Mac (best with Claude Code there);
-   once the repository is public, fix whatever the macOS CI job reports.
+2. iPad: get `ci.yml`'s macOS job and `ipad.yml` green (fix what they
+   report), then the first TestFlight build on the owner's iPad and their
+   test pass (docs/IPAD.md, "What to test").
 3. Distributable Windows package: rebuild OCCT without FFmpeg/FreeImage
    (TD-17, after the owner's OK to download it), installer or zip, then a
    GitHub release.
@@ -233,7 +240,7 @@ the GUI thread (TD-1). Re-measure with `bench_session` (BUILDING.md,
 
 ## Tests currently passing
 
-238/238 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
+239/239 (`ctest -LE gui`): GTest suites for core, geometry, profiles, sketch
 model and solver, sketch edits (slot, fillet, trim), document, commands,
 project files, sketch features, face attachment, camera, picking,
 interaction (headless M0 script, sketch workflows and tools, history

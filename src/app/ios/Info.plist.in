@@ -2,8 +2,8 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
      License, v. 2.0. If a copy of the MPL was not distributed with this
      file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
-<!-- iPadOS app bundle (CMake fills the ${...} values). Prepared on Windows,
-     not yet built: see docs/IPAD.md. -->
+<!-- iPadOS app bundle (CMake fills the ${...} values; Xcode adds the icon
+     and platform keys). See docs/IPAD.md. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -25,6 +25,9 @@
     <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <!-- No encryption beyond the system's: TestFlight skips the export question. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIRequiresFullScreen</key>

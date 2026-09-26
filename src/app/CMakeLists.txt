@@ -16,19 +16,29 @@ qt_add_resources(openshape "openshape_icons"
 )
 set_target_properties(openshape PROPERTIES OUTPUT_NAME "OpenShape")
 
-# macOS / iPadOS app bundle. The identifier can be changed in Xcode when signing.
+# macOS / iPadOS app bundle. The identifier is the App ID registered with
+# Apple for TestFlight (docs/IPAD.md). Every TestFlight upload needs a new
+# build number: CI passes its run number.
+set(OPENSHAPE_BUILD_NUMBER "${PROJECT_VERSION}" CACHE STRING "Bundle build number (CFBundleVersion)")
 if(APPLE)
     set_target_properties(openshape PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.samuelairs.openshape"
         MACOSX_BUNDLE_BUNDLE_NAME "OpenShape"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
+        MACOSX_BUNDLE_BUNDLE_VERSION "${OPENSHAPE_BUILD_NUMBER}")
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # App icon: one 1024 px image; Xcode derives the other sizes.
+    target_sources(openshape PRIVATE ios/Assets.xcassets)
+    set_source_files_properties(ios/Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     set_target_properties(openshape PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "io.github.samuelairs.openshape"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "2") # iPad only
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "2" # iPad only
+        XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+        # Only the app goes into an archive (the libraries set SKIP_INSTALL).
+        XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
+        XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)")
 endif()
 
 if(OPENSHAPE_BUILD_TESTS)

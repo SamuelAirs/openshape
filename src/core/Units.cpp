@@ -5,9 +5,10 @@
 #include "core/Units.h"
 
 #include <cctype>
-#include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <locale>
+#include <sstream>
 
 namespace os {
 
@@ -218,9 +219,13 @@ private:
             error_ = pos_ < text_.size() ? "Unexpected '" + std::string(1, text_[pos_]) + "'" : "Expected a number";
             return {};
         }
+        // Locale-independent (Qt sets the C locale from the environment on
+        // Unix). Not std::from_chars: Apple's libc++ lacks it for double.
+        std::istringstream in(digits);
+        in.imbue(std::locale::classic());
         double value = 0.0;
-        const auto [ptr, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
-        if (ec != std::errc() || ptr != digits.data() + digits.size()) {
+        in >> value;
+        if (in.fail() || in.peek() != std::char_traits<char>::eof()) {
             error_ = "Invalid number '" + digits + "'";
             return {};
         }

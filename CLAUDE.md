@@ -36,12 +36,15 @@ Start here, in this order:
 - Python: `$HOME/msys64/ucrt64/bin/python.exe` is Windows-native (ctypes works).
 
 ## Repository and CI
-- Remote: https://github.com/SamuelAirs/openshape (private). `gh` is not installed;
-  git over HTTPS works with the owner's stored credentials.
-- CI (`.github/workflows/ci.yml`) runs on every push on a Windows runner and builds with
-  warnings as errors; private-repo Windows minutes bill 2x, so batch pushes.
-  Docs-only pushes skip it. Results are only visible on the Actions page (the owner's
-  login): green as of 2026-09-25; ask the owner when a result matters.
+- Remote: https://github.com/SamuelAirs/openshape (**public** since 2026-09-25).
+  `gh` is not installed; git over HTTPS works with the owner's stored credentials.
+- CI runs on every push (free: public repository); docs-only pushes skip it.
+  `ci.yml`: Windows (MSYS2) and macOS (Apple Clang, Homebrew), warnings as errors.
+  `ipad.yml`: builds the iPad app on a GitHub Mac and, on `main`, uploads it to
+  TestFlight for the owner's iPad (docs/IPAD.md; the owner has no usable Mac).
+- Reading results needs no login: run/job status and annotations come from the
+  public API, and failed steps put their error lines into annotations
+  (docs/IPAD.md, "Reading CI results"). Full logs need the owner's login.
 - Commit identity for this repo is set locally (GitHub noreply address).
 
 ## Debugging with the owner

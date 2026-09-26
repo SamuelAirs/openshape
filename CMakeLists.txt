@@ -25,6 +25,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 include(cmake/CompilerWarnings.cmake)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # An Xcode archive (TestFlight/App Store) must contain only the app, not
+    # the static libraries it is built from; the app target overrides this.
+    set(CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL "YES")
+endif()
+
 # ---- Third-party dependencies --------------------------------------------
 # The modeling core (core/geometry/document/commands/selection/interaction/io)
 # deliberately does NOT depend on Qt. Only render/ui/app do.
