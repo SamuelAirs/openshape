@@ -69,8 +69,13 @@ Rules:
   `value` > 0), `Parallel`, `Perpendicular`, `Equal` (two lines or two
   circles/arcs), `Tangent`, `Concentric`, `PointOnLine` (point `a` on line
   `b`), `Midpoint` (point `a` at the middle of line `b`), `PointOnCircle`
-  (point `a` on the circle of circle or arc `b`). Unknown constraint types
-  make the file unreadable with a "newer version" message.
+  (point `a` on the circle of circle or arc `b`), `Symmetric` (points `a`
+  and `b` mirror images across line `c`; neither may be an end of `c`).
+  Only constraints with a third entity write `"c"` (an entity id); readers
+  treat a missing `"c"` as none and refuse it on any other type. A `Tangent`
+  between a line or arc and an arc sharing an end point means a smooth join
+  there. Unknown constraint types make the file unreadable with a "newer
+  version" message.
 - `Extrude` params: `{ "sketch": uuid, "profiles": [{ "point": [x, y], "area" }],
   "distance", "mode": "NewBody" | "Join" | "Cut" }`. Profiles are referenced by
   a point inside the region (sketch coordinates) plus its area.

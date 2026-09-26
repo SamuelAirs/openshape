@@ -281,7 +281,117 @@ std::vector<AcceptanceRunner::Step> constraintIcons(AcceptanceRunner& r)
     };
 }
 
-const bool registeredConstraintIcons = registerAcceptanceScenario({QStringLiteral("sketch3_constrainticons"), 63, constraintIcons});
+// ---- Mirror and pattern ----------------------------------------------------------------------
+
+// Half a 20 x 20 square against a construction center line, mirrored.
+std::vector<AcceptanceRunner::Step> mirror(AcceptanceRunner& r)
+{
+    std::vector<AcceptanceRunner::Step> steps{
+        startSketch(r),
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.key(Qt::Key_L, Qt::NoModifier, QStringLiteral("l"));
+            r.click(r.screenPoint(0, -5, 0));
+            r.click(r.screenPoint(0, 25, 0));
+            r.key(Qt::Key_Escape);
+            for (const auto& [x, y] : {std::pair{0.0, 0.0}, {10.0, 0.0}, {10.0, 20.0}, {0.0, 20.0}})
+                r.click(r.screenPoint(x, y, 0));
+            r.key(Qt::Key_Escape);
+            r.check(r.clickItem(QStringLiteral("tool_select")), "Select tool button");
+            r.click(r.screenPoint(0, 10, 0)); // the center line
+            r.check(r.clickItem(QStringLiteral("sketchAction_construction")), "Construction on the center line");
+            r.key(Qt::Key_Escape);
+        },
+        [&r] {
+            r.click(r.screenPoint(5, 0, 0));
+            r.click(r.screenPoint(10, 10, 0), Qt::ShiftModifier);
+            r.click(r.screenPoint(5, 20, 0), Qt::ShiftModifier);
+            const auto* session = r.app().interaction().sketchSession();
+            r.check(session && session->selection().size() == 3, "the half profile selected",
+                    session ? QString::number(session->selection().size()) : QString());
+            r.check(r.clickItem(QStringLiteral("sketchAction_mirror")), "Mirror button");
+            r.check(session && session->isMirroring(), "waits for the line to mirror across");
+        },
+        [&r] {
+            r.mouseMove(r.screenPoint(0, 12, 0));
+            r.click(r.screenPoint(0, 12, 0));
+            const auto* s = activeSketch(r);
+            r.check(s && s->lines().size() == 7, "mirrored: three new lines", s ? QString::number(s->lines().size()) : QString());
+            r.check(countConstraints(r, sketch::ConstraintKind::Symmetric) == 2, "the copies stay mirrored (two symmetric pairs)");
+            r.screenshot(QStringLiteral("sketch3_mirror"));
+        },
+    };
+    append(steps, finishAndExtrude(r, 3, 10, QStringLiteral("5"), 20 * 20 * 5, QStringLiteral("mirrored square")));
+    return steps;
+}
+
+// A plate with a row of holes (linear pattern) and holes turned about the origin (circular).
+std::vector<AcceptanceRunner::Step> pattern(AcceptanceRunner& r)
+{
+    auto circles = [&r] {
+        const auto* s = activeSketch(r);
+        return s ? s->circles().size() : std::size_t(0);
+    };
+    std::vector<AcceptanceRunner::Step> steps{
+        startSketch(r),
+        [] {}, [] {}, [] {},
+        [&r] {
+            r.click(r.screenPoint(-20, -20, 0)); // the plate (the rectangle tool is active)
+            r.click(r.screenPoint(55, 20, 0));
+            r.check(r.clickItem(QStringLiteral("tool_circle")), "Circle tool button");
+            r.click(r.screenPoint(10, 10, 0));
+            r.mouseMove(r.screenPoint(13, 10, 0));
+            r.type(QStringLiteral("6"));
+            r.key(Qt::Key_Return);
+            r.check(r.clickItem(QStringLiteral("tool_select")), "Select tool button");
+            r.click(r.screenPoint(13, 10, 0)); // the hole
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern")), "Pattern button");
+            r.check(r.app().sketchCounterText() == QStringLiteral("3 in total"), "three in a row by default",
+                    r.app().sketchCounterText());
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("sketchCounterPlus")), "+ button");
+            r.click(r.screenPoint(25, 10, 0)); // where the next hole goes
+            r.type(QStringLiteral("12"));      // the spacing
+            r.screenshot(QStringLiteral("sketch3_pattern_linear"));
+        },
+        [&r, circles] {
+            r.check(r.clickItem(QStringLiteral("sketchAction_apply")), "Apply button");
+            r.check(circles() == 4, "four holes in a row", QString::number(circles()));
+            double farthest = 0;
+            if (const auto* s = activeSketch(r))
+                for (const auto& [id, c] : s->circles())
+                    farthest = std::max(farthest, s->point(c.center)->position.x);
+            r.check(std::abs(farthest - 46) < 1e-6, "12 mm apart: the last at x = 46", AcceptanceRunner::num(farthest));
+        },
+        [&r] {
+            r.click(r.screenPoint(13, 10, 0)); // the first hole again
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern")), "Pattern button (circular)");
+            r.check(r.clickItem(QStringLiteral("sketchAction_pattern:circular")), "Circular button");
+            r.click(r.screenPoint(0, 0, 0)); // the center: the origin
+            r.type(QStringLiteral("180"));
+            r.key(Qt::Key_Tab);
+            r.type(QStringLiteral("3"));
+            r.screenshot(QStringLiteral("sketch3_pattern_circular"));
+            r.key(Qt::Key_Return);
+        },
+        [&r, circles] {
+            r.check(circles() == 6, "two more holes turned about the origin", QString::number(circles()));
+            bool opposite = false;
+            if (const auto* s = activeSketch(r))
+                for (const auto& [id, c] : s->circles())
+                    opposite = opposite || (s->point(c.center)->position - Vec2{-10, -10}).length() < 1e-6;
+            r.check(opposite, "the last one half a turn round, at (-10, -10)");
+        },
+    };
+    append(steps, finishAndExtrude(r, 0, -15, QStringLiteral("4"), (75 * 40 - 6 * kPi * 9) * 4,
+                                   QStringLiteral("plate with six holes")));
+    return steps;
+}
+
+const bool registeredMirror = registerAcceptanceScenario({QStringLiteral("sketch3_mirror"), 64, mirror});
+const bool registeredPattern = registerAcceptanceScenario({QStringLiteral("sketch3_pattern"), 65, pattern});
+const bool registeredConstraintIcons =registerAcceptanceScenario({QStringLiteral("sketch3_constrainticons"), 63, constraintIcons});
 const bool registeredTangentArc =registerAcceptanceScenario({QStringLiteral("sketch3_tangentarc"), 62, tangentArc});
 const bool registeredCenterRectangle =registerAcceptanceScenario({QStringLiteral("sketch3_centerrect"), 60, centerRectangle});
 const bool registeredPolygon = registerAcceptanceScenario({QStringLiteral("sketch3_polygon"), 61, polygon});

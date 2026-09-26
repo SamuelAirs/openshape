@@ -12,6 +12,7 @@
 #include "interaction/InputEvents.h"
 #include "interaction/RenderScene.h"
 #include "sketch/Sketch.h"
+#include "sketch/SketchEdit.h"
 
 #include <functional>
 #include <memory>
@@ -41,7 +42,7 @@ struct SketchLabel {
 // A whole number with -/+ buttons for the active tool or mode (a polygon's
 // sides, a pattern's copies): touch needs buttons, keyboards use +/-.
 struct SketchCounter {
-    std::string label; // "sides", "copies"
+    std::string text; // "6 sides", "3 in total"
     int value = 0;
 };
 
@@ -65,6 +66,14 @@ public:
     // Offset (from the "Offset" action on selected curves): the pointer picks
     // the side and distance, a typed distance fixes it; click or Enter applies.
     bool isOffsetting() const { return !offsetSource_.empty(); }
+    // Mirror (from the "Mirror" action on selected curves): the next click on
+    // a line mirrors them across it.
+    bool isMirroring() const { return !mirrorSource_.empty(); }
+    // Pattern (from the "Pattern" action): clicks set where the next copy
+    // goes (linear) or the center (circular); typed spacing/angle and count;
+    // Enter or Apply adds the copies.
+    bool isPatterning() const { return !patternSource_.empty(); }
+    const sketch::PatternLayout& patternLayout() const { return pattern_; }
 
     // ---- Input (screen coordinates in logical pixels) ----
     // Returns true if the press was consumed by the sketch (tool or geometry);
@@ -78,6 +87,9 @@ public:
 
     // Polygon tool: the number of sides (kept for the next polygon).
     int polygonSides() const { return polygonSides_; }
+    // Touch layout: constraint glyphs sit further from the geometry and each
+    // other (their tap targets are larger).
+    void setLargeTargets(bool on) { largeTargets_ = on; }
     std::optional<SketchCounter> counter() const;
     bool stepCounter(int delta);
 
@@ -162,6 +174,14 @@ private:
     void updateOffset(std::optional<Vec2> pointer);
     bool commitOffset();
     void cancelOffset();
+    void cancelModes(); // mirror and pattern
+    bool applyMirror(sketch::EntityId axis);
+    void startPattern(bool circular);
+    void updatePatternPreview();
+    bool commitPattern();
+    void patternClick(const Snap& at);
+    // The copies a mirror across `axis` or the pattern would add (drawn as a preview).
+    void updatePreview(std::function<Result<std::vector<sketch::EntityId>>(sketch::Sketch&)> edit);
     bool finishShape(const Snap& end);
     bool commit(sketch::Sketch next, const std::string& label);
     std::optional<double> input(const std::string& key) const;
@@ -188,6 +208,7 @@ private:
     std::vector<Input> inputs_;
     std::size_t focusedInput_ = 0;
     int polygonSides_ = 6;
+    bool largeTargets_ = false;
 
     // Press tracking.
     bool pressed_ = false;
@@ -206,6 +227,14 @@ private:
     std::vector<geom::PlanarCurve> offsetPreview_;   // local coordinates (z = 0)
     std::optional<Vec2> offsetPointer_;              // decides the side (and distance when not typed)
     double offsetDistance_ = 0;                      // signed, as last previewed
+
+    std::vector<sketch::EntityId> mirrorSource_;     // curves being mirrored
+    sketch::EntityId mirrorAxis_ = sketch::kNoEntity; // the line under the pointer (previewed)
+    std::vector<sketch::EntityId> patternSource_;    // curves being repeated
+    sketch::PatternLayout pattern_;
+    Vec2 patternOrigin_;                             // the selection's middle: a linear step is measured from it
+    sketch::Sketch preview_;                         // working copy with the copies added
+    std::vector<sketch::EntityId> previewCurves_;    // the copies in preview_
 
     // Cached closed regions of the working copy.
     std::vector<geom::Region> regions_;

@@ -127,6 +127,7 @@ void AppController::setTouchMode(bool on)
     if (touchMode_ == on)
         return;
     touchMode_ = on;
+    interaction_->setLargeTargets(on);
     emit touchModeChanged();
 }
 
@@ -218,7 +219,7 @@ QString AppController::sketchHint() const
 bool AppController::sketchDrawing() const
 {
     const auto* s = interaction_->sketchSession();
-    return s && (s->isDrawing() || s->isOffsetting()); // typed values go to the shape or the offset
+    return s && (s->isDrawing() || s->isOffsetting() || s->isPatterning()); // typed values go to the shape, offset or pattern
 }
 
 bool AppController::sketchCounterVisible() const
@@ -231,7 +232,7 @@ QString AppController::sketchCounterText() const
 {
     const auto* s = interaction_->sketchSession();
     const auto counter = s ? s->counter() : std::nullopt;
-    return counter ? QStringLiteral("%1 %2").arg(counter->value).arg(q(counter->label)) : QString();
+    return counter ? q(counter->text) : QString();
 }
 
 void AppController::selectSketchConstraint(int constraintId)

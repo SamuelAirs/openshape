@@ -191,14 +191,19 @@ Document (UUID, display unit)
 - Constraints: coincident, horizontal, vertical, distance, horizontal/vertical
   distance (signed), diameter, radius (arcs), parallel, perpendicular, equal
   (lengths or radii), tangent (line or round to round), concentric, point on
-  line, point on circle, midpoint. A line and an arc tangent at a shared end
+  line, point on circle, midpoint, symmetric (two points across a line: the
+  only kind with a third entity, `c`). A line and an arc tangent at a shared end
   are solved as a direction (angle constraint), not "line touches circle";
   two arcs tangent at a shared end likewise tie their end angles (equal, or
   half a turn apart for an S-bend), never circle-to-circle tangency.
   `sketch/SketchEdit` holds the edits behind tools that change geometry:
   `addSlot`, `filletCorner` (keeps the corner as a reference point on both
   lines), `trimAt` / `trimPreview` (pieces between crossings; new ends kept
-  on the curves they meet). `solve()` / `solveDragging()` build a PlaneGCS
+  on the curves they meet), `addCenterRectangle`, `addPolygon`,
+  `mirrorCurves` (copies held by `Symmetric` constraints across a line;
+  points on the axis are shared and kept on it) and `patternCurves` (linear
+  or circular copies with their shape constraints; circles and arcs keep an
+  Equal radius to the original). `solve()` / `solveDragging()` build a PlaneGCS
   system per call (DogLeg), write positions back, and report DOF plus
   conflicting/redundant constraints. A failed solve never changes the sketch.
 - Profiles: `geom::findRegions` splits a large face on the sketch plane with
@@ -283,7 +288,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (two centers, then the width) and Trim (click a piece, previewed red);
   the tools sit in a palette on the left (`tool_<id>` object names). Selected curves offer Offset (a mode: the pointer
   picks the side, a typed distance fixes it, click/Enter applies); selected
-  corner points offer Fillet. Starting a sketch on a plane where a visible sketch
+  corner points offer Fillet; selected curves also offer Mirror (the next
+  click on a line mirrors them, previewed while hovering) and Pattern (a
+  mode: Linear / Circular, clicks set the step or the center, typed
+  spacing/angle and count, a -/+ counter, Enter or Apply adds the copies). Starting a sketch on a plane where a visible sketch
   already lies (exactly coplanar), or with one of its profiles selected,
   reopens that sketch instead, so new curves split its shapes. Selecting
   sketch items offers constraint and Construction actions (`contextActions`).

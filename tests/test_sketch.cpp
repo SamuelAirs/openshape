@@ -702,3 +702,200 @@ TEST(Sketch, ArcsMeetingEndToEndMakeAnSBend)
     ASSERT_TRUE(solve(back.value()).ok);
     EXPECT_NEAR((pos(back.value(), c2) - pos(back.value(), p)).length(), 8.0, 1e-9);
 }
+
+TEST(Sketch, SymmetricConstraintAndItsThirdEntity)
+{
+    Sketch s;
+    const EntityId axis = line(s, {0, -10}, {0, 10});
+    const EntityId p = s.addPoint({3, 1});
+    const EntityId q = s.addPoint({-5, 4});
+    const EntityId id = s.addConstraint({ConstraintKind::Symmetric, p, q, 0.0, axis});
+    ASSERT_NE(id, kNoEntity);
+    EXPECT_EQ(s.addConstraint({ConstraintKind::Symmetric, p, s.line(axis)->end, 0.0, axis}), kNoEntity) << "an axis end";
+    EXPECT_EQ(s.addConstraint({ConstraintKind::Symmetric, p, q, 0.0, p}), kNoEntity) << "not a line";
+    EXPECT_EQ(s.addConstraint({ConstraintKind::Coincident, p, q, 0.0, axis}), kNoEntity) << "only Symmetric has a third";
+    s.addConstraint({ConstraintKind::Vertical, axis});
+    ASSERT_TRUE(solve(s).ok);
+    const Vec2 a = pos(s, p), b = pos(s, q), x = pos(s, s.line(axis)->start);
+    EXPECT_NEAR(a.x + b.x, 2 * x.x, 1e-9);
+    EXPECT_NEAR(a.y, b.y, 1e-9);
+    EXPECT_EQ(s.constraintsOn(axis).size(), 2u);
+
+    // JSON: "c" is written only when used, and read back.
+    const auto json = s.toJson();
+    std::size_t withC = 0;
+    for (const auto& c : json["constraints"])
+        withC += c.contains("c") ? 1 : 0;
+    EXPECT_EQ(withC, 1u);
+    auto back = Sketch::fromJson(json);
+    ASSERT_TRUE(back.ok()) << back.developerMessage();
+    EXPECT_EQ(back.value().constraint(id)->c, axis);
+    auto broken = json;
+    for (auto& c : broken["constraints"])
+        if (c.contains("c"))
+            c["c"] = "axis";
+    EXPECT_FALSE(Sketch::fromJson(broken).ok());
+
+    // Removing the axis drops the constraint.
+    ASSERT_TRUE(s.remove(axis));
+    EXPECT_EQ(s.constraint(id), nullptr);
+}
+
+TEST(SketchEdit, MirrorHalfProfileAcrossACenterLine)
+{
+    // Half of a 20 x 20 square against a vertical construction center line.
+    Sketch s;
+    const EntityId axis = line(s, {0, -5}, {0, 25});
+    s.setConstruction(axis, true);
+    s.addConstraint({ConstraintKind::Vertical, axis});
+    const EntityId bottomEnd = s.addPoint({0, 0}), right0 = s.addPoint({10, 0});
+    const EntityId right1 = s.addPoint({10, 20}), topEnd = s.addPoint({0, 20});
+    const std::vector<EntityId> half{s.addLine(bottomEnd, right0), s.addLine(right0, right1), s.addLine(right1, topEnd)};
+    for (const EntityId p : {bottomEnd, topEnd})
+        s.addConstraint({ConstraintKind::PointOnLine, p, axis});
+    ASSERT_TRUE(solve(s).ok);
+    const int dofBefore = s.solveReport().degreesOfFreedom;
+
+    const auto made = mirrorCurves(s, {half[0], half[1], half[2], axis}, axis); // the axis itself is skipped
+    ASSERT_TRUE(made.ok()) << made.developerMessage();
+    EXPECT_EQ(made.value().size(), 3u);
+    EXPECT_EQ(s.lines().size(), 7u);
+    std::size_t symmetric = 0, onLine = 0;
+    for (const auto& [id, c] : s.constraints()) {
+        symmetric += c.kind == ConstraintKind::Symmetric ? 1 : 0;
+        onLine += c.kind == ConstraintKind::PointOnLine ? 1 : 0;
+    }
+    EXPECT_EQ(symmetric, 2u) << "the two corners off the axis";
+    EXPECT_EQ(onLine, 2u) << "the shared ends were already held on the axis";
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, dofBefore) << "the mirror image adds no freedom";
+    EXPECT_TRUE(s.solveReport().redundant.empty());
+
+    // The copy follows the original.
+    ASSERT_TRUE(solveDragging(s, right1, {14, 26}).ok);
+    const double axisX = pos(s, s.line(axis)->start).x; // the (vertical) axis may slide too
+    bool found = false;
+    for (const auto& [id, p] : s.points())
+        found = found
+             || (std::abs(p.position.x - (2 * axisX - pos(s, right1).x)) < 1e-7 && std::abs(p.position.y - pos(s, right1).y) < 1e-7);
+    EXPECT_TRUE(found) << "a point mirrors the dragged corner";
+
+    // Only the axis selected, or curves on the axis: nothing to mirror, nothing changed.
+    const std::size_t constraintsBefore = s.constraints().size();
+    EXPECT_FALSE(mirrorCurves(s, {axis}, axis).ok());
+    const Vec2 axisStart = pos(s, s.line(axis)->start), axisEnd = pos(s, s.line(axis)->end);
+    const EntityId along = line(s, axisStart + (axisEnd - axisStart) * 0.25, axisStart + (axisEnd - axisStart) * 0.5);
+    EXPECT_FALSE(mirrorCurves(s, {along}, axis).ok());
+    EXPECT_EQ(s.constraints().size(), constraintsBefore);
+}
+
+TEST(SketchEdit, MirrorCirclesAndArcsKeepSizeAndTurn)
+{
+    Sketch s;
+    const EntityId axis = line(s, {0, -20}, {0, 20});
+    s.addConstraint({ConstraintKind::Vertical, axis});
+    const EntityId circle = s.addCircle(s.addPoint({5, 5}), 2);
+    const EntityId diameter = s.addConstraint({ConstraintKind::Diameter, circle, kNoEntity, 4.0});
+    const EntityId arc = s.addArc(s.addPoint({8, 0}), s.addPoint({10, 0}), s.addPoint({8, 2}));
+    ASSERT_TRUE(solve(s).ok);
+    const int dofBefore = s.solveReport().degreesOfFreedom;
+    const auto made = mirrorCurves(s, {circle, arc}, axis);
+    ASSERT_TRUE(made.ok());
+    ASSERT_EQ(made.value().size(), 2u);
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_EQ(s.solveReport().degreesOfFreedom, dofBefore);
+    EXPECT_TRUE(s.solveReport().redundant.empty());
+    const auto* copy = s.circle(made.value()[0]);
+    ASSERT_NE(copy, nullptr);
+    EXPECT_NEAR((pos(s, copy->center) - Vec2{-5, 5}).length(), 0.0, 1e-9);
+    // The mirrored arc is still a short counterclockwise quarter, around (-8, 0).
+    const auto* image = s.arc(made.value()[1]);
+    ASSERT_NE(image, nullptr);
+    EXPECT_NEAR((pos(s, image->center) - Vec2{-8, 0}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((pos(s, image->start) - Vec2{-8, 2}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((pos(s, image->end) - Vec2{-10, 0}).length(), 0.0, 1e-9);
+    // A new diameter resizes both circles.
+    s.constraint(diameter)->value = 7.0;
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_NEAR(copy->radius, 3.5, 1e-9);
+}
+
+TEST(SketchEdit, LinearPatternCopiesShapesAndConstraints)
+{
+    Sketch s;
+    const auto r = addRectangle(s, {0, 0}, {10, 5}, kOriginId);
+    const EntityId hole = s.addCircle(s.addPoint({5, 2.5}), 1.5);
+    const std::vector<EntityId> curves{r.edges[0], r.edges[1], r.edges[2], r.edges[3], hole};
+    PatternLayout layout;
+    layout.step = {15, 0};
+    layout.count = 3;
+    const auto made = patternCurves(s, curves, layout);
+    ASSERT_TRUE(made.ok()) << made.developerMessage();
+    EXPECT_EQ(made.value().size(), 10u);
+    EXPECT_EQ(s.lines().size(), 12u);
+    EXPECT_EQ(s.circles().size(), 3u);
+    std::size_t hv = 0, equal = 0;
+    for (const auto& [id, c] : s.constraints()) {
+        hv += c.kind == ConstraintKind::Horizontal || c.kind == ConstraintKind::Vertical ? 1 : 0;
+        equal += c.kind == ConstraintKind::Equal ? 1 : 0;
+    }
+    EXPECT_EQ(hv, 12u) << "each copy keeps its right angles";
+    EXPECT_EQ(equal, 2u) << "the copied holes keep the first hole's size";
+    ASSERT_TRUE(solve(s).ok);
+    EXPECT_TRUE(s.solveReport().redundant.empty());
+    double farthest = 0;
+    for (const auto& [id, p] : s.points())
+        farthest = std::max(farthest, p.position.x);
+    EXPECT_NEAR(farthest, 40.0, 1e-12);
+    // The holes follow the first one's diameter.
+    s.addConstraint({ConstraintKind::Diameter, hole, kNoEntity, 4.0});
+    ASSERT_TRUE(solve(s).ok);
+    for (const auto& [id, c] : s.circles())
+        EXPECT_NEAR(c.radius, 2.0, 1e-9);
+    // A zero step or a single item is refused.
+    layout.step = {0, 0};
+    EXPECT_FALSE(patternCurves(s, curves, layout).ok());
+    layout.step = {1, 0};
+    layout.count = 1;
+    EXPECT_FALSE(patternCurves(s, curves, layout).ok());
+}
+
+TEST(SketchEdit, CircularPatternSharesTheCenterAndSpacesEvenly)
+{
+    Sketch s;
+    const EntityId spoke = s.addLine(kOriginId, s.addPoint({10, 0}));
+    const EntityId hole = s.addCircle(s.addPoint({20, 0}), 2);
+    PatternLayout layout;
+    layout.circular = true;
+    layout.center = {0, 0};
+    layout.count = 4;
+    const auto made = patternCurves(s, {spoke, hole}, layout);
+    ASSERT_TRUE(made.ok());
+    EXPECT_EQ(s.lines().size(), 4u);
+    for (const auto& [id, l] : s.lines())
+        EXPECT_EQ(l.start, kOriginId) << "every spoke starts on the shared center";
+    std::vector<Vec2> centers;
+    for (const auto& [id, c] : s.circles())
+        centers.push_back(pos(s, c.center));
+    ASSERT_EQ(centers.size(), 4u);
+    EXPECT_NEAR((centers[1] - Vec2{0, 20}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((centers[2] - Vec2{-20, 0}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((centers[3] - Vec2{0, -20}).length(), 0.0, 1e-9);
+    ASSERT_TRUE(solve(s).ok);
+
+    // A quarter turn with three items: 0, 45 and 90 degrees.
+    Sketch t;
+    const EntityId h = t.addCircle(t.addPoint({10, 0}), 1);
+    layout.count = 3;
+    layout.angle = kPi / 2;
+    ASSERT_TRUE(patternCurves(t, {h}, layout).ok());
+    std::vector<Vec2> at;
+    for (const auto& [id, c] : t.circles())
+        at.push_back(pos(t, c.center));
+    ASSERT_EQ(at.size(), 3u);
+    EXPECT_NEAR((at[1] - Vec2{10 * std::cos(kPi / 4), 10 * std::sin(kPi / 4)}).length(), 0.0, 1e-9);
+    EXPECT_NEAR((at[2] - Vec2{0, 10}).length(), 0.0, 1e-9);
+    const auto motions = patternMotions(layout);
+    ASSERT_EQ(motions.size(), 2u);
+    EXPECT_NEAR(motions[1].angle, kPi / 2, 1e-12);
+}

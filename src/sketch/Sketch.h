@@ -89,6 +89,7 @@ enum class ConstraintKind {
     Midpoint,           // point a at the middle of line b
     Radius,             // arc a; value > 0
     PointOnCircle,      // point a on the (full) circle of circle or arc b
+    Symmetric,          // points a, b mirror images across the (infinite) line c
 };
 
 struct SketchConstraint {
@@ -96,6 +97,7 @@ struct SketchConstraint {
     EntityId a = kNoEntity;
     EntityId b = kNoEntity;
     double value = 0;
+    EntityId c = kNoEntity; // a third entity (Symmetric: the line mirrored across)
 
     bool isDimension() const
     {

@@ -1010,7 +1010,7 @@ TEST(SketchInteraction, PolygonToolSidesAndAcrossFlats)
     h.controller.setSketchTool(SketchTool::Polygon);
     ASSERT_TRUE(h.session().counter().has_value());
     EXPECT_EQ(h.session().counter()->value, 6) << "hexagons by default";
-    EXPECT_EQ(h.session().counter()->label, "sides");
+    EXPECT_EQ(h.session().counter()->text, "6 sides");
     h.click(h.sketchScreen({0, 0})); // the center, on the origin
     ASSERT_TRUE(h.session().isDrawing());
     h.move(h.sketchScreen({12, 0.2})); // straight to the right: the first side is vertical
@@ -1189,6 +1189,21 @@ TEST(SketchInteraction, ConstraintIconsSelectAndDelete)
         for (std::size_t j = i + 1; j < icons.size(); ++j)
             EXPECT_GE((icons[i].screen - icons[j].screen).length(), 18.0);
     }
+    // Clear of every line (a glyph's tap target must not hide a curve); further in the touch layout.
+    auto nearestLine = [&](Vec2 p) {
+        double best = 1e9;
+        const sketch::Sketch& sk = h.session().sketch();
+        for (const auto& [id, l] : sk.lines())
+            best = std::min(best, distanceToSegment2D(p, h.sketchScreen(sk.point(l.start)->position),
+                                                      h.sketchScreen(sk.point(l.end)->position)));
+        return best;
+    };
+    for (const auto& icon : icons)
+        EXPECT_GE(nearestLine(icon.screen), 12.0 - 1e-9);
+    h.controller.setLargeTargets(true);
+    for (const auto& icon : constraintIcons(h))
+        EXPECT_GE(nearestLine(icon.screen), 20.0 - 1e-9);
+    h.controller.setLargeTargets(false);
 
     // Select a horizontal constraint through its icon: only Delete is offered.
     sketch::EntityId bottom = sketch::kNoEntity;
@@ -1229,4 +1244,147 @@ TEST(SketchInteraction, ConstraintIconsSelectAndDelete)
     EXPECT_TRUE(constraintIcons(h).empty());
     h.controller.keyPress(Key::Escape);
     EXPECT_EQ(constraintIcons(h).size(), 4u);
+}
+
+namespace {
+bool offers(Harness& h, const std::string& id)
+{
+    for (const auto& action : h.session().contextActions())
+        if (action.id == id)
+            return true;
+    return false;
+}
+} // namespace
+
+// Half a 20 x 20 square against a construction center line, mirrored into a
+// closed square, extruded.
+TEST(SketchInteraction, MirrorAcrossAClickedLine)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click(h.sketchScreen({0, -5}));
+    h.click(h.sketchScreen({0, 25}));
+    h.controller.keyPress(Key::Escape);
+    h.click(h.sketchScreen({0, 0}));
+    h.click(h.sketchScreen({10, 0}));
+    h.click(h.sketchScreen({10, 20}));
+    h.click(h.sketchScreen({0, 20}));
+    h.controller.keyPress(Key::Escape);
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({0, 10})); // the center line (away from its points): make it construction
+    ASSERT_TRUE(h.session().triggerAction("construction").ok());
+    h.controller.keyPress(Key::Escape); // clear the selection
+    for (const Vec2 mid : {Vec2{5, 0}, Vec2{10, 10}, Vec2{5, 20}})
+        h.click(h.sketchScreen(mid), true);
+    ASSERT_EQ(h.session().selection().size(), 3u);
+    ASSERT_TRUE(offers(h, "mirror"));
+    ASSERT_TRUE(h.session().triggerAction("mirror").ok());
+    EXPECT_TRUE(h.session().isMirroring());
+    EXPECT_NE(h.session().hintText().find("line to mirror across"), std::string::npos);
+    h.move(h.sketchScreen({0, 23}));
+    bool previewed = false;
+    for (const auto& line : h.session().renderData(h.controller.camera()).lines)
+        previewed = previewed || line.style == SketchStyle::Preview;
+    EXPECT_TRUE(previewed) << "the mirror image shows before the click";
+    h.click(h.sketchScreen({0, 23}));
+    EXPECT_FALSE(h.session().isMirroring());
+    const sketch::Sketch& s = h.session().sketch();
+    EXPECT_EQ(s.lines().size(), 7u);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Symmetric), 2u);
+    EXPECT_NEAR(largestRegion(s), 400.0, 1e-6);
+    EXPECT_TRUE(h.messages.empty());
+
+    // The glyph of a symmetric pair sits on the axis.
+    bool glyph = false;
+    for (const auto& icon : constraintIcons(h))
+        glyph = glyph || icon.text == "\xE2\x86\x94";
+    EXPECT_TRUE(glyph);
+
+    // Esc leaves mirroring without a change.
+    h.click(h.sketchScreen({5, 0}));
+    ASSERT_TRUE(h.session().triggerAction("mirror").ok());
+    h.controller.keyPress(Key::Escape);
+    EXPECT_FALSE(h.session().isMirroring());
+    EXPECT_EQ(h.session().sketch().lines().size(), 7u);
+
+    h.controller.finishSketch();
+    h.click(h.controller.camera().project({3, 10, 0}));
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("5"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::volume(h.document.bodies()[0]->shape()), 2000, 1e-4);
+}
+
+TEST(SketchInteraction, LinearAndCircularPatternOfAHole)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Circle);
+    h.click(h.sketchScreen({10, 10}));
+    h.move(h.sketchScreen({13, 10}));
+    h.type("6");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.setSketchTool(SketchTool::Select);
+    h.click(h.sketchScreen({13, 10}));
+    ASSERT_EQ(h.session().selection().size(), 1u);
+    ASSERT_TRUE(offers(h, "pattern"));
+    ASSERT_TRUE(h.session().triggerAction("pattern").ok());
+    ASSERT_TRUE(h.session().isPatterning());
+    ASSERT_TRUE(h.session().counter().has_value());
+    EXPECT_EQ(h.session().counter()->text, "3 in total");
+    EXPECT_TRUE(h.session().stepCounter(+1));
+    // Where the next hole goes: 15 to the right (kept straight).
+    h.click(h.sketchScreen({25, 10.3}));
+    EXPECT_NEAR(h.session().patternLayout().step.x, 15.0, 1e-9);
+    EXPECT_NEAR(h.session().patternLayout().step.y, 0.0, 1e-12);
+    h.type("12"); // the spacing
+    EXPECT_NEAR(h.session().patternLayout().step.x, 12.0, 1e-9);
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_FALSE(h.session().isPatterning());
+    const sketch::Sketch& s = h.session().sketch();
+    ASSERT_EQ(s.circles().size(), 4u);
+    std::vector<double> xs;
+    for (const auto& [id, c] : s.circles())
+        xs.push_back(s.point(c.center)->position.x);
+    std::sort(xs.begin(), xs.end());
+    EXPECT_NEAR(xs[3], 46.0, 1e-9);
+    EXPECT_EQ(h.count(sketch::ConstraintKind::Equal), 3u);
+    const auto regions = doc::sketchRegions(s);
+    ASSERT_TRUE(regions.ok());
+    EXPECT_EQ(regions.value().size(), 4u);
+    // One diameter edit resizes all four.
+    sketch::EntityId diameter = sketch::kNoEntity;
+    for (const auto& [id, c] : s.constraints())
+        if (c.kind == sketch::ConstraintKind::Diameter)
+            diameter = id;
+    ASSERT_NE(diameter, sketch::kNoEntity);
+    EXPECT_EQ(h.session().setDimension(diameter, "8"), "");
+    for (const auto& [id, c] : h.session().sketch().circles())
+        EXPECT_NEAR(c.radius, 4.0, 1e-9);
+
+    // Circular: the first hole three times over half a turn about the origin.
+    h.click(h.sketchScreen({14, 10})); // the first hole
+    ASSERT_TRUE(h.session().triggerAction("pattern").ok());
+    ASSERT_TRUE(h.session().triggerAction("pattern:circular").ok());
+    EXPECT_TRUE(h.session().patternLayout().circular);
+    EXPECT_EQ(h.session().counter()->value, 6);
+    h.click(h.sketchScreen({0, 0})); // the center: the origin
+    h.type("180");
+    h.session().focusNextInput();
+    h.type("3");
+    ASSERT_TRUE(h.session().triggerAction("apply").ok());
+    EXPECT_EQ(h.session().sketch().circles().size(), 6u);
+    bool opposite = false, above = false;
+    for (const auto& [id, c] : h.session().sketch().circles()) {
+        const Vec2 p = h.session().sketch().point(c.center)->position;
+        opposite = opposite || (p - Vec2{-10, -10}).length() < 1e-9;
+        above = above || (p - Vec2{-10, 10}).length() < 1e-9;
+    }
+    EXPECT_TRUE(above) << "90 degrees on";
+    EXPECT_TRUE(opposite) << "180 degrees on";
+    EXPECT_TRUE(h.messages.empty());
 }

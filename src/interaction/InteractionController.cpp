@@ -1634,9 +1634,18 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
     session_ = std::make_unique<SketchSession>(*document_, *undoStack_, sketchId);
     session_->onMessage = [this](const std::string& text) { message(text); };
     session_->onCommitted = [this] { afterDocumentEdit(); };
+    session_->setLargeTargets(largeTargets_);
     session_->setTool(tool);
     alignViewTo(session_->sketch().plane());
     afterDocumentEdit();
+}
+
+void InteractionController::setLargeTargets(bool on)
+{
+    largeTargets_ = on;
+    if (session_)
+        session_->setLargeTargets(on);
+    notifyView();
 }
 
 void InteractionController::finishSketch()

@@ -139,6 +139,9 @@ public:
                 // The line's endpoints are symmetric about the point.
                 system_.addConstraintP2PSymmetric(lines_.at(c.b).p1, lines_.at(c.b).p2, points_.at(c.a), tag);
                 break;
+            case ConstraintKind::Symmetric:
+                system_.addConstraintP2PSymmetric(points_.at(c.a), points_.at(c.b), lines_.at(c.c), tag);
+                break;
             }
         }
     }

@@ -289,7 +289,7 @@ Item {
                     id: iconArea
                     // Touch needs a larger target than the glyph itself.
                     anchors.centerIn: parent
-                    width: Theme.touch ? 36 : 24
+                    width: Theme.touch ? 40 : 24
                     height: width
                     enabled: labelItem.isConstraint
                     hoverEnabled: true

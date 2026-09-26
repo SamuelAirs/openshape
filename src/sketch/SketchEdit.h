@@ -60,6 +60,41 @@ Result<EntityId> filletCorner(Sketch& sketch, EntityId corner, double radius);
 // A friendly default radius for a corner: about a quarter of the shorter line.
 std::optional<double> suggestedFilletRadius(const Sketch& sketch, EntityId corner);
 
+// Mirror images of `curves` (lines, circles, arcs) across the line `axis`,
+// kept mirrored: each copied point is Symmetric to its original across the
+// axis (arcs whose center is theirs alone and circles take an Equal radius
+// instead of a mirrored center). Points on the axis are shared by both
+// halves (and kept on it), so half a profile drawn against a center line
+// mirrors into one closed shape. Returns the new curves.
+Result<std::vector<EntityId>> mirrorCurves(Sketch& sketch, const std::vector<EntityId>& curves, EntityId axis);
+
+// A linear pattern repeats by `step`; a circular one turns about `center`:
+// a full turn (angle 2 pi) spaces `count` items evenly, a smaller angle puts
+// the last one at its end. `count` includes the original.
+struct PatternLayout {
+    bool circular = false;
+    Vec2 step{10, 0};
+    Vec2 center{0, 0};
+    double angle = 2 * kPi;
+    int count = 3;
+};
+inline constexpr int kMaxPatternCount = 200;
+// Copies of `curves` placed by `layout`. The copies are real geometry: their
+// shape constraints come along (horizontal/vertical only in linear
+// patterns), circles and arcs keep an Equal radius to their original (so a
+// hole pattern follows the first hole's size), and points landing on an
+// existing point of the selection are shared. Returns the new curves.
+Result<std::vector<EntityId>> patternCurves(Sketch& sketch, const std::vector<EntityId>& curves, const PatternLayout& layout);
+// The rigid motions a layout applies, one per copy (translation `offset`,
+// then rotation by `angle` about `center`).
+struct Motion2D {
+    Vec2 offset;
+    Vec2 center;
+    double angle = 0;
+    Vec2 apply(Vec2 p) const;
+};
+std::vector<Motion2D> patternMotions(const PatternLayout& layout);
+
 // Removes the piece of a line, circle or arc around `at` that lies between
 // its nearest crossings with other curves (or its own ends): a circle
 // becomes an arc, a line or arc may split in two. New ends are kept on the

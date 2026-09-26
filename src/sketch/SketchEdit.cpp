@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace os::sketch {
 
@@ -343,6 +344,254 @@ PolygonIds addPolygon(Sketch& s, Vec2 center, Vec2 sideMiddle, int sides, Entity
         s.addConstraint({ConstraintKind::Equal, ids.sides[0], ids.sides[i]});
     s.addConstraint({ConstraintKind::Tangent, ids.sides[0], ids.inner});
     return ids;
+}
+
+namespace {
+
+// The points a curve is made of.
+std::vector<EntityId> curvePoints(const Sketch& s, EntityId curve)
+{
+    if (const auto* l = s.line(curve))
+        return {l->start, l->end};
+    if (const auto* c = s.circle(curve))
+        return {c->center};
+    if (const auto* a = s.arc(curve))
+        return {a->center, a->start, a->end};
+    return {};
+}
+
+bool isConstruction(const Sketch& s, EntityId curve)
+{
+    if (const auto* l = s.line(curve))
+        return l->construction;
+    if (const auto* c = s.circle(curve))
+        return c->construction;
+    if (const auto* a = s.arc(curve))
+        return a->construction;
+    return false;
+}
+
+// The distinct curves of a selection, in order, without `except`.
+std::vector<EntityId> curvesOnly(const Sketch& s, const std::vector<EntityId>& ids, EntityId except = kNoEntity)
+{
+    std::vector<EntityId> out;
+    for (const EntityId id : ids)
+        if (id != except && (s.line(id) || s.isRound(id)) && std::find(out.begin(), out.end(), id) == out.end())
+            out.push_back(id);
+    return out;
+}
+
+// A copy of `curve` on the mapped points (arcs reversed when mirrored).
+EntityId copyCurve(Sketch& s, EntityId curve, const std::map<EntityId, EntityId>& map, bool reversed)
+{
+    const bool construction = isConstruction(s, curve);
+    if (const auto* l = s.line(curve)) {
+        const SketchLine line = *l;
+        return s.addLine(map.at(line.start), map.at(line.end), construction);
+    }
+    if (const auto* c = s.circle(curve)) {
+        const SketchCircle circle = *c;
+        return s.addCircle(map.at(circle.center), circle.radius, construction);
+    }
+    const SketchArc arc = *s.arc(curve);
+    // A mirror image runs the other way round: counterclockwise from the image of the end.
+    return reversed ? s.addArc(map.at(arc.center), map.at(arc.end), map.at(arc.start), construction)
+                    : s.addArc(map.at(arc.center), map.at(arc.start), map.at(arc.end), construction);
+}
+
+} // namespace
+
+Result<std::vector<EntityId>> mirrorCurves(Sketch& s, const std::vector<EntityId>& ids, EntityId axis)
+{
+    using R = Result<std::vector<EntityId>>;
+    const auto* axisLine = s.line(axis);
+    if (!axisLine)
+        return R::failure(ErrorCode::InvalidArgument, "Mirror across a straight line.", "mirror: axis is not a line");
+    const std::vector<EntityId> curves = curvesOnly(s, ids, axis);
+    if (curves.empty())
+        return R::failure(ErrorCode::InvalidArgument, "Select the curves to mirror first.", "mirror: nothing to mirror");
+    const Vec2 a = s.point(axisLine->start)->position, b = s.point(axisLine->end)->position;
+    const double axisLength = (b - a).length();
+    if (axisLength < kEps)
+        return R::failure(ErrorCode::InvalidArgument, "The mirror line has no length.", "mirror: degenerate axis");
+    const Vec2 d = (b - a) * (1.0 / axisLength);
+    auto mirrored = [&](Vec2 p) {
+        const Vec2 v = p - a;
+        return a + d * (2 * v.dot(d)) - v;
+    };
+    auto onAxis = [&](EntityId p) {
+        if (p == axisLine->start || p == axisLine->end)
+            return true;
+        const Vec2 v = s.point(p)->position - a;
+        return std::abs(cross(d, v)) < 1e-7;
+    };
+    const EntityId axisStart = axisLine->start, axisEnd = axisLine->end;
+    const bool allOnAxis = std::all_of(curves.begin(), curves.end(), [&](EntityId c) {
+        const auto points = curvePoints(s, c);
+        return std::all_of(points.begin(), points.end(), onAxis);
+    });
+    if (allOnAxis)
+        return R::failure(ErrorCode::InvalidArgument, "These curves lie on the mirror line.", "mirror: all on the axis");
+
+    // Which points are only arc centers: their image follows from the arc (an
+    // Equal radius), a Symmetric pair there would say the same thing twice.
+    std::map<EntityId, bool> onlyArcCenter;
+    for (const EntityId c : curves) {
+        const auto points = curvePoints(s, c);
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            const bool arcCenter = s.arc(c) && i == 0;
+            auto [it, inserted] = onlyArcCenter.try_emplace(points[i], arcCenter);
+            if (!inserted)
+                it->second = it->second && arcCenter;
+        }
+    }
+
+    std::map<EntityId, EntityId> image;
+    for (const auto& [p, arcCenterOnly] : onlyArcCenter) {
+        if (onAxis(p)) {
+            image[p] = p; // shared by both halves; it must stay on the axis
+            bool held = p == axisStart || p == axisEnd;
+            for (const EntityId cid : s.constraintsOn(p)) {
+                const auto* k = s.constraint(cid);
+                held = held || (k->kind == ConstraintKind::PointOnLine && k->a == p && k->b == axis);
+            }
+            if (!held)
+                s.addConstraint({ConstraintKind::PointOnLine, p, axis});
+            continue;
+        }
+        image[p] = s.addPoint(mirrored(s.point(p)->position));
+        if (!arcCenterOnly)
+            s.addConstraint({ConstraintKind::Symmetric, p, image[p], 0.0, axis});
+    }
+
+    std::vector<EntityId> made;
+    std::map<EntityId, bool> centerHeld; // an arc-only center whose image an earlier arc already fixes
+    for (const EntityId c : curves) {
+        const auto points = curvePoints(s, c);
+        if (std::all_of(points.begin(), points.end(), [&](EntityId p) { return image.at(p) == p; }))
+            continue; // lies on the axis: its image is itself
+        const EntityId copy = copyCurve(s, c, image, true);
+        if (copy == kNoEntity)
+            continue;
+        made.push_back(copy);
+        if (s.circle(c)) {
+            s.addConstraint({ConstraintKind::Equal, c, copy}); // the center is mirrored, the size is equal
+        } else if (s.arc(c)) {
+            const EntityId center = s.arc(c)->center;
+            if (onlyArcCenter.at(center) && image.at(center) != center && !centerHeld[center]) {
+                s.addConstraint({ConstraintKind::Equal, c, copy}); // with the mirrored ends, this fixes the center
+                centerHeld[center] = true;
+            }
+        }
+    }
+    if (made.empty())
+        return R::failure(ErrorCode::InvalidArgument, "These curves lie on the mirror line.", "mirror: all on the axis");
+    return R::success(std::move(made));
+}
+
+Vec2 Motion2D::apply(Vec2 p) const
+{
+    const Vec2 v = p - center;
+    const double c = std::cos(angle), s = std::sin(angle);
+    return center + Vec2{c * v.x - s * v.y, s * v.x + c * v.y} + offset;
+}
+
+std::vector<Motion2D> patternMotions(const PatternLayout& layout)
+{
+    std::vector<Motion2D> out;
+    const int count = std::clamp(layout.count, 1, kMaxPatternCount);
+    const bool fullTurn = std::abs(layout.angle - 2 * kPi) < 1e-9;
+    const double step = fullTurn ? layout.angle / count : layout.angle / std::max(count - 1, 1);
+    for (int k = 1; k < count; ++k) {
+        Motion2D m;
+        if (layout.circular) {
+            m.center = layout.center;
+            m.angle = step * k;
+        } else {
+            m.offset = layout.step * double(k);
+        }
+        out.push_back(m);
+    }
+    return out;
+}
+
+Result<std::vector<EntityId>> patternCurves(Sketch& s, const std::vector<EntityId>& ids, const PatternLayout& layout)
+{
+    using R = Result<std::vector<EntityId>>;
+    const std::vector<EntityId> curves = curvesOnly(s, ids);
+    if (curves.empty())
+        return R::failure(ErrorCode::InvalidArgument, "Select the curves to repeat first.", "pattern: nothing selected");
+    if (layout.count < 2 || layout.count > kMaxPatternCount)
+        return R::failure(ErrorCode::InvalidArgument,
+                          "Use between 2 and " + std::to_string(kMaxPatternCount) + " items.", "pattern: count");
+    if (!layout.circular && layout.step.length() < kEps)
+        return R::failure(ErrorCode::InvalidArgument, "The spacing must be greater than zero.", "pattern: zero step");
+    if (layout.circular && !(layout.angle > kEps && layout.angle <= 2 * kPi + 1e-9))
+        return R::failure(ErrorCode::InvalidArgument, "The angle must be more than 0 and at most 360 degrees.",
+                          "pattern: angle");
+
+    // Everything the selection is made of, for sharing points and copying
+    // the constraints among them.
+    std::vector<EntityId> points;
+    for (const EntityId c : curves)
+        for (const EntityId p : curvePoints(s, c))
+            if (std::find(points.begin(), points.end(), p) == points.end())
+                points.push_back(p);
+    auto inSelection = [&](EntityId e) {
+        return e == kNoEntity || std::find(curves.begin(), curves.end(), e) != curves.end()
+            || std::find(points.begin(), points.end(), e) != points.end();
+    };
+    std::vector<SketchConstraint> internal;
+    for (const auto& [cid, k] : s.constraints()) {
+        using K = ConstraintKind;
+        if (k.isDimension() || !inSelection(k.a) || !inSelection(k.b) || !inSelection(k.c))
+            continue;
+        if ((k.kind == K::Horizontal || k.kind == K::Vertical) && layout.circular)
+            continue; // turned copies are neither
+        if (k.kind == K::Equal && s.isRound(k.a))
+            continue; // round sizes follow the originals through their own Equal
+        internal.push_back(k);
+    }
+
+    std::vector<std::pair<Vec2, EntityId>> shared; // points a copy may land on
+    for (const EntityId p : points)
+        shared.emplace_back(s.point(p)->position, p);
+    std::vector<EntityId> made;
+    for (const Motion2D& motion : patternMotions(layout)) {
+        std::map<EntityId, EntityId> map;
+        for (const EntityId p : points) {
+            const Vec2 q = motion.apply(s.point(p)->position);
+            EntityId id = kNoEntity;
+            for (const auto& [where, existing] : shared)
+                if ((where - q).length() < 1e-7)
+                    id = existing;
+            if (id == kNoEntity) {
+                id = s.addPoint(q);
+                shared.emplace_back(q, id);
+            }
+            map[p] = id;
+        }
+        for (const EntityId c : curves) {
+            const EntityId copy = copyCurve(s, c, map, false);
+            if (copy == kNoEntity)
+                continue;
+            map[c] = copy;
+            made.push_back(copy);
+            if (s.isRound(c))
+                s.addConstraint({ConstraintKind::Equal, c, copy});
+        }
+        for (const SketchConstraint& k : internal) {
+            auto remap = [&](EntityId e) {
+                const auto it = map.find(e);
+                return it == map.end() ? e : it->second;
+            };
+            const SketchConstraint copy{k.kind, remap(k.a), remap(k.b), k.value, remap(k.c)};
+            if (copy.a == k.a && copy.b == k.b && copy.c == k.c)
+                continue; // everything it holds is shared: it is there already
+            s.addConstraint(copy);
+        }
+    }
+    return R::success(std::move(made));
 }
 
 Result<EntityId> filletCorner(Sketch& s, EntityId corner, double radius)

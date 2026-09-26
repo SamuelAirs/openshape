@@ -160,7 +160,16 @@ bool Sketch::isValid(const SketchConstraint& c) const
              && (!arcs_.contains(c.b)
                  || (arcs_.at(c.b).center != c.a && arcs_.at(c.b).start != c.a && arcs_.at(c.b).end != c.a));
         break;
+    case ConstraintKind::Symmetric:
+        // Two different points, neither an end of the line (a point on the
+        // line is its own mirror image).
+        valid = isPoint(c.a) && isPoint(c.b) && c.a != c.b && lines_.contains(c.c)
+             && lines_.at(c.c).start != c.a && lines_.at(c.c).end != c.a && lines_.at(c.c).start != c.b
+             && lines_.at(c.c).end != c.b;
+        break;
     }
+    if (valid && c.kind != ConstraintKind::Symmetric && c.c != kNoEntity)
+        return false; // only Symmetric uses a third entity
     if (!valid || !std::isfinite(c.value))
         return false;
     if ((c.kind == ConstraintKind::Distance || c.kind == ConstraintKind::Diameter || c.kind == ConstraintKind::Radius)
@@ -234,7 +243,7 @@ bool Sketch::remove(EntityId id)
             return e != kNoEntity && !points_.contains(e) && !lines_.contains(e) && !circles_.contains(e)
                 && !arcs_.contains(e);
         };
-        return gone(k.a) || gone(k.b);
+        return gone(k.a) || gone(k.b) || gone(k.c);
     });
     return true;
 }
@@ -289,7 +298,7 @@ std::vector<EntityId> Sketch::constraintsOn(EntityId id) const
 {
     std::vector<EntityId> out;
     for (const auto& [cid, c] : constraints_)
-        if (c.a == id || c.b == id)
+        if (c.a == id || c.b == id || c.c == id)
             out.push_back(cid);
     return out;
 }
@@ -333,6 +342,7 @@ const char* kindName(ConstraintKind k)
     case ConstraintKind::Midpoint: return "Midpoint";
     case ConstraintKind::Radius: return "Radius";
     case ConstraintKind::PointOnCircle: return "PointOnCircle";
+    case ConstraintKind::Symmetric: return "Symmetric";
     }
     return "?";
 }
@@ -343,7 +353,7 @@ std::optional<ConstraintKind> kindFromName(const std::string& s)
                    ConstraintKind::HorizontalDistance, ConstraintKind::VerticalDistance, ConstraintKind::Diameter,
                    ConstraintKind::Parallel, ConstraintKind::Perpendicular, ConstraintKind::Equal, ConstraintKind::Tangent,
                    ConstraintKind::Concentric, ConstraintKind::PointOnLine, ConstraintKind::Midpoint,
-                   ConstraintKind::Radius, ConstraintKind::PointOnCircle})
+                   ConstraintKind::Radius, ConstraintKind::PointOnCircle, ConstraintKind::Symmetric})
         if (s == kindName(k))
             return k;
     return std::nullopt;
@@ -384,8 +394,12 @@ json Sketch::toJson() const
         cls.push_back({{"id", id}, {"center", c.center}, {"radius", c.radius}, {"construction", c.construction}});
     for (const auto& [id, a] : arcs_)
         arcs.push_back({{"id", id}, {"center", a.center}, {"start", a.start}, {"end", a.end}, {"construction", a.construction}});
-    for (const auto& [id, c] : constraints_)
-        cns.push_back({{"id", id}, {"type", kindName(c.kind)}, {"a", c.a}, {"b", c.b}, {"value", c.value}});
+    for (const auto& [id, c] : constraints_) {
+        json entry{{"id", id}, {"type", kindName(c.kind)}, {"a", c.a}, {"b", c.b}, {"value", c.value}};
+        if (c.c != kNoEntity)
+            entry["c"] = c.c; // only constraints with a third entity (Symmetric) write it
+        cns.push_back(std::move(entry));
+    }
     json attachment = nullptr;
     if (attachment_)
         attachment = {{"body", attachment_->body.toString()},
@@ -514,7 +528,10 @@ Result<Sketch> Sketch::fromJson(const json& j)
             return Result<Sketch>::failure(ErrorCode::FileVersionUnsupported,
                                            "This sketch uses a constraint this version of OpenShape does not support.",
                                            "unknown constraint type");
-        const SketchConstraint c{*kind, e["a"].get<EntityId>(), e["b"].get<EntityId>(), e["value"].get<double>()};
+        if (e.contains("c") && !idField(e, "c"))
+            return bad("invalid constraint");
+        const SketchConstraint c{*kind, e["a"].get<EntityId>(), e["b"].get<EntityId>(), e["value"].get<double>(),
+                                 e.contains("c") ? e["c"].get<EntityId>() : kNoEntity};
         if (!s.isValid(c))
             return bad("constraint references invalid entities");
         s.constraints_[eid] = c;

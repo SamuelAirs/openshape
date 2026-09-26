@@ -126,6 +126,8 @@ Rectangle {
                             ["Trim", "Click the piece of a curve to cut away (it shows red first)"],
                             ["Round a corner", "Select the corner point → Fillet, then click R to change it"],
                             ["Offset", "Select curves → Offset, move to a side, click or type a distance"],
+                            ["Mirror", "Select curves → Mirror, then click the line to mirror across (they stay mirrored)"],
+                            ["Pattern", "Select curves → Pattern: click where the next copy goes (or type the spacing); Circular: click the center, type the angle; − / + or Tab for the count; Apply"],
                             ["Arc", "Click start, click end, then bend it (or type a radius)"],
                             ["Tangent arc", "Click the end of a line or arc, then where the arc ends (or type a radius); it keeps going from there until Esc"],
                             ["Exact size while drawing", "Type, Tab to the next value, Enter"],
