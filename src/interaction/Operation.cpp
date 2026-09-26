@@ -1254,7 +1254,19 @@ doc::ExtrudeMode ExtrudeOperation::mode() const
         return host_ || *modeOverride_ == doc::ExtrudeMode::NewBody ? *modeOverride_ : doc::ExtrudeMode::NewBody;
     if (!host_ || autoNewBody_)
         return doc::ExtrudeMode::NewBody;
-    return value() < 0 ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::Join;
+    return distance() < 0 ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::Join;
+}
+
+void ExtrudeOperation::setActiveHandle(int index)
+{
+    index = index == 1 ? 1 : 0;
+    if (index == activeHandle())
+        return;
+    const double d = distance(), a = draftDegrees();
+    Operation::setActiveHandle(index);
+    distance_ = d;
+    draftDegrees_ = a;
+    setStoredValue(index == 1 ? a : d);
 }
 
 bool ExtrudeOperation::reconsider(const geom::Shape& result, const doc::Document& document)
@@ -1275,10 +1287,11 @@ std::unique_ptr<doc::Feature> ExtrudeOperation::makeFeature(double value) const
     auto feature = std::make_unique<doc::ExtrudeFeature>();
     feature->sketchId = sketchId_;
     feature->profiles = profiles_;
-    feature->distance = value;
+    feature->distance = editingDraft() ? distance_ : value;
     feature->mode = mode();
     feature->throughAll = throughAll_ && feature->mode == doc::ExtrudeMode::Cut;
     feature->symmetric = symmetric_;
+    feature->draftAngle = (editingDraft() ? value : draftDegrees_) * kPi / 180.0;
     return feature;
 }
 
@@ -1293,6 +1306,11 @@ void ExtrudeOperation::setSymmetric(bool symmetric, const doc::Document& documen
     symmetric_ = symmetric;
     // The number stays: 10 one way becomes a 10 mm thick slab centered on the
     // sketch (a symmetric thickness is never negative).
+    if (editingDraft()) {
+        distance_ = std::abs(distance_);
+        setValue(value(), document);
+        return;
+    }
     setValue(std::abs(value()), document);
 }
 
@@ -1309,6 +1327,7 @@ Status ExtrudeOperation::extendToFace(const doc::Document& document, const Uuid&
         return Status::failure(ErrorCode::InvalidArgument, "That face lies in the sketch's plane.", "extrude up to: distance 0");
     pickingTarget_ = false;
     symmetric_ = false;
+    setActiveHandle(0);
     setValue(distance, document);
     return okStatus();
 }

@@ -710,9 +710,23 @@ public:
 
     std::string title() const override { return "Extrude"; }
     // Symmetric: the value is the total thickness, centered on the sketch.
-    std::string valueLabel() const override { return symmetric_ ? "Thickness" : "Distance"; }
-    bool allowsNegative() const override { return !symmetric_; }
+    std::string valueLabel() const override
+    {
+        return editingDraft() ? "Draft" : symmetric_ ? "Thickness" : "Distance";
+    }
+    bool allowsNegative() const override { return editingDraft() || !symmetric_; }
+    bool isAngle() const override { return editingDraft(); }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Extrude; }
+    // The draft is a second field of the value chip (Draft action; no arrow
+    // of its own): value() is then the angle in degrees, positive narrowing
+    // away from the sketch. Grabbing the arrow goes back to the distance.
+    bool editingDraft() const { return activeHandle() == 1; }
+    void setActiveHandle(int index) override;
+    double distance() const { return editingDraft() ? distance_ : value(); }
+    double draftDegrees() const { return editingDraft() ? value() : draftDegrees_; }
+    LinearManipulator handle(int) const override { return manipulator(); }
+    double handleOffset(int) const override { return displayOffset(distance()); }
+    bool canCommit() const override { return distance() != 0.0 && error().empty() && hasPreview(); }
     Uuid previewBody() const override;
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
     double displayOffset(double value) const override { return symmetric_ ? value / 2 : value; }
@@ -741,6 +755,8 @@ protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     void resetAutomaticChoices() override { autoNewBody_ = false; }
     bool reconsider(const geom::Shape& result, const doc::Document& document) override;
+    // A draft of 0 still previews the extrusion.
+    bool neutralIsIdentity() const override { return !editingDraft(); }
 
 private:
     ExtrudeOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles)
@@ -753,6 +769,8 @@ private:
     bool throughAll_ = false;
     bool symmetric_ = false;
     bool pickingTarget_ = false;
+    double distance_ = 0;     // while the draft is being edited
+    double draftDegrees_ = 0; // while the distance is being edited
 };
 
 } // namespace os::interact

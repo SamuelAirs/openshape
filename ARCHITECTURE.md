@@ -139,6 +139,16 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   passes through must be a wall and the volume must change by exactly
   cross-section x distance, else `ErrorCode::Unsupported` and the caller
   uses `pushPullFace`.
+- `extrudeFacesDrafted` (Profiles.h, `DraftExtrude.cpp`): a straight prism
+  whose side faces `BRepOffsetAPI_DraftAngle` tilts about the profile's
+  plane (planes stay planes, cylinders become cones, corners stay sharp).
+  Before any kernel work the far end is checked analytically: lines
+  shorten by inset x tan(turn / 2) at each corner, circles and arcs around
+  the material shrink by the inset, around holes they grow; an edge that
+  would vanish refuses the draft with a plain message
+  (`BRepOffsetAPI_MakeOffset` could answer this, but crashed in its medial
+  axis on a square with a small round hole). After it, a positive draft
+  must remove volume and a negative one add some.
 - `offsetCurves` (Profiles.h): offsets one connected chain of planar curves
   (`BRepOffsetAPI_MakeOffset`, sharp corners) for the sketch Offset action.
 - `pointOnFace` (a point inside a flat face, away from holes) and
@@ -421,7 +431,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Extrude options:** Symmetric makes the value the total thickness
   (`displayOffset` = value / 2); "Up to face" makes the next face click set
   the distance to a parallel flat face (`ExtrudeOperation::extendToFace`,
-  stored as a plain distance). Push/pull steps from the UI set `keepEdges`.
+  stored as a plain distance). "Draft" makes the value chip edit the draft
+  angle instead (degrees; the operation's second "handle" without an arrow,
+  so grabbing the arrow returns to the distance); the step stores
+  `draftAngle` and the Model panel always offers it. Push/pull steps from
+  the UI set `keepEdges`.
 - **Mirror / Pattern:** Mirror waits for a flat face (or an origin plane from
   the action bar) and has no value; Apply or Enter commits. Pattern previews
   right away (spacing = the body's extent plus 5 mm); the arrow sets the

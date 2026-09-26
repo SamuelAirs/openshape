@@ -147,7 +147,8 @@ Rectangle {
                             ["Construction curves", "Select curves → Construction (never become shapes)"],
                             ["Add to a sketch", "Select one of its shapes → Sketch, or sketch on its plane"],
                             ["Extrude / revolve", "Finish, then click inside a closed shape"],
-                            ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face"]
+                            ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face"],
+                            ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"]
                         ]
                     }
                     HelpSection {

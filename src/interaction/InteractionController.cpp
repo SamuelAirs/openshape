@@ -1208,6 +1208,10 @@ std::vector<ContextAction> InteractionController::contextActions() const
                 actions.push_back({"throughAll", "Through all", extrude->throughAll()});
         }
         actions.push_back({"symmetric", "Symmetric", extrude->symmetric()});
+        // The draft angle is typed in the chip; the button shows it when set.
+        const double draft = extrude->draftDegrees();
+        actions.push_back({"draft", draft == 0 ? std::string("Draft") : "Draft " + formatAngle(draft * kPi / 180.0),
+                           extrude->editingDraft()});
         actions.push_back({"upToFace", "Up to face", extrude->pickingTarget()});
         actions.push_back({"editSketch", "Edit sketch", false});
         return actions;
@@ -1390,6 +1394,13 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "symmetric") {
         extrude->setSymmetric(!extrude->symmetric(), *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "draft") {
+        // The chip now edits the draft (again: back to the distance).
+        extrude->setActiveHandle(extrude->editingDraft() ? 0 : 1);
         notifyState();
         notifyView();
         return okStatus();
@@ -2317,6 +2328,8 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
                                : formatLength(e.symmetric ? std::abs(e.distance) : e.distance, unit);
         if (e.symmetric)
             extent += " symmetric";
+        if (e.draftAngle != 0)
+            extent += dot + "Draft " + formatAngle(e.draftAngle);
         return extent + dot + mode;
     }
     }

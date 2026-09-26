@@ -72,8 +72,9 @@ TEST(History, RowsDescribeTheModel)
     EXPECT_NE(rows[2].detail.find("20.00 mm"), std::string::npos);
     EXPECT_NE(rows[2].detail.find("New body"), std::string::npos);
     EXPECT_FALSE(rows[2].canDelete) << "first step of the body";
-    ASSERT_EQ(rows[2].parameters.size(), 1u);
+    ASSERT_EQ(rows[2].parameters.size(), 2u) << "distance and draft";
     EXPECT_EQ(rows[2].parameters[0].valueText, "20.00 mm");
+    EXPECT_EQ(rows[2].parameters[1].label, "Draft");
     EXPECT_EQ(rows[3].name, "Fillet");
     EXPECT_NE(rows[3].detail.find("4 edges"), std::string::npos);
     EXPECT_EQ(rows[3].status, HistoryRow::Status::Ok);

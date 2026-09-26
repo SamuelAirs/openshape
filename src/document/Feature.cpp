@@ -993,6 +993,22 @@ Result<geom::Shape> ExtrudeFeature::toolSolid(const geom::Shape& input, const Ev
         faces.push_back(regions.value()[std::size_t(*index)].face);
     }
     double length = symmetric ? std::abs(distance) : distance;
+    if (std::abs(draftAngle) > 1e-12) {
+        if (throughAll && mode == ExtrudeMode::Cut)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidArgument,
+                                                "A draft needs a distance: turn off Through all, or set the draft to 0.",
+                                                "Extrude: draft with through all");
+        if (!symmetric)
+            return geom::extrudeFacesDrafted(faces, plane.normal() * length, draftAngle);
+        // Both ways from the sketch, each half narrowing away from it.
+        auto up = geom::extrudeFacesDrafted(faces, plane.normal() * (length / 2), draftAngle);
+        if (!up)
+            return up;
+        auto down = geom::extrudeFacesDrafted(faces, plane.normal() * (-length / 2), draftAngle);
+        if (!down)
+            return down;
+        return geom::booleanOp(up.value(), down.value(), geom::BooleanKind::Union);
+    }
     if (throughAll && mode == ExtrudeMode::Cut && !input.isNull()) {
         const auto box = geom::approximateBoundingBox(input);
         if (box.valid) {
@@ -1031,13 +1047,24 @@ void ExtrudeFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
 
 std::vector<ParameterInfo> ExtrudeFeature::parameters() const
 {
+    std::vector<ParameterInfo> out;
     if (symmetric)
-        return {{"distance", "Thickness", ParameterKind::Length, std::abs(distance)}};
-    return {{"distance", "Distance", ParameterKind::Length, distance}};
+        out.push_back({"distance", "Thickness", ParameterKind::Length, std::abs(distance)});
+    else
+        out.push_back({"distance", "Distance", ParameterKind::Length, distance});
+    out.push_back({"draft", "Draft", ParameterKind::Angle, draftAngle});
+    return out;
 }
 
 Status ExtrudeFeature::setParameter(std::string_view key, double value)
 {
+    if (key == "draft") {
+        if (!std::isfinite(value) || std::abs(value) > 89.0 * kPi / 180.0 + 1e-12)
+            return Status::failure(ErrorCode::InvalidArgument, "The draft must be between -89\xC2\xB0 and 89\xC2\xB0.",
+                                   "draft out of range");
+        draftAngle = value;
+        return okStatus();
+    }
     if (key != "distance")
         return unknownParameter(key);
     if (!std::isfinite(value) || std::abs(value) < 1e-6)
@@ -1058,6 +1085,8 @@ void ExtrudeFeature::writeParams(json& out) const
     out["throughAll"] = throughAll;
     if (symmetric)
         out["symmetric"] = true;
+    if (draftAngle != 0)
+        out["draft"] = draftAngle;
 }
 
 Status ExtrudeFeature::readParams(const json& in)
@@ -1096,6 +1125,13 @@ Status ExtrudeFeature::readParams(const json& in)
     distance = *d;
     throughAll = in.contains("throughAll") && in["throughAll"].is_boolean() && in["throughAll"].get<bool>();
     symmetric = in.contains("symmetric") && in["symmetric"].is_boolean() && in["symmetric"].get<bool>();
+    draftAngle = 0;
+    if (in.contains("draft")) {
+        const auto draft = numberFrom(in, "draft");
+        if (!draft || !std::isfinite(*draft) || std::abs(*draft) > 89.0 * kPi / 180.0 + 1e-12)
+            return bad("Extrude: bad draft");
+        draftAngle = *draft;
+    }
     return okStatus();
 }
 

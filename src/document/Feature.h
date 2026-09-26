@@ -429,6 +429,10 @@ public:
     // Centered on the sketch plane: |distance| is the total thickness, half
     // on each side (through-all cuts go through both ways).
     bool symmetric = false;
+    // Side walls tilted by this angle (radians): positive narrows the shape
+    // as it goes away from the sketch (both ways when symmetric), negative
+    // widens it; 0 = straight walls (steps from older files).
+    double draftAngle = 0;
 
     FeatureKind kind() const override { return FeatureKind::Extrude; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new ExtrudeFeature(*this)); }

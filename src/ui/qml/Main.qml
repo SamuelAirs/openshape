@@ -500,6 +500,9 @@ ApplicationWindow {
             return app.operationPrompt
         if (app.operationActive && app.operationTitle === "Align")
             return "Drag the arrow or type an offset · Flip turns it around · click another face to re-aim · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Draft")
+            return "Type the draft angle: positive narrows the walls away from the sketch, negative widens them · "
+                 + "the arrow (or Draft again) goes back to the distance · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Thickness")
             return "Drag the arrow or type the total thickness (half on each side of the sketch) \u00b7 Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
