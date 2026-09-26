@@ -252,6 +252,9 @@ Panel {
                             onClicked: panel.app.setFeatureSuppressed(row.modelData.id, row.modelData.status !== "suppressed")
                         }
                         ActionButton {
+                            // A body others are built from is hidden instead
+                            // (the controller says so); a hidden one has no Delete.
+                            objectName: "historyDelete_" + row.modelData.id
                             compact: true
                             visible: row.modelData.canDelete
                             text: "Delete"

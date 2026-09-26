@@ -227,8 +227,8 @@ void InteractionController::pointerPress(const PointerEvent& event)
             return;
         }
         // A ring is grabbed once the pointer moves (pointerMove). A click on
-        // it activates it - or, where it crosses an edge, picks that edge
-        // (Rotate about an edge: the rings often cross the body's edges).
+        // it activates it - or, where it crosses an edge or a hole or shaft,
+        // picks that (Rotate about it: the rings often cross the body).
         if (const int ring = ringAt(event.position, event.device); ring >= 0)
             drag_.ring = ring;
     }
@@ -381,9 +381,19 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     }
     // Only a left click or a tap selects (and applies a pending value); right
     // and middle buttons orbit/pan when dragged and do nothing on a click.
-    const bool edgeUnderRing = pendingRing >= 0 && dynamic_cast<const RotateOperation*>(operation_.get())
-                            && pickAt(press.position, InputProfile::forDevice(press.device)).kind == sel::PickKind::Edge;
-    if (pendingRing >= 0 && operation_ && !edgeUnderRing) {
+    // In Rotate, what a click on a ring crosses may be what the user wants to
+    // turn about: an edge, or a hole or shaft (a round face).
+    bool axisUnderRing = false;
+    if (pendingRing >= 0 && dynamic_cast<const RotateOperation*>(operation_.get())) {
+        const sel::PickResult hit = pickAt(press.position, InputProfile::forDevice(press.device));
+        const doc::Body* body = hit.hit() ? document_->body(hit.bodyId) : nullptr;
+        axisUnderRing = hit.kind == sel::PickKind::Edge
+                     || (hit.kind == sel::PickKind::Face && body && [&] {
+                            const auto face = geom::faceInfo(body->shape(), hit.index);
+                            return face && face->hasAxis();
+                        }());
+    }
+    if (pendingRing >= 0 && operation_ && !axisUnderRing) {
         operation_->setActiveHandle(pendingRing); // clicking a ring makes it the active one
         notifyState();
     } else if (mode == DragMode::Pending && press.button == PointerButton::Left)
@@ -597,7 +607,10 @@ void InteractionController::click(const PointerEvent& event)
         const doc::Body* body = document_->body(hit.bodyId);
         if (const auto edge = body ? geom::edgeInfo(body->shape(), hit.index) : std::nullopt) {
             std::optional<Vec3> corner;
-            double nearest = profile.pickTolerance * 2;
+            // The corner zones never cover a whole short edge (a finger's
+            // zone is 36 px): its middle still picks the axis.
+            const double onScreen = (camera_.project(edge->start) - camera_.project(edge->end)).length();
+            double nearest = std::min(profile.pickTolerance * 2, onScreen / 4);
             if ((edge->start - edge->end).length() > 1e-9) // closed curves have no corners
                 for (const Vec3& end : {edge->start, edge->end})
                     if (const double d = (camera_.project(end) - event.position).length(); d <= nearest) {
@@ -843,18 +856,23 @@ Status InteractionController::commitOperation()
         return status;
     }
     operation_.reset();
-    // A cut that split the body in two: say how to make each piece a body
-    // (not automatic: the pieces may belong together).
-    if (const doc::Body* after = piecesBefore > 0 ? document_->body(target) : nullptr;
-        after && after->shape().solidCount() > piecesBefore && !after->hasFailures())
-        message(after->name() + " is now in " + std::to_string(after->shape().solidCount())
-                + " separate pieces. To make each piece a body, select it and choose Split into bodies.");
+    suggestSplit(target, piecesBefore);
     // Edges consumed by a fillet/chamfer no longer exist; a face that was
     // pushed still does and stays selected for the next push.
     if (clearSelection)
         selection_.clear();
     afterDocumentEdit();
     return status;
+}
+
+void InteractionController::suggestSplit(const Uuid& bodyId, int piecesBefore)
+{
+    // A cut that split the body in two: say how to make each piece a body
+    // (not automatic: the pieces may belong together).
+    if (const doc::Body* after = piecesBefore > 0 ? document_->body(bodyId) : nullptr;
+        after && after->shape().solidCount() > piecesBefore && !after->hasFailures())
+        message(after->name() + " is now in " + std::to_string(after->shape().solidCount())
+                + " separate pieces. To make each piece a body, select it and choose Split into bodies.");
 }
 
 void InteractionController::cancelOperation()
@@ -952,13 +970,101 @@ Status InteractionController::deleteSelectedBodies()
     if (bodies.empty())
         return Status::failure(ErrorCode::InvalidArgument, "Select a body to delete.", "delete without body selection");
     selection_.clear();
-    for (const auto& id : bodies) {
-        Status status = undoStack_->push(std::make_unique<cmd::DeleteBodyCommand>(id), *document_);
-        if (!status)
-            message(status.userMessage());
+    Status status = deleteBodies(bodies);
+    if (!status)
+        message(status.userMessage());
+    return status;
+}
+
+namespace {
+
+// "A", "A and B", "A, B and C", "A, B and 3 more".
+std::string nameList(const std::vector<std::string>& names)
+{
+    std::string out;
+    const std::size_t shown = names.size() > 3 ? 2 : names.size();
+    for (std::size_t i = 0; i < shown; ++i)
+        out += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
+    if (shown < names.size())
+        out += " and " + std::to_string(names.size() - shown) + " more";
+    return out;
+}
+
+} // namespace
+
+Status InteractionController::deleteBodies(const std::vector<Uuid>& bodies)
+{
+    auto contains = [](const std::vector<Uuid>& list, const Uuid& id) { return std::find(list.begin(), list.end(), id) != list.end(); };
+    // Bodies built from a body that stays (a piece split off it, its separate
+    // copy, a body that consumed it as a tool) would break: it is hidden
+    // instead. Repeated until stable, since keeping one can keep its sources.
+    std::vector<Uuid> remove;
+    for (const Uuid& id : bodies)
+        if (document_->body(id) && !contains(remove, id))
+            remove.push_back(id);
+    std::vector<Uuid> kept;
+    for (bool again = true; again;) {
+        again = false;
+        for (auto it = remove.begin(); it != remove.end(); ++it) {
+            const auto users = document_->bodiesUsing(*it);
+            if (std::any_of(users.begin(), users.end(), [&](const Uuid& user) { return !contains(remove, user); })) {
+                kept.push_back(*it);
+                remove.erase(it);
+                again = true;
+                break;
+            }
+        }
     }
+    const std::vector<Uuid> deleted = remove;
+    // The bodies built from others go first, so every deletion leaves the rest
+    // intact (and undo restores sources before what is built from them).
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    while (!remove.empty()) {
+        auto leaf = std::find_if(remove.begin(), remove.end(), [&](const Uuid& id) {
+            const auto users = document_->bodiesUsing(id);
+            return std::none_of(users.begin(), users.end(), [&](const Uuid& user) { return contains(remove, user); });
+        });
+        if (leaf == remove.end())
+            leaf = remove.begin(); // a cycle (only in a hand-edited file)
+        steps.push_back(std::make_unique<cmd::DeleteBodyCommand>(*leaf));
+        remove.erase(leaf);
+    }
+    std::vector<std::string> hiddenNames, userNames;
+    for (const Uuid& id : kept) {
+        const doc::Body* body = document_->body(id);
+        if (body->isVisible()) {
+            steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(id, false));
+            hiddenNames.push_back(body->name());
+        }
+        for (const Uuid& user : document_->bodiesUsing(id))
+            if (const doc::Body* u = document_->body(user); u && !contains(kept, user) && !contains(deleted, user)
+                && std::find(userNames.begin(), userNames.end(), u->name()) == userNames.end())
+                userNames.push_back(u->name());
+    }
+    if (steps.empty()) {
+        if (kept.empty())
+            return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "delete: unknown bodies");
+        const doc::Body& first = *document_->body(kept.front());
+        return Status::failure(ErrorCode::InvalidArgument,
+                               first.name() + " cannot be deleted: " + nameList(userNames)
+                                   + (userNames.size() == 1 ? " is" : " are") + " built from it.",
+                               "delete: other bodies depend on it");
+    }
+    std::unique_ptr<cmd::Command> command;
+    if (steps.size() == 1)
+        command = std::move(steps.front());
+    else
+        command = std::make_unique<cmd::CompositeCommand>(kept.empty() ? "Delete bodies" : "Delete", std::move(steps));
+    Status status = undoStack_->push(std::move(command), *document_);
+    if (!status)
+        return status;
+    operation_.reset();
+    if (!hiddenNames.empty())
+        message(nameList(hiddenNames) + (hiddenNames.size() == 1 ? " is" : " are") + " hidden, not deleted: "
+                + nameList(userNames) + (userNames.size() == 1 ? " is" : " are") + " built from "
+                + (hiddenNames.size() == 1 ? "it." : "them."));
     afterDocumentEdit();
-    return okStatus();
+    return status;
 }
 
 Status InteractionController::deleteSelectedFaces()
@@ -2050,6 +2156,18 @@ std::vector<HistoryRow> InteractionController::historyRows() const
                             + " separate pieces; they move and combine together.";
             bodyRow.canSplit = true;
         }
+        // Bodies built from this one (split-off pieces, separate copies, a body
+        // that consumed it as a tool) would break if it were deleted: Delete
+        // hides it instead, and a hidden one stays.
+        if (const auto users = document_->bodiesUsing(body->id()); !users.empty()) {
+            std::vector<std::string> names;
+            for (const Uuid& user : users)
+                names.push_back(document_->body(user)->name());
+            const std::string built = nameList(names) + (names.size() == 1 ? " is" : " are") + " built from it";
+            bodyRow.canDelete = body->isVisible();
+            if (bodyRow.message.empty())
+                bodyRow.message = body->isVisible() ? built + ": Delete hides it instead." : "Kept hidden: " + built + ".";
+        }
         rows.push_back(std::move(bodyRow));
 
         const auto& features = body->features();
@@ -2163,10 +2281,7 @@ Status InteractionController::setBodyVisible(const Uuid& bodyId, bool visible)
 
 Status InteractionController::deleteBody(const Uuid& bodyId)
 {
-    Status status = undoStack_->push(std::make_unique<cmd::DeleteBodyCommand>(bodyId), *document_);
-    if (status)
-        afterDocumentEdit();
-    return status;
+    return deleteBodies({bodyId}); // the selection drops deleted or hidden bodies itself
 }
 
 Status InteractionController::deleteSketch(const Uuid& sketchId)
@@ -2215,12 +2330,17 @@ Status InteractionController::combineSelectedBodies(doc::CombineMode mode)
         steps.push_back(std::make_unique<cmd::SetBodyVisibilityCommand>(tool, false));
     }
     const char* label = mode == doc::CombineMode::Union ? "Union" : mode == doc::CombineMode::Subtract ? "Subtract" : "Intersect";
+    const int piecesBefore = document_->body(target) ? document_->body(target)->shape().solidCount() : 0;
     Status status = undoStack_->push(std::make_unique<cmd::CompositeCommand>(label, std::move(steps)), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
     }
     operation_.reset();
+    // A subtract (or intersect) that cut the body in pieces. A union of
+    // bodies that do not touch was meant to hold them together: no hint.
+    if (mode != doc::CombineMode::Union)
+        suggestSplit(target, piecesBefore);
     if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, target, -1))
         selection_.set(*item);
     afterDocumentEdit();
@@ -2256,8 +2376,11 @@ Status InteractionController::duplicateBody(const Uuid& bodyId)
 
 Status InteractionController::splitBody(const Uuid& bodyId)
 {
-    if (session_)
+    // Every failure is reported here (the Model panel's button ignores the Status).
+    if (session_) {
+        message("Finish the sketch first.");
         return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "split in sketch mode");
+    }
     if (operation_ && operation_->canCommit())
         if (Status status = commitOperation(); !status)
             return status;

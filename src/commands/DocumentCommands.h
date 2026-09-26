@@ -49,11 +49,12 @@ private:
 
 // Duplicates a body as an independent copy named "<name> copy": its history
 // with fresh ids, plus what belongs to that history alone - the sketches its
-// steps use (copied hidden) and the hidden bodies its steps consumed
-// (Combine tools, copied hidden), all re-pointed at the copies. Editing the
-// copy never changes the source, nor the other way round. Visible bodies the
-// history builds on (a piece split off another body, a mirror copy's
-// source) stay shared: the copy follows them like the source does.
+// steps use (copied hidden) and the tool bodies its Combine steps consumed
+// (copied hidden, recursively), all re-pointed at the copies. Editing the
+// copy never changes the source, nor the other way round. The other bodies
+// the history builds on (the body a piece was split off, a separate copy's
+// source) stay shared, shown or hidden: the copy follows them like the
+// source does.
 class DuplicateBodyCommand final : public Command {
 public:
     explicit DuplicateBodyCommand(Uuid sourceId) : sourceId_(sourceId) {}

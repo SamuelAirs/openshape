@@ -146,18 +146,35 @@ struct Harness {
         return document.bodies().back()->id();
     }
 
-    static PointerEvent at(Vec2 p)
+    static PointerEvent at(Vec2 p, PointerDevice device = PointerDevice::Mouse)
     {
         PointerEvent e;
         e.position = p;
         e.button = PointerButton::Left;
+        e.device = device;
         return e;
     }
-    void clickAt(Vec2 p)
+    void clickAt(Vec2 p, PointerDevice device = PointerDevice::Mouse)
     {
-        controller.pointerPress(at(p));
-        controller.pointerRelease(at(p));
+        controller.pointerPress(at(p, device));
+        controller.pointerRelease(at(p, device));
     }
+    bool saw(const std::string& text) const
+    {
+        for (const auto& m : messages)
+            if (m.find(text) != std::string::npos)
+                return true;
+        return false;
+    }
+    const HistoryRow* row(const Uuid& id) const
+    {
+        rows = controller.historyRows();
+        for (const auto& r : rows)
+            if (r.id == id)
+                return &r;
+        return nullptr;
+    }
+    mutable std::vector<HistoryRow> rows;
     Vec2 screen(const Vec3& p) const { return controller.camera().project(p); }
 
     bool hasAction(const std::string& id) const
@@ -899,4 +916,368 @@ TEST(Split, MirrorThatLeavesPiecesSuggestsTheSplit)
     ASSERT_TRUE(h.controller.commitOperation().ok());
     ASSERT_FALSE(h.messages.empty());
     EXPECT_NE(h.messages.back().find("Split into bodies"), std::string::npos) << h.messages.back();
+}
+
+// Subtracting a slot body that cuts a plate in two says how to split it (the
+// Combine path, not only tool operations); a union of bodies that do not
+// touch was meant to hold them together and gets no hint.
+TEST(Split, SubtractThatCutsInTwoSuggestsTheSplit)
+{
+    Harness h;
+    const Uuid plate = h.addBox("Body 1", {0, 0, 0}, {60, 20, 5});
+    const Uuid slot = h.addBox("Slot", {28, -5, -5}, {4, 30, 15});
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(slot, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    ASSERT_EQ(h.document.body(plate)->shape().solidCount(), 2);
+    EXPECT_TRUE(h.saw("Body 1 is now in 2 separate pieces")) << (h.messages.empty() ? "" : h.messages.back());
+    EXPECT_TRUE(h.saw("Split into bodies"));
+
+    h.messages.clear();
+    const Uuid a = h.addBox("Body 3", {100, 0, 0}, {5, 5, 5});
+    const Uuid b = h.addBox("Body 4", {120, 0, 0}, {5, 5, 5});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(b, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("union").ok());
+    ASSERT_EQ(h.document.body(a)->shape().solidCount(), 2);
+    EXPECT_FALSE(h.saw("Split into bodies"));
+}
+
+// The Model panel's Split button reports why nothing happens while a sketch
+// is being edited (it ignores the returned Status).
+TEST(Split, InSketchModeSaysWhy)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    const Uuid b = h.addBox("Body 2", {30, 0, 0}, {10, 10, 10});
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(b, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("union").ok());
+    h.controller.keyPress(Key::Escape);
+    h.controller.keyPress(Key::Escape);
+    ASSERT_TRUE(h.controller.selection().empty());
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    ASSERT_EQ(h.controller.mode(), InteractionController::Mode::Sketch);
+    h.messages.clear();
+    EXPECT_FALSE(h.controller.splitBody(a).ok());
+    EXPECT_TRUE(h.saw("Finish the sketch first."));
+    EXPECT_EQ(h.document.body(a)->shape().solidCount(), 2);
+}
+
+// ---- Deleting a body others are built from ------------------------------------------
+
+// Deleting the body a piece was split off would break the piece: the body is
+// hidden instead (one undo step) and the piece stays exactly as it was.
+// Deleting both at once deletes both.
+TEST(Delete, SplitParentIsHiddenNotDeleted)
+{
+    Harness h;
+    const Uuid plate = h.addBox("Body 1", {0, 0, 0}, {60, 20, 5});
+    const Uuid slot = h.addBox("Slot", {28, -5, -5}, {4, 30, 15});
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(slot, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("split").ok());
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+    const Uuid piece = h.document.bodies().back()->id();
+    ASSERT_EQ(h.document.body(piece)->name(), "Body 2");
+    EXPECT_NEAR(geom::volume(h.document.body(piece)->shape()), 2800.0, 1e-6);
+
+    // The Model panel says it.
+    const HistoryRow* r = h.row(plate);
+    ASSERT_NE(r, nullptr);
+    EXPECT_TRUE(r->canDelete);
+    EXPECT_NE(r->message.find("Body 2 is built from it"), std::string::npos) << r->message;
+
+    // Delete in the view: hidden, not deleted; the piece is unchanged.
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    h.messages.clear();
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    ASSERT_NE(h.document.body(plate), nullptr);
+    EXPECT_FALSE(h.document.body(plate)->isVisible());
+    EXPECT_EQ(h.document.bodies().size(), 3u);
+    EXPECT_FALSE(h.document.body(piece)->hasFailures());
+    EXPECT_NEAR(geom::volume(h.document.body(piece)->shape()), 2800.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(h.document.body(piece)->shape()).min.x, 32.0, 1e-6);
+    EXPECT_TRUE(h.saw("Body 1 is hidden, not deleted: Body 2 is built from it."))
+        << (h.messages.empty() ? "" : h.messages.back());
+    EXPECT_TRUE(h.controller.selection().empty());
+    EXPECT_EQ(h.stack.undoLabel(), "Hide body");
+
+    // Hidden, the Model panel offers no Delete, and a delete is refused.
+    r = h.row(plate);
+    ASSERT_NE(r, nullptr);
+    EXPECT_FALSE(r->canDelete);
+    EXPECT_NE(r->message.find("Kept hidden"), std::string::npos) << r->message;
+    const Status refused = h.controller.deleteBody(plate);
+    EXPECT_FALSE(refused.ok());
+    EXPECT_EQ(refused.userMessage(), "Body 1 cannot be deleted: Body 2 is built from it.");
+    EXPECT_EQ(h.document.bodies().size(), 3u);
+
+    // One undo shows it again.
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_TRUE(h.document.body(plate)->isVisible());
+
+    // The plate and its piece together: both go, in one undo step.
+    ASSERT_TRUE(h.controller.selectBody(plate, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(piece, true).ok());
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.document.body(plate), nullptr);
+    EXPECT_EQ(h.document.body(piece), nullptr);
+    EXPECT_EQ(h.document.bodies().size(), 1u) << "the slot (a hidden tool) stays";
+    EXPECT_EQ(h.stack.undoLabel(), "Delete bodies");
+    EXPECT_TRUE(h.controller.undo());
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+    EXPECT_FALSE(h.document.body(piece)->hasFailures());
+    EXPECT_NEAR(geom::volume(h.document.body(piece)->shape()), 2800.0, 1e-6);
+    EXPECT_NEAR(geom::volume(h.document.body(plate)->shape()), 2800.0, 1e-6);
+
+    // The piece alone: nothing is built from it, so it is deleted.
+    ASSERT_TRUE(h.controller.selectBody(piece, false).ok());
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.document.body(piece), nullptr);
+    EXPECT_TRUE(h.document.body(plate)->isVisible());
+    EXPECT_NEAR(geom::volume(h.document.body(plate)->shape()), 2800.0, 1e-6);
+    EXPECT_EQ(h.stack.undoLabel(), "Delete body");
+}
+
+// Of a body and one of its two split-off pieces, the piece is deleted and the
+// body hidden (the other piece is built from it); the message names only the
+// body that stays.
+TEST(Delete, ParentAndOneOfTwoPieces)
+{
+    Harness h;
+    const Uuid bar = h.addBox("Body 1", {0, 0, 0}, {100, 10, 10});
+    const Uuid cutA = h.addBox("Cut A", {20, -1, -1}, {2, 12, 12});
+    const Uuid cutB = h.addBox("Cut B", {70, -1, -1}, {2, 12, 12});
+    ASSERT_TRUE(h.controller.selectBody(bar, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(cutA, true).ok());
+    ASSERT_TRUE(h.controller.selectBody(cutB, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("subtract").ok());
+    ASSERT_EQ(h.document.body(bar)->shape().solidCount(), 3);
+    EXPECT_TRUE(h.saw("Body 1 is now in 3 separate pieces"));
+    ASSERT_TRUE(h.controller.selectBody(bar, false).ok());
+    ASSERT_TRUE(h.controller.triggerAction("split").ok());
+    ASSERT_EQ(h.document.bodies().size(), 5u);
+    const Uuid pieceA = h.document.bodies()[3]->id(); // "Body 2", 28 mm
+    const Uuid pieceB = h.document.bodies()[4]->id(); // "Body 3", 20 mm
+
+    ASSERT_TRUE(h.controller.selectBody(bar, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(pieceA, true).ok());
+    h.messages.clear();
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_EQ(h.document.body(pieceA), nullptr);
+    ASSERT_NE(h.document.body(bar), nullptr);
+    EXPECT_FALSE(h.document.body(bar)->isVisible());
+    EXPECT_FALSE(h.document.body(pieceB)->hasFailures());
+    EXPECT_NEAR(geom::volume(h.document.body(pieceB)->shape()), 2000.0, 1e-6);
+    EXPECT_TRUE(h.saw("Body 1 is hidden, not deleted: Body 3 is built from it."))
+        << (h.messages.empty() ? "" : h.messages.back());
+    EXPECT_EQ(h.stack.undoLabel(), "Delete");
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_EQ(h.document.bodies().size(), 5u);
+    EXPECT_TRUE(h.document.body(bar)->isVisible());
+    EXPECT_NEAR(geom::volume(h.document.body(pieceA)->shape()), 2800.0, 1e-6);
+}
+
+// The same for the source of separate copies (Pattern -> Separate bodies).
+TEST(Delete, CopySourceIsHiddenNotDeleted)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    const Uuid a = h.document.bodies().front()->id();
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("pattern").ok());
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    h.messages.clear();
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    ASSERT_EQ(h.document.bodies().size(), 3u);
+    EXPECT_FALSE(h.document.body(a)->isVisible());
+    for (std::size_t i = 1; i < 3; ++i) {
+        EXPECT_FALSE(h.document.bodies()[i]->hasFailures()) << i;
+        EXPECT_NEAR(geom::volume(h.document.bodies()[i]->shape()), 8000.0, 1e-6) << i;
+        EXPECT_NEAR(geom::boundingBox(h.document.bodies()[i]->shape()).min.x, -10.0 + 25.0 * double(i), 1e-6) << i;
+    }
+    EXPECT_TRUE(h.saw("Body 1 is hidden, not deleted: Body 2 and Body 3 are built from it."))
+        << (h.messages.empty() ? "" : h.messages.back());
+    EXPECT_TRUE(h.controller.undo());
+    EXPECT_TRUE(h.document.body(a)->isVisible());
+
+    // The Model panel's Delete on the visible source hides it too.
+    ASSERT_TRUE(h.controller.deleteBody(a).ok());
+    EXPECT_FALSE(h.document.body(a)->isVisible());
+    EXPECT_EQ(h.document.bodies().size(), 3u);
+}
+
+// ---- Duplicate: what is copied depends on the kind of reference ----------------------
+
+// A mirror copy's source that is merely hidden is still shared: the duplicate
+// follows it like the copy does.
+TEST(Duplicate, HiddenSourceOfACopyStaysShared)
+{
+    Model m;
+    const Uuid a = m.box("Body 1", {5, 0, 0}, {10, 10, 10});
+    auto mirror = std::make_unique<doc::CopyFeature>();
+    mirror->sourceBody = a;
+    mirror->mirror = true;
+    mirror->planeOrigin = {0, 0, 0};
+    mirror->planeNormal = {1, 0, 0};
+    auto create = std::make_unique<cmd::CreateBodyCommand>("Body 2", std::move(mirror));
+    const Uuid b = create->bodyId();
+    ASSERT_TRUE(m.push(std::move(create)).ok());
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetBodyVisibilityCommand>(a, false)).ok());
+
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(b);
+    const Uuid copy = command->copyId();
+    ASSERT_TRUE(m.push(std::move(command)).ok());
+    EXPECT_EQ(m.document.bodies().size(), 3u) << "the hidden source is not copied";
+    EXPECT_EQ(static_cast<const doc::CopyFeature&>(*m.body(copy).features()[0]).sourceBody, a);
+    EXPECT_NEAR(m.bounds(copy).min.x, -15.0, 1e-6);
+
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(m.body(a).features()[0]->id(), "width", 20.0)).ok());
+    EXPECT_NEAR(m.bounds(b).min.x, -25.0, 1e-6);
+    EXPECT_NEAR(m.bounds(copy).min.x, -25.0, 1e-6) << "the duplicate follows the shared source";
+}
+
+// A Combine tool the user showed again is still consumed by the body: the
+// duplicate takes its own (hidden) copy, so editing the tool changes only the
+// source.
+TEST(Duplicate, ShownToolBodyIsStillCopied)
+{
+    Model m;
+    const Uuid a = m.box("Body 1", {0, 0, 0}, {20, 20, 20});
+    const Uuid b = m.box("Body 2", {5, 5, 15}, {10, 10, 10});
+    auto combine = std::make_unique<doc::CombineFeature>();
+    combine->toolBody = b;
+    combine->mode = doc::CombineMode::Subtract;
+    ASSERT_TRUE(m.push(std::make_unique<cmd::AddFeatureCommand>(a, std::move(combine))).ok());
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetBodyVisibilityCommand>(b, false)).ok());
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetBodyVisibilityCommand>(b, true)).ok()); // shown to look at it
+
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(a);
+    const Uuid copy = command->copyId();
+    ASSERT_TRUE(m.push(std::move(command)).ok());
+    ASSERT_EQ(m.document.bodies().size(), 4u);
+    const auto& copyCombine = static_cast<const doc::CombineFeature&>(*m.body(copy).features()[1]);
+    ASSERT_NE(copyCombine.toolBody, b);
+    ASSERT_NE(m.document.body(copyCombine.toolBody), nullptr);
+    EXPECT_FALSE(m.document.body(copyCombine.toolBody)->isVisible()) << "the copied tool is consumed: hidden";
+
+    ASSERT_TRUE(m.push(std::make_unique<cmd::SetParameterCommand>(m.body(b).features()[0]->id(), "height", 3.0)).ok());
+    EXPECT_NEAR(m.volume(a), 8000.0 - 300.0, 1e-6);
+    EXPECT_NEAR(m.volume(copy), 7500.0, 1e-6);
+}
+
+// A copy that took its source in with a union: the source is its Combine
+// tool, so the duplicate copies it too and is independent of it.
+TEST(Duplicate, UnionOfACopyWithItsSourceIsCopiedWhole)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    auto mirror = std::make_unique<doc::CopyFeature>();
+    mirror->sourceBody = a;
+    mirror->mirror = true;
+    mirror->planeOrigin = {10, 0, 0};
+    mirror->planeNormal = {1, 0, 0};
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>("Body 2", std::move(mirror)), h.document).ok());
+    h.controller.documentChanged();
+    const Uuid b = h.document.bodies().back()->id();
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.selectBody(b, true).ok());
+    ASSERT_TRUE(h.controller.triggerAction("union").ok()); // b keeps the result, a is its hidden tool
+
+    auto command = std::make_unique<cmd::DuplicateBodyCommand>(b);
+    const Uuid copy = command->copyId();
+    ASSERT_TRUE(h.stack.push(std::move(command), h.document).ok());
+    ASSERT_EQ(h.document.bodies().size(), 4u);
+    EXPECT_NEAR(geom::volume(h.document.body(copy)->shape()), 2000.0, 1e-6);
+    const auto& base = static_cast<const doc::CopyFeature&>(*h.document.body(copy)->features()[0]);
+    EXPECT_NE(base.sourceBody, a) << "mirrors the copied source";
+
+    ASSERT_TRUE(h.stack.push(std::make_unique<cmd::SetParameterCommand>(h.document.body(a)->features()[0]->id(), "width", 5.0),
+                             h.document)
+                    .ok());
+    EXPECT_NEAR(geom::volume(h.document.body(b)->shape()), 1000.0, 1e-6);
+    EXPECT_NEAR(geom::volume(h.document.body(copy)->shape()), 2000.0, 1e-6);
+    EXPECT_FALSE(h.document.body(copy)->hasFailures());
+}
+
+// On touch the corner zones (36 px) would cover all of a short edge; they are
+// limited to a quarter of the edge on screen, so a tap on its middle still
+// makes it the axis, and a tap on its end still moves the pivot there.
+TEST(RotateAbout, ShortEdgeMiddlePicksTheAxisOnTouch)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {20, 10, 2});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    const double onScreen = (h.screen({20, 0, 2}) - h.screen({20, 0, 0})).length();
+    ASSERT_LT(onScreen, 4 * InputProfile::forDevice(PointerDevice::Touch).pickTolerance) << "a short edge";
+    ASSERT_GT(onScreen, 8.0);
+
+    h.clickAt(h.screen({20, 0, 1}), PointerDevice::Touch);
+    const auto* rotate = dynamic_cast<const RotateOperation*>(h.controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    ASSERT_TRUE(rotate->axis().has_value()) << "the middle of the edge picks the axis";
+    EXPECT_NEAR(rotate->axis()->z, 1.0, 1e-12);
+    EXPECT_EQ(rotate->ringCount(), 1);
+    EXPECT_NEAR((rotate->center() - Vec3{20, 0, 1}).length(), 0.0, 1e-9);
+
+    ASSERT_TRUE(h.controller.triggerAction("pivotCenter").ok());
+    h.clickAt(h.screen({20, 0, 2}), PointerDevice::Touch);
+    rotate = dynamic_cast<const RotateOperation*>(h.controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    EXPECT_FALSE(rotate->axis().has_value());
+    EXPECT_NEAR((rotate->center() - Vec3{20, 0, 2}).length(), 0.0, 1e-9) << "its end picks the corner";
+    EXPECT_EQ(rotate->ringCount(), 3);
+}
+
+// The rings cross the body; a tap on a ring where it crosses a shaft (or a
+// hole) turns about the shaft's axis, as a tap on it elsewhere does (on touch
+// the rings' tap zones are wide).
+TEST(RotateAbout, RingOverAShaftPicksItsAxis)
+{
+    Model m;
+    sketch::Sketch s(Uuid::generate(), sketch::Plane::xy());
+    s.setName("Sketch 1");
+    s.addCircle(s.addPoint({30, 0}), 5);
+    const Uuid sketchId = s.id();
+    ASSERT_TRUE(m.push(std::make_unique<cmd::CreateSketchCommand>(std::move(s))).ok());
+    const Uuid disk = m.extrude(sketchId, 10);
+    InteractionController controller(m.document, m.stack);
+    controller.setViewportSize({1200, 800});
+    controller.fitAll(false);
+    ASSERT_TRUE(controller.selectBody(disk, false).ok());
+    ASSERT_TRUE(controller.runTool("rotate").ok());
+    const Operation* op = controller.operation();
+    ASSERT_NE(op, nullptr);
+    ASSERT_EQ(op->ringCount(), 3);
+
+    // A point on a ring that picks the round side.
+    const InputProfile touch = InputProfile::forDevice(PointerDevice::Touch);
+    std::optional<Vec2> spot;
+    for (int i = 0; i < 3 && !spot; ++i)
+        for (int k = 0; k < 72 && !spot; ++k) {
+            const Vec2 p = controller.camera().project(op->ring(i).pointAt(controller.camera(), 2 * kPi * k / 72));
+            const sel::PickResult hit = controller.pickAt(p, touch);
+            const auto face = hit.kind == sel::PickKind::Face ? geom::faceInfo(m.body(disk).shape(), hit.index) : std::nullopt;
+            if (face && face->hasAxis())
+                spot = p;
+        }
+    ASSERT_TRUE(spot.has_value()) << "a ring crosses the shaft's side";
+    controller.pointerPress(Harness::at(*spot, PointerDevice::Touch));
+    controller.pointerRelease(Harness::at(*spot, PointerDevice::Touch));
+    const auto* rotate = dynamic_cast<const RotateOperation*>(controller.operation());
+    ASSERT_NE(rotate, nullptr);
+    ASSERT_TRUE(rotate->axis().has_value()) << "the tap turned about the shaft, not activated the ring";
+    EXPECT_NEAR(rotate->axis()->z, 1.0, 1e-9);
+    EXPECT_NEAR(rotate->center().x, 30.0, 1e-6);
+    EXPECT_NEAR(rotate->center().y, 0.0, 1e-6);
+    EXPECT_EQ(rotate->ringCount(), 1);
 }

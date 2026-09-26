@@ -250,13 +250,15 @@ a new command, tracks the clean state for "unsaved changes", and caps depth.
 `DuplicateBodyCommand` makes an independent copy ("<name> copy"): the
 history is cloned with fresh ids (`Feature::cloneWithNewId`), and what
 belongs to that history alone is copied too — the sketches its steps use
-(copied hidden, so they do not sit on the source's) and the hidden bodies
-its steps consumed (Combine tools) — then every reference is re-pointed at
-the copies (`Feature::remapReferences`, sketch attachments and host bodies).
-Editing the copy (a step, its sketch, its tool) never changes the source, nor
-the other way round. Visible bodies a history builds on (the parent of a
-split-off piece, the source of a mirror copy) stay shared. The copy's id is
-fixed at construction so the UI can select it and redo recreates it.
+(copied hidden, so they do not sit on the source's) and the tool bodies its
+Combine steps consumed (copied hidden, recursively) — then every reference is
+re-pointed at the copies (`Feature::remapReferences`, sketch attachments and
+host bodies). Editing the copy (a step, its sketch, its tool) never changes
+the source, nor the other way round. The other bodies a history builds on
+(the parent of a split-off piece, the source of a mirror copy) stay shared.
+What is copied depends on the kind of reference, never on visibility (a tool
+shown again is still consumed; a hidden source is still shared). The copy's
+id is fixed at construction so the UI can select it and redo recreates it.
 
 ## Interaction (`interaction/`)
 
@@ -343,8 +345,13 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   button in the body's expanded Model-panel row; the copy comes out selected
   with the Move arrows, ready to drag away), and "Split into bodies" when it
   is in several pieces (also under the body's warning in the Model panel and
-  on the expanded step that left the pieces; a committed step that leaves
-  new pieces says so in a message). Two or more bodies offer Union / Subtract /
+  on the expanded step that left the pieces; a committed step, or a Subtract
+  or Intersect, that leaves new pieces says so in a message:
+  `suggestSplit`). The Delete key deletes the selected bodies in one undo
+  step (`deleteBodies`), except a body that others are built from
+  (`Document::bodiesUsing`: split-off pieces, separate copies, bodies that
+  consumed it as a tool): that one is hidden instead, with a message, and a
+  hidden one cannot be deleted (its Model-panel row says why). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
   A body built from the other (a Copy or SplitPiece of it) cannot be its
@@ -435,7 +442,9 @@ body row calls `selectBody(id, additive)`. The QML `HistoryPanel` edits values t
 `setFeatureParameter`, which pushes a `SetParameterCommand` in *keep-failed*
 mode: an edit that breaks a later step is kept, the step is marked failed
 with its user message, and undo restores the value. Base features cannot be
-deleted or suppressed; sketches used by features cannot be deleted.
+deleted or suppressed; sketches used by features cannot be deleted, and
+neither can hidden bodies other bodies are built from (Delete on a shown one
+hides it).
 
 ## Files (`io/`)
 

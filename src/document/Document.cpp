@@ -249,6 +249,22 @@ std::vector<Uuid> Document::dependentFeatures(const Uuid& objectId) const
     return out;
 }
 
+std::vector<Uuid> Document::bodiesUsing(const Uuid& objectId) const
+{
+    std::vector<Uuid> out;
+    for (const auto& b : bodies_) {
+        if (b->id() == objectId)
+            continue;
+        const bool uses = std::any_of(b->features().begin(), b->features().end(), [&](const auto& f) {
+            const auto deps = f->dependencies();
+            return std::find(deps.begin(), deps.end(), objectId) != deps.end();
+        });
+        if (uses)
+            out.push_back(b->id());
+    }
+    return out;
+}
+
 void Document::recomputeDependents(const Uuid& objectId)
 {
     // Transitive: a body that changed because of `objectId` updates the

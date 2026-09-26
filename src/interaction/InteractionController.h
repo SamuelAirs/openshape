@@ -124,6 +124,10 @@ public:
     Status createBox(double size);
     bool undo();
     bool redo();
+    // Deletes the selected bodies, as one undo step. A body that other bodies
+    // are built from (pieces split off it, its separate copies, bodies that
+    // consumed it as a tool) is hidden instead, with a message: deleting it
+    // would break them.
     Status deleteSelectedBodies();
     // Removes the selected faces (holes, fillets, chamfers, bosses) and heals the gap.
     Status deleteSelectedFaces();
@@ -152,6 +156,8 @@ public:
     Status setFeatureSuppressed(const Uuid& featureId, bool suppressed);
     Status deleteFeature(const Uuid& featureId);
     Status setBodyVisible(const Uuid& bodyId, bool visible);
+    // Like deleteSelectedBodies for one body; fails (without a message) when
+    // other bodies are built from it and it is already hidden.
     Status deleteBody(const Uuid& bodyId);
     Status deleteSketch(const Uuid& sketchId);
     Status setSketchVisible(const Uuid& sketchId, bool visible);
@@ -201,6 +207,11 @@ private:
     void updateHover(const PointerEvent& event);
     void rebuildOperation();
     void refreshHistoryHighlight();
+    // Deletes these bodies (one undo step), hiding those others are built from.
+    Status deleteBodies(const std::vector<Uuid>& bodies);
+    // After an edit of `bodyId`, which had `piecesBefore` separate pieces: when
+    // it left the body in more pieces, says how to make each piece a body.
+    void suggestSplit(const Uuid& bodyId, int piecesBefore);
     void afterDocumentEdit();
     void updateSceneBounds();
     void startAnimation(const Camera& to);

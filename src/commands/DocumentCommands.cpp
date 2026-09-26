@@ -125,15 +125,17 @@ Status DuplicateBodyCommand::plan(const doc::Document& document)
     };
 
     // Bodies to copy, dependencies first: the source and, recursively, the
-    // hidden bodies its steps consumed.
+    // tool bodies its Combine steps consumed - decided by the kind of
+    // reference, never by visibility (a tool shown again is still consumed; a
+    // copy's source that is merely hidden is still shared).
     std::vector<const doc::Body*> bodies;
     std::vector<Uuid> seen;
     std::function<void(const doc::Body&)> visit = [&](const doc::Body& body) {
         seen.push_back(body.id());
         for (const auto& f : body.features())
-            for (const Uuid& dep : f->dependencies())
-                if (const doc::Body* used = document.body(dep); used && !used->isVisible() && !contains(seen, dep))
-                    visit(*used);
+            if (const auto* combine = dynamic_cast<const doc::CombineFeature*>(f.get()))
+                if (const doc::Body* tool = document.body(combine->toolBody); tool && !contains(seen, tool->id()))
+                    visit(*tool);
         bodies.push_back(&body);
     };
     visit(*source);
@@ -200,7 +202,7 @@ Status DuplicateBodyCommand::plan(const doc::Document& document)
         const doc::Body& b = *bodies[i];
         auto copy = std::make_unique<doc::Body>(copies.at(b.id()));
         copy->setName(uniqueName(b.name() + " copy", true));
-        copy->setVisible(b.id() == sourceId_ || b.isVisible());
+        copy->setVisible(b.id() == sourceId_); // copied tools are consumed by the copy: hidden
         int index = 0;
         for (auto& f : features[i]) {
             f->remapReferences(copies);
