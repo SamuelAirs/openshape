@@ -56,6 +56,27 @@ SegmentHit segmentHit(const Camera& camera, Vec2 screen, const Vec3& a, const Ve
     return {p, (camera.project(p) - screen).length(), camera.depthOf(p)};
 }
 
+// What a construction axis or plane is made from, for the Model panel.
+std::string datumDetail(const doc::Datum& d, LengthUnit unit)
+{
+    static const char* planes[] = {"YZ", "XZ", "XY"};
+    switch (d.method) {
+    case doc::DatumMethod::AxisThrough:
+        return !d.refs.empty() && d.refs[0].kind == doc::GeometryRef::Kind::Face ? "Through a hole or shaft" : "Through a circle";
+    case doc::DatumMethod::AxisAlongEdge: return "Along an edge";
+    case doc::DatumMethod::AxisTwoPoints: return "Through 2 points";
+    case doc::DatumMethod::AxisParallel:
+        return std::string("Parallel to ") + (d.originIndex >= 0 && d.originIndex <= 2 ? "XYZ"[d.originIndex] : '?');
+    case doc::DatumMethod::PlaneOffset:
+        return formatLength(d.distance, unit)
+             + (d.refs.empty() && d.originIndex >= 0 && d.originIndex <= 2 ? std::string(" from ") + planes[d.originIndex]
+                                                                          : std::string(" from a face"));
+    case doc::DatumMethod::PlaneAngle: return formatAngle(d.angle) + " to a face";
+    case doc::DatumMethod::PlaneMidway: return "Midway between 2 faces";
+    }
+    return {};
+}
+
 // Align's origin targets: action id, button label, target.
 struct OriginTargetAction {
     const char* id;
@@ -94,6 +115,8 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
     cameraBeforeSketch_.reset();
     selection_.clear();
     operation_.reset();
+    datumTool_.reset();
+    planeFills_.clear();
     hover_ = {};
     drag_ = {};
     historyHighlight_.reset();
@@ -419,7 +442,7 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     if (pendingRing >= 0 && dynamic_cast<const RotateOperation*>(operation_.get())) {
         const sel::PickResult hit = pickAt(press.position, InputProfile::forDevice(press.device));
         const doc::Body* body = hit.hit() ? document_->body(hit.bodyId) : nullptr;
-        axisUnderRing = hit.kind == sel::PickKind::Edge
+        axisUnderRing = hit.kind == sel::PickKind::Edge || hit.kind == sel::PickKind::Datum
                      || (hit.kind == sel::PickKind::Face && body && [&] {
                             const auto face = geom::faceInfo(body->shape(), hit.index);
                             return face && face->hasAxis();
@@ -545,6 +568,10 @@ bool InteractionController::keyPress(Key key)
         return false;
     case Key::Delete:
     case Key::Backspace:
+        if (selection_.allOfKind(sel::SelectionKind::Datum)) {
+            (void)deleteSelectedDatums();
+            return true;
+        }
         if (selection_.allOfKind(sel::SelectionKind::Body)) {
             (void)deleteSelectedBodies();
             return true;
@@ -595,9 +622,33 @@ void InteractionController::click(const PointerEvent& event)
     // still waits for its target gives up, as a tap there does elsewhere
     // (clears the selection). A mouse keeps waiting (a near miss is common).
     const bool tapGivesUp = event.device != PointerDevice::Mouse && !hit.hit();
+    // Axis / Plane tool: faces and edges are its picks; clicking empty space
+    // applies it (or, with a finger, gives up while it is incomplete).
+    if (auto* construct = dynamic_cast<DatumOperation*>(operation_.get())) {
+        if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge) {
+            const Status status = construct->pick(*document_, hit.bodyId,
+                                                  hit.kind == sel::PickKind::Face ? geom::SubShapeKind::Face
+                                                                                  : geom::SubShapeKind::Edge,
+                                                  hit.index, hit.point);
+            if (!status)
+                message(forInput(status.userMessage()));
+        } else if (!hit.hit() && construct->canCommit()) {
+            (void)commitOperation();
+        } else if (tapGivesUp) {
+            datumTool_.reset();
+            selection_.clear();
+            rebuildOperation();
+        }
+        notifyState();
+        notifyView();
+        return;
+    }
     // Align: clicks pick (or re-pick) the target; clicking empty space applies.
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
-        if (hit.kind == sel::PickKind::OriginAxis) {
+        if (hit.kind == sel::PickKind::Datum) {
+            if (const doc::Datum* datum = document_->datum(hit.bodyId))
+                (void)align->setDatumTarget(*datum, *document_);
+        } else if (hit.kind == sel::PickKind::OriginAxis) {
             (void)align->setOriginTarget(hit.index == 0   ? OriginTarget::XAxis
                                          : hit.index == 1 ? OriginTarget::YAxis
                                                           : OriginTarget::ZAxis,
@@ -643,7 +694,9 @@ void InteractionController::click(const PointerEvent& event)
     }
     // Mirror: a flat face sets the plane; clicking empty space applies.
     if (auto* mirror = dynamic_cast<MirrorOperation*>(operation_.get())) {
-        if (hit.kind == sel::PickKind::Face) {
+        if (const doc::Datum* datum = hit.kind == sel::PickKind::Datum ? document_->datum(hit.bodyId) : nullptr) {
+            mirror->setPlane(datum->geometry().origin, datum->geometry().direction, *document_);
+        } else if (hit.kind == sel::PickKind::Face) {
             if (const Status status = mirror->setPlaneFromFace(*document_, hit.bodyId, hit.index); !status)
                 message(status.userMessage());
         } else if (!hit.hit() && mirror->canCommit()) {
@@ -660,7 +713,11 @@ void InteractionController::click(const PointerEvent& event)
     // cannot be used for that applies the pattern (like clicking elsewhere).
     if (auto* pattern = dynamic_cast<PatternOperation*>(operation_.get())) {
         bool used = false;
-        if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge)
+        if (const doc::Datum* datum = hit.kind == sel::PickKind::Datum ? document_->datum(hit.bodyId) : nullptr;
+            datum && datum->kind() == doc::DatumKind::Axis) {
+            pattern->setAxisLine(datum->geometry().origin, datum->geometry().direction, *document_);
+            used = true;
+        } else if (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge)
             used = pattern
                        ->setAxisFrom(*document_, hit.bodyId,
                                      hit.kind == sel::PickKind::Face ? geom::SubShapeKind::Face : geom::SubShapeKind::Edge,
@@ -702,6 +759,15 @@ void InteractionController::click(const PointerEvent& event)
             return;
         }
     }
+    // ...and so does a construction axis.
+    if (auto* rotate = dynamic_cast<RotateOperation*>(operation_.get()); rotate && hit.kind == sel::PickKind::Datum) {
+        if (const doc::Datum* datum = document_->datum(hit.bodyId); datum && datum->kind() == doc::DatumKind::Axis) {
+            rotate->setAxis(datum->geometry().origin, datum->geometry().direction, *document_);
+            notifyState();
+            notifyView();
+            return;
+        }
+    }
     // ...and a hole or shaft (a round face) gives its axis.
     if (auto* rotate = dynamic_cast<RotateOperation*>(operation_.get()); rotate && hit.kind == sel::PickKind::Face) {
         const doc::Body* body = document_->body(hit.bodyId);
@@ -724,6 +790,16 @@ void InteractionController::click(const PointerEvent& event)
 
     if (!hit.hit()) {
         selection_.clear();
+    } else if (hit.kind == sel::PickKind::Datum) {
+        sel::SelectionItem item;
+        item.kind = sel::SelectionKind::Datum;
+        item.bodyId = hit.bodyId;
+        if (additive && selection_.allOfKind(sel::SelectionKind::Datum))
+            selection_.toggle(item);
+        else
+            selection_.set(item);
+    } else if (hit.kind == sel::PickKind::OriginAxis) {
+        // Only a target for tools (Align); nothing to select.
     } else if (hit.kind == sel::PickKind::Profile) {
         const auto* entry = scene_.sketch(hit.bodyId);
         const sketch::Sketch* sk = document_->sketch(hit.bodyId);
@@ -760,6 +836,16 @@ void InteractionController::click(const PointerEvent& event)
 
 void InteractionController::rebuildOperation()
 {
+    // The Axis / Plane tool keeps its picks across document changes (its
+    // preview is worked out again from the document as it is now).
+    if (datumTool_) {
+        if (auto* construct = dynamic_cast<DatumOperation*>(operation_.get()); construct && construct->kind() == *datumTool_) {
+            construct->setValue(construct->value(), *document_);
+            return;
+        }
+        operation_ = DatumOperation::create(*datumTool_);
+        return;
+    }
     operation_.reset();
     if (selection_.empty()) {
         faceOperationKind_ = doc::FeatureKind::PushPull;
@@ -919,6 +1005,26 @@ Status InteractionController::commitOperation()
         const std::string text = operation_->error().empty() ? "Drag the arrow or type a value first." : operation_->error();
         return Status::failure(ErrorCode::InvalidArgument, text, "commit of non-committable operation");
     }
+    // A new construction axis or plane comes out selected (Sketch on a plane
+    // is then one step away).
+    if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get())) {
+        Status status = undoStack_->push(construct->makeCommand(*document_), *document_);
+        if (!status) {
+            message(status.userMessage());
+            return status;
+        }
+        operation_.reset();
+        datumTool_.reset();
+        selection_.clear();
+        if (!document_->datums().empty()) {
+            sel::SelectionItem item;
+            item.kind = sel::SelectionKind::Datum;
+            item.bodyId = document_->datums().back()->id();
+            selection_.set(item);
+        }
+        afterDocumentEdit();
+        return status;
+    }
     // Fillets consume their edges and extrusions their profiles: clear those
     // selections. A pushed face still exists and stays selected.
     const doc::FeatureKind kind = operation_->featureKind();
@@ -960,6 +1066,17 @@ void InteractionController::suggestSplit(const Uuid& bodyId, int piecesBefore)
 
 void InteractionController::cancelOperation()
 {
+    // The Axis / Plane tool steps back one pick at a time, then ends.
+    if (auto* construct = dynamic_cast<DatumOperation*>(operation_.get())) {
+        if (!construct->dropLastPick(*document_)) {
+            datumTool_.reset();
+            selection_.clear();
+            rebuildOperation();
+        }
+        notifyState();
+        notifyView();
+        return;
+    }
     // Align steps back one pick at a time: offset, then target, then Align itself.
     if (auto* align = dynamic_cast<AlignOperation*>(operation_.get())) {
         if (align->hasTarget() && align->value() != 0.0) {
@@ -1272,6 +1389,29 @@ std::vector<ContextAction> InteractionController::contextActions() const
     if (session_)
         return session_->contextActions();
     std::vector<ContextAction> actions;
+    if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get())) {
+        using Mode = DatumOperation::Mode;
+        const Mode mode = construct->mode();
+        if (construct->kind() == doc::DatumKind::Axis) {
+            actions.push_back({"datum:axis", "Through / along", mode == Mode::Axis});
+            actions.push_back({"datum:twoPoints", "Two points", mode == Mode::AxisTwoPoints});
+            for (int axis = 0; axis < 3; ++axis)
+                actions.push_back({"datum:parallel:" + std::to_string(axis), std::string("Parallel to ") + "XYZ"[axis],
+                                   mode == Mode::AxisParallel && construct->originIndex() == axis});
+        } else {
+            const bool fromOrigin = mode == Mode::PlaneOffset && construct->originIndex() >= 0;
+            actions.push_back({"datum:offset", "Offset from face", mode == Mode::PlaneOffset && !fromOrigin});
+            static const char* planes[] = {"From YZ", "From XZ", "From XY"};
+            for (int axis : {2, 1, 0})
+                actions.push_back({"datum:origin:" + std::to_string(axis), planes[axis],
+                                   fromOrigin && construct->originIndex() == axis});
+            actions.push_back({"datum:angle", "At angle", mode == Mode::PlaneAngle});
+            actions.push_back({"datum:midway", "Midway", mode == Mode::PlaneMidway});
+        }
+        if (construct->canCommit())
+            actions.push_back({"apply", "Apply", false});
+        return actions;
+    }
     if (const auto* mirror = dynamic_cast<const MirrorOperation*>(operation_.get())) {
         actions.push_back({"plane:0", "Across YZ", mirror->originPlane() == 0});
         actions.push_back({"plane:1", "Across XZ", mirror->originPlane() == 1});
@@ -1365,6 +1505,14 @@ std::vector<ContextAction> InteractionController::contextActions() const
     }
     if (selection_.empty())
         return actions;
+    if (selection_.allOfKind(sel::SelectionKind::Datum)) {
+        const doc::Datum* datum = selection_.size() == 1 ? document_->datum(selection_.items().front().bodyId) : nullptr;
+        if (datum && datum->kind() == doc::DatumKind::Plane)
+            actions.push_back({"sketch", "Sketch", false});
+        actions.push_back({"hideDatum", "Hide", false});
+        actions.push_back({"delete", "Delete", false});
+        return actions;
+    }
     if (operation_ && (operation_->featureKind() == doc::FeatureKind::PushPull
                        || operation_->featureKind() == doc::FeatureKind::Shell
                        || operation_->featureKind() == doc::FeatureKind::OffsetFace)) {
@@ -1452,6 +1600,38 @@ Status InteractionController::triggerAction(const std::string& id)
         notifyState();
         notifyView();
         return status;
+    }
+    if (auto* construct = dynamic_cast<DatumOperation*>(operation_.get()); construct && id.rfind("datum:", 0) == 0) {
+        using Mode = DatumOperation::Mode;
+        if (id == "datum:axis")
+            construct->setMode(Mode::Axis, *document_);
+        else if (id == "datum:twoPoints")
+            construct->setMode(Mode::AxisTwoPoints, *document_);
+        else if (id.rfind("datum:parallel:", 0) == 0)
+            construct->setParallelTo(std::stoi(id.substr(15)), *document_);
+        else if (id == "datum:offset" && construct->mode() == Mode::PlaneOffset && construct->originIndex() >= 0)
+            (void)construct->dropLastPick(*document_); // back to picking a face
+        else if (id == "datum:offset")
+            construct->setMode(Mode::PlaneOffset, *document_);
+        else if (id.rfind("datum:origin:", 0) == 0)
+            construct->setOriginPlane(std::stoi(id.substr(13)), *document_);
+        else if (id == "datum:angle")
+            construct->setMode(Mode::PlaneAngle, *document_);
+        else if (id == "datum:midway")
+            construct->setMode(Mode::PlaneMidway, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (id == "hideDatum") {
+        std::vector<Uuid> datums;
+        for (const auto& item : selection_.items())
+            if (item.kind == sel::SelectionKind::Datum)
+                datums.push_back(item.bodyId);
+        for (const Uuid& datum : datums)
+            if (Status status = setDatumVisible(datum, false); !status)
+                return status;
+        return okStatus();
     }
     if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get())) {
         using Field = HoleOperation::Field;
@@ -1573,7 +1753,9 @@ Status InteractionController::triggerAction(const std::string& id)
                                                         : doc::CombineMode::Intersect);
     if (id == "duplicate") {
         // The selected body, or the body of the selected faces/edges.
-        const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) ? std::nullopt : selection_.singleBody();
+        const auto body = selection_.allOfKind(sel::SelectionKind::SketchProfile) || selection_.allOfKind(sel::SelectionKind::Datum)
+                            ? std::nullopt
+                            : selection_.singleBody();
         if (!body)
             return Status::failure(ErrorCode::InvalidArgument,
                                    forInput("Select one body to duplicate: double-click it, or click it in the Model panel."),
@@ -1741,6 +1923,8 @@ Status InteractionController::triggerAction(const std::string& id)
             selection_.set(*item);
         rebuildOperation();
     } else if (id == "delete") {
+        if (selection_.allOfKind(sel::SelectionKind::Datum))
+            return deleteSelectedDatums();
         return deleteSelectedBodies();
     } else if (id == "fit") {
         fitSelection(true);
@@ -1760,6 +1944,12 @@ std::string InteractionController::selectionSummary() const
         return {};
     const LengthUnit unit = document_->displayUnit();
     const auto& first = selection_.items().front();
+    if (first.kind == sel::SelectionKind::Datum) {
+        if (selection_.size() > 1)
+            return std::to_string(selection_.size()) + " axes and planes";
+        const doc::Datum* datum = document_->datum(first.bodyId);
+        return datum ? datum->name() + " \xC2\xB7 " + datumDetail(*datum, unit) : std::string();
+    }
     if (first.kind == sel::SelectionKind::SketchProfile) {
         double area = 0;
         const auto* entry = scene_.sketch(first.bodyId);
@@ -1876,6 +2066,11 @@ RenderScene InteractionController::renderScene() const
             }
             if (highlightBody_ == body->id())
                 rb.highlightFaces = highlightFaces_;
+            // What the Axis / Plane tool picked is shown like a selection.
+            if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get()))
+                for (const auto& picked : construct->picked())
+                    if (picked.body == body->id())
+                        (picked.kind == geom::SubShapeKind::Face ? rb.selectedFaces : rb.selectedEdges).push_back(picked.index);
             // Align's target is shown like a selection on its body.
             if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get());
                 align && align->hasTarget() && align->targetBody() == body->id()) {
@@ -1888,6 +2083,9 @@ RenderScene InteractionController::renderScene() const
         if (rb.mesh)
             scene.bodies.push_back(std::move(rb));
     }
+
+    // Construction axes and planes (and the one the Axis / Plane tool is making).
+    addDatumDrawing(scene);
 
     // A new-body preview has no document body to stand in for.
     if (operation_ && operation_->previewBody().isNil() && operation_->hasPreview()) {
@@ -1957,7 +2155,7 @@ RenderScene InteractionController::renderScene() const
                         style = SketchStyle::Selected;
                 if (consumed && style == SketchStyle::Normal)
                     continue;
-                rs.regions.push_back({entry->meshes[i], entry->meshKeys[i], style});
+                rs.regions.push_back({entry->meshes[i], entry->meshKeys[i], style, false});
             }
         }
         scene.sketches.push_back(std::move(rs));
@@ -2093,6 +2291,10 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     sel::PickOptions options;
     options.edgeTolerance = profile.pickTolerance;
     const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
+    // Construction axes and plane outlines are thin, like edges: they win
+    // over a face behind them (not over an edge nearer the pointer).
+    if (const sel::PickResult line = pickDatumLine(screen, profile, body, std::nullopt); line.hit())
+        return line;
     if (body.kind == sel::PickKind::Edge)
         return body; // edges are the smallest targets; keep them reachable
     const sel::PickResult region = pickProfile(screen);
@@ -2104,7 +2306,10 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     if (region.hit()
         && (!body.hit() || (consumed ? std::abs(region.depth - body.depth) <= slack : region.depth <= body.depth + slack)))
         return region;
-    return body;
+    if (body.hit())
+        return body;
+    // Inside a construction plane: only where nothing else is.
+    return pickDatumPlane(screen);
 }
 
 // While a tool waits for a face (Mirror's plane, Extrude's "Up to face") or
@@ -2114,17 +2319,39 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
 sel::PickResult InteractionController::operationPickAt(Vec2 screen, const InputProfile& profile) const
 {
     const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get());
-    if (dynamic_cast<const MirrorOperation*>(operation_.get()) || (extrude && extrude->pickingTarget())
-        || dynamic_cast<const HoleOperation*>(operation_.get()))
+    // Mirror: flat faces and construction planes.
+    if (dynamic_cast<const MirrorOperation*>(operation_.get())) {
+        const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
+        if (const sel::PickResult line = pickDatumLine(screen, profile, face, doc::DatumKind::Plane); line.hit())
+            return line;
+        if (face.hit())
+            return face;
+        const sel::PickResult plane = pickDatumPlane(screen);
+        const doc::Datum* datum = plane.hit() ? document_->datum(plane.bodyId) : nullptr;
+        return datum && datum->kind() == doc::DatumKind::Plane ? plane : sel::PickResult{};
+    }
+    // The Axis / Plane tool: faces and edges of bodies (faces only where
+    // only a flat face will do).
+    if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get())) {
+        if (construct->mode() == DatumOperation::Mode::PlaneOffset || construct->mode() == DatumOperation::Mode::PlaneMidway)
+            return sel::pickFace(pickTargets(), camera_, screen);
+        sel::PickOptions options;
+        options.edgeTolerance = profile.pickTolerance;
+        return sel::pick(pickTargets(), camera_, screen, options);
+    }
+    if ((extrude && extrude->pickingTarget()) || dynamic_cast<const HoleOperation*>(operation_.get()))
         return sel::pickFace(pickTargets(), camera_, screen);
     if (dynamic_cast<const AlignOperation*>(operation_.get())) {
         sel::PickOptions options;
         options.edgeTolerance = profile.pickTolerance;
         const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
-        // The X/Y/Z lines drawn through the origin are targets too.
+        // Construction axes and planes, and the X/Y/Z lines drawn through the
+        // origin, are targets too.
+        if (const sel::PickResult line = pickDatumLine(screen, profile, body, std::nullopt); line.hit())
+            return line;
         if (const sel::PickResult axis = pickOriginAxis(screen, profile, body); axis.hit())
             return axis;
-        return body;
+        return body.hit() ? body : pickDatumPlane(screen);
     }
     return pickAt(screen, profile);
 }
@@ -2189,6 +2416,181 @@ sel::PickResult InteractionController::pickOriginAxis(Vec2 screen, const InputPr
     return best;
 }
 
+InteractionController::DatumShape InteractionController::datumShape(const doc::DatumGeometry& g, doc::DatumKind kind) const
+{
+    DatumShape shape;
+    const Vec3 d = g.direction.normalized();
+    if (kind == doc::DatumKind::Axis) {
+        // Through the model and beyond it: centered where the model's middle
+        // is nearest the axis.
+        const Vec3 center = modelSize_ > 0 ? g.origin + d * (modelCenter_ - g.origin).dot(d) : g.center;
+        const double half = std::max(modelSize_ * 0.75, 20.0);
+        shape.a = center - d * half;
+        shape.b = center + d * half;
+        return shape;
+    }
+    shape.plane = true;
+    const double half = g.size > 0 ? std::max(g.size, 10.0) : std::max(modelSize_ * 0.5, 20.0);
+    Vec3 x = g.xAxis - d * g.xAxis.dot(d);
+    if (x.length() < 1e-9)
+        x = sketch::Plane::fromNormal(g.origin, d).xAxis;
+    x = x.normalized();
+    const Vec3 y = d.cross(x).normalized();
+    shape.corners[0] = g.center - x * half - y * half;
+    shape.corners[1] = g.center + x * half - y * half;
+    shape.corners[2] = g.center + x * half + y * half;
+    shape.corners[3] = g.center - x * half + y * half;
+    return shape;
+}
+
+sel::PickResult InteractionController::pickDatumLine(Vec2 screen, const InputProfile& profile, const sel::PickResult& bodyHit,
+                                                     std::optional<doc::DatumKind> only) const
+{
+    sel::PickResult best;
+    double bestPixels = profile.pickTolerance;
+    for (const auto& datum : document_->datums()) {
+        if (!datum->isVisible() || (only && datum->kind() != *only))
+            continue;
+        const DatumShape shape = datumShape(datum->geometry(), datum->kind());
+        std::vector<std::pair<Vec3, Vec3>> segments;
+        if (shape.plane)
+            for (int i = 0; i < 4; ++i)
+                segments.emplace_back(shape.corners[i], shape.corners[(i + 1) % 4]);
+        else
+            segments.emplace_back(shape.a, shape.b);
+        for (const auto& [a, b] : segments) {
+            const SegmentHit hit = segmentHit(camera_, screen, a, b);
+            if (hit.pixels > bestPixels)
+                continue;
+            // Drawn depth-tested: a body in front hides it; an edge nearer
+            // the pointer stays the target.
+            if (bodyHit.kind == sel::PickKind::Face && hit.depth > bodyHit.depth + camera_.pixelSize(hit.point) * 2)
+                continue;
+            if (bodyHit.kind == sel::PickKind::Edge && bodyHit.screenDistance <= hit.pixels)
+                continue;
+            bestPixels = hit.pixels;
+            best.kind = sel::PickKind::Datum;
+            best.bodyId = datum->id();
+            best.index = -1;
+            best.point = hit.point;
+            best.depth = hit.depth;
+            best.screenDistance = hit.pixels;
+        }
+    }
+    return best;
+}
+
+sel::PickResult InteractionController::pickDatumPlane(Vec2 screen) const
+{
+    sel::PickResult best;
+    const Ray ray = camera_.rayAt(screen);
+    for (const auto& datum : document_->datums()) {
+        if (!datum->isVisible() || datum->kind() != doc::DatumKind::Plane)
+            continue;
+        const DatumShape shape = datumShape(datum->geometry(), datum->kind());
+        const Vec3 n = datum->geometry().direction.normalized();
+        const double denom = ray.direction.dot(n);
+        if (std::abs(denom) < 1e-9)
+            continue;
+        const double t = (shape.corners[0] - ray.origin).dot(n) / denom;
+        const Vec3 p = ray.at(t);
+        // Inside the square: on the inner side of all four edges.
+        bool inside = true;
+        for (int i = 0; i < 4 && inside; ++i) {
+            const Vec3 edge = shape.corners[(i + 1) % 4] - shape.corners[i];
+            inside = edge.cross(p - shape.corners[i]).dot(n) >= 0;
+        }
+        const double depth = camera_.depthOf(p);
+        if (!inside || (best.hit() && depth >= best.depth))
+            continue;
+        best.kind = sel::PickKind::Datum;
+        best.bodyId = datum->id();
+        best.point = p;
+        best.depth = depth;
+    }
+    return best;
+}
+
+void InteractionController::addDatumDrawing(RenderScene& scene) const
+{
+    RenderSketch drawing;
+    auto isSelected = [&](const Uuid& id) {
+        return std::any_of(selection_.items().begin(), selection_.items().end(), [&](const sel::SelectionItem& item) {
+            return item.kind == sel::SelectionKind::Datum && item.bodyId == id;
+        });
+    };
+    const auto* align = dynamic_cast<const AlignOperation*>(operation_.get());
+    const double px = camera_.pixelSize(camera_.target);
+    auto draw = [&](const Uuid& key, const doc::DatumGeometry& g, doc::DatumKind kind, SketchStyle style) {
+        const DatumShape shape = datumShape(g, kind);
+        if (!shape.plane) {
+            // A thin dashed line: 8 px dashes, 5 px gaps (at the view's target).
+            const Vec3 along = shape.b - shape.a;
+            const double length = along.length();
+            double period = std::max(13.0 * px, length / 400.0);
+            const int count = std::max(1, static_cast<int>(length / period));
+            period = length / count;
+            const Vec3 dir = along * (1.0 / std::max(length, 1e-12));
+            for (int i = 0; i < count; ++i) {
+                const Vec3 start = shape.a + dir * (period * i);
+                drawing.lines.push_back({start, start + dir * (period * 8.0 / 13.0), style});
+            }
+            return;
+        }
+        for (int i = 0; i < 4; ++i)
+            drawing.lines.push_back({shape.corners[i], shape.corners[(i + 1) % 4], style});
+        // The translucent fill: a two-triangle mesh, rebuilt when the plane moves.
+        PlaneFill& fill = planeFills_[key];
+        bool same = fill.mesh != nullptr;
+        for (int i = 0; i < 4 && same; ++i)
+            same = (fill.corners[i] - shape.corners[i]).length() < 1e-12;
+        if (!same) {
+            static std::uint64_t keys = 1ull << 61; // apart from bodies, profiles and previews
+            auto mesh = std::make_shared<geom::Mesh>();
+            const Vec3 n = g.direction.normalized();
+            for (const Vec3& c : shape.corners) {
+                mesh->positions.insert(mesh->positions.end(), {float(c.x), float(c.y), float(c.z)});
+                mesh->normals.insert(mesh->normals.end(), {float(n.x), float(n.y), float(n.z)});
+            }
+            mesh->indices = {0, 1, 2, 0, 2, 3};
+            mesh->triangleFace = {0, 0};
+            mesh->faceTriangleOffset = {0, 2};
+            for (int i = 0; i < 4; ++i)
+                fill.corners[i] = shape.corners[i];
+            fill.mesh = std::move(mesh);
+            fill.key = ++keys;
+        }
+        const SketchStyle fillStyle = style == SketchStyle::Selected  ? SketchStyle::Selected
+                                    : style == SketchStyle::Hovered   ? SketchStyle::Hovered
+                                                                      : SketchStyle::Normal;
+        drawing.regions.push_back({fill.mesh, fill.key, fillStyle, true});
+    };
+    for (const auto& datum : document_->datums()) {
+        const bool highlighted = historyHighlight_ && *historyHighlight_ == datum->id();
+        if (!datum->isVisible() && !highlighted)
+            continue;
+        SketchStyle style = datum->failed() ? SketchStyle::Conflict : SketchStyle::Reference;
+        if (hover_.kind == sel::PickKind::Datum && hover_.bodyId == datum->id())
+            style = SketchStyle::Hovered;
+        if (highlighted)
+            style = SketchStyle::Hovered;
+        if (isSelected(datum->id()) || (align && align->datumTarget() == datum->id()))
+            style = SketchStyle::Selected;
+        draw(datum->id(), datum->geometry(), datum->kind(), style);
+    }
+    // The axis or plane the Axis / Plane tool would make.
+    if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get()); construct && construct->preview())
+        draw(Uuid(), *construct->preview(), construct->kind(), SketchStyle::Preview);
+    // Fills of planes that are gone.
+    for (auto it = planeFills_.begin(); it != planeFills_.end();)
+        if (!it->first.isNil() && !document_->datum(it->first))
+            it = planeFills_.erase(it);
+        else
+            ++it;
+    if (!drawing.lines.empty())
+        scene.sketches.push_back(std::move(drawing));
+}
+
 // ---- Sketching -------------------------------------------------------------------------
 
 Status InteractionController::startSketch(SketchPlane originPlane)
@@ -2212,6 +2614,18 @@ Status InteractionController::startSketch(SketchPlane originPlane)
         plane = sketch::Plane{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     std::optional<Uuid> host;
     std::optional<sketch::Attachment> attachment;
+    std::optional<Uuid> datumPlane;
+    if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Datum) {
+        const doc::Datum* datum = document_->datum(selection_.items().front().bodyId);
+        if (!datum || datum->kind() != doc::DatumKind::Plane) {
+            const std::string text = "Sketches go on planes: select a construction plane or a flat face.";
+            message(text);
+            return Status::failure(ErrorCode::NotPlanar, text, "startSketch on an axis");
+        }
+        // On the plane, following it.
+        plane = doc::sketchPlaneOn(datum->geometry());
+        datumPlane = datum->id();
+    }
     if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face) {
         const auto& item = selection_.items().front();
         const doc::Body* body = document_->body(item.bodyId);
@@ -2253,6 +2667,7 @@ Status InteractionController::startSketch(SketchPlane originPlane)
     s.setName(document_->nextSketchName());
     s.setHostBody(host);
     s.setAttachment(attachment);
+    s.setDatumPlane(datumPlane);
     const Uuid id = s.id();
     Status status = undoStack_->push(std::make_unique<cmd::CreateSketchCommand>(std::move(s)), *document_);
     if (!status) {
@@ -2277,6 +2692,7 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
 {
     selection_.clear();
     operation_.reset();
+    datumTool_.reset();
     hover_ = {};
     drag_ = {};
     if (!cameraBeforeSketch_)
@@ -2619,6 +3035,22 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.message = "Used by a 3D step";
         rows.push_back(std::move(row));
     }
+    for (const auto& datum : document_->datums()) {
+        HistoryRow row;
+        row.kind = HistoryRow::Kind::Datum;
+        row.id = datum->id();
+        row.name = datum->name();
+        row.detail = datumDetail(*datum, unit);
+        row.visible = datum->isVisible();
+        if (datum->failed()) {
+            row.status = HistoryRow::Status::Failed;
+            row.message = datum->error() + " It stays where it was.";
+        }
+        for (const auto& p : datum->parameters())
+            row.parameters.push_back({p.key, p.label, p.kind == doc::ParameterKind::Angle ? formatAngle(p.value)
+                                                                                          : formatLength(p.value, unit)});
+        rows.push_back(std::move(row));
+    }
     for (const auto& body : document_->bodies()) {
         HistoryRow bodyRow;
         bodyRow.kind = HistoryRow::Kind::Body;
@@ -2696,6 +3128,22 @@ std::vector<HistoryRow> InteractionController::historyRows() const
 
 Status InteractionController::setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text)
 {
+    // A construction plane's distance or angle (Model panel).
+    if (const doc::Datum* datum = document_->datum(featureId)) {
+        bool angle = false;
+        for (const auto& p : datum->parameters())
+            angle = angle || (p.key == key && p.kind == doc::ParameterKind::Angle);
+        const auto parsed = angle ? parseAngle(text) : parseLength(text, document_->displayUnit());
+        if (!parsed.millimeters)
+            return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
+        doc::Datum edited = *datum;
+        if (Status status = edited.setParameter(key, *parsed.millimeters); !status)
+            return status;
+        Status status = undoStack_->push(std::make_unique<cmd::EditDatumCommand>(edited, "Change " + key), *document_);
+        if (status)
+            afterDocumentEdit();
+        return status;
+    }
     bool isAngle = false, isCount = false;
     if (const doc::Body* body = document_->bodyOfFeature(featureId))
         for (const auto& p : body->feature(featureId)->parameters()) {
@@ -2972,6 +3420,13 @@ Status InteractionController::runTool(const std::string& id)
     };
     if (session_)
         return explain("Finish the sketch first.");
+    if (id == "axis" || id == "plane")
+        return startDatumTool(id == "axis" ? doc::DatumKind::Axis : doc::DatumKind::Plane);
+    // Another tool ends the Axis / Plane tool.
+    if (datumTool_) {
+        datumTool_.reset();
+        rebuildOperation();
+    }
     const bool faces = selection_.allOfKind(sel::SelectionKind::Face) && selection_.singleBody();
     const bool edges = selection_.allOfKind(sel::SelectionKind::Edge) && selection_.singleBody();
     const bool bodies = selection_.allOfKind(sel::SelectionKind::Body);
@@ -3036,6 +3491,119 @@ Status InteractionController::runTool(const std::string& id)
     return Status::failure(ErrorCode::InvalidArgument, "Unknown tool.", "runTool: unknown id '" + id + "'");
 }
 
+Status InteractionController::selectDatum(const Uuid& datumId)
+{
+    if (session_)
+        return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "selectDatum in sketch mode");
+    const doc::Datum* datum = document_->datum(datumId);
+    if (!datum)
+        return Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "selectDatum: unknown");
+    if (!datum->isVisible()) {
+        const std::string text = "Show it first to select it.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "selectDatum: hidden");
+    }
+    // Like clicking it in the view: a pending value is applied first.
+    if (operation_ && operation_->canCommit())
+        if (Status status = commitOperation(); !status)
+            return status;
+    datumTool_.reset();
+    alignRequested_ = false;
+    sel::SelectionItem item;
+    item.kind = sel::SelectionKind::Datum;
+    item.bodyId = datumId;
+    selection_.set(item);
+    rebuildOperation();
+    notifyState();
+    notifyView();
+    return okStatus();
+}
+
+Status InteractionController::setDatumVisible(const Uuid& datumId, bool visible)
+{
+    const doc::Datum* datum = document_->datum(datumId);
+    if (!datum)
+        return Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "setDatumVisible");
+    doc::Datum next = *datum;
+    next.setVisible(visible);
+    Status status = undoStack_->push(std::make_unique<cmd::EditDatumCommand>(next, visible ? "Show" : "Hide"), *document_);
+    if (status)
+        afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::deleteDatum(const Uuid& datumId)
+{
+    Status status = undoStack_->push(std::make_unique<cmd::DeleteDatumCommand>(datumId), *document_);
+    if (status)
+        afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::deleteSelectedDatums()
+{
+    std::vector<std::unique_ptr<cmd::Command>> steps;
+    for (const auto& item : selection_.items())
+        if (item.kind == sel::SelectionKind::Datum)
+            steps.push_back(std::make_unique<cmd::DeleteDatumCommand>(item.bodyId));
+    if (steps.empty())
+        return Status::failure(ErrorCode::InvalidArgument, "Select an axis or plane to delete.", "deleteSelectedDatums");
+    selection_.clear();
+    std::unique_ptr<cmd::Command> command =
+        steps.size() == 1 ? std::move(steps.front()) : std::make_unique<cmd::CompositeCommand>("Delete", std::move(steps));
+    Status status = undoStack_->push(std::move(command), *document_);
+    if (!status)
+        message(status.userMessage());
+    afterDocumentEdit();
+    return status;
+}
+
+Status InteractionController::startDatumTool(doc::DatumKind kind)
+{
+    if (session_) {
+        const std::string text = "Finish the sketch first.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "datum tool in sketch mode");
+    }
+    // Like clicking elsewhere: a pending value is applied first.
+    if (operation_ && operation_->canCommit() && !dynamic_cast<const DatumOperation*>(operation_.get()))
+        if (Status status = commitOperation(); !status)
+            return status;
+    // A fitting selection is the first pick: a hole or an edge for an axis;
+    // a flat face (offset), two parallel faces (midway) or an edge (at an
+    // angle) for a plane.
+    std::vector<sel::SelectionItem> picks;
+    for (const auto& item : selection_.items())
+        if (item.kind == sel::SelectionKind::Face || item.kind == sel::SelectionKind::Edge)
+            picks.push_back(item);
+    alignRequested_ = false;
+    bodyTool_ = BodyTool::Move;
+    selection_.clear();
+    datumTool_ = kind;
+    operation_ = DatumOperation::create(kind);
+    auto* construct = static_cast<DatumOperation*>(operation_.get());
+    if (kind == doc::DatumKind::Plane && !picks.empty()) {
+        const bool edgeFirst = picks.front().kind == sel::SelectionKind::Edge;
+        if (edgeFirst)
+            construct->setMode(DatumOperation::Mode::PlaneAngle, *document_);
+        else if (picks.size() == 2)
+            construct->setMode(DatumOperation::Mode::PlaneMidway, *document_);
+    }
+    for (const auto& item : picks) {
+        const doc::Body* body = document_->body(item.bodyId);
+        const bool face = item.kind == sel::SelectionKind::Face;
+        const auto point = !body ? std::nullopt
+                         : face  ? std::optional<Vec3>(geom::faceInfo(body->shape(), item.index).value_or(geom::FaceInfo{}).centroid)
+                                 : std::optional<Vec3>(geom::edgeInfo(body->shape(), item.index).value_or(geom::EdgeInfo{}).midpoint);
+        if (point)
+            (void)construct->pick(*document_, item.bodyId, face ? geom::SubShapeKind::Face : geom::SubShapeKind::Edge,
+                                  item.index, *point);
+    }
+    notifyState();
+    notifyView();
+    return okStatus();
+}
+
 Status InteractionController::setSketchVisible(const Uuid& sketchId, bool visible)
 {
     const sketch::Sketch* current = document_->sketch(sketchId);
@@ -3087,6 +3655,8 @@ void InteractionController::updateSceneBounds()
             total.max = {std::max(total.max.x, box.max.x), std::max(total.max.y, box.max.y), std::max(total.max.z, box.max.z)};
         }
     }
+    modelCenter_ = total.valid ? total.center() : Vec3{};
+    modelSize_ = total.valid ? total.size().length() : 0.0;
     if (total.valid) {
         camera_.sceneCenter = total.center();
         // Generous margin: previews may grow the body before the next update.

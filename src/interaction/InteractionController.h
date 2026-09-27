@@ -20,6 +20,7 @@
 
 #include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,7 +31,7 @@ namespace os::interact {
 
 // One row of the model tree shown in the history panel.
 struct HistoryRow {
-    enum class Kind { Sketch, Body, Feature };
+    enum class Kind { Sketch, Body, Feature, Datum };
     enum class Status { Ok, Warning, Failed, NotComputed, Suppressed };
     struct Parameter {
         std::string key;
@@ -185,6 +186,13 @@ public:
     Status deleteBody(const Uuid& bodyId);
     Status deleteSketch(const Uuid& sketchId);
     Status setSketchVisible(const Uuid& sketchId, bool visible);
+    // Construction axes and planes: select one (its actions appear: Sketch on
+    // a plane, Hide, Delete), show or hide, delete (sketches on a deleted
+    // plane stay where they are).
+    Status selectDatum(const Uuid& datumId);
+    Status setDatumVisible(const Uuid& datumId, bool visible);
+    Status deleteDatum(const Uuid& datumId);
+    Status deleteSelectedDatums();
     // Combines the first selected body with each of the others (which are
     // hidden): union, subtract them from it, or keep only the common volume.
     Status combineSelectedBodies(doc::CombineMode mode);
@@ -227,6 +235,15 @@ public:
     // pickAt, narrowed to what the active tool is waiting for (e.g. faces only).
     sel::PickResult operationPickAt(Vec2 screen, const InputProfile& profile) const;
 
+    // How a construction axis or plane is drawn (and picked): an axis as a
+    // segment reaching beyond the model, a plane as a square.
+    struct DatumShape {
+        bool plane = false;
+        Vec3 a, b;
+        Vec3 corners[4];
+    };
+    DatumShape datumShape(const doc::DatumGeometry& geometry, doc::DatumKind kind) const;
+
     // ---- Notifications ----
     std::function<void()> onViewChanged;                 // needs redraw
     std::function<void()> onStateChanged;                // selection/operation/undo state changed
@@ -265,6 +282,15 @@ private:
     // The origin axis line (as drawn) within pick reach of `screen`, unless
     // `bodyHit` is nearer on screen (an edge) or in front of it (a face).
     sel::PickResult pickOriginAxis(Vec2 screen, const InputProfile& profile, const sel::PickResult& bodyHit) const;
+    // A construction axis, or a plane's outline, within pick reach (unless
+    // `bodyHit` is nearer on screen or in front), optionally of one kind only.
+    sel::PickResult pickDatumLine(Vec2 screen, const InputProfile& profile, const sel::PickResult& bodyHit,
+                                  std::optional<doc::DatumKind> only) const;
+    // Inside a construction plane's square (where nothing else is hit).
+    sel::PickResult pickDatumPlane(Vec2 screen) const;
+    // Starts the Axis or Plane tool; a fitting selection is its first pick.
+    Status startDatumTool(doc::DatumKind kind);
+    void addDatumDrawing(RenderScene& scene) const;
     void notifyView();
     void notifyState();
     void message(const std::string& text);
@@ -287,6 +313,17 @@ private:
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
     bool alignRequested_ = false; // the selected face/edge is the source of an Align
+    std::optional<doc::DatumKind> datumTool_; // the Axis or Plane tool is running
+    // What the model spans (for drawing construction geometry beyond it).
+    Vec3 modelCenter_;
+    double modelSize_ = 0;
+    // Construction planes' fill meshes, rebuilt only when a plane moves.
+    struct PlaneFill {
+        Vec3 corners[4];
+        std::shared_ptr<const geom::Mesh> mesh;
+        std::uint64_t key = 0;
+    };
+    mutable std::map<Uuid, PlaneFill> planeFills_;
     // What a single selected body offers: arrows, rings, a mirror plane or a pattern.
     enum class BodyTool { Move, Rotate, Mirror, Pattern };
     BodyTool bodyTool_ = BodyTool::Move;

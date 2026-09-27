@@ -49,6 +49,7 @@ constexpr Color kHistoryHighlight{0.96f, 0.52f, 0.13f, 0.42f}; // model panel ho
 constexpr Color kSketchDefined{0.12f, 0.14f, 0.18f, 1.0f};
 constexpr Color kSketchConstruction{0.55f, 0.58f, 0.62f, 1.0f};
 constexpr Color kSketchDimension{0.36f, 0.39f, 0.44f, 0.9f};
+constexpr Color kReference{0.80f, 0.50f, 0.12f, 1.0f}; // construction axes and planes
 
 
 constexpr quint32 kLineVertexFloats = 8; // p0(3) p1(3) corner(2)
@@ -79,6 +80,7 @@ SketchLook lookOf(interact::SketchStyle style)
     case S::Dimension: return {kSketchDimension, 1.0f, 4.0f};
     case S::Measure: return {withAlpha(kAccent, 0.9f), 1.75f, 7.0f};
     case S::Conflict: return {kError, 2.0f, 7.0f};
+    case S::Reference: return {withAlpha(kReference, 0.9f), 1.5f, 6.0f};
     }
     return {kAccent, 2.0f, 7.0f};
 }
@@ -517,10 +519,10 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
                                   : region.style == interact::SketchStyle::Hovered  ? 0.22f
                                                                                     : 0.08f;
                 meshDraw(sketch.editing ? overlayPipeline_.get() : tintPipeline_.get(), &it->second, 0, it->second.indexCount,
-                         withAlpha(kAccent, alpha), 1, kEdgeBias);
+                         withAlpha(region.reference ? kReference : kAccent, alpha), 1, kEdgeBias);
             }
             // Group segments by style so each style is one draw call.
-            for (int s = 0; s <= int(interact::SketchStyle::Conflict); ++s) {
+            for (int s = 0; s <= int(interact::SketchStyle::Reference); ++s) {
                 const auto style = interact::SketchStyle(s);
                 const quint32 first = quint32(lines.size() / kLineVertexFloats);
                 for (const auto& l : sketch.lines)

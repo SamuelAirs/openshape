@@ -36,6 +36,11 @@ void Operation::setValue(double value, const doc::Document& document)
         error_ = std::move(why);
         return;
     }
+    if (!previewsShape()) {
+        previewMesh_.reset();
+        error_ = refreshPreview(value, document);
+        return;
+    }
     if (std::abs(value - neutralValue()) < 1e-12 && handleCount() == 1 && neutralIsIdentity()) {
         previewMesh_.reset();
         return;
@@ -173,6 +178,7 @@ std::string AlignOperation::prompt() const
 void AlignOperation::forgetTarget()
 {
     target_.reset();
+    datumTarget_ = Uuid();
     targetKindOf_ = TargetOf::None;
     targetBody_ = Uuid();
     targetKind_ = geom::SubShapeKind::Whole;
@@ -248,6 +254,16 @@ Status AlignOperation::setOriginTarget(OriginTarget target, const doc::Document&
         setValue(value(), document);
         break;
     }
+    return okStatus();
+}
+
+Status AlignOperation::setDatumTarget(const doc::Datum& datum, const doc::Document& document)
+{
+    forgetTarget();
+    targetKindOf_ = TargetOf::Datum;
+    datumTarget_ = datum.id();
+    const doc::DatumGeometry& g = datum.geometry();
+    setEndlessTarget(g.origin, g.direction, datum.kind() == doc::DatumKind::Plane, document);
     return okStatus();
 }
 
@@ -442,6 +458,13 @@ Status MirrorOperation::setPlaneFromFace(const doc::Document& document, const Uu
     return okStatus();
 }
 
+void MirrorOperation::setPlane(const Vec3& origin, const Vec3& normal, const doc::Document& document)
+{
+    plane_ = Plane{origin, normal.normalized()};
+    originAxis_ = -1;
+    setValue(value(), document);
+}
+
 void MirrorOperation::setOriginPlane(int normalAxis, const doc::Document& document)
 {
     originAxis_ = std::clamp(normalAxis, 0, 2);
@@ -568,6 +591,14 @@ Status PatternOperation::setAxisFrom(const doc::Document& document, const Uuid& 
     axisIndex_ = -1;
     setValue(circular_ ? value() : defaultSpacing(), document);
     return okStatus();
+}
+
+void PatternOperation::setAxisLine(const Vec3& point, const Vec3& direction, const doc::Document& document)
+{
+    customOrigin_ = point;
+    customAxis_ = direction.normalized();
+    axisIndex_ = -1;
+    setValue(circular_ ? value() : defaultSpacing(), document);
 }
 
 LinearManipulator PatternOperation::handle(int index) const
@@ -1431,6 +1462,286 @@ std::unique_ptr<cmd::Command> ExtrudeOperation::makeCommand(const doc::Document&
         return std::make_unique<cmd::CreateBodyCommand>(document.nextBodyName(), makeFeature(value()));
     }
     return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
+}
+
+// ---- Construct: axes and planes -------------------------------------------------------
+
+std::unique_ptr<DatumOperation> DatumOperation::create(doc::DatumKind kind)
+{
+    auto op = std::unique_ptr<DatumOperation>(new DatumOperation(kind));
+    op->mode_ = kind == doc::DatumKind::Axis ? Mode::Axis : Mode::PlaneOffset;
+    return op;
+}
+
+std::string DatumOperation::valueLabel() const
+{
+    return mode_ == Mode::PlaneOffset ? "Distance" : mode_ == Mode::PlaneAngle ? "Angle" : "";
+}
+
+std::string DatumOperation::prompt() const
+{
+    const std::string cancel = " \xC2\xB7 Esc cancels";
+    switch (mode_) {
+    case Mode::Axis:
+        return refs_.empty() ? "Click a hole, a shaft, a circle or a straight edge (or choose Two points or Parallel)" + cancel
+                             : std::string();
+    case Mode::AxisTwoPoints:
+        if (refs_.empty())
+            return "Click the first point: an edge near its end (a corner) or a circle (its center)" + cancel;
+        return refs_.size() == 1 ? "Click the second point" + cancel : std::string();
+    case Mode::AxisParallel:
+        return refs_.empty() ? "Click the point it goes through: an edge near its end (a corner) or a circle (its center)" + cancel
+                             : std::string();
+    case Mode::PlaneOffset:
+        return refs_.empty() && originIndex_ < 0 ? "Click a flat face to offset from, or choose an origin plane" + cancel
+                                                 : std::string();
+    case Mode::PlaneAngle:
+        if (refs_.empty())
+            return "Click the straight edge the plane goes through" + cancel;
+        return refs_.size() == 1 ? "Click the flat face the angle is measured from" + cancel : std::string();
+    case Mode::PlaneMidway:
+        if (refs_.empty())
+            return "Click the first of two parallel flat faces" + cancel;
+        return refs_.size() == 1 ? "Click the second face, parallel to the first" + cancel : std::string();
+    }
+    return {};
+}
+
+int DatumOperation::handleCount() const
+{
+    return mode_ == Mode::PlaneOffset && offsetBase_ ? 1 : 0;
+}
+
+LinearManipulator DatumOperation::handle(int index) const
+{
+    if (index != 0 || !offsetBase_)
+        return {};
+    return LinearManipulator(offsetBase_->first, offsetBase_->second);
+}
+
+std::optional<Vec3> DatumOperation::labelAnchor() const
+{
+    if (mode_ == Mode::PlaneAngle && !refs_.empty())
+        return edgeMiddle_;
+    return std::nullopt;
+}
+
+void DatumOperation::startOver(const doc::Document& document)
+{
+    refs_.clear();
+    picked_.clear();
+    originIndex_ = -1;
+    offsetBase_.reset();
+    preview_.reset();
+    clearPreview();
+    setStoredValue(neutralValue());
+    setValue(value(), document);
+}
+
+void DatumOperation::setMode(Mode mode, const doc::Document& document)
+{
+    if (mode == mode_)
+        return;
+    mode_ = mode;
+    startOver(document);
+}
+
+void DatumOperation::setParallelTo(int axis, const doc::Document& document)
+{
+    if (mode_ != Mode::AxisParallel)
+        setMode(Mode::AxisParallel, document); // a point picked for it stays when only the axis changes
+    originIndex_ = std::clamp(axis, 0, 2);
+    setValue(value(), document);
+}
+
+void DatumOperation::setOriginPlane(int normalAxis, const doc::Document& document)
+{
+    if (mode_ != Mode::PlaneOffset)
+        setMode(Mode::PlaneOffset, document);
+    refs_.clear();
+    picked_.clear();
+    originIndex_ = std::clamp(normalAxis, 0, 2);
+    offsetBase_ = std::pair{Vec3{}, axisVector(originIndex_)};
+    setValue(value(), document); // a typed distance is kept
+}
+
+Status DatumOperation::pick(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index,
+                            const Vec3& point)
+{
+    auto refuse = [](const std::string& text) {
+        return Status::failure(ErrorCode::InvalidArgument, text, "construct: pick does not fit");
+    };
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return refuse("That body no longer exists.");
+    const auto face = kind == geom::SubShapeKind::Face ? geom::faceInfo(body->shape(), index) : std::nullopt;
+    const auto edge = kind == geom::SubShapeKind::Edge ? geom::edgeInfo(body->shape(), index) : std::nullopt;
+    using K = doc::GeometryRef::Kind;
+    auto add = [&](K refKind, geom::SubShapeKind pickedKind, int pickedIndex) {
+        const auto ref = doc::makeGeometryRef(*body, refKind, pickedIndex, point);
+        if (!ref)
+            return false;
+        refs_.push_back(*ref);
+        picked_.push_back({bodyId, pickedKind, pickedIndex});
+        return true;
+    };
+    auto clearPicks = [&] {
+        refs_.clear();
+        picked_.clear();
+    };
+    auto pointKind = [&]() { return edge->kind == geom::CurveKind::Circle ? K::Center : K::Vertex; };
+    const std::string pointHelp = "Click an edge near its end for a corner, or a circle for its center.";
+    bool added = false;
+    switch (mode_) {
+    case Mode::Axis:
+        if (!(face && face->hasAxis()) && !(edge && (edge->kind == geom::CurveKind::Circle || edge->kind == geom::CurveKind::Line)))
+            return refuse("An axis goes through a hole, a shaft or a circle, or along a straight edge.");
+        clearPicks(); // a new pick re-aims it
+        added = add(face ? K::Face : K::Edge, kind, index);
+        break;
+    case Mode::AxisTwoPoints:
+        if (!edge || (edge->kind != geom::CurveKind::Circle && (edge->start - edge->end).length() < 1e-9))
+            return refuse(pointHelp);
+        if (refs_.size() >= 2) { // re-aims the second point
+            refs_.pop_back();
+            picked_.pop_back();
+        }
+        added = add(pointKind(), kind, index);
+        break;
+    case Mode::AxisParallel:
+        if (!edge || (edge->kind != geom::CurveKind::Circle && (edge->start - edge->end).length() < 1e-9))
+            return refuse(pointHelp);
+        clearPicks();
+        added = add(pointKind(), kind, index);
+        break;
+    case Mode::PlaneOffset:
+        if (!face || !face->isPlanar())
+            return refuse("Offset a plane from a flat face, or choose an origin plane.");
+        clearPicks();
+        originIndex_ = -1;
+        added = add(K::Face, kind, index);
+        if (added)
+            offsetBase_ = std::pair{geom::pointOnFace(body->shape(), index, face->centroid).value_or(face->centroid),
+                                    face->normal.normalized()};
+        break;
+    case Mode::PlaneAngle:
+        if (edge) {
+            if (edge->kind != geom::CurveKind::Line)
+                return refuse("An angled plane goes through a straight edge.");
+            clearPicks();
+            added = add(K::Edge, kind, index);
+            edgeMiddle_ = edge->midpoint;
+            // The angle is measured from the flat face next to the edge that
+            // it runs along (another face can be clicked instead).
+            for (int f : geom::facesOfEdge(body->shape(), index))
+                if (const auto info = geom::faceInfo(body->shape(), f);
+                    info && info->isPlanar() && std::abs(info->normal.normalized().dot(edge->tangent.normalized())) < 1e-6) {
+                    add(K::Face, geom::SubShapeKind::Face, f);
+                    break;
+                }
+        } else if (face && face->isPlanar()) {
+            if (refs_.empty())
+                return refuse("Click the straight edge the plane goes through first.");
+            if (std::abs(face->normal.normalized().dot(refs_[0].edge.signature.tangent.normalized())) > 1e-6)
+                return refuse("The edge must run along the face the angle is measured from.");
+            if (refs_.size() >= 2) {
+                refs_.pop_back();
+                picked_.pop_back();
+            }
+            added = add(K::Face, kind, index);
+        } else {
+            return refuse("Click a straight edge, then the flat face the angle is measured from.");
+        }
+        break;
+    case Mode::PlaneMidway:
+        if (!face || !face->isPlanar())
+            return refuse("A plane midway goes between two parallel flat faces.");
+        if (refs_.size() >= 2) {
+            refs_.pop_back();
+            picked_.pop_back();
+        }
+        if (refs_.size() == 1
+            && std::abs(std::abs(face->normal.normalized().dot(refs_[0].face.signature.normal.normalized())) - 1.0) > 1e-6)
+            return refuse("Pick a face parallel to the first one.");
+        added = add(K::Face, kind, index);
+        break;
+    }
+    if (!added)
+        return refuse("That cannot be used here.");
+    setValue(value(), document);
+    return okStatus();
+}
+
+bool DatumOperation::dropLastPick(const doc::Document& document)
+{
+    if (mode_ == Mode::PlaneOffset && originIndex_ >= 0) {
+        originIndex_ = -1;
+        offsetBase_.reset();
+    } else if (!refs_.empty()) {
+        refs_.pop_back();
+        picked_.pop_back();
+        if (mode_ == Mode::PlaneOffset)
+            offsetBase_.reset();
+    } else {
+        return false;
+    }
+    setValue(value(), document);
+    return true;
+}
+
+doc::Datum DatumOperation::datum() const
+{
+    doc::Datum d;
+    d.refs = refs_;
+    switch (mode_) {
+    case Mode::Axis:
+        d.method = !refs_.empty() && refs_[0].kind == doc::GeometryRef::Kind::Edge
+                        && refs_[0].edge.signature.kind == geom::CurveKind::Line
+                     ? doc::DatumMethod::AxisAlongEdge
+                     : doc::DatumMethod::AxisThrough;
+        break;
+    case Mode::AxisTwoPoints: d.method = doc::DatumMethod::AxisTwoPoints; break;
+    case Mode::AxisParallel:
+        d.method = doc::DatumMethod::AxisParallel;
+        d.originIndex = originIndex_;
+        break;
+    case Mode::PlaneOffset:
+        d.method = doc::DatumMethod::PlaneOffset;
+        d.originIndex = refs_.empty() ? originIndex_ : -1;
+        d.distance = value();
+        break;
+    case Mode::PlaneAngle:
+        d.method = doc::DatumMethod::PlaneAngle;
+        d.angle = std::clamp(value(), -180.0, 180.0) * kPi / 180.0;
+        break;
+    case Mode::PlaneMidway: d.method = doc::DatumMethod::PlaneMidway; break;
+    }
+    return d;
+}
+
+std::string DatumOperation::refreshPreview(double, const doc::Document& document)
+{
+    preview_.reset();
+    const std::size_t needed = mode_ == Mode::AxisTwoPoints || mode_ == Mode::PlaneAngle || mode_ == Mode::PlaneMidway ? 2 : 1;
+    const bool complete = mode_ == Mode::PlaneOffset ? (!refs_.empty() || originIndex_ >= 0)
+                        : mode_ == Mode::AxisParallel ? (refs_.size() == 1 && originIndex_ >= 0)
+                                                      : refs_.size() == needed;
+    if (!complete)
+        return {}; // still picking: nothing to show, nothing wrong
+    const auto resolved = doc::resolveDatum(datum(), document.context());
+    if (!resolved)
+        return resolved.userMessage();
+    preview_ = resolved.value();
+    return {};
+}
+
+std::unique_ptr<cmd::Command> DatumOperation::makeCommand(const doc::Document& document) const
+{
+    doc::Datum d = datum();
+    d.setName(document.nextDatumName(kind_));
+    if (preview_)
+        d.setGeometry(*preview_);
+    return std::make_unique<cmd::AddDatumCommand>(std::move(d));
 }
 
 } // namespace os::interact

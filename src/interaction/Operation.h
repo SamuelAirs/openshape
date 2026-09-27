@@ -5,6 +5,7 @@
 #pragma once
 
 #include "commands/Command.h"
+#include "document/Datum.h"
 #include "core/Uuid.h"
 #include "document/Feature.h"
 #include "geometry/Holes.h"
@@ -105,6 +106,11 @@ protected:
     }
     // Whether the neutral value means "no change" (no preview). Align previews at 0.
     virtual bool neutralIsIdentity() const { return true; }
+    // Operations whose preview is not a body's shape (construction axes and
+    // planes) work it out here instead of computePreview: "" when it could be
+    // shown, else why not (the error).
+    virtual bool previewsShape() const { return true; }
+    virtual std::string refreshPreview(double /*value*/, const doc::Document& /*document*/) { return {}; }
     // Why `value` cannot be previewed at all (e.g. a thickness of zero); "" = fine.
     virtual std::string checkValue(double /*value*/) const { return {}; }
     // Automatic choices (e.g. join vs. new body) start over for every value...
@@ -154,6 +160,10 @@ public:
     Status setTarget(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
     // The ground (XY plane): lays a flat source face down on it where it is.
     Status setGroundTarget(const doc::Document& document);
+    // A construction axis or plane: endless, like the origin's.
+    Status setDatumTarget(const doc::Datum& datum, const doc::Document& document);
+    // The construction axis or plane aimed at (nil otherwise).
+    const Uuid& datumTarget() const { return datumTarget_; }
     // An origin axis (the source becomes parallel to it, its point on it), an
     // origin plane (a flat face touches it from the side the body is on; Flip
     // turns it over) or the origin (the source's point moves there, no turn).
@@ -186,7 +196,7 @@ protected:
 private:
     AlignOperation(Uuid bodyId, geom::AlignFrame source, Vec3 bodyCenter)
         : Operation(bodyId, LinearManipulator(source.point, source.direction)), source_(source), bodyCenter_(bodyCenter) {}
-    enum class TargetOf { None, Body, Ground, Origin };
+    enum class TargetOf { None, Body, Ground, Origin, Datum };
     // An endless line or plane through `point` along/across `direction`, the
     // arrow placed where the source lands. Planes face the side the body is on.
     void setEndlessTarget(Vec3 point, Vec3 direction, bool plane, const doc::Document& document);
@@ -199,6 +209,7 @@ private:
     geom::SubShapeKind targetKind_ = geom::SubShapeKind::Whole;
     int targetIndex_ = -1;
     OriginTarget origin_ = OriginTarget::Point;
+    Uuid datumTarget_;
     bool flip_ = false;
 };
 
@@ -320,6 +331,8 @@ public:
     // -1 when the plane came from a face.
     int originPlane() const { return originAxis_; }
     Status setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
+    // Across any plane (a construction plane).
+    void setPlane(const Vec3& origin, const Vec3& normal, const doc::Document& document);
     // normalAxis 0: across YZ (flips X), 1: across XZ (flips Y), 2: across XY (flips Z).
     void setOriginPlane(int normalAxis, const doc::Document& document);
     // "Separate bodies": the mirror image becomes a body of its own that
@@ -368,6 +381,8 @@ public:
     void setCount(int count, const doc::Document& document);
     // A straight edge (linear direction) or a round face/edge (circular axis).
     Status setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
+    // Along / around a line (a construction axis).
+    void setAxisLine(const Vec3& point, const Vec3& direction, const doc::Document& document);
     // "Separate bodies": every copy becomes a body of its own that follows
     // this one (a Copy step) instead of joining it (at most 100 copies).
     bool separate() const { return separate_; }
@@ -804,6 +819,82 @@ private:
     bool pickingTarget_ = false;
     double distance_ = 0;     // while the draft is being edited
     double draftDegrees_ = 0; // while the distance is being edited
+};
+
+// Construct: a construction axis or plane (a datum) from picked geometry.
+// Axis: through a hole or shaft (its wall or rim circle) or along a straight
+// edge (whichever is clicked), through two points, or parallel to X / Y / Z
+// through a point (points: an edge clicked near its end, or a circle for its
+// center). Plane: offset from a flat face or an origin plane (value = the
+// distance, an arrow along the normal), through a straight edge at an angle
+// to a flat face it runs along (value = the angle; the face next to the edge
+// is taken until another one is clicked), or midway between two parallel
+// flat faces. Commits an AddDatumCommand; nothing touches the document before.
+class DatumOperation final : public Operation {
+public:
+    enum class Mode { Axis, AxisTwoPoints, AxisParallel, PlaneOffset, PlaneAngle, PlaneMidway };
+    static std::unique_ptr<DatumOperation> create(doc::DatumKind kind);
+
+    std::string title() const override { return kind_ == doc::DatumKind::Axis ? "Axis" : "Plane"; }
+    std::string valueLabel() const override;
+    bool allowsNegative() const override { return true; }
+    bool isAngle() const override { return mode_ == Mode::PlaneAngle; }
+    // Not a step (nothing reads it: the controller handles datums first).
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Box; }
+    std::string prompt() const override;
+    bool canCommit() const override { return preview_.has_value() && error().empty(); }
+    double neutralValue() const override { return mode_ == Mode::PlaneAngle ? 45.0 : 0.0; }
+    int handleCount() const override;
+    LinearManipulator handle(int index) const override;
+    double handleOffset(int index) const override { return index == 0 ? value() : 0.0; }
+    std::optional<Vec3> labelAnchor() const override;
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+
+    doc::DatumKind kind() const { return kind_; }
+    Mode mode() const { return mode_; }
+    // Starts over with another way of making it (the picks are dropped).
+    void setMode(Mode mode, const doc::Document& document);
+    // Parallel to X / Y / Z (AxisParallel), or the origin plane an offset
+    // plane starts from (PlaneOffset: 0 = YZ, 1 = XZ, 2 = XY), -1 = none.
+    int originIndex() const { return originIndex_; }
+    void setParallelTo(int axis, const doc::Document& document);
+    void setOriginPlane(int normalAxis, const doc::Document& document);
+    // A clicked face or edge of a body (`point`: where it was clicked, which
+    // picks the end of an edge for a point). Says what is wrong with a pick
+    // that does not fit.
+    Status pick(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index, const Vec3& point);
+    // Drops the last pick (Esc steps back one pick); false when there was none.
+    bool dropLastPick(const doc::Document& document);
+    bool hasPicks() const { return !refs_.empty() || originIndex_ >= 0; }
+    // What was picked, for highlighting (body, face or edge, index).
+    struct Picked {
+        Uuid body;
+        geom::SubShapeKind kind = geom::SubShapeKind::Face;
+        int index = -1;
+    };
+    const std::vector<Picked>& picked() const { return picked_; }
+    // The datum as it would be made now, and where it is.
+    doc::Datum datum() const;
+    const std::optional<doc::DatumGeometry>& preview() const { return preview_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double) const override { return nullptr; }
+    bool previewsShape() const override { return false; }
+    std::string refreshPreview(double value, const doc::Document& document) override;
+    bool neutralIsIdentity() const override { return false; }
+
+private:
+    explicit DatumOperation(doc::DatumKind kind) : Operation(Uuid(), LinearManipulator()), kind_(kind) {}
+    void startOver(const doc::Document& document);
+    // Where the arrow of an offset plane starts (the face or origin plane).
+    std::optional<std::pair<Vec3, Vec3>> offsetBase_; // point, normal
+    doc::DatumKind kind_;
+    Mode mode_ = Mode::Axis;
+    int originIndex_ = -1;
+    std::vector<doc::GeometryRef> refs_;
+    std::vector<Picked> picked_;
+    std::optional<doc::DatumGeometry> preview_;
+    Vec3 edgeMiddle_; // PlaneAngle: where the angle's value sits
 };
 
 } // namespace os::interact

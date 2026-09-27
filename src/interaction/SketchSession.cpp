@@ -2460,7 +2460,7 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
     }
 
     for (std::size_t i = 0; i < regionMeshes_.size(); ++i)
-        out.regions.push_back({regionMeshes_[i], regionKeys_[i], SketchStyle::Normal});
+        out.regions.push_back({regionMeshes_[i], regionKeys_[i], SketchStyle::Normal, false});
     return out;
 }
 

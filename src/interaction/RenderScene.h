@@ -66,6 +66,7 @@ enum class SketchStyle {
     Dimension,    // dimension and extension lines
     Measure,      // a size measured in 3D (push/pull thickness), drawn with the arrow
     Conflict,     // over-constrained
+    Reference,    // construction axes and planes
 };
 
 struct RenderSketchLine {
@@ -83,6 +84,7 @@ struct RenderRegion {
     std::shared_ptr<const geom::Mesh> mesh;
     std::uint64_t meshKey = 0;
     SketchStyle style = SketchStyle::Normal; // Normal, Hovered or Selected
+    bool reference = false; // a construction plane's fill (its own color)
 };
 
 struct RenderSketch {
