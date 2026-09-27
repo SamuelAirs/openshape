@@ -106,6 +106,7 @@ Rectangle {
                         ["Open CASCADE Technology", "LGPL-2.1 with the OCCT exception", "exact solid geometry"],
                         ["Qt 6", "LGPL-3.0", "user interface and drawing"],
                         ["PlaneGCS (from FreeCAD)", "LGPL-2.1", "sketch constraints"],
+                        ["FreeType", "FreeType License", "letter shapes for raised and cut-in text"],
                         ["Eigen", "MPL-2.0", "linear algebra"],
                         ["libzip", "BSD-3-Clause", "project files"],
                         ["nlohmann/json", "MIT", "project files"],
@@ -153,6 +154,7 @@ Rectangle {
                 ActionButton {
                     objectName: "aboutLicenses"
                     text: "Licenses"
+                    outlined: true
                     onClicked: overlay.licensesRequested()
                 }
             }

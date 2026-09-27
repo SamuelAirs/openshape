@@ -16,9 +16,10 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
 | iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ✅ built on CI |
-| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); internal testing only (`testFlightInternalTestingOnly`): the owner's devices |
+| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); internal testing only (`testFlightInternalTestingOnly`): the owner's devices. Release tags `v<version>...` upload for external testing and App Store review (since 2026-09-27; not run yet) |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
+| Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store / public beta upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-75); the owner: the custom EULA and the source-offer contact (TD-74) |
 
 What is ready:
 
@@ -216,12 +217,29 @@ The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → L
 TestFlight also collects crash reports and screenshot feedback in App Store
 Connect.
 
-## Licenses
+## Licenses and the App Store
 
-For your own iPhone and iPad there is nothing to do. For the App Store see
-docs/LICENSING.md: MPL-2.0 allows it; the LGPL parts (Qt, OCCT, PlaneGCS)
-are linked statically on iOS, so their object files must be offered for
-relinking.
+Checked on 2026-09-27 for the paid App Store release (docs/LICENSING.md,
+"The iOS app and the App Store"; not legal advice): selling is allowed; Qt,
+OCCT and PlaneGCS are LGPL and linked statically, which is fine because the
+app's complete source, build scripts and the libraries' exact sources are
+public at every release tag, and the app says so and shows every license
+text (About → **Licenses**). What that means in practice:
+
+- **Only builds of release tags go to the public.** A tag `v<version>` (or
+  `v<version>-beta1` for the public beta) builds the app with the tag
+  inside it, requires the license gate to pass and uploads a TestFlight
+  build that may go to external testers and App Store review (the run's
+  notice names the build number). Builds of `main` stay internal-only.
+  The same tag's GitHub release carries `OpenShape-<version>-ios-sources.tar`.
+- **The owner, once, before the first public release:** set the custom
+  EULA ([EULA.md](EULA.md): fill in name, address, telephone, e-mail; App
+  Store Connect → App Information → License Agreement), decide the contact
+  for the written source offer (TD-74), and add the license sentence to
+  the App Store description (docs/LICENSING.md, "Releasing an App Store
+  (or public beta) version").
+- Every build's notices on CI list what the app links, by origin, and the
+  license gate's result (`scripts/ios/build-app.sh`).
 
 ## What to test on the iPad
 
@@ -300,7 +318,9 @@ margins (BUILDING.md).
 9. The hint line under the model is one short line: tap it to read all of it.
 10. **?** opens the help card: it talks about taps and two-finger gestures
    (no mouse or keyboard terms); File → Preferences and About fit the
-   screen and scroll.
+   screen and scroll. About → **Licenses**: the list scrolls; tap Qt, then
+   Back; tap "Your rights to the LGPL libraries": it names this version and
+   build; the text pages scroll and fit the screen.
 11. File → Save: the first time it asks for a name and saves into OpenShape's
    folder (Files app → On My iPhone → OpenShape); File → Open shows the
    system file picker; Export STL/3MF/STEP writes into Exports there.

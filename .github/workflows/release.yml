@@ -141,10 +141,10 @@ jobs:
       - name: Mirror the iOS app's library sources
         run: |
           tag=""
-          [[ "$GITHUB_REF" == refs/tags/v* ]] && tag=$GITHUB_REF_NAME
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then tag=$GITHUB_REF_NAME; fi
           bash scripts/ci/run-logged.sh ios-sources bash scripts/ios/mirror-sources.sh dist/ios-sources "$tag"
           name="${tag#v}"
-          [ -n "$name" ] || name="${{ steps.version.outputs.version }}"
+          if [ -z "$name" ]; then name="${{ steps.version.outputs.version }}"; fi
           tar -cf "dist/OpenShape-$name-ios-sources.tar" -C dist ios-sources
           echo "::notice title=iOS sources::OpenShape-$name-ios-sources.tar: $(grep -c . dist/ios-sources/SOURCES-SHA256SUMS.txt) archives, $(du -h "dist/OpenShape-$name-ios-sources.tar" | cut -f1)"
 

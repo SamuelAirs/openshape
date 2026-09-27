@@ -740,7 +740,12 @@ remembered:
   [Holes that fit](#holes-that-fit)).
 
 **File → About OpenShape** shows the version, the license and where the
-source code is.
+source code is. Its **Licenses** button lists OpenShape and every library
+built into it, each with its full license text and where its source code
+is. OpenShape is free software (Mozilla Public License 2.0); on iPhone and
+iPad, "Your rights to the LGPL libraries" there explains how to rebuild the
+app with modified versions of Qt, Open CASCADE or PlaneGCS and where to get
+the exact source code of your version, free of charge.
 
 ### Where things are kept (Windows)
 
