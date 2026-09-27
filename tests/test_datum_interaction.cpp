@@ -14,6 +14,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+
 using namespace os;
 using namespace os::interact;
 
@@ -603,6 +606,73 @@ TEST(DatumInteraction, FailedDatumSaysWhyInTheModelPanel)
     EXPECT_TRUE(found);
     EXPECT_TRUE(h.controller.undo());
     EXPECT_FALSE(h.document.datum(planeId)->failed());
+}
+
+// Where a construction plane's outline passes in front of a body edge on
+// screen, it is drawn over the edge, so it is what a click there picks, even
+// a pixel nearer the edge (the acceptance run once clicked such a crossing
+// and got the edge behind). An edge in front of an axis or outline, or on
+// the same spot, stays the target (covered by the flows above).
+TEST(DatumInteraction, OutlineDrawnOverAnEdgeIsPickedWhereTheyCross)
+{
+    Harness h;
+    h.addBox("Bar", {-40, 0, 0}, {80, 10, 10}); // long along X
+    ASSERT_TRUE(h.controller.runTool("plane").ok());
+    ASSERT_TRUE(h.controller.triggerAction("datum:origin:1").ok()); // from XZ
+    EXPECT_EQ(h.controller.setValueText("-30"), "");                 // in front of the bar (-Y)
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    h.controller.cancelOperation();
+    h.controller.fitAll(false);
+    ASSERT_EQ(h.document.datums().size(), 1u);
+    const doc::Datum& plane = *h.document.datums().front();
+    const auto shape = h.controller.datumShape(plane.geometry(), plane.kind());
+    const Camera& camera = h.controller.camera();
+
+    auto cross2 = [](Vec2 a, Vec2 b) { return a.x * b.y - a.y * b.x; };
+    // The point of segment ab nearest the pick ray through `s`.
+    auto nearestOn = [&](Vec2 s, const Vec3& a, const Vec3& b) {
+        const Ray ray = camera.rayAt(s);
+        const Vec3 u = b - a, v = ray.direction, w = a - ray.origin;
+        const double uu = u.dot(u), uv = u.dot(v), vv = v.dot(v), uw = u.dot(w), vw = v.dot(w);
+        const double t = std::clamp((uv * vw - vv * uw) / (uu * vv - uv * uv), 0.0, 1.0);
+        return a + u * t;
+    };
+    const Vec3 lo{-40, 0, 0}, hi{40, 10, 10};
+    auto corner = [&](int i) { return Vec3{i & 1 ? hi.x : lo.x, i & 2 ? hi.y : lo.y, i & 4 ? hi.z : lo.z}; };
+    std::vector<std::pair<Vec3, Vec3>> edges;
+    for (int i = 0; i < 8; ++i)
+        for (int bit : {1, 2, 4})
+            if (!(i & bit))
+                edges.emplace_back(corner(i), corner(i | bit));
+    ASSERT_EQ(edges.size(), 12u);
+
+    int tested = 0;
+    for (int side = 0; side < 4; ++side) {
+        const Vec3 a3 = shape.corners[side], b3 = shape.corners[(side + 1) % 4];
+        const Vec2 p = camera.project(a3), r = camera.project(b3) - p;
+        for (const auto& [c3, d3] : edges) {
+            const Vec2 q = camera.project(c3), s = camera.project(d3) - q;
+            const double denom = cross2(r, s);
+            if (std::abs(denom) < 1e-9)
+                continue;
+            const double t = cross2(q - p, s) / denom, u = cross2(q - p, r) / denom;
+            if (t < 0.1 || t > 0.9 || u < 0.1 || u > 0.9)
+                continue;
+            const Vec2 crossing = p + r * t;
+            const double onOutline = camera.depthOf(nearestOn(crossing, a3, b3));
+            const double onEdge = camera.depthOf(nearestOn(crossing, c3, d3));
+            const double sine = std::abs(denom) / (r.length() * s.length());
+            if (onOutline > onEdge - 1.0 || sine < 0.2)
+                continue; // only where the outline is clearly in front, crossing at an angle
+            // One pixel off the outline, on the edge.
+            const Vec2 at = crossing + s * ((1.0 / sine) / s.length());
+            h.hover(at);
+            EXPECT_EQ(h.controller.hover().kind, sel::PickKind::Datum) << "side " << side << " at " << at.x << "," << at.y;
+            EXPECT_EQ(h.controller.hover().bodyId, plane.id());
+            ++tested;
+        }
+    }
+    EXPECT_GT(tested, 0); // the outline does cross the bar's edges in front of them
 }
 
 // The preview worker's document copy has the construction planes, so a

@@ -77,6 +77,24 @@ SegmentHit segmentHit(const Camera& camera, Vec2 screen, const Vec3& a, const Ve
     return {p, (camera.project(p) - screen).length(), camera.depthOf(p)};
 }
 
+// Whether a line drawn in the view (a construction axis or plane outline, an
+// origin axis) near the pointer is picked rather than what the body pick
+// found there. The lines are depth-tested like the bodies: a face in front
+// hides them. An edge nearer the pointer stays the target (edges are the
+// smallest targets), unless the line passes in front of it there - drawn
+// over the edge, it is what the user sees - and is about as near.
+bool lineBeatsBodyHit(const Camera& camera, const SegmentHit& line, const sel::PickResult& bodyHit)
+{
+    const double slack = camera.pixelSize(line.point) * 2;
+    if (bodyHit.kind == sel::PickKind::Face)
+        return line.depth <= bodyHit.depth + slack;
+    if (bodyHit.kind == sel::PickKind::Edge) {
+        const bool inFront = line.depth < bodyHit.depth - slack;
+        return inFront ? line.pixels <= bodyHit.screenDistance + 2.0 : line.pixels < bodyHit.screenDistance;
+    }
+    return true;
+}
+
 // What a construction axis or plane is made from, for the Model panel.
 std::string datumDetail(const doc::Datum& d, LengthUnit unit)
 {
@@ -2644,11 +2662,7 @@ sel::PickResult InteractionController::pickOriginAxis(Vec2 screen, const InputPr
         const SegmentHit hit = segmentHit(camera_, screen, a, b);
         if (hit.pixels > bestPixels)
             continue;
-        // Bodies hide the lines (they are depth-tested); a body edge nearer
-        // on screen stays the target.
-        if (bodyHit.kind == sel::PickKind::Face && hit.depth > bodyHit.depth + camera_.pixelSize(hit.point) * 2)
-            continue;
-        if (bodyHit.kind == sel::PickKind::Edge && bodyHit.screenDistance <= hit.pixels)
+        if (!lineBeatsBodyHit(camera_, hit, bodyHit))
             continue;
         bestPixels = hit.pixels;
         best.kind = sel::PickKind::OriginAxis;
@@ -2707,11 +2721,7 @@ sel::PickResult InteractionController::pickDatumLine(Vec2 screen, const InputPro
             const SegmentHit hit = segmentHit(camera_, screen, a, b);
             if (hit.pixels > bestPixels)
                 continue;
-            // Drawn depth-tested: a body in front hides it; an edge nearer
-            // the pointer stays the target.
-            if (bodyHit.kind == sel::PickKind::Face && hit.depth > bodyHit.depth + camera_.pixelSize(hit.point) * 2)
-                continue;
-            if (bodyHit.kind == sel::PickKind::Edge && bodyHit.screenDistance <= hit.pixels)
+            if (!lineBeatsBodyHit(camera_, hit, bodyHit))
                 continue;
             bestPixels = hit.pixels;
             best.kind = sel::PickKind::Datum;

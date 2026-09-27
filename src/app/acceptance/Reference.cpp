@@ -55,6 +55,13 @@ std::vector<AcceptanceRunner::Step> alignOriginSteps(AcceptanceRunner& r)
         const auto& sel = r.app().interaction().selection();
         r.check(sel.size() == 1 && sel.items()[0].kind == sel::SelectionKind::Edge, "the hole's rim is selected");
     };
+    auto select = [&r](QPointF at, sel::SelectionKind kind, const QString& what) {
+        r.key(Qt::Key_Escape);
+        r.key(Qt::Key_Escape);
+        r.click(at);
+        const auto& sel = r.app().interaction().selection();
+        r.check(sel.size() == 1 && sel.items()[0].kind == kind, what + QStringLiteral(" is selected"));
+    };
     return {
         [&r] { r.check(addHoledPlate(r), "align to origin: a plate with a hole"); },
         [] {}, [] {},
@@ -143,6 +150,92 @@ std::vector<AcceptanceRunner::Step> alignOriginSteps(AcceptanceRunner& r)
             r.check(std::abs(bb.min.x + 10.0) < 1e-6 && std::abs(bb.max.y - 10.0) < 1e-6 && std::abs(bb.max.z) < 1e-6,
                     "Enter: the rim's center is at the origin", num(bb.min.x) + "," + num(bb.max.y) + "," + num(bb.max.z));
             r.screenshot(QStringLiteral("alignorigin_03_origin"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        // ---- An edge along X (the X axis button) ----------------------------
+        [&r, select] {
+            select(r.screenPoint(30, 24, 5), sel::SelectionKind::Edge, "the plate's top right edge (along Y)");
+            r.check(r.clickItem(QStringLiteral("tool_align")), "Align tool button for the edge");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_origin:x")), "X axis button");
+            r.check(alignOf(r) && alignOf(r)->originTarget() == interact::OriginTarget::XAxis, "the X axis is the target");
+            r.key(Qt::Key_Return);
+        },
+        [] {},
+        [&r, num, box] {
+            const auto bb = box();
+            // Turned a quarter about Z: the edge lies on the X axis (y = z = 0
+            // on the box's boundary), its middle still at x = 30.
+            const bool onAxis = (std::abs(bb.min.y) < 1e-6 || std::abs(bb.max.y) < 1e-6)
+                             && (std::abs(bb.min.z) < 1e-6 || std::abs(bb.max.z) < 1e-6);
+            r.check(onAxis && std::abs(bb.size().x - 20.0) < 1e-6 && std::abs(bb.size().y - 20.0) < 1e-6
+                        && std::abs(bb.size().z - 5.0) < 1e-6 && std::abs(bb.center().x - 30.0) < 1e-6,
+                    "Enter: the edge runs along the X axis",
+                    num(bb.min.x) + ".." + num(bb.max.x) + " y " + num(bb.min.y) + ".." + num(bb.max.y) + " z "
+                        + num(bb.min.z) + ".." + num(bb.max.z));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        // ---- The hole's axis onto Y: the plate stands up --------------------
+        [&r, selectRim] {
+            selectRim();
+            r.check(r.clickItem(QStringLiteral("tool_align")), "Align tool button for the rim (Y)");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_origin:y")), "Y axis button");
+            r.check(alignOf(r) && alignOf(r)->originTarget() == interact::OriginTarget::YAxis, "the Y axis is the target");
+            r.key(Qt::Key_Return);
+        },
+        [] {},
+        [&r, num, box] {
+            const auto bb = box();
+            // The rim's center (20, 20, 5) lands at (0, 20, 0); the plate's
+            // 5 mm now run along Y on one side of it.
+            const bool atRim = std::abs(bb.min.y - 20.0) < 1e-6 || std::abs(bb.max.y - 20.0) < 1e-6;
+            r.check(atRim && std::abs(bb.center().x) < 1e-6 && std::abs(bb.center().z) < 1e-6
+                        && std::abs(bb.size().y - 5.0) < 1e-6 && std::abs(bb.size().z - 20.0) < 1e-6,
+                    "Enter: the hole's axis is the Y axis",
+                    num(bb.center().x) + "," + num(bb.center().z) + " y " + num(bb.min.y) + ".." + num(bb.max.y));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        // ---- The front face onto XY: the plate stands on it ------------------
+        [&r, select] {
+            select(r.screenPoint(14, 10, 2.5), sel::SelectionKind::Face, "the plate's front face (for XY)");
+            r.check(r.clickItem(QStringLiteral("tool_align")), "Align tool button for the front face");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_origin:xy")), "XY plane button");
+            r.check(alignOf(r) && alignOf(r)->originTarget() == interact::OriginTarget::XYPlane, "the XY plane is the target");
+            r.key(Qt::Key_Return);
+        },
+        [] {},
+        [&r, num, box] {
+            const auto bb = box();
+            r.check(std::abs(bb.min.z) < 1e-6 && std::abs(bb.max.z - 20.0) < 1e-6 && std::abs(bb.min.y - 7.5) < 1e-6
+                        && std::abs(bb.max.y - 12.5) < 1e-6 && std::abs(bb.min.x - 10.0) < 1e-6,
+                    "Enter: the front face lies on XY, the plate standing above it",
+                    "z " + num(bb.min.z) + ".." + num(bb.max.z) + " y " + num(bb.min.y) + ".." + num(bb.max.y));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        // ---- The right face onto YZ: turned to face it ----------------------
+        [&r, select] {
+            select(r.screenPoint(30, 16, 2.5), sel::SelectionKind::Face, "the plate's right face (for YZ)");
+            r.check(r.clickItem(QStringLiteral("tool_align")), "Align tool button for the right face");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_origin:yz")), "YZ plane button");
+            r.check(alignOf(r) && alignOf(r)->originTarget() == interact::OriginTarget::YZPlane, "the YZ plane is the target");
+            r.key(Qt::Key_Return);
+        },
+        [] {},
+        [&r, num, box] {
+            const auto bb = box();
+            r.check(std::abs(bb.min.x) < 1e-6 && std::abs(bb.max.x - 20.0) < 1e-6 && std::abs(bb.min.y - 10.0) < 1e-6
+                        && std::abs(bb.max.y - 30.0) < 1e-6 && std::abs(bb.min.z) < 1e-6 && std::abs(bb.max.z - 5.0) < 1e-6,
+                    "Enter: the right face lies on YZ (half a turn), the plate on the +X side",
+                    "x " + num(bb.min.x) + ".." + num(bb.max.x));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(std::abs(box().min.x - 10.0) < 1e-6 && std::abs(box().min.y - 10.0) < 1e-6, "undo: where it started");
         },
     };
 }

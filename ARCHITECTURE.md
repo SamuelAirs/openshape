@@ -667,8 +667,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   / a click on empty space commits an `AddDatumCommand`, and the new datum
   comes out selected (Sketch on a plane, Hide, Delete). Datums are picked
   on their drawn lines (`pickDatumLine`: like edges, hidden behind faces,
-  an edge nearer the pointer wins) and inside a plane's square only where
-  nothing else is hit (`pickDatumPlane`); `SelectionKind::Datum` and
+  an edge nearer the pointer wins unless the line passes in front of it
+  there and is within 2 px: drawn over the edge, the line is what the user
+  sees; `lineBeatsBodyHit`, also for the origin axis lines) and inside a
+  plane's square only where nothing else is hit (`pickDatumPlane`);
+  `SelectionKind::Datum` and
   `PickKind::Datum` carry the datum's id in `bodyId`. Consumers take a
   clicked datum while they wait: Rotate (an axis: one ring about it),
   Pattern (an axis: `setAxisLine`, the direction or the circular axis),

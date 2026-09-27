@@ -154,13 +154,22 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
         [&r] { r.key(Qt::Key_Return); },
         [] {},
         [&r, num] {
-            const auto bb = geom::boundingBox(r.body(1).shape());
-            r.check(near(volumeOf(r, 1), 6 * 64.0), "six blocks around the axis", num(volumeOf(r, 1)));
-            r.check(near(bb.center().x, 20) && near(bb.center().y, 20), "centered on the hole",
-                    num(bb.center().x) + "," + num(bb.center().y));
+            // Six blocks that do not touch: the copies are bodies of their own.
+            double blocks = 0;
+            Vec3 lo{1e9, 1e9, 1e9}, hi{-1e9, -1e9, -1e9};
+            for (std::size_t i = 1; i < r.app().document().bodies().size(); ++i) {
+                blocks += volumeOf(r, i);
+                const auto bb = geom::boundingBox(r.body(i).shape());
+                lo = {std::min(lo.x, bb.min.x), std::min(lo.y, bb.min.y), std::min(lo.z, bb.min.z)};
+                hi = {std::max(hi.x, bb.max.x), std::max(hi.y, bb.max.y), std::max(hi.z, bb.max.z)};
+            }
+            const Vec3 middle = (lo + hi) * 0.5;
+            r.check(r.app().bodyCount() == 7 && near(blocks, 6 * 64.0), "six blocks around the axis",
+                    QString::number(r.app().bodyCount()) + " bodies, " + num(blocks));
+            r.check(near(middle.x, 20) && near(middle.y, 20), "centered on the hole", num(middle.x) + "," + num(middle.y));
             r.screenshot(QStringLiteral("construct_02_pattern_around_axis"));
             r.key(Qt::Key_Z, Qt::ControlModifier);
-            r.check(near(volumeOf(r, 1), 64.0), "undo: one block again", num(volumeOf(r, 1)));
+            r.check(r.app().bodyCount() == 2 && near(volumeOf(r, 1), 64.0), "undo: one block again", num(volumeOf(r, 1)));
         },
         // ---- Rotate the block a quarter turn about the axis ------------------
         [&r, clear, selectBlock] {
@@ -182,12 +191,65 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
                     num(bb.center().x) + "," + num(bb.center().y));
             r.key(Qt::Key_Z, Qt::ControlModifier);
         },
+        // ---- Pattern it along the axis (Linear, clicking the axis) ----------
+        [&r, clear, selectBlock] {
+            clear();
+            selectBlock();
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("tool_pattern")), "Pattern tool button (linear)"); },
+        [&r] {
+            r.click(onAxis(r, *datums(r).front()));
+            const auto* pattern = dynamic_cast<const interact::PatternOperation*>(r.app().interaction().operation());
+            r.check(pattern && !pattern->circular() && pattern->axisIndex() == -1, "clicking the axis: copies along it");
+            r.type(QStringLiteral("10"));
+        },
+        [&r] { r.key(Qt::Key_Return); },
+        [] {},
+        [&r, num] {
+            // Three blocks 10 mm apart up (or down) the hole's axis, apart
+            // from each other: the copies are bodies of their own.
+            double farthest = 0, copies = 0;
+            bool inLine = true;
+            for (std::size_t i = 1; i < r.app().document().bodies().size(); ++i) {
+                const auto bb = geom::boundingBox(r.body(i).shape());
+                inLine = inLine && near(bb.center().x, 37) && near(bb.center().y, 20);
+                farthest = std::max(farthest, std::abs(bb.center().z - 2));
+                copies += geom::volume(r.body(i).shape());
+            }
+            r.check(r.app().bodyCount() == 4 && inLine && near(copies, 3 * 64.0) && near(farthest, 20),
+                    "three blocks along the axis, 10 mm apart", num(farthest) + " " + num(copies));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().bodyCount() == 2, "undo: the copies are gone", QString::number(r.app().bodyCount()));
+        },
         // ---- Offset plane -> sketch on it -> extrude ------------------------
         [&r, clear] {
             clear();
             r.check(r.clickItem(QStringLiteral("tool_plane")), "Plane tool button");
             r.check(constructOf(r) && !r.app().operationPrompt().isEmpty(), "the Plane tool asks for a face",
                     r.app().operationPrompt());
+        },
+        // An origin plane to start from (the distance arrow and its chip
+        // appear), another one, then back to picking a face.
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_datum:origin:2")), "From XY");
+            const auto* op = constructOf(r);
+            r.check(op && op->originIndex() == 2 && op->preview() && near(op->preview()->direction.z, 1)
+                        && near(op->preview()->origin.z, 0),
+                    "a plane on XY to offset");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_datum:origin:1")), "From XZ (in the value chip)");
+            const auto* op = constructOf(r);
+            r.check(op && op->originIndex() == 1 && op->preview() && near(std::abs(op->preview()->direction.y), 1),
+                    "a plane on XZ to offset");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("action_datum:offset")), "Offset from face (in the value chip)");
+            const auto* op = constructOf(r);
+            r.check(op && op->originIndex() < 0 && !op->preview() && !r.app().operationPrompt().isEmpty(),
+                    "back to picking a face", r.app().operationPrompt());
+        },
+        [&r] {
             r.click(r.screenPoint(14, 14, 5)); // the plate's top
             r.check(constructOf(r) && constructOf(r)->preview().has_value() && r.app().valueLabelVisible(),
                     "the top face: a plane on it with a distance to type");
@@ -281,6 +343,33 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
                     num(bb.min.z) + ".." + num(bb.max.z));
             r.key(Qt::Key_Z, Qt::ControlModifier);
         },
+        // An edge onto the axis through the hole (clicking the axis).
+        [&r, clear] {
+            clear();
+            r.click(r.screenPoint(39, 18, 2)); // the block's front right vertical edge
+            const auto& sel = r.app().interaction().selection();
+            r.check(sel.size() == 1 && sel.items()[0].kind == sel::SelectionKind::Edge, "the block's vertical edge");
+            r.check(r.clickItem(QStringLiteral("tool_align")), "Align tool button for the edge");
+        },
+        [&r, state] {
+            const doc::Datum* axis = r.app().document().datum(state->first);
+            r.check(axis != nullptr, "the axis is there");
+            if (!axis)
+                return;
+            r.click(onAxis(r, *axis));
+            const auto* align = dynamic_cast<const interact::AlignOperation*>(r.app().interaction().operation());
+            r.check(align && align->datumTarget() == state->first, "clicking the axis aims at it");
+            r.key(Qt::Key_Return);
+        },
+        [] {},
+        [&r, num] {
+            // Already parallel: the block only moves, its edge from (39, 18)
+            // onto the axis at (20, 20), at the same height.
+            const auto bb = geom::boundingBox(r.body(1).shape());
+            r.check(near(bb.max.x, 20) && near(bb.min.y, 20) && near(bb.min.z, 0) && near(bb.max.z, 4),
+                    "the block's edge lies on the hole's axis", num(bb.max.x) + "," + num(bb.min.y) + "," + num(bb.min.z));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
         // ---- Hole onto Z (Align's origin axis) ------------------------------
         [&r, clear] {
             clear();
@@ -346,6 +435,15 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
         [&r, clear] {
             clear();
             r.check(r.clickItem(QStringLiteral("tool_axis")), "Axis tool: along an edge");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_datum:twoPoints")), "Two points (to come back from)");
+            r.check(constructOf(r) && constructOf(r)->mode() == interact::DatumOperation::Mode::AxisTwoPoints, "two points mode");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_datum:axis")), "Through / along");
+            r.check(constructOf(r) && constructOf(r)->mode() == interact::DatumOperation::Mode::Axis,
+                    "back to a hole, a shaft or an edge");
             r.click(r.screenPoint(30, 10, 2.5)); // the plate's front right vertical edge
             r.check(constructOf(r) && constructOf(r)->preview().has_value(), "a straight edge makes it");
             r.key(Qt::Key_Return);
@@ -376,11 +474,24 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
         },
         [&r, clear] {
             clear();
-            r.check(r.clickItem(QStringLiteral("tool_axis")), "Axis tool: parallel to Z");
+            r.check(r.clickItem(QStringLiteral("tool_axis")), "Axis tool: parallel to X, Y, Z");
         },
-        [&r] { r.check(r.clickItem(QStringLiteral("barAction_datum:parallel:2")), "Parallel to Z"); },
+        [&r] { r.check(r.clickItem(QStringLiteral("barAction_datum:parallel:0")), "Parallel to X"); },
         [&r] {
             r.click(r.screenPoint(28.5, 10, 5)); // the top front edge near (30, 10, 5)
+            const auto* op = constructOf(r);
+            r.check(op && op->preview() && near(op->preview()->direction.x, 1) && near(op->preview()->origin.x, 30)
+                        && near(op->preview()->origin.y, 10) && near(op->preview()->origin.z, 5),
+                    "parallel to X through the corner");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_datum:parallel:1")), "Parallel to Y");
+            const auto* op = constructOf(r);
+            r.check(op && op->preview() && near(op->preview()->direction.y, 1) && near(op->preview()->origin.x, 30),
+                    "parallel to Y through the same corner");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_datum:parallel:2")), "Parallel to Z");
             r.key(Qt::Key_Return);
         },
         [&r] {
@@ -454,7 +565,21 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             clear();
             r.check(r.clickItem(QStringLiteral("historyRow_") + idText(state->first)), "the axis's Model panel row");
         },
-        [&r, state] { r.check(r.clickItem(QStringLiteral("historyVisibility_") + idText(state->first)), "Hide"); },
+        [&r, state] {
+            const auto& sel = r.app().interaction().selection();
+            r.check(sel.size() == 1 && sel.items()[0].kind == sel::SelectionKind::Datum, "its row selects the axis");
+            r.check(r.clickItem(QStringLiteral("barAction_hideDatum")), "Hide in the action bar");
+        },
+        [&r, state] {
+            const doc::Datum* axis = r.app().document().datum(state->first);
+            r.check(axis && !axis->isVisible() && r.app().interaction().selection().empty(), "hidden (and no longer selected)");
+            r.check(r.clickItem(QStringLiteral("historyVisibility_") + idText(state->first)), "Show in its row");
+        },
+        [&r, state] {
+            const doc::Datum* axis = r.app().document().datum(state->first);
+            r.check(axis && axis->isVisible(), "shown again");
+            r.check(r.clickItem(QStringLiteral("historyVisibility_") + idText(state->first)), "Hide in its row");
+        },
         [&r, state] {
             const doc::Datum* axis = r.app().document().datum(state->first);
             r.check(axis && !axis->isVisible(), "hidden");
@@ -483,6 +608,22 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             r.check(r.app().document().datum(state->first) == nullptr, "Delete removes it");
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().document().datum(state->first) != nullptr, "undo again");
+        },
+        // The action bar's Delete for a selected axis.
+        [&r, state, clear] {
+            clear();
+            const doc::Datum* axis = r.app().document().datum(state->first);
+            if (!axis)
+                return;
+            r.click(onAxis(r, *axis));
+            const auto& sel = r.app().interaction().selection();
+            r.check(sel.size() == 1 && sel.items()[0].kind == sel::SelectionKind::Datum, "the axis selected again in the view");
+        },
+        [&r, state] {
+            r.check(r.clickItem(QStringLiteral("barAction_delete")), "Delete in the action bar");
+            r.check(r.app().document().datum(state->first) == nullptr, "the action bar's Delete removes it");
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().document().datum(state->first) != nullptr, "undo once more");
         },
     };
 }

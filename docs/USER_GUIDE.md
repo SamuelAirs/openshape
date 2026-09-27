@@ -308,8 +308,9 @@ follow the target when that changes later.
   row (**Along X/Y/Z**, or click an edge or a construction axis for the
   direction; the value is the spacing), **Circular** around an axis
   (**Around X/Y/Z**, or click a hole, a shaft or a construction axis; the
-  value is the total angle, and 360° spaces the copies evenly). **+ copy** and **− copy** change how many (the number after ×
-  counts the original too).
+  value is the total angle, and 360° spaces the copies evenly). **+ copy**
+  and **− copy** change how many (the number after × counts the original
+  too).
 - Copies that touch or overlap the original join it (a half part mirrored
   across its own face becomes one symmetric body). Copies that touch
   neither the original nor each other become **separate bodies**, each
