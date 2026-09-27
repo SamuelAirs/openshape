@@ -1206,6 +1206,65 @@ private:
     double draftDegrees_ = 0; // while the distance is being edited
 };
 
+// Loft: joins closed profiles on different planes (of different sketches),
+// in the order they were selected, into a solid. It has no value: the
+// preview comes at once, and Smooth / Straight and New body / Join / Cut are
+// its options. Like Extrude, a loft with a profile on a body's face (the
+// first such sketch's body) joins that body, or becomes a new body when it
+// would not touch it; Cut only when chosen. Without such a sketch it is a
+// new body.
+class LoftOperation final : public Operation {
+public:
+    // `mode`: the user's choice so far (nullopt: automatic).
+    static std::unique_ptr<LoftOperation> create(const doc::Document& document, std::vector<doc::LoftSection> sections,
+                                                 bool ruled, std::optional<doc::ExtrudeMode> mode);
+
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new LoftOperation(*this)); }
+    std::string title() const override { return "Loft"; }
+    std::string valueLabel() const override { return {}; }
+    bool allowsNegative() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Loft; }
+    bool canCommit() const override { return previewUsable(); }
+    int handleCount() const override { return 0; }
+    Uuid previewBody() const override;
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+    // A new body as the preview shows it (a join: the profiles only).
+    Carry carriedSelection() const override { return {{}, previewBody().isNil()}; }
+
+    const std::vector<doc::LoftSection>& sections() const { return sections_; }
+    bool ruled() const { return ruled_; }
+    void setRuled(bool ruled, const doc::Document& document);
+    doc::ExtrudeMode mode() const;
+    void setMode(doc::ExtrudeMode mode, const doc::Document& document);
+    bool modeChosen() const { return modeChosen_; }
+    bool hasHost() const { return host_.has_value(); }
+    // The automatic choice (join or new body) comes from the preview.
+    bool commitNeedsPreview() const override { return host_.has_value() && !modeChosen_; }
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    bool neutralIsIdentity() const override { return false; }
+    void resetAutomaticChoices() override { autoNewBody_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
+    // The preview worker decides on a clone: take its choice with its preview.
+    void adoptAutomaticChoices(const Operation& from) override
+    {
+        if (const auto* other = dynamic_cast<const LoftOperation*>(&from))
+            autoNewBody_ = other->autoNewBody_;
+    }
+
+private:
+    LoftOperation(std::optional<Uuid> host, std::vector<doc::LoftSection> sections, bool ruled, const Vec3& center)
+        : Operation(host.value_or(Uuid()), LinearManipulator(center, {0, 0, 1})), host_(host), sections_(std::move(sections)),
+          ruled_(ruled) {}
+    std::optional<Uuid> host_;
+    std::vector<doc::LoftSection> sections_;
+    bool ruled_ = false;
+    doc::ExtrudeMode mode_ = doc::ExtrudeMode::NewBody; // when chosen
+    bool modeChosen_ = false;
+    bool autoNewBody_ = false; // an automatic join that would not touch the body becomes a new body
+};
+
 // Construct: a construction axis or plane (a datum) from picked geometry.
 // Axis: through a hole or shaft (its wall or rim circle) or along a straight
 // edge (whichever is clicked), through two points, or parallel to X / Y / Z

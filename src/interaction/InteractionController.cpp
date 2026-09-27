@@ -140,6 +140,26 @@ std::string curveName(geom::CurveKind kind)
     }
 }
 
+// Two sketch planes that are the same plane (either way up).
+bool samePlane(const sketch::Plane& a, const sketch::Plane& b)
+{
+    const Vec3 na = a.normal().normalized(), nb = b.normal().normalized();
+    return std::abs(std::abs(na.dot(nb)) - 1) < 1e-9 && std::abs((b.origin - a.origin).dot(na)) < 1e-6;
+}
+
+// Selected profiles (of any sketches) that do not all lie in one plane:
+// something to loft.
+bool profilesOnSeveralPlanes(const sel::SelectionSet& selection, const doc::Document& document)
+{
+    if (selection.size() < 2 || !selection.allOfKind(sel::SelectionKind::SketchProfile))
+        return false;
+    const sketch::Sketch* first = document.sketch(selection.items().front().bodyId);
+    for (const auto& item : selection.items())
+        if (const sketch::Sketch* sk = document.sketch(item.bodyId); first && sk && !samePlane(first->plane(), sk->plane()))
+            return true;
+    return false;
+}
+
 } // namespace
 
 InteractionController::InteractionController(doc::Document& document, cmd::UndoStack& undoStack)
@@ -519,6 +539,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
         return;
     }
     const auto profile = InputProfile::forDevice(drag_.press.device);
+    drag_.travel = std::max(drag_.travel, (event.position - drag_.press.position).length());
     if (drag_.mode == DragMode::Pending && drag_.ring >= 0 && operation_) {
         if ((event.position - drag_.press.position).length() < profile.dragThreshold)
             return;
@@ -579,6 +600,7 @@ void InteractionController::pointerRelease(const PointerEvent& event)
 {
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
+    const double travel = drag_.travel;
     const int pendingRing = mode == DragMode::Pending ? drag_.ring : -1;
     drag_.mode = DragMode::None;
     drag_.ring = -1;
@@ -615,10 +637,22 @@ void InteractionController::pointerRelease(const PointerEvent& event)
                             return face && face->hasAxis();
                         }());
     }
+    // The arrow of a profile's extrusion (not dragged yet) points through the
+    // profile above it on screen - a loft's next section: a click on the
+    // arrow over a profile on another plane picks that profile.
+    bool profileUnderArrow = false;
+    if (const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get());
+        extrude && mode == DragMode::Manipulator && press.button == PointerButton::Left
+        && travel < InputProfile::forDevice(press.device).dragThreshold && extrude->value() == 0.0 && !extrude->editingDraft()) {
+        const sel::PickResult hit = pickAt(press.position, InputProfile::forDevice(press.device));
+        const sketch::Sketch* own = document_->sketch(extrude->sketchId());
+        const sketch::Sketch* other = hit.kind == sel::PickKind::Profile ? document_->sketch(hit.bodyId) : nullptr;
+        profileUnderArrow = own && other && !samePlane(own->plane(), other->plane());
+    }
     if (pendingRing >= 0 && operation_ && !axisUnderRing) {
         operation_->setActiveHandle(pendingRing); // clicking a ring makes it the active one
         notifyState();
-    } else if (mode == DragMode::Pending && press.button == PointerButton::Left)
+    } else if ((mode == DragMode::Pending || profileUnderArrow) && press.button == PointerButton::Left)
         click(press);
     else if (mode == DragMode::Manipulator)
         notifyState();
@@ -1006,7 +1040,10 @@ void InteractionController::click(const PointerEvent& event)
         }
     }
 
-    if (operation_ && operation_->canCommit()) {
+    // Loft: tapping (Shift-clicking) a profile adds it as the next section, or
+    // takes a selected one out; the loft is previewed again (below).
+    const bool loftSection = dynamic_cast<const LoftOperation*>(operation_.get()) && hit.kind == sel::PickKind::Profile && additive;
+    if (operation_ && operation_->canCommit() && !loftSection) {
         // Clicking anywhere else accepts the pending operation (direct-manipulation
         // convention); then the click selects against the updated geometry.
         const ApplyResult applied = applyBeforeSelecting();
@@ -1040,8 +1077,16 @@ void InteractionController::click(const PointerEvent& event)
             item.index = hit.index;
             item.shapeRevision = document_->sketchRevision(hit.bodyId);
             item.profile = doc::makeProfileRef(entry->regions[std::size_t(hit.index)], *sk);
-            const bool sameSketch = selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody() == hit.bodyId;
-            if (additive && sameSketch)
+            // Adding (Shift, or any tap): more profiles of the same sketch
+            // (to extrude together), or a profile on another plane than the
+            // last one selected (a loft's next section). A profile of another
+            // sketch in the same plane starts a new selection, as a plain click
+            // does: the two could neither extrude together nor loft.
+            const bool profiles = selection_.allOfKind(sel::SelectionKind::SketchProfile);
+            const bool sameSketch = profiles && selection_.singleBody() == hit.bodyId;
+            const sketch::Sketch* last = profiles ? document_->sketch(selection_.items().back().bodyId) : nullptr;
+            const bool nextSection = last && !samePlane(last->plane(), sk->plane());
+            if (additive && profiles && (sameSketch || nextSection || selection_.contains(item)))
                 selection_.toggle(item);
             else
                 selection_.set(item);
@@ -1093,9 +1138,15 @@ void InteractionController::rebuildOperation()
         if (edgeOperationKind_ == doc::FeatureKind::Hole)
             edgeOperationKind_ = doc::FeatureKind::Fillet;
         profileOperationKind_ = doc::FeatureKind::Extrude;
+        loftRuled_ = false;
+        loftMode_.reset();
         alignRequested_ = false;
         bodyTool_ = BodyTool::Move;
     }
+    // Loft needs two profiles at least; with fewer, a profile extrudes again.
+    if (profileOperationKind_ == doc::FeatureKind::Loft
+        && !(selection_.size() >= 2 && selection_.allOfKind(sel::SelectionKind::SketchProfile)))
+        profileOperationKind_ = doc::FeatureKind::Extrude;
     if (alignRequested_) {
         const auto& items = selection_.items();
         if (items.size() == 1 && (items[0].kind == sel::SelectionKind::Face || items[0].kind == sel::SelectionKind::Edge))
@@ -1157,6 +1208,15 @@ void InteractionController::rebuildOperation()
         case BodyTool::Mirror: operation_ = MirrorOperation::create(*document_, body); break;
         case BodyTool::Pattern: operation_ = PatternOperation::create(*document_, body); break;
         }
+    } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && profileOperationKind_ == doc::FeatureKind::Loft) {
+        // The profiles in the order they were selected; the preview comes at once.
+        std::vector<doc::LoftSection> sections;
+        for (const auto& item : selection_.items())
+            if (item.profile)
+                sections.push_back({item.bodyId, *item.profile});
+        operation_ = LoftOperation::create(*document_, std::move(sections), loftRuled_, loftMode_);
+        if (operation_)
+            operation_->setValue(0.0, *document_);
     } else if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.singleBody()) {
         const Uuid sketchId = *selection_.singleBody();
         const auto* entry = scene_.sketch(sketchId);
@@ -2073,6 +2133,23 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({id, label, origin == target});
         return actions;
     }
+    if (const auto* loft = dynamic_cast<const LoftOperation*>(operation_.get())) {
+        // Profiles of one sketch (Loft from the palette) could extrude instead.
+        if (selection_.singleBody())
+            actions.push_back({"extrude", "Extrude", false});
+        actions.push_back({"loft", "Loft", true});
+        actions.push_back({"loft:smooth", "Smooth", !loft->ruled()});
+        actions.push_back({"loft:straight", "Straight", loft->ruled()});
+        if (loft->hasHost()) {
+            const auto mode = loft->mode();
+            actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
+            actions.push_back({"mode:join", "Join", mode == doc::ExtrudeMode::Join});
+            actions.push_back({"mode:cut", "Cut", mode == doc::ExtrudeMode::Cut});
+        }
+        if (loft->canCommit())
+            actions.push_back({"apply", "Apply", false});
+        return actions;
+    }
     if (const auto* revolve = dynamic_cast<const RevolveOperation*>(operation_.get())) {
         actions.push_back({"extrude", "Extrude", false});
         actions.push_back({"revolve", "Revolve", true});
@@ -2108,6 +2185,11 @@ std::vector<ContextAction> InteractionController::contextActions() const
     }
     if (selection_.empty())
         return actions;
+    // Profiles of several sketches on different planes: they can be lofted.
+    if (profilesOnSeveralPlanes(selection_, *document_)) {
+        actions.push_back({"loft", "Loft", false});
+        return actions;
+    }
     if (selection_.allOfKind(sel::SelectionKind::Datum)) {
         const doc::Datum* datum = selection_.size() == 1 ? document_->datum(selection_.items().front().bodyId) : nullptr;
         if (datum && datum->kind() == doc::DatumKind::Plane)
@@ -2352,6 +2434,28 @@ Status InteractionController::triggerAction(const std::string& id)
         // A revolve is most often a full turn: preview it right away.
         if (auto* revolve = dynamic_cast<RevolveOperation*>(operation_.get()))
             revolve->setValue(360.0, *document_);
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (id == "loft") {
+        if (!selection_.allOfKind(sel::SelectionKind::SketchProfile) || selection_.size() < 2)
+            return runTool("loft"); // says what to select
+        profileOperationKind_ = doc::FeatureKind::Loft;
+        rebuildOperation(); // previews the loft at once
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* loft = dynamic_cast<LoftOperation*>(operation_.get());
+        loft && (id == "loft:smooth" || id == "loft:straight" || id.rfind("mode:", 0) == 0)) {
+        if (id == "loft:smooth" || id == "loft:straight") {
+            loftRuled_ = id == "loft:straight";
+            loft->setRuled(loftRuled_, *document_);
+        } else {
+            loftMode_ = id == "mode:join" ? doc::ExtrudeMode::Join : id == "mode:cut" ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::NewBody;
+            loft->setMode(*loftMode_, *document_);
+        }
         notifyState();
         notifyView();
         return okStatus();
@@ -2632,9 +2736,9 @@ std::string InteractionController::computeSelectionSummary() const
     }
     if (first.kind == sel::SelectionKind::SketchProfile) {
         double area = 0;
-        const auto* entry = scene_.sketch(first.bodyId);
-        for (const auto& item : selection_.items())
-            if (entry && item.index >= 0 && item.index < static_cast<int>(entry->regions.size()))
+        for (const auto& item : selection_.items()) // each in its own sketch (a loft's come from several)
+            if (const auto* entry = scene_.sketch(item.bodyId);
+                entry && item.index >= 0 && item.index < static_cast<int>(entry->regions.size()))
                 area += entry->regions[std::size_t(item.index)].area;
         char text[96];
         std::snprintf(text, sizeof text, "%.2f %s\xC2\xB2", fromMillimeters(fromMillimeters(area, unit), unit),
@@ -3582,6 +3686,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Holes: return static_cast<const doc::HolesFeature&>(f).positions.size() == 1 ? "Hole" : "Holes";
     case doc::FeatureKind::Imported: return "Import";
     case doc::FeatureKind::Text: return "Text";
+    case doc::FeatureKind::Loft: return "Loft";
     }
     return "Step";
 }
@@ -3754,6 +3859,12 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
             text += dot + std::string("Bold");
         return text;
     }
+    case doc::FeatureKind::Loft: {
+        // "2 profiles · Smooth · New body"
+        const auto& l = static_cast<const doc::LoftFeature&>(f);
+        const char* mode = l.mode == doc::ExtrudeMode::NewBody ? "New body" : l.mode == doc::ExtrudeMode::Join ? "Join" : "Cut";
+        return std::to_string(l.sections.size()) + " profiles" + dot + (l.ruled ? "Straight" : "Smooth") + dot + mode;
+    }
     }
     return {};
 }
@@ -3858,7 +3969,7 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.canSplit = state.status == doc::FeatureStatus::Ok && state.output.solidCount() > 1
                         && body->shape().solidCount() > 1 && !body->hasFailures();
             for (const auto& p : f.textParameters())
-                row.parameters.push_back({p.key, p.label, p.value, true});
+                row.parameters.push_back({p.key, p.label, p.value, true, p.choices});
             for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
                     row.parameters.push_back({p.key, p.label, formatLength(p.value, unit), false});
@@ -4251,6 +4362,12 @@ Status InteractionController::runTool(const std::string& id)
             return triggerAction("text");
         return explain("Click a flat face, then Text: type the words, click where they go, and drag the arrow "
                        "out to raise them or in to cut them.");
+    }
+    if (id == "loft") {
+        if (selection_.allOfKind(sel::SelectionKind::SketchProfile) && selection_.size() >= 2)
+            return triggerAction("loft");
+        return explain("Click a closed profile, then Shift-click profiles on other planes in the order to join them, then "
+                       "Loft. To draw one above another, add a construction plane (Plane) and sketch on it.");
     }
     if (id == "measure")
         return explain("Select two faces or edges (Shift-click the second); the distance and angle appear at the bottom left.");

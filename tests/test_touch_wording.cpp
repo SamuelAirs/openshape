@@ -279,9 +279,9 @@ TEST(TouchWording, EveryToolExplanationIsTouchReady)
     h.controller.setTouchLayout(true);
     // Nothing selected: every Modify/Combine tool says what to select.
     for (const char* tool : {"pushpull", "fillet", "chamfer", "shell", "offset", "hole", "text", "move", "rotate", "mirror",
-                             "pattern", "align", "union", "subtract", "intersect", "measure"})
+                             "pattern", "align", "union", "subtract", "intersect", "measure", "loft"})
         EXPECT_FALSE(h.controller.runTool(tool).ok()) << tool;
-    EXPECT_GE(h.messages.size(), 16u);
+    EXPECT_GE(h.messages.size(), 17u);
     for (const std::string& message : h.messages)
         expectTouchMessage(message);
 }

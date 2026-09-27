@@ -9,6 +9,7 @@
 #include "document/JsonHelpers.h"
 #include "document/SketchProfiles.h"
 #include "geometry/Holes.h"
+#include "geometry/Loft.h"
 #include "geometry/Modeling.h"
 #include "geometry/Text.h"
 
@@ -46,6 +47,7 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Holes: return "Holes";
     case FeatureKind::Imported: return "Imported";
     case FeatureKind::Text: return "Text";
+    case FeatureKind::Loft: return "Loft";
     }
     return "Unknown";
 }
@@ -56,7 +58,8 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
                           FeatureKind::Extrude, FeatureKind::Shell, FeatureKind::Move, FeatureKind::Combine,
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
                           FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
-                          FeatureKind::Copy, FeatureKind::Holes, FeatureKind::Imported, FeatureKind::Text})
+                          FeatureKind::Copy, FeatureKind::Holes, FeatureKind::Imported, FeatureKind::Text,
+                          FeatureKind::Loft})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -85,6 +88,7 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Holes: return std::make_unique<HolesFeature>(id);
     case FeatureKind::Imported: return std::make_unique<ImportedFeature>(id);
     case FeatureKind::Text: return std::make_unique<TextFeature>(id);
+    case FeatureKind::Loft: return std::make_unique<LoftFeature>(id);
     }
     return nullptr;
 }
@@ -1816,6 +1820,161 @@ Status RevolveFeature::readParams(const json& in)
     mode = probe.mode;
     angle = *a;
     axis = ax == "Y" ? SketchAxis::Y : SketchAxis::X;
+    return okStatus();
+}
+
+// ---- Loft -------------------------------------------------------------------------
+
+Result<geom::Shape> LoftFeature::toolSolid(const EvalContext& context) const
+{
+    using R = Result<geom::Shape>;
+    if (sections.size() < 2)
+        return R::failure(ErrorCode::InvalidArgument, "Select two or more closed profiles to loft.",
+                          "Loft: " + std::to_string(sections.size()) + " sections");
+    if (sections.size() > kMaxLoftSections)
+        return R::failure(ErrorCode::InvalidArgument,
+                          "A loft joins at most " + std::to_string(kMaxLoftSections) + " profiles.", "Loft: too many sections");
+    // Each sketch's regions once (a loft may come back to a sketch).
+    struct Found {
+        Uuid sketch;
+        sketch::Plane plane;
+        std::vector<geom::Region> regions;
+    };
+    std::vector<Found> found;
+    std::vector<geom::Shape> faces;
+    for (const LoftSection& section : sections) {
+        const sketch::Sketch* sk = context.sketch(section.sketchId);
+        if (!sk)
+            return R::failure(ErrorCode::InvalidReference, "A sketch this loft used no longer exists.",
+                              "Loft: sketch " + section.sketchId.toString() + " not found");
+        auto it = std::find_if(found.begin(), found.end(), [&](const Found& f) { return f.sketch == section.sketchId; });
+        if (it == found.end()) {
+            const sketch::Plane plane = effectivePlane(*sk, context);
+            auto regions = sketchRegions(*sk, plane);
+            if (!regions)
+                return R::failureFrom(regions);
+            it = found.insert(found.end(), Found{section.sketchId, plane, std::move(regions.value())});
+        }
+        const auto index = resolveProfile(it->regions, it->plane, section.profile);
+        if (!index)
+            return R::failure(ErrorCode::InvalidReference, "A profile this loft used is no longer closed or no longer exists.",
+                              "Loft: profile unresolved in sketch " + section.sketchId.toString());
+        faces.push_back(it->regions[std::size_t(*index)].face);
+    }
+    return geom::loftFaces(faces, ruled);
+}
+
+Result<geom::Shape> LoftFeature::compute(const geom::Shape& input, const EvalContext& context) const
+{
+    auto tool = toolSolid(context);
+    if (!tool)
+        return tool;
+    switch (mode) {
+    case ExtrudeMode::NewBody: return tool;
+    case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
+    case ExtrudeMode::Cut:
+        return reworded(geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
+                        "This loft does not reach the body, so nothing would be cut away.");
+    }
+    return tool;
+}
+
+Status LoftFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+std::vector<TextParameterInfo> LoftFeature::textParameters() const
+{
+    std::vector<TextParameterInfo> out{{"sections", "Sections", ruled ? "Straight" : "Smooth", {"Smooth", "Straight"}}};
+    // A new body stays one (the step starts the body); a join can become a cut.
+    if (mode != ExtrudeMode::NewBody)
+        out.push_back({"mode", "Result", mode == ExtrudeMode::Join ? "Join" : "Cut", {"Join", "Cut"}});
+    return out;
+}
+
+Status LoftFeature::setTextParameter(std::string_view key, const std::string& value)
+{
+    if (key == "sections" && (value == "Smooth" || value == "Straight")) {
+        ruled = value == "Straight";
+        return okStatus();
+    }
+    if (key == "mode" && mode != ExtrudeMode::NewBody && (value == "Join" || value == "Cut")) {
+        mode = value == "Join" ? ExtrudeMode::Join : ExtrudeMode::Cut;
+        return okStatus();
+    }
+    if (key == "sections" || key == "mode")
+        return Status::failure(ErrorCode::InvalidArgument, key == "sections" ? "Choose Smooth or Straight." : "Choose Join or Cut.",
+                               "Loft: bad " + std::string(key) + " '" + value + "'");
+    return Feature::setTextParameter(key, value);
+}
+
+std::vector<Uuid> LoftFeature::dependencies() const
+{
+    std::vector<Uuid> out;
+    for (const LoftSection& section : sections)
+        if (std::find(out.begin(), out.end(), section.sketchId) == out.end())
+            out.push_back(section.sketchId);
+    return out;
+}
+
+void LoftFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    for (LoftSection& section : sections)
+        remap(section.sketchId, copies);
+}
+
+void LoftFeature::writeParams(json& out) const
+{
+    json list = json::array();
+    for (const LoftSection& s : sections)
+        list.push_back({{"sketch", s.sketchId.toString()},
+                        {"point", json::array({s.profile.interiorPoint.x, s.profile.interiorPoint.y})},
+                        {"area", s.profile.area}});
+    out["sections"] = list;
+    out["ruled"] = ruled;
+    out["mode"] = std::string(toString(mode));
+}
+
+Status LoftFeature::readParams(const json& in)
+{
+    auto bad = [](const std::string& why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid loft.", "Loft: " + why);
+    };
+    if (!in.contains("sections") || !in["sections"].is_array())
+        return bad("missing sections");
+    const json& list = in["sections"];
+    if (list.size() < 2 || list.size() > kMaxLoftSections)
+        return bad(std::to_string(list.size()) + " sections");
+    std::vector<LoftSection> read;
+    for (const json& s : list) {
+        if (!s.is_object() || !s.contains("sketch") || !s["sketch"].is_string() || !s.contains("point") || !s["point"].is_array()
+            || s["point"].size() != 2 || !s["point"][0].is_number() || !s["point"][1].is_number())
+            return bad("bad section");
+        const auto id = Uuid::parse(s["sketch"].get<std::string>());
+        const auto area = numberFrom(s, "area");
+        const double x = s["point"][0].get<double>(), y = s["point"][1].get<double>();
+        if (!id || id->isNil() || !area || !std::isfinite(*area) || !std::isfinite(x) || !std::isfinite(y))
+            return bad("bad section fields");
+        read.push_back({*id, {{x, y}, *area}});
+    }
+    bool straight = false;
+    if (in.contains("ruled")) {
+        if (!in["ruled"].is_boolean())
+            return bad("ruled is not a boolean");
+        straight = in["ruled"].get<bool>();
+    }
+    const std::string m = in.contains("mode") && in["mode"].is_string() ? in["mode"].get<std::string>() : std::string();
+    ExtrudeMode readMode = ExtrudeMode::NewBody;
+    if (m == "Join")
+        readMode = ExtrudeMode::Join;
+    else if (m == "Cut")
+        readMode = ExtrudeMode::Cut;
+    else if (m != "NewBody")
+        return bad("unknown mode '" + m + "'");
+    sections = std::move(read);
+    ruled = straight;
+    mode = readMode;
     return okStatus();
 }
 

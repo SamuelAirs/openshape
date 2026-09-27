@@ -30,7 +30,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece, Copy, Holes, Imported, Text
+    Split, SplitPiece, Copy, Holes, Imported, Text, Loft
 };
 
 // What a feature may consult besides its input shape.
@@ -73,11 +73,13 @@ struct ParameterInfo {
 };
 
 // An editable string (a Text step's text), edited in the Model panel like
-// the scalars.
+// the scalars; or one of a few `choices` (a loft's Smooth / Straight), which
+// the Model panel offers as buttons.
 struct TextParameterInfo {
     std::string key;
     std::string label;
     std::string value; // UTF-8
+    std::vector<std::string> choices = {};
 };
 
 // One step of a body's modeling history. A feature is a pure function of its
@@ -668,6 +670,46 @@ public:
     Status readParams(const nlohmann::json& in) override;
     std::vector<Uuid> dependencies() const override { return {sketchId}; }
     void remapReferences(const std::map<Uuid, Uuid>& copies) override;
+};
+
+// One profile of a loft: a closed region of a sketch.
+struct LoftSection {
+    Uuid sketchId;
+    ProfileRef profile;
+};
+
+// The most profiles one loft joins (files with more are refused).
+inline constexpr std::size_t kMaxLoftSections = 100;
+
+// Joins closed sketch profiles on different planes, in their order, into one
+// solid (geom::loftFaces): Smooth through all of them, or Straight (ruled)
+// from each to the next. A new body (base feature), or joined to / cut from
+// the body it belongs to, like Extrude. Each profile follows its sketch (and
+// the face or construction plane the sketch is on).
+class LoftFeature final : public Feature {
+public:
+    using Feature::Feature;
+    std::vector<LoftSection> sections;
+    bool ruled = false; // Straight
+    ExtrudeMode mode = ExtrudeMode::NewBody;
+
+    FeatureKind kind() const override { return FeatureKind::Loft; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new LoftFeature(*this)); }
+    bool isBaseFeature() const override { return mode == ExtrudeMode::NewBody; }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    // "sections": Smooth / Straight; for a join or cut also "mode": Join / Cut.
+    std::vector<TextParameterInfo> textParameters() const override;
+    Status setTextParameter(std::string_view key, const std::string& value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    // Each sketch once, in the order the profiles use them.
+    std::vector<Uuid> dependencies() const override;
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
+
+    // The lofted solid alone (before join / cut).
+    Result<geom::Shape> toolSolid(const EvalContext& context) const;
 };
 
 } // namespace os::doc

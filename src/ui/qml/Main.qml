@@ -488,6 +488,17 @@ ApplicationWindow {
                 ToolTip.text: "Sketch on the selected flat face, or on an origin plane (K = ground)."
                 ToolTip.delay: 500
             }
+            ActionButton {
+                objectName: "tool_loft"
+                text: "Loft"
+                Layout.fillWidth: !Theme.compact
+                // With profiles on different planes selected: loft them;
+                // otherwise it says what to select (runTool).
+                onClicked: { window.app.runTool("loft"); viewport.forceActiveFocus() }
+                ToolTip.visible: hovered && !Theme.touch
+                ToolTip.text: "Join closed profiles on different planes into a solid, in the order you select them (Shift adds)."
+                ToolTip.delay: 500
+            }
 
             // Tools that act on a selection: with a fitting selection they run,
             // otherwise they say what to select (no hidden gestures to learn).
@@ -908,6 +919,13 @@ ApplicationWindow {
             return "Drag the arrow or type the total thickness (half on each side of the sketch) · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
             return "Drag the arrow or type a distance · \"Up to face\" ends it on a face you click · Shift-click adds profiles"
+        // Loft: profiles on several planes, joined in the order selected.
+        if (app.operationActive && app.operationTitle === "Loft")
+            return "Enter or Apply makes the loft · Straight goes straight from each profile to the next · "
+                 + "Shift-click another profile to add it (the order counts) or to take it out"
+        if (!app.operationActive && app.contextActions.some(a => a.id === "loft"))
+            return "Loft joins these profiles in the order you selected them · Shift-click another profile to add it · "
+                 + "Esc clears the selection"
         // An empty model's hints, unless a tool is already at work (e.g. the
         // first extrusion, whose own hints come below).
         if (!app.operationActive && app.bodyCount === 0 && app.sketchCount > 0)

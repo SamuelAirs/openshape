@@ -224,7 +224,9 @@ Rectangle {
                             ["Add to a sketch", "Select one of its shapes → Sketch, or sketch on its plane"],
                             ["Extrude / revolve", "Finish, then click inside a closed shape", "Finish, then tap inside a closed shape"],
                             ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face", "While extruding: Symmetric, or Up to face and tap a face"],
-                            ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"]
+                            ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"],
+                            ["Loft", "Click a profile, Shift-click profiles on other planes in the order to join them, then Loft (also in the tools) · Smooth or Straight · change it later in the Model panel",
+                             "Tap a profile, then profiles on other planes in the order to join them, then Loft (also in the tools) · Smooth or Straight · change it later in the Model panel"]
                         ]
                     }
                     HelpSection {

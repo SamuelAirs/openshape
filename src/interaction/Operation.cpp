@@ -2056,6 +2056,85 @@ std::unique_ptr<cmd::Command> ExtrudeOperation::makeCommand(const doc::Document&
     return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
 }
 
+// ---- Loft -------------------------------------------------------------------------
+
+std::unique_ptr<LoftOperation> LoftOperation::create(const doc::Document& document, std::vector<doc::LoftSection> sections,
+                                                     bool ruled, std::optional<doc::ExtrudeMode> mode)
+{
+    if (sections.empty())
+        return nullptr;
+    // The body the first profile drawn on a (shown) body's face lies on.
+    std::optional<Uuid> host;
+    Vec3 center;
+    for (const doc::LoftSection& section : sections) {
+        const sketch::Sketch* sk = document.sketch(section.sketchId);
+        if (!sk)
+            return nullptr;
+        center = center + sk->plane().toWorld(section.profile.interiorPoint) / double(sections.size());
+        if (!host && sk->hostBody())
+            if (const doc::Body* body = document.body(*sk->hostBody()); body && body->isVisible())
+                host = sk->hostBody();
+    }
+    auto op = std::unique_ptr<LoftOperation>(new LoftOperation(host, std::move(sections), ruled, center));
+    if (mode && (host || *mode == doc::ExtrudeMode::NewBody)) {
+        op->mode_ = *mode;
+        op->modeChosen_ = true;
+    }
+    return op;
+}
+
+doc::ExtrudeMode LoftOperation::mode() const
+{
+    if (!host_)
+        return doc::ExtrudeMode::NewBody;
+    if (modeChosen_)
+        return mode_;
+    return autoNewBody_ ? doc::ExtrudeMode::NewBody : doc::ExtrudeMode::Join;
+}
+
+void LoftOperation::setRuled(bool ruled, const doc::Document& document)
+{
+    ruled_ = ruled;
+    setValue(value(), document);
+}
+
+void LoftOperation::setMode(doc::ExtrudeMode mode, const doc::Document& document)
+{
+    mode_ = mode;
+    modeChosen_ = true;
+    setValue(value(), document);
+}
+
+Uuid LoftOperation::previewBody() const
+{
+    return mode() == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
+}
+
+bool LoftOperation::reconsider(const geom::Shape& result, const doc::Document& document)
+{
+    // A join that would not touch the body: the user meant a new body.
+    if (modeChosen_ || mode() != doc::ExtrudeMode::Join || !joinMissedBody(result, document, host_))
+        return false;
+    autoNewBody_ = true;
+    return true;
+}
+
+std::unique_ptr<doc::Feature> LoftOperation::makeFeature(double) const
+{
+    auto feature = std::make_unique<doc::LoftFeature>();
+    feature->sections = sections_;
+    feature->ruled = ruled_;
+    feature->mode = mode();
+    return feature;
+}
+
+std::unique_ptr<cmd::Command> LoftOperation::makeCommand(const doc::Document& document) const
+{
+    if (!host_ || mode() == doc::ExtrudeMode::NewBody)
+        return std::make_unique<cmd::CreateBodyCommand>(document.nextBodyName(), makeFeature(value()));
+    return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
+}
+
 // ---- Construct: axes and planes -------------------------------------------------------
 
 std::unique_ptr<DatumOperation> DatumOperation::create(doc::DatumKind kind)

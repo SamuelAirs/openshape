@@ -94,6 +94,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Holes: return "Hole";
     case doc::FeatureKind::Imported: return "Import";
     case doc::FeatureKind::Text: return "Text";
+    case doc::FeatureKind::Loft: return "Loft";
     }
     return "Add step";
 }

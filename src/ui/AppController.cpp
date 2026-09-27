@@ -652,6 +652,10 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
             pm.insert(QStringLiteral("label"), q(p.label));
             pm.insert(QStringLiteral("value"), q(p.valueText));
             pm.insert(QStringLiteral("isText"), p.isText);
+            QStringList choices;
+            for (const auto& choice : p.choices)
+                choices.append(q(choice));
+            pm.insert(QStringLiteral("choices"), choices);
             params.append(pm);
         }
         map.insert(QStringLiteral("parameters"), params);
