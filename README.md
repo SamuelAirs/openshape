@@ -16,7 +16,7 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 [User guide](docs/USER_GUIDE.md) · [Build from source](BUILDING.md) ·
 [Report a bug](https://github.com/SamuelAirs/openshape/issues)
 
-> **Early pre-release (0.1).** OpenShape is young: it does the things below,
+> **Early pre-release (0.2).** OpenShape is young: it does the things below,
 > but expect rough edges. It keeps recovery copies of unsaved work, and bug
 > reports are very welcome.
 
@@ -56,8 +56,9 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
   mirror across, align onto or sketch on; they follow the faces they were
   made from.
 - Union, subtract and intersect.
-- The Model panel lists every step: change its values later, suppress,
-  delete or hide it. Everything can be undone.
+- The Model panel lists every body, sketch and step: change a step's
+  values later, suppress or delete it, and hide bodies, sketches and
+  construction geometry. Everything can be undone.
 
 **Print helpers**
 - A Hole tool with ISO clearance and tap sizes, counterbores and
@@ -126,7 +127,8 @@ ask it to) are in [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md).
 
 A 60 × 30 × 5 mm mounting plate with two 6 mm holes:
 
-1. **Sketch.** Press `K` (or click **Sketch**, then **Top (XY)**): you are
+1. **Sketch.** Start OpenShape and click **New project** on the Home screen.
+   Press `K` (or click **Sketch**, then **Top (XY) — ground**): you are
    drawing on the ground with the Rectangle tool. Click where the red and
    green axes cross, type `60`, press `Tab`, type `30`, press `Enter`. Click
    **Finish sketch**.

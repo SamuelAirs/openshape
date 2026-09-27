@@ -141,7 +141,8 @@ if command -v pacman >/dev/null; then
     msysRoot=${msysRoot%/*} # package paths are relative to it
     {
         echo "Libraries bundled with OpenShape and their licenses. OpenShape's own"
-        echo "license is in LICENSE.txt; PlaneGCS's (LGPL-2.1) in PlaneGCS-COPYING.LIB.txt."
+        echo "license is in LICENSE.txt; PlaneGCS's (LGPL-2.1) in PlaneGCS-COPYING.LIB.txt;"
+        echo "the Noto Sans font's (SIL OFL 1.1) in NotoSans-OFL.txt."
         echo "Where to get the source code of each is given with it (\"Source code\")."
         if [ -n "$own_occt" ]; then
             echo

@@ -8,7 +8,14 @@
 #   pre-release for 0.x versions and suffixed tags.
 # - Manual runs and pushes to main that change the packaging upload the
 #   files as a workflow artifact instead, so the pipeline is exercised
-#   before the first tag.
+#   without publishing (a version bump alone does not start it: run it by
+#   hand before pushing a tag, BUILDING.md "Release").
+# - A tag needs CHANGELOG.md's section for its version (dated, except for
+#   suffixed tags such as -rc1): the release notes are that section
+#   (checked in the first step, not after the build).
+# - Every run downloads the source code of the LGPL libraries the package
+#   ships (scripts/ci/mirror-sources.sh, TD-46); a release attaches it, so
+#   it stays available as long as the release is offered.
 # - Code signing through SignPath Foundation (docs/CODE_SIGNING.md) switches
 #   on once the secret SIGNPATH_API_TOKEN and the variable
 #   SIGNPATH_ORGANIZATION_ID are set: OpenShape.exe is signed before the
@@ -31,6 +38,7 @@ on:
       - 'scripts/windows/**'
       - 'packaging/**'
       - 'scripts/package-windows.sh'
+      - 'scripts/ci/**'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -101,6 +109,13 @@ jobs:
               "$version"|"$version"-*) ;;
               *) echo "::error title=Version::tag $tag does not match the version in CMakeLists.txt ($version)"; exit 1 ;;
             esac
+            # The release notes are CHANGELOG.md's section for the version.
+            if [ -z "$(bash scripts/ci/changelog-section.sh "$version")" ]; then
+              echo "::error title=Changelog::CHANGELOG.md has no '## $version' section"; exit 1
+            fi
+            if [ "${tag#v}" = "$version" ] && grep -q "^## $version (unreleased)" CHANGELOG.md; then
+              echo "::error title=Changelog::date CHANGELOG.md's heading '## $version (unreleased)' before tagging"; exit 1
+            fi
           fi
           echo "::notice title=Version::OpenShape $version (${GITHUB_REF_NAME})"
       # The release notes template and scripts/ci/install-notes.sh, both
@@ -156,6 +171,15 @@ jobs:
       # tried on made-up signed copies of this OpenShape.exe, on every run
       # (signed or not), so that a broken check shows up before anyone is
       # asked to approve a signing request (ctest runs it on the build too).
+      # The LGPL libraries' source code, as listed in the package (TD-46):
+      # on every run and before any signing request, so a tag does not meet
+      # a broken download for the first time after the whole build; attached
+      # to releases only.
+      - name: Mirror the LGPL sources
+        run: |
+          bash scripts/ci/run-logged.sh sources bash scripts/ci/mirror-sources.sh dist/OpenShape/THIRD_PARTY_LICENSES.txt dist/sources
+          echo "::notice title=Sources::$(ls dist/sources | wc -l) files, $(du -sh dist/sources | cut -f1)"
+
       - name: Check the signature check (self-test on OpenShape.exe)
         run: |
           bash scripts/ci/run-logged.sh pe-signature python scripts/windows/pe-signature.py self-test dist/OpenShape/OpenShape.exe
@@ -286,9 +310,9 @@ jobs:
           bash scripts/ci/install-notes.sh "$version" "$APP_VERSION" "$tag" "$signing" > "$RUNNER_TEMP/install.md"
           # What is new: this version's section of CHANGELOG.md (without its
           # heading), then the install and license notes.
-          bash scripts/ci/changelog-section.sh "$version" > "$RUNNER_TEMP/notes.md"
+          bash scripts/ci/changelog-section.sh "$APP_VERSION" > "$RUNNER_TEMP/notes.md"
           cat "$RUNNER_TEMP/install.md" >> "$RUNNER_TEMP/notes.md"
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
-              dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt
+              dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt dist/sources/*
           echo "::notice title=GitHub Release::$tag published ${prerelease[*]} ($signing)"

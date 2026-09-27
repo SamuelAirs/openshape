@@ -12,7 +12,7 @@
 #
 # Usage (Windows PowerShell 5.1 or pwsh):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 `
-#       -Setup dist\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\OpenShape `
+#       -Setup dist\OpenShape-<version>-windows-x64-setup.exe -InstallDir build\installer-test\OpenShape `
 #       [-PackageDir dist\OpenShape] [-TestDesktopDir <folder>] [-Screenshot <png>] [-TestRunningApp]
 # -TestDesktopDir: the installer was built with OPENSHAPE_TEST_DESKTOP_DIR set
 #   to this folder (scripts/windows/make-installer.sh): also tests /DESKTOP.

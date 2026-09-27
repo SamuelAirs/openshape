@@ -61,12 +61,13 @@ On a desktop-sized window:
 - **Top bar** (top left): the **File** menu, **Undo** and **Redo** (their
   tooltips name the step), and **?** for the help card.
 - **Tool palette** (left): **Create** (Box, Sketch), **Modify**
-  (Push/Pull, Fillet, Chamfer, Shell, Offset, Move, Rotate, Mirror,
-  Pattern, Align), **Combine** (Union, Subtract, Intersect) and
+  (Push/Pull, Fillet, Chamfer, Shell, Offset, Hole, Text, Move, Rotate,
+  Mirror, Pattern, Align), **Combine** (Union, Subtract, Intersect) and
   **Construct** (Axis, Plane). When the window is short, the palette
   scrolls.
 - **Model panel** (right): everything you made, step by step. It appears
-  once there is something in the document; **Hide** folds it away. See
+  once there is something in the document; **Hide** folds it away (**Show**
+  brings it back; on a phone, **Close** slides it away). See
   [The Model panel](#the-model-panel).
 - **Value box** (next to the arrow or ring you are dragging, never over
   what you selected, nor where you are moving, turning or copying it, the
@@ -91,8 +92,11 @@ On a desktop-sized window:
 - Short messages ("Saved", "Exported STL", or why something failed) appear
   at the bottom of the window for a few seconds.
 
-A new document is empty: click **Box** (or press `B`) to start with a 20 mm
-cube, or **Sketch** (or `K`) to draw a profile on the ground.
+When OpenShape starts without a file it shows [Home](#projects) with your
+recent projects: click **New project** for an empty document. A new document
+is empty: click **Box** (or press `B`) to start with a 20 mm cube, or press
+`K` (or click **Sketch**, then **Top (XY) — ground**) to draw a profile on the
+ground.
 
 ### How tools work
 
@@ -143,8 +147,11 @@ display unit (**mm** or **in**, bottom right). Angles are in degrees.
 - **Iso**, **Top**, **Front** and **Right** turn the view to the standard
   directions (Front looks along +Y, Right looks along −X); the grid is the
   ground (the XY plane, fading out towards its edge), Z points up. The
-  light comes from above, so tops are lightest and undersides darkest from
-  every angle.
+  light comes from above and turns with you as you orbit, staying over
+  your left shoulder: tops are lighter than the sides and undersides
+  darkest from every angle, two sides of a box seen at once get clearly
+  different shades, and a body resting flat on the grid casts a soft
+  shadow beneath it.
 - Dragging an arrow or a ring changes a value instead of turning the view.
 
 **Touch layout.** The first time you touch the screen, OpenShape switches
@@ -156,8 +163,8 @@ modifier key: taps add to the selection (tap empty space to start over), a
 double-tap selects a body, and every tool has a button. On an iPad the
 touch layout is on from the start.
 
-**On a phone** (or any window smaller than about 600 x 500, such as an iPad
-in Split View), the tools move to a strip along the bottom that scrolls
+**On a phone** (or any window narrower than about 600 px or lower than
+about 500 px, such as an iPad in Split View), the tools move to a strip along the bottom that scrolls
 sideways, the Model panel and the view buttons open from the **Model** and
 **View** buttons, and nothing sits under the camera cutout or the home
 indicator. The value box docks at the top or the bottom of the screen, on
@@ -269,6 +276,10 @@ shapes of the same sketch). An arrow appears:
   sketch.
 - **Up to face**: click a flat face parallel to the sketch; the extrusion
   ends there.
+- **Draft**: click it and type an angle to taper the walls (positive
+  narrows them away from the sketch, negative widens them); the button
+  then shows the angle, and the arrow (or **Draft** again) goes back to the
+  distance. The draft can be changed later in the Model panel.
 - **Revolve** turns the shape around the sketch's own vertical or
   horizontal axis through its origin (**Axis: vertical** / **Axis:
   horizontal**); type the angle (`360` for a full turn).
@@ -301,8 +312,9 @@ click what to line it up with:
   a hole on a shaft.
 - **The origin:** click one of the X (red), Y (green) or Z (blue) axis
   lines drawn through the origin, or choose **X axis**, **Y axis**, **Z
-  axis**, **XY plane**, **XZ plane**, **YZ plane** or **Origin** below the
-  hint. A hole's axis (select its rim or its wall) lands on the Z axis, a
+  axis**, **XY plane**, **XZ plane**, **YZ plane** or **Origin** in the row of
+  buttons above the hint (in the value box once a target is chosen). A
+  hole's axis (select its rim or its wall) lands on the Z axis, a
   straight edge runs along X, a flat face lies on the XZ plane touching it
   from the side the body is on (**Flip** puts the body on the other side),
   and a circle's center or an edge's middle moves onto the origin (the body
@@ -348,11 +360,13 @@ that floats above a face. They are drawn in orange (an axis as a dashed
 line, a plane as a see-through square with an outline), have their own rows
 in the Model panel, and are saved with the project.
 
-- **Axis** (in **Construct**): click a hole, a shaft or a circle (the axis
-  goes through its middle) or a straight edge (along it). **Two points**:
+- **Axis** (in **Construct**): with **Through / along** (the starting
+  mode), click a hole, a shaft or a circle (the axis goes through its
+  middle) or a straight edge (along it). **Two points**:
   click two corners (an edge near its end) or circles (their centers).
   **Parallel to X / Y / Z**: click a corner or circle it goes through.
-- **Plane**: click a flat face, then drag the arrow or type the distance
+- **Plane**: with **Offset from face** (the starting mode), click a flat
+  face, then drag the arrow or type the distance
   (negative goes the other way); **From XY / XZ / YZ** starts from an
   origin plane instead. **At angle**: click a straight edge, then type the
   angle to the face next to it (the one facing up; click another flat face
@@ -417,7 +431,7 @@ A sketch is a flat drawing on a plane; its closed shapes (profiles) become
 
 ### Starting a sketch
 
-- **On the ground:** press `K`, or click **Sketch** and choose **Top (XY)**.
+- **On the ground:** press `K`, or click **Sketch** and choose **Top (XY) — ground**.
   **Front (XZ)** and **Right (YZ)** are the upright origin planes.
 - **On a face:** select a flat face, then press `K` or click **Sketch** (or
   **Sketch** below the value box). The sketch stays on that face when the
@@ -442,7 +456,7 @@ The view turns to face the sketch. At the top are the sketch's name,
 | Line | `L` | Click point after point; type a length. `Esc` or a right-click ends the line (on touch: tap the tool again); ending on the first point closes the shape. |
 | Rectangle | `R` | Click one corner, then the opposite corner, or type width, `Tab`, height, `Enter`. You can also drag. |
 | Center rectangle | `E` | Click the center, then a corner (or type width, `Tab`, height): it stays centered. |
-| Polygon | `P` | Click the center, move to the middle of a side; type the size across flats, `Tab` for the number of sides. `-` / `+` (or the **−** / **+** buttons) change the sides. |
+| Polygon | `P` | Click the center, move to the middle of a side; type the size across flats (with an odd number of sides: the inner diameter, labelled inner Ø), `Tab` for the number of sides. `-` / `+` (or the **−** / **+** buttons) change the sides. |
 | Circle | `C` | Click the center, then click for the size or type the diameter. |
 | Arc | `A` | Click the start, the end, then where it bends (or type the radius). |
 | Tangent arc | `G` | Click the free end of a line or arc, then where the arc ends (or type the radius); it continues from there until `Esc`. |
@@ -573,6 +587,30 @@ sizes already assume printed plastic and never get it. A diameter you type
 is used exactly: click the hole's wall and type the diameter you need; the
 Model panel keeps the value, so you can change it after a test print.
 
+### Holes for screws
+
+1. Click a flat face, then **Hole** (on the face's buttons, or in the
+   Modify tools).
+2. Click where each hole goes: clicks snap to the face's center and the
+   middles of its straight edges, and line up with the holes placed so far.
+3. Pick the screw size (**M2** … **M6**) and the fit: **Close fit** or
+   **Normal fit** (ISO 273 clearance, plus the
+   [hole allowance](#holes-that-fit)), or **Tap** (a tap drill, for a screw
+   that cuts its own thread). Or click **Ø** and type a diameter.
+4. **Through all** drills through the whole part; switch it off and click
+   **Depth** to type a depth. **Counterbore** or **Countersink** adds a
+   seat for the screw head.
+5. For exact positions click **X** or **Y** (or press `Tab`) and type the
+   distance from the face's corner; with two or more holes, **From last
+   hole** measures from the hole placed before. Click a placed hole to make
+   it the current one; **Remove hole** drops it.
+6. Press `Enter` (or ✓): all the holes are one step in the Model panel
+   (**Holes**, or **Hole** for a single one).
+
+To add a seat to a hole that is already there, click its rim on the flat
+face, then **Counterbore** or **Countersink**; pick **M2** … **M6** or type
+the diameter. A counterbore's arrow into the hole sets its depth.
+
 ### Heat-set inserts
 
 1. Make a small hole where the insert goes (a sketched circle, cut into the
@@ -603,8 +641,9 @@ datasheet.
 2. Type the words in the **Text** box (one line). They appear at the
    middle of the face in Noto Sans; click the face to move them (they snap
    to the middle and to the middles of the edges).
-3. Drag the arrow out to raise the letters (**Emboss**) or in to cut them
-   into the face (**Deboss**). To type a number, click **Depth**, **Size**
+3. Drag the arrow out to raise the letters or in to cut them into the
+   face, or click **Emboss** (raised) or **Deboss** (cut in); **Bold**
+   switches to Noto Sans Bold. To type a number, click **Depth**, **Size**
    or **Angle** first (or press `Tab` in the Text box): anything typed
    elsewhere, digits included, goes to the words. **Size** is the height of
    the capital letters in mm; **Angle** turns the text, from -360° to 360°
@@ -652,7 +691,8 @@ CAD programs.
 - **Home** shows your recent projects as cards with a preview of each (saved
   inside the project), with **New project**, **Open…** and **Import STEP…**.
   It appears when OpenShape starts without a file and from **File → Home**;
-  `Esc` or **Back** returns to the open document. Each card's **⋯** button
+  `Esc` or **Back to …** (**Back** in a narrow window, such as a phone held
+  upright) returns to the open document. Each card's **⋯** button
   (or a right-click or a long touch) offers **Remove from list**.
 - **File → Import STEP…** (`Ctrl+I`) brings in parts from other CAD programs:
   each solid becomes a body you can push, pull, round and combine; inches
@@ -667,6 +707,12 @@ CAD programs.
   installing, double-clicking an `.openshape` file opens it too.
 - Before New, Open or closing with unsaved changes, OpenShape asks: **Save**,
   **Don't Save** or **Cancel**.
+- **On iPhone and iPad** there are no save dialogs: **Save** asks only for a
+  name and puts the project into OpenShape's folder (in the Files app: *On
+  My iPhone / iPad → OpenShape*); **File → Export STL**, **Export 3MF** and
+  **Export STEP** write straight into its *Exports* folder, and a message
+  names the file. **Open…** picks any project there, and Home lists the
+  projects in that folder too.
 - A project from a newer OpenShape version is refused with a message rather
   than opened wrongly.
 

@@ -3,51 +3,104 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-09-27)
 
-**On iPhone and iPad.** OpenShape runs on iPhone and iPad (TestFlight).
-The layout adapts to phones, tablets, Split View and foldables, and the
-value box no longer covers what you tapped: on phones it docks at the top
-or bottom, away from the selection (and above the on-screen keyboard while
-you type); on larger screens it sits beside the arrow, never over the
-edge, face or body you are working on. While you draw a sketch with a
-finger, the live sizes show beside the finger, not under it.
+The answers to the first round of testing on iPhone and iPad, a clearer
+view, construction axes and planes, text, and holes sized for printing.
+
+**The value box stays out of the way.** It no longer covers the edge,
+face or body you clicked, the arrow, or where you are moving or turning
+the body, whenever there is room: it sits beside the arrow, or in the
+nearest free corner of the window when there is no room there. In small
+windows (a phone, an iPad in Split View) it docks below the top bar or
+above the hint line, on the side away from the selection. It overlaps
+them only when there is no free corner left (zoomed in close, or a pattern
+or move that spans the window), and in a small window while you drag the
+arrow: the box keeps its side until you let go.
+
+**iPhone and iPad (in testing, not available to install yet).** The
+universal iPhone and iPad app is being tested through TestFlight on the
+developer's own devices; there is no public TestFlight link or App Store
+release yet. On a phone the value box moves to the top of the screen
+while the on-screen keyboard is up, and while you sketch with a finger or
+a pen the live sizes move above it instead of hiding under it.
 
 **Easier to read at every angle.** The view opens in perspective (the
-Perspective / Orthographic button remembers your choice), the light stays
-fixed to the world (tops are lightest, undersides darkest, and two sides
-seen at once are never the same shade), the grid fades out softly instead
-of ending at an edge, and bodies cast a soft shadow where they stand on
-the ground.
+Perspective / Orthographic button remembers your choice), and zooming
+with the wheel or a pinch heads for the spot under the pointer, stopping
+just short of it. The light always comes from above and turns with you
+as you orbit, staying over your left shoulder: tops are lighter than the
+sides, undersides darkest, and two sides of a box seen at once get
+clearly different shades. The grid fades out softly instead of ending at
+an edge, also towards the horizon, and a body resting flat on the grid
+casts a soft shadow beneath it.
 
-**Construction axes and planes.** Construct → Axis (through a hole or a
-shaft, along an edge, through two points, parallel to X, Y or Z) and
-Construct → Plane (offset from a face or an origin plane, at an angle
-through an edge, midway between two faces). Rotate about them, pattern
-around or along them, mirror across them, align onto them and sketch on
-them; they follow the faces they were made from. Align can also put a
-hole's axis on the Z axis, a face on the XY, XZ or YZ plane, or a corner
-on the origin.
+Fixed: a click at the very center of a face could select the face behind
+it; in perspective, hidden edges could show through and some visible
+edges could not be clicked.
 
-**Text.** Raise or cut words into a flat face (Noto Sans, regular or
-bold): size, depth and angle can be typed and changed later.
+**Construction axes and planes.** Construct → Axis (through a hole, a
+shaft or a circle, along a straight edge, through two corners or circle
+centers, or parallel to X, Y or Z through a corner) and Construct → Plane
+(offset from a flat face or an origin plane, at an angle through an edge,
+midway between two parallel faces). Rotate about an axis, pattern around
+or along one, mirror across a plane, sketch on a plane, and align onto
+either (click it while the tool waits). Each has a row in the Model
+panel: type a new distance or angle there (a sketch on the plane, and
+what you extruded from it, moves along), hide it or delete it. When you
+change an earlier step in the Model panel (say, make the box taller),
+they move with the faces and edges they were made from. Align can also
+put a hole's axis on the X, Y or Z axis, a face on the XY, XZ or YZ
+plane, or a circle's center or an edge's middle on the origin: click the
+X, Y or Z line through the origin, or choose the axis, plane or Origin
+among Align's buttons.
 
-**Holes that fit printed parts.** Clearance holes and counterbore or
-countersink seats get a 3D-printing allowance (+0.2 mm to start with,
-File → Preferences); tap and heat-set insert sizes stay as they are.
+**Text.** Select a flat face, then Text (also in the Modify tools), to
+raise words from it or cut them into it, in Noto Sans (regular or bold,
+built in). Size (the height of the capital letters, in mm), depth and
+angle can be typed, and the words, size, depth and angle can be changed
+later in the Model panel.
 
-**Copies you can change on their own.** Mirror and Pattern copies made as
-separate bodies, and pieces split into bodies, are independent: editing
-the original no longer changes them (projects from 0.1.0 keep their
-linked copies).
+**Holes that fit printed parts.** The screw sizes of the Hole tool,
+Counterbore and Countersink now add a 3D-printing allowance to clearance
+holes and head seats: +0.2 mm by default, also after updating from 0.1.0
+(an M3 close-fit hole is 3.4 mm instead of ISO's 3.2 mm), and the Model
+panel says so ("M3 close fit +0.2 mm"). Set it between 0 (the standard
+sizes) and 1 mm in File → Preferences to suit your printer. Tap-drill and
+heat-set insert sizes stay as they are, diameters you type are used
+exactly, and holes already in your projects keep their sizes.
 
-**Smoother on large parts.** Previews are computed in the background and
-shown as soon as they are ready, so dragging stays smooth.
+**Copies you can change on their own.** Mirror and Pattern now make
+separate bodies by themselves when the copies would touch neither the
+original nor each other (a message says so; the Separate bodies button
+still decides either way). These copies, and pieces made with Split into
+bodies, are independent: editing, moving or deleting the original no
+longer changes them, and a copy can be subtracted from its original. A
+pattern made as separate bodies cannot change its count or spacing
+afterwards; turn Separate bodies off for a pattern you want to edit
+later. In projects made with 0.1.0, copies and pieces made back then
+still follow their original; new ones are independent.
 
-Known limitations: the Windows installer is not code-signed yet
-(SmartScreen warns); text is one line on a flat face, without kerning;
-construction axes and planes follow the step they were made from, not
-steps added later; no splines yet.
+**Smoother on large parts.** Previews are computed in the background, so
+the window, the arrows and the view keep up with your pointer while you
+drag; the shape follows as each preview is ready. Applying a change and
+undo still take a moment on large parts.
+
+Known limitations: Windows is the only download for now (the iPhone and
+iPad app is in private TestFlight testing, and there is no macOS
+download); text is one line on a flat face, in Latin, Greek or Cyrillic
+letters (Noto Sans only), without kerning (pairs such as AV sit a little
+apart), and once applied it cannot be moved or switched between regular
+and bold; letters that hang over the face's edge are not flagged;
+construction axes and planes stay where they are when you push, pull,
+move or align the part after making them, and Rotate, Pattern, Mirror and
+Align use an axis or plane where it is when you apply them (only a sketch
+on a plane moves with it); the value box can still cover part of a very
+large selection or of a fillet's new surface; each separate copy or split
+piece adds hidden copies of the sketches, construction planes and tool
+bodies it was made from to the Model panel; projects saved with 0.2.0 may not open in 0.1.0 (for
+example one with a mirror made as a separate body, or with text); no
+splines yet.
 
 ## 0.1.0 (2026-09-26)
 

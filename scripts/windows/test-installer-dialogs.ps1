@@ -23,7 +23,7 @@
 #
 # Usage (Windows PowerShell 5.1):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer-dialogs.ps1 `
-#       -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe `
+#       -Setup build\installer-test\OpenShape-<version>-windows-x64-setup.exe `
 #       -InstallDir build\installer-test\Programs\OpenShape -TestDesktopDir build\installer-test\desktop
 # Exit code: the number of failed checks.
 param(

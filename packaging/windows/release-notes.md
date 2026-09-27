@@ -20,7 +20,7 @@ verified publisher **SignPath Foundation**. Free code signing provided by
 SignPath.io, certificate by SignPath Foundation. To check a file, right-click
 it: *Properties > Digital Signatures*.
 <!-- end -->
-`SHA256SUMS.txt` lists the files' SHA-256 checksums
+`SHA256SUMS.txt` lists the installer's and the zip's SHA-256 checksums
 (PowerShell: `Get-FileHash <file>`). Code signing policy:
 [docs/CODE_SIGNING.md](https://github.com/SamuelAirs/openshape/blob/@TAG@/docs/CODE_SIGNING.md).
 
@@ -35,4 +35,8 @@ next to `OpenShape.exe`: among them Open CASCADE Technology
 `scripts/windows/build-occt.sh`), Qt 6 (LGPL-3.0) and PlaneGCS (LGPL-2.1,
 in the repository under `third_party/planegcs`). They are separate DLLs,
 so they can be replaced with modified versions. No GPL-licensed code is
-included.
+included. The source code of these libraries is attached to this release
+(the `.src.tar.zst` archives, `opencascade-*.tar.gz` and
+`SOURCES-SHA256SUMS.txt`). The Text tool's font, Noto Sans (SIL Open Font
+License 1.1), is built into `OpenShape.exe`; its license is in
+`NotoSans-OFL.txt`.

@@ -1,6 +1,6 @@
 # Running OpenShape on an iPhone and iPad
 
-**Status (2026-09-26):** the owner's MacBook is too old for current Xcode,
+**Status (2026-09-27):** the owner's MacBook is too old for current Xcode,
 so the iOS app is built on GitHub's Macs (free for a public repository)
 and delivered through **TestFlight**; no Mac is needed. It is one
 **universal app** for iPhone and iPad (2026-09-26; it was iPad only
@@ -15,10 +15,10 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Mac real-UI acceptance run (1024x653 window) | ✅ all checks since CI run #29 (TD-35 resolved); the step stays allowed to fail until the new `compact` and `appfolder` scenarios have passed there |
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
-| iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ⬜ not yet built on CI |
-| Signing + TestFlight upload (`testflight.sh`) | ⬜ waits for the owner's Apple Developer enrollment and the secrets |
-| Running on the iPad | ⬜ |
-| Running on the iPhone | ⬜ |
+| iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ✅ built on CI |
+| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); internal testing only (`testFlightInternalTestingOnly`): the owner's devices |
+| Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
+| Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
 
 What is ready:
 

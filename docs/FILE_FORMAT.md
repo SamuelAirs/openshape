@@ -279,8 +279,12 @@ Rules:
 
 ## Versioning
 
-Version 1 is not frozen until the first public release; until then it may
-gain fields (as it did for sketches) without a version bump.
+Version 1 is frozen since 0.1.0 (the first public release, 2026-09-26):
+later builds add only optional fields, feature types and datum methods.
+Builds that do not know them either ignore them (`datums`, `datumPlane`:
+such a sketch stays where it was saved) or refuse the file with a "newer
+version" or "invalid" message (`Text`, unknown datum methods, a Mirror with
+a nested `plane`).
 
 - `version` is an integer. Readers refuse files with a higher version than they
   support ("created by a newer version of OpenShape").

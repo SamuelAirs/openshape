@@ -659,8 +659,9 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
   MSYS2's (same version and patches, different options; TD-45). When MSYS2
   moves to a newer OCCT, update `build-occt.sh` with it.
 - THIRD_PARTY_LICENSES.txt points to MSYS2's source archives as the LGPL
-  "corresponding source"; MSYS2 may delete old versions (TD-46): mirror them
-  with the first public release.
+  "corresponding source"; MSYS2 may delete old versions (TD-46): from 0.2.0
+  on, releases attach them (with OpenCASCADE's source and patches); the
+  v0.1.0 release still lacks them.
 - Unsigned installer and exe: SmartScreen warns (TD-44).
 - Topological naming on symmetric parts after large upstream edits (TD-3).
 - Previews run on a worker thread under one kernel lock (TD-1, TD-4):

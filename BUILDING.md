@@ -309,7 +309,7 @@ in the repository root.
    check existed.)
 
    ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -PackageDir dist\OpenShape -TestDesktopDir build\installer-test\desktop -Screenshot build\installer-test\installed.png -TestRunningApp
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 -Setup build\installer-test\OpenShape-0.2.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -PackageDir dist\OpenShape -TestDesktopDir build\installer-test\desktop -Screenshot build\installer-test\installed.png -TestRunningApp
    ```
 
    Verified 2026-09-25: 42/42 checks. The test installer puts its desktop
@@ -325,7 +325,7 @@ in the repository root.
    session:
 
    ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer-dialogs.ps1 -Setup build\installer-test\OpenShape-0.1.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -TestDesktopDir build\installer-test\desktop
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer-dialogs.ps1 -Setup build\installer-test\OpenShape-0.2.0-windows-x64-setup.exe -InstallDir build\installer-test\Programs\OpenShape -TestDesktopDir build\installer-test\desktop
    ```
 
    Run on 2026-09-26: 53 of 56 checks passed (license text, folder page,
@@ -350,7 +350,27 @@ The version is `project(OpenShape VERSION ...)` in `CMakeLists.txt`. A tag
 `v<version>` pushed to GitHub runs `.github/workflows/release.yml`, which does
 all of the above and publishes a GitHub Release (pre-release for 0.x);
 manual runs and packaging changes on `main` only upload the files as a
-workflow artifact. The Windows icon is made from the SVG with
+workflow artifact. (The setup file's name carries the version: adjust the
+installer-test commands above after a version change.)
+
+Before tagging a release:
+1. Set the version in `CMakeLists.txt` and date the release's section in
+   `CHANGELOG.md` (`## <version> (YYYY-MM-DD)`): the release notes are that
+   section (`scripts/ci/changelog-section.sh`); `release.yml` refuses a tag
+   whose section is missing, and a `v<version>` tag (not a `-rc` one) whose
+   section still says "(unreleased)".
+2. Do TD-55's documentation steps: retake the screenshots
+   (`scripts/dev/doc_screenshots.sh`), walk through the README's Quick
+   start, grep the guide for renamed buttons, and update the README's
+   "Early pre-release" line.
+3. Push `main`, wait for CI, and run Release once by hand (GitHub →
+   Actions → Release → Run workflow; a version bump alone does not start
+   it). Push the tag `v<version>` only when both are green.
+
+Every Release run also downloads the source code of the LGPL libraries the
+package ships (`scripts/ci/mirror-sources.sh`: the MSYS2 source archives
+`THIRD_PARTY_LICENSES.txt` names, and OpenCASCADE's source with the
+patches `build-occt.sh` applies); a release attaches it (TD-46). The Windows icon is made from the SVG with
 `python scripts/windows/make-icon.py` (needs MSYS2's `rsvg-convert`,
 `pacman -S mingw-w64-ucrt-x86_64-librsvg`).
 
@@ -454,11 +474,13 @@ bash scripts/ci/install-notes.sh 0.2.0 0.2.0 v0.2.0 signed                      
   image; `bash scripts/dev/doc_screenshots.sh hero tablet` retakes only
   those.
 
-## macOS and iPad — prepared, not yet verified
+## macOS and iPad — built on GitHub's Macs
 
-A `macos` preset (Homebrew packages) and a macOS CI job exist; the iPad build
-is described step by step in [docs/IPAD.md](docs/IPAD.md). Neither has been
-run on a Mac yet.
+A `macos` preset (Homebrew packages) exists; CI builds it with Apple Clang
+and runs the headless tests and the real-UI acceptance run on a GitHub Mac
+(`.github/workflows/ci.yml`). The universal iPhone/iPad app is built on
+GitHub's Macs and delivered through TestFlight (`.github/workflows/ipad.yml`,
+[docs/IPAD.md](docs/IPAD.md)). A build on a local Mac has not been tried.
 
 ## Other platforms — not yet verified
 
