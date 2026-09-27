@@ -101,11 +101,11 @@ esac
 DSYMS="$BUILD/OpenShape.xcarchive/dSYMs"
 DSYM="$DSYMS/OpenShape.app.dSYM"
 if [ ! -d "$DSYM" ]; then
-    # CMake's Xcode project gives each target its own output folder
-    # (CONFIGURATION_BUILD_DIR); dsymutil writes the dSYM beside the app
-    # there, where Xcode's archive step does not collect it (CI run 37 of
-    # ipad.yml: an empty dSYMs folder). Put it in; the UUID check below makes
-    # sure it is this build's.
+    # Xcode's archive step left the dSYM out (ipad.yml run 37: an empty
+    # dSYMs folder), likely because CMake's Xcode project gives each target
+    # its own output folder (CONFIGURATION_BUILD_DIR), where dsymutil writes
+    # it beside the app. Put it in; the UUID check below makes sure it is
+    # this build's.
     built=$(find "$BUILD" "$HOME/Library/Developer/Xcode/DerivedData" -name OpenShape.app.dSYM -type d \
                 -not -path "*.xcarchive/*" 2>/dev/null | head -n 1 || true)
     echo "The archive has no dSYM of its own; the build's: ${built:-none}"

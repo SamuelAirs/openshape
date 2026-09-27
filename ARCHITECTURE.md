@@ -1468,8 +1468,10 @@ document pickers' files take the same staging when there is an app folder
 - **iOS archive** (`scripts/ios/build-app.sh`, `ipad.yml`): Release with
   debug information at the same optimization and `dwarf-with-dsym`
   (`CMAKE_XCODE_ATTRIBUTE_*` in the top-level `CMakeLists.txt` and on the
-  `xcodebuild` line), so the archive carries `OpenShape.app.dSYM`; the
-  script fails when it is missing, when its UUID is not the app binary's or
+  `xcodebuild` line). Xcode's archive step left the dSYM of this
+  CMake-generated project out (ipad.yml run 37; likely because CMake gives
+  each target its own `CONFIGURATION_BUILD_DIR`), so the script copies the
+  `OpenShape.app.dSYM` the build wrote into the archive; it fails when there is none, when its UUID is not the app binary's or
   when OpenShape's functions are not in it, and when `Info.plist` lacks the
   document types. `scripts/ios/testflight.sh` exports with
   `uploadSymbols` (and refuses an archive without dSYMs) and
