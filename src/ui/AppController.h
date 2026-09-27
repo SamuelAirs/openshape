@@ -9,6 +9,7 @@
 #include "interaction/InteractionController.h"
 #include "io/Recovery.h"
 #include "ui/AppSettings.h"
+#include "ui/Licenses.h"
 
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
@@ -21,6 +22,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace os::ui {
@@ -123,6 +125,10 @@ class AppController : public QObject {
     Q_PROPERTY(bool savesToAppFolder READ savesToAppFolder NOTIFY appFolderChanged)
     // The app's folder as a URL (for the Open picker to start in), or "".
     Q_PROPERTY(QString appFolderUrl READ appFolderUrl NOTIFY appFolderChanged)
+    // About: the source code of exactly this build (its release tag's or
+    // commit's tree; ui/Licenses) and what identifies it ("build 57, commit ...").
+    Q_PROPERTY(QString sourceCodeUrl READ sourceCodeUrl CONSTANT)
+    Q_PROPERTY(QString buildDescription READ buildDescription CONSTANT)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -284,6 +290,19 @@ public:
     // (set at start), "" for file dialogs; tests and --app-folder set it.
     void setAppFolder(const QString& folder);
 
+    // ---- About -> Licenses (ui/Licenses, resources/licenses; docs/LICENSING.md)
+    QString sourceCodeUrl() const;
+    QString buildDescription() const;
+    // What the Licenses view lists, in order: {id, name, group, version,
+    // license, usedFor}; first the LGPL notice and source offer (id
+    // "source-offer", group "offer"), then OpenShape ("app"), the libraries
+    // ("library") and the third-party code inside Qt ("qt"). Empty if the
+    // license texts cannot be read (logged).
+    Q_INVOKABLE QVariantList licenseEntries();
+    // The page for one of them: the full license texts with copyright,
+    // notices and where the source is; "" for an unknown id.
+    Q_INVOKABLE QString licenseText(const QString& id);
+
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
@@ -404,6 +423,7 @@ private:
     Preferences preferences_;
     std::unique_ptr<RecoverySession> recovery_;
     std::vector<io::RecoveryEntry> orphans_; // offered for restoring
+    std::optional<LicenseCatalog> licenses_; // read at the first use (About -> Licenses)
     QTimer recoveryDebounce_; // edits settled
     QTimer recoveryDeadline_; // at least this often while editing
     std::uint64_t seenRevision_ = 0;  // undo-stack revision at the last noteEdits()

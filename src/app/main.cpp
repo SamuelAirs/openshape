@@ -846,6 +846,7 @@ int main(int argc, char* argv[])
             static const QMap<QString, QPair<QString, const char*>> panels{
                 {QStringLiteral("help"), {QStringLiteral("combine"), "helpOverlay"}},
                 {QStringLiteral("about"), {QStringLiteral("empty"), "aboutOverlay"}},
+                {QStringLiteral("licenses"), {QStringLiteral("empty"), "licensesOverlay"}},
                 {QStringLiteral("preferences"), {QStringLiteral("empty"), "preferencesOverlay"}},
                 {QStringLiteral("modelpanel"), {QStringLiteral("history"), "historyOpen"}},
                 {QStringLiteral("viewmenu"), {QStringLiteral("combine"), "viewMenuOpen"}},
@@ -867,8 +868,12 @@ int main(int argc, char* argv[])
             }
             if (panel == panels.end())
                 return;
-            if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second)))
-                item->setVisible(true);
+            if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second))) {
+                if (demo == QStringLiteral("licenses"))
+                    QMetaObject::invokeMethod(item, "open"); // reads the list first
+                else
+                    item->setVisible(true);
+            }
             else
                 window->setProperty(panel->second, true); // the compact layout's switches (Main.qml)
         });

@@ -5,6 +5,7 @@
 #include "ui/AppController.h"
 
 #include "core/Log.h"
+#include "core/Version.h"
 #include "geometry/Exchange.h"
 #include "geometry/Text.h"
 #include "interaction/TouchWording.h"
@@ -979,6 +980,62 @@ void AppController::setAppFolder(const QString& folder)
 QString AppController::appFolderUrl() const
 {
     return appFolder_.isEmpty() ? QString() : QUrl::fromLocalFile(appFolder_).toString();
+}
+
+QString AppController::sourceCodeUrl() const
+{
+    return ui::sourceCodeUrl(BuildInfo::current());
+}
+
+QString AppController::buildDescription() const
+{
+    return ui::buildDescription(BuildInfo::current());
+}
+
+QVariantList AppController::licenseEntries()
+{
+    if (!licenses_) {
+        licenses_ = LicenseCatalog::load();
+        if (!licenses_->isValid())
+            OS_LOG(Error, App) << "the license texts cannot be read: " << licenses_->error().toStdString();
+    }
+    QVariantList list;
+    if (!licenses_->isValid())
+        return list;
+    list.append(QVariantMap{{QStringLiteral("id"), QStringLiteral("source-offer")},
+                            {QStringLiteral("name"), QStringLiteral("Your rights to the LGPL libraries")},
+                            {QStringLiteral("group"), QStringLiteral("offer")},
+                            {QStringLiteral("version"), QString()},
+                            {QStringLiteral("license"), QStringLiteral("LGPL")},
+                            {QStringLiteral("usedFor"),
+                             QStringLiteral("modifying Qt, Open CASCADE and PlaneGCS; the source code")}});
+    for (const LicenseEntry& entry : licenses_->entries()) {
+        list.append(QVariantMap{{QStringLiteral("id"), entry.id},
+                                {QStringLiteral("name"), entry.name},
+                                {QStringLiteral("group"), entry.group},
+                                {QStringLiteral("version"),
+                                 entry.id == QStringLiteral("openshape") ? QString::fromLatin1(os::kAppVersion) : entry.version},
+                                {QStringLiteral("license"), entry.license},
+                                {QStringLiteral("usedFor"), entry.usedFor}});
+    }
+    return list;
+}
+
+QString AppController::licenseText(const QString& id)
+{
+    if (!licenses_)
+        licenseEntries();
+    if (!licenses_->isValid())
+        return {};
+    const BuildInfo build = BuildInfo::current();
+    if (id == QStringLiteral("source-offer"))
+        return licenses_->sourceOffer(build);
+    QString text = licenses_->text(id);
+    if (id == QStringLiteral("openshape") && !text.isEmpty()) {
+        text.prepend(QStringLiteral("OpenShape %1 (%2)\nSource code: %3\n\n")
+                         .arg(build.version, ui::buildDescription(build), ui::sourceCodeUrl(build)));
+    }
+    return text;
 }
 
 bool AppController::appFolderHasProject(const QString& name) const

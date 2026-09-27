@@ -16,4 +16,15 @@ inline constexpr int kAppVersionMajor = @PROJECT_VERSION_MAJOR@;
 inline constexpr int kAppVersionMinor = @PROJECT_VERSION_MINOR@;
 inline constexpr int kAppVersionPatch = @PROJECT_VERSION_PATCH@;
 
+// Which source a build is made from, for the LGPL's relinking notice in
+// About -> Licenses (docs/LICENSING.md). Set at CMake's configure time
+// (src/core/CMakeLists.txt): the git commit (empty when unknown; a build
+// that was not reconfigured after a commit keeps the older one), the
+// release tag an App Store or public beta build is made from (empty
+// otherwise; scripts/ios/build-app.sh passes it on tags) and the bundle
+// build number (CFBundleVersion: the CI run number on iOS, else the version).
+inline constexpr const char* kSourceCommit = "@OPENSHAPE_SOURCE_COMMIT@";
+inline constexpr const char* kReleaseTag = "@OPENSHAPE_RELEASE_TAG@";
+inline constexpr const char* kBuildNumber = "@OPENSHAPE_BUILD_NUMBER@";
+
 } // namespace os

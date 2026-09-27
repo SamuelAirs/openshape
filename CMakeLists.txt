@@ -24,6 +24,10 @@ option(OPENSHAPE_BUILD_TESTS "Build unit and integration tests" ON)
 option(OPENSHAPE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(OPENSHAPE_BUILD_TOOLS "Build developer tools (benchmarks)" OFF)
 option(OPENSHAPE_OWN_OCCT "Use OpenShape's own OpenCASCADE build (scripts/windows/build-occt.sh; release packages) instead of the system one" OFF)
+# The bundle build number (CFBundleVersion of the macOS / iOS app; shown in
+# About -> Licenses): every TestFlight upload needs a new one, CI passes its
+# run number (scripts/ios/build-app.sh).
+set(OPENSHAPE_BUILD_NUMBER "${PROJECT_VERSION}" CACHE STRING "Bundle build number (CFBundleVersion)")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)

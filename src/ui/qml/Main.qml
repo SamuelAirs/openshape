@@ -199,7 +199,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [saveNamePrompt, unsavedDialog, recoveryOverlay, preferencesOverlay, aboutOverlay, helpOverlay, homeScreen]
+        const panels = [saveNamePrompt, unsavedDialog, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, homeScreen]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -1121,6 +1121,19 @@ ApplicationWindow {
         objectName: "aboutOverlay"
         anchors.fill: parent
         z: 100
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+        sourceUrl: window.app.sourceCodeUrl
+        buildText: window.app.buildDescription
+        onLicensesRequested: licensesOverlay.open()
+    }
+
+    // About -> Licenses, over the About card (closing it returns there).
+    LicensesOverlay {
+        id: licensesOverlay
+        objectName: "licensesOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 101
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 

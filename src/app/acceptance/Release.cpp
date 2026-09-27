@@ -78,22 +78,25 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             const QString text = title ? title->property("text").toString() : QString();
             r.check(title && title->isVisible() && text == QStringLiteral("OpenShape ") + version,
                     "release: the About card names the version", text);
-            // Only the Windows package carries the license files
-            // (scripts/package-windows.sh); elsewhere the card links the list
-            // in the repository and must not name files that are not there.
+            // Every build shows the license texts in Licenses (the
+            // "licenses" scenario opens it); only the Windows package also
+            // carries them as files (scripts/package-windows.sh), and the card
+            // must not name files that are not there elsewhere.
             QQuickItem* files = r.findItem(QStringLiteral("aboutLicenseFiles"));
             const QString filesText = files ? files->property("text").toString() : QString();
+            r.check(filesText.contains(QStringLiteral("Licenses shows each license text")),
+                    "release: the About card points to Licenses", filesText);
 #if defined(Q_OS_WIN)
             r.check(filesText.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt"))
                         && filesText.contains(QStringLiteral("OpenShape.exe")),
-                    "release: the About card points to the bundled license texts", filesText);
+                    "release: the About card points to the bundled license files", filesText);
 #else
-            r.check(filesText.contains(QStringLiteral("THIRD_PARTY.md"))
-                        && filesText.contains(QStringLiteral("github.com/SamuelAirs/openshape"))
-                        && !filesText.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt"))
+            r.check(!filesText.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt"))
                         && !filesText.contains(QStringLiteral("OpenShape.exe")),
-                    "release: the About card links the license list in the repository", filesText);
+                    "release: the About card names no license files outside Windows", filesText);
 #endif
+            QQuickItem* licenses = r.findItem(QStringLiteral("aboutLicenses"));
+            r.check(licenses && licenses->isVisible(), "release: the About card has a Licenses button");
             r.screenshot(QStringLiteral("release_about"));
             r.key(Qt::Key_Escape);
         },

@@ -11,7 +11,9 @@
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "io/ProjectFile.h"
+#include "core/Version.h"
 #include "ui/AppSettings.h"
+#include "ui/Licenses.h"
 #include "ui/RecoverySession.h"
 #include "ui/ThumbnailSource.h"
 
@@ -413,4 +415,144 @@ TEST(ThumbnailSource, PreviewOfAProjectWithANonAsciiName)
     auto png = io::readProjectThumbnail(std::filesystem::path(back.toStdWString()));
     ASSERT_TRUE(png.ok()) << png.developerMessage();
     EXPECT_EQ(png.value(), options.thumbnailPng);
+}
+
+// ---- About -> Licenses (ui/Licenses; resources/licenses, built in) --------
+
+TEST(Licenses, TheBuiltInListHasEveryLibraryWithItsLicense)
+{
+    const LicenseCatalog catalog = LicenseCatalog::load();
+    ASSERT_TRUE(catalog.isValid()) << catalog.error().toStdString();
+    const std::vector<std::pair<const char*, const char*>> expected{
+        {"openshape", "MPL-2.0"},
+        {"occt", "LGPL-2.1-only WITH OCCT-exception-1.0"},
+        {"qt", "LGPL-3.0-only"},
+        {"planegcs", "LGPL-2.1-or-later"},
+        {"freetype", "FTL"},
+        {"libzip", "BSD-3-Clause"},
+        {"json", "MIT"},
+        {"eigen", "MPL-2.0"},
+        {"notosans", "OFL-1.1"},
+    };
+    for (const auto& [id, license] : expected) {
+        const LicenseEntry* entry = catalog.find(QString::fromLatin1(id));
+        ASSERT_NE(entry, nullptr) << id;
+        EXPECT_EQ(entry->license, QString::fromLatin1(license)) << id;
+        EXPECT_FALSE(entry->usedFor.isEmpty()) << id;
+        EXPECT_FALSE(entry->source.isEmpty()) << id;
+    }
+    // The pinned versions (scripts/ios/sources.txt) of the libraries.
+    EXPECT_EQ(catalog.find(QStringLiteral("qt"))->version, QStringLiteral("6.11.2"));
+    EXPECT_EQ(catalog.find(QStringLiteral("occt"))->version, QStringLiteral("7.9.3"));
+    EXPECT_EQ(catalog.find(QStringLiteral("freetype"))->version, QStringLiteral("2.14.3"));
+    // Qt's third-party code, each with its license.
+    int insideQt = 0;
+    for (const LicenseEntry& entry : catalog.entries()) {
+        if (entry.group != QStringLiteral("qt"))
+            continue;
+        ++insideQt;
+        EXPECT_TRUE(entry.id.startsWith(QStringLiteral("qt:"))) << entry.id.toStdString();
+        EXPECT_FALSE(entry.license.isEmpty()) << entry.id.toStdString();
+        EXPECT_FALSE(entry.texts.empty()) << entry.id.toStdString();
+    }
+    EXPECT_GE(insideQt, 30);
+    EXPECT_NE(catalog.find(QStringLiteral("qt:harfbuzz-ng")), nullptr);
+    EXPECT_NE(catalog.find(QStringLiteral("qt:pcre2")), nullptr);
+    // Not built into the iOS app: Wayland, Windows, Qt SQL.
+    EXPECT_EQ(catalog.find(QStringLiteral("qt:wayland-protocol")), nullptr);
+    EXPECT_EQ(catalog.find(QStringLiteral("qt:wintab")), nullptr);
+    EXPECT_EQ(catalog.find(QStringLiteral("qt:sqlite")), nullptr);
+}
+
+TEST(Licenses, EveryEntryShowsItsFullTexts)
+{
+    const LicenseCatalog catalog = LicenseCatalog::load();
+    ASSERT_TRUE(catalog.isValid()) << catalog.error().toStdString();
+    qsizetype total = 0;
+    for (const LicenseEntry& entry : catalog.entries()) {
+        const QString text = catalog.text(entry.id);
+        EXPECT_GT(text.size(), 100) << entry.id.toStdString();
+        EXPECT_TRUE(text.startsWith(entry.name)) << entry.id.toStdString();
+        for (const LicenseText& t : entry.texts)
+            EXPECT_TRUE(text.contains(t.title)) << entry.id.toStdString() << ": " << t.title.toStdString();
+        total += text.size();
+    }
+    EXPECT_GT(total, 200000); // the LGPL and GPL texts alone are ~70 kB
+    // The LGPL 3.0 asks for the GPL 3.0 text too (4b); both come with Qt.
+    const QString qt = catalog.text(QStringLiteral("qt"));
+    EXPECT_TRUE(qt.contains(QStringLiteral("GNU LESSER GENERAL PUBLIC LICENSE")));
+    EXPECT_TRUE(qt.contains(QStringLiteral("Version 3, 29 June 2007")));
+    EXPECT_TRUE(qt.contains(QStringLiteral("GNU GENERAL PUBLIC LICENSE")));
+    EXPECT_TRUE(qt.contains(QStringLiteral("Copyright (C) The Qt Company Ltd.")));
+    // The Open CASCADE exception asks for this notice.
+    const QString occt = catalog.text(QStringLiteral("occt"));
+    EXPECT_TRUE(occt.contains(QStringLiteral("makes use of facilities provided by the Open CASCADE Technology software")));
+    EXPECT_TRUE(occt.contains(QStringLiteral("Open CASCADE exception (version 1.0)")));
+    EXPECT_TRUE(occt.contains(QStringLiteral("Version 2.1, February 1999")));
+    // The FreeType License asks for this credit.
+    EXPECT_TRUE(catalog.text(QStringLiteral("freetype")).contains(QStringLiteral("Portions of this software are copyright")));
+    EXPECT_TRUE(catalog.text(QStringLiteral("openshape")).contains(QStringLiteral("Mozilla Public License Version 2.0")));
+    EXPECT_TRUE(catalog.text(QStringLiteral("notosans")).contains(QStringLiteral("SIL OPEN FONT LICENSE Version 1.1")));
+    EXPECT_TRUE(catalog.text(QStringLiteral("nothing")).isEmpty());
+}
+
+TEST(Licenses, TheSourceOfferNamesExactlyThisBuildsSource)
+{
+    const LicenseCatalog catalog = LicenseCatalog::load();
+    ASSERT_TRUE(catalog.isValid()) << catalog.error().toStdString();
+
+    // An App Store build: made from a release tag, with a CI build number.
+    const BuildInfo release{QStringLiteral("1.2.3"), QStringLiteral("57"),
+                            QStringLiteral("0123456789abcdef0123456789abcdef01234567"), QStringLiteral("v1.2.3-beta1")};
+    const QString offer = catalog.sourceOffer(release);
+    EXPECT_TRUE(offer.contains(QStringLiteral("This is OpenShape 1.2.3 (build 57, release v1.2.3-beta1, commit 0123456789ab).")))
+        << offer.toStdString();
+    EXPECT_TRUE(offer.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/tree/v1.2.3-beta1")));
+    EXPECT_TRUE(offer.contains(QStringLiteral(
+        "https://github.com/SamuelAirs/openshape/releases/tag/v1.2.3-beta1 (the file OpenShape-1.2.3-beta1-ios-sources.tar)")));
+    EXPECT_TRUE(offer.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/issues")));
+    EXPECT_TRUE(offer.contains(QStringLiteral("Rebuilding the iOS app with modified libraries")));
+    EXPECT_FALSE(offer.contains(QLatin1Char('@'))) << offer.toStdString();
+
+    // A build between releases: the commit's tree and the pins in it.
+    const BuildInfo commit{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"),
+                           QStringLiteral("abcdef0123456789abcdef0123456789abcdef01"), {}};
+    const QString between = catalog.sourceOffer(commit);
+    EXPECT_TRUE(between.contains(QStringLiteral("(commit abcdef012345)"))) << between.toStdString();
+    EXPECT_TRUE(between.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/tree/abcdef0123456789abcdef0123456789abcdef01")));
+    EXPECT_TRUE(between.contains(QStringLiteral("scripts/ios/sources.txt")));
+    EXPECT_FALSE(between.contains(QStringLiteral("/releases/tag/")));
+
+    // Nothing known (a build from a source archive without git).
+    const BuildInfo unknown{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"), {}, {}};
+    EXPECT_EQ(sourceCodeUrl(unknown), QStringLiteral("https://github.com/SamuelAirs/openshape"));
+    EXPECT_EQ(buildDescription(unknown), QStringLiteral("a local build"));
+
+    // This build: CMake's version.
+    EXPECT_EQ(BuildInfo::current().version, QString::fromLatin1(kAppVersion));
+}
+
+TEST(Licenses, ABrokenListIsReportedNotShownHalf)
+{
+    EXPECT_FALSE(LicenseCatalog::load(QStringLiteral(":/no/such/folder")).isValid());
+    EXPECT_FALSE(LicenseCatalog::load(QStringLiteral(":/no/such/folder")).error().isEmpty());
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const auto write = [&dir](const QByteArray& json) {
+        QFile file(dir.path() + QStringLiteral("/index.json"));
+        EXPECT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write(json);
+    };
+    write("{ not json");
+    EXPECT_FALSE(LicenseCatalog::load(dir.path()).isValid());
+    write(R"({"format": 2, "components": []})");
+    EXPECT_FALSE(LicenseCatalog::load(dir.path()).isValid());
+    write(R"({"format": 1, "components": [{"id": "x", "name": "X", "texts": []}]})");
+    EXPECT_FALSE(LicenseCatalog::load(dir.path()).isValid());
+    // A text file that is missing: the entry's page is empty, not half a page.
+    write(R"({"format": 1, "components": [{"id": "x", "name": "X", "license": "MIT", "texts": [{"title": "MIT", "file": "gone.txt"}]}]})");
+    const LicenseCatalog catalog = LicenseCatalog::load(dir.path());
+    ASSERT_TRUE(catalog.isValid()) << catalog.error().toStdString();
+    EXPECT_TRUE(catalog.text(QStringLiteral("x")).isEmpty());
+    EXPECT_TRUE(catalog.sourceOffer(BuildInfo::current()).isEmpty()); // no source-offer.txt there
 }
