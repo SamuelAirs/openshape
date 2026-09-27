@@ -198,6 +198,11 @@ public:
     // call (the UI asks on every drag step, while the preview worker may hold
     // the kernel).
     std::optional<ScreenRect> keepClearRect() const;
+    // Moves the view so that keepClearRect() lies inside `region` (the part
+    // of the window a phone's numeric keypad and the value chip above it
+    // leave free), zooming out first when it is larger. False when it
+    // already lies there, or there is nothing to keep clear.
+    bool revealKeepClear(const ScreenRect& region);
     // An arrow or ring is being dragged.
     bool manipulatorDragging() const { return drag_.mode == DragMode::Manipulator; }
     // Where the value editor goes (interact::placeValueChip). The spot is

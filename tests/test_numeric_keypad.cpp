@@ -4,7 +4,10 @@
 
 // The numeric keypad shown on touch screens (interact::NumericKeypad): key
 // sequences give the text a field takes, and the text the value.
+#include "commands/Command.h"
 #include "core/Math.h"
+#include "document/Document.h"
+#include "interaction/InteractionController.h"
 #include "interaction/NumericKeypad.h"
 
 #include <gtest/gtest.h>
@@ -166,4 +169,120 @@ TEST(NumericKeypad, LayoutHasEveryKeyOnceAndFullRows)
     }
     EXPECT_EQ(keypadModeFromString("angle"), KeypadMode::Angle);
     EXPECT_FALSE(keypadModeFromString("text").has_value());
+}
+
+// ---- Where the keypad goes ----------------------------------------------------------
+
+namespace {
+
+KeypadPlacementInput ipad()
+{
+    KeypadPlacementInput in;
+    in.area = {0, 24, 1180, 800};
+    in.size = {320, 290};
+    return in;
+}
+
+ScreenRect placed(const KeypadPlacementInput& in, const KeypadPlacement& p) { return ScreenRect::at(p.position, in.size); }
+
+} // namespace
+
+TEST(KeypadPlacement, PhoneDocksAlongTheBottom)
+{
+    KeypadPlacementInput in;
+    in.area = {0, 62, 402, 840}; // 402x874 with the Dynamic Island and the home indicator
+    in.size = {402, 300};
+    in.target = {10, 130, 300, 180};
+    in.compact = true;
+    const KeypadPlacement p = placeKeypad(in);
+    EXPECT_TRUE(p.docked);
+    EXPECT_DOUBLE_EQ(p.position.x, 0);
+    EXPECT_DOUBLE_EQ(p.position.y + in.size.y, 840) << "down to the home indicator's safe area";
+}
+
+TEST(KeypadPlacement, BesideTheValueBoxClearOfTheSelectionAndTheControls)
+{
+    KeypadPlacementInput in = ipad();
+    in.target = {600, 400, 800, 460};
+    const KeypadPlacement below = placeKeypad(in);
+    EXPECT_FALSE(below.docked);
+    EXPECT_TRUE(below.clear);
+    EXPECT_DOUBLE_EQ(below.position.y, 460 + kKeypadGap) << "right below the value box";
+    EXPECT_NEAR(below.position.x + in.size.x / 2, 700, 1e-9) << "centered under it";
+
+    // The selection below the value box: above it instead.
+    in.keepClear = ScreenRect{560, 480, 790, 760};
+    const KeypadPlacement above = placeKeypad(in);
+    EXPECT_TRUE(above.clear);
+    EXPECT_DOUBLE_EQ(above.position.y + in.size.y, 400 - kKeypadGap);
+    EXPECT_FALSE(placed(in, above).intersects(in.keepClear->inflated(kKeypadKeepClearMargin)));
+
+    // A control above too (the top bar reaching down): to the right.
+    in.avoid = {{0, 0, 1180, 120}};
+    const KeypadPlacement right = placeKeypad(in);
+    EXPECT_TRUE(right.clear);
+    EXPECT_DOUBLE_EQ(right.position.x, 800 + kKeypadGap);
+    const ScreenRect r = placed(in, right);
+    EXPECT_TRUE(in.area.contains(r));
+    EXPECT_FALSE(r.intersects(in.target));
+    EXPECT_FALSE(r.intersects(in.avoid[0]));
+}
+
+TEST(KeypadPlacement, NeverOverTheValueBoxOrOutsideTheWindow)
+{
+    // Value boxes all over the window: the keypad is inside the area and off
+    // the value box every time; clear of the selection whenever it is not docked.
+    for (double x = 0; x <= 1000; x += 125) {
+        for (double y = 30; y <= 740; y += 90) {
+            KeypadPlacementInput in = ipad();
+            in.target = {x, y, x + 180, y + 56};
+            in.keepClear = ScreenRect{x + 40, y + 70, x + 260, y + 260};
+            const KeypadPlacement p = placeKeypad(in);
+            const ScreenRect r = placed(in, p);
+            EXPECT_TRUE(in.area.contains(r)) << x << "," << y;
+            if (!p.docked) {
+                EXPECT_FALSE(r.intersects(in.target)) << x << "," << y;
+                EXPECT_FALSE(r.intersects(*in.keepClear)) << x << "," << y;
+            }
+        }
+    }
+}
+
+// ---- A phone's keypad over the selection: the view moves ----------------------------
+
+TEST(KeypadReveal, TheSelectionMovesIntoTheRoomTheKeypadLeaves)
+{
+    doc::Document document;
+    cmd::UndoStack stack;
+    InteractionController controller{document, stack};
+    controller.setViewportSize({402, 874});
+    ASSERT_TRUE(controller.createBox(20).ok());
+    controller.fitAll(false);
+    // The box's front face (y = -10), tapped in its middle.
+    const Vec2 p = controller.camera().project({0, -10, 10});
+    PointerEvent e;
+    e.position = p;
+    e.button = PointerButton::Left;
+    e.device = PointerDevice::Touch;
+    controller.pointerPress(e);
+    controller.pointerRelease(e);
+    ASSERT_NE(controller.operation(), nullptr);
+    const auto before = controller.keepClearRect();
+    ASSERT_TRUE(before.has_value());
+
+    // Room between a chip docked at the top and a keypad along the bottom.
+    const ScreenRect room{0, 240, 402, 520};
+    EXPECT_TRUE(controller.revealKeepClear(room));
+    const auto after = controller.keepClearRect();
+    ASSERT_TRUE(after.has_value());
+    EXPECT_TRUE(room.contains(*after)) << after->left << "," << after->top << " " << after->right << "," << after->bottom;
+    EXPECT_FALSE(controller.revealKeepClear(room)) << "already there";
+
+    // A band smaller than the selection: the view zooms out too.
+    const ScreenRect band{0, 300, 402, 380};
+    EXPECT_TRUE(controller.revealKeepClear(band));
+    const auto small = controller.keepClearRect();
+    ASSERT_TRUE(small.has_value());
+    EXPECT_TRUE(band.contains(*small)) << small->top << " " << small->bottom;
+    EXPECT_EQ(document.bodies().size(), 1u) << "only the view moved";
 }

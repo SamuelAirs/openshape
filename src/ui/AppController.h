@@ -341,6 +341,14 @@ public:
     Q_INVOKABLE QVariantList keypadRows(const QString& mode, bool hasNext) const;
     Q_INVOKABLE QVariantMap keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const;
     Q_INVOKABLE QVariantMap keypadType(const QString& text, bool replacing, const QString& characters) const;
+    // Where the keypad goes (interact::placeKeypad): `layout` has area,
+    // size, target (the value box), avoid (controls), keepClear and compact;
+    // returns {x, y, docked, clear}.
+    Q_INVOKABLE QVariantMap placeKeypad(const QVariantMap& layout) const;
+    // A phone's keypad came up: the view moves so the selection and its
+    // arrow lie in `region`, the part of the window left free
+    // (InteractionController::revealKeepClear). True when it moved.
+    Q_INVOKABLE bool revealKeepClear(const QRectF& region);
     // The Text tool's words (previewed at once); returns the error, or "".
     Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);

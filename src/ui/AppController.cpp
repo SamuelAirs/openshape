@@ -1155,6 +1155,29 @@ QVariantMap AppController::keypadType(const QString& text, bool replacing, const
     return keypadResultMap(interact::typeIntoKeypad({text.toStdString(), replacing}, characters.toStdString()));
 }
 
+QVariantMap AppController::placeKeypad(const QVariantMap& layout) const
+{
+    interact::KeypadPlacementInput input;
+    input.area = toScreenRect(layout.value(QStringLiteral("area")).toRectF());
+    const QSizeF size = layout.value(QStringLiteral("size")).toSizeF();
+    input.size = {size.width(), size.height()};
+    input.target = toScreenRect(layout.value(QStringLiteral("target")).toRectF());
+    for (const QVariant& rect : layout.value(QStringLiteral("avoid")).toList())
+        input.avoid.push_back(toScreenRect(rect.toRectF()));
+    if (const QVariant keepClear = layout.value(QStringLiteral("keepClear")); keepClear.typeId() == QMetaType::QRectF)
+        input.keepClear = toScreenRect(keepClear.toRectF());
+    input.compact = layout.value(QStringLiteral("compact")).toBool();
+    const interact::KeypadPlacement placement = interact::placeKeypad(input);
+    QVariantMap result;
+    result.insert(QStringLiteral("x"), placement.position.x);
+    result.insert(QStringLiteral("y"), placement.position.y);
+    result.insert(QStringLiteral("docked"), placement.docked);
+    result.insert(QStringLiteral("clear"), placement.clear);
+    return result;
+}
+
+bool AppController::revealKeepClear(const QRectF& region) { return interaction_->revealKeepClear(toScreenRect(region)); }
+
 bool AppController::focusSketchInput(const QString& key)
 {
     typingPause_.stop();

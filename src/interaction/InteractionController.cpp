@@ -1570,6 +1570,32 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
     return all.rect->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y});
 }
 
+bool InteractionController::revealKeepClear(const ScreenRect& region)
+{
+    if (region.width() <= 1 || region.height() <= 1)
+        return false;
+    bool moved = false;
+    // A few rounds: the rectangle is clipped to the window, so one that
+    // reaches past it is only known in full once the view has moved.
+    for (int round = 0; round < 4; ++round) {
+        const auto keep = keepClearRect();
+        if (!keep || region.contains(*keep, 0.5))
+            break;
+        animation_.reset();
+        const double scale = std::max(keep->width() / region.width(), keep->height() / region.height());
+        if (scale > 1)
+            camera_.zoomAt(keep->center(), scale * 1.08); // (a factor above 1 zooms out)
+        const auto after = keepClearRect();
+        if (!after)
+            break;
+        camera_.pan(after->center(), region.center());
+        moved = true;
+    }
+    if (moved)
+        notifyView();
+    return moved;
+}
+
 ChipPlacement InteractionController::placeValueChip(const ChipPlacementInput& input) const
 {
     // A new selection chooses afresh; the same one keeps its spot.

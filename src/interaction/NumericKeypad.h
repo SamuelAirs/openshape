@@ -5,6 +5,7 @@
 #pragma once
 
 #include "core/Units.h"
+#include "interaction/OverlayPlacement.h"
 
 #include <optional>
 #include <string>
@@ -75,5 +76,38 @@ KeypadResult typeIntoKeypad(const KeypadState& state, std::string_view character
 // `unit`), radians for an angle, the whole number for a count. The fields
 // themselves parse what they are given; this is what the keypad's text means.
 LengthParseResult keypadValue(std::string_view text, KeypadMode mode, LengthUnit unit);
+
+// ---- Where the keypad goes -------------------------------------------------------
+
+struct KeypadPlacementInput {
+    ScreenRect area;               // the window inside its safe area
+    Vec2 size;                     // the keypad's width and height
+    ScreenRect target;             // the value box it types into (the value chip, a dimension, a Model panel row)
+    std::vector<ScreenRect> avoid; // controls it must not cover; empty ones are ignored
+    // The selection and its arrow (InteractionController::keepClearRect):
+    // the keypad stays a margin away from them. nullopt: nothing to keep clear.
+    std::optional<ScreenRect> keepClear;
+    bool compact = false; // a phone-sized window: docked along the bottom
+};
+
+struct KeypadPlacement {
+    Vec2 position;       // top-left corner
+    bool docked = false; // along the bottom of the window (a phone, or no room beside the value box)
+    bool clear = false;  // off the value box, the controls and the keep-clear rectangle
+};
+
+// The gap between the keypad and the value box beside it (more than the
+// value chip keeps from the controls it avoids, kChipPanelGap, so the chip
+// keeps its spot beside a keypad), and the margin around the keep-clear rectangle.
+inline constexpr double kKeypadGap = 10;
+inline constexpr double kKeypadKeepClearMargin = 20;
+
+// A phone (compact): docked along the bottom, the value chip is at the top
+// while a value is typed there. Larger windows (an iPad): beside the value
+// box, below it, above it, right of it or left of it, else in a corner of the
+// area, the first that covers neither the value box, nor a control, nor the
+// keep-clear rectangle; else the first that covers neither the value box
+// nor the keep-clear rectangle; else docked along the bottom.
+KeypadPlacement placeKeypad(const KeypadPlacementInput& input);
 
 } // namespace os::interact

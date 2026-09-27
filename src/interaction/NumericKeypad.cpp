@@ -4,6 +4,7 @@
 
 #include "interaction/NumericKeypad.h"
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace os::interact {
@@ -202,6 +203,52 @@ LengthParseResult keypadValue(std::string_view text, KeypadMode mode, LengthUnit
     }
     }
     return {std::nullopt, "Type a number."};
+}
+
+KeypadPlacement placeKeypad(const KeypadPlacementInput& in)
+{
+    const double w = in.size.x;
+    const double h = in.size.y;
+    const ScreenRect& area = in.area;
+    const auto clampX = [&](double x) { return std::max(area.left, std::min(x, area.right - w)); };
+    const auto clampY = [&](double y) { return std::max(area.top, std::min(y, area.bottom - h)); };
+    const KeypadPlacement docked{{area.left + std::max(0.0, (area.width() - w) / 2), area.bottom - h}, true, false};
+    if (in.compact)
+        return docked;
+
+    const ScreenRect& t = in.target;
+    std::vector<Vec2> candidates{
+        {clampX(t.center().x - w / 2), t.bottom + kKeypadGap}, // below
+        {clampX(t.center().x - w / 2), t.top - kKeypadGap - h}, // above
+        {t.right + kKeypadGap, clampY(t.top)},                  // right
+        {t.left - kKeypadGap - w, clampY(t.top)},               // left
+        {area.right - w, area.bottom - h},                      // the corners
+        {area.left, area.bottom - h},
+        {area.right - w, area.top},
+        {area.left, area.top},
+    };
+    const ScreenRect targetZone = t.inflated(kKeypadGap - 1);
+    const std::optional<ScreenRect> keepZone =
+        in.keepClear ? std::optional<ScreenRect>(in.keepClear->inflated(kKeypadKeepClearMargin)) : std::nullopt;
+    const auto fits = [&](const ScreenRect& r) { return area.contains(r); };
+    const auto offTarget = [&](const ScreenRect& r) { return !r.intersects(targetZone) && !(keepZone && r.intersects(*keepZone)); };
+    const auto offControls = [&](const ScreenRect& r) {
+        for (const ScreenRect& control : in.avoid)
+            if (control.width() > 0 && control.height() > 0 && r.intersects(control))
+                return false;
+        return true;
+    };
+    for (const Vec2& p : candidates) {
+        const ScreenRect r = ScreenRect::at(p, in.size);
+        if (fits(r) && offTarget(r) && offControls(r))
+            return {p, false, true};
+    }
+    for (const Vec2& p : candidates) {
+        const ScreenRect r = ScreenRect::at(p, in.size);
+        if (fits(r) && offTarget(r))
+            return {p, false, false};
+    }
+    return docked;
 }
 
 } // namespace os::interact
