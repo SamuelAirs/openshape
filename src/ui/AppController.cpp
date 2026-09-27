@@ -264,6 +264,36 @@ QString AppController::operationPrompt() const
     return interaction_->operation() ? q(interaction_->operation()->prompt()) : QString();
 }
 
+namespace {
+QString modeName(doc::ExtrudeMode mode)
+{
+    switch (mode) {
+    case doc::ExtrudeMode::Cut: return QStringLiteral("cut");
+    case doc::ExtrudeMode::Join: return QStringLiteral("join");
+    case doc::ExtrudeMode::NewBody: break;
+    }
+    return QStringLiteral("new");
+}
+} // namespace
+
+QString AppController::operationMode() const
+{
+    if (const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(interaction_->operation()))
+        return modeName(extrude->mode());
+    if (const auto* revolve = dynamic_cast<const interact::RevolveOperation*>(interaction_->operation()))
+        return modeName(revolve->mode());
+    return {};
+}
+
+bool AppController::operationOnBody() const
+{
+    if (const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(interaction_->operation()))
+        return extrude->hasHost();
+    if (const auto* revolve = dynamic_cast<const interact::RevolveOperation*>(interaction_->operation()))
+        return revolve->hasHost();
+    return false;
+}
+
 bool AppController::operationTakesText() const
 {
     return interaction_->operationTakesText();
@@ -319,6 +349,27 @@ void AppController::setSafeInsets(const QVariantList& insets)
         i.left = insets[3].toDouble();
     }
     interaction_->setSafeInsets(i); // emits viewChanged when they change
+}
+
+QVariantList AppController::frameInsets() const
+{
+    const interact::SafeInsets& i = interaction_->frameInsets();
+    return {i.top, i.right, i.bottom, i.left};
+}
+
+void AppController::setFrameInsets(const QVariantList& insets)
+{
+    interact::SafeInsets i;
+    if (insets.size() == 4) {
+        i.top = insets[0].toDouble();
+        i.right = insets[1].toDouble();
+        i.bottom = insets[2].toDouble();
+        i.left = insets[3].toDouble();
+    }
+    if (i == interaction_->frameInsets())
+        return;
+    interaction_->setFrameInsets(i); // read when a sketch starts: nothing to redraw
+    emit viewChanged();
 }
 
 QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
@@ -518,23 +569,21 @@ bool AppController::canStartSketch() const
     if (interaction_->sketchSession())
         return false;
     const auto& sel = interaction_->selection();
-    // Nothing selected: sketch on the ground plane. One flat face or
-    // construction plane: sketch on it. One profile: continue its sketch.
-    return sel.empty()
-        || (sel.size() == 1
-            && (sel.items().front().kind == sel::SelectionKind::Face
-                || sel.items().front().kind == sel::SelectionKind::SketchProfile))
+    // Nothing selected: sketch on the ground plane. A flat face (of several,
+    // the last one tapped: taps add on a touch screen) or construction
+    // plane: sketch on it. One profile: continue its sketch.
+    return sel.empty() || sel.allOfKind(sel::SelectionKind::Face)
+        || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::SketchProfile)
         || datumPlaneSelected(sel, *document_);
 }
 
 bool AppController::faceSelected() const
 {
-    // A face or construction plane (sketch on it) or a profile (continue its
+    // Faces or a construction plane (sketch on it) or a profile (continue its
     // sketch): no plane menu.
     const auto& sel = interaction_->selection();
-    return (sel.size() == 1
-            && (sel.items().front().kind == sel::SelectionKind::Face
-                || sel.items().front().kind == sel::SelectionKind::SketchProfile))
+    return sel.allOfKind(sel::SelectionKind::Face)
+        || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::SketchProfile)
         || datumPlaneSelected(sel, *document_);
 }
 

@@ -1947,10 +1947,129 @@ std::unique_ptr<ExtrudeOperation> ExtrudeOperation::create(const doc::Document& 
 doc::ExtrudeMode ExtrudeOperation::mode() const
 {
     if (modeOverride_)
-        return host_ || *modeOverride_ == doc::ExtrudeMode::NewBody ? *modeOverride_ : doc::ExtrudeMode::NewBody;
-    if (!host_ || autoNewBody_)
+        return *modeOverride_;
+    if (!host_)
+        return autoMode_;
+    if (autoNewBody_)
         return doc::ExtrudeMode::NewBody;
     return distance() < 0 ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::Join;
+}
+
+std::string ExtrudeOperation::valueLabel() const
+{
+    if (editingDraft())
+        return "Draft";
+    if (symmetric_)
+        return "Thickness";
+    switch (mode()) {
+    case doc::ExtrudeMode::Cut: return "Cut depth";
+    case doc::ExtrudeMode::Join: return "Height";
+    case doc::ExtrudeMode::NewBody: break;
+    }
+    return "New body";
+}
+
+LinearManipulator ExtrudeOperation::handle(int) const
+{
+    if (!arrowIntoBody())
+        return manipulator();
+    return LinearManipulator(manipulator().base(), -manipulator().direction());
+}
+
+std::optional<Uuid> ExtrudeOperation::targetBody() const
+{
+    if (mode() == doc::ExtrudeMode::NewBody)
+        return std::nullopt;
+    return host_ ? host_ : target_;
+}
+
+void ExtrudeOperation::chooseMode(doc::ExtrudeMode mode, const doc::Document& document)
+{
+    modeOverride_ = mode;
+    // On a body, Cut goes into it and Join / New body out of it.
+    const double d = distance();
+    if (host_ && !symmetric_ && ((mode == doc::ExtrudeMode::Cut && d > 0) || (mode != doc::ExtrudeMode::Cut && d < 0))) {
+        if (editingDraft())
+            distance_ = -distance_;
+        else
+            setStoredValue(-d);
+    }
+    setValue(value(), document);
+}
+
+void ExtrudeOperation::flip(const doc::Document& document)
+{
+    if (symmetric_)
+        return; // centered on the sketch: both ways already
+    // On a body the direction says what it does (out joins, in cuts).
+    if (host_)
+        modeOverride_.reset();
+    if (editingDraft())
+        distance_ = -distance_;
+    else
+        setStoredValue(-value());
+    setValue(value(), document);
+}
+
+Result<geom::Shape> ExtrudeOperation::computePreview(double value, const doc::Document& document) const
+{
+    if (targetMissing_)
+        return mode() == doc::ExtrudeMode::Cut
+                 ? Result<geom::Shape>::failure(
+                       ErrorCode::NoEffect,
+                       "This cut does not reach a body, so nothing would be removed. Extrude into a body, or further.",
+                       "extrude: cut chosen, no body overlaps the extrusion")
+                 : Result<geom::Shape>::failure(
+                       ErrorCode::NoEffect,
+                       "This extrusion does not touch a body, so there is nothing to join. Extrude it into a body, or choose New body.",
+                       "extrude: join chosen, no body touches the extrusion");
+    return Operation::computePreview(value, document);
+}
+
+void ExtrudeOperation::findTarget(const geom::Shape& tool, const doc::Document& document)
+{
+    // Bodies whose boxes meet the extrusion's (touching counts: a join),
+    // the largest overlap first. Only these are tried with the kernel.
+    const geom::BoundingBox box = geom::approximateBoundingBox(tool);
+    if (!box.valid)
+        return;
+    constexpr double kTouch = 1e-6;
+    std::vector<std::pair<double, const doc::Body*>> candidates;
+    for (const auto& body : document.bodies()) {
+        if (!body->isVisible() || body->shape().isNull())
+            continue;
+        const geom::BoundingBox b = geom::approximateBoundingBox(body->shape());
+        if (!b.valid)
+            continue;
+        const double dx = std::min(box.max.x, b.max.x) - std::max(box.min.x, b.min.x);
+        const double dy = std::min(box.max.y, b.max.y) - std::max(box.min.y, b.min.y);
+        const double dz = std::min(box.max.z, b.max.z) - std::max(box.min.z, b.min.z);
+        if (dx < -kTouch || dy < -kTouch || dz < -kTouch)
+            continue;
+        candidates.emplace_back(std::max(dx, 0.0) * std::max(dy, 0.0) * std::max(dz, 0.0), body.get());
+    }
+    std::stable_sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    const bool wantCut = modeOverride_ != doc::ExtrudeMode::Join;   // automatic: a cut first
+    const bool wantJoin = modeOverride_ != doc::ExtrudeMode::Cut;   // automatic: else a join
+    if (wantCut)
+        for (const auto& [overlap, body] : candidates)
+            if (geom::booleanOp(body->shape(), tool, geom::BooleanKind::Subtract)) { // removes material
+                target_ = body->id();
+                autoMode_ = doc::ExtrudeMode::Cut;
+                return;
+            }
+    if (wantJoin)
+        for (const auto& [overlap, body] : candidates) {
+            // Touching or overlapping: the union is no more pieces than the body.
+            const auto joined = geom::booleanOp(body->shape(), tool, geom::BooleanKind::Union);
+            if (joined && joined.value().solidCount() <= std::max(body->shape().solidCount(), 1)) {
+                target_ = body->id();
+                autoMode_ = doc::ExtrudeMode::Join;
+                return;
+            }
+        }
+    // Join or Cut chosen with no body to act on: the preview says so.
+    targetMissing_ = modeOverride_.has_value();
 }
 
 void ExtrudeOperation::setActiveHandle(int index)
@@ -1977,6 +2096,14 @@ Operation::Carry ExtrudeOperation::carriedSelection() const
 
 bool ExtrudeOperation::reconsider(const geom::Shape& result, const doc::Document& document)
 {
+    if (!host_) {
+        // A sketch on no body: `result` is the extrusion as a new body (the
+        // first pass). Which body does it go into, or touch?
+        if (target_ || targetMissing_ || modeOverride_ == doc::ExtrudeMode::NewBody)
+            return false;
+        findTarget(result, document);
+        return target_.has_value() || targetMissing_;
+    }
     if (modeOverride_ || mode() != doc::ExtrudeMode::Join || !joinMissedBody(result, document, host_))
         return false;
     autoNewBody_ = true;
@@ -1987,7 +2114,7 @@ bool ExtrudeOperation::reconsiderRefusal(ErrorCode code)
 {
     // Pushed in beside the body, an automatic cut removes nothing: the user
     // meant a new body on that side (as a join that misses does).
-    if (modeOverride_ || mode() != doc::ExtrudeMode::Cut || code != ErrorCode::NoEffect)
+    if (!host_ || modeOverride_ || mode() != doc::ExtrudeMode::Cut || code != ErrorCode::NoEffect)
         return false;
     autoNewBody_ = true;
     return true;
@@ -1995,7 +2122,7 @@ bool ExtrudeOperation::reconsiderRefusal(ErrorCode code)
 
 Uuid ExtrudeOperation::previewBody() const
 {
-    return mode() == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
+    return targetBody().value_or(Uuid());
 }
 
 std::unique_ptr<doc::Feature> ExtrudeOperation::makeFeature(double value) const
@@ -2004,7 +2131,8 @@ std::unique_ptr<doc::Feature> ExtrudeOperation::makeFeature(double value) const
     feature->sketchId = sketchId_;
     feature->profiles = profiles_;
     feature->distance = editingDraft() ? distance_ : value;
-    feature->mode = mode();
+    // A sketch on no body is extruded on its own until its body is known.
+    feature->mode = targetBody() ? mode() : doc::ExtrudeMode::NewBody;
     feature->throughAll = throughAll_ && feature->mode == doc::ExtrudeMode::Cut;
     feature->symmetric = symmetric_;
     feature->draftAngle = (editingDraft() ? value : draftDegrees_) * kPi / 180.0;
@@ -2050,10 +2178,11 @@ Status ExtrudeOperation::extendToFace(const doc::Document& document, const Uuid&
 
 std::unique_ptr<cmd::Command> ExtrudeOperation::makeCommand(const doc::Document& document) const
 {
-    if (mode() == doc::ExtrudeMode::NewBody) {
+    if (mode() == doc::ExtrudeMode::NewBody)
         return std::make_unique<cmd::CreateBodyCommand>(document.nextBodyName(), makeFeature(value()));
-    }
-    return std::make_unique<cmd::AddFeatureCommand>(*host_, makeFeature(value()));
+    // Join or Cut without a body found (its preview refused it): the
+    // command refuses too (no such body) rather than making a new body.
+    return std::make_unique<cmd::AddFeatureCommand>(targetBody().value_or(Uuid()), makeFeature(value()));
 }
 
 // ---- Construct: axes and planes -------------------------------------------------------

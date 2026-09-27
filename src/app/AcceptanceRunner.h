@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <vector>
 
 class QQuickItem;
@@ -69,10 +70,19 @@ public:
     void type(const QString& text);
     // A quick multi-finger tap through Qt's touch path (fingers at `points`).
     void touchTap(const QList<QPointF>& points);
+    // One finger down, moved and lifted through Qt's touch path (moves in
+    // one step may be merged into the last one: Qt compresses touch moves
+    // per frame).
+    void touchPress(QPointF p);
+    void touchMove(QPointF p);
+    void touchRelease(QPointF p);
     // Clicks the center of a QML item found by objectName, first scrolling any
     // Flickable around it (the tool palette in a short window) so it is on
     // screen, as a user would; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
+    // The same with one finger (the touch layout stays on; a click would
+    // switch to the mouse layout).
+    bool tapItem(const QString& objectName);
     // A QML item by objectName (declared items and generated delegates; a
     // visible one when two share the name), or null.
     QQuickItem* findItem(const QString& objectName) const;
@@ -109,6 +119,9 @@ private:
     QPointF nativeLocal(QPointF p) const;
     QPointF nativeGlobal(QPointF p) const;
     void runNext();
+    void touchPoint(QPointF p, int state); // a QEventPoint::State
+    // clickItem's search, layout and scrolling: the item's center, if it can be reached.
+    std::optional<QPointF> reachItem(const QString& objectName);
     void beginScenario(const QString& name, bool reset);
     void endScenario();
     std::vector<Step> coreScenario();
