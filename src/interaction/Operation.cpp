@@ -2058,8 +2058,18 @@ void ExtrudeOperation::findTarget(const geom::Shape& tool, const doc::Document& 
                 autoMode_ = doc::ExtrudeMode::Cut;
                 return;
             }
+    // A join: pulled away from a body the profile lies on (Shapr3D's rule),
+    // i.e. the extrusion nudged back toward its sketch goes into that body.
+    // One that only touches a body's side (a neighboring profile's block)
+    // stays a new body. Chosen explicitly, any body it touches will do.
+    const double along = distance() < 0 ? -1.0 : 1.0;
+    const auto nudged = symmetric_ ? Result<geom::Shape>::failure(ErrorCode::InvalidArgument, "", "symmetric")
+                                   : geom::translated(tool, manipulator().direction().normalized() * (-along * 0.01));
     if (wantJoin)
         for (const auto& [overlap, body] : candidates) {
+            const bool onIt = nudged && geom::booleanOp(body->shape(), nudged.value(), geom::BooleanKind::Subtract).ok();
+            if (!onIt && !modeOverride_)
+                continue;
             // Touching or overlapping: the union is no more pieces than the body.
             const auto joined = geom::booleanOp(body->shape(), tool, geom::BooleanKind::Union);
             if (joined && joined.value().solidCount() <= std::max(body->shape().solidCount(), 1)) {

@@ -1758,6 +1758,9 @@ void InteractionController::cancelOperation()
         return;
     }
     if (operation_ && operation_->value() != operation_->neutralValue()) {
+        // Back to the start: an Extrude's mode is automatic again too.
+        if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()))
+            extrude->setModeOverride(std::nullopt);
         operation_->setValue(operation_->neutralValue(), *document_);
     } else {
         selection_.clear();

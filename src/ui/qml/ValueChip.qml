@@ -30,6 +30,20 @@ Item {
     // Typing into the value or the Text tool's words (the on-screen keyboard is up).
     readonly property bool typing: field.activeFocus || textField.activeFocus
     signal finished()
+    // For Main.qml's choice of a single row: the field's width, and the width
+    // of the leading actions that must stay in sight beside it (Extrude's
+    // New body / Join / Cut).
+    readonly property real fieldWidth: fieldPanel.implicitWidth
+    readonly property real leadingActionsWidth: {
+        let width = 0
+        for (let i = 0; i < measureRepeater.count; ++i) {
+            const item = measureRepeater.itemAt(i)
+            if (!item || !item.modelData.id.startsWith("mode:"))
+                break
+            width += item.implicitWidth + (i > 0 ? actionMeasure.spacing : 0)
+        }
+        return width
+    }
 
     width: column.implicitWidth
     height: column.implicitHeight
@@ -342,6 +356,7 @@ Item {
             visible: false
             spacing: 4
             Repeater {
+                id: measureRepeater
                 model: chip.app.contextActions
                 delegate: ActionButton {
                     required property var modelData

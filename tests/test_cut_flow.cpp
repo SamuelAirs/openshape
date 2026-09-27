@@ -442,6 +442,13 @@ TEST(CutFlow, JoinPushedInIsRefusedWithAReason)
     EXPECT_FALSE(p.commit().ok());
     EXPECT_EQ(p.stack.size(), steps);
     EXPECT_NEAR(p.volume(), kCube, 1e-6);
+    // ✕ goes back to the start, the mode automatic again: pushed in, it cuts.
+    p.controller.cancelOperation();
+    ASSERT_NE(p.extrude(), nullptr);
+    EXPECT_DOUBLE_EQ(p.extrude()->distance(), 0.0);
+    EXPECT_FALSE(p.extrude()->modeOverride().has_value());
+    EXPECT_EQ(p.controller.setValueText("-4"), "");
+    EXPECT_EQ(p.extrude()->mode(), doc::ExtrudeMode::Cut);
 }
 
 // 4. The value says what it makes; the compact row starts with the modes.
@@ -573,7 +580,8 @@ TEST(CutFlow, SketchOnNoBodyCutsOrJoinsTheBodyItGoesInto)
     const Case cases[] = {
         {{-5, -5}, {5, 5}, 5, doc::ExtrudeMode::Cut, 1, -5},      // up into the box
         {{-5, -5}, {5, 5}, -5, doc::ExtrudeMode::Join, 1, 5},     // down from its bottom
-        {{20, -5}, {30, 5}, 5, doc::ExtrudeMode::NewBody, 2, 0},  // beside it
+        {{20, -5}, {30, 5}, 5, doc::ExtrudeMode::NewBody, 2, 0},  // apart from it
+        {{10, -5}, {20, 5}, 5, doc::ExtrudeMode::NewBody, 2, 0},  // against its side: touching is not a join
     };
     for (const Case& c : cases) {
         Phone p;
@@ -583,6 +591,9 @@ TEST(CutFlow, SketchOnNoBodyCutsOrJoinsTheBodyItGoesInto)
         ASSERT_FALSE(p.session().sketch().hostBody().has_value());
         p.rectangle(c.a, c.b); // at the phone's fitted zoom: roughly
         EXPECT_GT(p.rectArea(), 50);
+        if (c.a.x == 10) {
+            EXPECT_NEAR(p.rectMin.x, 10, 1e-9) << "against the box's side";
+        }
         p.finish();
         // Tapped from below (from above the box hides it).
         p.selectFromBelow((p.rectMin + p.rectMax) * 0.5);

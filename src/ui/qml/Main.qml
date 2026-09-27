@@ -1061,13 +1061,17 @@ ApplicationWindow {
         // A phone: a bar (its actions scroll sideways) beside the Model / View
         // buttons; held sideways, one row high, as wide as the room beside the
         // top bar when that is enough.
+        // Only while the leading actions (Extrude's New body / Join / Cut)
+        // fit beside the field: otherwise they go below it, in sight.
         singleRow: Theme.compact && window.width > window.height
+                   && singleRowWidth - fieldWidth - 6 >= leadingActionsWidth
         readonly property real roomBesideTopBar: Math.floor(Math.min(viewButtonPanel.x, modelButtonPanel.visible ? modelButtonPanel.x : window.width)
                                                  - 8 - (topBar.x + topBar.width + 8)) - 1
+        readonly property real singleRowWidth: roomBesideTopBar >= 380 ? roomBesideTopBar
+                                             : Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1
         // Whole pixels, a pixel short: the layout rounds the chip's width up.
         maximumWidth: !Theme.compact ? window.width - Theme.insetLeft - Theme.insetRight
-                    : singleRow ? (roomBesideTopBar >= 380 ? roomBesideTopBar
-                                                           : Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
+                    : singleRow ? singleRowWidth
                     : Math.max(200, Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
         // Where it goes (interact::placeValueChip): never over the selection,
         // the arrows or the point just tapped (app.keepClearRect), nor over
