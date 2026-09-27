@@ -838,7 +838,10 @@ radius (`InteractionController::groundGrid`: about a view's width around the
 target, at least twice the distance to the visible bodies' farthest
 footprint corner, so the lines under a model never fade). The axes are
 line quads in the line shader's fading mode, reaching 1.5 times the grid's
-radius (near the eye they fade too: the Z axis seen from above). The
+radius (near the eye they fade too: the Z axis seen from above); the Z
+axis's half on the far side of the ground is drawn at 30 % (drawn fully,
+the part below the ground read as a line on the ground running towards the
+viewer). The
 `perspective` scenario follows a major grid line across the fade on the
 rendered window, in both projections, and checks that it falls smoothly to
 nothing (a hard border shows as a step of 17-24 levels).

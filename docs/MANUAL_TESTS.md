@@ -104,6 +104,17 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     (the mounting plate with two holes), and skim docs/USER_GUIDE.md: does
     everything work as written? Is anything you use missing? F1 → the
     link under the first paragraph opens the guide on GitHub.
+15. **The new look (your report: "confusing and not realistic at different
+    angles", "the grid cuts off abruptly").** Open a real project and orbit
+    all the way round, low over the ground, from above and from below:
+    tops should stay the lightest, undersides the darkest, and two sides
+    seen at once never the same shade. The view is now in perspective;
+    zoom with the wheel onto a small detail (it heads for what is under
+    the pointer) and orbit about it. The grid should fade out softly, also
+    far away towards the horizon, with a faint shadow where a body stands
+    on the ground. The Perspective / Orthographic button switches back;
+    close and start again: your choice is kept. Is anything harder to
+    read than before (edges, sketches, selected faces)?
 
 ## The Windows installer (optional)
 

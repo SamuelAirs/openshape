@@ -37,6 +37,12 @@ void main()
             // sweep across the whole view: it fades out there too.
             alpha *= smoothstep(0.25 * fade.z, 0.5 * fade.z, toEye);
         }
+        // The Z axis's half on the far side of the ground (below it, seen
+        // from above) is faint: drawn fully it read as a line on the ground
+        // running towards the viewer. eye.z is the eye's height, or in
+        // orthographic the view direction's (the same sign).
+        if (vWorld.z * eye.z < 0.0)
+            alpha *= 0.3;
     }
     fragColor = vec4(color.rgb, alpha);
 }
