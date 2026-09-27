@@ -264,6 +264,8 @@ ApplicationWindow {
     // File → Share Project…: the project's file as it is now, so it is saved
     // first (a new project asks for its name, as Save does).
     function shareProject() {
+        if (!app.canShare)
+            return
         const share = () => window.app.shareProject(window.shareAnchor())
         if (!app.hasProjectPath()) {
             window.afterSave = share
@@ -420,6 +422,7 @@ ApplicationWindow {
             objectName: "shareProjectMenuItem"
             text: "Share Project…"
             visible: window.app.canShare && window.app.savesToAppFolder
+            enabled: visible // the arrow keys skip it where it is hidden
             height: visible ? implicitHeight : 0
             onTriggered: window.shareProject()
         }

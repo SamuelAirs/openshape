@@ -265,7 +265,14 @@ Steps shareSteps(AcceptanceRunner& r)
     });
     steps.push_back([&r, s] {
         QQuickItem* item = r.findItem(QStringLiteral("shareProjectMenuItem"));
-        r.check(item && !item->isVisible() && item->height() == 0, "share: no Share Project on the desktop (and no gap)");
+        r.check(item && !item->isVisible() && item->height() == 0 && !item->isEnabled(),
+                "share: no Share Project on the desktop (no gap; the arrow keys skip it)");
+        bool reached = false;
+        for (int i = 0; i < 16; ++i) {
+            r.key(Qt::Key_Down);
+            reached = reached || (item && (item->hasActiveFocus() || item->property("highlighted").toBool()));
+        }
+        r.check(!reached, "share: the arrow keys never land on the hidden Share Project");
         r.screenshot(QStringLiteral("share_desktop_menu"));
         r.key(Qt::Key_Escape);
         QObject::disconnect(s->listening);
