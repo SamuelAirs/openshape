@@ -807,15 +807,20 @@ bool AppController::openProject(const QUrl& url)
     // Drive, On My iPad) is copied in first: the project reader cannot read
     // it there (it lies outside the app's sandbox), and Save must be able to
     // write where the project is.
-    if (savesToAppFolder() && !isInsideFolder(localPath(url), appFolder_)) {
+    // A project in the Inbox (where iOS puts Mail's attachments, read-only)
+    // is moved out of it the same way; one elsewhere in the app folder
+    // opens where it is (stageIncomingFile returns it unchanged).
+    if (savesToAppFolder()) {
         const StagedFile staged = stageIncomingFile(localPath(url), incomingPlaces(), IncomingKind::Project);
         if (staged.path.isEmpty()) {
             OS_LOG(Warning, File) << "open: " << localPath(url).toStdString() << ": " << staged.error.toStdString();
             notifyMessage(staged.error);
             return false;
         }
-        OS_LOG(Info, File) << "open: " << localPath(url).toStdString() << " copied into the app folder as "
-                           << staged.path.toStdString();
+        if (staged.copied) {
+            OS_LOG(Info, File) << "open: " << localPath(url).toStdString() << " copied into the app folder as "
+                               << staged.path.toStdString();
+        }
         return openProjectFile(staged.path);
     }
     return openProjectFile(localPath(url));
@@ -1067,11 +1072,17 @@ bool AppController::exportToAppFolder(const QString& format, const QRectF& share
         notifyMessage(q(status.userMessage()));
         return false;
     }
-    // Where to find it: the Files app shows the app's folder by its name.
+    OS_LOG(Info, File) << "exported " << file.toStdString() << " to " << folder.toStdString();
+    // iPhone / iPad: straight on to a slicer, AirDrop or Mail (the file
+    // stays in Exports). The share sheet is the answer: no message unless
+    // sharing fails (shareFile says so).
+    if (canShare()) {
+        (void)shareFile(folder + QLatin1Char('/') + file, shareAnchor);
+        return true;
+    }
+    // No share sheet: where to find it (the Files app shows the app's
+    // folder by its name).
     notifyMessage(QStringLiteral("Exported %1 to OpenShape \u2192 Exports (Files app)").arg(file));
-    // Then straight on to a slicer, AirDrop or Mail (the file stays in Exports).
-    if (canShare())
-        shareFile(folder + QLatin1Char('/') + file, shareAnchor);
     return true;
 }
 

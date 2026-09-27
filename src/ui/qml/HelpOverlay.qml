@@ -247,7 +247,7 @@ Rectangle {
                             ["From other apps", "In the Files app or Mail, share a project or a STEP file to OpenShape: "
                              + "a project is copied into OpenShape's folder and opened, a STEP file becomes a new project"]
                         ] : []).concat(overlay.share ? [
-                            ["To a slicer", "File → Export STL or 3MF, then pick the slicer app (or AirDrop, Save to Files, Mail) in the share sheet"],
+                            ["To a slicer", "File → Export STL or 3MF, then pick your printer’s or slicer’s app (or AirDrop, Save to Files, Mail) in the share sheet"],
                             ["Send a project", "File → Share Project… (saves it first)"]
                         ] : []).concat([
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S", "File → New / Open… / Save"],

@@ -684,8 +684,8 @@ CAD programs.
 
 On an **iPhone or iPad**, **File → Export STL**, **Export 3MF** and
 **Export STEP** save the file into OpenShape's *Exports* folder and then
-open the share sheet: pick your slicer app (for example Bambu Handy,
-PrusaSlicer or Cura for iOS, whichever you have installed), **AirDrop** it to
+open the share sheet: pick the app of your printer or slicer (if it takes
+STL or 3MF files), **AirDrop** it to
 the computer next to the printer, **Save to Files** or send it by **Mail**.
 On an iPad the share sheet opens next to the **File** button. Closing the
 share sheet is fine: the file stays in *Exports* (see "Files on iPhone and

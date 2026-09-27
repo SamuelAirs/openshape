@@ -105,27 +105,19 @@ Needs the paid Apple Developer Program (the owner has it).
 
 Decided 2026-09-27: a public TestFlight beta before the paid App Store
 release. Builds uploaded since then may go to external testers
-(`scripts/ios/testflight.sh` no longer marks them internal-only; builds
-uploaded before stay internal). In App Store Connect → OpenShape →
-TestFlight:
-
-1. **Test Information** (left column): Beta App Description (what to try),
-   Feedback Email, Marketing URL (e.g. the GitHub page) and Privacy Policy
-   URL.
-2. **Beta App Review Information** (same page): a contact name, e-mail and
-   phone; sign-in required: **No** (OpenShape has no accounts).
-3. **External Testing → +** → a group (e.g. `Public beta`) → add a build →
-   **Submit for Review**. Apple reviews the first build of each version
-   (usually within a day); later builds of the same version go out without
-   a review.
-4. In the group: **Public Link → Enable** (optionally a tester limit, up to
-   10,000) and share the link; anyone with it installs TestFlight and joins.
-   A **What to Test** note per build is shown to the testers.
+(`scripts/ios/testflight.sh` sets `testFlightInternalTestingOnly` to false;
+builds uploaded before stay internal). The steps in App Store Connect (Test
+Information with the Privacy Policy URL, Beta App Review information, the
+`Public beta` group, adding a build, the public link) and the texts to paste
+are in one place: [APP_STORE.md, section 5](APP_STORE.md#5-the-public-beta-testflight).
+In short: TestFlight → **Test Information** → an external group
+`Public beta` → **Add Builds** → **Submit Review** → after the review,
+`Public beta` → **Testers** → **Create Public Link**.
 
 Testers' crash reports and screenshot feedback appear under TestFlight →
 Feedback (crashes symbolicated with the uploaded dSYM). The App Store
 listing itself (description, screenshots, price, age rating, privacy
-answers) is a separate checklist: docs/APP_STORE.md.
+answers) is in the same checklist, [APP_STORE.md](APP_STORE.md).
 
 ## 2. Getting a new build onto the iPhone or iPad
 
@@ -212,12 +204,14 @@ OpenShape):
   A project picked outside OpenShape's folder (iCloud Drive, On My iPad) is
   copied in and the copy opened (below).
 - **Export STL / 3MF / STEP** write `Exports/<project name>.<ext>` in
-  OpenShape's folder at once (replacing an earlier export of that name),
-  say where, and then open the **share sheet** with the file
+  OpenShape's folder at once (replacing an earlier export of that name)
+  and then open the **share sheet** with the file
   (`UIActivityViewController`: a slicer app, AirDrop, Save to Files, Mail;
   on an iPad a popover at the File button). **File → Share Project…** saves
   (a new project asks for its name) and shares the `.openshape` file.
-  Sent or closed is only logged; a failure is said in a message. The sheet
+  Sent or closed is only logged; a failure is said in a message (without
+  a share sheet, as in `--app-folder` on the desktop, a message says where
+  the file is). The sheet
   is Objective-C++ (`src/ui/ios/ShareSheet.mm`), behind a handler the
   acceptance run replaces with a stub (`AppController::setShareHandler`).
 - **Open in OpenShape:** `Info.plist` lists projects (rank Owner) and STEP

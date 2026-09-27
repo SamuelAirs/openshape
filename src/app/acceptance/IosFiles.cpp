@@ -209,13 +209,13 @@ Steps shareSteps(AcceptanceRunner& r)
     for (const auto& [item, file] : exports) {
         const QString itemName = QString::fromLatin1(item);
         const QString fileName = QString::fromLatin1(file);
+        steps.push_back([s] { s->messages.clear(); });
         append(steps, fileMenu(r, itemName, QStringLiteral("share: File → ") + itemName));
         ++count;
         steps.push_back([&r, s, fileName, count] {
             checkShared(r, s, count, fileName, QStringLiteral("share: ") + QFileInfo(fileName).suffix() + QStringLiteral(" export"));
-            // The export's message stays (where the file is); the sheet's end says nothing.
-            r.check(toastText(r) == QStringLiteral("Exported %1 to OpenShape → Exports (Files app)").arg(QFileInfo(fileName).fileName()),
-                    "share: the export says where the file is", toastText(r));
+            // The share sheet is the answer: no message after a good export.
+            r.check(s->messages.isEmpty(), "share: a shared export adds no message", s->messages.join(QStringLiteral(" | ")));
         });
     }
     // ---- The sheet closed without sending, or failing.
@@ -226,8 +226,7 @@ Steps shareSteps(AcceptanceRunner& r)
     append(steps, fileMenu(r, QStringLiteral("export3mfMenuItem"), QStringLiteral("share: Export 3MF, the sheet closed")));
     steps.push_back([&r, s] {
         r.check(s->requests.size() == 7, "share: the sheet opened", QString::number(s->requests.size()));
-        r.check(s->messages == QStringList{QStringLiteral("Exported Share lid.3mf to OpenShape → Exports (Files app)")},
-                "share: closing the sheet adds no message", s->messages.join(QStringLiteral(" | ")));
+        r.check(s->messages.isEmpty(), "share: closing the sheet adds no message", s->messages.join(QStringLiteral(" | ")));
         s->reply = ui::ShareOutcome::Failed;
         s->replyDetail = QStringLiteral("The slicer could not take it");
     });
@@ -235,6 +234,8 @@ Steps shareSteps(AcceptanceRunner& r)
     steps.push_back([&r, s] {
         r.check(toastText(r) == QStringLiteral("Could not share Share lid.stl: The slicer could not take it"),
                 "share: a failed share is said", toastText(r));
+        r.check(s->messages == QStringList{QStringLiteral("Could not share Share lid.stl: The slicer could not take it")},
+                "share: only the failure is said", s->messages.join(QStringLiteral(" | ")));
         r.screenshot(QStringLiteral("share_failed"));
         s->reply = ui::ShareOutcome::Completed;
         s->replyDetail.clear();
