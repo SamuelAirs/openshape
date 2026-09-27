@@ -168,8 +168,9 @@
     "qt": [
       ["^qml/", "qtdeclarative"],
       ["^plugins/qmltooling/", "qtdeclarative"],
-      ["^plugins/(imageformats/libqsvg|iconengines/libqsvgicon)", "qtsvg"],
-      ["^plugins/(platforms|imageformats|iconengines|generic|networkinformation|tls|platforminputcontexts|permissions)/", "qtbase"],
+      ["^plugins/(imageformats|iconengines)/(libqsvg|objects-[^/]+/QSvg)", "qtsvg"],
+      ["^plugins/imageformats/(libq(gif|ico|jpeg)[._]|objects-[^/]+/Q(Gif|Ico|Jpeg))", "qtbase"],
+      ["^plugins/(platforms|generic|networkinformation|tls|platforminputcontexts|permissions)/", "qtbase"],
       ["^lib/(lib)?Qt6(Qml|Quick|Labs|PacketProtocol)", "qtdeclarative"],
       ["^lib/(lib)?Qt6Svg", "qtsvg"],
       ["^lib/(lib)?Qt6ShaderTools", "qtshadertools"],

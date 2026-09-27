@@ -4,8 +4,10 @@
 find_package(Eigen3 REQUIRED NO_MODULE)
 
 set(PLANEGCS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Sketcher/App/planegcs)
-# iOS apps cannot ship plain dynamic libraries: static there (the LGPL's
-# relinking option is then met by providing the object files).
+# iOS apps cannot ship plain dynamic libraries: static there. The LGPL's
+# relinking option is then met by the complete source code of the app and
+# its build scripts at each release tag (docs/LICENSING.md, "The iOS app and
+# the App Store"; BUILDING.md, "Rebuilding the iOS app with modified libraries").
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(PLANEGCS_LIBRARY_TYPE STATIC)
 else()

@@ -632,6 +632,9 @@ def gate(args):
 
     if not os.path.isfile(args.link_map):
         checks(False, "gate: the app's link map exists", args.link_map)
+        if args.report:
+            with open(args.report, "w", encoding="utf-8", newline="") as f:
+                f.write(f"License gate: FAIL (no link map: {args.link_map})\n")
         return checks.failures
     inputs = link_map_inputs(args.link_map)
     checks(len(inputs) > 0, "gate: the link map lists the app's input files", args.link_map)
@@ -876,6 +879,56 @@ def self_test(_args):
                 sys.stdout = stdout
         with open(gns.report, encoding="utf-8") as f:
             report = f.read()
+        # The repository's own rules and Licenses list, on a link map laid out
+        # as the iOS build's (scripts/ios/build-app.sh; paths as on CI).
+        real_map = os.path.join(tmp, "ios.map")
+        ios_inputs = [
+            f"{qt_dir}/lib/libQt6Core.a(qstring.cpp.o)", f"{qt_dir}/lib/libQt6Gui.a[3](qimage.cpp.o)",
+            f"{qt_dir}/lib/libQt6Network.a(x.o)", f"{qt_dir}/lib/libQt6Qml.a(x.o)", f"{qt_dir}/lib/libQt6QmlModels.a(x.o)",
+            f"{qt_dir}/lib/libQt6Quick.a(x.o)", f"{qt_dir}/lib/libQt6QuickControls2Basic.a(x.o)",
+            f"{qt_dir}/lib/libQt6QuickTemplates2.a(x.o)", f"{qt_dir}/lib/libQt6QuickDialogs2QuickImpl.a(x.o)",
+            f"{qt_dir}/lib/libQt6LabsFolderListModel.a(x.o)", f"{qt_dir}/lib/libQt6Svg.a(x.o)", f"{qt_dir}/lib/libQt6OpenGL.a(x.o)",
+            f"{qt_dir}/lib/libQt6BundledHarfbuzz.a(hb.cc.o)", f"{qt_dir}/lib/libQt6BundledPcre2.a(x.o)",
+            f"{qt_dir}/lib/libQt6BundledLibpng.a(x.o)", f"{qt_dir}/lib/libQt6BundledLibjpeg.a(x.o)",
+            f"{qt_dir}/lib/libQt6BundledFreetype.a(x.o)",
+            f"{qt_dir}/lib/objects-Release/Gui_resources_1/.rcc/qrc_qpdf.cpp.o",
+            f"{qt_dir}/lib/objects-Release/QuickControls2Basic_resources_2/.rcc/qrc_x.cpp.o",
+            f"{qt_dir}/plugins/platforms/libqios.a(qiosintegration.mm.o)",
+            f"{qt_dir}/plugins/platforms/objects-Release/QIOSIntegrationPlugin_init/QIOSIntegrationPlugin_init.cpp.o",
+            f"{qt_dir}/plugins/imageformats/libqjpeg.a(x.o)", f"{qt_dir}/plugins/imageformats/libqsvg.a(x.o)",
+            f"{qt_dir}/plugins/imageformats/objects-Release/QSvgPlugin_init/QSvgPlugin_init.cpp.o",
+            f"{qt_dir}/plugins/iconengines/libqsvgicon.a(x.o)",
+            f"{qt_dir}/qml/QtQuick/libqtquick2plugin.a(x.o)",
+            f"{qt_dir}/qml/QtQuick/Controls/Basic/objects-Release/qtquickcontrols2basicstyleplugin_init/x.cpp.o",
+            f"{deps}/lib/libTKernel.a(Standard.cxx.o)", f"{deps}/lib/libTKDESTEP.a(x.o)", f"{deps}/lib/libfreetype.a(x.o)",
+            f"{deps}/lib/libzip.a(zip_open.c.o)",
+            f"{build}/lib/Release-iphoneos/libplanegcs.a(GCS.cpp.o)", f"{build}/lib/Release-iphoneos/libopenshape_ui.a(x.o)",
+            f"{build}/src/ui/Release-iphoneos/libopenshape_uiplugin.a(x.o)",
+            f"{build}/DerivedData/Build/Intermediates.noindex/ArchiveIntermediates/openshape/IntermediateBuildFilesPath/"
+            "openshape.build/Release-iphoneos/openshape.build/Objects-normal/arm64/main.o",
+            "/Applications/Xcode_26.3.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/lib/darwin/libclang_rt.ios.a(x.o)",
+            "/Applications/Xcode_26.3.0.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/UIKit.framework/UIKit.tbd",
+        ]
+        with open(real_map, "w", encoding="utf-8", newline="") as f:
+            f.write("# Path: OpenShape\n# Object files:\n[  0] linker synthesized\n")
+            f.write("".join(f"[{n + 1:3}] {p}\n" for n, p in enumerate(ios_inputs)))
+            f.write("# Sections:\n")
+        rns = argparse.Namespace(components=DEFAULTS["components"], out=DEFAULTS["out"], link_map=real_map, qt_dir=qt_dir,
+                                 deps_dir=deps, build_dir=build, report=os.path.join(tmp, "ios-gate.txt"))
+        have_real = os.path.isfile(os.path.join(DEFAULTS["out"], "index.json"))
+        with open(os.devnull, "w") as devnull:
+            stdout = sys.stdout
+            sys.stdout = devnull
+            try:
+                real_failures = gate(rns) if have_real else -1
+            finally:
+                sys.stdout = stdout
+        real_report = open(rns.report, encoding="utf-8").read() if have_real else "resources/licenses/index.json missing"
+        checks(real_failures == 0 and "qt qtsvg: " in real_report and "qt qtdeclarative: " in real_report
+               and "component occt: " in real_report and "component planegcs: " in real_report,
+               "self-test: the repository's gate rules cover an iOS link map (Qt modules, plugins, OCCT, FreeType, "
+               "libzip, PlaneGCS, OpenShape, Apple's SDK)", real_report)
+
         checks(good_failures == 0, "self-test: the gate passes a link map of known origins")
         checks(bad_failures == 3 and "libQt6Multimedia.a" in report and "libavcodec.a" in report
                and "'qtdeclarative' is pinned" in report and "bundled Other" in report,
