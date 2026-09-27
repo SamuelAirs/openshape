@@ -32,17 +32,21 @@ the location of their exact source in `THIRD_PARTY_LICENSES.txt`, which
 `scripts/package-windows.sh` generates for every package.
 
 **Noto Sans** (the Noto Project Authors, <https://github.com/notofonts/latin-greek-cyrillic>)
-goes in `resources/fonts/` (`NotoSans-Regular.ttf`, `NotoSans-Bold.ttf`,
+is in `resources/fonts/` (`NotoSans-Regular.ttf`, `NotoSans-Bold.ttf`,
 `OFL.txt`; see `resources/fonts/README.md` for the release it comes from).
 Its files are used unmodified; the OFL allows bundling them with any
 software as long as the license goes along (and the fonts are not sold on
-their own). SHA-256 of the files in use:
+their own). They come from the release `NotoSans-v2.013`
+(`NotoSans-v2.013.zip`, SHA-256
+`9fd595dd701d7ea103a9ba8a9cfdcf0c35c5574ef754fecabe718eadad8bccde`; the
+fonts from `NotoSans/unhinted/ttf/`), added 2026-09-26. SHA-256 of the files
+in use:
 
 | File | SHA-256 |
 |---|---|
-| `NotoSans-Regular.ttf` | *(to be recorded when the file is added)* |
-| `NotoSans-Bold.ttf` | *(to be recorded when the file is added)* |
-| `OFL.txt` | *(to be recorded when the file is added)* |
+| `NotoSans-Regular.ttf` | `b092b091c904c12a96c9189e3d66a9eabe0818fdf0572fcc5f23f1d37efbc76f` |
+| `NotoSans-Bold.ttf` | `01a869026d170ee232c7ed2f5254e482de1dcc7de91ad1310e6c6ca6b008a947` |
+| `OFL.txt` | `cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a` |
 
 Vendored code: `third_party/planegcs` (unmodified upstream files plus
 OpenShape shims; see its README). It is built as a separate shared library

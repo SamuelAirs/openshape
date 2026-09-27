@@ -3,3 +3,4 @@
 *.step binary
 *.stl binary
 *.openshape binary
+*.ttf binary
