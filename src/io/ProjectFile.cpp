@@ -187,7 +187,10 @@ json documentToJson(const doc::Document& document)
     json sketches = json::array();
     for (const auto& sketch : document.sketches())
         sketches.push_back(sketch->toJson());
-    return {{"format", kProjectFormatName},
+    json datums = json::array();
+    for (const auto& datum : document.datums())
+        datums.push_back(datum->toJson());
+    json out{{"format", kProjectFormatName},
             {"version", kProjectFormatVersion},
             // Stored lengths are always millimeters, independent of display unit.
             {"lengthUnit", "mm"},
@@ -196,6 +199,11 @@ json documentToJson(const doc::Document& document)
             {"id", document.id().toString()},
             {"sketches", sketches},
             {"bodies", bodies}};
+    // Only when there are some: files without construction geometry stay as
+    // older builds wrote them.
+    if (!datums.empty())
+        out["datums"] = datums;
+    return out;
 }
 
 namespace {
@@ -274,7 +282,20 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
         return true;
     };
 
-    // Sketches first: body features look them up during the initial recompute.
+    // Construction axes and planes, then sketches (a sketch may lie on a
+    // plane): body features look them up during the initial recompute.
+    if (root.contains("datums")) {
+        if (!root["datums"].is_array())
+            return R::failureFrom(formatError("'datums' is not an array"));
+        for (const auto& d : root["datums"]) {
+            auto datum = doc::Datum::fromJson(d);
+            if (!datum)
+                return R::failureFrom(datum);
+            if (!checkUnique(datum.value().id()))
+                return R::failureFrom(formatError("duplicate datum id"));
+            document->addDatum(std::make_unique<doc::Datum>(std::move(datum.value())));
+        }
+    }
     if (root.contains("sketches")) {
         if (!root["sketches"].is_array())
             return R::failureFrom(formatError("'sketches' is not an array"));

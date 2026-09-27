@@ -1369,9 +1369,9 @@ std::optional<AlignFrame> alignFrame(const Shape& shape, SubShapeKind kind, int 
         if (!info)
             return std::nullopt;
         if (info->isPlanar())
-            return AlignFrame{info->centroid, info->normal.normalized(), true};
+            return AlignFrame{info->centroid, info->normal.normalized(), true, AlignFrame::Extent::Finite};
         if (info->hasAxis() && info->axisDirection.length() > 0.5)
-            return AlignFrame{info->axisOrigin, info->axisDirection.normalized(), false};
+            return AlignFrame{info->axisOrigin, info->axisDirection.normalized(), false, AlignFrame::Extent::Finite};
         return std::nullopt;
     }
     if (kind == SubShapeKind::Edge) {
@@ -1379,15 +1379,23 @@ std::optional<AlignFrame> alignFrame(const Shape& shape, SubShapeKind kind, int 
         if (!info)
             return std::nullopt;
         if (info->kind == CurveKind::Line)
-            return AlignFrame{info->midpoint, info->tangent.normalized(), false};
+            return AlignFrame{info->midpoint, info->tangent.normalized(), false, AlignFrame::Extent::Finite};
         if (info->kind == CurveKind::Circle && info->axis.length() > 0.5)
-            return AlignFrame{info->center, info->axis.normalized(), false};
+            return AlignFrame{info->center, info->axis.normalized(), false, AlignFrame::Extent::Finite};
     }
     return std::nullopt;
 }
 
 RigidMotion alignMotion(const AlignFrame& source, const AlignFrame& target, bool flip, double offset)
 {
+    if (target.extent == AlignFrame::Extent::Point) {
+        // The origin has no direction: the body only moves.
+        RigidMotion motion;
+        motion.center = source.point;
+        const Vec3 along = target.direction.length() > 1e-12 ? target.direction.normalized() : Vec3{};
+        motion.translation = target.point + along * offset - source.point;
+        return motion;
+    }
     const Vec3 s = source.direction.normalized();
     Vec3 t = target.direction.normalized();
     if (source.sided && target.sided)
@@ -1410,7 +1418,15 @@ RigidMotion alignMotion(const AlignFrame& source, const AlignFrame& target, bool
         motion.axis = s.cross(helper).normalized();
         motion.angle = kPi;
     }
-    motion.translation = target.point + target.direction.normalized() * offset - source.point;
+    // The rotation turns about the source point, so the source point stays
+    // where it is: on an endless axis or plane it lands on the nearest point.
+    const Vec3 d = target.direction.normalized();
+    Vec3 onto = target.point;
+    if (target.extent == AlignFrame::Extent::Line)
+        onto = target.point + d * (source.point - target.point).dot(d);
+    else if (target.extent == AlignFrame::Extent::Plane)
+        onto = source.point - d * (source.point - target.point).dot(d);
+    motion.translation = onto + d * offset - source.point;
     return motion;
 }
 

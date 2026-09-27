@@ -20,6 +20,12 @@ A ZIP archive (deflate) with these entries:
   "angleUnit": "rad",
   "displayUnit": "mm",
   "id": "5f0c…",
+  "datums": [
+    { "id": "9d42…", "name": "Plane 1", "visible": true, "method": "PlaneOffset", "distance": 10.0,
+      "refs": [ { "kind": "Face", "body": "8a1e…", "feature": "…",
+                  "face": { "indexHint": 5, "surface": 0, "normal": [0,0,1], "centroid": [0,0,20], "area": 400.0 } } ],
+      "geometry": { "origin": [0,0,30], "direction": [0,0,1], "xAxis": [1,0,0], "center": [0,0,30], "size": 15.0 } }
+  ],
   "sketches": [
     {
       "id": "c21d…", "name": "Sketch 1", "visible": true, "hostBody": null, "attachment": null, "nextId": 18,
@@ -101,8 +107,46 @@ Rules:
   "faceHint", "normal", "centroid", "area" }` identifying the face (on the
   output of `feature`); its `plane` is then derived from that face and the
   stored plane is the last resolved one.
-- Sketches are stored before bodies and loaded first, because extrusions
-  look them up during the initial recompute.
+- A sketch placed on a construction plane has `"datumPlane": uuid` (the
+  datum; absent otherwise): its `plane` follows that plane (origin: the world
+  origin projected onto it, x horizontal where possible) and the stored plane
+  is the last resolved one; a datum that is gone or not a plane leaves the
+  sketch where it is.
+- `datums` (optional; absent when there are none, so such files are exactly
+  what older builds wrote): construction axes and planes. Each is `{ "id",
+  "name", "visible", "method", "refs", "geometry" }` plus, by method,
+  `"origin"` (0/1/2), `"distance"` (mm, |d| ≤ 10^6) or `"angle"` (radians,
+  |a| ≤ π). `refs` (0 to 2) name what it is made from: `{ "kind": "Face" |
+  "Edge" | "Vertex" | "Center", "body", "feature", "face": faceRef }` (Face)
+  or `..., "edge": edgeRef }` (the others), on the output of step `feature`
+  of body `body` (like a sketch's attachment, so a datum follows edits of
+  that step and the ones before it, not later steps); a `Vertex` also has
+  `"point": [x, y, z]`, where the corner was (the end of the edge nearest it
+  is taken), a `Center` is a circular edge's center. Methods:
+  `AxisThrough` (one Face with an axis: a hole or shaft; or one circular
+  Edge), `AxisAlongEdge` (one straight Edge), `AxisTwoPoints` (two Vertex /
+  Center), `AxisParallel` (one Vertex / Center; `origin` = the axis it is
+  parallel to: 0 X, 1 Y, 2 Z), `PlaneOffset` (`distance` along the outward
+  normal of one flat Face, or, with no refs, from an origin plane: `origin`
+  = its normal, 0 YZ, 1 XZ, 2 XY), `PlaneAngle` (through a straight Edge at
+  `angle` to a flat Face the edge runs along: 0 is the face's own plane, 90
+  degrees stands up across it), `PlaneMidway` (two parallel flat Faces).
+  `geometry` is the last resolved position (`origin` and `direction`: a
+  point on it and its direction or normal; `xAxis` in the plane; `center`
+  and `size`, a half size, only place its drawing): it is recomputed from
+  the refs on load and after every change, and kept (with the datum marked
+  failed and a message) when a reference no longer resolves. A method a
+  build does not know makes the file unreadable with a "newer version"
+  message; refs that do not fit the method, a wrong type or a missing field
+  make it invalid (OpenShape refuses such a distance or angle when it is
+  typed, so it never writes one). A hidden datum named "... copy" is the
+  plane an independent copy's hidden sketch is on: an ordinary datum whose
+  refs name the copy's body and steps. Builds before construction geometry
+  (2026-09-26) ignore `datums` and `datumPlane`: such a sketch stays where
+  it was saved.
+- Datums are loaded first, then sketches, then bodies: a sketch may lie on a
+  construction plane, and extrusions look sketches up during the initial
+  recompute.
 - UUIDs must be unique across the document.
 - `surface` / `curve` are enum ordinals (`geom::SurfaceKind`, `geom::CurveKind`).
   They must never be renumbered; new kinds are appended.

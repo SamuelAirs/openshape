@@ -501,10 +501,10 @@ ApplicationWindow {
                     { id: "hole", label: "Hole", tip: "Drill holes for screws into a flat face: click where each goes (snaps to the center and edge middles), type X / Y, pick M2-M6 and the fit, add a counterbore or countersink." },
                     { id: "text", label: "Text", tip: "Raise text from a flat face or cut it in: select the face, type the words, click where they go; drag the arrow out (emboss) or in (deboss)." },
                     { id: "move", label: "Move", tip: "Move a body along X, Y or Z." },
-                    { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
-                    { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face or an origin plane." },
-                    { id: "pattern", label: "Pattern", tip: "Repeat a body in a row or around an axis (holes and shafts work as axes)." },
-                    { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another (or lay a face on the ground)." }
+                    { id: "rotate", label: "Rotate", tip: "Turn a body about X, Y or Z, or about an edge or construction axis you click: drag a ring (15° steps, Alt for 1°) or type an angle." },
+                    { id: "mirror", label: "Mirror", tip: "Add a body's mirror image across a flat face, a construction plane or an origin plane." },
+                    { id: "pattern", label: "Pattern", tip: "Repeat a body in a row or around an axis (holes, shafts and construction axes work as axes)." },
+                    { id: "align", label: "Align", tip: "Put a face or edge of one body against a face or edge of another, a construction axis or plane, an origin axis or plane, or the origin (or lay a face on the ground)." }
                 ]
                 delegate: ActionButton {
                     required property var modelData
@@ -535,6 +535,26 @@ ApplicationWindow {
                     onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
                     ToolTip.visible: hovered && !Theme.touch
                     ToolTip.text: modelData.tip + " Select bodies by double-clicking (Shift adds), or in the Model panel."
+                    ToolTip.delay: 500
+                }
+            }
+            // Reference geometry to model against: rotate about an axis,
+            // pattern around it, mirror across a plane, sketch on it.
+            SectionLabel { text: "Construct"; Layout.topMargin: 6; visible: !Theme.compact }
+            Separator { visible: Theme.compact }
+            Repeater {
+                model: [
+                    { id: "axis", label: "Axis", tip: "A construction axis through a hole or shaft, along an edge, through two corners, or parallel to X, Y or Z through a corner." },
+                    { id: "plane", label: "Plane", tip: "A construction plane offset from a flat face or an origin plane, through an edge at an angle to a face, or midway between two faces." }
+                ]
+                delegate: ActionButton {
+                    required property var modelData
+                    objectName: "tool_" + modelData.id
+                    text: modelData.label
+                    Layout.fillWidth: !Theme.compact
+                    onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
+                    ToolTip.visible: hovered && !Theme.touch
+                    ToolTip.text: modelData.tip
                     ToolTip.delay: 500
                 }
             }
@@ -871,7 +891,14 @@ ApplicationWindow {
         if (app.operationPrompt.length > 0)
             return app.operationPrompt
         if (app.operationActive && app.operationTitle === "Align")
-            return "Drag the arrow or type an offset · Flip turns it around · click another face to re-aim · Enter applies"
+            return "Drag the arrow or type an offset · Flip turns it around · click another face, edge or axis line to re-aim · Enter applies"
+        // The Axis and Plane tools once their picks are made (their prompts come first).
+        if (app.operationActive && app.operationTitle === "Plane" && app.operationValueLabel === "Distance")
+            return "Drag the arrow or type the distance · click another flat face or choose a plane to start from it · Enter applies"
+        if (app.operationActive && app.operationTitle === "Plane" && app.operationValueLabel === "Angle")
+            return "Type the angle to the face · click another flat face along the edge to measure from it · Enter applies"
+        if (app.operationActive && (app.operationTitle === "Plane" || app.operationTitle === "Axis"))
+            return "Enter or Apply adds it (so does clicking empty space) · click another edge or face to re-aim it · Esc goes back a pick"
         if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Draft")
             return "Type the draft angle: positive narrows the walls away from the sketch, negative widens them · "
                  + "the arrow (or Draft again) goes back to the distance · Enter applies"

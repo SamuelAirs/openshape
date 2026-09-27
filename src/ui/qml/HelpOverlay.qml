@@ -167,6 +167,8 @@ Rectangle {
                             ["Split into bodies", "A body in separate pieces (e.g. cut in two) → Split into bodies: each piece becomes a body of its own, with a copy of the history"],
                             ["Align", "Face or edge → Align, then click the face or edge to line it up with",
                              "Face or edge → Align, then tap the face or edge to line it up with (empty space gives up)"],
+                            ["Align to the origin", "Align, then click an X / Y / Z axis line, or choose X axis … Origin: a hole's axis onto Z, an edge along X, a face onto the XZ plane (Flip turns it over)",
+                             "Align, then tap an X / Y / Z axis line, or choose X axis … Origin: a hole's axis onto Z, an edge along X, a face onto the XZ plane (Flip turns it over)"],
                             ["Mirror", "Body → Mirror, then click a flat face or choose a plane",
                              "Body → Mirror, then tap a flat face or choose a plane (empty space gives up)"],
                             ["Pattern", "Body → Pattern: Linear or Circular, type the spacing, ± copy"],
@@ -174,6 +176,20 @@ Rectangle {
                             ["Delete a body", "Double-click it, press Delete; a body another body is built from is hidden instead",
                              "Double-tap it → Delete; a body another body is built from is hidden instead"],
                             ["Union / subtract / intersect", "Select two bodies → Union, Subtract or Intersect (Swap picks which is cut)"]
+                        ]
+                    }
+                    HelpSection {
+                        title: "Construct"
+                        rows: [
+                            ["Axis", "Axis (in the tools), then click a hole, a shaft, a circle or a straight edge · Two points: two corners or circle centers · Parallel to X / Y / Z through a corner (an edge clicked near its end)",
+                             "Axis (in the tools), then tap a hole, a shaft, a circle or a straight edge · Two points: two corners or circle centers · Parallel to X / Y / Z through a corner (an edge tapped near its end)"],
+                            ["Plane", "Plane, then click a flat face and drag or type the distance (From XY / XZ / YZ starts at an origin plane) · At angle: an edge, then the angle to its face · Midway: two parallel faces",
+                             "Plane, then tap a flat face and drag or type the distance (From XY / XZ / YZ starts at an origin plane) · At angle: an edge, then the angle to its face · Midway: two parallel faces"],
+                            ["Use them", "Rotate about an axis, Pattern around or along one, Mirror across a plane, Align onto either: click it while the tool waits · select a plane → Sketch (the sketch moves with it)",
+                             "Rotate about an axis, Pattern around or along one, Mirror across a plane, Align onto either: tap it while the tool waits · select a plane → Sketch (the sketch moves with it)"],
+                            ["They follow", "They move with the faces and edges they were made from; when those are gone they turn red, stay where they were, and the Model panel says why"],
+                            ["Change, hide, delete", "Model panel: click the row to select it, type a new distance or angle, Hide or Delete · Delete removes a selected one",
+                             "Model panel: tap the row to select it, type a new distance or angle, Hide or Delete"]
                         ]
                     }
                     HelpSection {

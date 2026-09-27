@@ -18,9 +18,10 @@ class Document;
 
 namespace os::sel {
 
-// Conceptual selection kinds. Only Body/Face/Edge are produced today; the
-// rest are reserved so the vocabulary is stable (sketch entities arrive in M1).
-enum class SelectionKind { Body, Face, Edge, Vertex, SketchEntity, SketchProfile, ConstructionPlane };
+// Conceptual selection kinds. Vertex and SketchEntity are reserved (sketch
+// entities are selected inside the sketch session). Datum: a construction
+// axis or plane (bodyId holds its id).
+enum class SelectionKind { Body, Face, Edge, Vertex, SketchEntity, SketchProfile, Datum };
 
 // A selected thing. Topology indices are only meaningful for the body shape
 // revision they were taken from; the signature lets the selection follow the

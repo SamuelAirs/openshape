@@ -82,6 +82,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 874x402 --safe-area 0,62,21,62 --demo sketch --screenshot phone-landscape.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir

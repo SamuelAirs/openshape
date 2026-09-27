@@ -322,6 +322,42 @@ Status DuplicateBodyCommand::plan(const doc::Document& document)
         }
     };
 
+    // A construction plane a sketch is on, made from something copied (a
+    // face of the source, say): the copy's sketch goes onto a hidden copy of
+    // it made from the copy, so it follows the copy's edits and never the
+    // source's. A plane made from other bodies only (or from an origin
+    // plane) stays shared, as a face of another body does.
+    std::map<Uuid, Uuid> datumCopies;
+    std::vector<std::string> datumNames;
+    for (const sketch::Sketch* s : sketches) {
+        const doc::Datum* datum = s->datumPlane() ? document.datum(*s->datumPlane()) : nullptr;
+        if (!datum || datumCopies.count(datum->id()))
+            continue;
+        const bool fromCopied = std::any_of(datum->refs.begin(), datum->refs.end(), [&](const doc::GeometryRef& ref) {
+            return mapped(ref.body) != ref.body || mapped(ref.feature) != ref.feature;
+        });
+        if (!fromCopied)
+            continue;
+        doc::Datum copy = datum->copyWithId(Uuid::generate());
+        for (doc::GeometryRef& ref : copy.refs) {
+            ref.body = mapped(ref.body);
+            ref.feature = mapped(ref.feature);
+        }
+        for (int n = 1;; ++n) {
+            const std::string candidate = datum->name() + " copy" + (n == 1 ? std::string() : " " + std::to_string(n));
+            const auto& all = document.datums();
+            const bool taken = contains(datumNames, candidate)
+                            || std::any_of(all.begin(), all.end(), [&](const auto& d) { return d->name() == candidate; });
+            if (!taken) {
+                datumNames.push_back(candidate);
+                copy.setName(candidate);
+                break;
+            }
+        }
+        copy.setVisible(false); // drawn, it would sit exactly on the source's
+        datumCopies.emplace(datum->id(), copy.id());
+        datums_.push_back(std::move(copy));
+    }
     for (const sketch::Sketch* s : sketches) {
         sketch::Sketch copy = s->copyWithId(copies.at(s->id()));
         copy.setName(uniqueName(s->name() + " copy", false));
@@ -335,6 +371,9 @@ Status DuplicateBodyCommand::plan(const doc::Document& document)
             attachment->feature = mapped(attachment->feature);
             copy.setAttachment(attachment);
         }
+        if (copy.datumPlane())
+            if (const auto it = datumCopies.find(*copy.datumPlane()); it != datumCopies.end())
+                copy.setDatumPlane(it->second);
         sketches_.push_back(std::move(copy));
     }
     for (std::size_t i = 0; i < planned.size(); ++i) {
@@ -405,6 +444,11 @@ Status DuplicateBodyCommand::execute(doc::Document& document)
                                        + megabytes(limit) + " MB of imported geometry). Nothing was copied.",
                                    "duplicate: " + std::to_string(adding) + " bytes on top of " + std::to_string(stored));
     }
+    // The planes first (they resolve once the copied bodies are there; until
+    // then they keep the source's position, which is theirs), then the
+    // sketches on them, then the bodies.
+    for (const auto& d : datums_)
+        document.addDatum(std::make_unique<doc::Datum>(d));
     for (const auto& s : sketches_)
         document.addSketch(std::make_unique<sketch::Sketch>(s));
     for (std::size_t i = 0; i < bodies_.size(); ++i) {
@@ -444,6 +488,8 @@ void DuplicateBodyCommand::undo(doc::Document& document)
         document.removeBody((*it)->id());
     for (auto it = sketches_.rbegin(); it != sketches_.rend(); ++it)
         document.removeSketch(it->id());
+    for (auto it = datums_.rbegin(); it != datums_.rend(); ++it)
+        document.removeDatum(it->id());
 }
 
 std::unique_ptr<Command> makeCopyBodiesCommand(const Uuid& sourceId, std::vector<std::unique_ptr<doc::Feature>> lastSteps,
@@ -727,6 +773,53 @@ void DeleteSketchCommand::undo(doc::Document& document)
 {
     if (removed_)
         document.addSketch(std::move(removed_), index_);
+}
+
+Status AddDatumCommand::execute(doc::Document& document)
+{
+    if (document.datum(datum_.id()))
+        return Status::failure(ErrorCode::InvalidArgument, "Unable to add this axis or plane.", "datum id already exists");
+    // Never a datum the project file could not read back.
+    if (Status status = doc::checkDatumValues(datum_); !status)
+        return status;
+    document.addDatum(std::make_unique<doc::Datum>(datum_));
+    return okStatus();
+}
+
+void AddDatumCommand::undo(doc::Document& document)
+{
+    document.removeDatum(datum_.id());
+}
+
+Status EditDatumCommand::execute(doc::Document& document)
+{
+    const doc::Datum* current = document.datum(after_.id());
+    if (!current)
+        return Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "EditDatum: unknown");
+    if (Status status = doc::checkDatumValues(after_); !status)
+        return status;
+    before_ = *current;
+    document.replaceDatum(after_);
+    return okStatus();
+}
+
+void EditDatumCommand::undo(doc::Document& document)
+{
+    if (before_)
+        document.replaceDatum(*before_);
+}
+
+Status DeleteDatumCommand::execute(doc::Document& document)
+{
+    removed_ = document.removeDatum(datumId_, &index_);
+    return removed_ ? okStatus()
+                    : Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "DeleteDatum: unknown");
+}
+
+void DeleteDatumCommand::undo(doc::Document& document)
+{
+    if (removed_)
+        document.addDatum(std::move(removed_), index_);
 }
 
 } // namespace os::cmd

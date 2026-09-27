@@ -367,6 +367,127 @@ TEST(Interaction, AlignOntoGround)
     EXPECT_NEAR(bb.size().y, 20.0, 1e-6);
 }
 
+namespace {
+// A 20 x 20 x 5 plate from (10, 10, 0) with a round hole (radius 3) through
+// its middle at (20, 20), as one body.
+Uuid addHoledPlate(Harness& h, const std::string& name)
+{
+    const geom::Shape plate = geom::makeBox({10, 10, 0}, {20, 20, 5}).value();
+    const geom::Shape pin = geom::makeCylinder({20, 20, -1}, {0, 0, 1}, 3.0, 7.0).value();
+    auto feature = std::make_unique<doc::ImportedFeature>();
+    feature->setShape(geom::booleanOp(plate, pin, geom::BooleanKind::Subtract).value());
+    EXPECT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>(name, std::move(feature)), h.document).ok());
+    h.controller.documentChanged();
+    return h.document.bodies().back()->id();
+}
+} // namespace
+
+// Align onto the origin: a hole's axis onto the Z axis (concentric), then the
+// hole's rim circle onto the origin point.
+TEST(Interaction, AlignHoleOntoZAxisAndOrigin)
+{
+    Harness h;
+    const Uuid plate = addHoledPlate(h, "Plate");
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({20, 17, 5})); // the near side of the hole's top rim
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Edge);
+    ASSERT_TRUE(h.controller.triggerAction("align").ok());
+    bool offered = false;
+    for (const auto& action : h.controller.contextActions())
+        offered = offered || (action.id == "origin:z" && action.label == "Z axis");
+    EXPECT_TRUE(offered);
+    ASSERT_TRUE(h.controller.triggerAction("origin:z").ok());
+    const auto* align = dynamic_cast<const AlignOperation*>(h.controller.operation());
+    ASSERT_NE(align, nullptr);
+    EXPECT_EQ(align->originTarget(), OriginTarget::ZAxis);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto bb = geom::boundingBox(h.document.body(plate)->shape());
+    EXPECT_NEAR(bb.center().x, 0.0, 1e-6); // the hole is on the Z axis
+    EXPECT_NEAR(bb.center().y, 0.0, 1e-6);
+    EXPECT_NEAR(bb.min.z, 0.0, 1e-6); // at the height it was
+    EXPECT_NEAR(bb.max.z, 5.0, 1e-6);
+    EXPECT_EQ(h.document.body(plate)->features().back()->name(), "Align");
+
+    // The rim's center (now 0, 0, 5) onto the origin: the plate moves down 5.
+    ASSERT_TRUE(h.controller.undo());
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({20, 17, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("align").ok());
+    ASSERT_TRUE(h.controller.triggerAction("origin:point").ok());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto moved = geom::boundingBox(h.document.body(plate)->shape());
+    EXPECT_NEAR(moved.min.x, -10.0, 1e-6);
+    EXPECT_NEAR(moved.max.y, 10.0, 1e-6);
+    EXPECT_NEAR(moved.max.z, 0.0, 1e-6);
+    EXPECT_NEAR(moved.min.z, -5.0, 1e-6);
+}
+
+// The axis lines drawn through the origin are targets while Align waits:
+// hovering one highlights it, clicking it aims there. A vertical edge onto
+// the X axis lays the box along X.
+TEST(Interaction, AlignEdgeOntoClickedXAxis)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {5, 5, 0}, {10, 10, 20});
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({15, 5, 10})); // the front vertical edge
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Edge);
+    ASSERT_TRUE(h.controller.triggerAction("align").ok());
+    const Vec2 onAxis = h.screen({-30, 0, 0}); // the X axis line, away from the box
+    h.hover(onAxis);
+    EXPECT_EQ(h.controller.hover().kind, sel::PickKind::OriginAxis);
+    EXPECT_EQ(h.controller.hover().index, 0);
+    h.clickAt(onAxis + Vec2{0, 3}); // within the pick tolerance
+    const auto* align = dynamic_cast<const AlignOperation*>(h.controller.operation());
+    ASSERT_NE(align, nullptr);
+    ASSERT_EQ(align->originTarget(), OriginTarget::XAxis);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.size().x, 20.0, 1e-6); // the 20 mm edge now runs along X
+    EXPECT_NEAR(bb.size().y, 10.0, 1e-6);
+    EXPECT_NEAR(bb.size().z, 10.0, 1e-6);
+    EXPECT_NEAR(bb.center().x, 15.0, 1e-6); // its middle stays at x = 15
+    EXPECT_NEAR(bb.min.y, 0.0, 1e-6);       // the edge lies on the X axis (y = z = 0)
+    EXPECT_TRUE(std::abs(bb.min.z) < 1e-6 || std::abs(bb.max.z) < 1e-6);
+}
+
+// A flat face onto an origin plane touches it from the side the body is on;
+// Flip turns it over to the other side.
+TEST(Interaction, AlignFaceOntoOriginPlaneAndFlip)
+{
+    Harness h;
+    const Uuid a = addBox(h, "Body 1", {5, 5, 0}, {10, 10, 10});
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({10, 5, 5})); // front (-Y) face
+    ASSERT_EQ(h.controller.selection().items().at(0).kind, sel::SelectionKind::Face);
+    ASSERT_TRUE(h.controller.triggerAction("align").ok());
+    ASSERT_TRUE(h.controller.triggerAction("origin:xz").ok());
+    EXPECT_TRUE(h.controller.operation()->canCommit());
+    ASSERT_TRUE(h.controller.triggerAction("flip").ok());
+    ASSERT_TRUE(h.controller.triggerAction("flip").ok()); // and back
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    auto bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.min.y, 0.0, 1e-6); // touching XZ from +Y, where it was
+    EXPECT_NEAR(bb.max.y, 10.0, 1e-6);
+    EXPECT_NEAR(bb.min.x, 5.0, 1e-6); // same place in the plane
+    EXPECT_NEAR(bb.min.z, 0.0, 1e-6);
+    ASSERT_TRUE(h.controller.undo());
+
+    h.controller.fitAll(false);
+    h.clickAt(h.screen({10, 5, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("align").ok());
+    ASSERT_TRUE(h.controller.triggerAction("origin:xz").ok());
+    ASSERT_TRUE(h.controller.triggerAction("flip").ok());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    bb = geom::boundingBox(h.document.body(a)->shape());
+    EXPECT_NEAR(bb.max.y, 0.0, 1e-6); // flipped: on the -Y side
+    EXPECT_NEAR(bb.min.y, -10.0, 1e-6);
+    EXPECT_NEAR(bb.size().x, 10.0, 1e-6);
+    EXPECT_NEAR(bb.min.z, 0.0, 1e-6);
+}
+
 // Rotation rings: dragging along the Z ring turns the body in 15 degree
 // steps; a 30 x 10 footprint becomes 10 x 30 after a quarter turn.
 TEST(Interaction, RotateBodyWithRing)

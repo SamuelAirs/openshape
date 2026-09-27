@@ -290,6 +290,56 @@ TEST(Geometry, AlignCirclesConcentric)
     EXPECT_NEAR(axis->point.y, 0.0, 1e-9);
 }
 
+// Endless targets (an axis line, a plane) take the source to its nearest
+// point on them; a point target (the origin) only moves it.
+TEST(Geometry, AlignOntoEndlessAxisPlaneAndPoint)
+{
+    // A shaft along X at y = 5, z = 7 (from x = 2 to 12), radius 2.
+    const Shape shaft = makeCylinder({2, 5, 7}, {1, 0, 0}, 2.0, 10.0).value();
+    int side = -1;
+    for (int i = 0; i < shaft.faceCount(); ++i)
+        if (faceInfo(shaft, i)->kind == SurfaceKind::Cylinder)
+            side = i;
+    const auto source = alignFrame(shaft, SubShapeKind::Face, side);
+    ASSERT_TRUE(source);
+    // Onto the Z axis: the shaft turns upright, its middle stays at its height.
+    const AlignFrame zAxis{{0, 0, 3}, {0, 0, 1}, false, AlignFrame::Extent::Line};
+    const auto upright = boundingBox(transformed(shaft, alignMotion(*source, zAxis, false, 0.0)).value());
+    EXPECT_NEAR(upright.center().x, 0.0, 1e-6);
+    EXPECT_NEAR(upright.center().y, 0.0, 1e-6);
+    EXPECT_NEAR(upright.center().z, 7.0, 1e-6); // the source point's height, not the frame's point
+    EXPECT_NEAR(upright.size().z, 10.0, 1e-6);
+    EXPECT_NEAR(upright.size().x, 4.0, 1e-6);
+    // An offset slides it along the axis.
+    const auto raised = boundingBox(transformed(shaft, alignMotion(*source, zAxis, false, 3.0)).value());
+    EXPECT_NEAR(raised.center().z, 10.0, 1e-6);
+
+    // A box's -Y face onto the plane y = 0 (normal +Y): touching from +Y.
+    const Shape block = makeBox({3, 4, 1}, {10, 6, 2}).value();
+    const auto front = alignFrame(block, SubShapeKind::Face, faceWithNormal(block, {0, -1, 0}));
+    ASSERT_TRUE(front);
+    const AlignFrame xz{{0, 0, 0}, {0, 1, 0}, true, AlignFrame::Extent::Plane};
+    const auto onPlane = boundingBox(transformed(block, alignMotion(*front, xz, false, 0.0)).value());
+    EXPECT_NEAR(onPlane.min.y, 0.0, 1e-6);
+    EXPECT_NEAR(onPlane.max.y, 6.0, 1e-6);
+    EXPECT_NEAR(onPlane.min.x, 3.0, 1e-6); // keeps where it is in the plane
+    EXPECT_NEAR(onPlane.min.z, 1.0, 1e-6);
+    // Flip: the face turns over, the block now on the -Y side.
+    const auto flipped = boundingBox(transformed(block, alignMotion(*front, xz, true, 0.0)).value());
+    EXPECT_NEAR(flipped.max.y, 0.0, 1e-6);
+    EXPECT_NEAR(flipped.min.y, -6.0, 1e-6);
+
+    // The origin: the block's front face centroid (8, 4, 2) moves there, no turn.
+    const AlignFrame origin{{0, 0, 0}, front->direction, false, AlignFrame::Extent::Point};
+    const RigidMotion toOrigin = alignMotion(*front, origin, false, 0.0);
+    EXPECT_NEAR(toOrigin.angle, 0.0, 1e-12);
+    const auto atOrigin = boundingBox(transformed(block, toOrigin).value());
+    EXPECT_NEAR(atOrigin.min.x, -5.0, 1e-6);
+    EXPECT_NEAR(atOrigin.min.y, 0.0, 1e-6);
+    EXPECT_NEAR(atOrigin.min.z, -1.0, 1e-6);
+    EXPECT_NEAR(atOrigin.max.z, 1.0, 1e-6);
+}
+
 TEST(Geometry, MirrorJoinedMergesAcrossAFace)
 {
     const Shape b = box(10, 10, 10);

@@ -63,6 +63,7 @@ constexpr Color kHistoryHighlight{0.96f, 0.52f, 0.13f, 0.42f}; // model panel ho
 constexpr Color kSketchDefined{0.12f, 0.14f, 0.18f, 1.0f};
 constexpr Color kSketchConstruction{0.55f, 0.58f, 0.62f, 1.0f};
 constexpr Color kSketchDimension{0.36f, 0.39f, 0.44f, 0.9f};
+constexpr Color kReference{0.80f, 0.50f, 0.12f, 1.0f}; // construction axes and planes
 
 
 constexpr quint32 kLineVertexFloats = 8; // p0(3) p1(3) corner(2)
@@ -99,6 +100,7 @@ SketchLook lookOf(interact::SketchStyle style)
     case S::Dimension: return {kSketchDimension, 1.0f, 4.0f};
     case S::Measure: return {withAlpha(kAccent, 0.9f), 1.75f, 7.0f};
     case S::Conflict: return {kError, 2.0f, 7.0f};
+    case S::Reference: return {withAlpha(kReference, 0.9f), 1.5f, 6.0f};
     }
     return {kAccent, 2.0f, 7.0f};
 }
@@ -509,24 +511,13 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         // The axes through the origin where they cross the axes' disc (the Z
         // axis as high as they reach); they fade out further than the grid.
         std::vector<float> axes;
-        const double r = grid.axisRadius;
-        const Vec3 c = grid.center;
-        quint32 xCount = 0, yCount = 0, zCount = 0;
-        if (std::abs(c.y) < r) {
-            const double half = std::sqrt(r * r - c.y * c.y);
-            appendSegment(axes, {c.x - half, 0, 0}, {c.x + half, 0, 0});
-            xCount = 6;
-        }
-        if (std::abs(c.x) < r) {
-            const double half = std::sqrt(r * r - c.x * c.x);
-            appendSegment(axes, {0, c.y - half, 0}, {0, c.y + half, 0});
-            yCount = 6;
-        }
-        if (const double fromCenter = std::hypot(c.x, c.y); fromCenter < r) {
-            const double half = std::sqrt(r * r - fromCenter * fromCenter);
-            appendSegment(axes, {0, 0, -half}, {0, 0, half});
-            zCount = 6;
-        }
+        quint32 counts[3] = {0, 0, 0};
+        for (int axis = 0; axis < 3; ++axis)
+            if (const auto segment = originAxisSegment(grid, axis)) {
+                appendSegment(axes, segment->first, segment->second);
+                counts[axis] = 6;
+            }
+        const quint32 xCount = counts[0], yCount = counts[1], zCount = counts[2];
         if (!axes.empty()) {
             const quint32 axisBytes = quint32(axes.size() * sizeof(float));
             ensureDynamicBuffer(gridVertices_, axisBytes, QRhiBuffer::VertexBuffer);
@@ -609,10 +600,10 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
                                   : region.style == interact::SketchStyle::Hovered  ? 0.22f
                                                                                     : 0.08f;
                 meshDraw(sketch.editing ? overlayPipeline_.get() : tintPipeline_.get(), &it->second, 0, it->second.indexCount,
-                         withAlpha(kAccent, alpha), 1, kEdgeBiasPx);
+                         withAlpha(region.reference ? kReference : kAccent, alpha), 1, kEdgeBiasPx);
             }
             // Group segments by style so each style is one draw call.
-            for (int s = 0; s <= int(interact::SketchStyle::Conflict); ++s) {
+            for (int s = 0; s <= int(interact::SketchStyle::Reference); ++s) {
                 const auto style = interact::SketchStyle(s);
                 const quint32 first = quint32(lines.size() / kLineVertexFloats);
                 for (const auto& l : sketch.lines)

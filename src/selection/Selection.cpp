@@ -88,6 +88,14 @@ bool SelectionSet::refresh(const doc::Document& document)
     bool changed = false;
     std::vector<SelectionItem> kept;
     for (SelectionItem item : items_) {
+        if (item.kind == SelectionKind::Datum) {
+            const doc::Datum* datum = document.datum(item.bodyId);
+            if (!datum || !datum->isVisible())
+                changed = true;
+            else
+                kept.push_back(item);
+            continue;
+        }
         if (item.kind == SelectionKind::SketchProfile) {
             const sketch::Sketch* sk = document.sketch(item.bodyId);
             if (!sk || !sk->isVisible() || !item.profile) {

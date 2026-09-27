@@ -512,7 +512,7 @@ json Sketch::toJson() const
                       {"normal", vec3(attachment_->faceNormal)},
                       {"centroid", vec3(attachment_->faceCentroid)},
                       {"area", attachment_->faceArea}};
-    return {{"id", id_.toString()},
+    json out{{"id", id_.toString()},
             {"name", name_},
             {"attachment", attachment},
             {"visible", visible_},
@@ -524,6 +524,9 @@ json Sketch::toJson() const
             {"circles", cls},
             {"arcs", arcs},
             {"constraints", cns}};
+    if (datumPlane_)
+        out["datumPlane"] = datumPlane_->toString();
+    return out;
 }
 
 Result<Sketch> Sketch::fromJson(const json& j)
@@ -564,6 +567,12 @@ Result<Sketch> Sketch::fromJson(const json& j)
             || !a["faceHint"].is_number_integer())
             return bad("invalid attachment");
         s.attachment_ = Attachment{*body, *feature, a["faceHint"].get<int>(), *normal, *centroid, a["area"].get<double>()};
+    }
+    if (j.contains("datumPlane")) {
+        const auto datum = j["datumPlane"].is_string() ? Uuid::parse(j["datumPlane"].get<std::string>()) : std::nullopt;
+        if (!datum || datum->isNil())
+            return bad("invalid datumPlane");
+        s.datumPlane_ = *datum;
     }
     if (!idField(j, "nextId"))
         return bad("missing nextId");

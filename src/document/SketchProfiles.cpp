@@ -91,6 +91,15 @@ std::optional<int> resolveProfile(const std::vector<geom::Region>& regions, cons
 
 sketch::Plane effectivePlane(const sketch::Sketch& sketch, const EvalContext& context)
 {
+    // On a construction plane: where that plane is now (resolved with the
+    // same context, so during a body recompute only earlier steps count).
+    if (sketch.datumPlane()) {
+        const Datum* datum = context.document ? context.document->datum(*sketch.datumPlane()) : nullptr;
+        if (!datum || datum->kind() != DatumKind::Plane)
+            return sketch.plane();
+        const auto resolved = resolveDatum(*datum, context);
+        return resolved ? sketchPlaneOn(resolved.value()) : sketch.plane();
+    }
     const auto& attachment = sketch.attachment();
     if (!attachment)
         return sketch.plane();

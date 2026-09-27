@@ -38,7 +38,7 @@ Technology choices and the alternatives considered are in
         ▼
  commands/  Command + UndoStack (CreateBody, AddFeature, SetParameter, EditSketch…)
         ▼
- document/  Document → Sketches + Bodies → Feature history (Box, PushPull,
+ document/  Document → Sketches, Datums + Bodies → Feature history (Box, PushPull,
         │            Fillet, Chamfer, Shell, Extrude, Revolve, Hole, Move,
         │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace, Text, …);
         │            SketchProfiles bridge
@@ -164,7 +164,12 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   edges: midpoint + direction; circles, cylinders, cones: center + axis).
   `alignMotion(source, target, flip, offset)` is the motion that brings one
   onto the other: sided pairs end up touching, facing each other; others
-  become parallel with the smaller rotation.
+  become parallel with the smaller rotation. A frame's `extent` says what it
+  stands for: `Finite` (a face or edge: the points coincide), `Line` or
+  `Plane` (an endless axis or plane: X/Y/Z, the origin planes, construction
+  axes and planes; the source lands on its nearest point there, since the
+  rotation turns about the source point) or `Point` (the origin: the body
+  only moves).
 - `FaceInfo` has `point` (a point on the face where `normal` is taken; a full
   cylinder's centroid lies on its axis, off the face) and, for cylinders and
   cones, `axisOrigin` / `axisDirection` / `radius`.
@@ -346,8 +351,40 @@ Document (UUID, display unit)
 - `Document::preview(body, feature)` evaluates a feature without mutating
   anything; interactive previews use it. `Document::snapshot()` copies the
   bodies (histories, cached step results, shapes shared: they are
-  immutable) and sketches for the preview worker (0.04 ms for a 21-body
-  model).
+  immutable), sketches and datums for the preview worker (0.04 ms for a
+  21-body model).
+- **Construction axes and planes** (`doc::Datum`, `document/Datum`): document
+  objects beside sketches and bodies (`Document::datums()`, add / remove /
+  replace, `datumRevision()`), each made by a `DatumMethod` from 0-2
+  `GeometryRef`s: a face, edge, corner (`Vertex`: the end of an edge nearest
+  the recorded point) or circle center of the output of one step of a body,
+  captured from the body's shown step (`makeGeometryRef`) with the usual
+  signatures. Axes: through a hole / shaft / circle, along a straight edge,
+  through two points, parallel to X/Y/Z through a point; planes: offset from
+  a flat face or an origin plane, through a straight edge at an angle to a
+  face it runs along, midway between two parallel faces. `resolveDatum` =
+  `resolveDatumRefs` (the kernel work: finding the faces and edges again,
+  `ResolvedRef` facts) + `datumGeometry` (plain arithmetic, so the Plane
+  tool's arrow previews without the kernel). `Document::syncDatums` (first
+  thing in `syncSketchAttachments`, after every change) re-resolves them;
+  one that no longer resolves keeps its last `DatumGeometry` with a plain
+  error ("The step it was made from is gone."), like a body's last good
+  shape. A reference names a step, like a sketch's attachment, so a datum
+  follows edits of that step and earlier ones, not later steps (TD-64).
+  Commands: `AddDatumCommand`, `EditDatumCommand` (visibility, name,
+  distance / angle; before/after snapshots), `DeleteDatumCommand` (sketches
+  on the plane stay where they are and follow it again after undo). The
+  Add and Edit commands, the Plane tool's value and `Datum::setParameter`
+  refuse what the file could not read back (`checkDatumValues`: an offset
+  beyond +-`kMaxDatumDistance` = 10^6 mm, an angle beyond +-180 degrees).
+  Steps that use a datum (Rotate, Pattern, Mirror, Align) store its
+  position as geometry (TD-65); only a sketch references one (below). An
+  independent copy (`DuplicateBodyCommand`) of a body with a sketch on a
+  plane made from something it copies takes a hidden copy of that plane
+  (`Datum::copyWithId`, references re-pointed at the copy, added before the
+  sketches and bodies, removed after them), so editing the source never
+  moves the copy; a plane made from other bodies or an origin plane stays
+  shared, like a face of another body.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
   know when to re-tessellate and when topology indices are stale.
 
@@ -389,6 +426,11 @@ Document (UUID, display unit)
   face during recompute (only from features *before* the one being
   evaluated), and `Document::syncSketchAttachments()` writes the resolved
   plane back after every change, so sketches ride along with their faces.
+  A sketch on a construction plane stores its `datumPlane` id instead;
+  `effectivePlane()` resolves that datum with the same context
+  (`sketchPlaneOn`: the world origin projected onto the plane, x horizontal
+  where possible), so an extrusion from it follows the plane, and the plane
+  follows its face.
 - `ExtrudeFeature` references a sketch UUID and profile refs; mode NewBody
   (base feature), Join or Cut; cuts can be "through all". `Feature::compute` receives an `EvalContext`
   for such lookups, `Feature::dependencies()` declares them, and
@@ -615,7 +657,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   before any kernel call, e.g. a thickness of 0);
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
   the preview is known: an extrusion's new body, Mirror's and Pattern's
-  separate bodies); `canCommit()`; `clearPreview()`.
+  separate bodies); `canCommit()`; `clearPreview()`; `previewsShape()` /
+  `refreshPreview()` (a preview that is not a body's shape, worked out on
+  the calling thread without the kernel: the Axis / Plane tool).
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
   Sketch, Hole, Text, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
@@ -716,10 +760,45 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`commitNeedsPreview`: "The text's center is off the face" is the
   tool's wording, the step's is for upstream changes).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
-  for a target on another body (`prompt()`), then previews at offset 0; the
-  arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
-  faces) lays the face on the XY plane. It commits as a Move step named
-  "Align": a one-time placement, not linked to the target.
+  for a target (`prompt()`), then previews at offset 0; the arrow adds an
+  offset along the target, Flip reverses, "Onto ground" (flat faces) lays
+  the face on the XY plane. Targets: a face or edge of another body, an
+  origin axis, origin plane or the origin (`setOriginTarget`, actions
+  `origin:x` ... `origin:point`, or a click on an X/Y/Z line drawn through
+  the origin: `PickKind::OriginAxis`, picked like an edge while Align waits,
+  hidden behind bodies, highlighted on hover), or a construction axis or
+  plane (`setDatumTarget`). Endless targets use `AlignFrame::Extent`; an
+  origin plane faces the side the body is on, so a flat face ends up
+  touching it from there. It commits as a Move step named "Align": a
+  one-time placement, not linked to the target.
+- **Construct (Axis, Plane):** `runTool("axis" / "plane")` starts a
+  `DatumOperation` (`datumTool_` keeps it across document changes; another
+  tool ends it, and so does any selection: the tool runs with nothing
+  selected, so a body picked in the Model panel or by a double-click ends
+  it in `rebuildOperation`) whose modes are its actions (`datum:axis`,
+  `datum:twoPoints`, `datum:parallel:<0-2>`, `datum:offset`,
+  `datum:origin:<0-2>`, `datum:angle`, `datum:midway`). Clicks on faces and
+  edges are its picks (`pick()` says why one does not fit); a fitting
+  selection is taken as the first pick. The offset plane has an arrow along
+  the face normal (value = distance), the angled plane a value chip at the
+  edge (value = degrees; the flat face along the edge facing up the most is
+  taken until another is clicked). The picks are resolved when made
+  (`resolveDatumRefs`) and again after a document change; values only
+  recompute the position (`refreshPreview`, `previewsShape()` false: no
+  worker, no kernel while dragging). Esc drops the last pick, Enter / Apply
+  / a click on empty space commits an `AddDatumCommand`, and the new datum
+  comes out selected (Sketch on a plane, Hide, Delete). Datums are picked
+  on their drawn lines (`pickDatumLine`: like edges, hidden behind faces,
+  an edge nearer the pointer wins unless the line passes in front of it
+  there and is within 2 px: drawn over the edge, the line is what the user
+  sees; `lineBeatsBodyHit`, also for the origin axis lines) and inside a
+  plane's square only where nothing else is hit (`pickDatumPlane`);
+  `SelectionKind::Datum` and
+  `PickKind::Datum` carry the datum's id in `bodyId`. Consumers take a
+  clicked datum while they wait: Rotate (an axis: one ring about it),
+  Pattern (an axis: `setAxisLine`, the direction or the circular axis),
+  Mirror (a plane: `setPlane`), Align (either), Sketch (a selected plane:
+  `startSketch` sets `datumPlane`).
 - **Extrude options:** Symmetric makes the value the total thickness
   (`displayOffset` = value / 2); "Up to face" makes the next face click set
   the distance to a parallel flat face (`ExtrudeOperation::extendToFace`,
@@ -728,11 +807,12 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   so grabbing the arrow returns to the distance); the step stores
   `draftAngle` and the Model panel always offers it. Push/pull steps from
   the UI set `keepEdges`.
-- **Mirror / Pattern:** Mirror waits for a flat face (or an origin plane from
-  the action bar) and has no value; Apply or Enter commits. Pattern previews
-  right away (spacing = the body's extent plus 5 mm); the arrow sets the
-  spacing (angle when circular), ± copy changes the count, and clicking an
-  edge or a hole/shaft sets the direction or axis. Copies that touch or
+- **Mirror / Pattern:** Mirror waits for a flat face or a construction plane
+  (or an origin plane from the action bar) and has no value; Apply or Enter
+  commits. Pattern previews right away (spacing = the body's extent plus
+  5 mm); the arrow sets the spacing (angle when circular), ± copy changes
+  the count, and clicking an edge, a hole/shaft or a construction axis sets
+  the direction or axis. Copies that touch or
   overlap the body are joined into it (one Mirror or Pattern step: a half
   part mirrored across its own face becomes one symmetric body). Copies
   that touch neither the body nor each other (the joined preview has
@@ -817,10 +897,12 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 - **Tools and actions:** `contextActions()` lists what the selection offers;
   the UI shows them in the value chip while a manipulator is active and in the
   selection action bar otherwise (`barAction_<id>` object names, used by the
-  acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
-  pushpull, fillet, chamfer, shell, offset, hole, text, move, rotate, mirror, pattern,
-  align, union, subtract, intersect, measure): it runs the tool when the
-  selection fits and otherwise explains what to select.
+  acceptance run). `runTool(id)` backs the Modify/Combine/Construct palette
+  (ids: pushpull, fillet, chamfer, shell, offset, hole, text, move, rotate,
+  mirror, pattern, align, union, subtract, intersect, measure, axis, plane):
+  it runs the tool when the selection fits and otherwise explains what to
+  select (axis and plane always start, taking a fitting selection as a first
+  pick).
 
 ## Threads
 
@@ -889,7 +971,13 @@ blocked) and draws with 4x MSAA:
    extra buffers);
 4. edges as screen-space expanded quads (constant pixel width, depth bias);
 5. sketches: profile fills (cached meshes), curves batched per style, point
-   markers as zero-length line quads; the sketch being edited draws on top;
+   markers as zero-length line quads; the sketch being edited draws on top.
+   Construction axes and planes come through the same path
+   (`addDatumDrawing`: one `RenderSketch`, style `Reference`, orange; an
+   axis as dashes across the model, a plane as its outline plus a
+   two-triangle fill flagged `reference`, cached per plane position; hover,
+   selection, the Model-panel highlight and the Axis / Plane tool's preview
+   use the sketch styles; a failed one is drawn as a conflict);
 6. manipulator arrows and rotation rings on top (no depth test), sized in
    screen pixels.
 
@@ -982,11 +1070,16 @@ iPadOS) unchanged.
 
 ## History panel
 
-`InteractionController::historyRows()` flattens sketches, bodies and each
-body's features into rows (name, detail, status — ok, warning, failed,
-blocked, suppressed — explanation, editable parameters: lengths, angles,
-counts, and strings such as a Text step's words, `Parameter::isText`, which
-`setFeatureParameter` takes as typed).
+`InteractionController::historyRows()` flattens sketches, construction axes
+and planes (kind `datum`: what they are made from, a failure's reason, the
+offset plane's distance or the angled plane's angle as parameters), bodies
+and each body's features into rows (name, detail, status — ok, warning,
+failed, blocked, suppressed — explanation, editable parameters: lengths,
+angles, counts, and strings such as a Text step's words, `Parameter::isText`,
+which `setFeatureParameter` takes as typed).
+Clicking a datum's row selects it (`selectDatum`); Hide / Show and Delete
+push `EditDatumCommand` / `DeleteDatumCommand`, and `setFeatureParameter`
+edits a datum's value when the id is a datum's.
 `AppController` gives QML new rows (`historyChanged`) and a new action list
 (`contextActionsChanged`) only when they differ from the last ones: a new
 list rebuilds the panel's delegates, and most state changes (a drag step, a
@@ -1006,7 +1099,8 @@ hides it).
 
 ## Files (`io/`)
 
-`.openshape` = ZIP: `document.json` (source of truth), `metadata.json`,
+`.openshape` = ZIP: `document.json` (source of truth; construction axes and
+planes in `datums`, loaded before sketches and bodies), `metadata.json`,
 `imports/<step>.brep` (the geometry of Imported steps: source of truth,
 also in recovery copies), `geometry/<body>.brep` (cache), optional
 `thumbnail.png` (written on Save: `InteractionController::renderThumbnail`
@@ -1184,7 +1278,14 @@ them on a hidden menu separator after the Open Recent sub-menu).
   touch layout); `copies` (Mirror and Pattern clicked on a box off the
   origin: separate bodies without asking, the hint line and the toggle,
   then the original's top face pushed twice while the copies stay as they
-  were); scenarios `recovery` (a real crash
+  were); `alignorigin` (a hole's axis onto Z by the action and by clicking
+  the Z line, a face onto XZ flipped, a rim onto the origin); `construct`
+  (every way the Axis and Plane tools make one, clicked in the palette, the
+  action bar and the view; Pattern around and Rotate about an axis through
+  a hole, a sketch on an offset plane extruded, the plane's distance edited
+  in the Model panel with the sketch and block following, Align onto a
+  plane, Mirror across one, the palette's Sketch button on a selected plane,
+  Hide / Show / Delete in the Model panel and Delete in the view); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I

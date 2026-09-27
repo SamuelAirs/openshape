@@ -61,8 +61,9 @@ On a desktop-sized window:
   tooltips name the step), and **?** for the help card.
 - **Tool palette** (left): **Create** (Box, Sketch), **Modify**
   (Push/Pull, Fillet, Chamfer, Shell, Offset, Move, Rotate, Mirror,
-  Pattern, Align) and **Combine** (Union, Subtract, Intersect). When the
-  window is short, the palette scrolls.
+  Pattern, Align), **Combine** (Union, Subtract, Intersect) and
+  **Construct** (Axis, Plane). When the window is short, the palette
+  scrolls.
 - **Model panel** (right): everything you made, step by step. It appears
   once there is something in the document; **Hide** folds it away. See
   [The Model panel](#the-model-panel).
@@ -270,31 +271,50 @@ Model panel) to select it; its actions appear below the value box.
   or type a distance for the highlighted arrow (click an arrow to choose
   it).
 - **Rotate**: drag one of the three rings (15° steps; hold `Alt` for 1°) or
-  type an angle. To turn about something else, click a straight edge or a
-  hole (one ring appears around it), or click a corner or a circle (the
-  rings move there). **Center pivot** puts them back.
+  type an angle. To turn about something else, click a straight edge, a
+  hole or a [construction axis](#construction-axes-and-planes) (one ring
+  appears around it), or click a corner or a circle (the rings move there).
+  **Center pivot** puts them back.
 
 ### Align
 
 Select the face or edge of the body you want to move, click **Align**, then
-click the face or edge on the other body to line it up with: faces end up
-touching, edges in line, a hole on a shaft. **Flip** turns it around, the
-arrow or a typed value adds an offset, and **Onto ground** lays the selected
-face flat on the ground (the build plate). `Enter` applies.
+click what to line it up with:
+
+- **A face or edge of another body:** faces end up touching, edges in line,
+  a hole on a shaft.
+- **The origin:** click one of the X (red), Y (green) or Z (blue) axis
+  lines drawn through the origin, or choose **X axis**, **Y axis**, **Z
+  axis**, **XY plane**, **XZ plane**, **YZ plane** or **Origin** below the
+  hint. A hole's axis (select its rim or its wall) lands on the Z axis, a
+  straight edge runs along X, a flat face lies on the XZ plane touching it
+  from the side the body is on (**Flip** puts the body on the other side),
+  and a circle's center or an edge's middle moves onto the origin (the body
+  only moves, it does not turn). The body goes the shortest way: onto the
+  nearest point of the axis or plane.
+- **A [construction axis or plane](#construction-axes-and-planes):** click
+  it in the view; it works like the origin's axes and planes.
+
+**Flip** turns it around, the arrow or a typed value adds an offset along
+the target, and **Onto ground** lays the selected face flat on the ground
+(the build plate). `Enter` applies. Align is stored as a move: it does not
+follow the target when that changes later.
 
 ### Mirror and pattern
 
 ![A linear pattern: three copies, 25 mm apart](images/pattern.png)
 
-- **Mirror**: select a body, click **Mirror**, then click a flat face to
-  mirror across, or choose **Across YZ**, **Across XZ** or **Across XY**.
+- **Mirror**: select a body, click **Mirror**, then click a flat face or a
+  construction plane to mirror across, or choose **Across YZ**, **Across
+  XZ** or **Across XY**.
   **Apply** (or `Enter`) adds the mirror image.
 - **Pattern**: select a body, click **Pattern**. **Linear** repeats it in a
-  row (**Along X/Y/Z**, or click an edge for the direction; the value is the
-  spacing), **Circular** around an axis (**Around X/Y/Z**, or click a hole
-  or shaft; the value is the total angle, and 360° spaces the copies
-  evenly). **+ copy** and **− copy** change how many (the number after ×
-  counts the original too).
+  row (**Along X/Y/Z**, or click an edge or a construction axis for the
+  direction; the value is the spacing), **Circular** around an axis
+  (**Around X/Y/Z**, or click a hole, a shaft or a construction axis; the
+  value is the total angle, and 360° spaces the copies evenly). **+ copy**
+  and **− copy** change how many (the number after × counts the original
+  too).
 - Copies that touch or overlap the original join it (a half part mirrored
   across its own face becomes one symmetric body). Copies that touch
   neither the original nor each other become **separate bodies**, each
@@ -303,6 +323,47 @@ face flat on the ground (the build plate). `Enter` applies.
   be; click it to switch. (Each copy of an imported STEP body stores its
   geometry again, and a project holds at most 512 MB of it: copies that
   would not fit stay joined, and Separate bodies says why.)
+
+### Construction axes and planes
+
+Reference geometry to model against: turn a body about an axis, repeat it
+around one, mirror across a plane, align onto either, or sketch on a plane
+that floats above a face. They are drawn in orange (an axis as a dashed
+line, a plane as a see-through square with an outline), have their own rows
+in the Model panel, and are saved with the project.
+
+- **Axis** (in **Construct**): click a hole, a shaft or a circle (the axis
+  goes through its middle) or a straight edge (along it). **Two points**:
+  click two corners (an edge near its end) or circles (their centers).
+  **Parallel to X / Y / Z**: click a corner or circle it goes through.
+- **Plane**: click a flat face, then drag the arrow or type the distance
+  (negative goes the other way); **From XY / XZ / YZ** starts from an
+  origin plane instead. **At angle**: click a straight edge, then type the
+  angle to the face next to it (the one facing up; click another flat face
+  along the edge to measure from that one): 0° is the face's own plane, 90°
+  stands up across it. **Midway**: click two parallel flat faces.
+- `Enter`, **Apply** or a click on empty space adds it; `Esc` goes back one
+  pick. Something selected first (a hole's rim, an edge, a face, two
+  parallel faces) is taken as the first pick.
+- The new axis or plane is selected: **Sketch** puts a sketch on a plane
+  (it moves with the plane), **Hide** and **Delete** are there too. Click
+  one in the view to select it again.
+- **Using them:** while Rotate, Pattern, Mirror or Align waits, click the
+  axis or plane in the view. They use it where it is when you apply them.
+- **They follow the part:** made from a face or edge, they move when an
+  earlier step changes that face or edge (a plane 10 mm above the top of a
+  box moves up when the box gets taller), and so do a sketch on the plane
+  and what was extruded from it. Steps added after the axis or plane was
+  made do not move it. If what it was made from is gone, its Model-panel row
+  turns red and says why, and it stays where it was.
+- **In the Model panel:** click the row to select it; an offset plane's
+  distance and an angled plane's angle can be typed there; **Hide** /
+  **Show** and **Delete**. A distance goes up to 1000 m either way, an
+  angle from -180° to 180°.
+- **Copies:** a separate copy of a body built on a plane made from that
+  body (Duplicate, a separate Mirror or Pattern copy, a split piece) gets
+  its own hidden copy of the plane, so changing the original never moves
+  the copy. A plane made from another body or an origin plane is shared.
 
 ### Duplicate and split
 
@@ -345,6 +406,9 @@ A sketch is a flat drawing on a plane; its closed shapes (profiles) become
 - **On a face:** select a flat face, then press `K` or click **Sketch** (or
   **Sketch** below the value box). The sketch stays on that face when the
   part changes.
+- **On a construction plane:** select it (click it in the view or its
+  Model-panel row), then press `K` or click **Sketch**. The sketch moves
+  with the plane.
 - **Adding to a sketch:** select one of its shapes and press `K`, or start a
   sketch on the plane it lies on: new lines then split its shapes.
 - **Editing a sketch later:** double-click one of its shapes, double-click
@@ -439,9 +503,9 @@ sketch step can be undone, also after finishing.
 
 ![Hovering a step in the Model panel shows the geometry it made](images/history.png)
 
-The Model panel lists your sketches and bodies, and under each body its
-steps in order (Box, Push/Pull, Fillet, Shell, Extrude …) with their main
-values.
+The Model panel lists your sketches, construction axes and planes, and
+bodies, and under each body its steps in order (Box, Push/Pull, Fillet,
+Shell, Extrude …) with their main values.
 
 - **Hover a row** to see its geometry highlighted in the view.
 - **Click a step** to open it: its values appear as fields; type a new value
@@ -454,6 +518,9 @@ values.
 - **Sketches** show "Fully defined" or how many degrees of freedom (DOF)
   are left; open one with **Edit sketch** or a double-click. A sketch can be
   deleted when no step uses it.
+- **Construction axes and planes** show what they are made from ("10.00 mm
+  from a face", "Through a hole or shaft"). Clicking the row selects it; an
+  offset or angle can be typed; **Hide** / **Show** and **Delete**.
 - **Status dots:** green is fine, amber is a warning (for example a body in
   several pieces: **Split into bodies** appears), red failed, grey is
   suppressed or not computed.
@@ -637,13 +704,13 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
 | Keys | Action |
 |---|---|
 | `B` | Add a 20 mm box |
-| `K` | Sketch (on the selected flat face or shape, otherwise on the ground) |
+| `K` | Sketch (on the selected flat face, construction plane or shape, otherwise on the ground) |
 | `F` | Fit everything in the view |
 | `Ctrl+D` | Duplicate the selected body |
 | `0`–`9`, `.`, `+`, `-`, `(` | Start typing into the value box |
 | `Enter` | Apply |
 | `Esc` | Cancel; clear the selection |
-| `Delete` or `Backspace` | Delete the selected faces (the gap closes) or bodies |
+| `Delete` or `Backspace` | Delete the selected faces (the gap closes), bodies, or construction axes and planes |
 | `Shift`+click, `Ctrl`+click | Add to (or remove from) the selection |
 | `Shift`+double-click | Add a body to the selection |
 | `Shift`+drag | Pan |

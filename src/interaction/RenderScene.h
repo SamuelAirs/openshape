@@ -9,8 +9,11 @@
 #include "geometry/Mesh.h"
 #include "interaction/Manipulator.h"
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace os::interact {
@@ -62,6 +65,25 @@ struct RenderGrid {
     double eyeFadeEnd = 0;
 };
 
+// The X (0), Y (1) or Z (2) axis line through the origin as drawn with
+// `grid`: where it crosses the axes' disc around the grid's center (the Z
+// axis as high and as deep as the others reach). None when the disc misses
+// it. Shared by the renderer and by picking the origin axes.
+inline std::optional<std::pair<Vec3, Vec3>> originAxisSegment(const RenderGrid& grid, int axis)
+{
+    const double r = grid.axisRadius;
+    const Vec3 c = grid.center;
+    const double off = axis == 0 ? std::abs(c.y) : axis == 1 ? std::abs(c.x) : std::hypot(c.x, c.y);
+    if (off >= r)
+        return std::nullopt;
+    const double half = std::sqrt(r * r - off * off);
+    if (axis == 0)
+        return std::pair{Vec3{c.x - half, 0, 0}, Vec3{c.x + half, 0, 0}};
+    if (axis == 1)
+        return std::pair{Vec3{0, c.y - half, 0}, Vec3{0, c.y + half, 0}};
+    return std::pair{Vec3{0, 0, -half}, Vec3{0, 0, half}};
+}
+
 // ---- Sketches ----
 enum class SketchStyle {
     Normal,       // under-constrained geometry
@@ -74,6 +96,7 @@ enum class SketchStyle {
     Dimension,    // dimension and extension lines
     Measure,      // a size measured in 3D (push/pull thickness), drawn with the arrow
     Conflict,     // over-constrained
+    Reference,    // construction axes and planes
 };
 
 struct RenderSketchLine {
@@ -91,6 +114,7 @@ struct RenderRegion {
     std::shared_ptr<const geom::Mesh> mesh;
     std::uint64_t meshKey = 0;
     SketchStyle style = SketchStyle::Normal; // Normal, Hovered or Selected
+    bool reference = false; // a construction plane's fill (its own color)
 };
 
 struct RenderSketch {

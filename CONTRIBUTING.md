@@ -141,6 +141,36 @@ field (`-Wmissing-field-initializers`) fails CI.
 5. Tests: `tests/test_sketch.cpp` (solved geometry, JSON) and
    `tests/test_sketch_interaction.cpp` (the tool or action).
 
+**A new kind of document object** (beside sketches, bodies and
+construction axes / planes, `document/Datum` being the latest example)
+1. `document/`: the class (UUID, name, visibility, strict `fromJson`: a
+   wrong type is invalid, an unknown method or kind is "newer version");
+   `Document` keeps it (add / remove / replace, a revision counter, copied
+   by `snapshot()` for the preview worker). If it is made from body
+   geometry, reference faces and edges through a step (as `GeometryRef`
+   and sketch attachments do) and re-resolve it in
+   `syncSketchAttachments()`; failing keeps its last position with a plain
+   message.
+2. `commands/DocumentCommands`: add, edit and delete commands (by UUID,
+   with what undo needs).
+3. `io/ProjectFile.cpp`: write it only when there is one (files without it
+   stay as older builds wrote them), load it before what depends on it;
+   `docs/FILE_FORMAT.md`; a round trip and refused broken files in the
+   tests.
+4. `selection/`: a `SelectionKind` / `PickKind`; `SelectionSet::refresh`
+   drops it when it is gone or hidden.
+5. `interaction/`: picking (`pickAt`, and `operationPickAt` for the tools
+   that take it), drawing (`renderScene`), hover and selection styles,
+   `contextActions` / `triggerAction` for a selection of it, Delete,
+   `selectionSummary`, `historyRows` (kind, detail, status, parameters)
+   and `setFeatureParameter` for its values.
+6. `ui/`: `AppController` (the row kind, `deleteHistoryItem`,
+   `setHistoryItemVisible`, selecting it from its row), `HistoryPanel.qml`,
+   the help card and the user guide.
+7. Tests: document (exact geometry, following upstream edits, undo/redo,
+   save/open), a headless interaction flow, and an acceptance scenario that
+   clicks every way to make it and every tool that uses it.
+
 ## Documentation
 
 Keep `ARCHITECTURE.md`, `ROADMAP.md`, `PROJECT_STATUS.md` and `BUILDING.md`
