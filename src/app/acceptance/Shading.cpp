@@ -204,7 +204,7 @@ void measureAllViews(Steps& steps, AcceptanceRunner& r, const Model& model, cons
             steps.push_back([&r, model, view, projectionName, totals] { measure(r, model, view.name, projectionName, *totals); });
         }
     }
-    steps.push_back([&r, model] {
+    steps.push_back([&r] {
         auto& in = r.app().interaction();
         in.setViewAngles(-45 * kPi / 180, 35.26 * kPi / 180, false);
         in.fitAll(false);

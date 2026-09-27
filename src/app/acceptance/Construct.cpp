@@ -138,7 +138,7 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             r.screenshot(QStringLiteral("construct_01_axis_through_hole"));
         },
         // ---- Pattern the block around it (clicking the axis) -----------------
-        [&r, clear, selectBlock] {
+        [clear, selectBlock] {
             clear();
             selectBlock();
         },
@@ -172,7 +172,7 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             r.check(r.app().bodyCount() == 2 && near(volumeOf(r, 1), 64.0), "undo: one block again", num(volumeOf(r, 1)));
         },
         // ---- Rotate the block a quarter turn about the axis ------------------
-        [&r, clear, selectBlock] {
+        [clear, selectBlock] {
             clear();
             selectBlock();
         },
@@ -192,7 +192,7 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             r.key(Qt::Key_Z, Qt::ControlModifier);
         },
         // ---- Pattern it along the axis (Linear, clicking the axis) ----------
-        [&r, clear, selectBlock] {
+        [clear, selectBlock] {
             clear();
             selectBlock();
         },
@@ -407,7 +407,7 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             r.check(datums(r).size() == 3 && plane.originIndex == 0 && near(plane.geometry().origin.x, 40),
                     "a plane 40 mm from YZ", num(plane.geometry().origin.x));
         },
-        [&r, clear, selectBlock] {
+        [clear, selectBlock] {
             clear();
             selectBlock();
         },
@@ -565,7 +565,7 @@ std::vector<AcceptanceRunner::Step> constructSteps(AcceptanceRunner& r)
             clear();
             r.check(r.clickItem(QStringLiteral("historyRow_") + idText(state->first)), "the axis's Model panel row");
         },
-        [&r, state] {
+        [&r] {
             const auto& sel = r.app().interaction().selection();
             r.check(sel.size() == 1 && sel.items()[0].kind == sel::SelectionKind::Datum, "its row selects the axis");
             r.check(r.clickItem(QStringLiteral("barAction_hideDatum")), "Hide in the action bar");
