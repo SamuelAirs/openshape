@@ -10,6 +10,7 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Tessellation.h"
 #include "interaction/Manipulator.h"
+#include "interaction/OverlayPlacement.h"
 #include "sketch/SketchEdit.h"
 
 #include <algorithm>
@@ -799,6 +800,7 @@ void SketchSession::regionsChanged()
 
 bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera)
 {
+    notePointer(event);
     if (event.button != PointerButton::Left)
         return false;
     pressed_ = true;
@@ -855,6 +857,7 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
 
 void SketchSession::pointerMove(const PointerEvent& event, const Camera& camera)
 {
+    notePointer(event);
     if (isOffsetting()) {
         updateOffset(toLocal(event.position, camera));
         return;
@@ -890,6 +893,7 @@ void SketchSession::pointerMove(const PointerEvent& event, const Camera& camera)
 
 void SketchSession::pointerRelease(const PointerEvent& event, const Camera& camera)
 {
+    notePointer(event);
     if (!pressed_)
         return;
     pressed_ = false;
@@ -960,6 +964,7 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
 
 void SketchSession::hover(const PointerEvent& event, const Camera& camera)
 {
+    notePointer(event);
     if (isOffsetting()) {
         updateOffset(toLocal(event.position, camera));
         return;
@@ -2021,6 +2026,22 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             label.screen = screen(cursor_.position) + Vec2{18, 18};
             out.push_back(label);
         }
+    }
+
+    // A finger (or pen) hides what is right beside the point it touches, and
+    // the hand hides what is below it: there the live values and the
+    // inference hint move above the finger (or beside it, near the top).
+    if (pointerScreen_ && (largeTargets_ || pointerDevice_ != PointerDevice::Mouse)) {
+        std::vector<std::size_t> live;
+        std::vector<Vec2> centers;
+        for (std::size_t i = 0; i < out.size(); ++i)
+            if (out[i].kind == SketchLabel::Kind::Input || out[i].kind == SketchLabel::Kind::Hint) {
+                live.push_back(i);
+                centers.push_back(out[i].screen);
+            }
+        keepLabelsClearOfFinger(centers, kLiveLabelSize, *pointerScreen_, safeInsets_.inside(camera.viewportSize));
+        for (std::size_t k = 0; k < live.size(); ++k)
+            out[live[k]].screen = centers[k];
     }
     return out;
 }

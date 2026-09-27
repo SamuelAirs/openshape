@@ -258,7 +258,18 @@ relinking.
    the dashed axis or the plane's outline with a finger (easy to hit?);
    with Pattern → Circular waiting, tap an axis made through a hole; tap
    empty space while the Axis tool waits for its first pick (it gives up).
-12. Note anything slow, hard to hit, or missing — with a screenshot
+12. The value box stays out of the way: tap edges and faces on the left,
+   the right, high and low on the model (and zoomed in): the box sits next
+   to the arrow but never over what you tapped, the arrow or the selected
+   edge / face; drag the arrow and it moves along without jumping. Move a
+   body with its X arrow, then its Y arrow (zoomed in), and turn a long
+   part a quarter turn: the box stays off the body where it went. Tap the
+   value and type with the on-screen keyboard (no hardware keyboard): the
+   box moves above the keyboard and stays readable. With the Pencil, rest
+   your palm on the screen while the box shows: it does not move. Draw a
+   rectangle and a circle with a finger: the live width / height /
+   diameter show above the finger, not under it.
+13. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 
 ## What to test on the iPhone
@@ -297,3 +308,13 @@ margins (BUILDING.md).
    projects and opens them.
 12. iPhone Duo (once available): fold and unfold with a model open, and use
    the inner display's Split View: the layout changes live, no restart.
+13. The value box never covers what you tapped (your screen recording of
+   2026-09-26): tap an edge on the left of a body low on the screen, then
+   faces in different places: the box docks below the top bar or above the
+   hint, whichever is farther from the selection, and stays there while
+   you drag the arrow. In landscape it is one row, beside the top bar.
+   Tap the top face of a box, then the value field: the box moves below the
+   top bar while the keyboard is up, and the field stays in sight as you
+   type. Swipe its row of actions sideways and tap the last one.
+   Draw a rectangle with a finger, also next to the Dynamic Island in
+   landscape: its width and height show above the finger, whole.

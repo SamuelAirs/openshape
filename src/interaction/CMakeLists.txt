@@ -9,6 +9,7 @@ add_library(openshape_interaction STATIC
     InteractionController.cpp InteractionController.h
     Manipulator.cpp Manipulator.h
     Operation.cpp Operation.h
+    OverlayPlacement.cpp OverlayPlacement.h
     PreviewWorker.cpp PreviewWorker.h
     RenderScene.h
     SceneCache.cpp SceneCache.h

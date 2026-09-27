@@ -175,6 +175,18 @@ QQuickItem* findVisibleVisualItem(QQuickItem* root, const QString& objectName)
             return found;
     return nullptr;
 }
+
+// Lays out every item that waits for it (from the top down), as the next
+// frame would before drawing; hidden ones too (a hidden row that measures
+// buttons gives a visible one its width).
+void polishTree(QQuickItem* root)
+{
+    if (!root)
+        return;
+    root->ensurePolished();
+    for (QQuickItem* child : root->childItems())
+        polishTree(child);
+}
 } // namespace
 
 bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifiers mods)
@@ -190,11 +202,18 @@ bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifier
     // Buttons created by the last input (e.g. the actions of a new selection)
     // are not laid out until the next frame: lay out their rows now, from the
     // top down, or the click lands wherever the row stacked them (on Delete).
+    // The whole scene first, twice (as the next frame would): a row's width
+    // may come from an item beside it (the value chip's actions take theirs
+    // from a hidden row that measures them), and the chip is placed from its
+    // laid-out size.
     std::vector<QQuickItem*> chain;
     for (QQuickItem* p = item; p; p = p->parentItem())
         chain.push_back(p);
-    for (auto it = chain.rbegin(); it != chain.rend(); ++it)
-        (*it)->ensurePolished();
+    for (int pass = 0; pass < 2; ++pass) {
+        polishTree(window_->contentItem());
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+            (*it)->ensurePolished();
+    }
     // Scroll it into view (the tool palette scrolls in short windows; the
     // compact layout's tool strip and action rows scroll sideways).
     for (QQuickItem* p : chain) {

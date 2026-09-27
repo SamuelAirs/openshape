@@ -64,6 +64,8 @@ ApplicationWindow {
     Binding { target: Theme; property: "safeRight"; value: safeInsets.marginRight }
     Binding { target: Theme; property: "safeBottom"; value: safeInsets.marginBottom }
     Binding { target: Theme; property: "safeLeft"; value: safeInsets.marginLeft }
+    // The sketch's live values, moved out from under a finger, stay inside them too.
+    Binding { target: window.app; property: "safeInsets"; value: [Theme.safeTop, Theme.safeRight, Theme.safeBottom, Theme.safeLeft] }
     // Touch-sized controls once the app is used by touch (from the start on a tablet).
     Binding { target: Theme; property: "touch"; value: window.app.touchMode }
 
@@ -1032,20 +1034,59 @@ ApplicationWindow {
         z: 6
         // The compact Model panel covers most of a phone: the chip waits until it closes.
         visible: window.app.operationActive && window.app.valueLabelVisible && !(Theme.compact && window.historyOpen)
-        maximumWidth: window.width - Theme.insetLeft - Theme.insetRight
-        // Beside the arrow tip (right side, or left if there is no room),
-        // so the manipulator itself is never covered.
-        readonly property real tipX: window.app.valueLabelPosition.x
-        readonly property real tipY: window.app.valueLabelPosition.y
-        readonly property bool fitsRight: tipX + 28 + width < window.width - Theme.insetRight
-        readonly property real minY: topBar.y + topBar.height + 8
-        x: Theme.compact ? Math.max(Theme.insetLeft, Math.min(window.width - Theme.insetRight - width,
-                                                              fitsRight ? tipX + 28 : tipX - 28 - width))
-                         : Math.max(Theme.insetLeft, fitsRight ? tipX + 28 : tipX - 28 - width)
-        // Compact windows: never over the hint, the selection or the tool strip.
-        y: Theme.compact ? Math.max(minY, Math.min(statusColumn.y - 8 - height, tipY - 24))
-                         : Math.max(minY, Math.min(window.height - Theme.safeBottom - height - 70, tipY - 24))
+        // A phone: a bar (its actions scroll sideways) beside the Model / View
+        // buttons; held sideways, one row high, as wide as the room beside the
+        // top bar when that is enough.
+        singleRow: Theme.compact && window.width > window.height
+        readonly property real roomBesideTopBar: Math.floor(Math.min(viewButtonPanel.x, modelButtonPanel.visible ? modelButtonPanel.x : window.width)
+                                                 - 8 - (topBar.x + topBar.width + 8)) - 1
+        // Whole pixels, a pixel short: the layout rounds the chip's width up.
+        maximumWidth: !Theme.compact ? window.width - Theme.insetLeft - Theme.insetRight
+                    : singleRow ? (roomBesideTopBar >= 380 ? roomBesideTopBar
+                                                           : Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
+                    : Math.max(200, Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
+        // Where it goes (interact::placeValueChip): never over the selection,
+        // the arrows or the point just tapped (app.keepClearRect), nor over
+        // the controls. Phones: docked below the top bar or above the hint,
+        // on the side farther from the selection and the arrow, and kept
+        // there while the arrow is dragged. Larger windows: beside the arrow
+        // tip (right, left, above, below), else in the free corner nearest to
+        // it, else docked like on a phone. It keeps its spot while that stays
+        // clear, so it moves along with the arrow instead of jumping. While
+        // the value is typed on a touch screen, a phone's chip docks below the
+        // top bar (the on-screen keyboard covers the bottom), and a larger
+        // window's keeps off the keyboard (chipObstacles).
+        readonly property var placement: visible ? window.app.placeValueChip({
+            area: Qt.rect(Theme.insetLeft, Theme.insetTop, window.width - Theme.insetLeft - Theme.insetRight,
+                          window.height - Theme.insetTop - Theme.insetBottom),
+            avoid: window.chipObstacles(),
+            size: Qt.size(width, height),
+            tip: window.app.valueLabelPosition,
+            fieldCenter: Theme.controlHeight / 2 + Theme.panelPadding,
+            keepClear: window.app.keepClearRect,
+            compact: Theme.compact,
+            touch: Theme.touch,
+            frozen: window.app.manipulatorDragging,
+            typing: Theme.touch && valueChip.typing
+        }) : null
+        x: placement ? placement.x : Theme.insetLeft
+        y: placement ? placement.y : Theme.insetTop
+        // The field toward the tip; a docked bar left-aligned, like the top bar.
+        alignment: !placement || placement.spot === "above" || placement.spot === "below" ? Qt.AlignHCenter
+                 : placement.spot === "left" ? Qt.AlignRight : Qt.AlignLeft
         onFinished: viewport.forceActiveFocus()
+    }
+
+    // The controls the value chip must not cover, as window rectangles, and
+    // the on-screen keyboard while it is up (in window coordinates; empty
+    // where the platform does not say, and on a desktop).
+    function chipObstacles() {
+        const items = Theme.compact ? [topBar, modelButtonPanel, viewButtonPanel, axisTriad, statusColumn, createPanel]
+                                    : [topBar, createPanel, historyPanel, viewPanel, axisTriad, statusColumn]
+        const rects = items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
+        if (Qt.inputMethod.visible)
+            rects.push(Qt.inputMethod.keyboardRectangle)
+        return rects
     }
 
     // ---------------------------------------------------------------- home
@@ -1151,8 +1192,8 @@ ApplicationWindow {
         property alias text: toastText.text
         // Where it rests: above the hint and the tool strip in a compact window.
         readonly property real restBottom: Theme.compact ? statusColumn.y - 8 : window.height - 72 - Theme.safeBottom
-        // The value chip may sit there too (its arrow tip low on the screen):
-        // then the message goes above the chip if there is room below the top
+        // The value chip may sit there too (docked above the hint, or its
+        // arrow tip low on the screen): then the message goes above the chip if there is room below the top
         // bar, and is drawn over it otherwise (z), for the few seconds it shows.
         readonly property bool chipInTheWay: valueChip.visible && valueChip.y < restBottom
             && valueChip.y + valueChip.height > restBottom - height

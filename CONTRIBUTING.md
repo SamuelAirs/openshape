@@ -119,12 +119,22 @@ field (`-Wmissing-field-initializers`) fails CI.
    typed value) passes `Change::ValueOnly`. A query the GUI thread makes
    while hovering or dragging (snapping, picking, labels) must not call the
    kernel: the kernel lock makes it wait for the worker's preview (use the
-   display mesh, the operation's own members or a memoized result).
+   display mesh, the operation's own members or a memoized result). The
+   value chip keeps clear of its arrows (`handle()`), rings (`ring()`) and,
+   for a value with neither, `labelAnchor()`
+   (`InteractionController::keepClearRect`), and of the selection where the
+   operation takes it: `carriedSelection()` gives the shifts (by default the
+   active arrow's base to its tip: override it when the arrow does not carry
+   the selection that way, as Move's arrows, Revolve's arc or a head's
+   diameter do not) and whether the whole preview is the thing being moved
+   or made (a moved or turned body, copies, a new body).
 2. `InteractionController`: arm it in `rebuildOperation()`, offer it in
    `contextActions()`, handle its id in `triggerAction()`, and in `runTool()`
    when it belongs in the palette.
 3. `ui/qml/Main.qml`: palette entry (Modify/Combine) and its hint in
-   `hintText()`; `ui/qml/HelpOverlay.qml`: a row.
+   `hintText()`; `ui/qml/HelpOverlay.qml`: a row. A new panel or button
+   over the viewport goes into `chipObstacles()` there, so the value chip
+   never covers it.
 4. Tests: a headless flow in `tests/test_interaction.cpp` and an acceptance
    step that clicks it.
 

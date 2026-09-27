@@ -34,7 +34,7 @@ openshape_add_test(test_document test_document.cpp test_commands.cpp test_projec
 target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)
 target_compile_definitions(test_document PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
-openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_touch_wording.cpp test_bodies.cpp test_holes_interaction.cpp test_draft_interaction.cpp test_import_interaction.cpp test_thumbnail.cpp
+openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_overlay_placement.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_touch_wording.cpp test_bodies.cpp test_holes_interaction.cpp test_draft_interaction.cpp test_import_interaction.cpp test_thumbnail.cpp
     test_text_interaction.cpp test_async_preview.cpp test_contact_shadow.cpp test_datum_interaction.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
 # test_touch_wording reads the QML hints and the help card; test_bodies a

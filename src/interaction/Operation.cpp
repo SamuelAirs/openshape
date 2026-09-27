@@ -37,6 +37,23 @@ std::uint64_t nextPreviewSerial()
 
 std::atomic<std::uint64_t> g_operationInstances{0};
 thread_local PreviewScheduler* t_creationScheduler = nullptr;
+
+// A preview mesh's box (what the value chip keeps clear of when the preview
+// is itself what moves or is made).
+geom::BoundingBox meshBounds(const geom::Mesh& mesh)
+{
+    geom::BoundingBox box;
+    if (mesh.vertexCount() == 0)
+        return box;
+    box.min = box.max = mesh.vertex(0);
+    for (std::size_t i = 1; i < mesh.vertexCount(); ++i) {
+        const Vec3 v = mesh.vertex(i);
+        box.min = {std::min(box.min.x, v.x), std::min(box.min.y, v.y), std::min(box.min.z, v.z)};
+        box.max = {std::max(box.max.x, v.x), std::max(box.max.y, v.y), std::max(box.max.z, v.z)};
+    }
+    box.valid = true;
+    return box;
+}
 } // namespace
 
 Operation::Operation(Uuid bodyId, LinearManipulator manipulator)
@@ -134,6 +151,7 @@ PreviewOutcome Operation::computeOutcome(double value, const doc::Document& docu
             geom::TessellationParams params;
             params.isolated = true;
             outcome.mesh = std::make_shared<const geom::Mesh>(geom::tessellate(result.value(), params));
+            outcome.bounds = meshBounds(*outcome.mesh); // here: on the worker, not on the GUI thread
         }
     } catch (const std::exception& e) {
         // Kernel failures come back as Results; this would be a bug (or memory).
@@ -159,6 +177,22 @@ void Operation::showOutcome(const PreviewOutcome& outcome)
     previewMeshBody_ = outcome.meshBody;
     if (previewMesh_)
         previewKey_ = nextPreviewKey();
+    previewBounds_ = outcome.bounds;
+    // Where the operation that computed this preview had taken the selection
+    // (the worker's copy, done with it by now; this operation when synchronous).
+    const Operation& by = outcome.computedBy ? *outcome.computedBy : *this;
+    previewCarry_ = by.carriedSelection();
+}
+
+Operation::Carry Operation::carriedSelection() const
+{
+    Carry carry;
+    if (const int active = activeHandle(); active >= 0 && active < handleCount()) {
+        const LinearManipulator h = handle(active);
+        carry.shifts.push_back({h.base(), h.anchor(handleOffset(active))});
+    }
+    carry.wholePreview = previewBody().isNil();
+    return carry;
 }
 
 bool Operation::acceptPreview(const PreviewOutcome& outcome)
@@ -513,6 +547,11 @@ Vec3 MoveOperation::translation() const
     return t;
 }
 
+Operation::Carry MoveOperation::carriedSelection() const
+{
+    return {{{center_, center_ + translation()}}, true};
+}
+
 bool MoveOperation::canCommit() const
 {
     return translation().length() > 1e-9 && previewUsable();
@@ -779,6 +818,13 @@ LinearManipulator PatternOperation::handle(int index) const
     if (index != 0 || circular_)
         return {};
     return LinearManipulator(center_, axisVectorFor());
+}
+
+Operation::Carry PatternOperation::carriedSelection() const
+{
+    Carry carry = Operation::carriedSelection();
+    carry.wholePreview = true;
+    return carry;
 }
 
 std::unique_ptr<doc::Feature> PatternOperation::makeFeature(double value) const
@@ -1917,6 +1963,16 @@ void ExtrudeOperation::setActiveHandle(int index)
     distance_ = d;
     draftDegrees_ = a;
     setStoredValue(index == 1 ? a : d);
+}
+
+Operation::Carry ExtrudeOperation::carriedSelection() const
+{
+    const Vec3 base = manipulator().base();
+    const Vec3 end = manipulator().anchor(displayOffset(distance()));
+    Carry carry{{{base, end}}, previewBody().isNil()};
+    if (symmetric_)
+        carry.shifts.push_back({base, base - (end - base)});
+    return carry;
 }
 
 bool ExtrudeOperation::reconsider(const geom::Shape& result, const doc::Document& document)

@@ -10,6 +10,7 @@
 #include "geometry/Profiles.h"
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
+#include "interaction/OverlayPlacement.h"
 #include "interaction/RenderScene.h"
 #include "sketch/Sketch.h"
 #include "sketch/SketchEdit.h"
@@ -97,6 +98,9 @@ public:
     // other, and their tap targets are larger.
     bool largeTargets() const { return largeTargets_; }
     void setLargeTargets(bool on) { largeTargets_ = on; }
+    // The window's safe-area insets: live values moved out from under a
+    // finger stay inside them (labels()).
+    void setSafeInsets(const SafeInsets& insets) { safeInsets_ = insets; }
     // Half the side of a constraint glyph's square tap target, px. Taps are
     // resolved here, not by the UI: with the Select tool a point or curve
     // within pick reach always wins, and only then a glyph under the pointer.
@@ -122,7 +126,13 @@ public:
     Status triggerAction(const std::string& id);
 
     // ---- Presentation ----
+    // Dimensions, live values, hints and constraint glyphs, in screen
+    // coordinates. After a touch or pen input (or in the touch layout) the
+    // live values and hints are kept out from under the finger
+    // (keepLabelsClearOfFinger).
     std::vector<SketchLabel> labels(const Camera& camera) const;
+    // About the size of a live value's label on screen (px), for keeping it clear of a finger.
+    static constexpr Vec2 kLiveLabelSize{88, 24};
     RenderSketch renderData(const Camera& camera) const;
     std::string statusText() const;
     std::string hintText() const;
@@ -148,6 +158,11 @@ private:
         double value = 0; // mm, when locked
     };
 
+    void notePointer(const PointerEvent& event)
+    {
+        pointerScreen_ = event.position;
+        pointerDevice_ = event.device;
+    }
     std::optional<Vec2> toLocal(Vec2 screen, const Camera& camera) const;
     Vec2 toScreen(Vec2 local, const Camera& camera) const;
     Snap snapAt(Vec2 screen, const Camera& camera, PointerDevice device) const;
@@ -224,6 +239,12 @@ private:
     std::size_t focusedInput_ = 0;
     int polygonSides_ = 6;
     bool largeTargets_ = false;
+    SafeInsets safeInsets_;
+
+    // The last pointer position and device: a finger or pen there hides the
+    // labels beside it (labels()).
+    std::optional<Vec2> pointerScreen_;
+    PointerDevice pointerDevice_ = PointerDevice::Mouse;
 
     // Press tracking.
     bool pressed_ = false;

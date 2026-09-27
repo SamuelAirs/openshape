@@ -714,6 +714,69 @@ TEST(SketchInteraction, RevolveTypedAngle)
 }
 
 namespace {
+// The screen rectangle around world points.
+interact::ScreenRect onScreen(const Harness& h, const std::vector<Vec3>& points)
+{
+    interact::ScreenRect r = interact::ScreenRect::around(h.controller.camera().project(points.front()));
+    for (const Vec3& p : points)
+        r.include(h.controller.camera().project(p));
+    return r;
+}
+std::vector<Vec3> boxCorners(const Vec3& lo, const Vec3& hi)
+{
+    std::vector<Vec3> corners;
+    for (int c = 0; c < 8; ++c)
+        corners.push_back({c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z});
+    return corners;
+}
+} // namespace
+
+// Revolve's arrow rides on the swept arc; its travel is not a shift of the
+// profile. The value chip keeps clear of the new body as the preview shows it,
+// the profile, the arrow and the click, and of nothing else (the profile
+// shifted along the arrow's arc length lies in empty space).
+TEST(SketchInteraction, RevolveKeepsTheSweptBodyClear)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.startSketch(InteractionController::SketchPlane::Front).ok());
+    h.controller.skipAnimation();
+    h.click(h.sketchScreen({5, 0})); // a 3 x 10 rectangle from (5, 0)
+    h.move(h.sketchScreen({8, 10}));
+    h.type("3");
+    h.session().focusNextInput();
+    h.type("10");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.finishSketch();
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+    const Vec2 clicked = h.controller.camera().project({6.5, 0, 5});
+    h.click(clicked);
+    ASSERT_TRUE(h.controller.triggerAction("revolve").ok());
+    ASSERT_EQ(h.controller.setValueText("90"), "");
+    const Operation* op = h.controller.operation();
+    ASSERT_NE(op, nullptr);
+    ASSERT_TRUE(op->hasPreview());
+    EXPECT_TRUE(op->carriedSelection().shifts.empty());
+    EXPECT_TRUE(op->carriedSelection().wholePreview) << "a new body";
+    const auto swept = op->previewBounds();
+    ASSERT_TRUE(swept.has_value());
+    EXPECT_NEAR(swept->size().z, 10.0, 1e-3);
+    const auto keep = h.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    const interact::ScreenRect body = onScreen(h, boxCorners(swept->min, swept->max));
+    EXPECT_TRUE(keep->contains(body, 1.0));
+    // What is there: the profile, the swept body, the arrow (with its head) and the click.
+    const LinearManipulator handle = op->handle(0);
+    const Vec3 anchor = handle.anchor(op->handleOffset(0));
+    const Vec3 tip = anchor + handle.direction() * (ArrowStyle{}.totalPx() * h.controller.camera().pixelSize(anchor));
+    interact::ScreenRect there = body.united(onScreen(h, boxCorners({5, 0, 0}, {8, 0, 10})))
+                                     .united(onScreen(h, {anchor, tip}).inflated(ArrowStyle{}.headRadiusPx));
+    there.include(clicked);
+    EXPECT_TRUE(there.contains(*keep, 1.0)) << "kept clear: " << keep->left << "," << keep->top << " .. " << keep->right
+                                            << "," << keep->bottom;
+}
+
+namespace {
 // A 60 x 40 rectangle from the origin on the ground, sketch finished, its
 // profile selected (the Extrude operation armed).
 void rectangleProfileSelected(Harness& h)
@@ -762,6 +825,35 @@ TEST(SketchInteraction, SymmetricExtrudeIsCenteredOnTheSketch)
     doc::ExtrudeFeature copy;
     ASSERT_TRUE(copy.readParams(params).ok());
     EXPECT_TRUE(copy.symmetric);
+}
+
+// Both ends of a symmetric extrusion are kept clear of the value chip (the
+// profile where each end goes), also while the draft is edited.
+TEST(SketchInteraction, SymmetricExtrudeKeepsBothEndsClear)
+{
+    Harness h;
+    rectangleProfileSelected(h);
+    ASSERT_TRUE(h.controller.triggerAction("symmetric").ok());
+    ASSERT_EQ(h.controller.setValueText("30"), "");
+    h.controller.wheel({600, 400}, -3); // both ends on screen
+    const interact::ScreenRect window{0, 0, 1200, 800};
+    const interact::ScreenRect top = onScreen(h, boxCorners({0, 0, 15}, {60, 40, 15}));
+    const interact::ScreenRect bottom = onScreen(h, boxCorners({0, 0, -15}, {60, 40, -15}));
+    ASSERT_TRUE(window.contains(top) && window.contains(bottom));
+    for (const bool draft : {false, true}) {
+        if (draft) {
+            ASSERT_TRUE(h.controller.triggerAction("draft").ok());
+            ASSERT_TRUE(dynamic_cast<const ExtrudeOperation*>(h.controller.operation())->editingDraft());
+        }
+        const auto carry = h.controller.operation()->carriedSelection();
+        ASSERT_EQ(carry.shifts.size(), 2u) << "draft " << draft;
+        EXPECT_NEAR(carry.shifts[0].to.z - carry.shifts[0].from.z, 15.0, 1e-9);
+        EXPECT_NEAR(carry.shifts[1].to.z - carry.shifts[1].from.z, -15.0, 1e-9);
+        const auto keep = h.controller.keepClearRect();
+        ASSERT_TRUE(keep.has_value());
+        EXPECT_TRUE(keep->contains(top, 1.0)) << "draft " << draft;
+        EXPECT_TRUE(keep->contains(bottom, 1.0)) << "draft " << draft;
+    }
 }
 
 // Up to face: the next face click sets the distance so the extrusion ends on it.

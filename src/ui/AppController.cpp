@@ -287,6 +287,67 @@ QPointF AppController::valueLabelPosition() const
 
 bool AppController::valueLabelVisible() const { return interaction_->valueLabelPosition().has_value(); }
 
+namespace {
+
+QRectF toQRect(const interact::ScreenRect& r) { return QRectF(QPointF(r.left, r.top), QPointF(r.right, r.bottom)); }
+
+interact::ScreenRect toScreenRect(const QRectF& r) { return {r.left(), r.top(), r.right(), r.bottom()}; }
+
+} // namespace
+
+QVariant AppController::keepClearRect() const
+{
+    const auto rect = interaction_->keepClearRect();
+    return rect ? QVariant::fromValue(toQRect(*rect)) : QVariant();
+}
+
+bool AppController::manipulatorDragging() const { return interaction_->manipulatorDragging(); }
+
+QVariantList AppController::safeInsets() const
+{
+    const interact::SafeInsets& i = interaction_->safeInsets();
+    return {i.top, i.right, i.bottom, i.left};
+}
+
+void AppController::setSafeInsets(const QVariantList& insets)
+{
+    interact::SafeInsets i;
+    if (insets.size() == 4) {
+        i.top = insets[0].toDouble();
+        i.right = insets[1].toDouble();
+        i.bottom = insets[2].toDouble();
+        i.left = insets[3].toDouble();
+    }
+    interaction_->setSafeInsets(i); // emits viewChanged when they change
+}
+
+QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
+{
+    interact::ChipPlacementInput input;
+    input.area = toScreenRect(layout.value(QStringLiteral("area")).toRectF());
+    for (const QVariant& rect : layout.value(QStringLiteral("avoid")).toList())
+        input.avoid.push_back(toScreenRect(rect.toRectF()));
+    const QSizeF size = layout.value(QStringLiteral("size")).toSizeF();
+    input.size = {size.width(), size.height()};
+    const QPointF tip = layout.value(QStringLiteral("tip")).toPointF();
+    input.tip = {tip.x(), tip.y()};
+    input.fieldCenter = layout.value(QStringLiteral("fieldCenter"), 24.0).toDouble();
+    if (const QVariant keepClear = layout.value(QStringLiteral("keepClear")); keepClear.typeId() == QMetaType::QRectF)
+        input.keepClear = toScreenRect(keepClear.toRectF());
+    input.compact = layout.value(QStringLiteral("compact")).toBool();
+    input.touch = layout.value(QStringLiteral("touch")).toBool();
+    input.frozen = layout.value(QStringLiteral("frozen")).toBool();
+    input.typing = layout.value(QStringLiteral("typing")).toBool();
+    const interact::ChipPlacement placement = interaction_->placeValueChip(input);
+    QVariantMap result;
+    result.insert(QStringLiteral("x"), placement.position.x);
+    result.insert(QStringLiteral("y"), placement.position.y);
+    const std::string_view spot = interact::toString(placement.spot);
+    result.insert(QStringLiteral("spot"), QString::fromUtf8(spot.data(), qsizetype(spot.size())));
+    result.insert(QStringLiteral("clear"), placement.clear);
+    return result;
+}
+
 bool AppController::touchMode() const { return interaction_->touchLayout(); }
 
 void AppController::setTouchMode(bool on)

@@ -31,6 +31,7 @@ Technology choices and the alternatives considered are in
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
         │         │   Pattern, Insert, Head, Hole, Text)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
+        │         ├─ OverlayPlacement (value chip clear of the selection, labels clear of a finger)
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
         │         ▼
@@ -687,8 +688,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   cannot be its tool: Union and Intersect then keep the result in the copy
   instead.
 - **Hole tool:** "Hole" on a single flat face (or the palette) arms
-  `HoleOperation` (no arrows; the value chip sits at the current hole via
-  `labelAnchor()`). Clicks on that face (picked as faces only) add holes:
+  `HoleOperation` (no arrows; the value chip is placed from the current
+  hole, `labelAnchor()`, clear of the face). Clicks on that face (picked as faces only) add holes:
   `snap()` puts a click within two pick tolerances onto the face's center
   (of its outline's bounding rectangle, `geom::faceOutline`) or a straight
   edge's middle, and otherwise lines X and Y up with those, with circles on
@@ -891,6 +892,71 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   fills the whole window (`ApplicationWindow` padding 0). Overlays center
   their cards in the safe rectangle. Regular windows (desktop, iPad full
   screen) look as before.
+- **Where the value chip goes** (`interaction/OverlayPlacement`, Qt-free):
+  the chip never covers the **keep-clear rectangle**
+  (`InteractionController::keepClearRect`, exposed as
+  `AppController.keepClearRect` with `viewChanged`): the screen bounds of
+  the selection (face triangles and edge polylines of the display mesh, a
+  body's or profile's mesh box corners), the same bounds moved by the
+  operation's shifts (`Operation::carriedSelection`: by default the active
+  arrow's base to its tip, a pushed face; a Move's whole translation, since
+  each arrow's base already carries the other axes' travel; both ends of a
+  symmetric extrusion; none for Revolve's arc or a head's diameter) as the
+  operation has them now and as the preview on screen had them
+  (`Operation::previewCarry`, from the worker's copy: while a newer value
+  computes, the shown preview is of an earlier one, also ahead of the arrow
+  after a drag back), the shown preview's box when it is itself what moves
+  or is made (`Carry::wholePreview`: a moved, turned or aligned body, a
+  mirror's or pattern's copies, a new body; the box is measured on the
+  worker, `PreviewOutcome::bounds`), the arrows (with their head
+  radius) and rings, a hole's position (Hole tool) and the last press that
+  could select or act (a left click, a tap, the pen: not a finger resting in
+  pen mode, not a right or middle button) while the view and the selection
+  it left are unchanged (what a press selects is recorded with it while its
+  release is handled: `pressHandling_`, `notePressSelection`; a selection
+  made another way, such as the Model panel, forgets it); clipped to the
+  viewport; none in sketch mode. It reads display meshes (`SceneCache`),
+  the preview's box and the operation's own members only, so neither it
+  nor the chip's placement calls the kernel on the GUI thread during a drag
+  (`AsyncPreview.ValueChipKeepsClearOfTheShownPreview`,
+  `AsyncPreview.MovedBodyKeptClearWhileItsPreviewComputes`).
+  `placeValueChip(input, previous)` is a pure function of rectangles (the
+  area inside the safe insets, the controls to avoid with an 8 px gap, the
+  chip's size, the tip, the keep-clear rectangle with a 10 px margin, 20 px
+  on touch): **compact** windows dock the chip in the first spot beside
+  the controls from the top (below the top bar; in landscape that is the
+  top bar's row) or from the bottom (above the hint), on the side farther
+  from the keep-clear rectangle (a clear side first, the bottom on a tie),
+  and keep that side while it stays clear and always while an arrow or
+  ring is dragged (`manipulatorDragging`), and below the top bar while the
+  value is typed on a touch screen (`typing`: the field has the focus, so the
+  on-screen keyboard covers the bottom); **regular** windows try right,
+  left, above and below the tip (next to it, else on that side just past
+  the keep-clear rectangle, the field level with the tip), then the free
+  spot nearest each corner of the area (a first-fit search over the edges of
+  the area and the obstacles: complete, so a free spot is always found when
+  one exists), nearest to the tip first, and dock like a phone when none is
+  clear. The previous spot is kept while it is still clear, so the chip
+  moves with the arrow instead of jumping; `InteractionController::placeValueChip`
+  remembers it per selection and operation (a new selection, or the next
+  operation after none, chooses afresh). The first placements of a new
+  selection come while the chip is still being laid out (its actions
+  appear, it grows), so until the tip or the keep-clear rectangle moves (or
+  a drag starts) each one chooses afresh for the chip's current size. QML
+  (`Main.qml`) passes the layout to `AppController.placeValueChip` from one
+  binding and places the chip from the result, with the on-screen
+  keyboard's rectangle (`Qt.inputMethod.keyboardRectangle`, while it is up)
+  among the controls to avoid; a phone held sideways shows
+  the chip as one row (`ValueChip.singleRow`: the actions beside the field).
+  **Live sketch values** (`SketchSession::labels`): after a touch or pen
+  input (or in the touch layout) the typed-value labels and inference hints
+  whose box falls under the finger or the hand below it
+  (`fingerShadow`: 56 px either side, from 36 px above the contact down)
+  move above the finger, stacked (`keepLabelsClearOfFinger`), or beside it
+  near the top of the window (a long stack starts higher, to end above the
+  bottom inset), whole and inside the safe area (the window's
+  safe insets reach the sketch through `AppController.safeInsets` ->
+  `InteractionController::setSafeInsets` -> `SketchSession::setSafeInsets`).
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -1272,7 +1338,15 @@ them on a hidden menu separator after the Open Recent sub-menu).
   an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
   Model panel, View menu, a box pushed by touch, Undo / Redo with their
   messages, a body row tapped twice, the sketch strip; the runner
-  restores the run's window size for the next scenario); `appfolder`
+  restores the run's window size for the next scenario); `chipplacement`
+  (an edge on the left side of a box and a face, tapped or clicked at
+  402x874 and 874x402 with the iPhone's safe areas, 1180x820 touch and
+  1400x900: the chip is off the projected edge or face (with the margin),
+  the arrow tip, the keep-clear rectangle and the controls, inside the safe
+  area; on the phone it keeps its place while the arrow is dragged, its
+  buttons work (Chamfer, Fillet, the edge's Select body, ✕, the field, ✓,
+  and the face's Select body, out of sight until its row scrolls) and it
+  docks below the top bar while the value is typed); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
   touch layout); `copies` (Mirror and Pattern clicked on a box off the
@@ -1308,7 +1382,10 @@ them on a hidden menu separator after the Open Recent sub-menu).
   (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the
   item (both directions) to bring it on screen, and lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
-  still sat where Fillet was about to go). Before each step the runner
+  still sat where Fillet was about to go): the whole scene twice, hidden
+  items too, then the item's parents from the top down (the value chip's
+  actions take their width from a hidden measuring row, and the chip is
+  placed from its laid-out size). Before each step the runner
   waits until camera animations end and previews (computed on the worker)
   are shown; scenario `previews` drags on a 119-face tray and checks that
   no pointer move blocks the window for 50 ms, that Ctrl+Z and Enter work
