@@ -40,6 +40,11 @@ C++20, 4-space indent, `camelCase` functions, `PascalCase` types, trailing `_`
 for members, `#pragma once`. Prefer clear, boring code; no clever
 metaprogramming without strong reason. Keep comments for *why*, not *what*.
 
+The macOS CI job builds with Apple Clang, warnings as errors, and Clang warns
+about things GCC does not, such as a lambda capture that is never used. Run
+`python scripts/dev/check_lambda_captures.py` before pushing new lambdas (the
+acceptance scenarios have many).
+
 Mark intentional shortcuts with a milestone tag and record significant ones in
 `docs/TECHNICAL_DEBT.md`:
 

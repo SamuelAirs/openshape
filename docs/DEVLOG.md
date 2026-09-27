@@ -615,7 +615,9 @@ as directions in [0, 360°), so files with many turns still open.
 
 **Integration pitfalls.** A test kept a pointer into the temporary vector
 `historyRows()` returns; libstdc++ left the freed memory intact, libc++ on
-the CI Mac did not (a deleted rvalue overload now prevents it). Branches
+the CI Mac did not (a deleted rvalue overload now prevents it). Apple Clang
+also rejected four lambda captures that were never used (GCC does not warn):
+`scripts/dev/check_lambda_captures.py` finds them on Windows. Branches
 merged against an older main changed shared vocabulary (a selection kind
 renamed, a grid function replaced, the default projection) without text
 conflicts: the lead's merge build and full UI run caught each one. This
