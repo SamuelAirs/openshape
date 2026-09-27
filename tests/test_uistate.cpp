@@ -25,6 +25,7 @@
 #include <QtCore/QSysInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QUrl>
+#include <QtCore/QXmlStreamReader>
 
 #include <gtest/gtest.h>
 
@@ -655,6 +656,87 @@ TEST(IncomingFiles, WhatCannotBeUsedIsSaidPlainly)
     writeProject(odd, 10);
     const StagedFile forced = stageIncomingFile(odd, f.places, IncomingKind::Project);
     EXPECT_EQ(forced.path, f.places.appFolder + QStringLiteral("/backup.openshape"));
+}
+
+namespace {
+
+// The iOS Info.plist template as nested QVariants (dict, array, string, bool).
+QVariant readPlistValue(QXmlStreamReader& xml)
+{
+    const QString tag = xml.name().toString();
+    if (tag == QLatin1String("dict")) {
+        QVariantMap map;
+        QString key;
+        while (xml.readNextStartElement()) {
+            if (xml.name() == QLatin1String("key"))
+                key = xml.readElementText();
+            else
+                map.insert(key, readPlistValue(xml));
+        }
+        return map;
+    }
+    if (tag == QLatin1String("array")) {
+        QVariantList list;
+        while (xml.readNextStartElement())
+            list.append(readPlistValue(xml));
+        return list;
+    }
+    if (tag == QLatin1String("true") || tag == QLatin1String("false")) {
+        xml.skipCurrentElement();
+        return tag == QLatin1String("true");
+    }
+    return xml.readElementText();
+}
+
+QVariantMap iosInfoPlist()
+{
+    QFile file(QStringLiteral(OPENSHAPE_SOURCE_DIR "/src/app/ios/Info.plist.in"));
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QXmlStreamReader xml(&file);
+    while (xml.readNextStartElement())
+        if (xml.name() == QLatin1String("dict"))
+            return readPlistValue(xml).toMap();
+    return {};
+}
+
+} // namespace
+
+// What iOS offers to hand to OpenShape (Info.plist) is what AppController
+// takes (incomingKind): each document type names a declared type whose
+// extensions are the ones that kind has.
+TEST(IncomingFiles, InfoPlistDocumentTypesMatchWhatOpenShapeTakes)
+{
+    const QVariantMap plist = iosInfoPlist();
+    ASSERT_FALSE(plist.isEmpty()) << "src/app/ios/Info.plist.in could not be read";
+    EXPECT_TRUE(plist.value(QStringLiteral("LSSupportsOpeningDocumentsInPlace")).toBool());
+    // Declared types: identifier -> (extensions, conforms to).
+    QMap<QString, QPair<QStringList, QStringList>> declared;
+    for (const char* key : {"UTExportedTypeDeclarations", "UTImportedTypeDeclarations"})
+        for (const QVariant& type : plist.value(QString::fromLatin1(key)).toList()) {
+            const QVariantMap t = type.toMap();
+            declared.insert(t.value(QStringLiteral("UTTypeIdentifier")).toString(),
+                            {t.value(QStringLiteral("UTTypeTagSpecification")).toMap().value(QStringLiteral("public.filename-extension")).toStringList(),
+                             t.value(QStringLiteral("UTTypeConformsTo")).toStringList()});
+        }
+    const QVariantList documentTypes = plist.value(QStringLiteral("CFBundleDocumentTypes")).toList();
+    ASSERT_EQ(documentTypes.size(), 2);
+    const std::pair<const char*, IncomingKind> expected[] = {{"Owner", IncomingKind::Project}, {"Alternate", IncomingKind::Step}};
+    for (int i = 0; i < 2; ++i) {
+        const QVariantMap type = documentTypes[i].toMap();
+        EXPECT_EQ(type.value(QStringLiteral("LSHandlerRank")).toString().toStdString(), expected[i].first);
+        EXPECT_FALSE(type.value(QStringLiteral("CFBundleTypeName")).toString().isEmpty());
+        const QStringList utis = type.value(QStringLiteral("LSItemContentTypes")).toStringList();
+        ASSERT_EQ(utis.size(), 1);
+        ASSERT_TRUE(declared.contains(utis.front())) << utis.front().toStdString() << " is not declared";
+        const auto& [extensions, conforms] = declared.value(utis.front());
+        EXPECT_TRUE(conforms.contains(QStringLiteral("public.data")));
+        ASSERT_FALSE(extensions.isEmpty());
+        for (const QString& extension : extensions)
+            EXPECT_EQ(incomingKind(QStringLiteral("file.") + extension), expected[i].second) << extension.toStdString();
+    }
+    EXPECT_EQ(declared.value(QStringLiteral("io.github.samuelairs.openshape.project")).first, QStringList{QStringLiteral("openshape")});
+    EXPECT_EQ(declared.value(QStringLiteral("org.iso.step")).first, (QStringList{QStringLiteral("step"), QStringLiteral("stp")}));
 }
 
 TEST(IncomingFiles, CopiesGetSafeNames)
