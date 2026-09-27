@@ -160,8 +160,8 @@ and draws and your fingers only move the view, so a hand resting on the
 screen does nothing; OpenShape turns this on when it first sees a pen, and
 **Pen** switches it on or off. Nothing needs hovering, a right-click or a
 modifier key: taps add to the selection (tap empty space to start over), a
-double-tap selects a body, and every tool has a button. On an iPad the
-touch layout is on from the start.
+double-tap selects a body (another double-tap adds the next one), and
+every tool has a button. On an iPad the touch layout is on from the start.
 
 **On a phone** (or any window narrower than about 600 px or lower than
 about 500 px, such as an iPad in Split View), the tools move to a strip along the bottom that scrolls
@@ -185,7 +185,8 @@ beside your finger, not under it.
 | A face or an edge | click it (edges within a few pixels win) | tap it |
 | More faces or edges | `Shift`+click (click again to remove one) | tap more (taps add) |
 | A whole body | double-click it | double-tap it |
-| A second body | `Shift`+double-click | double-tap it |
+| A second body | `Shift`+double-click | double-tap it, or just tap it |
+| A body out of several | `Shift`+double-click it | double-tap it (or tap it) |
 | A sketch shape (profile) | click inside it | tap inside it |
 | From the Model panel | click a body's row (`Shift` adds) | tap its row |
 | Nothing | `Esc`, or click empty space | tap empty space |
@@ -195,6 +196,14 @@ beside your finger, not under it.
 - **Select body** (in the actions of a selected face or edge) selects the
   body it belongs to.
 - `Ctrl`+click adds like `Shift`+click.
+- **Two or more bodies on touch** (to combine them, say): double-tap one,
+  then double-tap the next; each double-tap adds its body, and a double-tap
+  on a selected body takes it out again. While bodies are selected a single
+  tap on another body adds it too, and a tap on a selected one takes it out
+  (tap empty space first to pick a face again). A tap beside the Move
+  arrows, on another body, adds that body; right on an arrow it chooses the
+  arrow. With two bodies selected, **Union**, **Subtract** and **Intersect**
+  appear. The same works with a pen.
 
 ---
 
