@@ -417,6 +417,19 @@ Document (UUID, display unit)
   Equal radius to the original). `solve()` / `solveDragging()` build a PlaneGCS
   system per call (DogLeg), write positions back, and report DOF plus
   conflicting/redundant constraints. A failed solve never changes the sketch.
+  `solveDragging(sketch, targets)` takes any number of `DragTarget`s, each
+  one temporary PlaneGCS constraint (solved after the real ones, as closely
+  as they allow, least squares over all pulls, never stored): `point` pulls
+  a point to a position (a line or shape moved as a whole is one per point),
+  `rim` makes a circle or arc pass through a position (its center holds
+  weakly, so a circle whose diameter is fixed moves instead; an arc keeps
+  its angles weakly, so its ends move out along their radii). The report's
+  `movable` lists the points, lines, circles and arcs owning a parameter
+  PlaneGCS's diagnosis still finds free (its dependent parameters); the rest
+  are fixed item by item. `mergePoints` (a point dropped on another: curves
+  and constraints move over, meaningless or repeated constraints go),
+  `connectedCurves` (the curves joined end to end, directly or by
+  Coincident) and `curvePoints` are in `SketchEdit`.
 - Profiles: `geom::findRegions` splits a large face on the sketch plane with
   all sketch curves via OCCT's General Fuse (`BRepAlgoAPI_Splitter`) and keeps
   the bounded pieces — this handles nesting, crossings and dangling lines
@@ -582,8 +595,35 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   shape start → zoom-dependent grid. Inferred H/V becomes a constraint only
   when shown during drawing. Typed values (width/height, diameter, length) lock
   the shape and become dimension constraints. Every completed action commits
-  one `EditSketchCommand` (full before/after snapshots). Dragging a point runs
-  the solver live. Undo that removes the sketch exits sketch mode.
+  one `EditSketchCommand` (full before/after snapshots). Undo that removes
+  the sketch exits sketch mode.
+  **Dragging in the Select tool** (mouse, pen and finger alike; `Grab` in
+  `SketchSession`): the press decides what is held — a point (it snaps to
+  other points, line midpoints, curves — never its own curves nor what moves
+  with it — then the grid, and on release it is merged into the point it
+  landed on or held there by Midpoint / On line / On circle: "Connect
+  point"); a line, an arc's center or one of several selected items
+  (`Rigid`: every point moves by the pointer's travel on the plane, in grid
+  steps); a circle's or arc's rim (`Rim`: the radius, in grid steps); a
+  press inside a closed region (`Region`: the curves bounding it, found at
+  the drag's start by classifying a hair to each side of each curve). Every
+  move re-solves from the drag's start with `solveDragging`, so constraints
+  and dimensions hold and what cannot move stays; a grab of which nothing is
+  movable (`SolveReport::movable`) is refused once with "Fully sized: change
+  or remove a dimension to move it." The release commits one step ("Move
+  line", "Resize circle", "Move shape", …) and keeps the selection; a drag
+  that moved nothing counts as a tap; a cancelled press (a second finger)
+  puts everything back. A tap inside a closed region selects the region
+  (`selectedRegion`), whose one action, Extrude, is the controller's
+  (`extrudeSketchRegion`: finishes the sketch, selects the profile under the
+  tapped point and anchors its arrow there). A double-click or double-tap on
+  a curve selects its `connectedCurves` chain. One selected line, circle or
+  arc without a dimension setting its size shows a `SketchLabel::Kind::Size`
+  label (length, Ø, R; dimmer than a dimension); `setDimension(curveId, …)`
+  adds the Distance / Diameter / Radius at the present size, refuses one
+  that other dimensions already fix, then sets the typed value (one step).
+  Lines, circles, arcs and points are drawn movable (accent) or fixed (the
+  dark "defined" color) item by item from `SolveReport::movable`.
 - **Operations with several handles:** an `Operation` may expose several
   arrows (`handleCount()`); the grabbed one becomes active and receives drags
   and typed values. `MoveOperation` uses this for X/Y/Z (axis-colored).
@@ -1113,8 +1153,13 @@ All shaders share one uniform block (`UniformData`: matrices, colour,
 per-draw parameters, eye, pixel scale, lights, grid and fade parameters);
 all draws share one dynamic uniform buffer with per-draw offsets.
 
-Sketch labels (dimensions, live inputs, inference hints, constraint glyphs)
-are QML items positioned from `SketchSession::labels()` screen coordinates.
+Sketch labels (dimensions, sizes, live inputs, inference hints, constraint
+glyphs) are QML items positioned from `SketchSession::labels()` screen
+coordinates. Dimension and size labels (`dimensionLabel_<id>`,
+`sizeLabel_<curve id>`) take a tap (at least 44 px in the touch layout) and
+open the `dimensionEditor` on them; for a size it applies through
+`setSketchDimension` with the curve's id (ids of entities and constraints
+share one counter per sketch).
 Constraint glyphs (H, V, ∥, ⊥, =, T, …; not for dimensions, and hidden while
 a shape is being drawn) sit beside their geometry, on the outer side of a
 line, and slide along it to stay clear of each other, the dimension labels

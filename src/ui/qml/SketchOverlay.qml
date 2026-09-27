@@ -450,6 +450,8 @@ Item {
     // ------------------------------------------------------------ dimension editor
     TextField {
         id: dimensionEditor
+        objectName: "dimensionEditor"
+        // A dimension's id, or a size label's line, circle or arc.
         property int constraintId: 0
         visible: false
         width: 96

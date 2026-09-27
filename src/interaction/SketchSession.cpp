@@ -2371,11 +2371,11 @@ std::string SketchSession::hintText() const
     if (constraintSelected())
         return "Delete removes the constraint \xC2\xB7 click elsewhere to keep it";
     if (selected_.size() == 1 && (working_.line(selected_.front()) || working_.isRound(selected_.front())))
-        return "Click its size to type an exact one \xC2\xB7 drag it to move or resize it \xC2\xB7 add constraints below "
+        return "Click its size or dimension to type an exact one \xC2\xB7 drag it to move or resize it \xC2\xB7 add constraints below "
                "\xC2\xB7 Delete removes";
     if (!selected_.empty())
         return "Drag one of them to move them all \xC2\xB7 add constraints below \xC2\xB7 Delete removes";
-    return "Drag lines, circles and shapes to move or resize them \xC2\xB7 click one to type its size \xC2\xB7 "
+    return "Drag lines, circles and shapes to move or resize them \xC2\xB7 click one, then its size, to type an exact one \xC2\xB7 "
            "double-click selects a whole shape \xC2\xB7 click inside a shape to extrude it \xC2\xB7 pick a tool to draw";
 }
 

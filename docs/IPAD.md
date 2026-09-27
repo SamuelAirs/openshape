@@ -318,3 +318,13 @@ margins (BUILDING.md).
    type. Swipe its row of actions sideways and tap the last one.
    Draw a rectangle with a finger, also next to the Dynamic Island in
    landscape: its width and height show above the finger, whole.
+14. **Editing a sketch by dragging** (your report of 2026-09-27). In a
+   sketch, pick **Select** at the end of the strip, then with one finger:
+   drag a rectangle's side (it moves, the rectangle grows), a circle's rim
+   (its size) and the inside of a shape (all of it moves); tap a side, tap
+   its dimmed length and type one (the rectangle resizes); double-tap a
+   side (the whole rectangle is selected) and Delete; drag the end of a
+   line onto a corner or a side (it stays joined). Blue items can still
+   move, dark ones cannot; dragging a fully sized one says so. Tap inside
+   a closed shape → **Extrude**: the sketch closes and the arrow is under
+   your finger. Try the same with the Pencil on the iPad.

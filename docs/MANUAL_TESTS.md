@@ -34,6 +34,14 @@ odd: a screenshot and a sentence is plenty. Starting the app with
    - Mirror: draw half a shape against a line, select the half, "Mirror",
      click the line. Pattern: select a hole, "Pattern", click where the next
      one goes, + for more, Apply; try "Circular" too.
+   - Editing by dragging (Select tool): drag a rectangle's side, a circle's
+     rim and its center, the inside of a shape, and one of several
+     Shift-selected items; drop a line's end on a corner, on a side and on
+     a side's middle (it stays joined: drag the corner and the line
+     follows). Click a side, then its dimmed length, type `30`, Enter.
+     Double-click a side: the whole shape; Delete. Click inside a shape →
+     "Extrude". Blue items can still move, dark ones cannot; dragging a
+     dark one says "Fully sized …". Each drag is one Undo.
 4. **Extrude options.** Click a sketch profile, then "Symmetric" and type
    `10` (5 mm each side); or "Up to face" and click the top of another body.
 5. **Axes.** Blue Z axis through the origin and the X/Y/Z marker above the
