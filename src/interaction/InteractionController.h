@@ -11,6 +11,7 @@
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
 #include "interaction/Operation.h"
+#include "interaction/PreviewWorker.h"
 #include "interaction/RenderScene.h"
 #include "interaction/SceneCache.h"
 #include "interaction/SketchSession.h"
@@ -36,6 +37,7 @@ struct HistoryRow {
         std::string key;
         std::string label;
         std::string valueText; // formatted in the display unit
+        bool operator==(const Parameter&) const = default;
     };
 
     Kind kind = Kind::Body;
@@ -52,14 +54,19 @@ struct HistoryRow {
     // "Split into bodies" (for the body `id`, or `parentId` for a step).
     bool canSplit = false;
     std::vector<Parameter> parameters;
+    // The UI rebuilds the Model panel only when a row changed (TD-18).
+    bool operator==(const HistoryRow&) const = default;
 };
 
 // Turns application-level input into navigation, selection, previews and
 // commands. Owns no UI toolkit objects; the Qt layer feeds it events and
 // reads back state. Everything here is unit-testable headlessly.
-class InteractionController {
+class InteractionController : private PreviewScheduler {
 public:
     InteractionController(doc::Document& document, cmd::UndoStack& undoStack);
+    ~InteractionController() override;
+    InteractionController(const InteractionController&) = delete;
+    InteractionController& operator=(const InteractionController&) = delete;
 
     // Replaces the document (new/open). Resets selection and operations.
     void setDocument(doc::Document& document, cmd::UndoStack& undoStack);
@@ -115,9 +122,15 @@ public:
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
     // Parses unit-aware text ("25", "1in", "20+5") and previews it. Returns an
-    // error message, or empty on success. For a measured value (a push/pull
-    // showing the thickness) a leading + or - changes it by that much.
+    // error message, or empty on success (or while the preview computes on the
+    // worker: its error then comes with a state change, operation()->error()).
+    // For a measured value (a push/pull showing the thickness) a leading + or
+    // - changes it by that much.
     std::string setValueText(const std::string& text);
+    // setValueText, then waits for the value's verdict when its preview is
+    // still computing: for a key that moves on only with a usable value (Tab
+    // to the next field). Keystrokes use setValueText and never wait.
+    std::string confirmValueText(const std::string& text);
     std::string operationValueText() const;
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
@@ -230,6 +243,28 @@ public:
     // pickAt, narrowed to what the active tool is waiting for (e.g. faces only).
     sel::PickResult operationPickAt(Vec2 screen, const InputProfile& profile) const;
 
+    // ---- Previews off the GUI thread (TD-1) ----
+    // From now on operations compute their previews on a worker thread (the
+    // caller's thread becomes the interactive one: geom::setInteractiveThread).
+    // `notify` is called on the worker whenever a result is ready; the UI then
+    // calls deliverPreviews() on this thread (a queued call). Off by default:
+    // headless tests compute previews synchronously.
+    void enableAsyncPreviews(std::function<void()> notify);
+    // Back to synchronous previews (waits for a running one).
+    void disableAsyncPreviews();
+    bool asyncPreviews() const { return previewWorker_ != nullptr; }
+    // Shows finished previews (or drops stale ones). True if one was shown.
+    bool deliverPreviews();
+    // A preview is being computed, or waits to be delivered.
+    bool previewBusy() const;
+    // Blocks until every requested preview is computed and delivered (tests,
+    // commit when an automatic choice depends on it). False on timeout.
+    bool waitForPreview(std::chrono::milliseconds timeout = std::chrono::seconds(60));
+    PreviewWorker* previewWorker() { return previewWorker_.get(); }
+    // Previews shown and dropped as stale so far.
+    std::uint64_t previewsShown() const { return previewsShown_; }
+    std::uint64_t previewsDropped() const { return previewsDropped_; }
+
     // ---- Notifications ----
     std::function<void()> onViewChanged;                 // needs redraw
     std::function<void()> onStateChanged;                // selection/operation/undo state changed
@@ -241,7 +276,35 @@ public:
 private:
     enum class DragMode { None, Pending, Orbit, Pan, Manipulator, Sketch };
 
+    // PreviewScheduler (operations call these).
+    std::shared_ptr<const doc::Document> previewSnapshot(const doc::Document& document) override;
+    void schedulePreview(std::function<PreviewOutcome()> compute) override;
+    void dropScheduledPreview() override;
+    void receivePreview(const PreviewOutcome& outcome);
+
+    // Kernel queries about the selection, cached until the selection or its
+    // bodies change: the UI reads the summary and the actions after every
+    // state change (each drag step), when the GUI thread must not wait for
+    // the kernel (the worker holds it while it computes a preview).
+    struct SelectionMemo {
+        std::string key;
+        std::optional<std::string> summary;
+        std::optional<bool> planarFace;
+        std::optional<bool> holeRim;
+    };
+    SelectionMemo& selectionMemo() const;
+    std::string computeSelectionSummary() const;
+
     void click(const PointerEvent& event);
+    // A click elsewhere (or on a Model panel row) applies the operation first.
+    // Applied; Refused: the operation stays (its message says why), the click
+    // stops; Dropped: nothing to apply, or the command refused a value whose
+    // preview had not come back yet - the click goes on to select.
+    enum class ApplyResult { Applied, Refused, Dropped };
+    ApplyResult applyBeforeSelecting();
+    // The same before an action that replaces the operation (Import,
+    // Duplicate, Split, a Model panel row): fails only when Refused.
+    Status applyPendingValue(const char* action);
     sel::PickResult pickProfile(Vec2 screen) const;
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);
@@ -335,6 +398,16 @@ private:
         double durationSeconds = 0.3;
     };
     std::optional<Animation> animation_;
+
+    mutable SelectionMemo selectionMemo_;
+    std::shared_ptr<const doc::Document> snapshot_; // the last preview snapshot, reused while nothing changed
+    const doc::Document* snapshotOf_ = nullptr;
+    std::uint64_t snapshotRevision_ = 0;
+    std::uint64_t snapshotUndoRevision_ = 0;
+    std::uint64_t previewsShown_ = 0;
+    std::uint64_t previewsDropped_ = 0;
+    // Last member: destroyed first, so no job outlives what it reports to.
+    std::unique_ptr<PreviewWorker> previewWorker_;
 };
 
 } // namespace os::interact

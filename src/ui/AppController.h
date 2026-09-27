@@ -43,7 +43,9 @@ class AppController : public QObject {
     Q_PROPERTY(QString redoText READ redoText NOTIFY stateChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY stateChanged)
     Q_PROPERTY(QString selectionSummary READ selectionSummary NOTIFY stateChanged)
-    Q_PROPERTY(QVariantList contextActions READ contextActions NOTIFY stateChanged)
+    // The Model panel rows and the action buttons: their own signals, emitted
+    // only when their content changes (TD-18: a drag step used to rebuild both).
+    Q_PROPERTY(QVariantList contextActions READ contextActions NOTIFY contextActionsChanged)
     Q_PROPERTY(bool operationActive READ operationActive NOTIFY stateChanged)
     Q_PROPERTY(QString operationTitle READ operationTitle NOTIFY stateChanged)
     Q_PROPERTY(QString operationValueLabel READ operationValueLabel NOTIFY stateChanged)
@@ -77,7 +79,7 @@ class AppController : public QObject {
     Q_PROPERTY(QVariantList sketchLabels READ sketchLabels NOTIFY viewChanged)
     Q_PROPERTY(bool canStartSketch READ canStartSketch NOTIFY stateChanged)
     Q_PROPERTY(int sketchCount READ sketchCount NOTIFY stateChanged)
-    Q_PROPERTY(QVariantList history READ history NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList history READ history NOTIFY historyChanged)
     // Recovery copies left by a crashed run, offered for restoring
     // ({session, title, detail, time}); empty once each is restored or discarded.
     Q_PROPERTY(QVariantList recoveryItems READ recoveryItems NOTIFY recoveryChanged)
@@ -117,7 +119,7 @@ public:
     QString redoText() const;
     bool hasSelection() const;
     QString selectionSummary() const;
-    QVariantList contextActions() const;
+    QVariantList contextActions() const { return contextActionsList_; }
     bool operationActive() const;
     QString operationTitle() const;
     QString operationValueLabel() const;
@@ -150,7 +152,7 @@ public:
     QVariantList sketchLabels() const;
     bool canStartSketch() const;
     int sketchCount() const { return int(document_->sketches().size()); }
-    QVariantList history() const;
+    QVariantList history() const { return historyList_; }
     QVariantList recoveryItems() const;
     QVariantList recentFiles() const { return recentFiles_; }
     bool homeVisible() const { return homeVisible_; }
@@ -195,6 +197,17 @@ public:
     void endRecovery();
     // This run's copy ("" when there is none).
     QString recoveryCopyFile() const;
+
+    // ---- GUI-thread time per pointer move (the viewport reports each) ----
+    // A slow move is logged at debug level ("gui: pointer move took N ms");
+    // each drag ends with one line for its longest move. The watch_log
+    // script reports both.
+    void notePointerMove(double milliseconds, bool dragging);
+    void notePointerRelease();
+    // The last finished drag: its longest pointer move (ms) and its moves.
+    double lastDragLongestMs() const { return lastDragLongestMs_; }
+    double lastDragAverageMs() const { return lastDragAverageMs_; }
+    int lastDragMoves() const { return lastDragMoves_; }
 
     Q_INVOKABLE bool openRecent(const QString& path);
     Q_INVOKABLE void clearRecentFiles();
@@ -252,10 +265,16 @@ public:
     // on-screen ✓ / ✕; no Shift-click, Esc, Enter, scrolling or hovering).
     // Only for the app's own hints: a name in the text would be reworded too.
     Q_INVOKABLE QString touchWording(const QString& text) const;
-    Q_INVOKABLE void commitOperation();
+    // False when the operation was not applied (the reason is shown).
+    Q_INVOKABLE bool commitOperation();
     Q_INVOKABLE void cancelOperation();
-    // Returns an error message ("" on success). Previews live as the user types.
+    // Returns an error message ("" on success, or while the value's preview
+    // still computes: its verdict comes with a state change). Previews live
+    // as the user types.
     Q_INVOKABLE QString setValueText(const QString& text);
+    // The same, waiting for the verdict of a preview still computing: Tab to
+    // the next field moves on only with a usable value.
+    Q_INVOKABLE QString confirmValueText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
     Q_INVOKABLE void setView(const QString& name);
     Q_INVOKABLE void fitAll();
@@ -302,6 +321,8 @@ public:
 
 signals:
     void stateChanged();
+    void contextActionsChanged();
+    void historyChanged();
     void viewChanged();
     void documentChanged();
     void message(const QString& text);
@@ -314,6 +335,9 @@ signals:
 
 private:
     void attach();
+    // After every state change: rebuilds the Model panel rows and the action
+    // list from the interaction core, and emits their signals if they changed.
+    void refreshLists();
     void notifyMessage(const QString& text);
     // The document was replaced (New, Open, restore): no unsaved edits to copy yet.
     void documentReplaced();
@@ -349,6 +373,16 @@ private:
     bool recoveryWarned_ = false;
     bool recoveryEnded_ = false;
     QVariantList recentFiles_;
+    std::vector<interact::HistoryRow> historyRows_;
+    QVariantList historyList_;
+    std::vector<interact::ContextAction> contextActions_;
+    QVariantList contextActionsList_;
+    int dragMoves_ = 0;
+    double dragLongestMs_ = 0;
+    double dragTotalMs_ = 0;
+    int lastDragMoves_ = 0;
+    double lastDragLongestMs_ = 0;
+    double lastDragAverageMs_ = 0;
     QVariantList homeProjects_;
     bool homeVisible_ = false;
     QUrl nextFileChoice_;

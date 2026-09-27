@@ -105,6 +105,9 @@ public:
 
 private:
     struct AbortScenario {};
+    // Logical window position -> the native (device) pixels Qt's platform input takes.
+    QPointF nativeLocal(QPointF p) const;
+    QPointF nativeGlobal(QPointF p) const;
     void runNext();
     void beginScenario(const QString& name, bool reset);
     void endScenario();
@@ -124,7 +127,8 @@ private:
     int scenarioChecks_ = 0;
     int scenarioFailures_ = 0;
     QStringList summary_;
-    int waitedMs_ = 0; // for a camera animation to end before the next step
+    int animationWaitMs_ = 0; // for a camera animation to end before the next step
+    int previewWaitMs_ = 0;   // for previews (computed on the worker) to be shown
     QSize initialSize_;
     QSize initialMinimum_;
     bool startedInPerspective_ = false;
@@ -148,8 +152,11 @@ private:
 //   const bool registered = registerAcceptanceScenario({"name", 100, steps});
 //   } }
 //
-// Steps run 160 ms apart; add empty steps ([] {}) to let animations finish.
-// Keep per-scenario state in a std::shared_ptr captured by the steps.
+// Steps run 160 ms apart, and each waits until camera animations end and
+// previews (computed on a worker thread) are shown: a step sees the preview
+// or the error of a value the step before it typed or dragged. Add empty
+// steps ([] {}) for other things to settle. Keep per-scenario state in a
+// std::shared_ptr captured by the steps.
 struct AcceptanceScenario {
     QString name;
     int order = 100; // "core" is 0

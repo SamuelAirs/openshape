@@ -8,6 +8,7 @@
 #include "geometry/Shape.h"
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 // Drilled holes (plain, counterbored, countersunk) and the queries they need.
@@ -62,11 +63,21 @@ struct FaceOutline {
     double minU = 0, minV = 0, maxU = 0, maxV = 0;
     std::vector<Vec3> edgeMidpoints; // straight edges
     std::vector<Vec3> circleCenters; // circular edges (holes, round outlines)
+    // Every boundary edge as segments in (u, v): straight edges exactly,
+    // curves as chords within `boundaryDeflection` of them.
+    std::vector<std::pair<Vec2, Vec2>> boundary;
+    double boundaryDeflection = 0;
 };
 FaceOutline faceOutline(const Shape& shape, int faceIndex, const Vec3& origin, const Vec3& xAxis, const Vec3& yAxis);
 // Whether `point` (on the face's plane) lies on the face (inside or on its
 // boundary, not in one of its holes).
 bool faceContains(const Shape& shape, int faceIndex, const Vec3& point);
+// The same test on the outline's boundary segments, for (u, v) in its frame:
+// no kernel call, so it never waits for another thread's (the Hole tool's
+// hover snapping while a preview computes). Points within `tolerance` of the
+// boundary count as on the face. It differs from faceContains only within
+// the boundary deflection of a curved edge.
+bool outlineContains(const FaceOutline& outline, Vec2 point, double tolerance);
 
 // Cuts all holes in one boolean. Fails with a plain message for impossible
 // sizes (a head narrower than its hole, a countersink deeper than a blind

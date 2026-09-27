@@ -39,9 +39,9 @@ the copy that matches a release is in that release's source, under its tag
    [Releases page](https://github.com/SamuelAirs/openshape/releases). There
    is also a `.zip`: extract it anywhere and run `OpenShape.exe` inside, no
    installation needed.
-2. Run the installer. The installer is not code-signed yet, so Windows
-   SmartScreen may say "Windows protected your PC": click **More info**,
-   then **Run anyway**.
+2. Run the installer. Each release's notes say whether it is code-signed;
+   if it is not, Windows SmartScreen may say "Windows protected your PC":
+   click **More info**, then **Run anyway**.
 3. It installs for your user only, without administrator rights, into
    `%LOCALAPPDATA%\Programs\OpenShape`, adds OpenShape to the Start menu
    (and, if you tick the box on the last page, to the desktop) and opens
@@ -295,9 +295,14 @@ face flat on the ground (the build plate). `Enter` applies.
   or shaft; the value is the total angle, and 360° spaces the copies
   evenly). **+ copy** and **− copy** change how many (the number after ×
   counts the original too).
-- **Separate bodies** (both tools) makes each copy its own body instead of
-  joining them, and the copies follow the original when you change it
-  later.
+- Copies that touch or overlap the original join it (a half part mirrored
+  across its own face becomes one symmetric body). Copies that touch
+  neither the original nor each other become **separate bodies**, each
+  independent: changing or moving the original later changes no copy, and
+  the other way round. The **Separate bodies** button shows which it will
+  be; click it to switch. (Each copy of an imported STEP body stores its
+  geometry again, and a project holds at most 512 MB of it: copies that
+  would not fit stay joined, and Separate bodies says why.)
 
 ### Duplicate and split
 
@@ -305,8 +310,8 @@ face flat on the ground (the build plate). `Enter` applies.
   independent copy in place and selects it with the Move arrows, ready to
   drag away.
 - A body cut into separate pieces is marked in the Model panel; **Split
-  into bodies** makes each piece its own body. The pieces still follow the
-  history of the body they came from.
+  into bodies** makes each piece its own, independent body (with a copy of
+  the history it came from).
 
 ### Union, subtract, intersect
 
@@ -321,9 +326,10 @@ undo.
 ### Deleting and hiding
 
 Select a body and press `Delete` (or **Delete**). A body that other bodies
-are built from (split pieces, separate copies) is hidden instead. **Hide**
-and **Show** are in the body's Model-panel row. Hidden bodies are not
-exported.
+are built from (a subtracted tool body you showed again, or split pieces
+and separate copies in projects saved by OpenShape 0.1) is hidden instead.
+**Hide** and **Show** are in the body's Model-panel row. Hidden bodies are
+not exported.
 
 ---
 
@@ -631,8 +637,11 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
 
 ## Troubleshooting and bug reports
 
-- **"Windows protected your PC" when installing:** the installer is not
-  code-signed yet. Click **More info**, then **Run anyway**.
+- **"Windows protected your PC" when installing:** Windows SmartScreen
+  warns about programs it does not know yet: releases that are not
+  code-signed (the release notes say whether a release is) and, now and
+  then, a new signed one (the warning then names SignPath Foundation as the
+  publisher). Click **More info**, then **Run anyway**.
 - **The installer says OpenShape is running:** close OpenShape, then click
   **Retry**.
 - **A tool does nothing:** read the hint line (bottom left) and the red text

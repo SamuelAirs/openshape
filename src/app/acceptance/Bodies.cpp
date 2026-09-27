@@ -3,9 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // Bodies and copies: Duplicate (value chip, Ctrl+D, Model panel row), Split
-// into bodies (value chip, Model panel), Mirror / Pattern as separate bodies,
-// Delete on a body others are built from (hides it), Rotate about a picked
-// edge, corner, hole or circle.
+// into bodies (value chip, Model panel; the pieces are independent), Delete
+// of a body another is built from (a consumed tool shown again: hidden
+// instead, key and Model panel), Mirror / Pattern as separate bodies (chosen,
+// or automatic when the copies would not touch; more in
+// acceptance/Copies.cpp), Delete of a body its copies came from, Rotate about
+// a picked edge, corner, hole or circle.
 
 #include "app/AcceptanceRunner.h"
 #include "commands/DocumentCommands.h"
@@ -19,6 +22,7 @@
 #include <QtQuick/QQuickWindow>
 
 #include <cmath>
+#include <memory>
 #include <optional>
 
 namespace os::app {
@@ -29,9 +33,19 @@ QString idOf(const doc::Body& body)
     return QString::fromStdString(body.id().toString());
 }
 
+bool shown(AcceptanceRunner& r, const QString& objectName)
+{
+    const QQuickItem* item = r.findItem(objectName);
+    return item && item->isVisible();
+}
+
 std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
 {
     auto num = [](double v) { return AcceptanceRunner::num(v); };
+    // What the app told the user.
+    auto messages = std::make_shared<QStringList>();
+    QObject::connect(&r.app(), &ui::AppController::message, &r, [messages](const QString& text) { messages->push_back(text); });
+    auto told = [messages](const QString& text) { return messages->join(QStringLiteral(" | ")).contains(text); };
     auto selectedBody = [&r]() -> std::optional<Uuid> {
         const auto& sel = r.app().interaction().selection();
         if (sel.size() != 1 || sel.items()[0].kind != sel::SelectionKind::Body)
@@ -137,14 +151,17 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         },
         [&r, num] {
             r.check(r.clickItem(QStringLiteral("action_split")), "Split into bodies button");
-            r.check(r.app().bodyCount() == 3, "one more body (plate, hidden slot, piece)", QString::number(r.app().bodyCount()));
-            if (r.app().bodyCount() != 3)
+            // The plate, its hidden slot, the piece's own hidden copy of the slot, the piece.
+            r.check(r.app().bodyCount() == 4, "one more body (and its hidden copy of the slot)",
+                    QString::number(r.app().bodyCount()));
+            if (r.app().bodyCount() != 4)
                 return;
             r.check(std::abs(geom::volume(r.body(0).shape()) - 2800.0) < 1e-6 && r.body(0).shape().solidCount() == 1,
                     "the plate keeps one 28 mm piece", num(geom::volume(r.body(0).shape())));
-            r.check(std::abs(geom::volume(r.body(2).shape()) - 2800.0) < 1e-6
-                        && std::abs(geom::boundingBox(r.body(2).shape()).min.x - 2.0) < 1e-6,
-                    "the other piece is a body of its own", num(geom::volume(r.body(2).shape())));
+            r.check(!r.body(2).isVisible(), "the piece's copy of the slot is hidden");
+            r.check(std::abs(geom::volume(r.body(3).shape()) - 2800.0) < 1e-6
+                        && std::abs(geom::boundingBox(r.body(3).shape()).min.x - 2.0) < 1e-6,
+                    "the other piece is a body of its own", num(geom::volume(r.body(3).shape())));
             r.screenshot(QStringLiteral("bodies_02_split"));
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 2 && r.body(0).shape().solidCount() == 2, "undo: one body in two pieces again");
@@ -154,7 +171,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         [&r] {
             r.check(r.clickItem(QStringLiteral("historySplit_") + idOf(r.body(0))),
                     "Split into bodies right under the body's warning in the Model panel");
-            r.check(r.app().bodyCount() == 3, "it splits too", QString::number(r.app().bodyCount()));
+            r.check(r.app().bodyCount() == 4, "it splits too", QString::number(r.app().bodyCount()));
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 2, "undo: in two pieces again");
         },
@@ -166,40 +183,10 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         [&r] {
             const QString step = QString::fromStdString(r.body(0).features().back()->id().toString());
             r.check(r.clickItem(QStringLiteral("historySplit_") + step), "Split into bodies on the step that left the pieces");
-            r.check(r.app().bodyCount() == 3, "that splits it as well", QString::number(r.app().bodyCount()));
-        },
-        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "the split plate selected in the Model panel"); },
-        [&r, num] {
-            // The piece is built from the plate: Delete hides the plate instead.
-            r.key(Qt::Key_Delete);
-            r.check(r.app().bodyCount() == 3, "Delete keeps the plate the piece is built from", QString::number(r.app().bodyCount()));
-            if (r.app().bodyCount() != 3)
-                return;
-            r.check(!r.body(0).isVisible(), "it is hidden instead");
-            const double piece = geom::volume(r.body(2).shape());
-            r.check(std::abs(piece - 2800.0) < 1e-6 && !r.body(2).hasFailures(), "the piece stays as it was", num(piece));
-            r.screenshot(QStringLiteral("bodies_03a_parent_hidden"));
-            r.key(Qt::Key_Z, Qt::ControlModifier);
-            r.check(r.body(0).isVisible(), "undo shows the plate again");
-        },
-        [&r, num] {
-            // The same from the Model panel (the plate's row is still expanded).
-            r.check(r.clickItem(QStringLiteral("historyDelete_") + idOf(r.body(0))), "Delete in the plate's Model panel row");
-            r.check(r.app().bodyCount() == 3 && !r.body(0).isVisible(), "the row's Delete hides it too");
-            if (r.app().bodyCount() == 3)
-                r.check(std::abs(geom::volume(r.body(2).shape()) - 2800.0) < 1e-6 && !r.body(2).hasFailures(),
-                        "and the piece stays", num(geom::volume(r.body(2).shape())));
-        },
-        [] {},
-        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "the hidden plate's row"); },
-        [&r] {
-            const QQuickItem* button = r.findItem(QStringLiteral("historyDelete_") + idOf(r.body(0)));
-            r.check(!button || !button->isVisible(), "a hidden plate the piece is built from offers no Delete");
-            r.key(Qt::Key_Z, Qt::ControlModifier);
-            r.check(r.body(0).isVisible(), "undo shows the plate again");
+            r.check(r.app().bodyCount() == 4, "that splits it as well", QString::number(r.app().bodyCount()));
         },
         [&r] {
-            // An upstream edit through the Model panel: both pieces follow.
+            // An edit through the Model panel: the piece is independent now.
             const QString box = QString::fromStdString(r.body(0).features().front()->id().toString());
             r.check(r.clickItem(QStringLiteral("historyRow_") + box), "the plate's Box step in the Model panel");
         },
@@ -211,16 +198,91 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         },
         [] {},
         [&r, num] {
-            if (r.app().bodyCount() != 3) {
-                r.check(false, "three bodies after the split", QString::number(r.app().bodyCount()));
+            if (r.app().bodyCount() != 4) {
+                r.check(false, "four bodies after the split", QString::number(r.app().bodyCount()));
                 return;
             }
             const double plate = geom::volume(r.body(0).shape());
-            const double piece = geom::volume(r.body(2).shape());
-            r.check(std::abs(plate - 4480.0) < 1e-6 && std::abs(piece - 4480.0) < 1e-6,
-                    "an 8 mm plate: both pieces follow", num(plate) + QStringLiteral(" / ") + num(piece));
-            r.check(!r.body(2).hasFailures(), "the piece has no failed step");
-            r.screenshot(QStringLiteral("bodies_03_split_follows"));
+            const double piece = geom::volume(r.body(3).shape());
+            r.check(std::abs(plate - 4480.0) < 1e-6 && std::abs(piece - 2800.0) < 1e-6,
+                    "an 8 mm plate: the piece keeps its own 5 mm", num(plate) + QStringLiteral(" / ") + num(piece));
+            r.check(!r.body(3).hasFailures(), "the piece has no failed step");
+            r.screenshot(QStringLiteral("bodies_03_split_independent"));
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "the split plate selected in the Model panel"); },
+        [&r, num] {
+            // Nothing is built from the plate: Delete deletes it; the piece stays.
+            const Uuid piece = r.body(3).id();
+            r.key(Qt::Key_Delete);
+            r.check(r.app().bodyCount() == 3, "Delete deletes the plate", QString::number(r.app().bodyCount()));
+            const doc::Body* kept = r.app().document().body(piece);
+            r.check(kept && std::abs(geom::volume(kept->shape()) - 2800.0) < 1e-6 && !kept->hasFailures(),
+                    "the piece stays as it was", kept ? num(geom::volume(kept->shape())) : QStringLiteral("gone"));
+            r.screenshot(QStringLiteral("bodies_03a_parent_deleted"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.app().bodyCount() == 4 && r.body(0).isVisible(), "undo brings the plate back");
+        },
+
+        // ---- Delete of a body another is built from: hidden instead -----------------
+        // The slot the plate consumed (body 1), shown again from the Model
+        // panel: the plate is built from it, so Delete hides it again and
+        // says why (as for the linked copies and pieces of older files).
+        [&r] {
+            r.key(Qt::Key_Escape);
+            r.key(Qt::Key_Escape);
+            r.check(r.app().bodyCount() == 4 && r.body(1).name() == "Slot" && !r.body(1).isVisible(),
+                    "the slot the plate consumed is hidden");
+        },
+        [] {}, [] {}, [] {},
+        [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1))), "the hidden slot's Model panel row"); },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("historyVisibility_") + idOf(r.body(1))), "Show in the slot's row");
+            r.check(r.body(1).isVisible(), "the slot is shown again");
+        },
+        [] {}, [] {}, [] {},
+        [&r, selectedBody] {
+            if (selectedBody() != r.body(1).id())
+                r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1)));
+            r.check(selectedBody() == r.body(1).id(), "the shown slot selected in the Model panel");
+        },
+        [&r, num, messages, told] {
+            const double plate = geom::volume(r.body(0).shape());
+            messages->clear();
+            r.key(Qt::Key_Delete);
+            r.check(r.app().bodyCount() == 4, "Delete keeps the slot the plate is built from", QString::number(r.app().bodyCount()));
+            r.check(!r.body(1).isVisible(), "it is hidden instead");
+            r.check(told(QStringLiteral("Slot is hidden, not deleted: Body 1 is built from it.")), "the message says why",
+                    messages->join(QStringLiteral(" | ")));
+            r.check(std::abs(geom::volume(r.body(0).shape()) - plate) < 1e-6 && !r.body(0).hasFailures(), "the plate is unchanged",
+                    num(geom::volume(r.body(0).shape())));
+            r.screenshot(QStringLiteral("bodies_03b_tool_hidden"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.body(1).isVisible(), "undo shows the slot again");
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            // The row's actions show while it is expanded.
+            if (!shown(r, QStringLiteral("historyDelete_") + idOf(r.body(1))))
+                r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1)));
+        },
+        [&r, messages, told] {
+            messages->clear();
+            r.check(r.clickItem(QStringLiteral("historyDelete_") + idOf(r.body(1))), "Delete in the shown slot's Model panel row");
+            r.check(r.app().bodyCount() == 4 && !r.body(1).isVisible(), "the row's Delete hides it too");
+            r.check(told(QStringLiteral("Slot is hidden, not deleted: Body 1 is built from it.")), "and says why",
+                    messages->join(QStringLiteral(" | ")));
+        },
+        [] {}, [] {}, [] {},
+        [&r] {
+            if (!shown(r, QStringLiteral("historyVisibility_") + idOf(r.body(1))))
+                r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(1)));
+        },
+        [&r] {
+            r.check(shown(r, QStringLiteral("historyVisibility_") + idOf(r.body(1))), "the hidden slot's row is open (it offers Show)");
+            r.check(!shown(r, QStringLiteral("historyDelete_") + idOf(r.body(1))),
+                    "a hidden body the plate is built from offers no Delete");
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+            r.check(r.body(1).isVisible(), "undo shows it again");
         },
 
         // ---- Mirror / Pattern as separate bodies -----------------------------------
@@ -233,15 +295,17 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         },
         [] {}, [] {}, [] {},
         [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "copies: the box selected in the Model panel"); },
-        [&r] {
-            r.check(r.clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
-            r.check(r.clickItem(QStringLiteral("barAction_separate")), "Separate bodies option of Mirror");
-            const auto* mirror = dynamic_cast<const interact::MirrorOperation*>(r.app().interaction().operation());
-            r.check(mirror && mirror->separate(), "Mirror makes a separate body");
-        },
+        [&r] { r.check(r.clickItem(QStringLiteral("tool_mirror")), "Mirror tool button"); },
         [&r] {
             r.click(r.screenPoint(10, 0, 10)); // the box's +X face
-            r.check(r.app().operationCanCommit(), "clicking the +X face sets the mirror plane");
+            const auto* mirror = dynamic_cast<const interact::MirrorOperation*>(r.app().interaction().operation());
+            r.check(r.app().operationCanCommit() && mirror && !mirror->separate(),
+                    "across its own +X face the image would join it");
+        },
+        [&r] {
+            r.check(r.clickItem(QStringLiteral("barAction_separate")), "Separate bodies option of Mirror");
+            const auto* mirror = dynamic_cast<const interact::MirrorOperation*>(r.app().interaction().operation());
+            r.check(mirror && mirror->separate() && r.app().operationCanCommit(), "Mirror makes a separate body");
         },
         [&r, num] {
             r.check(r.clickItem(QStringLiteral("barAction_apply")), "Apply the mirror");
@@ -254,15 +318,19 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     "beside the box, across its face", num(bb.min.x) + QStringLiteral("..") + num(bb.max.x));
             r.check(r.body(0).features().size() == 1 && std::abs(geom::volume(r.body(0).shape()) - 8000.0) < 1e-6,
                     "the original keeps its history and volume");
+            r.check(r.body(1).features().size() == 2, "the image has the box's history plus its Mirror step");
             r.screenshot(QStringLiteral("bodies_04_mirror_separate"));
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 1, "undo removes the image");
         },
+        [&r] { r.check(r.clickItem(QStringLiteral("tool_pattern")), "Pattern tool button"); },
+        // The automatic choice comes with the preview (computed on the worker;
+        // the runner waits for it between steps).
         [&r] {
-            r.check(r.clickItem(QStringLiteral("tool_pattern")), "Pattern tool button");
-            r.check(r.clickItem(QStringLiteral("action_separate")), "Separate bodies option of Pattern");
             const auto* pattern = dynamic_cast<const interact::PatternOperation*>(r.app().interaction().operation());
-            r.check(pattern && pattern->separate() && pattern->canCommit(), "the pattern previews separate copies");
+            r.check(pattern && pattern->separate() && pattern->separateIsAutomatic() && pattern->canCommit(),
+                    "5 mm apart, the copies are separate bodies without asking");
+            r.check(r.findItem(QStringLiteral("action_separate")) != nullptr, "the Separate bodies option shows it");
             r.key(Qt::Key_Return);
         },
         [&r, num] {
@@ -271,23 +339,24 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                 return;
             const double x1 = geom::boundingBox(r.body(1).shape()).min.x;
             const double x2 = geom::boundingBox(r.body(2).shape()).min.x;
-            r.check(std::abs(x1 - 15.0) < 1e-6 && std::abs(x2 - 40.0) < 1e-6, "25 mm apart along X", num(x1) + QStringLiteral(", ") + num(x2));
+            r.check(std::abs(x1 - 15.0) < 1e-6 && std::abs(x2 - 40.0) < 1e-6, "25 mm apart along X",
+                    num(x1) + QStringLiteral(", ") + num(x2));
             r.screenshot(QStringLiteral("bodies_05_pattern_separate"));
         },
         [&r] { r.check(r.clickItem(QStringLiteral("historyRow_") + idOf(r.body(0))), "the patterned box selected in the Model panel"); },
         [&r, num] {
-            // The copies are built from the box: Delete hides it instead.
+            // The copies are independent: Delete deletes the box, they stay.
             r.key(Qt::Key_Delete);
-            r.check(r.app().bodyCount() == 3, "Delete keeps the box the copies are built from", QString::number(r.app().bodyCount()));
-            if (r.app().bodyCount() != 3)
+            r.check(r.app().bodyCount() == 2, "Delete deletes the box", QString::number(r.app().bodyCount()));
+            if (r.app().bodyCount() != 2)
                 return;
-            r.check(!r.body(0).isVisible(), "it is hidden instead");
-            const double v1 = geom::volume(r.body(1).shape());
-            const double v2 = geom::volume(r.body(2).shape());
-            r.check(std::abs(v1 - 8000.0) < 1e-6 && std::abs(v2 - 8000.0) < 1e-6 && !r.body(1).hasFailures() && !r.body(2).hasFailures(),
+            const double v1 = geom::volume(r.body(0).shape());
+            const double v2 = geom::volume(r.body(1).shape());
+            r.check(std::abs(v1 - 8000.0) < 1e-6 && std::abs(v2 - 8000.0) < 1e-6 && !r.body(0).hasFailures()
+                        && !r.body(1).hasFailures(),
                     "both copies stay", num(v1) + QStringLiteral(", ") + num(v2));
             r.key(Qt::Key_Z, Qt::ControlModifier);
-            r.check(r.body(0).isVisible(), "undo shows the box again");
+            r.check(r.app().bodyCount() == 3, "undo brings the box back");
             r.key(Qt::Key_Z, Qt::ControlModifier);
             r.check(r.app().bodyCount() == 1, "undo removes the copies");
         },

@@ -15,7 +15,13 @@ then run this in the background while the owner designs:
 
 Tails the log and pings the window's GUI thread. Prints one compact line per
 actionable event, aggregated per 1.5 s window:
-  SLOW    kernel/tessellation/recompute scopes over the threshold
+  GUI     the GUI thread blocked: a pointer move (with the QML updates it
+          causes), the longest move of each drag, a wait for the kernel while
+          the preview worker held it ("gui:" timings)
+  SLOW    kernel/tessellation/recompute scopes on the GUI thread (commits,
+          undo, meshing a changed body) over the threshold
+  WORKER  the same on the preview worker thread ("[worker]" timings): slow
+          previews, but the window stays responsive
   WARN/ERROR lines, Qt/QML diagnostics, failed features
   TOAST   messages shown to the user
   PREVIEW-FAIL  a live preview the kernel rejected
@@ -44,7 +50,9 @@ except Exception:
     pass
 
 lock = threading.Lock()
-slow = collections.defaultdict(lambda: [0, 0.0])  # label -> [count, max ms]
+slow = collections.defaultdict(lambda: [0, 0.0])  # label -> [count, max ms] (GUI thread)
+gui = collections.defaultdict(lambda: [0, 0.0])   # "gui:" blocks of the GUI thread
+worker = collections.defaultdict(lambda: [0, 0.0])  # "[worker]" scopes (preview worker)
 lines = collections.OrderedDict()                 # text -> count
 stalls = []
 last_cmd = ["(none)"]
@@ -134,9 +142,11 @@ def handle(line):
     if m:
         ms = float(m.group(2))
         csv.write(f"{time.time():.3f},perf,{m.group(1)},{ms}\n")
+        label = m.group(1)
         if ms >= SLOW_MS:
             with lock:
-                entry = slow[m.group(1)]
+                table = gui if label.startswith("gui:") else worker if label.startswith("[worker]") else slow
+                entry = table[label]
                 entry[0] += 1
                 entry[1] = max(entry[1], ms)
         return
@@ -161,11 +171,12 @@ def flusher():
         with lock:
             out = []
             ctx = f" [last: {last_cmd[0]}]"
-            if slow:
-                parts = [f"{label} {mx:.0f}ms" + (f" x{n}" if n > 1 else "") for label, (n, mx) in
-                         sorted(slow.items(), key=lambda kv: -kv[1][1])]
-                out.append("SLOW " + ", ".join(parts) + ctx)
-                slow.clear()
+            for name, table in (("GUI", gui), ("SLOW", slow), ("WORKER", worker)):
+                if table:
+                    parts = [f"{label} {mx:.0f}ms" + (f" x{n}" if n > 1 else "") for label, (n, mx) in
+                             sorted(table.items(), key=lambda kv: -kv[1][1])]
+                    out.append(name + " " + ", ".join(parts) + ctx)
+                    table.clear()
             if stalls:
                 out.append(f"STALL GUI thread blocked: {len(stalls)} sample(s), worst {max(stalls):.0f} ms" + ctx)
                 stalls.clear()

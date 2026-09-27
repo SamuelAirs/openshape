@@ -51,6 +51,8 @@ std::filesystem::path withExtension(std::filesystem::path path, const char* exte
     return path;
 }
 
+QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows);
+
 } // namespace
 
 AppController::AppController(QObject* parent)
@@ -70,7 +72,9 @@ AppController::AppController(QObject* parent)
     recoveryDeadline_.setSingleShot(true);
     connect(&recoveryDebounce_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
     connect(&recoveryDeadline_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
-    // Every path that changes the document ends in stateChanged.
+    // Every path that changes the document ends in stateChanged. The lists
+    // are refreshed first (connected before QML), then QML re-reads.
+    connect(this, &AppController::stateChanged, this, &AppController::refreshLists);
     connect(this, &AppController::stateChanged, this, &AppController::noteEdits);
     // Leaving the app (another window, the iPad home screen, which may end the
     // app without warning): copy unsaved work now rather than in a few seconds.
@@ -86,6 +90,14 @@ AppController::AppController(QObject* parent)
 
     updateRecentFiles();
     attach();
+    refreshLists();
+    // Previews compute on a worker thread (TD-1); a finished one comes back
+    // as a queued call on this (the GUI) thread. OPENSHAPE_SYNC_PREVIEWS=1
+    // computes them on the GUI thread as before (to compare).
+    if (qEnvironmentVariableIntValue("OPENSHAPE_SYNC_PREVIEWS") == 0)
+        interaction_->enableAsyncPreviews([this] {
+            QMetaObject::invokeMethod(this, [this] { interaction_->deliverPreviews(); }, Qt::QueuedConnection);
+        });
     // Tablets and phones start in the touch layout. The flag lives in the
     // interaction core only (touchMode() reads it), so on-canvas targets and
     // the QML controls always agree.
@@ -121,6 +133,32 @@ void AppController::notifyMessage(const QString& text)
     emit message(text);
 }
 
+void AppController::notePointerMove(double milliseconds, bool dragging)
+{
+    // "took": scripts/dev/watch_log.py counts these among the slow steps.
+    if (milliseconds >= 16.0)
+        OS_LOG(Debug, Performance) << "gui: pointer move took " << milliseconds << " ms";
+    if (!dragging)
+        return;
+    ++dragMoves_;
+    dragTotalMs_ += milliseconds;
+    dragLongestMs_ = std::max(dragLongestMs_, milliseconds);
+}
+
+void AppController::notePointerRelease()
+{
+    if (dragMoves_ == 0)
+        return;
+    OS_LOG(Debug, Performance) << "gui: longest pointer move of a drag took " << dragLongestMs_ << " ms (" << dragMoves_
+                               << " moves, average " << dragTotalMs_ / dragMoves_ << " ms)";
+    lastDragMoves_ = dragMoves_;
+    lastDragLongestMs_ = dragLongestMs_;
+    lastDragAverageMs_ = dragTotalMs_ / dragMoves_;
+    dragMoves_ = 0;
+    dragTotalMs_ = 0;
+    dragLongestMs_ = 0;
+}
+
 QString AppController::touchWording(const QString& text) const
 {
     return q(interact::touchWording(text.toStdString()));
@@ -135,17 +173,28 @@ QString AppController::redoText() const { return q(undoStack_->redoLabel()); }
 bool AppController::hasSelection() const { return !interaction_->selection().empty(); }
 QString AppController::selectionSummary() const { return q(interaction_->selectionSummary()); }
 
-QVariantList AppController::contextActions() const
+void AppController::refreshLists()
 {
-    QVariantList list;
-    for (const auto& action : interaction_->contextActions()) {
-        QVariantMap map;
-        map.insert(QStringLiteral("id"), q(action.id));
-        map.insert(QStringLiteral("label"), q(action.label));
-        map.insert(QStringLiteral("active"), action.active);
-        list.append(map);
+    // Converting and handing QML a new list rebuilds its delegates: only do
+    // it when a row or an action changed.
+    if (std::vector<interact::ContextAction> actions = interaction_->contextActions(); actions != contextActions_) {
+        contextActions_ = std::move(actions);
+        QVariantList list;
+        for (const auto& action : contextActions_) {
+            QVariantMap map;
+            map.insert(QStringLiteral("id"), q(action.id));
+            map.insert(QStringLiteral("label"), q(action.label));
+            map.insert(QStringLiteral("active"), action.active);
+            list.append(map);
+        }
+        contextActionsList_ = std::move(list);
+        emit contextActionsChanged();
     }
-    return list;
+    if (std::vector<interact::HistoryRow> rows = interaction_->historyRows(); rows != historyRows_) {
+        historyRows_ = std::move(rows);
+        historyList_ = historyListFrom(historyRows_);
+        emit historyChanged();
+    }
 }
 
 bool AppController::operationActive() const { return interaction_->operation() != nullptr; }
@@ -442,10 +491,12 @@ QString AppController::setSketchDimension(int constraintId, const QString& text)
 
 // ---- History ------------------------------------------------------------------------------
 
-QVariantList AppController::history() const
+namespace {
+// The Model panel rows as QML reads them.
+QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
 {
     QVariantList list;
-    for (const auto& row : interaction_->historyRows()) {
+    for (const auto& row : rows) {
         QVariantMap map;
         map.insert(QStringLiteral("kind"), row.kind == interact::HistoryRow::Kind::Sketch ? QStringLiteral("sketch")
                                            : row.kind == interact::HistoryRow::Kind::Body ? QStringLiteral("body")
@@ -478,6 +529,7 @@ QVariantList AppController::history() const
     }
     return list;
 }
+} // namespace
 
 namespace {
 std::optional<Uuid> uuidOf(const QString& text)
@@ -857,11 +909,12 @@ void AppController::redoWithFeedback()
         notifyMessage(QStringLiteral("Redo ") + label);
 }
 
-void AppController::commitOperation()
+bool AppController::commitOperation()
 {
     const Status status = interaction_->commitOperation();
     if (!status)
         notifyMessage(q(status.userMessage()));
+    return status.ok();
 }
 
 void AppController::cancelOperation() { interaction_->cancelOperation(); }
@@ -869,6 +922,11 @@ void AppController::cancelOperation() { interaction_->cancelOperation(); }
 QString AppController::setValueText(const QString& text)
 {
     return q(interaction_->setValueText(text.toStdString()));
+}
+
+QString AppController::confirmValueText(const QString& text)
+{
+    return q(interaction_->confirmValueText(text.toStdString()));
 }
 
 void AppController::triggerAction(const QString& id)

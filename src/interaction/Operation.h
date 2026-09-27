@@ -12,6 +12,8 @@
 #include "geometry/Modeling.h"
 #include "interaction/Manipulator.h"
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,12 +25,48 @@ class Document;
 
 namespace os::interact {
 
+class Operation;
+
+// A preview computed away from the operation (on the preview worker).
+struct PreviewOutcome {
+    std::uint64_t operation = 0; // Operation::instance() it belongs to
+    std::uint64_t serial = 0;    // the request it answers
+    double value = 0;
+    std::shared_ptr<const geom::Mesh> mesh; // null when the preview failed
+    Uuid meshBody;                          // the body the mesh stands in for (nil: a new body)
+    std::string error;                      // user message when it failed
+    std::string developerMessage;
+    // The operation copy that computed it; carries the automatic choices it
+    // made (e.g. a join that missed the body became a new body).
+    std::shared_ptr<const Operation> computedBy;
+    double milliseconds = 0; // on the worker: kernel + meshing
+};
+
+// Where an operation's previews are computed when not on the calling thread
+// (InteractionController, with its PreviewWorker).
+class PreviewScheduler {
+public:
+    virtual ~PreviewScheduler() = default;
+    // A copy of `document` the worker reads while the caller keeps changing it.
+    virtual std::shared_ptr<const doc::Document> previewSnapshot(const doc::Document& document) = 0;
+    // Runs `compute` on the worker; replaces a job still waiting to start.
+    virtual void schedulePreview(std::function<PreviewOutcome()> compute) = 0;
+    // Drops a job still waiting to start.
+    virtual void dropScheduledPreview() = 0;
+};
+
 // An in-progress, previewable modeling operation driven by a manipulator
 // and/or typed values. Nothing touches the document until commit, which
 // produces a Command for the undo stack.
+//
+// Previews: setValue() computes the preview synchronously, or - with a
+// PreviewScheduler (the app) - hands a self-contained job to the preview
+// worker: a clone() of the operation and a snapshot of the document. The
+// last preview stays shown until the new one arrives (acceptPreview); a
+// newer value supersedes an older one.
 class Operation {
 public:
-    Operation(Uuid bodyId, LinearManipulator manipulator) : bodyId_(bodyId), manipulator_(std::move(manipulator)) {}
+    Operation(Uuid bodyId, LinearManipulator manipulator);
     virtual ~Operation() = default;
 
     virtual std::string title() const = 0;
@@ -45,15 +83,58 @@ public:
     LinearManipulator& manipulator() { return manipulator_; }
 
     double value() const { return value_; }
+    // What a new preview request changes. Only a new value (a drag step, a
+    // typed value) lets a finished preview of an earlier value show while the
+    // newest one computes: it keeps up with the drag. After any other change
+    // (a mode, a count, a target, Through all: the setters, which call
+    // setValue with the default) an earlier request's preview is wrong
+    // geometry, and it is not shown.
+    enum class Change { Parameters, ValueOnly };
     // Sets the value and recomputes the preview. Invalid values leave an
     // error message and no preview; the previous document state is untouched.
-    void setValue(double value, const doc::Document& document);
+    // With a preview scheduler the preview is computed on the worker: this
+    // returns at once, previewPending() until acceptPreview() gets it.
+    void setValue(double value, const doc::Document& document, Change change = Change::Parameters);
+    // The command refused the value while its preview was still computing
+    // (Enter does not wait for it): that refusal is the verdict, shown as a
+    // refused preview would be (the message, no preview), and the preview is
+    // no longer awaited (the commit dropped it if it had not started).
+    void refusePendingValue(std::string message);
 
     bool hasPreview() const { return previewMesh_ != nullptr; }
     const std::shared_ptr<const geom::Mesh>& previewMesh() const { return previewMesh_; }
     std::uint64_t previewKey() const { return previewKey_; }
+    // The body the shown preview mesh stands in for (nil: a new body). While
+    // a newer preview is pending, previewBody() may already differ.
+    const Uuid& previewMeshBody() const { return previewMeshBody_; }
+    // The error of the latest finished preview (or of a value refused at once).
     const std::string& error() const { return error_; }
-    virtual bool canCommit() const { return value_ != 0.0 && error_.empty() && hasPreview(); }
+    // A pending preview counts as committable: the command computes the step
+    // again anyway (and reports a failure itself).
+    virtual bool canCommit() const { return value_ != 0.0 && previewUsable(); }
+
+    // ---- Previews off the calling thread ----
+    // From now on previews go to `scheduler` (nullptr: synchronous). Operations
+    // created while a PreviewSchedulerScope exists start with its scheduler.
+    void setPreviewScheduler(PreviewScheduler* scheduler) { scheduler_ = scheduler; }
+    PreviewScheduler* previewScheduler() const { return scheduler_; }
+    // A preview for the current state is being computed.
+    bool previewPending() const { return pendingSerial_ != 0; }
+    // A preview from the worker arrives (on the operation's thread). Shows it
+    // and returns true, or drops it when stale: for another operation, older
+    // than what is shown, from before the preview was reset, or from before a
+    // change of anything but the value. A result for a value the user has
+    // since left is still shown if it succeeded (the preview keeps up while
+    // dragging), but its error is not.
+    bool acceptPreview(const PreviewOutcome& outcome);
+    // Identifies this operation (its clones share it).
+    std::uint64_t instance() const { return instance_; }
+    // A copy that computes previews on another thread (the preview worker);
+    // nullptr keeps this operation's previews synchronous.
+    virtual std::unique_ptr<Operation> clone() const { return nullptr; }
+    // Commit waits for a pending preview when an automatic choice depends on
+    // it (an extrusion that becomes a new body when it misses its body).
+    virtual bool commitNeedsPreview() const { return false; }
     // Instruction while the operation needs another pick (e.g. Align's target); "" otherwise.
     virtual std::string prompt() const { return {}; }
     // The value that means "no change" (Esc returns to it): 0 for most, the
@@ -91,6 +172,12 @@ public:
     virtual double valueFromOffset(double offset) const { return offset; }
 
 protected:
+    Operation(const Operation&) = default;
+    // canCommit()'s preview condition: a preview without error, or one pending.
+    bool previewUsable() const { return previewPending() || (error_.empty() && hasPreview()); }
+    // Takes the automatic choices a clone of this operation made while it
+    // computed the preview that is now shown.
+    virtual void adoptAutomaticChoices(const Operation& /*from*/) {}
     virtual std::unique_ptr<doc::Feature> makeFeature(double value) const = 0;
     // The previewed result for `value`: by default makeFeature evaluated on
     // the preview body (Mirror/Pattern with separate bodies show the copies instead).
@@ -100,7 +187,7 @@ protected:
     // Drops the preview and error (e.g. when a needed pick is undone).
     void clearPreview()
     {
-        previewMesh_.reset();
+        dropPreviews();
         error_.clear();
     }
     // Whether the neutral value means "no change" (no preview). Align previews at 0.
@@ -117,13 +204,39 @@ protected:
     virtual bool reconsiderRefusal(ErrorCode /*code*/) { return false; }
 
 private:
+    // The preview for `value`, automatic choices revised (on this object).
+    PreviewOutcome computeOutcome(double value, const doc::Document& document);
+    void showOutcome(const PreviewOutcome& outcome);
+    // No preview, and none of the requests so far will be shown.
+    void dropPreviews();
+
     Uuid bodyId_;
     LinearManipulator manipulator_;
     double value_ = 0;
     int activeHandle_ = 0;
     std::shared_ptr<const geom::Mesh> previewMesh_;
+    Uuid previewMeshBody_;
     std::uint64_t previewKey_ = 0;
     std::string error_;
+    std::uint64_t instance_ = 0;
+    PreviewScheduler* scheduler_ = nullptr;
+    std::uint64_t pendingSerial_ = 0;  // the request whose preview is awaited (0: none)
+    std::uint64_t resolvedSerial_ = 0; // the newest request whose result was applied
+    std::uint64_t floorSerial_ = 0;    // results of older requests are stale (a reset, a parameter change)
+};
+
+// While one exists (on this thread), new operations use `scheduler` for
+// their previews, including those computed as they are created (Pattern,
+// the heat-set insert).
+class PreviewSchedulerScope {
+public:
+    explicit PreviewSchedulerScope(PreviewScheduler* scheduler);
+    ~PreviewSchedulerScope();
+    PreviewSchedulerScope(const PreviewSchedulerScope&) = delete;
+    PreviewSchedulerScope& operator=(const PreviewSchedulerScope&) = delete;
+
+private:
+    PreviewScheduler* previous_;
 };
 
 // Align: moves a body so one of its faces or edges (the source) meets a face
@@ -136,12 +249,13 @@ public:
     static std::unique_ptr<AlignOperation> create(const doc::Document& document, const Uuid& bodyId,
                                                   geom::SubShapeKind kind, int index);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new AlignOperation(*this)); }
     std::string title() const override { return "Align"; }
     std::string valueLabel() const override { return "Offset"; }
     bool allowsNegative() const override { return true; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Move; }
     std::string prompt() const override;
-    bool canCommit() const override { return target_.has_value() && error().empty() && hasPreview(); }
+    bool canCommit() const override { return target_.has_value() && previewUsable(); }
 
     bool hasTarget() const { return target_.has_value(); }
     // Picks the target on another body; recomputes the preview.
@@ -187,6 +301,7 @@ class PushPullOperation final : public Operation {
 public:
     static std::unique_ptr<PushPullOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new PushPullOperation(*this)); }
     std::string title() const override { return "Push/Pull"; }
     std::string valueLabel() const override { return thickness_ ? thicknessLabel_ : "Distance"; }
     bool allowsNegative() const override { return !thickness_; }
@@ -200,10 +315,7 @@ public:
     {
         return thickness_ ? std::optional<double>(thickness_->distance) : std::nullopt;
     }
-    bool canCommit() const override
-    {
-        return std::abs(value() - neutralValue()) > 1e-9 && error().empty() && hasPreview();
-    }
+    bool canCommit() const override { return std::abs(value() - neutralValue()) > 1e-9 && previewUsable(); }
     double displayOffset(double value) const override { return value - neutralValue(); }
     double valueFromOffset(double offset) const override { return neutralValue() + offset; }
 
@@ -226,6 +338,7 @@ public:
     static std::unique_ptr<EdgeOperation> create(const doc::Document& document, const Uuid& bodyId,
                                                  const std::vector<int>& edgeIndices, doc::FeatureKind kind);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new EdgeOperation(*this)); }
     std::string title() const override { return kind_ == doc::FeatureKind::Fillet ? "Fillet" : "Chamfer"; }
     std::string valueLabel() const override { return kind_ == doc::FeatureKind::Fillet ? "Radius" : "Distance"; }
     bool allowsNegative() const override { return false; }
@@ -254,15 +367,13 @@ class OffsetFaceOperation final : public Operation {
 public:
     static std::unique_ptr<OffsetFaceOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new OffsetFaceOperation(*this)); }
     std::string title() const override { return "Offset"; }
     std::string valueLabel() const override { return round_ ? "Diameter" : "Offset"; }
     bool allowsNegative() const override { return !round_; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::OffsetFace; }
     double neutralValue() const override { return round_ ? diameter_ : 0.0; }
-    bool canCommit() const override
-    {
-        return std::abs(value() - neutralValue()) > 1e-9 && error().empty() && hasPreview();
-    }
+    bool canCommit() const override { return std::abs(value() - neutralValue()) > 1e-9 && previewUsable(); }
     double displayOffset(double value) const override { return round_ ? (value - diameter_) / 2 : value; }
     double valueFromOffset(double offset) const override { return round_ ? diameter_ + 2 * offset : offset; }
     bool round() const { return round_; }
@@ -281,16 +392,19 @@ private:
 
 // Mirror: keeps the body and joins its mirror image. The plane comes from a
 // clicked flat face (on any body) or an origin plane (across YZ, XZ or XY).
+// An image that would not touch the body becomes a separate, independent
+// body instead (as in Shapr3D); the "Separate bodies" toggle overrides that.
 class MirrorOperation final : public Operation {
 public:
     static std::unique_ptr<MirrorOperation> create(const doc::Document& document, const Uuid& bodyId);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new MirrorOperation(*this)); }
     std::string title() const override { return "Mirror"; }
     std::string valueLabel() const override { return {}; }
     bool allowsNegative() const override { return true; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Mirror; }
     std::string prompt() const override;
-    bool canCommit() const override { return plane_.has_value() && error().empty() && hasPreview(); }
+    bool canCommit() const override { return plane_.has_value() && previewUsable(); }
     int handleCount() const override { return 0; }
 
     bool hasPlane() const { return plane_.has_value(); }
@@ -299,20 +413,35 @@ public:
     Status setPlaneFromFace(const doc::Document& document, const Uuid& bodyId, int faceIndex);
     // normalAxis 0: across YZ (flips X), 1: across XZ (flips Y), 2: across XY (flips Z).
     void setOriginPlane(int normalAxis, const doc::Document& document);
-    // "Separate bodies": the mirror image becomes a body of its own that
-    // follows this one (a Copy step) instead of joining it.
-    bool separate() const { return separate_; }
+    // "Separate bodies": the mirror image becomes an independent body (a copy
+    // of this body's history ending in a Mirror step that keeps only the
+    // image) instead of joining it. Chosen automatically when the image would
+    // not touch the body; setSeparate is the user's choice and wins.
+    bool separate() const { return separateChoice_.value_or(autoSeparate_); }
+    // Separate because the image would not touch the body (not chosen).
+    bool separateIsAutomatic() const { return !separateChoice_ && autoSeparate_; }
     void setSeparate(bool separate, const doc::Document& document);
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+    // The automatic choice (separate or joined) comes from the preview.
+    bool commitNeedsPreview() const override { return plane_.has_value() && !separateChoice_; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
     bool neutralIsIdentity() const override { return false; }
+    void resetAutomaticChoices() override { autoSeparate_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
+    // The preview worker decides on a clone: take its choice with its preview.
+    void adoptAutomaticChoices(const Operation& from) override
+    {
+        if (const auto* other = dynamic_cast<const MirrorOperation*>(&from))
+            autoSeparate_ = other->autoSeparate_;
+    }
 
 private:
-    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies() const;
-    bool separate_ = false;
+    std::vector<std::unique_ptr<doc::Feature>> makeCopySteps() const;
+    std::optional<bool> separateChoice_; // the toggle, once used
+    bool autoSeparate_ = false;          // the joined image would be a separate piece
     MirrorOperation(Uuid bodyId, const Vec3& center) : Operation(bodyId, LinearManipulator(center, {0, 0, 1})) {}
     struct Plane {
         Vec3 origin, normal;
@@ -324,17 +453,20 @@ private:
 // Pattern: repeats the body, copies joined. Linear: `count` copies along X/Y/Z
 // (or a clicked straight edge), the arrow sets the spacing (it sits on the last
 // copy). Circular: copies turn around X/Y/Z through the body center (or a
-// clicked hole/shaft/circle), value() = total angle in degrees.
+// clicked hole/shaft/circle), value() = total angle in degrees. Copies that
+// would not touch the body become separate, independent bodies instead (as
+// in Shapr3D; up to 100 copies); the "Separate bodies" toggle overrides that.
 class PatternOperation final : public Operation {
 public:
     static std::unique_ptr<PatternOperation> create(const doc::Document& document, const Uuid& bodyId);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new PatternOperation(*this)); }
     std::string title() const override { return "Pattern"; }
     std::string valueLabel() const override;
     bool allowsNegative() const override { return !circular_; }
     bool isAngle() const override { return circular_; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Pattern; }
-    bool canCommit() const override { return count_ >= 2 && value() != 0.0 && error().empty() && hasPreview(); }
+    bool canCommit() const override { return count_ >= 2 && value() != 0.0 && previewUsable(); }
 
     bool circular() const { return circular_; }
     int count() const { return count_; }
@@ -345,11 +477,17 @@ public:
     void setCount(int count, const doc::Document& document);
     // A straight edge (linear direction) or a round face/edge (circular axis).
     Status setAxisFrom(const doc::Document& document, const Uuid& bodyId, geom::SubShapeKind kind, int index);
-    // "Separate bodies": every copy becomes a body of its own that follows
-    // this one (a Copy step) instead of joining it (at most 100 copies).
-    bool separate() const { return separate_; }
+    // "Separate bodies": every copy becomes an independent body (a copy of
+    // this body's history ending in a Move step) instead of joining it (at
+    // most 100 copies). Chosen automatically when the copies would not touch
+    // the body; setSeparate is the user's choice and wins.
+    bool separate() const { return separateChoice_.value_or(autoSeparate_); }
+    // Separate because the copies would not touch the body (not chosen).
+    bool separateIsAutomatic() const { return !separateChoice_ && autoSeparate_; }
     void setSeparate(bool separate, const doc::Document& document);
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+    // The automatic choice (separate or joined) comes from the preview.
+    bool commitNeedsPreview() const override { return !separateChoice_; }
 
     int handleCount() const override { return circular_ ? 0 : 1; }
     LinearManipulator handle(int index) const override;
@@ -360,10 +498,19 @@ public:
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
+    void resetAutomaticChoices() override { autoSeparate_ = false; }
+    bool reconsider(const geom::Shape& result, const doc::Document& document) override;
+    // The preview worker decides on a clone: take its choice with its preview.
+    void adoptAutomaticChoices(const Operation& from) override
+    {
+        if (const auto* other = dynamic_cast<const PatternOperation*>(&from))
+            autoSeparate_ = other->autoSeparate_;
+    }
 
 private:
-    std::vector<std::unique_ptr<doc::CopyFeature>> makeCopies(double value) const;
-    bool separate_ = false;
+    std::vector<std::unique_ptr<doc::Feature>> makeCopySteps(double value) const;
+    std::optional<bool> separateChoice_; // the toggle, once used
+    bool autoSeparate_ = false;          // the joined copies would be separate pieces
     PatternOperation(Uuid bodyId, const Vec3& center, const Vec3& size)
         : Operation(bodyId, LinearManipulator(center, {1, 0, 0})), center_(center), size_(size) {}
     Vec3 axisVectorFor() const;
@@ -386,6 +533,7 @@ class RotateOperation final : public Operation {
 public:
     static std::unique_ptr<RotateOperation> create(const doc::Document& document, const Uuid& bodyId);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new RotateOperation(*this)); }
     std::string title() const override { return "Rotate"; }
     std::string valueLabel() const override;
     bool allowsNegative() const override { return true; }
@@ -429,6 +577,7 @@ class MoveOperation final : public Operation {
 public:
     static std::unique_ptr<MoveOperation> create(const doc::Document& document, const Uuid& bodyId);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new MoveOperation(*this)); }
     std::string title() const override { return "Move"; }
     std::string valueLabel() const override;
     bool allowsNegative() const override { return true; }
@@ -461,6 +610,7 @@ public:
                                                     std::vector<doc::ProfileRef> profiles, const Vec3& anchor,
                                                     doc::SketchAxis axis);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new RevolveOperation(*this)); }
     std::string title() const override { return "Revolve"; }
     std::string valueLabel() const override { return "Angle"; }
     bool allowsNegative() const override { return false; }
@@ -485,11 +635,17 @@ public:
     doc::SketchAxis axis() const { return axis_; }
     const Uuid& sketchId() const { return sketchId_; }
     const std::vector<doc::ProfileRef>& profiles() const { return profiles_; }
+    bool commitNeedsPreview() const override { return host_.has_value() && !modeChosen_; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     void resetAutomaticChoices() override { autoNewBody_ = false; }
     bool reconsider(const geom::Shape& result, const doc::Document& document) override;
+    void adoptAutomaticChoices(const Operation& from) override
+    {
+        if (const auto* other = dynamic_cast<const RevolveOperation*>(&from))
+            autoNewBody_ = other->autoNewBody_;
+    }
 
 private:
     RevolveOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles,
@@ -518,6 +674,7 @@ public:
     static std::unique_ptr<InsertOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
                                                    std::size_t presetIndex);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new InsertOperation(*this)); }
     std::string title() const override { return "Heat-set insert " + preset().name; }
     std::string valueLabel() const override { return "Depth"; }
     bool allowsNegative() const override { return false; }
@@ -552,6 +709,7 @@ public:
     static std::unique_ptr<HeadOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
                                                  doc::HoleKind kind, std::size_t presetIndex);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new HeadOperation(*this)); }
     std::string title() const override;
     std::string valueLabel() const override { return activeHandle() == 1 ? "Depth" : "Diameter"; }
     bool allowsNegative() const override { return false; }
@@ -611,12 +769,16 @@ public:
     static std::unique_ptr<HoleOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex,
                                                  const HoleSettings& settings);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new HoleOperation(*this)); }
     std::string title() const override { return "Hole"; }
     std::string valueLabel() const override;
     bool allowsNegative() const override { return field_ == Field::X || field_ == Field::Y; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Holes; }
     std::string prompt() const override;
-    bool canCommit() const override { return !positions_.empty() && error().empty() && hasPreview(); }
+    bool canCommit() const override { return !positions_.empty() && previewUsable(); }
+    // Apply waits for the preview: it says which hole is off the face (the
+    // step's own refusal is worded for upstream changes).
+    bool commitNeedsPreview() const override { return true; }
     // Esc leaves the tool (there is no value to fall back to).
     double neutralValue() const override { return value(); }
     int handleCount() const override { return 0; }
@@ -672,7 +834,12 @@ private:
     double fieldValue(Field field) const;
     // Applies the screw preset to the diameter (and the head sizes).
     void applyPreset();
+    // Whether a hole centered at `p` lies on the face: exactly (the kernel;
+    // the preview's check, on the worker) or by the face's outline (snapping,
+    // on the GUI thread while hovering: no kernel call, so no wait for the
+    // worker's).
     bool onFace(Vec2 p) const;
+    bool onOutline(Vec2 p) const;
     geom::Shape shape_; // the body as the tool started (previews never change it)
     doc::FaceRef face_;
     doc::HoleFrame frame_;
@@ -695,6 +862,7 @@ public:
     static std::unique_ptr<ShellOperation> create(const doc::Document& document, const Uuid& bodyId,
                                                   const std::vector<int>& faceIndices);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new ShellOperation(*this)); }
     std::string title() const override { return "Shell"; }
     std::string valueLabel() const override { return "Wall"; }
     bool allowsNegative() const override { return false; }
@@ -717,6 +885,7 @@ public:
     static std::unique_ptr<ExtrudeOperation> create(const doc::Document& document, const Uuid& sketchId,
                                                     std::vector<doc::ProfileRef> profiles, const Vec3& anchor);
 
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new ExtrudeOperation(*this)); }
     std::string title() const override { return "Extrude"; }
     // Symmetric: the value is the total thickness, centered on the sketch.
     std::string valueLabel() const override
@@ -735,7 +904,7 @@ public:
     double draftDegrees() const { return editingDraft() ? value() : draftDegrees_; }
     LinearManipulator handle(int) const override { return manipulator(); }
     double handleOffset(int) const override { return displayOffset(distance()); }
-    bool canCommit() const override { return distance() != 0.0 && error().empty() && hasPreview(); }
+    bool canCommit() const override { return distance() != 0.0 && previewUsable(); }
     Uuid previewBody() const override;
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
     double displayOffset(double value) const override { return symmetric_ ? value / 2 : value; }
@@ -759,12 +928,18 @@ public:
     bool throughAll() const { return throughAll_; }
     void setThroughAll(bool throughAll) { throughAll_ = throughAll; }
     const Uuid& sketchId() const { return sketchId_; }
+    bool commitNeedsPreview() const override { return host_.has_value() && !modeOverride_; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
     void resetAutomaticChoices() override { autoNewBody_ = false; }
     bool reconsider(const geom::Shape& result, const doc::Document& document) override;
     bool reconsiderRefusal(ErrorCode code) override;
+    void adoptAutomaticChoices(const Operation& from) override
+    {
+        if (const auto* other = dynamic_cast<const ExtrudeOperation*>(&from))
+            autoNewBody_ = other->autoNewBody_;
+    }
     // A draft of 0 still previews the extrusion.
     bool neutralIsIdentity() const override { return !editingDraft(); }
 

@@ -190,6 +190,10 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(in.operation());
             r.check(extrude && extrude->value() < -1.0, "dragging the arrow down pushes the circle in",
                     extrude ? AcceptanceRunner::num(extrude->value()) : QStringLiteral("no extrude"));
+        },
+        // (The choice is made with the preview, computed on a worker thread.)
+        [&r, &in] {
+            const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(in.operation());
             r.check(extrude && extrude->mode() == doc::ExtrudeMode::NewBody,
                     "a cut that would remove nothing becomes a new body");
             r.check(r.app().operationCanCommit(), "it can be applied");

@@ -14,7 +14,9 @@ bevel edges, shell a body, offset faces (a hole takes its new diameter),
 delete holes, fillets and bosses, move, rotate (also about an edge or a
 hole), align one body onto another, mirror and pattern (joined or as
 separate bodies), duplicate, split separate pieces into bodies, and
-combine bodies (union, subtract, intersect).
+combine bodies (union, subtract, intersect). Dragging stays smooth on
+large parts: previews are computed in the background and shown as soon
+as they are ready.
 
 **Sketch precisely.** Lines, rectangles (also from the center), circles,
 3-point and tangent arcs, polygons (sized across flats), slots; trim,

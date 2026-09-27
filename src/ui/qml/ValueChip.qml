@@ -22,16 +22,30 @@ Item {
     width: column.implicitWidth
     height: column.implicitHeight
 
+    // The typed text itself is refused (not a length, out of range): its
+    // message stays while typing. Otherwise the preview's verdict shows, which
+    // may arrive after the keystroke (previews compute off the GUI thread).
+    property bool typedTextRefused: false
+
+    function typeValue(text) {
+        const error = app.setValueText(text)
+        typedTextRefused = error.length > 0 && error !== app.operationError
+        errorText.text = error
+        return error
+    }
+
     function beginTyping(firstChar) {
         field.text = firstChar
         field.forceActiveFocus()
         field.cursorPosition = field.text.length
-        errorText.text = app.setValueText(field.text)
+        typeValue(field.text)
     }
 
     function syncFromModel() {
         if (!field.activeFocus) {
             field.text = app.operationValueText
+            errorText.text = app.operationError
+        } else if (!typedTextRefused) {
             errorText.text = app.operationError
         }
     }
@@ -65,6 +79,7 @@ Item {
                 }
                 TextField {
                     id: field
+                    objectName: "valueChipField"
                     implicitWidth: 104
                     implicitHeight: Theme.controlHeight
                     font.pixelSize: 15
@@ -77,18 +92,20 @@ Item {
                         border.color: field.activeFocus ? Theme.accent : "transparent"
                         border.width: 1.5
                     }
-                    onTextEdited: errorText.text = chip.app.setValueText(text)
+                    onTextEdited: chip.typeValue(text)
                     onActiveFocusChanged: if (activeFocus) selectAll()
                     Keys.onReturnPressed: apply()
                     Keys.onEnterPressed: apply()
                     // Operations with several fields (the Hole tool's
-                    // diameter, depth, X, Y): Tab goes to the next one.
+                    // diameter, depth, X, Y): Tab goes to the next one, only
+                    // with a usable value (it waits for the verdict of a
+                    // preview still computing, e.g. a hole off the face).
                     Keys.onTabPressed: (event) => {
                         if (!chip.app.contextActions.some(a => a.id.startsWith("field:"))) {
                             event.accepted = false
                             return
                         }
-                        errorText.text = chip.app.setValueText(text)
+                        errorText.text = chip.app.confirmValueText(text)
                         if (errorText.text.length === 0) {
                             chip.app.triggerAction("nextField")
                             field.text = chip.app.operationValueText
@@ -101,14 +118,21 @@ Item {
                         chip.syncFromModel()
                     }
                     function apply() {
-                        const error = chip.app.setValueText(text)
-                        errorText.text = error
-                        if (error.length === 0) {
-                            field.focus = false
-                            chip.app.commitOperation()
-                            chip.finished()
+                        const error = chip.typeValue(text)
+                        if (error.length > 0)
+                            return
+                        field.focus = false
+                        // Refused - its verdict may come only now, when the
+                        // value's preview was still computing: stay in the
+                        // field with the message, as for a refused preview.
+                        if (!chip.app.commitOperation() && chip.app.operationActive) {
+                            field.forceActiveFocus()
+                            chip.typedTextRefused = false
                             chip.syncFromModel()
+                            return
                         }
+                        chip.finished()
+                        chip.syncFromModel()
                     }
                 }
                 ActionButton {

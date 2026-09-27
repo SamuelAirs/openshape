@@ -132,7 +132,13 @@ a name only and writes `<dir>/<name>.openshape`, exports go to
 `<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
 demo scene shows that prompt.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
-tessellation, recompute, kernel operations) to the log.
+tessellation, recompute, kernel operations) to the log; those computed on
+the preview worker thread start with `[worker]`, and GUI-thread blocks
+start with `gui:` (a pointer move of 16 ms or more, the longest move of
+each drag, a wait for the kernel while the worker held it).
+`OPENSHAPE_SYNC_PREVIEWS=1` computes previews on the GUI thread again, as
+before 2026-09-26 (to compare).
+
 
 Where the app keeps things (Windows):
 
@@ -322,6 +328,35 @@ workflow artifact. The Windows icon is made from the SVG with
 `python scripts/windows/make-icon.py` (needs MSYS2's `rsvg-convert`,
 `pacman -S mingw-w64-ucrt-x86_64-librsvg`).
 
+**Code signing** happens only in `release.yml`, through SignPath Foundation
+(docs/CODE_SIGNING.md: policy, and the owner's setup steps). It switches on
+when the repository has the secret `SIGNPATH_API_TOKEN` and the variable
+`SIGNPATH_ORGANIZATION_ID` (optional: `SIGNPATH_PROJECT_SLUG`, default
+`openshape`); without them the workflow runs exactly as above, unsigned, and
+says so in a notice. With them, `OpenShape.exe` is signed between steps 3
+and 4 (so the installer and the zip contain it signed) and the installer
+after step 4; tags use SignPath's `release-signing` policy (OpenCASCADE is
+then built in the run instead of restored from the cache; the owner approves
+each request, the workflow waits up to an hour each), other runs
+`test-signing`. `scripts/windows/use-signed.sh` accepts a returned file only
+if it is the sent file plus a signature (`scripts/windows/pe-signature.py`)
+and Windows accepts the signature, then updates `SHA256SUMS.txt`; the
+installer test runs on the signed installer.
+
+Every Release run (signed or not) also checks the release notes template in
+both variants, before the build, and runs the signature check's self-test
+on the packaged `OpenShape.exe`; on Windows, ctest runs both too
+(`release_notes_template`, needs bash; `release_pe_signature_selftest`,
+needs Python 3 and the app), so a broken template or check fails on a push,
+not an hour into a tag's release. By hand:
+
+```bash
+bash scripts/ci/test-install-notes.sh                                           # the template, both variants (25 checks)
+python scripts/windows/pe-signature.py self-test dist/OpenShape/OpenShape.exe  # 14 checks on made-up signatures
+python scripts/windows/pe-signature.py info <signed.exe>                        # where its signature is
+bash scripts/ci/install-notes.sh 0.2.0 0.2.0 v0.2.0 signed                       # release notes, signed variant
+```
+
 ### 7. Developer tools
 
 - **Benchmark** — times a push/pull drag preview, tessellation, recompute,
@@ -329,8 +364,13 @@ workflow artifact. The Windows icon is made from the SVG with
   (and saves and the project thumbnail on a 21-body, 1528-face model),
   then the same plus a fillet drag and hover picking (1200 pointer
   positions over the part) on a 249-face enclosure (shelled, rounded, 95
-  vent holes with chamfers, screw bosses; 25k triangles). Numbers in
-  PROJECT_STATUS.md:
+  vent holes with chamfers, screw bosses; 25k triangles). Last, the GUI
+  thread during a 20-step push/pull drag on the enclosure's rim (pointer
+  moves 16 ms apart: per move the controller plus what the UI reads back,
+  and delivering finished previews between moves), once with previews on
+  the GUI thread and once on the preview worker, and the same for the Hole
+  tool on the enclosure's front wall (two clicks, each followed by 15 hover
+  moves while its preview computes). Numbers in PROJECT_STATUS.md:
 
   ```bash
   cmake --preset msys2-ucrt64 -DOPENSHAPE_BUILD_TOOLS=ON
@@ -340,7 +380,9 @@ workflow artifact. The Windows icon is made from the SVG with
 
 - **Longer stress hunts** — the robustness suite runs a few fixed seeds;
   `OPENSHAPE_STRESS_SEEDS=N` runs N other seeds of each random session
-  instead (undo/redo, interleaved, save/open; ~3 s each). A seed replays the
+  instead (undo/redo, interleaved, save/open; ~3 s each), and as many random
+  UI sessions with previews on the worker against synchronous ones
+  (`test_interaction.exe`, `AsyncPreview.RandomSessionsMatchSynchronousOnes`). A seed replays the
   same session on Windows and macOS (`tests/PortableRandom.h`: no standard
   distributions, whose output differs between libstdc++ and libc++).
   Failures print the action log and every body's steps with status:
@@ -370,7 +412,10 @@ workflow artifact. The Windows icon is made from the SVG with
 - **`scripts/dev/watch_log.py`** — while someone uses the app started with
   `OPENSHAPE_LOG=debug`, prints slow operations, warnings, messages shown to
   the user, failed previews and GUI-thread stalls, one line per event
-  (run it in the background).
+  (run it in the background). `GUI` lines are what froze the window
+  (pointer moves, drags, waits for the kernel), `SLOW` kernel work on the
+  GUI thread (commits, undo), `WORKER` slow previews on the worker thread
+  (the window stays responsive meanwhile).
 
 - **`scripts/dev/doc_screenshots.sh`** — retakes the screenshots in
   `docs/images/` (README.md, docs/USER_GUIDE.md) from the demo scenes

@@ -61,14 +61,51 @@ void installKernelSignalHandlers();
 // last one ends, the handlers that were there before come back: outside
 // kernel calls a fault is a real crash for the app's crash handler and the
 // operating system (OCCT's handlers would end the app with exit(1)). On
-// Windows the MinGW runtime calls these C signal handlers from an SEH
-// handler around main, before any top-level exception filter.
+// Windows the C runtime calls C signal handlers from an SEH handler around
+// main and every thread it starts, before any top-level exception filter,
+// and keeps them per thread; ours (onKernelSignal in Modeling.cpp) jumps
+// back as OCCT's does, without OCCT's mutex, which a jump leaves locked (a
+// fault on a second thread would then wait forever). On POSIX handlers
+// belong to the process, so a dispatcher is installed instead: it hands a
+// fault to OCCT only when the faulting thread is inside a kernel try block
+// (Standard_ErrorHandler::IsInTryBlock, per thread) and to the handler from
+// before otherwise (e.g. a crash on the GUI thread while the preview worker
+// is in the kernel). On both, a fault outside any try block stays a crash.
+//
+// It also holds the kernel lock (see KernelLock below) for its lifetime.
 class KernelSignalScope {
 public:
     KernelSignalScope();
     ~KernelSignalScope();
     KernelSignalScope(const KernelSignalScope&) = delete;
     KernelSignalScope& operator=(const KernelSignalScope&) = delete;
+
+private:
+    int entryDepth_; // the kernel lock depth before this scope; restored at its end
+};
+
+// The kernel lock: one thread at a time runs OpenCASCADE code (TD-4). Meshing
+// writes triangulations into faces and edges that other shapes share (a
+// preview result shares most faces with the body it came from), and nearly
+// every kernel algorithm reads those edges' lists of representations, so a
+// lock around meshing alone would not do. Recursive. Every kernel call takes
+// it: the OS_KERNEL_SIGNALS_TO_EXCEPTIONS scope (and so guarded()) does, and
+// functions that touch kernel data without one hold a KernelLock. When a
+// kernel fault jumps back to a scope, that scope's end also releases the
+// KernelLocks the jump skipped.
+int kernelLockDepth(); // the calling thread's depth (0 = it does not hold the lock)
+void lockKernel();
+void unlockKernelTo(int depth);
+
+class KernelLock {
+public:
+    KernelLock() : entryDepth_(kernelLockDepth()) { lockKernel(); }
+    ~KernelLock() { unlockKernelTo(entryDepth_); }
+    KernelLock(const KernelLock&) = delete;
+    KernelLock& operator=(const KernelLock&) = delete;
+
+private:
+    int entryDepth_;
 };
 
 // The first statement of every try block around kernel calls (guarded()
