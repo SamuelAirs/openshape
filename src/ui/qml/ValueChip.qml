@@ -27,7 +27,8 @@ Item {
     property int alignment: Qt.AlignHCenter
     // The value is being typed (the field has the focus): on a touch screen
     // the on-screen keyboard is up, so a docked chip goes to the top.
-    readonly property bool typing: field.activeFocus
+    // Typing into the value or the Text tool's words (the on-screen keyboard is up).
+    readonly property bool typing: field.activeFocus || textField.activeFocus
     signal finished()
 
     width: column.implicitWidth
@@ -134,15 +135,20 @@ Item {
     Component.onCompleted: syncFromModel()
 
     // One column: the field, an error, the actions. In a single row the
-    // actions sit beside the field and an error goes below both.
+    // actions sit beside the field and an error goes below both. The Text
+    // tool's words come first, on a row of their own.
     GridLayout {
         id: column
+        readonly property int firstRow: chip.takesText ? 1 : 0
         columns: chip.singleRow ? 2 : 1
         rowSpacing: 6
         columnSpacing: 6
 
         // The Text tool's words (the value field below is the depth, size or angle).
         Panel {
+            Layout.row: 0
+            Layout.column: 0
+            Layout.columnSpan: chip.singleRow ? 2 : 1
             Layout.alignment: Qt.AlignHCenter
             visible: chip.takesText
             implicitWidth: textRow.implicitWidth + 2 * Theme.panelPadding
@@ -203,7 +209,7 @@ Item {
 
         Panel {
             id: fieldPanel
-            Layout.row: 0
+            Layout.row: column.firstRow
             Layout.column: 0
             Layout.alignment: chip.alignment
             implicitWidth: row.implicitWidth + 2 * Theme.panelPadding
@@ -313,7 +319,7 @@ Item {
         Text {
             id: errorText
             objectName: "valueChipError"
-            Layout.row: 1
+            Layout.row: column.firstRow + 1
             Layout.column: 0
             Layout.columnSpan: chip.singleRow ? 2 : 1
             Layout.alignment: Qt.AlignHCenter
@@ -331,7 +337,7 @@ Item {
         // acceptance run clicks the visible one.
         Row {
             id: actionMeasure
-            Layout.row: 3
+            Layout.row: column.firstRow + 3
             Layout.column: 0
             visible: false
             spacing: 4
@@ -345,7 +351,7 @@ Item {
             }
         }
         Flow {
-            Layout.row: 2
+            Layout.row: column.firstRow + 2
             Layout.column: 0
             Layout.alignment: chip.alignment
             Layout.preferredWidth: Math.min(actionMeasure.implicitWidth, 460)
@@ -358,7 +364,7 @@ Item {
         }
         ScrollRow {
             objectName: "valueChipActions"
-            Layout.row: chip.singleRow ? 0 : 2
+            Layout.row: column.firstRow + (chip.singleRow ? 0 : 2)
             Layout.column: chip.singleRow ? 1 : 0
             Layout.alignment: chip.singleRow ? Qt.AlignVCenter : chip.alignment
             maximumWidth: chip.singleRow ? Math.max(0, Math.floor(chip.maximumWidth - fieldPanel.implicitWidth - column.columnSpacing) - 1)
