@@ -85,6 +85,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario appfolder,share,openin   # iPhone / iPad files: saving by name, the share sheet (stub), Open in OpenShape
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
@@ -143,7 +144,9 @@ Dynamic Island and the home indicator drawn in: iPhone 16 Pro portrait
 `--app-folder <dir>` saves and exports as on an iPhone or iPad: Save asks for
 a name only and writes `<dir>/<name>.openshape`, exports go to
 `<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
-demo scene shows that prompt.
+demo scene shows that prompt. The share sheet exists only on iOS (on the
+desktop there is no File → Share Project…); the `share` scenario puts a
+stub in, and `openin` hands files over the way Qt's iOS delegate does.
 
 **App Store screenshots.** `bash scripts/dev/appstore_screenshots.sh
 [names...]` (docs/APP_STORE.md, section 3) renders the six App Store scenes
@@ -164,6 +167,7 @@ free without shading them, hides a message left by building the scene, and
 saves the picture without an alpha channel (App Store Connect refuses those).
 `python scripts/dev/check_appstore_texts.py` checks the listing texts in
 docs/APP_STORE.md against Apple's length limits.
+
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log; those computed on
 the preview worker thread start with `[worker]`, and GUI-thread blocks

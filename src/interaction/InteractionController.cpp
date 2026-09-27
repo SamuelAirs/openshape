@@ -684,6 +684,13 @@ void InteractionController::pointerLeave()
 
 void InteractionController::cancelPointer()
 {
+    // In a sketch the press may already have placed a shape's first corner
+    // or moved a point: without this, the next tap finished a rectangle from
+    // where a pinch or a two-finger pan began.
+    if (session_ && drag_.mode == DragMode::Sketch) {
+        session_->cancelPress();
+        notifyState();
+    }
     if (drag_.mode == DragMode::Manipulator)
         notifyState();
     drag_ = {};

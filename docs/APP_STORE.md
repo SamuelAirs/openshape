@@ -349,7 +349,7 @@ re-runs `bash scripts/dev/appstore_screenshots.sh` (about three minutes).
 They are rendered on Windows at the devices' exact point sizes, pixel
 ratios and safe areas, so the only visible difference from a device is the
 UI font (Windows' Segoe UI instead of San Francisco) and the missing status
-bar (docs/TECHNICAL_DEBT.md, TD-70). If you prefer, replace any of them with
+bar (docs/TECHNICAL_DEBT.md, TD-71). If you prefer, replace any of them with
 a screenshot from your own iPhone 16 Pro Max or 13-inch iPad (same sizes);
 an iPhone 16 Pro (1206 x 2622) or 11-inch iPad screenshot is a different
 size class and cannot stand in for the required ones.

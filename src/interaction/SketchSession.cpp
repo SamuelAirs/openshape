@@ -804,6 +804,7 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     if (event.button != PointerButton::Left)
         return false;
     pressed_ = true;
+    pressBeganShape_ = false;
     dragging_ = false;
     pressScreen_ = event.position;
     pressEvent_ = event;
@@ -838,6 +839,7 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
     const Snap snap = snapAt(event.position, camera, event.device);
     cursor_ = snap;
     cursorValid_ = true;
+    pressSnap_ = snap;
     if (!anchor_ && tool_ == SketchTool::TangentArc) {
         bool ambiguous = false;
         const auto start = snap.point != sketch::kNoEntity ? tangentStartAt(snap.point, &ambiguous) : std::nullopt;
@@ -848,11 +850,31 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
         }
         beginShape(snap);
         tangentStart_ = *start;
+        pressBeganShape_ = true;
         return true;
     }
-    if (!anchor_)
+    if (!anchor_) {
         beginShape(snap);
+        pressBeganShape_ = true;
+    }
     return true;
+}
+
+void SketchSession::cancelPress()
+{
+    if (!pressed_)
+        return;
+    pressed_ = false;
+    if (dragPoint_ != sketch::kNoEntity && dragging_) {
+        working_ = dragStart_; // the point goes back
+        regionsChanged();
+    }
+    dragPoint_ = sketch::kNoEntity;
+    dragging_ = false;
+    if (pressBeganShape_)
+        resetShape();
+    pressBeganShape_ = false;
+    cursorValid_ = false;
 }
 
 void SketchSession::pointerMove(const PointerEvent& event, const Camera& camera)
@@ -954,11 +976,27 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
     // Drawing tools: a press-drag-release draws the whole shape in one gesture;
     // a click leaves the first point placed and waits for the second click.
     const Snap snap = snapAt(event.position, camera, event.device);
+    // A stroke that starts away from a shape under way (a line chain's last
+    // point, a corner placed by a tap) draws a shape of its own from where it
+    // started: with a finger or a pen every stroke is a new shape (it joins
+    // an existing end only by starting on it, where it snaps).
+    if (dragging_ && anchor_ && !pressBeganShape_ && tool_ != SketchTool::TangentArc
+        && (toScreen(anchor_->position, camera) - pressScreen_).length()
+               > InputProfile::forDevice(pressEvent_.device).pickTolerance) {
+        resetShape();
+        beginShape(pressSnap_);
+    }
     const bool isSecondClick = !dragging_ && anchor_ && (anchor_->position - snap.position).length() > 1e-9
                             && (toScreen(anchor_->position, camera) - event.position).length()
                                    > InputProfile::forDevice(event.device).dragThreshold;
-    if (dragging_ || isSecondClick)
+    if (dragging_ || isSecondClick) {
+        const bool stroke = dragging_;
         finishShape(snap);
+        // A line drawn in one stroke ends with it; clicks or taps from point
+        // to point continue the chain.
+        if (stroke && tool_ == SketchTool::Line && anchor_)
+            resetShape();
+    }
     dragging_ = false;
 }
 

@@ -88,6 +88,11 @@ public:
     bool pointerPress(const PointerEvent& event, const Camera& camera);
     void pointerMove(const PointerEvent& event, const Camera& camera);
     void pointerRelease(const PointerEvent& event, const Camera& camera);
+    // The press became something else (a second finger arrived: a pan or a
+    // pinch; the system cancelled the touch): it neither draws, drags nor
+    // selects. A shape this press started goes; one already under way (its
+    // first corner placed by an earlier tap, a line chain) stays.
+    void cancelPress();
     void hover(const PointerEvent& event, const Camera& camera);
     void leave();
     bool keyPress(Key key);
@@ -248,6 +253,8 @@ private:
 
     // Press tracking.
     bool pressed_ = false;
+    bool pressBeganShape_ = false; // this press placed the shape's first point
+    Snap pressSnap_;               // drawing tools: where the press snapped
     bool dragging_ = false;
     Vec2 pressScreen_;
     PointerEvent pressEvent_;
