@@ -251,7 +251,11 @@ relinking.
    window (iPadOS 26 windowed apps), check that the window's controls at
    the top left do not cover **File** (they may sit outside the safe area
    Qt reports; TD-54).
-10. Note anything slow, hard to hit, or missing — with a screenshot
+10. Axes and planes: Construct → Plane, tap a top face, type `10`, ✓; tap
+   the dashed axis or the plane's outline with a finger (easy to hit?);
+   with Pattern → Circular waiting, tap an axis made through a hole; tap
+   empty space while the Axis tool waits for its first pick (it gives up).
+11. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 
 ## What to test on the iPhone

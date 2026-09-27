@@ -100,7 +100,24 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     Home comes back to it. Import STEP… with a part from another program
     (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
     size and names; push/pull a face and round an edge of it, save, reopen.
-14. **The documentation.** Follow the Quick start in README.md step by step
+14. **Axes and planes** (your question: "can you align to an axis? And can
+    you create axis?").
+    - Align onto the origin: in a plate with a hole, click the hole's rim,
+      Align, then click the blue Z line (or "Z axis"): the hole ends up
+      around Z. Try a flat face onto "XZ plane" (Flip puts the part on the
+      other side) and a rim onto "Origin".
+    - Construct → Axis, click the hole's rim: a dashed orange axis. Select
+      another body, Pattern, Circular, click the dashed line: the copies go
+      around the hole. Rotate about it the same way. Try "Two points" (two
+      corners) and "Parallel to Z" (one corner).
+    - Construct → Plane, click a top face, type `10`, Enter: a see-through
+      orange square above it, selected. Sketch on it, draw a rectangle,
+      finish and extrude. Make the part taller (its row in the Model panel):
+      the plane, the sketch and the new block move up. Change the plane's
+      distance in its row. Try "At angle" on an edge and "Midway" between
+      two parallel faces; Mirror a body across a plane by clicking it.
+    - Hide, Show and Delete in the plane's row; undo; save and reopen.
+15. **The documentation.** Follow the Quick start in README.md step by step
     (the mounting plate with two holes), and skim docs/USER_GUIDE.md: does
     everything work as written? Is anything you use missing? F1 → the
     link under the first paragraph opens the guide on GitHub.
