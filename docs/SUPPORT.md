@@ -9,8 +9,12 @@ Help for OpenShape on iPhone, iPad and Windows.
   card with every tool and gesture.
 - **Where are my projects?** On iPhone and iPad in the Files app: *On My
   iPhone* (or *On My iPad*) → *OpenShape*; exports (STL, 3MF, STEP) in its
-  *Exports* folder, from where you can send them to a slicer, AirDrop or
-  iCloud Drive. On Windows, wherever you saved them.
+  *Exports* folder. On Windows, wherever you saved them.
+- **How do I get a model to my slicer?** On iPhone and iPad, **File →
+  Export STL** (or 3MF) opens the share sheet: pick your slicer app,
+  AirDrop, Mail or Save to Files. **File → Share Project…** sends the
+  project itself. To open a project or STEP file from the Files app or Mail,
+  tap it (or *Share → OpenShape*).
 - **The app closed while I was working.** Start it again: it offers to
   restore your unsaved work.
 

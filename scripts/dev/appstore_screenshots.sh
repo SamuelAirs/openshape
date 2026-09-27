@@ -7,7 +7,7 @@
 # six scenes (src/app/StoreScenes.cpp: a project box, text on a key tag, a
 # sketch, a construction plane, the Model panel, Home) for
 #
-#   iPhone 6.9" (iPhone 16 Pro Max class): 440 x 956 points at 3x = 1320 x 2868
+#   iPhone 6.9" (iPhone 16/17/18 Pro Max class): 440 x 956 points at 3x = 1320 x 2868
 #       pixels, portrait, safe areas 62 (Dynamic Island) and 34 (home indicator);
 #   iPad 13" (iPad Pro 13-inch M4 class): 1376 x 1032 points at 2x = 2752 x 2064
 #       pixels, landscape, safe areas 24 (status bar) and 20 (home indicator),

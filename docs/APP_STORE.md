@@ -14,9 +14,13 @@ Nothing here needs a Mac. Each item is marked:
 - **DONE**: already in the repository (nothing to do).
 - **YOU**: you do it by hand, in App Store Connect or a browser.
 - **DECIDE**: a product decision only you can make; a recommendation is given.
-- **TRACK**: done by a separate work track (the share sheet, Open-in,
-  dSYMs and external TestFlight testing; the licensing texts). Listed so
-  nothing is forgotten; not repeated here.
+- **TRACK**: done by a separate work track (the licensing texts,
+  docs/LICENSING.md). Listed so nothing is forgotten; not repeated here.
+
+Already on `main` since 2026-09-27 (merged before this checklist): the
+share sheet after exports and **File → Share Project…**, *Open in
+OpenShape* from the Files app and Mail, debug symbols (dSYMs) with every
+upload, and uploads that may go to external testers (the public beta).
 
 The app record, bundle ID `io.github.samuelairs.openshape`, the API key and
 the TestFlight upload from GitHub already exist (docs/IPAD.md, section 1).
@@ -163,7 +167,7 @@ accounts. Answer every question **None** or **No**:
 |---|---|---|
 | In-App Controls | Parental Controls; Age Assurance | No; No |
 | Capabilities | Unrestricted Web Access | **No** (links in Help and About open Safari, outside the app; there is no web view) |
-| | User-Generated Content | **No** (projects stay on the device; nothing is shared with other users) |
+| | User-Generated Content | **No** (there is no place in the app where people see each other's content; a file sent with the system share sheet goes where the user sends it, like a photo from Files) |
 | | Social Media; Messaging and Chat; Advertising | No; No; No |
 | Mature Themes | Profanity or Crude Humor; Horror/Fear Themes; Alcohol, Tobacco, or Drug Use or References | None |
 | Medical or Wellness | Medical or Treatment Information; Health or Wellness Topics | None / No |
@@ -257,7 +261,8 @@ MADE FOR 3D PRINTING
 
 YOUR FILES
 • Projects keep the full history, so sketches and steps stay editable after reopening.
-• Projects are saved in OpenShape's folder in the Files app, exports in its Exports folder, ready for your slicer, AirDrop or iCloud Drive.
+• Export opens the share sheet: send the file straight to your slicer app, AirDrop or Mail. Share a whole project the same way.
+• Projects are saved in OpenShape's folder in the Files app, exports in its Exports folder. Open projects and STEP files from the Files app or Mail.
 • A Home screen with your projects and their previews.
 • Unsaved work is kept safe in the background and offered again if the app closes.
 • When a step cannot be done, OpenShape says why in plain words, often with a size that works, and your model stays as it was.
@@ -279,8 +284,9 @@ Notes on the description:
 - No prices or "pay once" wording anywhere in the metadata (guideline 2.3.7
   forbids pricing information in names, subtitles, screenshots and
   previews; the price is shown by the App Store itself).
-- "AirDrop or iCloud Drive" works from the Files app today; when the share
-  sheet track lands, "Share" in the app can be added.
+- The share sheet and "Open in OpenShape" lines describe `main` since
+  2026-09-27; the owner's device tests of them (docs/IPAD.md, iPad items
+  14 to 16, iPhone item 14) should pass before submission, or those lines come out.
 
 ### Keywords (max 100 bytes, comma-separated, no spaces)
 
@@ -307,13 +313,13 @@ first update:
 
 <!-- appstore:whats-new max-chars=4000 -->
 ```text
-• Share exports straight to your slicer, AirDrop or Mail from the app.
-• Open .openshape projects from the Files app.
-• Fixes and improvements from the public beta.
+• Holes: new thread sizes. (EXAMPLE: replace with this version's changes)
+• The value box follows the keyboard on iPad. (EXAMPLE)
+• Fixes for the problems reported in the beta: a fillet on a thin wall no longer fails. (EXAMPLE)
 ```
 
-(Only use lines for things that are really in that build: the first two are
-the share-sheet track's.)
+(The lines above only show the form: one short line per change a user can
+notice, taken from CHANGELOG.md. Never paste them unchanged.)
 
 ### Screenshots
 
@@ -333,9 +339,14 @@ not blank):
 | `*-6-home.png` | Home with six projects and their previews, in "OpenShape (Files app)" |
 
 - **iPhone** `iphone-*.png`: 1320 x 2868 pixels, portrait, the **6.9"
-  display** size (iPhone 16 Pro Max class; 440 x 956 points at 3x, with its
-  safe areas). Apple requires 6.9" screenshots for an iPhone app and scales
-  them down for smaller iPhones.
+  display** size (iPhone 16, 17 and 18 Pro Max class; 440 x 956 points at
+  3x, with their safe areas). An iPhone app needs 6.9" screenshots (or, if
+  there are none, 6.5" ones); Apple scales them down for smaller iPhones.
+- **iPhone Duo** (the foldable): Apple's page lists its sizes (outer display
+  1398 x 2034, inner 2007 x 2853) but says uploading them "will be
+  available later this year", so they are not required for this
+  submission. Nothing to do now; when App Store Connect accepts them, the lead adds the
+  two sizes to the script (TD-71).
 - **iPad** `ipad-*.png`: 2752 x 2064 pixels, landscape, the **13" display**
   size (iPad Pro 13-inch M4 class; 1376 x 1032 points at 2x). Required for
   an app that runs on iPad; scaled down for smaller iPads.
@@ -419,10 +430,11 @@ External testers (anyone with the link, up to 10,000) need the first build
 of each version to pass **Beta App Review**; later builds of the same
 version usually do not. Builds expire after 90 days.
 
-1. **TRACK: allow external testing.** `scripts/ios/testflight.sh` uploads
-   builds with `testFlightInternalTestingOnly` = true (internal testers
-   only); the external-testing track switches that off. Until a build without
-   that flag has been uploaded, it cannot be added to an external group.
+1. **DONE: allow external testing.** Since 2026-09-27,
+   `scripts/ios/testflight.sh` uploads builds from `main` with
+   `testFlightInternalTestingOnly` = false, so every build uploaded since
+   then can go to an external group (older builds stay internal only). Use
+   a build whose TestFlight page shows it was uploaded on or after that day.
 2. **YOU: test information.** App Store Connect → OpenShape → **TestFlight**
    → **Test Information** (English): paste the *Beta App Description* below;
    *Feedback Email*: the address you want tester email at (it is shown to
@@ -469,8 +481,9 @@ Thank you for testing! Try these, then anything you like:
 2. Tap an edge and type a radius to round it. Shell the box (tap the top face, Shell, type 2).
 3. Sketch on a face: draw a rectangle and a circle with your finger or Apple Pencil, type their sizes, Finish sketch, then tap inside the circle and type -10 to cut a hole.
 4. Hole (M3, with the print allowance) and Text on a flat face.
-5. File, Save: give it a name. File, Export STL or 3MF, then open it from the Files app (OpenShape, Exports) in your slicer.
-6. Turn the device and use Split View: the layout should follow. On iPhone, the value box should never cover what you tapped.
+5. File, Save: give it a name. File, Export STL or 3MF: the share sheet opens; pick your slicer app, or AirDrop it to your computer. File, Share Project sends the project itself.
+6. In the Files app or Mail, tap a project (or a STEP file, then Share, OpenShape): it opens in OpenShape.
+7. Turn the device and use Split View: the layout should follow. On iPhone, the value box should never cover what you tapped.
 If something is confusing, take a screenshot in OpenShape and send it from TestFlight with a note. Crash reports reach us automatically.
 ```
 
@@ -486,12 +499,12 @@ A 2-minute test path (iPhone or iPad):
 3. Tap the cube's top face. Drag the blue arrow up, or tap the value box, type 35 and tap the check mark: the cube is now 35 mm tall.
 4. Tap a vertical edge of the cube, type 4, tap the check mark: the edge is rounded (fillet).
 5. Tap the top face, then Sketch. Tap Circle and draw a circle with a finger. Tap Finish sketch. Tap inside the circle, tap the value box, type -10 and tap the check mark: a 10 mm deep hole is cut.
-6. File, Save: type a name and tap Save. The project is in the Files app: On My iPhone (or iPad), OpenShape. File, Export STL writes Exports/<name>.stl there.
+6. File, Save: type a name and tap Save. The project is in the Files app: On My iPhone (or iPad), OpenShape. File, Export STL writes Exports/<name>.stl there and opens the share sheet (close it, or pick Save to Files).
 7. The question mark button opens the help card with all gestures. File, About OpenShape shows the version, the license, the source code link and the privacy policy link.
 
 Gestures: one finger on empty space orbits the view, two fingers pan and pinch to zoom, a two-finger tap undoes, a three-finger tap redoes.
 
-Features in this version: direct modeling (push/pull faces, fillets, chamfers, shell, offset, holes with screw presets, raised or engraved text), sketches with constraints and typed dimensions, extrude and revolve, move, rotate, align, mirror, pattern, construction axes and planes, union, subtract and intersect, an editable Model panel with the full history, STEP import, STL, 3MF and STEP export, recovery of unsaved work after a crash.
+Features in this version: direct modeling (push/pull faces, fillets, chamfers, shell, offset, holes with screw presets, raised or engraved text), sketches with constraints and typed dimensions, extrude and revolve, move, rotate, align, mirror, pattern, construction axes and planes, union, subtract and intersect, an editable Model panel with the full history, STEP import, STL, 3MF and STEP export through the share sheet, opening projects and STEP files from Files and Mail, recovery of unsaved work after a crash.
 
 OpenShape is open source (Mozilla Public License 2.0): https://github.com/SamuelAirs/openshape. It uses the open-source libraries Open CASCADE Technology, Qt, PlaneGCS, Eigen, libzip and nlohmann/json and the Noto Sans font under their licenses (listed in About).
 ```
@@ -500,7 +513,7 @@ OpenShape is open source (Mozilla Public License 2.0): https://github.com/Samuel
 
 ## 6. Submitting to the App Store
 
-1. **TRACK / lead: the build.** The version you submit is the build number
+1. **Lead: the build.** The version you submit is the build number
    of an upload from `main` (docs/IPAD.md). **DECIDE the version number**:
    the bundle says `0.2.0` today (CMake `project(VERSION)`). Recommendation:
    submit the next GitHub release's number so both platforms match, and
@@ -554,7 +567,7 @@ rejection costs a round trip, so the plan keeps a week of buffer.
 | When | What | Who |
 |---|---|---|
 | **Mon 28 Sep** | Decide the name (section 0), the price (section 4), the version number (section 6) and EU trader status (section 1). Accept the Paid Apps Agreement; tax form; bank account; enroll in the Small Business Program; DSA declaration. | **YOU** |
-| Mon 28 – Wed 30 Sep | Merge this branch, the external-TestFlight / share-sheet track and the licensing track; push to `main` (the privacy policy and support pages go live; a new TestFlight build without the internal-only flag). Rename if decided. Real email address in PRIVACY.md and SUPPORT.md. | lead, **TRACK** |
+| Mon 28 – Wed 30 Sep | Merge this branch and the licensing track; push to `main` (the privacy policy and support pages go live; the upload from that push is the first beta build). Rename if decided. Real email address in PRIVACY.md and SUPPORT.md. Try the share sheet and Open in OpenShape on the iPhone and iPad (docs/IPAD.md: iPad items 14 to 16, iPhone item 14). (The share sheet, Open in OpenShape, dSYMs and external-testing uploads are on `main` since 27 Sep.) | lead, **TRACK**, **YOU** |
 | **Wed 30 Sep** | TestFlight test information, external group `Public beta`, add the build, **submit for Beta App Review**. | **YOU** |
 | Thu 1 – Fri 2 Oct | Beta App Review (buffer 2 days). Create the **public link**; share it (README, release notes, maker forums). | **YOU** |
 | 2 – 12 Oct | **Public beta**, about 10 days. Read TestFlight feedback daily; the lead fixes; new builds reach testers without a new review (same version). Check that the Paid Apps Agreement shows *Active*. | **YOU**, lead |

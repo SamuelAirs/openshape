@@ -15,9 +15,9 @@ OpenShape stores only what it needs to work, on your own device:
 
 | What | iPhone and iPad | Windows |
 |---|---|---|
-| Your projects (`.openshape`) and exports (STL, 3MF, STEP) | OpenShape's folder, visible in the Files app (*On My iPhone / On My iPad → OpenShape*; exports in its *Exports* folder), or wherever you open a project from | wherever you save them |
+| Your projects (`.openshape`) and exports (STL, 3MF, STEP) | OpenShape's folder, visible in the Files app (*On My iPhone / On My iPad → OpenShape*; exports in its *Exports* folder). A project you open from elsewhere (iCloud Drive, another app, a Mail attachment) is copied into this folder and the copy is what OpenShape changes | wherever you save them |
 | Recovery copies of unsaved work (so a crash does not lose it) | the app's private data folder (*Library/Application Support*) | `%LOCALAPPDATA%\OpenShape\OpenShape\recovery\` |
-| A log of what the app did, for troubleshooting: the version, the graphics chip it draws with, the names and folders of files you opened, saved or exported, the steps you applied and the messages it showed you | *OpenShape → Logs → openshape.log* in the Files app | `%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log` |
+| A log of what the app did, for troubleshooting: the version, the graphics chip it draws with, the names and folders of files you opened, saved, exported or shared (and the kind of destination you picked in the share sheet, such as AirDrop or Mail, never the recipient), the steps you applied and the messages it showed you | *OpenShape → Logs → openshape.log* in the Files app | `%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log` |
 | Settings: preferences, the list of recent projects, the view's projection, on Windows the window's position | the app's private settings (*Library/Preferences*) | the registry, `HKEY_CURRENT_USER\Software\OpenShape\OpenShape` |
 
 - A project file contains your model, its history, a small preview picture
@@ -29,8 +29,11 @@ OpenShape stores only what it needs to work, on your own device:
 - A recovery copy is deleted when you save, choose **Don't Save**, or
   choose **Discard** after a crash. The log starts over when it reaches
   4 MB.
+- A STEP file you open in OpenShape from another app is read from a
+  temporary copy that is deleted after the import.
 - OpenShape reads only the files you open (or pick in the system's file
-  picker) and the files in its own folders. It does not use your
+  picker, or send to OpenShape from the Files app or Mail) and the files in
+  its own folders. It does not use your
   location, camera, microphone, photos, contacts or any other personal
   data, and it does not ask for any of these permissions.
 
@@ -46,6 +49,15 @@ Your device may include OpenShape's folders in its own backups (iCloud or
 computer backups on iPhone and iPad), as it does for other apps; that is
 between you and your device's backup service, and the OpenShape project
 never receives them.
+
+## Sharing files
+
+On iPhone and iPad, **Export** and **File → Share Project…** open the
+system's share sheet with that one file. Where it goes (AirDrop, Mail,
+Messages, Save to Files, a slicer app) is your choice, and iOS and the
+app you pick deliver it, not OpenShape; OpenShape learns only whether the
+file was sent and the kind of destination, which it writes to its log on
+your device. Closing the share sheet sends nothing.
 
 ## Network access
 
