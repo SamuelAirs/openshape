@@ -14,6 +14,8 @@ Rectangle {
     id: overlay
     // Saving as on an iPhone or iPad (Main.qml: app.savesToAppFolder).
     property bool appFolder: false
+    // The share sheet follows exports, and File → Share Project… is there.
+    property bool share: false
 
     color: "#66000000"
     visible: false
@@ -241,7 +243,12 @@ Rectangle {
                         title: "Files"
                         rows: (overlay.appFolder ? [
                             ["Where files go", "Projects into OpenShape's folder (the Files app: On My iPhone / iPad → OpenShape), "
-                             + "by name; exports into its Exports folder. Open picks any project there"]
+                             + "by name; exports into its Exports folder. Open picks any project (one from elsewhere is copied in)"],
+                            ["From other apps", "In the Files app or Mail, share a project or a STEP file to OpenShape: "
+                             + "a project is copied into OpenShape's folder and opened, a STEP file becomes a new project"]
+                        ] : []).concat(overlay.share ? [
+                            ["To a slicer", "File → Export STL or 3MF, then pick your printer’s or slicer’s app (or AirDrop, Save to Files, Mail) in the share sheet"],
+                            ["Send a project", "File → Share Project… (saves it first)"]
                         ] : []).concat([
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S", "File → New / Open… / Save"],
                             ["Recent projects", "Home (at start, or File → Home): click a project to open it; ⋯ or a right click removes it from the list · File → Open Recent",

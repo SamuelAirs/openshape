@@ -49,6 +49,8 @@ if(OPENSHAPE_BUILD_APP)
     # Settings, recent files, window placement and recovery sessions (Qt Core).
     openshape_add_test(test_uistate test_uistate.cpp)
     target_link_libraries(test_uistate PRIVATE openshape_uistate)
+    # The iOS Info.plist's document types are checked against what the app takes.
+    target_compile_definitions(test_uistate PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 endif()
 # Robustness: random modeling sessions (undo/redo, save/open), project-file
 # fuzzing, failure messages and picking acceleration.

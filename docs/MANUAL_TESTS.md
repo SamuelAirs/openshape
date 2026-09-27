@@ -181,4 +181,21 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 ## On the iPad and iPhone
 
 See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the
-iPhone".
+iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
+
+1. **Share an STL to the slicer:** File → Export STL: the share sheet opens
+   (on the iPad pointing at File); choose the slicer app, then AirDrop a
+   3MF to another device; close the sheet once without choosing (no
+   message; the file is in OpenShape → Exports).
+2. **Share Project…:** on a new project it asks for a name first, then the
+   sheet; send the project to yourself by Mail.
+3. **Open a STEP file from the Files app:** Share → OpenShape: a new project
+   with the file's bodies (unsaved changes are asked about first).
+4. **Open a STEP file and a project from Mail:** touch and hold the
+   attachment → OpenShape; the project opens as a copy in OpenShape's
+   folder; no "Inbox" folder is left in OpenShape's folder afterwards.
+5. **Open a project from the Files app:** tap one in On My iPhone / iPad →
+   OpenShape (opens directly), and one in iCloud Drive (Share → OpenShape:
+   opens as a copy).
+6. If OpenShape is missing from the share sheet for STEP files, say which
+   other CAD or slicer apps are installed (TD-68).
