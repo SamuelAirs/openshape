@@ -41,6 +41,8 @@ struct HistoryRow {
         std::string label;
         std::string valueText; // formatted in the display unit (a string parameter: as it is)
         bool isText = false;   // a string (a Text step's text), not a number
+        bool isAngle = false;  // degrees (the keypad offers the degree sign)
+        bool isCount = false;  // a whole number (the keypad offers digits only)
         bool operator==(const Parameter&) const = default;
     };
 
@@ -263,6 +265,9 @@ public:
     // Tab or the keypad's Next: the value typed just now is taken, then the
     // next live value takes the keys.
     void focusNextSketchInput();
+    // A tap on the live value `key` (the keypad then types into it): the
+    // value typed just now is taken first. False when there is no such value.
+    bool focusSketchInput(const std::string& key);
 
     // ---- History (model tree) ----
     std::vector<HistoryRow> historyRows() const;

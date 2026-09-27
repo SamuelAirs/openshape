@@ -3625,6 +3625,17 @@ void InteractionController::focusNextSketchInput()
     notifyView();
 }
 
+bool InteractionController::focusSketchInput(const std::string& key)
+{
+    if (!session_)
+        return false;
+    (void)flushTyping(); // the value typed stays with the input it was typed into
+    const bool focused = session_->focusInput(key);
+    notifyState();
+    notifyView();
+    return focused;
+}
+
 void InteractionController::setSketchTool(SketchTool tool)
 {
     if (!session_)
@@ -3935,8 +3946,9 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.message = datum->error() + " It stays where it was.";
         }
         for (const auto& p : datum->parameters())
-            row.parameters.push_back({p.key, p.label, p.kind == doc::ParameterKind::Angle ? formatAngle(p.value)
-                                                                                          : formatLength(p.value, unit)});
+            row.parameters.push_back({p.key, p.label,
+                                      p.kind == doc::ParameterKind::Angle ? formatAngle(p.value) : formatLength(p.value, unit), false,
+                                      p.kind == doc::ParameterKind::Angle, false});
         rows.push_back(std::move(row));
     }
     for (const auto& body : document_->bodies()) {
@@ -4001,14 +4013,14 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             row.canSplit = state.status == doc::FeatureStatus::Ok && state.output.solidCount() > 1
                         && body->shape().solidCount() > 1 && !body->hasFailures();
             for (const auto& p : f.textParameters())
-                row.parameters.push_back({p.key, p.label, p.value, true});
+                row.parameters.push_back({p.key, p.label, p.value, true, false, false});
             for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
-                    row.parameters.push_back({p.key, p.label, formatLength(p.value, unit), false});
+                    row.parameters.push_back({p.key, p.label, formatLength(p.value, unit), false, false, false});
                 else if (p.kind == doc::ParameterKind::Angle)
-                    row.parameters.push_back({p.key, p.label, formatAngle(p.value), false});
+                    row.parameters.push_back({p.key, p.label, formatAngle(p.value), false, true, false});
                 else if (p.kind == doc::ParameterKind::Count)
-                    row.parameters.push_back({p.key, p.label, std::to_string(std::lround(p.value)), false});
+                    row.parameters.push_back({p.key, p.label, std::to_string(std::lround(p.value)), false, false, true});
             }
             rows.push_back(std::move(row));
         }

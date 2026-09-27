@@ -7,6 +7,7 @@
 #include "core/Log.h"
 #include "geometry/Exchange.h"
 #include "geometry/Text.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/TouchWording.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
@@ -259,6 +260,7 @@ QString AppController::operationError() const
 }
 QString AppController::typedValueError() const { return q(interaction_->typedValueError()); }
 bool AppController::typingPending() const { return interaction_->typingPending(); }
+bool AppController::operationIsAngle() const { return interaction_->operation() && interaction_->operation()->isAngle(); }
 bool AppController::operationCanCommit() const
 {
     return interaction_->operation() && interaction_->operation()->canCommit();
@@ -659,6 +661,11 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
             pm.insert(QStringLiteral("label"), q(p.label));
             pm.insert(QStringLiteral("value"), q(p.valueText));
             pm.insert(QStringLiteral("isText"), p.isText);
+            // What the keypad offers for it (touch): "length", "angle", "count" or "text".
+            pm.insert(QStringLiteral("mode"), p.isText    ? QStringLiteral("text")
+                                            : p.isAngle ? QStringLiteral("angle")
+                                            : p.isCount ? QStringLiteral("count")
+                                                        : QStringLiteral("length"));
             params.append(pm);
         }
         map.insert(QStringLiteral("parameters"), params);
@@ -1102,6 +1109,56 @@ void AppController::dropTyping()
         return;
     interaction_->dropTyping();
     emit stateChanged();
+}
+
+namespace {
+QVariantMap keypadResultMap(const interact::KeypadResult& result)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("text"), QString::fromStdString(result.state.text));
+    map.insert(QStringLiteral("replacing"), result.state.replacing);
+    map.insert(QStringLiteral("action"), result.action == interact::KeypadAction::Edited ? QStringLiteral("edited")
+                                         : result.action == interact::KeypadAction::Next ? QStringLiteral("next")
+                                         : result.action == interact::KeypadAction::Done ? QStringLiteral("done")
+                                                                                          : QStringLiteral("none"));
+    return map;
+}
+} // namespace
+
+QVariantList AppController::keypadRows(const QString& mode, bool hasNext) const
+{
+    QVariantList rows;
+    const auto keypadMode = interact::keypadModeFromString(mode.toStdString()).value_or(interact::KeypadMode::Length);
+    for (const auto& row : interact::keypadLayout(keypadMode, hasNext)) {
+        QVariantList keys;
+        for (const auto& key : row) {
+            QVariantMap k;
+            k.insert(QStringLiteral("id"), QString::fromStdString(key.id));
+            k.insert(QStringLiteral("label"), QString::fromStdString(key.label));
+            k.insert(QStringLiteral("span"), key.span);
+            k.insert(QStringLiteral("accent"), key.accent);
+            keys.append(k);
+        }
+        rows.append(QVariant(keys));
+    }
+    return rows;
+}
+
+QVariantMap AppController::keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const
+{
+    const auto keypadMode = interact::keypadModeFromString(mode.toStdString()).value_or(interact::KeypadMode::Length);
+    return keypadResultMap(interact::pressKeypadKey({text.toStdString(), replacing}, key.toStdString(), keypadMode));
+}
+
+QVariantMap AppController::keypadType(const QString& text, bool replacing, const QString& characters) const
+{
+    return keypadResultMap(interact::typeIntoKeypad({text.toStdString(), replacing}, characters.toStdString()));
+}
+
+bool AppController::focusSketchInput(const QString& key)
+{
+    typingPause_.stop();
+    return interaction_->focusSketchInput(key.toStdString());
 }
 
 void AppController::armTypingPause()

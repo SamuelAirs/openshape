@@ -1216,6 +1216,17 @@ void SketchSession::focusNextInput()
         focusedInput_ = (focusedInput_ + 1) % inputs_.size();
 }
 
+bool SketchSession::focusInput(const std::string& key)
+{
+    for (std::size_t i = 0; i < inputs_.size(); ++i) {
+        if (inputs_[i].key == key) {
+            focusedInput_ = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 Status SketchSession::commitTool()
 {
     if (isPatterning())

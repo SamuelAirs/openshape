@@ -16,6 +16,7 @@
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
 #include <cstdint>
@@ -48,6 +49,8 @@ class AppController : public QObject {
     // only when their content changes (TD-18: a drag step used to rebuild both).
     Q_PROPERTY(QVariantList contextActions READ contextActions NOTIFY contextActionsChanged)
     Q_PROPERTY(bool operationActive READ operationActive NOTIFY stateChanged)
+    // The operation's value is an angle (degrees): the keypad offers the degree sign.
+    Q_PROPERTY(bool operationIsAngle READ operationIsAngle NOTIFY stateChanged)
     Q_PROPERTY(QString operationTitle READ operationTitle NOTIFY stateChanged)
     Q_PROPERTY(QString operationValueLabel READ operationValueLabel NOTIFY stateChanged)
     Q_PROPERTY(QString operationValueText READ operationValueText NOTIFY stateChanged)
@@ -144,6 +147,7 @@ public:
     QString selectionSummary() const;
     QVariantList contextActions() const { return contextActionsList_; }
     bool operationActive() const;
+    bool operationIsAngle() const;
     QString operationTitle() const;
     QString operationValueLabel() const;
     QString operationValueText() const;
@@ -329,6 +333,14 @@ public:
     Q_INVOKABLE QString flushTyping();
     // Forgets the value typed (Esc).
     Q_INVOKABLE void dropTyping();
+    // The numeric keypad (touch; interact::NumericKeypad): its keys, row by
+    // row ({id, label, span, accent}) for a mode ("length", "angle",
+    // "count"), and what a key tapped does to the text shown: {text,
+    // replacing, action: "none" | "edited" | "next" | "done"}. keypadType is a
+    // hardware keyboard's characters while the keypad edits.
+    Q_INVOKABLE QVariantList keypadRows(const QString& mode, bool hasNext) const;
+    Q_INVOKABLE QVariantMap keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const;
+    Q_INVOKABLE QVariantMap keypadType(const QString& text, bool replacing, const QString& characters) const;
     // The Text tool's words (previewed at once); returns the error, or "".
     Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
@@ -351,6 +363,8 @@ public:
     // error or "". (Keys use typeSketchValue.)
     Q_INVOKABLE QString sketchType(const QString& text);
     Q_INVOKABLE void focusNextSketchInput();
+    // A tap on a live value while drawing: it takes the keys (the keypad's) next.
+    Q_INVOKABLE bool focusSketchInput(const QString& key);
     Q_INVOKABLE void commitSketchTool();
     // -/+ on the sketch counter (a polygon's sides, a pattern's copies).
     Q_INVOKABLE void stepSketchCounter(int delta);

@@ -119,6 +119,9 @@ public:
     std::string typeIntoInput(const std::string& text);
     std::string setInput(const std::string& key, const std::string& text);
     void focusNextInput();
+    // The live value `key` takes the keys typed next (a tap on it); false
+    // when the shape has no such value.
+    bool focusInput(const std::string& key);
     // Completes the shape being drawn using typed values (Enter).
     Status commitTool();
     // Changes a dimension's value. Returns an error message or "".
