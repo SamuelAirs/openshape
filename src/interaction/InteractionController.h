@@ -517,7 +517,14 @@ private:
         // A finger pressed on the selected profile or face: once it moves,
         // it drags the arrow along its axis through this point.
         std::optional<Vec3> region;
+        // The value and active handle when the manipulator drag began: a
+        // cancelled drag (a pinch or two-finger pan whose first finger had
+        // already moved the arrow) puts them back.
+        std::optional<double> valueBefore;
+        int handleBefore = 0;
     } drag_;
+    // Notes the operation's value and active handle before a manipulator drag.
+    void noteValueBeforeDrag();
 
     // Index of the operation handle under the pointer (tolerance per device), or -1.
     int handleAt(Vec2 screen, PointerDevice device) const;

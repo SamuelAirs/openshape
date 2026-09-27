@@ -435,6 +435,7 @@ void InteractionController::pointerPress(const PointerEvent& event)
     if (event.button == PointerButton::Left && operation_) {
         const int index = handleAt(event.position, event.device);
         if (index >= 0) {
+            noteValueBeforeDrag();
             operation_->setActiveHandle(index);
             drag_.mode = DragMode::Manipulator;
             drag_.handle = operation_->handle(index);
@@ -491,6 +492,7 @@ std::optional<Vec3> InteractionController::selectedRegionAt(Vec2 screen) const
 void InteractionController::grabPendingRing()
 {
     const int ring = drag_.ring;
+    noteValueBeforeDrag();
     operation_->setActiveHandle(ring); // a different ring starts from zero
     drag_.mode = DragMode::Manipulator;
     drag_.ringHandle = operation_->ring(ring);
@@ -565,6 +567,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
             return;
         // The arrow's value follows the finger along the arrow's axis through
         // the point pressed (then this move drags it, below).
+        noteValueBeforeDrag();
         operation_->setActiveHandle(0); // Extrude: back from the draft to the distance
         const LinearManipulator arrow = operation_->handle(0);
         drag_.mode = DragMode::Manipulator;
@@ -742,10 +745,28 @@ void InteractionController::cancelPointer()
         session_->cancelPress();
         notifyState();
     }
-    if (drag_.mode == DragMode::Manipulator)
+    // A pinch or a two-finger pan that began with one finger on the arrow,
+    // the selected profile or face (it moved the value before the second
+    // finger landed) leaves the value as it was.
+    if (drag_.mode == DragMode::Manipulator) {
+        if (operation_ && drag_.valueBefore) {
+            if (operation_->activeHandle() != drag_.handleBefore)
+                operation_->setActiveHandle(drag_.handleBefore);
+            if (operation_->value() != *drag_.valueBefore)
+                operation_->setValue(*drag_.valueBefore, *document_); // only this preview may show
+        }
         notifyState();
+    }
     drag_ = {};
     notifyView();
+}
+
+void InteractionController::noteValueBeforeDrag()
+{
+    if (!operation_)
+        return;
+    drag_.valueBefore = operation_->value();
+    drag_.handleBefore = operation_->activeHandle();
 }
 
 void InteractionController::wheel(Vec2 position, double steps)
@@ -3118,20 +3139,24 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     if (body.kind == sel::PickKind::Edge) {
         const sketch::Sketch* sk = region.hit() ? document_->sketch(region.bodyId) : nullptr;
         const bool edgeInPlane = sk && std::abs((body.point - sk->plane().origin).dot(sk->plane().normal().normalized())) <= slack;
-        // A tap inside a sketch region near an edge in the sketch's plane
-        // (the edge of the face it was drawn on, the rim of the pocket it
-        // cut), or inside the opening a used sketch cut near an edge of that
-        // pocket: at a finger's reach (18 px) the edge took most of a small
-        // region's or pocket's taps. There it is taken only within a mouse's
-        // reach (6 px; elsewhere a finger's reach still holds); otherwise the
-        // tap is for the region (not used yet, and not behind the surface
-        // hit) or for the surface seen through it (the pocket's floor).
+        // A tap inside a sketch region near an edge of the body the sketch
+        // was drawn on, in the sketch's plane (the edge of the face it lies
+        // on, the rim of the pocket it cut), or inside the opening a used
+        // sketch cut near an edge of that pocket: at a finger's reach (18 px)
+        // the edge took most of a small region's or pocket's taps. There it
+        // is taken only within a mouse's reach (6 px; elsewhere a finger's
+        // reach still holds); otherwise the tap is for the region (not used
+        // yet, and not behind the surface hit) or for the surface seen
+        // through it (the pocket's floor). A sketch on no body (the ground,
+        // a construction plane) leaves the bodies' edges a finger's reach: a
+        // base plate outline around a box must not hide its bottom edges.
+        const bool onHostFace = edgeInPlane && sk->hostBody() && *sk->hostBody() == body.bodyId;
         if (region.hit() && body.screenDistance > InputProfile::forDevice(PointerDevice::Mouse).pickTolerance) {
             const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
             const bool throughIt = face.hit() && face.depth > region.depth + slack;
-            if (edgeInPlane && !consumed && (!face.hit() || region.depth <= face.depth + slack))
+            if (onHostFace && !consumed && (!face.hit() || region.depth <= face.depth + slack))
                 return region;
-            if ((edgeInPlane || consumed) && throughIt)
+            if ((onHostFace || consumed) && throughIt)
                 return face;
         }
         if (!region.hit() || consumed || region.depth + slack >= body.depth)

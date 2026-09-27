@@ -926,10 +926,22 @@ ApplicationWindow {
                  + "Shift-click adds profiles"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
             return "Drag the arrow or type a distance · \"Up to face\" ends it on a face you click · Shift-click adds profiles"
-        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "cut")
+        // What each mode does, and only the ways out that really change it:
+        // on a face sketch Flip or the other mode turns it round, and an
+        // automatic Join cuts once the arrow goes into the body (a chosen
+        // Join stays a join). A sketch on no body cuts or joins the body it
+        // goes into: New body keeps it apart.
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "cut" && app.operationOnBody)
             return "Cuts it out of the body · Flip or Join turns it outward to add material instead · Enter applies"
-        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join")
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "cut")
+            return "Cuts it out of the body it goes into · New body makes a separate body instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join"
+            && app.operationOnBody && !app.operationModeChosen)
             return "Adds it to the body · drag the arrow into the body to cut instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join" && app.operationOnBody)
+            return "Adds it to the body · Flip or Cut cuts into it instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join")
+            return "Adds it to the body it touches · New body makes a separate body instead · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && app.operationOnBody)
             return "Makes a new body · Join adds it to the body, Cut cuts it out · Enter applies"
         // An empty model's hints, unless a tool is already at work (e.g. the

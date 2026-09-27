@@ -877,12 +877,16 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   across. On a phone a 20 mm face then spans ~16 px/mm: the sketch grid and
   the arrows snap in 1 mm (the fitted view gave 6 px/mm, 2 mm steps).
   With several faces selected (touch taps add) Sketch uses the last flat one.
-- **Edges under a sketch on touch:** in `pickAt`, an edge lying in the plane
-  of the sketch region under the tap, or an edge of the pocket seen through
-  a used sketch's region, wins only within a mouse's reach (6 px); beyond
-  it the tap goes to the region (unused, not behind the surface) or to the
-  face seen through it (the pocket's floor). Elsewhere edges keep a
-  finger's 18 px.
+- **Edges under a sketch on touch:** in `pickAt`, an edge of the sketch's
+  host body lying in the plane of the sketch region under the tap, or an
+  edge of the pocket seen through a used sketch's region, wins only within
+  a mouse's reach (6 px); beyond it the tap goes to the region (unused, not
+  behind the surface) or to the face seen through it (the pocket's floor).
+  Elsewhere, and under a sketch on no body (a base plate outline on the
+  ground around a box), edges keep a finger's 18 px (TD-83).
+- **A cancelled manipulator drag** (a pinch or two-finger pan whose first
+  finger had already moved the arrow, the profile or the face) puts the
+  value and the active handle back (`drag_.valueBefore`, `cancelPointer`).
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as

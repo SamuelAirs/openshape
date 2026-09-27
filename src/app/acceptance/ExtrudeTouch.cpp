@@ -6,6 +6,7 @@
 // top face tapped, Sketch, a rectangle drawn with one finger from (-5,-5) to
 // (5,5), Finish, the rectangle tapped and its arrow dragged 5 mm into the
 // body: 7500 mm3. Then typed +5 with Cut chosen (Cut goes into the body),
+// Flip (out again: a join, 8500 mm3), Cut chosen before typing 5,
 // Join pushed in (refused, and the hint says why), the selected profile
 // itself dragged (it moves the arrow, not the view), a stray second face
 // before Sketch, and the Cut button in sight in the value box's row on a
@@ -286,8 +287,50 @@ void addFlow(Steps& steps, AcceptanceRunner& r, const Config& c)
         r.check(hintFull(r).startsWith(QStringLiteral("Cuts it out of the body")), c.name + QStringLiteral(": the hint says it cuts"),
                 hintFull(r));
         r.screenshot(shot + QStringLiteral("5_plus5_cut"));
-        r.check(button(r, c, QStringLiteral("valueChipApply")), c.name + QStringLiteral(": ✓ (Cut chosen)"));
+        // Flip: out of the body again, an automatic Join.
+        r.check(button(r, c, QStringLiteral("action_flip")), c.name + QStringLiteral(": Flip in the value box"));
     });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        auto& app = r.app();
+        const QRectF row = sceneRect(r, QStringLiteral("valueChipActions"));
+        const QRectF flip = sceneRect(r, QStringLiteral("action_flip"));
+        r.check(!flip.isEmpty() && row.adjusted(-0.5, -0.5, 0.5, 0.5).contains(flip),
+                c.name + QStringLiteral(": Flip is in sight in the value box's row"), rectText(flip) + QStringLiteral(" in ") + rectText(row));
+        r.check(app.operationValueText().startsWith(QStringLiteral("5")) && app.operationValueLabel() == QStringLiteral("Height"),
+                c.name + QStringLiteral(": Flip turns the cut outward (+5, Height)"),
+                app.operationValueLabel() + QStringLiteral(" ") + app.operationValueText());
+        r.check(actionChecked(r, QStringLiteral("mode:join")) && app.operationCanCommit(),
+                c.name + QStringLiteral(": out of the body joins"), app.operationError());
+        r.check(hintFull(r).startsWith(QStringLiteral("Adds it to the body")), c.name + QStringLiteral(": the hint says it adds"),
+                hintFull(r));
+        r.check(button(r, c, QStringLiteral("valueChipApply")), c.name + QStringLiteral(": ✓ (flipped)"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(std::abs(r.bodyVolume() - 8500) < 1e-3, c.name + QStringLiteral(": flipped, 10 x 10 x 5 joined = 8500"),
+                AcceptanceRunner::num(r.bodyVolume()));
+        r.check(button(r, c, QStringLiteral("undoButton")), c.name + QStringLiteral(": Undo (flipped)"));
+    });
+    wait(steps, 2);
+    // ---- Cut chosen first, then 5 typed (no minus sign): into the body.
+    steps.push_back([&r, c] { select(r, c, r.screenPoint(0, 0, 20)); });
+    wait(steps, 2);
+    steps.push_back([&r, c] { r.check(button(r, c, QStringLiteral("action_mode:cut")), c.name + QStringLiteral(": Cut before a value")); });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(button(r, c, QStringLiteral("valueChipField")), c.name + QStringLiteral(": the value field (Cut chosen)"));
+        r.type(QStringLiteral("5"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        auto& app = r.app();
+        r.check(app.operationValueLabel() == QStringLiteral("Cut depth") && app.operationValueText().startsWith(QStringLiteral("-5")),
+                c.name + QStringLiteral(": 5 typed with Cut chosen goes in"), app.operationValueLabel() + QStringLiteral(" ") + app.operationValueText());
+        r.key(Qt::Key_Escape); // out of the field; the value stays
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] { r.check(button(r, c, QStringLiteral("valueChipApply")), c.name + QStringLiteral(": ✓ (Cut chosen)")); });
     wait(steps, 2);
     steps.push_back([&r, c] {
         r.check(std::abs(r.bodyVolume() - 7500) < 1e-3, c.name + QStringLiteral(": typed 5 with Cut cuts 5 deep"),

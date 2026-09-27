@@ -60,6 +60,9 @@ class AppController : public QObject {
     // of it adds material, into it cuts: the hints say so).
     Q_PROPERTY(QString operationMode READ operationMode NOTIFY stateChanged)
     Q_PROPERTY(bool operationOnBody READ operationOnBody NOTIFY stateChanged)
+    // Extrude: New body / Join / Cut was chosen (otherwise the direction and
+    // the preview decide it). The hints only promise what the choice does.
+    Q_PROPERTY(bool operationModeChosen READ operationModeChosen NOTIFY stateChanged)
     // The Text tool: the chip shows a text field for the words (setOperationText).
     Q_PROPERTY(bool operationTakesText READ operationTakesText NOTIFY stateChanged)
     Q_PROPERTY(QString operationText READ operationText NOTIFY stateChanged)
@@ -158,6 +161,7 @@ public:
     QString operationPrompt() const;
     QString operationMode() const;
     bool operationOnBody() const;
+    bool operationModeChosen() const;
     bool operationTakesText() const;
     QString operationText() const;
     bool operationTextTyped() const;

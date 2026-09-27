@@ -294,6 +294,13 @@ bool AppController::operationOnBody() const
     return false;
 }
 
+bool AppController::operationModeChosen() const
+{
+    if (const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(interaction_->operation()))
+        return extrude->modeOverride().has_value();
+    return false;
+}
+
 bool AppController::operationTakesText() const
 {
     return interaction_->operationTakesText();

@@ -283,8 +283,10 @@ appears where you clicked:
   makes a new body, and a cut that would remove nothing does too. **Join**
   chosen and pushed into the body is refused: it would add nothing.)
 - A sketch on the ground or on a construction plane makes a new body, or,
-  pushed into a body, cuts it (and one that only touches a body's side
-  joins it). **New body**, **Join** and **Cut** override that too.
+  pushed into a body, cuts it. One drawn on a body's face (say a
+  construction plane on its top) and pulled away from it joins it; one that
+  only touches a body's side stays a new body. **New body**, **Join** and
+  **Cut** override that too.
 - **Symmetric**: the value is the total thickness, half on each side of the
   sketch.
 - **Up to face**: click a flat face parallel to the sketch; the extrusion

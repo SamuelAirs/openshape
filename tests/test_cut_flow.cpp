@@ -312,6 +312,32 @@ TEST(CutFlow, EdgeTakesTapsInsideARegionOnlyWithinAMouseReach)
     EXPECT_EQ(p.tapped(p.screen({10, 7, 20}) + (p.screen({8, 7, 20}) - p.screen({10, 7, 20})) * 0.9), 'E');
 }
 
+// A sketch on no body (a base plate outlined on the ground around a box)
+// does not hide the box's edges: a finger 12 px in front of the box's
+// bottom edge, over the plate's region, still takes the edge.
+TEST(CutFlow, EdgesOverASketchOnNoBodyKeepAFingersReach)
+{
+    Phone p;
+    p.box();
+    p.tap(p.screen({60, 60, 60})); // empty space: nothing selected
+    ASSERT_TRUE(p.controller.selection().empty());
+    ASSERT_TRUE(p.controller.startSketch().ok());
+    p.controller.skipAnimation();
+    ASSERT_NEAR(p.session().sketch().plane().origin.z, 0.0, 1e-9);
+    p.rectangle({-20, -20}, {20, 20});
+    EXPECT_NEAR(p.rectArea(), 1600, 1e-6);
+    p.finish();
+    p.controller.fitAll(false);
+    const Vec2 edge = p.screen({0, -10, 0});
+    Vec2 out = p.screen({0, -11, 0}) - edge;
+    out = out * (1.0 / out.length());
+    const Vec2 at = edge + out * 12.0;
+    ASSERT_EQ(p.controller.pickAt(at, InputProfile::forDevice(PointerDevice::Touch)).kind, sel::PickKind::Edge);
+    EXPECT_EQ(p.tapped(at), 'E');
+    // Further out, the plate's region.
+    EXPECT_EQ(p.tapped(p.screen({0, -16, 0})), 'P');
+}
+
 // After the cut, a tap on the pocket's floor selects the floor, not the
 // pocket's edges a finger's reach (18 px) around it: a 5 mm slot seen from
 // above at the fitted phone view (1 mm = 6 px), its edges 15 px from its middle.
@@ -519,6 +545,51 @@ TEST(CutFlow, DraggingTheSelectedProfileDragsItsArrow)
     m.drag(at, at + Vec2{60, 0});
     EXPECT_GT(std::abs(m.controller.camera().yaw - yaw), 1e-3);
     EXPECT_DOUBLE_EQ(m.extrude()->distance(), 0.0);
+}
+
+// A pinch (or two-finger pan) whose first finger lands on the selected
+// profile and moves past the drag threshold before the second finger lands
+// is cancelled by the gesture recogniser: the value goes back to what it was.
+TEST(CutFlow, APinchStartingOnTheProfileLeavesTheValue)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    p.rectangle({-8, -8}, {8, 8});
+    p.finish();
+    p.tap(p.screen({5, -5, 20}));
+    ASSERT_NE(p.extrude(), nullptr);
+    EXPECT_EQ(p.controller.setValueText("3"), "");
+    ASSERT_DOUBLE_EQ(p.extrude()->distance(), 3.0);
+    const Vec2 from = p.screen({-5, -5, 20});
+    p.controller.pointerPress(p.at(from));
+    p.controller.pointerMove(p.at(from + Vec2{0, 8}));
+    p.controller.pointerMove(p.at(from + Vec2{0, 15}));
+    ASSERT_TRUE(p.controller.manipulatorDragging()) << "the finger drags the arrow";
+    ASSERT_NE(p.extrude()->distance(), 3.0) << "the first finger moved the value";
+    p.controller.cancelPointer(); // the second finger lands: a pinch
+    ASSERT_NE(p.extrude(), nullptr);
+    EXPECT_DOUBLE_EQ(p.extrude()->distance(), 3.0);
+    EXPECT_FALSE(p.controller.manipulatorDragging());
+    ASSERT_TRUE(p.commit().ok());
+    EXPECT_NEAR(p.volume(), kCube + 16 * 16 * 3, 1e-6) << "the 3 mm join, as typed";
+
+    // The same on a selected face (Push/Pull).
+    Phone f;
+    f.box();
+    f.tap(f.screen({0, 0, 20}));
+    ASSERT_NE(f.controller.operation(), nullptr);
+    const double start = f.controller.operation()->value();
+    const bool couldCommit = f.controller.operation()->canCommit();
+    const Vec2 at = f.screen({6, 6, 20});
+    f.controller.pointerPress(f.at(at));
+    f.controller.pointerMove(f.at(at + Vec2{0, -30}));
+    ASSERT_TRUE(f.controller.manipulatorDragging());
+    ASSERT_NE(f.controller.operation()->value(), start);
+    f.controller.cancelPointer();
+    EXPECT_DOUBLE_EQ(f.controller.operation()->value(), start);
+    EXPECT_EQ(f.controller.operation()->canCommit(), couldCommit);
+    EXPECT_NEAR(f.volume(), kCube, 1e-6);
 }
 
 TEST(CutFlow, DraggingTheSelectedFacePushesIt)
