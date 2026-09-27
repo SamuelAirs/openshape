@@ -70,6 +70,15 @@ Item {
         textField.forceActiveFocus()
         textField.cursorPosition = textField.text.length
     }
+    // The Text tool's Depth, Size and Angle buttons: the value field takes
+    // the keys (keys typed in the view go to the words).
+    function focusValue() {
+        if (!app.operationActive)
+            return
+        field.text = app.operationValueText
+        field.forceActiveFocus()
+        field.selectAll()
+    }
     // Keys typed while the view has the focus (after a click on the face).
     function typeText(characters) {
         focusText()
@@ -323,7 +332,10 @@ Item {
                 const owner = chip
                 const id = modelData.id
                 owner.app.triggerAction(id)
-                owner.finished()
+                if (owner.takesText && id.startsWith("field:"))
+                    owner.focusValue()
+                else
+                    owner.finished()
             }
         }
     }

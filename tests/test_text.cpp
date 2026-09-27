@@ -16,6 +16,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
+
 using namespace os;
 
 namespace {
@@ -242,4 +244,54 @@ TEST(Text, TextStepsRoundTripThroughTheProjectFile)
     const doc::Body& withOtherFont = *opened.value()->body(plate.body);
     ASSERT_TRUE(withOtherFont.hasFailures());
     EXPECT_EQ(withOtherFont.state(1).userMessage, "The font \"NotoSerif-Regular\" is not available in this version of OpenShape.");
+}
+
+// An angle is a direction: whatever is typed in the Model panel or read from
+// a file (finite), the step keeps the same direction in [0, 2 pi), so a
+// project never holds an angle it could not open again.
+TEST(Text, AnglesAreKeptAsDirections)
+{
+    EXPECT_DOUBLE_EQ(doc::TextFeature::normalizedAngle(0.25), 0.25) << "in range: exactly as it is";
+    EXPECT_NEAR(doc::TextFeature::normalizedAngle(-kPi / 2), 3 * kPi / 2, 1e-12);
+    EXPECT_NEAR(doc::TextFeature::normalizedAngle(5 * kPi / 2), kPi / 2, 1e-12);
+    EXPECT_EQ(doc::TextFeature::normalizedAngle(2 * kPi), 0.0);
+    EXPECT_EQ(doc::TextFeature::normalizedAngle(-2 * kPi), 0.0);
+    EXPECT_NEAR(doc::TextFeature::normalizedAngle(-100000 * kPi / 180), 80 * kPi / 180, 1e-9); // 278 turns back, then 80 degrees
+    for (double a = -20; a <= 20; a += 0.37) {
+        const double n = doc::TextFeature::normalizedAngle(a);
+        EXPECT_GE(n, 0.0) << a;
+        EXPECT_LT(n, 2 * kPi) << a;
+        EXPECT_NEAR(std::cos(n), std::cos(a), 1e-12) << a;
+        EXPECT_NEAR(std::sin(n), std::sin(a), 1e-12) << a;
+    }
+
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextPlate plate;
+    auto f = plate.text("AB", 1.0);
+    const Uuid id = f->id();
+    ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::AddFeatureCommand>(plate.body, std::move(f)), plate.document).ok());
+    const doc::Feature& step = *plate.document.body(plate.body)->feature(id);
+    // -90 degrees in the Model panel: stored as 270.
+    ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::SetParameterCommand>(id, "angle", -kPi / 2), plate.document).ok());
+    EXPECT_NEAR(*step.parameter("angle"), 3 * kPi / 2, 1e-12);
+    const double turned = plate.volume();
+    // 450 degrees: 90.
+    ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::SetParameterCommand>(id, "angle", 5 * kPi / 2), plate.document).ok());
+    EXPECT_NEAR(*step.parameter("angle"), kPi / 2, 1e-12);
+    EXPECT_NEAR(plate.volume(), turned, 1e-6) << "a half turn more raises the same letters";
+    EXPECT_FALSE(plate.stack.push(std::make_unique<cmd::SetParameterCommand>(id, "angle", std::nan("")), plate.document));
+
+    // A file with an angle of many turns (or a negative one) opens at the same direction.
+    const auto json = io::documentToJson(plate.document);
+    for (const double stored : {-kPi / 2 - 200 * kPi, 3 * kPi / 2 + 2000 * kPi}) {
+        auto many = json;
+        for (auto& feature : many["bodies"][0]["features"])
+            if (feature["type"] == "Text")
+                feature["params"]["angle"] = stored;
+        auto opened = io::documentFromJson(many);
+        ASSERT_TRUE(opened.ok()) << opened.developerMessage();
+        const doc::Body& body = *opened.value()->body(plate.body);
+        EXPECT_FALSE(body.hasFailures());
+        EXPECT_NEAR(*body.feature(id)->parameter("angle"), kPi / 2 + kPi, 1e-9) << stored;
+    }
 }

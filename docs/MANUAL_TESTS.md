@@ -109,7 +109,8 @@ odd: a screenshot and a sentence is plenty. Starting the app with
       Tap and heat-set insert sizes do not change.
     - Text: click a flat face, "Text", type a word (the letters appear in
       the middle), click elsewhere on the face to move it, drag the arrow
-      up (raised) or down (cut in), try Size `5`, 90°, Deboss; Enter. In
+      up (raised) or down (cut in), click Size and type `5`, 90°, Deboss;
+      type a digit after clicking the face (it goes to the words); Enter. In
       the Model panel, click the Text step and change the words. Print a
       label: are 5 mm capitals 0.6-1 mm deep readable?
 15. **The documentation.** Follow the Quick start in README.md step by step

@@ -253,8 +253,7 @@ relinking.
    Qt reports; TD-54).
 10. Text: tap a flat face, **Text**: the on-screen keyboard should come up
    for the words (they appear on the face as you type); tap the face to
-   move them, drag the arrow up or down, **Deboss**, ✓. (Needs the
-   built-in font, TD-57; without it the tool says text is not available.)
+   move them, drag the arrow up or down, **Deboss**, **Bold**, ✓.
 11. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 

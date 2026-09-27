@@ -131,16 +131,18 @@ each drag, a wait for the kernel while the worker held it).
 before 2026-09-26 (to compare).
 
 
-**The Text tool's font.** Noto Sans (`resources/fonts/`, see its README) is
-built into the executable when the files are there at CMake's configure
-time (re-run the configure step after adding them; without them CMake
-warns and the tool says text is not available). For development only,
-`OPENSHAPE_TEXT_FONT=<file.ttf>` makes a build without them use another
-font in its place (verified: `OPENSHAPE_TEXT_FONT=C:/Windows/Fonts/arial.ttf
-OpenShape.exe --acceptance out-dir --scenario text` passes 39/39). The
-text tests (`test_text*.cpp`) use the file named by `OPENSHAPE_TEST_FONT`
-if set, else the bundled font from the source tree, else a system font
-(Arial, DejaVu Sans; `tests/TestFonts.h`), and skip only when there is none.
+**The Text tool's font.** Noto Sans Regular and Bold (`resources/fonts/`,
+in the repository since 2026-09-26; see its README and `THIRD_PARTY.md` for
+the release and hashes) are built into the executable at CMake's configure
+time (after replacing the files, re-run the configure step; a checkout
+without them builds with a CMake warning, and the tool says text is not
+available). For development only, `OPENSHAPE_TEXT_FONT=<file.ttf>` makes a
+build without them use another font in its place. The text tests
+(`test_text*.cpp`, and the Text test in `test_async_preview.cpp`) read the
+bundled Noto Sans from the source tree (`tests/TestFonts.h`; they fail when
+it cannot be read); `OPENSHAPE_TEST_FONT=<file.ttf>` tries another typeface
+for the regular font (the checks are areas, volumes and extents, which hold
+for any outline font).
 
 Where the app keeps things (Windows):
 

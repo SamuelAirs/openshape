@@ -13,73 +13,58 @@
 
 namespace os::test {
 
+namespace detail {
+inline bool registerFontFile(const std::string& id, const std::string& path)
+{
+    if (path.empty())
+        return false;
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return false;
+    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return geom::registerFont(id, std::move(bytes));
+}
+} // namespace detail
+
 // A font for text tests, registered under `id` (the app's default font id):
-// the file named by OPENSHAPE_TEST_FONT, else the app's bundled Noto Sans
-// (resources/fonts/) when the source tree has it, else a system font
-// (Arial, DejaVu Sans) read at test time. The checks (areas, volumes,
-// counters, extents) hold for any outline font. Returns the file used, or
-// "" (the test then skips).
+// the app's bundled Noto Sans (resources/fonts/), or the file named by
+// OPENSHAPE_TEST_FONT to try another typeface (the invariants - areas,
+// volumes, counters, extents - hold for any outline font). Returns the file
+// used, or "" (the test then fails: the fonts are part of the repository).
 inline std::string registerTestFont(const std::string& id)
 {
     static std::string used;
     if (!used.empty() && geom::hasFont(id))
         return used;
-    std::string candidates[] = {
-        std::getenv("OPENSHAPE_TEST_FONT") ? std::getenv("OPENSHAPE_TEST_FONT") : "",
-        std::string(OPENSHAPE_SOURCE_DIR) + "/resources/fonts/NotoSans-Regular.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/Library/Fonts/Arial.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    };
-    for (const std::string& path : candidates) {
-        if (path.empty())
-            continue;
-        std::ifstream in(path, std::ios::binary);
-        if (!in)
-            continue;
-        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (geom::registerFont(id, std::move(bytes))) {
+    const char* chosen = std::getenv("OPENSHAPE_TEST_FONT");
+    for (const std::string& path : {std::string(chosen ? chosen : ""),
+                                    std::string(OPENSHAPE_SOURCE_DIR) + "/resources/fonts/NotoSans-Regular.ttf"})
+        if (detail::registerFontFile(id, path)) {
             used = path;
             return used;
         }
-    }
     return {};
 }
 
-// A bold font for the Bold switch, registered under `id`: the bundled Noto
-// Sans Bold, else a system bold font. Returns the file used, or "".
+// The bundled Noto Sans Bold for the Bold switch, registered under `id`.
+// Returns the file used, or "".
 inline std::string registerTestBoldFont(const std::string& id)
 {
     static std::string used;
     if (!used.empty() && geom::hasFont(id))
         return used;
-    const std::string candidates[] = {
-        std::string(OPENSHAPE_SOURCE_DIR) + "/resources/fonts/NotoSans-Bold.ttf",
-        "C:/Windows/Fonts/arialbd.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        "/Library/Fonts/Arial Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    };
-    for (const std::string& path : candidates) {
-        std::ifstream in(path, std::ios::binary);
-        if (!in)
-            continue;
-        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (geom::registerFont(id, std::move(bytes))) {
-            used = path;
-            return used;
-        }
-    }
-    return {};
+    const std::string path = std::string(OPENSHAPE_SOURCE_DIR) + "/resources/fonts/NotoSans-Bold.ttf";
+    if (detail::registerFontFile(id, path))
+        used = path;
+    return used;
 }
 
 } // namespace os::test
 
-// Registers the test font under `id`, or skips the test when there is none.
+// Registers the test font under `id`; fails the test when it cannot be read.
 #define OS_REQUIRE_TEST_FONT(id)                                                                                       \
     do {                                                                                                               \
         if (::os::test::registerTestFont(id).empty())                                                                  \
-            GTEST_SKIP() << "no font for text tests (resources/fonts/NotoSans-Regular.ttf, OPENSHAPE_TEST_FONT or a " \
-                            "system font)";                                                                            \
+            GTEST_FAIL() << "no font for text tests: resources/fonts/NotoSans-Regular.ttf (or OPENSHAPE_TEST_FONT) "   \
+                            "cannot be read";                                                                          \
     } while (false)

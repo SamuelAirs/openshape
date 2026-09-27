@@ -517,12 +517,17 @@ datasheet.
    middle of the face in Noto Sans; click the face to move them (they snap
    to the middle and to the middles of the edges).
 3. Drag the arrow out to raise the letters (**Emboss**) or in to cut them
-   into the face (**Deboss**), or type the depth. **Size** is the height of
-   the capital letters in mm; **Angle** turns the text (or use **0°**,
-   **90°**, **180°**, **270°**).
+   into the face (**Deboss**). To type a number, click **Depth**, **Size**
+   or **Angle** first (or press `Tab` in the Text box): anything typed
+   elsewhere, digits included, goes to the words. **Size** is the height of
+   the capital letters in mm; **Angle** turns the text, from -360° to 360°
+   (or use **0°**, **90°**, **180°**, **270°**).
 4. Press `Enter` (or ✓). The step appears as **Text** in the Model panel,
    where the words, size, depth and angle can be changed later; the text
-   follows its face when earlier steps move it.
+   follows its face when earlier steps move it. The next time, **Text**
+   starts with the same words and settings: `Enter` applies them again,
+   typing replaces the words, and a click elsewhere without changing
+   anything just leaves the tool.
 
 As a starting point for printing, try capitals of 5 mm or more and a depth
 of 0.6–1 mm.

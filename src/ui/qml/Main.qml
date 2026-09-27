@@ -883,7 +883,7 @@ ApplicationWindow {
                  + "X / Y (Tab) type the current hole's position · click a hole to pick it (Remove hole drops it) · Enter applies"
         if (app.operationActive && app.operationTitle === "Text")
             return "Click the face to move the text (it snaps to the center and edge middles) · drag the arrow out to raise it, "
-                 + "in to cut it · type the depth, size or angle in its field (Tab) · Size is the capital letters' height · Enter applies"
+                 + "in to cut it · Depth, Size or Angle, then type its value · Size is the capital letters' height · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
             return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Countersink"))

@@ -273,8 +273,9 @@ TEST(TextInteraction, TypedAnglesAreCheckedAndStoredAsDirections)
 
 // Words remembered from the last use preview when the tool opens, but a
 // stray click elsewhere does not apply them (the tool closes and the click
-// selects as usual); once anything is typed, placed or changed it does, and
-// Enter / Apply always do.
+// selects as usual), nor does picking a body in the Model panel; once
+// anything is typed, placed or changed a click elsewhere does, and Enter /
+// Apply always do.
 TEST(TextInteraction, AStrayClickDoesNotApplyRememberedText)
 {
     OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
@@ -283,16 +284,21 @@ TEST(TextInteraction, AStrayClickDoesNotApplyRememberedText)
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
     ASSERT_EQ(h.controller.setOperationText("OK"), "");
     EXPECT_TRUE(h.tool()->edited());
+    // Off the face's center (where the tool opens next time): "OK" at 10 mm
+    // is about 19 x 10 mm, so these letters span x 2.5-21.5, y 2-12.
+    h.clickAt(h.screen({12, 7, 5}));
+    ASSERT_NEAR((h.tool()->position() - Vec2{12, 7}).length(), 0, 0.5);
     ASSERT_TRUE(h.controller.commitOperation().ok());
     ASSERT_EQ(h.document.body(h.body)->features().size(), 2u);
     const double withOne = h.volume();
+    const Vec3 top{52, 5, 5}; // the top face, away from any letters
 
-    // Opened again: "OK" previews, nothing is done yet.
-    h.clickAt(h.screen({40, 20, 5}));
+    // Opened again: "OK" previews at the center, nothing is done yet.
+    h.clickAt(h.screen(top));
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
     ASSERT_NE(h.tool(), nullptr);
     EXPECT_EQ(h.tool()->text(), "OK");
-    EXPECT_TRUE(h.tool()->canCommit());
+    EXPECT_TRUE(h.tool()->canCommit()) << h.tool()->error();
     EXPECT_FALSE(h.tool()->edited());
     // A tap on empty space leaves the tool without a step.
     h.clickAt({5, 5});
@@ -301,7 +307,7 @@ TEST(TextInteraction, AStrayClickDoesNotApplyRememberedText)
     EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
     EXPECT_NEAR(h.volume(), withOne, 1e-9);
     // A click on another face selects it (its usual tools), still without a step.
-    h.clickAt(h.screen({40, 20, 5}));
+    h.clickAt(h.screen(top));
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
     h.clickAt(h.screen({30, 0, 2.5})); // the plate's front face
     EXPECT_EQ(h.tool(), nullptr);
@@ -310,36 +316,54 @@ TEST(TextInteraction, AStrayClickDoesNotApplyRememberedText)
     const auto front = geom::faceInfo(h.document.body(h.body)->shape(), h.controller.selection().items()[0].index);
     ASSERT_TRUE(front.has_value());
     EXPECT_NEAR(front->normal.y, -1.0, 1e-9) << "the front face is selected";
+    // Picking the body in the Model panel: selected, no step either.
+    h.clickAt(h.screen(top));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_TRUE(h.controller.selectBody(h.body, false).ok());
+    EXPECT_EQ(h.tool(), nullptr);
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
+    EXPECT_TRUE(h.controller.selection().allOfKind(sel::SelectionKind::Body));
 
     // Changed (Deboss): a click elsewhere applies it.
-    h.clickAt(h.screen({40, 20, 5}));
+    h.clickAt({5, 5});
+    h.clickAt(h.screen(top));
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
     ASSERT_TRUE(h.controller.triggerAction("deboss").ok());
     EXPECT_TRUE(h.tool()->edited());
     h.clickAt({5, 5});
     EXPECT_EQ(h.controller.operation(), nullptr);
     EXPECT_EQ(h.document.body(h.body)->features().size(), 3u);
-    // Placed by a click on the face (even at the same point): applied likewise.
-    h.clickAt(h.screen({40, 20, 5}));
+    // Placed by a click on the face: applied likewise.
+    h.clickAt(h.screen(top));
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
     h.clickAt(h.screen({45, 25, 5}));
     EXPECT_TRUE(h.tool()->edited());
+    EXPECT_TRUE(h.tool()->canCommit()) << h.tool()->error();
     h.clickAt({5, 5});
     EXPECT_EQ(h.document.body(h.body)->features().size(), 4u);
-    // Untouched, but applied on purpose (Enter or the chip's Apply).
-    h.clickAt(h.screen({40, 20, 5}));
+
+    // Untouched, but applied on purpose (Enter or the chip's Apply). The
+    // two cut-in steps undone first: the remembered words go to the free center.
+    ASSERT_TRUE(h.stack.undo(h.document));
+    ASSERT_TRUE(h.stack.undo(h.document));
+    h.controller.documentChanged();
+    ASSERT_EQ(h.document.body(h.body)->features().size(), 2u);
+    h.clickAt(h.screen(top));
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_NE(h.tool(), nullptr);
     EXPECT_FALSE(h.tool()->edited());
+    EXPECT_LT(h.tool()->depth(), 0) << "remembered: cut in";
     ASSERT_TRUE(h.controller.commitOperation().ok());
-    EXPECT_EQ(h.document.body(h.body)->features().size(), 5u);
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 3u);
+    const double area = letterArea("OK", 10);
+    EXPECT_NEAR(withOne - h.volume(), area, 1e-5 * area) << "cut in 1 mm at the center";
 }
 
-// With a bold font built in, Bold switches to it (stored as its font id).
+// With the bold font built in, Bold switches to it (stored as its font id).
 TEST(TextInteraction, BoldWhenABoldFontIsThere)
 {
     OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
-    if (test::registerTestBoldFont(doc::kTextFontBold).empty())
-        GTEST_SKIP() << "no bold font for the test";
+    ASSERT_FALSE(test::registerTestBoldFont(doc::kTextFontBold).empty()) << "resources/fonts/NotoSans-Bold.ttf";
     TextHarness h;
     h.plateWithTopSelected();
     ASSERT_TRUE(h.controller.triggerAction("text").ok());
