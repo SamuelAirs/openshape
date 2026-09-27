@@ -1963,7 +1963,11 @@ TEST(SketchInteraction, ProfileBesideABoxWinsOverAnEdgeBehindIt)
 // point a few pixels inside that edge is nearer the eye than the edge), or a
 // body's bottom edge beside a sketch on the ground. A click over the sketch
 // within the pick tolerance of such an edge picks the edge, in both
-// projections, with the mouse and with touch.
+// projections, with the mouse and with touch. Over a sketch drawn on the
+// body's face a finger gets only a mouse's reach (6 px) to that body's edges
+// (at 18 px the edge took most taps meant for a small sketch region on a
+// phone, 2026-09-27); a sketch on no body (the ground) leaves them a
+// finger's reach, and so does the face beside the sketch.
 TEST(SketchInteraction, EdgesInAnUnusedSketchPlaneStayReachable)
 {
     for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
@@ -2003,17 +2007,23 @@ TEST(SketchInteraction, EdgesInAnUnusedSketchPlaneStayReachable)
         for (const auto device : {PointerDevice::Mouse, PointerDevice::Touch}) {
             const auto profile = InputProfile::forDevice(device);
             for (const double pixels : {2.0, 0.6 * profile.pickTolerance}) {
+                const bool edge = pixels <= InputProfile::forDevice(PointerDevice::Mouse).pickTolerance;
                 // Inside the top face, off its far edge.
                 const Vec3 farEdge{0, 10, 20};
                 const Vec3 inside{0, 10 - pixels * camera.pixelSize(farEdge), 20};
                 const auto far = h.controller.pickAt(camera.project(inside), profile);
-                ASSERT_EQ(far.kind, sel::PickKind::Edge) << "far edge, " << pixels << " px";
-                EXPECT_NEAR(far.point.y, 10.0, 1e-6);
-                EXPECT_NEAR(far.point.z, 20.0, 1e-6);
+                if (!edge) {
+                    EXPECT_EQ(far.kind, sel::PickKind::Profile) << "a finger " << pixels << " px inside the far edge";
+                } else {
+                    ASSERT_EQ(far.kind, sel::PickKind::Edge) << "far edge, " << pixels << " px";
+                    EXPECT_NEAR(far.point.y, 10.0, 1e-6);
+                    EXPECT_NEAR(far.point.z, 20.0, 1e-6);
+                }
                 // On the ground sketch, in front of the bottom front edge.
                 const Vec3 bottomEdge{0, -10, 0};
                 const Vec3 inFront{0, -10 - pixels * camera.pixelSize(bottomEdge), 0};
                 const auto bottom = h.controller.pickAt(camera.project(inFront), profile);
+                // The ground sketch is on no body: the box's edges keep a finger's reach.
                 ASSERT_EQ(bottom.kind, sel::PickKind::Edge) << "bottom edge, " << pixels << " px";
                 EXPECT_NEAR(bottom.point.y, -10.0, 1e-6);
                 EXPECT_NEAR(bottom.point.z, 0.0, 1e-6);

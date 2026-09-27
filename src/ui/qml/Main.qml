@@ -67,6 +67,17 @@ ApplicationWindow {
     Binding { target: Theme; property: "safeLeft"; value: safeInsets.marginLeft }
     // The sketch's live values, moved out from under a finger, stay inside them too.
     Binding { target: window.app; property: "safeInsets"; value: [Theme.safeTop, Theme.safeRight, Theme.safeBottom, Theme.safeLeft] }
+    // Where a sketch started on a face or construction plane frames it: the
+    // view between the sketch's controls [top, right, bottom, left]. Compact:
+    // below the tool bar, above the hint line over the tool strip; regular:
+    // below the tool bar, right of the tool palette, above the hint.
+    Binding {
+        target: window.app
+        property: "frameInsets"
+        value: [sketchOverlay.toolbarBottom + 8, Theme.insetRight,
+                Theme.compact ? window.height - sketchOverlay.toolStripTop + 36 : Theme.insetBottom + 40,
+                Math.max(Theme.insetLeft, sketchOverlay.paletteRight + 8)]
+    }
     // Touch-sized controls once the app is used by touch (from the start on a tablet).
     Binding { target: Theme; property: "touch"; value: window.app.touchMode }
 
@@ -918,8 +929,11 @@ ApplicationWindow {
 
     // An operation without a value chip (Mirror) that cannot be applied says
     // why here; the chip shows its own errors.
+    // An operation with a chip that cannot be applied says why here too:
+    // never "✓ applies" beside a disabled ✓.
     function operationRefused() {
-        return !app.sketchMode && app.operationActive && app.operationError.length > 0 && !app.valueLabelVisible
+        return !app.sketchMode && app.operationActive && app.operationError.length > 0
+               && (!app.valueLabelVisible || !app.operationCanCommit)
     }
 
     // Mirror / Pattern will make separate bodies (chosen, or because the
@@ -957,8 +971,30 @@ ApplicationWindow {
                  + "the arrow (or Draft again) goes back to the distance · Enter applies"
         if (app.operationActive && app.operationTitle === "Extrude" && app.operationValueLabel === "Thickness")
             return "Drag the arrow or type the total thickness (half on each side of the sketch) · Enter applies"
+        // A sketch on a face: out of the body adds material, into it cuts.
+        if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue && app.operationOnBody)
+            return "Drag the arrow out of the body to add material, into it to cut · or type a distance (negative cuts) · "
+                 + "Shift-click adds profiles"
         if (app.operationActive && app.operationTitle === "Extrude" && !app.operationHasValue)
             return "Drag the arrow or type a distance · \"Up to face\" ends it on a face you click · Shift-click adds profiles"
+        // What each mode does, and only the ways out that really change it:
+        // on a face sketch Flip or the other mode turns it round, and an
+        // automatic Join cuts once the arrow goes into the body (a chosen
+        // Join stays a join). A sketch on no body cuts or joins the body it
+        // goes into: New body keeps it apart.
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "cut" && app.operationOnBody)
+            return "Cuts it out of the body · Flip or Join turns it outward to add material instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "cut")
+            return "Cuts it out of the body it goes into · New body makes a separate body instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join"
+            && app.operationOnBody && !app.operationModeChosen)
+            return "Adds it to the body · drag the arrow into the body to cut instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join" && app.operationOnBody)
+            return "Adds it to the body · Flip or Cut cuts into it instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationMode === "join")
+            return "Adds it to the body it touches · New body makes a separate body instead · Enter applies"
+        if (app.operationActive && app.operationTitle === "Extrude" && app.operationOnBody)
+            return "Makes a new body · Join adds it to the body, Cut cuts it out · Enter applies"
         // An empty model's hints, unless a tool is already at work (e.g. the
         // first extrusion, whose own hints come below).
         if (!app.operationActive && app.bodyCount === 0 && app.sketchCount > 0)
@@ -1088,13 +1124,17 @@ ApplicationWindow {
         // A phone: a bar (its actions scroll sideways) beside the Model / View
         // buttons; held sideways, one row high, as wide as the room beside the
         // top bar when that is enough.
+        // Only while the leading actions (Extrude's New body / Join / Cut)
+        // fit beside the field: otherwise they go below it, in sight.
         singleRow: Theme.compact && window.width > window.height
+                   && singleRowWidth - fieldWidth - 6 >= leadingActionsWidth
         readonly property real roomBesideTopBar: Math.floor(Math.min(viewButtonPanel.x, modelButtonPanel.visible ? modelButtonPanel.x : window.width)
                                                  - 8 - (topBar.x + topBar.width + 8)) - 1
+        readonly property real singleRowWidth: roomBesideTopBar >= 380 ? roomBesideTopBar
+                                             : Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1
         // Whole pixels, a pixel short: the layout rounds the chip's width up.
         maximumWidth: !Theme.compact ? window.width - Theme.insetLeft - Theme.insetRight
-                    : singleRow ? (roomBesideTopBar >= 380 ? roomBesideTopBar
-                                                           : Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
+                    : singleRow ? singleRowWidth
                     : Math.max(200, Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
         // Where it goes (interact::placeValueChip): never over the selection,
         // the arrows or the point just tapped (app.keepClearRect), nor over

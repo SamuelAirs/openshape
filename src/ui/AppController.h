@@ -58,6 +58,14 @@ class AppController : public QObject {
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
+    // Extrude / Revolve: what the profiles make ("new", "join", "cut"; "" for
+    // other operations), and whether the sketch lies on a body's face (out
+    // of it adds material, into it cuts: the hints say so).
+    Q_PROPERTY(QString operationMode READ operationMode NOTIFY stateChanged)
+    Q_PROPERTY(bool operationOnBody READ operationOnBody NOTIFY stateChanged)
+    // Extrude: New body / Join / Cut was chosen (otherwise the direction and
+    // the preview decide it). The hints only promise what the choice does.
+    Q_PROPERTY(bool operationModeChosen READ operationModeChosen NOTIFY stateChanged)
     // The Text tool: the chip shows a text field for the words (setOperationText).
     Q_PROPERTY(bool operationTakesText READ operationTakesText NOTIFY stateChanged)
     Q_PROPERTY(QString operationText READ operationText NOTIFY stateChanged)
@@ -75,6 +83,11 @@ class AppController : public QObject {
     // (Main.qml binds Theme.safe*): the sketch's live values moved out from
     // under a finger stay inside them.
     Q_PROPERTY(QVariantList safeInsets READ safeInsets WRITE setSafeInsets NOTIFY viewChanged)
+    // How far the sketch's controls reach into the view [top, right, bottom,
+    // left] (Main.qml: in a compact window the top bar and the Finish bar,
+    // the hint and the tool strip): a sketch started on a face frames it
+    // between them (InteractionController::setFrameInsets).
+    Q_PROPERTY(QVariantList frameInsets READ frameInsets WRITE setFrameInsets NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
@@ -153,6 +166,9 @@ public:
     bool operationCanCommit() const;
     bool operationHasValue() const;
     QString operationPrompt() const;
+    QString operationMode() const;
+    bool operationOnBody() const;
+    bool operationModeChosen() const;
     bool operationTakesText() const;
     QString operationText() const;
     bool operationTextTyped() const;
@@ -162,6 +178,8 @@ public:
     bool manipulatorDragging() const;
     QVariantList safeInsets() const;
     void setSafeInsets(const QVariantList& insets);
+    QVariantList frameInsets() const;
+    void setFrameInsets(const QVariantList& insets);
     QVariantList axisTriad() const;
     bool touchMode() const;
     void setTouchMode(bool on);

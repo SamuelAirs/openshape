@@ -261,17 +261,32 @@ surrounding faces close the gap.
 ### Extrude and revolve (3D from a sketch)
 
 Click inside a closed shape of a finished sketch (`Shift`+click adds more
-shapes of the same sketch). An arrow appears:
+shapes of the same sketch; on a touch screen every tap adds one). An arrow
+appears where you clicked:
 
-- Drag or type a distance and press `Enter`. A sketch on the ground makes a
-  new body.
-- A sketch on a body's face joins the body when you pull out and cuts into
-  it when you push in (type a negative value, e.g. `-5`). **New body**,
-  **Join** and **Cut** choose explicitly. Once the extrude is a cut (a
-  negative value, or **Cut** clicked), a **Through all** button appears; it
-  cuts through the whole body whatever its thickness. (A join that would
-  not touch the body makes a new body, and a cut that would remove nothing
-  does too.)
+- Drag or type a distance and press `Enter`. On a touch screen you can also
+  drag the selected shape itself: the arrow follows your finger (a drag
+  anywhere else still turns the view).
+- The value box says what the extrusion makes: **Height** (added to a
+  body), **Cut depth** (cut out of a body) or **New body**. Its first
+  buttons are **New body**, **Join** and **Cut**; the program picks one for
+  you, and a click overrides it.
+- **Cutting a pocket or a hole** (select a face, sketch the shape to cut
+  out, select it, push it into the body): a sketch on a body's face joins
+  the body when you pull out and cuts into it when you push in (or type a
+  negative value, e.g. `-5`). **Cut** always goes into the body: with a
+  positive value, clicking **Cut** turns it round, and a depth typed while
+  **Cut** is chosen goes into the body; **Join** and **New body** turn an
+  inward value outward. **Flip** turns the extrusion round. Once the
+  extrude is a cut, a **Through all** button appears; it cuts through the
+  whole body whatever its thickness. (A join that would not touch the body
+  makes a new body, and a cut that would remove nothing does too. **Join**
+  chosen and pushed into the body is refused: it would add nothing.)
+- A sketch on the ground or on a construction plane makes a new body, or,
+  pushed into a body, cuts it. One drawn on a body's face (say a
+  construction plane on its top) and pulled away from it joins it; one that
+  only touches a body's side stays a new body. **New body**, **Join** and
+  **Cut** override that too.
 - **Symmetric**: the value is the total thickness, half on each side of the
   sketch.
 - **Up to face**: click a flat face parallel to the sketch; the extrusion
@@ -435,7 +450,8 @@ A sketch is a flat drawing on a plane; its closed shapes (profiles) become
   **Front (XZ)** and **Right (YZ)** are the upright origin planes.
 - **On a face:** select a flat face, then press `K` or click **Sketch** (or
   **Sketch** below the value box). The sketch stays on that face when the
-  part changes.
+  part changes. With several faces selected (a stray tap adds one on a
+  touch screen), the sketch goes on the flat face selected last.
 - **On a construction plane:** select it (click it in the view or its
   Model-panel row), then press `K` or click **Sketch**. The sketch moves
   with the plane.
@@ -444,7 +460,9 @@ A sketch is a flat drawing on a plane; its closed shapes (profiles) become
 - **Editing a sketch later:** double-click one of its shapes, double-click
   its row in the Model panel, or use **Edit sketch**.
 
-The view turns to face the sketch. At the top are the sketch's name,
+The view turns to face the sketch; a sketch on a face or a construction
+plane also zooms to that face or plane, so on a phone the grid and the
+arrows snap in whole millimeters. At the top are the sketch's name,
 **Finish sketch** and its status; the drawing tools are on the left.
 
 ![A sketch with dimensions and constraint glyphs](images/sketch.png)

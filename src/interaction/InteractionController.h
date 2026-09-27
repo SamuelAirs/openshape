@@ -130,6 +130,12 @@ public:
     // the sketch's live values moved out from under a finger stay inside them.
     const SafeInsets& safeInsets() const { return safeInsets_; }
     void setSafeInsets(const SafeInsets& insets);
+    // How far the controls reach into the view from each edge while a sketch
+    // is drawn (a phone: the top bar and the Finish bar above, the hint and
+    // the tool strip below): a sketch started on a face or construction
+    // plane frames it in the view between them (with the safe insets).
+    const SafeInsets& frameInsets() const { return frameInsets_; }
+    void setFrameInsets(const SafeInsets& insets) { frameInsets_ = insets; }
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -363,7 +369,13 @@ private:
     Status applyPendingValue(const char* action);
     sel::PickResult pickProfile(Vec2 screen) const;
     void enterSketch(const Uuid& sketchId, SketchTool tool);
-    void alignViewTo(const sketch::Plane& plane);
+    // Faces the plane head-on; fits the sketch drawn so far, or - `frame`,
+    // a face's or construction plane's box - frames that (and the sketch)
+    // in the part of the view the controls leave free (frameInsets).
+    void alignViewTo(const sketch::Plane& plane, const std::optional<geom::BoundingBox>& frame = std::nullopt);
+    // The selected profile (Extrude) or flat face (Push/Pull) under a press,
+    // where a finger's drag moves the arrow: the point pressed on it.
+    std::optional<Vec3> selectedRegionAt(Vec2 screen) const;
     void updateHover(const PointerEvent& event);
     // How far (mm, at `point`) the Hole and Text tools' clicks snap: two pick tolerances.
     double holeSnapDistance(const Vec3& point, const InputProfile& profile) const
@@ -443,6 +455,15 @@ private:
     bool sketchGridSnap_ = true;
     bool touchLayout_ = false;
     SafeInsets safeInsets_;
+    SafeInsets frameInsets_;
+    // Where the profile selected last was tapped: its Extrude arrow starts
+    // there (under the finger), not at the region's inner point.
+    struct ProfileTap {
+        Uuid sketch;
+        int region = -1;
+        Vec3 point;
+    };
+    std::optional<ProfileTap> profileTap_;
     std::size_t insertPreset_ = 2; // M3
     // What a hole rim's Hole step makes: Plain = the heat-set insert's pilot
     // hole, or a counterbore / countersink (with the screw preset).
@@ -493,7 +514,17 @@ private:
         LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
         int ring = -1;            // rotation ring pressed on (grabbed once it moves), or -1
         RingManipulator ringHandle;
+        // A finger pressed on the selected profile or face: once it moves,
+        // it drags the arrow along its axis through this point.
+        std::optional<Vec3> region;
+        // The value and active handle when the manipulator drag began: a
+        // cancelled drag (a pinch or two-finger pan whose first finger had
+        // already moved the arrow) puts them back.
+        std::optional<double> valueBefore;
+        int handleBefore = 0;
     } drag_;
+    // Notes the operation's value and active handle before a manipulator drag.
+    void noteValueBeforeDrag();
 
     // Index of the operation handle under the pointer (tolerance per device), or -1.
     int handleAt(Vec2 screen, PointerDevice device) const;
