@@ -12,7 +12,9 @@
 // and keeps its place while the arrow is dragged; its buttons are tapped
 // (Chamfer, Fillet, the edge's last action, ✕, the field, ✓, and the face's
 // last action, which starts out of sight), and while the value is typed it
-// docks below the top bar (the on-screen keyboard comes up from below). The
+// docks below the top bar (the on-screen keyboard comes up from below). On
+// the iPad and the desktop the box is then moved on two axes (X typed, the Y
+// arrow tapped, Y typed) and the chip must stay off where the box went. The
 // window goes back to the run's size at the end (the runner's reset
 // restores it too).
 
@@ -355,6 +357,74 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
     steps.push_back([&r, c] {
         r.check(r.app().interaction().selection().empty(), c.name + QStringLiteral(": Esc clears the face"));
     });
+    if (!phone(c)) {
+        // ---- The body moved on two axes (X 12, then the Y arrow and 10): the
+        // chip stays off where the body went, not only where the Y arrow took it.
+        steps.push_back([&r, c] {
+            const QSizeF size = r.window()->size();
+            r.app().interaction().wheel({size.width() / 2, size.height() / 2}, -2); // room around the box
+            r.check(r.clickItem(QStringLiteral("historyRow_") + QString::fromStdString(r.body(0).id().toString())),
+                    c.name + QStringLiteral(": the Model panel row selects the box"));
+            r.app().setTouchMode(c.touch); // the row was clicked with the mouse
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            r.check(r.app().operationTitle() == QStringLiteral("Move"), c.name + QStringLiteral(": the box offers Move"),
+                    r.app().operationTitle());
+            r.check(r.clickItem(QStringLiteral("valueChipField")), c.name + QStringLiteral(": the value field (X)"));
+            r.app().setTouchMode(c.touch);
+            r.type(QStringLiteral("12"));
+            r.key(Qt::Key_Escape); // out of the field; the value stays
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            const auto* op = dynamic_cast<const interact::MoveOperation*>(r.app().interaction().operation());
+            r.check(op && op->valueLabel() == "X" && std::abs(op->value() - 12.0) < 1e-9, c.name + QStringLiteral(": X is 12"),
+                    op ? AcceptanceRunner::num(op->value()) : QStringLiteral("no Move"));
+            if (!op)
+                return;
+            // The Y arrow, grabbed on its shaft where it is drawn now.
+            const auto& camera = r.app().interaction().camera();
+            const interact::LinearManipulator handle = op->handle(1);
+            const Vec3 anchor = handle.anchor(op->handleOffset(1));
+            const interact::ArrowStyle style;
+            const Vec2 p = camera.project(anchor + handle.direction() * ((style.gapPx + style.shaftPx * 0.6) * camera.pixelSize(anchor)));
+            select(r, c, QPointF(p.x, p.y));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            const auto* op = r.app().interaction().operation();
+            r.check(op && op->valueLabel() == "Y", c.name + QStringLiteral(": the Y arrow is the active one"),
+                    op ? QString::fromStdString(op->valueLabel()) : QStringLiteral("none"));
+            r.check(r.clickItem(QStringLiteral("valueChipField")), c.name + QStringLiteral(": the value field (Y)"));
+            r.app().setTouchMode(c.touch);
+            r.type(QStringLiteral("10"));
+            r.key(Qt::Key_Escape);
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c, shot] {
+            const auto* op = dynamic_cast<const interact::MoveOperation*>(r.app().interaction().operation());
+            const Vec3 t = op ? op->translation() : Vec3{};
+            r.check(op && std::abs(t.x - 12.0) < 1e-9 && std::abs(t.y - 10.0) < 1e-9 && std::abs(t.z) < 1e-9,
+                    c.name + QStringLiteral(": the box moves 12 in X and 10 in Y"),
+                    QStringLiteral("%1, %2, %3").arg(t.x).arg(t.y).arg(t.z));
+            std::vector<Vec3> corners;
+            for (int k = 0; k < 8; ++k)
+                corners.push_back({k & 1 ? 22.0 : 2.0, k & 2 ? 20.0 : 0.0, k & 4 ? 20.0 : 0.0});
+            checkChip(r, c, QStringLiteral("body moved on two axes"), projected(r, corners));
+            r.screenshot(shot + QStringLiteral("_moved"));
+            r.key(Qt::Key_Escape);
+        });
+        steps.push_back([&r] {
+            if (!r.app().interaction().selection().empty())
+                r.key(Qt::Key_Escape);
+        });
+        steps.push_back([&r, c] {
+            r.check(r.app().interaction().selection().empty(), c.name + QStringLiteral(": Esc leaves the move"));
+            r.app().fitAll();
+        });
+        wait(steps, 4);
+    }
 }
 
 Steps steps(AcceptanceRunner& r)

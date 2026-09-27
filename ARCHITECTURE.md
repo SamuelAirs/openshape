@@ -706,21 +706,29 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`InteractionController::keepClearRect`, exposed as
   `AppController.keepClearRect` with `viewChanged`): the screen bounds of
   the selection (face triangles and edge polylines of the display mesh, a
-  body's or profile's mesh box corners), the same bounds moved by the active
-  arrow's travel (a pushed face, a moved body) and by the travel of the
-  preview on screen (`Operation::previewArrow`, the arrow as the worker's
-  copy had it: while a newer value computes, the shown preview is of an
-  earlier one, also ahead of the arrow after a drag back), the arrows (with their head
+  body's or profile's mesh box corners), the same bounds moved by the
+  operation's shifts (`Operation::carriedSelection`: by default the active
+  arrow's base to its tip, a pushed face; a Move's whole translation, since
+  each arrow's base already carries the other axes' travel; both ends of a
+  symmetric extrusion; none for Revolve's arc or a head's diameter) as the
+  operation has them now and as the preview on screen had them
+  (`Operation::previewCarry`, from the worker's copy: while a newer value
+  computes, the shown preview is of an earlier one, also ahead of the arrow
+  after a drag back), the shown preview's box when it is itself what moves
+  or is made (`Carry::wholePreview`: a moved, turned or aligned body, a
+  mirror's or pattern's copies, a new body; the box is measured on the
+  worker, `PreviewOutcome::bounds`), the arrows (with their head
   radius) and rings, a hole's position (Hole tool) and the last press that
   could select or act (a left click, a tap, the pen: not a finger resting in
   pen mode, not a right or middle button) while the view and the selection
   it left are unchanged (what a press selects is recorded with it while its
   release is handled: `pressHandling_`, `notePressSelection`; a selection
   made another way, such as the Model panel, forgets it); clipped to the
-  viewport; none in sketch mode. It reads display meshes (`SceneCache`)
-  and the operation's arrows only, so neither it nor the chip's placement
-  calls the kernel on the GUI thread during a drag
-  (`AsyncPreview.ValueChipKeepsClearOfTheShownPreview`).
+  viewport; none in sketch mode. It reads display meshes (`SceneCache`),
+  the preview's box and the operation's own members only, so neither it
+  nor the chip's placement calls the kernel on the GUI thread during a drag
+  (`AsyncPreview.ValueChipKeepsClearOfTheShownPreview`,
+  `AsyncPreview.MovedBodyKeptClearWhileItsPreviewComputes`).
   `placeValueChip(input, previous)` is a pure function of rectangles (the
   area inside the safe insets, the controls to avoid with an 8 px gap, the
   chip's size, the tip, the keep-clear rectangle with a 10 px margin, 20 px

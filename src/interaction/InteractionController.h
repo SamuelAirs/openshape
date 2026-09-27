@@ -137,15 +137,18 @@ public:
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
     // What the value editor must not cover, on screen: the selection (its
-    // faces, edges, profiles or bodies, also where the operation's arrow has
-    // moved them: a pushed face, a moved body, and where the shown preview
-    // has them while a newer one computes), the arrows and rings, a
-    // hole's position (Hole tool) and the last press that could select (a
-    // left click, a tap, the pen), while the view and the selection it left
-    // are unchanged. Clipped to the viewport; nullopt when there is nothing (or
-    // in sketch mode, which has no value editor). Reads display meshes and
-    // the operation's arrows only: no kernel call (the UI asks on every drag
-    // step, while the preview worker may hold the kernel).
+    // faces, edges, profiles or bodies, also where the operation has taken
+    // them: a pushed face, a body moved on several axes, a pattern's last
+    // copy, and where the shown preview has them while a newer one computes;
+    // Operation::carriedSelection), a moved, turned, aligned or new body and
+    // a mirror's or pattern's copies as the preview shows them, the arrows
+    // and rings, a hole's position (Hole tool) and the last press that could
+    // select (a left click, a tap, the pen), while the view and the selection
+    // it left are unchanged. Clipped to the viewport; nullopt when there is
+    // nothing (or in sketch mode, which has no value editor). Reads display
+    // meshes, the preview's box and the operation's arrows only: no kernel
+    // call (the UI asks on every drag step, while the preview worker may hold
+    // the kernel).
     std::optional<ScreenRect> keepClearRect() const;
     // An arrow or ring is being dragged.
     bool manipulatorDragging() const { return drag_.mode == DragMode::Manipulator; }

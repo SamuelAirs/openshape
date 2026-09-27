@@ -1071,6 +1071,10 @@ public:
             lo = {std::min(lo.x, v.x), std::min(lo.y, v.y), std::min(lo.z, v.z)};
             hi = {std::max(hi.x, v.x), std::max(hi.y, v.y), std::max(hi.z, v.z)};
         }
+        addBox(lo, hi);
+    }
+    void addBox(const Vec3& lo, const Vec3& hi)
+    {
         for (int c = 0; c < 8; ++c)
             add({c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z});
     }
@@ -1140,23 +1144,30 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
     if (operation_) {
         const ArrowStyle arrowStyle;
         const int handles = operation_->handleCount();
-        // What the arrow moves (a pushed face, a moved body) is also where the
-        // arrow has taken it: the selection moved by the arrow's travel. And
-        // where the preview on screen has it: while the arrow's newest value
-        // computes on the worker, the shown preview is of an earlier value
-        // (behind the arrow, or ahead of it after a drag back).
-        auto movedBy = [&](const Vec3& base, const Vec3& tip) {
-            const auto from = all.project(base);
-            const auto to = all.project(tip);
-            if (from && to)
-                all.include(selected.rect->translated(*to - *from));
+        // What the operation carries (a pushed face, a moved body, a
+        // pattern's last copy) is also where it has taken it: the selection
+        // moved by each of its shifts (Operation::carriedSelection). Where
+        // the operation has it now and where the preview on screen has it:
+        // while the newest value computes on the worker, the shown preview
+        // is of an earlier one (behind the arrow, or ahead of it after a drag
+        // back). A moved, turned or new body is also kept clear as the
+        // preview shows it (its mesh's box, measured on the worker).
+        auto carried = [&](const Operation::Carry& carry) {
+            if (!selected.rect)
+                return;
+            for (const Operation::Shift& shift : carry.shifts) {
+                const auto from = all.project(shift.from);
+                const auto to = all.project(shift.to);
+                if (from && to)
+                    all.include(selected.rect->translated(*to - *from));
+            }
         };
-        if (const int active = operation_->activeHandle(); selected.rect && active >= 0 && active < handles) {
-            const LinearManipulator handle = operation_->handle(active);
-            movedBy(handle.base(), handle.anchor(operation_->handleOffset(active)));
+        carried(operation_->carriedSelection());
+        if (const Operation::Carry* shown = operation_->previewCarry()) {
+            carried(*shown);
+            if (const auto box = operation_->previewBounds(); box && shown->wholePreview)
+                all.addBox(box->min, box->max);
         }
-        if (const auto shown = operation_->previewArrow(); selected.rect && shown)
-            movedBy(shown->base, shown->tip);
         for (int i = 0; i < handles; ++i) {
             const LinearManipulator handle = operation_->handle(i);
             const Vec3 anchor = handle.anchor(operation_->handleOffset(i));

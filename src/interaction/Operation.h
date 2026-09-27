@@ -36,6 +36,8 @@ struct PreviewOutcome {
     Uuid meshBody;                          // the body the mesh stands in for (nil: a new body)
     std::string error;                      // user message when it failed
     std::string developerMessage;
+    // The mesh's box (world coordinates), measured where it was computed.
+    geom::BoundingBox bounds;
     // The operation copy that computed it; carries the automatic choices it
     // made (e.g. a join that missed the body became a new body).
     std::shared_ptr<const Operation> computedBy;
@@ -107,16 +109,37 @@ public:
     // The body the shown preview mesh stands in for (nil: a new body). While
     // a newer preview is pending, previewBody() may already differ.
     const Uuid& previewMeshBody() const { return previewMeshBody_; }
-    // Where the shown preview has the active arrow (its base and tip, from
-    // the operation that computed it): while a newer value computes on the
-    // worker, the preview on screen is of an earlier one, and what the arrow
-    // moved (a pushed face) is there, not at anchor(). nullopt without a
-    // shown preview or an arrow.
-    struct ArrowSpan {
-        Vec3 base;
-        Vec3 tip;
+
+    // ---- Where the operation takes what it works on ----
+    // The value chip keeps clear of the selection also where the operation
+    // has taken it (InteractionController::keepClearRect). `shifts`: the
+    // selection moved by (to - from), each: a pushed face, a moved body (all
+    // axes of a Move), a pattern's last copy, both sides of a symmetric
+    // extrusion. `wholePreview`: the shown preview is the thing being made or
+    // moved, kept clear as a whole (a moved, turned or aligned body, a mirror
+    // or pattern with its copies, a new body). From the operation's state and
+    // the preview's mesh: no kernel call.
+    struct Shift {
+        Vec3 from;
+        Vec3 to;
     };
-    std::optional<ArrowSpan> previewArrow() const { return previewMesh_ ? previewArrow_ : std::nullopt; }
+    struct Carry {
+        std::vector<Shift> shifts;
+        bool wholePreview = false;
+    };
+    // By default the active arrow's travel (its base to its tip), and the
+    // whole preview when it is a new body.
+    virtual Carry carriedSelection() const;
+    // The same for the shown preview, as the operation that computed it had
+    // it (the worker's copy): while a newer value computes, the preview on
+    // screen is of an earlier one (behind the arrow, or ahead of it after a
+    // drag back). nullptr without a shown preview.
+    const Carry* previewCarry() const { return previewMesh_ ? &previewCarry_ : nullptr; }
+    // The shown preview mesh's box (world coordinates); nullopt without one.
+    std::optional<geom::BoundingBox> previewBounds() const
+    {
+        return previewMesh_ && previewBounds_.valid ? std::optional<geom::BoundingBox>(previewBounds_) : std::nullopt;
+    }
     // The error of the latest finished preview (or of a value refused at once).
     const std::string& error() const { return error_; }
     // A pending preview counts as committable: the command computes the step
@@ -226,7 +249,8 @@ private:
     int activeHandle_ = 0;
     std::shared_ptr<const geom::Mesh> previewMesh_;
     Uuid previewMeshBody_;
-    std::optional<ArrowSpan> previewArrow_;
+    Carry previewCarry_;
+    geom::BoundingBox previewBounds_;
     std::uint64_t previewKey_ = 0;
     std::string error_;
     std::uint64_t instance_ = 0;
@@ -288,6 +312,8 @@ public:
     LinearManipulator handle(int index) const override;
     double handleOffset(int index) const override { return index == 0 ? value() : 0.0; }
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+    // The arrow slides along the target; the body goes where the preview has it.
+    Carry carriedSelection() const override { return {{}, true}; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
@@ -417,6 +443,8 @@ public:
     std::string prompt() const override;
     bool canCommit() const override { return plane_.has_value() && previewUsable(); }
     int handleCount() const override { return 0; }
+    // The body and its image, as the preview shows them.
+    Carry carriedSelection() const override { return {{}, true}; }
 
     bool hasPlane() const { return plane_.has_value(); }
     // -1 when the plane came from a face.
@@ -505,6 +533,8 @@ public:
     double displayOffset(double value) const override { return value * std::max(count_ - 1, 1); }
     double valueFromOffset(double offset) const override { return offset / std::max(count_ - 1, 1); }
     std::optional<Vec3> labelAnchor() const override { return center_; }
+    // The last copy where the arrow has it, and all the copies as the preview shows them.
+    Carry carriedSelection() const override;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
@@ -570,6 +600,9 @@ public:
     // Back to X/Y/Z rings through the body's center.
     void resetPivot(const doc::Document& document);
     bool hasCustomPivot() const { return axis_.has_value() || (center_ - bodyCenter_).length() > 1e-12; }
+    // The turned body, as the preview shows it (a long part reaches out of
+    // its box and past the rings).
+    Carry carriedSelection() const override { return {{}, true}; }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double degrees) const override;
@@ -601,6 +634,9 @@ public:
     int handleAxis(int index) const override { return index; }
     void setActiveHandle(int index) override;
     Vec3 translation() const;
+    // The body moved on all axes (an arrow's base already includes the
+    // other axes' travel), and as the preview shows it.
+    Carry carriedSelection() const override;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
@@ -635,6 +671,10 @@ public:
     // The handle rides on the swept arc: it sits where the profile point
     // ends up at the current angle and points along the local tangent.
     LinearManipulator handle(int index) const override;
+    // The arrow's travel is along the arc, not a shift of the profile: a new
+    // body is kept clear as the preview shows it (a join: the arrow and the
+    // profile only).
+    Carry carriedSelection() const override { return {{}, previewBody().isNil()}; }
 
     doc::ExtrudeMode mode() const { return !modeChosen_ && autoNewBody_ ? doc::ExtrudeMode::NewBody : mode_; }
     void setMode(doc::ExtrudeMode mode)
@@ -733,6 +773,9 @@ public:
     void setActiveHandle(int index) override;
     double displayOffset(double value) const override { return activeHandle() == 1 ? value : value / 2; }
     double valueFromOffset(double offset) const override { return activeHandle() == 1 ? offset : 2 * offset; }
+    // The depth arrow takes the rim down; the diameter arrow widens it around
+    // its center (the rim and the arrow are kept clear), it does not shift it.
+    Carry carriedSelection() const override { return activeHandle() == 1 ? Operation::carriedSelection() : Carry{}; }
 
     // The screw preset the sizes came from (none once a size is typed or dragged).
     std::optional<std::size_t> presetIndex() const;
@@ -924,6 +967,9 @@ public:
 
     bool symmetric() const { return symmetric_; }
     void setSymmetric(bool symmetric, const doc::Document& document);
+    // The profile at the far end (both ends when symmetric), also while the
+    // draft is edited; a new body as the preview shows it.
+    Carry carriedSelection() const override;
     // "Up to face": the next face click sets the distance (see extendToFace).
     bool pickingTarget() const { return pickingTarget_; }
     void setPickingTarget(bool picking) { pickingTarget_ = picking; }

@@ -360,6 +360,62 @@ TEST(AsyncPreview, ValueChipKeepsClearOfTheShownPreview)
     EXPECT_FALSE(holds(after, topFace(high)));
 }
 
+// A body moved on two axes while the second axis' preview computes: kept
+// clear where the shown preview has it (moved in X only) and where the
+// arrows have it (X and Y; an arrow's own travel is one axis), without a
+// kernel call on the GUI thread. The chip goes off both.
+TEST(AsyncPreview, MovedBodyKeptClearWhileItsPreviewComputes)
+{
+    AsyncHarness h;
+    h.controller.wheel({600, 400}, -6); // room around the box for the move
+    const Vec2 top = h.screen({0, 0, 20});
+    h.clickAt(top);
+    h.controller.pointerDoubleClick(AsyncHarness::at(top));
+    const auto* op = dynamic_cast<const MoveOperation*>(h.controller.operation());
+    ASSERT_NE(op, nullptr);
+    auto grab = [&](int axis) {
+        const auto arrow = h.controller.renderScene().arrows.at(std::size_t(axis));
+        h.clickAt(h.screen(arrow.anchor + arrow.direction * (50 * h.controller.camera().pixelSize(arrow.anchor))));
+    };
+    grab(0);
+    ASSERT_EQ(op->valueLabel(), "X");
+    ASSERT_EQ(h.controller.setValueText("30"), "");
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(op->hasPreview());
+    grab(1);
+    ASSERT_EQ(op->valueLabel(), "Y");
+    h.worker().setJobDelayForTesting(300ms);
+    ASSERT_EQ(h.controller.setValueText("20"), "");
+    ASSERT_TRUE(op->previewPending());
+
+    auto box = [&](Vec3 lo, Vec3 hi) {
+        ScreenRect r = ScreenRect::around(h.screen(lo));
+        for (int c = 0; c < 8; ++c)
+            r.include(h.screen({c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z}));
+        return r;
+    };
+    const ScreenRect shown = box({20, -10, 0}, {40, 10, 20}); // the preview on screen: X 30
+    const ScreenRect moved = box({20, 10, 0}, {40, 30, 20});  // where the arrows have it: X 30, Y 20
+    const ScreenRect window{0, 0, 1200, 800};
+    ASSERT_TRUE(window.contains(shown) && window.contains(moved));
+    const std::uint64_t kernelCalls = geom::kernelCallsOnThisThread();
+    const auto keep = h.controller.keepClearRect();
+    const auto tip = h.controller.valueLabelPosition();
+    ASSERT_TRUE(tip.has_value());
+    const ChipPlacement chip = h.controller.placeValueChip(h.chipInput(*tip));
+    EXPECT_EQ(geom::kernelCallsOnThisThread(), kernelCalls) << "the chip's placement called the kernel";
+    ASSERT_TRUE(keep.has_value());
+    EXPECT_TRUE(keep->contains(shown, 1.0)) << "the body where the shown preview has it";
+    EXPECT_TRUE(keep->contains(moved, 1.0)) << "the body where the arrows have it";
+    const ScreenRect chipRect = ScreenRect::at(chip.position, h.chipInput(*tip).size);
+    EXPECT_TRUE(chip.clear);
+    EXPECT_FALSE(chipRect.intersects(shown));
+    EXPECT_FALSE(chipRect.intersects(moved));
+
+    ASSERT_TRUE(h.controller.waitForPreview());
+    EXPECT_TRUE(h.controller.keepClearRect()->contains(moved, 1.0));
+}
+
 // Values typed faster than the kernel: the one computing finishes, the one
 // waiting is replaced by the newest; the newest is what stays shown.
 TEST(AsyncPreview, OnlyTheLatestValueStaysShown)

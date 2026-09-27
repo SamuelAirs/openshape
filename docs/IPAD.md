@@ -254,7 +254,9 @@ relinking.
 10. The value box stays out of the way: tap edges and faces on the left,
    the right, high and low on the model (and zoomed in): the box sits next
    to the arrow but never over what you tapped, the arrow or the selected
-   edge / face; drag the arrow and it moves along without jumping. Tap the
+   edge / face; drag the arrow and it moves along without jumping. Move a
+   body with its X arrow, then its Y arrow (zoomed in), and turn a long
+   part a quarter turn: the box stays off the body where it went. Tap the
    value and type with the on-screen keyboard (no hardware keyboard): the
    box moves above the keyboard and stays readable. With the Pencil, rest
    your palm on the screen while the box shows: it does not move. Draw a

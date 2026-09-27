@@ -67,7 +67,8 @@ On a desktop-sized window:
   once there is something in the document; **Hide** folds it away. See
   [The Model panel](#the-model-panel).
 - **Value box** (next to the arrow or ring you are dragging, never over
-  what you selected, the arrow or the spot you tapped; on a phone it sits
+  what you selected, nor where you are moving, turning or copying it, the
+  arrow or the spot you tapped; on a phone it sits
   below the top bar or above the hint, on the side away from the
   selection, and stays there while you drag; while you type a value it
   sits below the top bar, above the keyboard): the name of

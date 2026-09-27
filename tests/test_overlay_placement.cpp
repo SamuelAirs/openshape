@@ -9,6 +9,7 @@
 // from the interaction layer (tested on a real box).
 
 #include "commands/Command.h"
+#include "commands/DocumentCommands.h"
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
@@ -525,11 +526,23 @@ struct Scene {
     cmd::UndoStack stack;
     InteractionController controller{document, stack};
 
-    explicit Scene(Vec2 viewport = {402, 874})
+    // A 20 mm cube on the origin, (-10,-10,0) .. (10,10,20), unless `cube` is false.
+    explicit Scene(Vec2 viewport = {402, 874}, bool cube = true)
     {
         controller.setViewportSize(viewport);
-        EXPECT_TRUE(controller.createBox(20).ok());
+        if (cube) {
+            EXPECT_TRUE(controller.createBox(20).ok());
+        }
         controller.fitAll(false);
+    }
+    Uuid addBox(Vec3 origin, Vec3 size)
+    {
+        auto box = std::make_unique<doc::BoxFeature>();
+        box->origin = origin;
+        box->size = size;
+        EXPECT_TRUE(stack.push(std::make_unique<cmd::CreateBodyCommand>("Box", std::move(box)), document).ok());
+        controller.documentChanged();
+        return document.bodies().back()->id();
     }
 
     static PointerEvent at(Vec2 p, PointerDevice device = PointerDevice::Touch)
@@ -548,6 +561,31 @@ struct Scene {
     bool inside(const ScreenRect& r, Vec2 p, double tolerance = 0.5) const
     {
         return p.x >= r.left - tolerance && p.x <= r.right + tolerance && p.y >= r.top - tolerance && p.y <= r.bottom + tolerance;
+    }
+    // The screen rectangle around the box lo .. hi (its eight corners), which
+    // must be on screen.
+    ScreenRect boxOnScreen(const Vec3& lo, const Vec3& hi) const
+    {
+        std::optional<ScreenRect> r;
+        for (int c = 0; c < 8; ++c) {
+            const Vec2 p = screen({c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z});
+            EXPECT_TRUE(inside({0, 0, controller.camera().viewportSize.x, controller.camera().viewportSize.y}, p, 0))
+                << "corner " << c << " off screen";
+            if (r)
+                r->include(p);
+            else
+                r = ScreenRect::around(p);
+        }
+        return *r;
+    }
+    // Grabs Move's arrow for `axis` where it is drawn (a click on it).
+    void grabArrow(int axis)
+    {
+        const auto arrow = controller.renderScene().arrows.at(std::size_t(axis));
+        const double px = controller.camera().pixelSize(arrow.anchor);
+        const Vec2 p = screen(arrow.anchor + arrow.direction * (50 * px));
+        controller.pointerPress(at(p, PointerDevice::Mouse));
+        controller.pointerRelease(at(p, PointerDevice::Mouse));
     }
 };
 
@@ -692,6 +730,82 @@ TEST(KeepClear, BodyAndItsArrows)
         const Vec3 tip = anchor + handle.direction() * (ArrowStyle{}.totalPx() * s.controller.camera().pixelSize(anchor));
         EXPECT_TRUE(s.inside(*keep, s.screen(tip))) << "arrow " << i;
     }
+}
+
+// A body moved on two axes is kept clear where it went (Move's arrows all
+// start at the moved center: an arrow's own travel is one axis only), and the
+// chip does not go beside the arrow tip onto it.
+TEST(KeepClear, MovedBodyOnTwoAxes)
+{
+    Scene s({1400, 900});
+    s.controller.wheel({700, 450}, -6); // room around the box for the move
+    const Vec2 top = s.screen({0, 0, 20});
+    s.tap(top, PointerDevice::Mouse);
+    s.controller.pointerDoubleClick(Scene::at(top, PointerDevice::Mouse));
+    ASSERT_NE(s.controller.operation(), nullptr);
+    ASSERT_EQ(s.controller.operation()->title(), "Move");
+    s.grabArrow(0);
+    ASSERT_EQ(s.controller.operation()->valueLabel(), "X");
+    ASSERT_EQ(s.controller.setValueText("30"), "");
+    s.grabArrow(1);
+    ASSERT_EQ(s.controller.operation()->valueLabel(), "Y");
+    ASSERT_EQ(s.controller.setValueText("20"), "");
+    const auto keep = s.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    const ScreenRect moved = s.boxOnScreen({20, 10, 0}, {40, 30, 20});
+    EXPECT_TRUE(keep->contains(moved, 1.0)) << "the moved body " << text(moved) << " in " << text(*keep);
+    const ScreenRect before = s.boxOnScreen({-10, -10, 0}, {10, 10, 20});
+    EXPECT_TRUE(keep->contains(before, 1.0)) << "where it was (selected)";
+    // Where the chip goes on a desktop and an iPad-sized window: off the moved body.
+    for (const Layout& layout : {desktop(), ipad()}) {
+        const auto in = input(layout, *s.controller.valueLabelPosition(), keep);
+        const ChipPlacement chip = placeValueChip(in);
+        EXPECT_TRUE(chip.clear) << layout.name;
+        EXPECT_FALSE(chipRect(chip, in).intersects(moved)) << layout.name << ": " << text(chipRect(chip, in));
+    }
+}
+
+// A long bar turned a quarter reaches far out of its box and past the rings:
+// it is kept clear as the preview shows it.
+TEST(KeepClear, TurnedBodyAsThePreviewShowsIt)
+{
+    Scene s({1400, 900}, false);
+    const Uuid bar = s.addBox({0, 0, 0}, {80, 10, 10});
+    // From above: the bar across the screen, turned along it.
+    s.controller.setStandardView(StandardView::Top, false);
+    s.controller.fitAll(false);
+    s.controller.wheel({700, 450}, -3);
+    ASSERT_TRUE(s.controller.selectBody(bar, false).ok());
+    ASSERT_TRUE(s.controller.runTool("rotate").ok());
+    ASSERT_NE(s.controller.operation(), nullptr);
+    ASSERT_EQ(s.controller.operation()->title(), "Rotate");
+    ASSERT_EQ(s.controller.setValueText("90"), ""); // about Z, through the bar's center (40, 5, 5)
+    ASSERT_TRUE(s.controller.operation()->hasPreview());
+    const auto keep = s.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    const ScreenRect turned = s.boxOnScreen({35, -35, 0}, {45, 45, 10});
+    EXPECT_TRUE(keep->contains(turned, 1.0)) << "the turned bar " << text(turned) << " in " << text(*keep);
+}
+
+// Align moves the whole body onto the target: kept clear where it lands.
+TEST(KeepClear, AlignedBodyWhereItLands)
+{
+    Scene s({1400, 900}, false);
+    s.addBox({0, 0, 0}, {10, 10, 10});
+    s.addBox({40, 0, 0}, {20, 20, 20});
+    s.controller.fitAll(false);
+    s.tap(s.screen({5, 0, 5}), PointerDevice::Mouse); // the small box's front face
+    ASSERT_TRUE(s.controller.runTool("align").ok());
+    s.tap(s.screen({50, 10, 20}), PointerDevice::Mouse); // the big box's top
+    const auto* align = dynamic_cast<const AlignOperation*>(s.controller.operation());
+    ASSERT_NE(align, nullptr);
+    ASSERT_TRUE(align->hasTarget());
+    ASSERT_TRUE(align->hasPreview());
+    const auto keep = s.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    // Face to face: the small box stands on the top, centered on it.
+    const ScreenRect landed = s.boxOnScreen({45, 5, 20}, {55, 15, 30});
+    EXPECT_TRUE(keep->contains(landed, 1.0)) << "the aligned body " << text(landed) << " in " << text(*keep);
 }
 
 // Through the controller: the spot is remembered for the selection, and a new

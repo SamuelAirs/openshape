@@ -122,7 +122,12 @@ field (`-Wmissing-field-initializers`) fails CI.
    display mesh, the operation's own members or a memoized result). The
    value chip keeps clear of its arrows (`handle()`), rings (`ring()`) and,
    for a value with neither, `labelAnchor()`
-   (`InteractionController::keepClearRect`).
+   (`InteractionController::keepClearRect`), and of the selection where the
+   operation takes it: `carriedSelection()` gives the shifts (by default the
+   active arrow's base to its tip: override it when the arrow does not carry
+   the selection that way, as Move's arrows, Revolve's arc or a head's
+   diameter do not) and whether the whole preview is the thing being moved
+   or made (a moved or turned body, copies, a new body).
 2. `InteractionController`: arm it in `rebuildOperation()`, offer it in
    `contextActions()`, handle its id in `triggerAction()`, and in `runTool()`
    when it belongs in the palette.
