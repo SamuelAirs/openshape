@@ -19,6 +19,7 @@
 #include <QtGui/QPointingDevice>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
+#include <QtGui/private/qhighdpiscaling_p.h>
 #include <qpa/qwindowsysteminterface.h>
 
 #include <algorithm>
@@ -40,23 +41,37 @@ AcceptanceRunner::AcceptanceRunner(QQuickWindow* window, ui::AppController* app,
 
 // ---- Input injection ----------------------------------------------------------------
 
+// QWindowSystemInterface takes positions in native (device) pixels, as the
+// platform plugin delivers them; the script works in logical pixels. On a
+// display scaled to 150 % the unconverted clicks landed at two thirds of
+// their target (2026-09-26, a second monitor).
+QPointF AcceptanceRunner::nativeLocal(QPointF p) const
+{
+    return QHighDpi::toNativeLocalPosition(p, window_);
+}
+
+QPointF AcceptanceRunner::nativeGlobal(QPointF p) const
+{
+    return QHighDpi::toNativeGlobalPosition(window_->mapToGlobal(p), window_);
+}
+
 void AcceptanceRunner::mouseMove(QPointF p, Qt::MouseButtons held)
 {
-    QCursor::setPos(window_->mapToGlobal(p.toPoint()));
+    QCursor::setPos(window_->mapToGlobal(p.toPoint())); // logical: Qt converts
     QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-        window_, p, window_->mapToGlobal(p), held, Qt::NoButton, QEvent::MouseMove);
+        window_, nativeLocal(p), nativeGlobal(p), held, Qt::NoButton, QEvent::MouseMove);
 }
 
 void AcceptanceRunner::mousePress(QPointF p, Qt::MouseButton button, Qt::KeyboardModifiers mods)
 {
     QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-        window_, p, window_->mapToGlobal(p), button, button, QEvent::MouseButtonPress, mods);
+        window_, nativeLocal(p), nativeGlobal(p), button, button, QEvent::MouseButtonPress, mods);
 }
 
 void AcceptanceRunner::mouseRelease(QPointF p, Qt::MouseButton button, Qt::KeyboardModifiers mods)
 {
     QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-        window_, p, window_->mapToGlobal(p), Qt::NoButton, button, QEvent::MouseButtonRelease, mods);
+        window_, nativeLocal(p), nativeGlobal(p), Qt::NoButton, button, QEvent::MouseButtonRelease, mods);
 }
 
 void AcceptanceRunner::click(QPointF p, Qt::KeyboardModifiers mods)
@@ -114,7 +129,7 @@ void AcceptanceRunner::touchTap(const QList<QPointF>& points)
             QWindowSystemInterface::TouchPoint tp;
             tp.id = id++;
             tp.state = state;
-            tp.area = QRectF(window_->mapToGlobal(p) - QPointF(3, 3), QSizeF(6, 6));
+            tp.area = QRectF(nativeGlobal(p) - QPointF(3, 3), QSizeF(6, 6)); // native pixels, like the mouse
             tp.pressure = state == QEventPoint::State::Released ? 0 : 1;
             list.append(tp);
         }
@@ -389,6 +404,10 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
         // 9-10. Drag the arrow upward: live preview, document unchanged.
         [=, this, &in] {
             const auto* op = in.operation();
+            if (!op) {
+                check(false, "the push/pull tool is there to drag (an earlier step failed)");
+                throw AbortScenario{};
+            }
             const Vec3 anchor = op->anchor();
             const double px = in.camera().pixelSize(anchor);
             const interact::ArrowStyle style;
@@ -397,7 +416,10 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             drag(from, from + QPointF(0, -90));
             check(in.operation() && in.operation()->value() > 21.0, "dragging the arrow makes it taller",
                   in.operation() ? num(in.operation()->value()) : QStringLiteral("no operation"));
-            check(in.operation() && in.operation()->hasPreview(), "the preview updates while dragging");
+        },
+        // (Previews compute on a worker thread; the runner waited for this one.)
+        [=, this, &in] {
+            check(in.operation() && in.operation()->hasPreview(), "the drag's preview is shown");
             check(std::abs(bodyHeight() - 20.0) < 1e-9, "preview does not modify the document", num(bodyHeight()));
             screenshot(QStringLiteral("04_drag_preview"));
         },
@@ -710,10 +732,12 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
         },
         [] {},
         [=, this] {
-            check(std::abs(geom::volume(body(1).shape()) - 3 * 8000.0) < 1e-3,
-                  "Enter: three copies of the box", num(geom::volume(body(1).shape())));
+            // 5 mm apart, the copies do not touch the box: separate bodies.
+            check(app_->bodyCount() == 4 && std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3
+                      && std::abs(geom::volume(body(3).shape()) - 8000.0) < 1e-3,
+                  "Enter: two copies of the box beside it, as bodies of their own", QString::number(app_->bodyCount()));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
+            check(app_->bodyCount() == 2 && std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
             check(clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
             check(app_->operationTitle() == QStringLiteral("Mirror") && !app_->operationPrompt().isEmpty(),
                   "Mirror asks for a plane", app_->operationPrompt());
@@ -1117,12 +1141,21 @@ void AcceptanceRunner::runNext()
     // A slow machine (the CI Mac) may still be animating the view after the
     // fixed step delay; clicks computed from a moving camera miss. Wait for
     // the animation to end (up to 3 s) before the next step (TD-31, TD-35).
-    if (app_->interaction().isAnimating() && waitedMs_ < 3000) {
-        waitedMs_ += 20;
-        QTimer::singleShot(20, this, &AcceptanceRunner::runNext);
+    // Previews compute on a worker thread: wait until the last one is shown
+    // (up to 30 s), so a step sees the preview (or the error) of what the
+    // step before it typed or dragged. The event loop runs meanwhile: the
+    // result arrives as the app would get it.
+    const bool animating = app_->interaction().isAnimating() && animationWaitMs_ < 3000;
+    const bool previewing = app_->interaction().previewBusy() && previewWaitMs_ < 30000;
+    if (animating || previewing) {
+        (animating ? animationWaitMs_ : previewWaitMs_) += 10;
+        QTimer::singleShot(10, this, &AcceptanceRunner::runNext);
         return;
     }
-    waitedMs_ = 0;
+    if (previewWaitMs_ >= 30000)
+        check(false, QStringLiteral("previews finish within 30 s"));
+    animationWaitMs_ = 0;
+    previewWaitMs_ = 0;
     if (next_ < steps_.size()) {
         try {
             steps_[next_++]();

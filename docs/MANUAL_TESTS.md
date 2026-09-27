@@ -60,11 +60,17 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     - Split into bodies: cut a plate in two (a sketch across it, extruded
       as a cut through the plate): a message says it is now in pieces and
       the row turns amber. Click "Split into bodies": each piece is its own
-      body. Now delete the bigger one: it is hidden instead, and the
-      message says which body is built from it.
-    - Separate bodies: select a body, Mirror or Pattern, switch on
-      "Separate bodies", apply: each copy is its own body (click them one
-      by one). Push/pull the original: the copies follow.
+      body. Push/pull one piece, then the other: each changes alone. Delete
+      the body you split: the other piece stays.
+    - Separate bodies (the report from the iPhone): move a box away from
+      the middle, Mirror, "Across YZ": "Separate bodies" lights up by itself
+      and the line at the bottom says the image will be a separate body.
+      Apply, then push/pull the original's top face: the image stays as it
+      was (and the other way round). Pattern the box: 5 mm apart the copies
+      are separate bodies; type the box's width as the spacing and they
+      join. Mirror a box across its own face: one body. Open a project from
+      version 0.1.0 with a mirrored or patterned copy, mirror that copy:
+      changing the 0.1.0 original moves its old copy but not the new one.
     - Rotate about an edge: select a body, Rotate, click one of its straight
       edges: a single ring appears around that edge; type `90`, Enter. Try
       again clicking near a corner (the rings move there), a hole's wall
@@ -107,8 +113,13 @@ check the installer automatically; this is the real thing, once, by hand.
 Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 `dist/` after BUILDING.md, "Release").
 
-1. **Install.** Windows SmartScreen warns (the installer is not signed yet):
-   "More info" → "Run anyway". No administrator prompt should appear. Click
+1. **Install.** An unsigned release: Windows SmartScreen warns
+   ("More info" → "Run anyway"). A signed one (its release notes say so,
+   docs/CODE_SIGNING.md): right-click the setup → Properties → Digital
+   Signatures shows **SignPath Foundation** and "This digital signature is
+   OK"; the same for the installed `OpenShape.exe`; if SmartScreen still
+   asks, it names SignPath Foundation as the publisher, not "Unknown
+   publisher". No administrator prompt should appear. Click
    through: the license page shows the MPL-2.0, the folder is
    `%LOCALAPPDATA%\Programs\OpenShape`. On the last page "Create a desktop
    shortcut" is off. **Leave it off** if you want to keep your current

@@ -96,7 +96,9 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   for that Shape instance**. Booleans run non-destructive (`runBoolean`):
   by default OCCT widens tolerances of its inputs' sub-shapes in place, which
   changed cached step outputs under later steps (found by the undo/redo
-  stress test). Meshing still writes triangulations into shapes (TD-4).
+  stress test). Meshing still writes triangulations into shapes, which
+  other shapes share (a preview result shares most faces with its body):
+  hence the kernel lock (see Threads).
 - `Modeling.h`: box, cylinder, push/pull of a planar face (prism + fuse/cut +
   `ShapeUpgrade_UnifySameDomain`), fillet, chamfer, shell, booleans,
   transforms, direct face edits, measurements (volume, area, optimal bounding
@@ -170,6 +172,14 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Tessellation.h`: `BRepMesh_IncrementalMesh` (faces meshed in parallel) →
   `Mesh` with per-triangle face ids, contiguous per-face triangle ranges (`faceTriangleOffset`) and per-edge
   polylines taken from the triangulation (so edges sit exactly on mesh vertices).
+  Meshing stores triangulations in the faces and polygons in the edges, and
+  a preview result shares most faces and edges with its body: meshed in
+  place, every preview left its polygons on the body's edges (a filleted
+  cube's BRep text grew from 93 KB to 1.3 MB over 40 previews, and the
+  project file's geometry cache with it). Previews are therefore meshed
+  `isolated`: on a copy of the topology (`BRepBuilderAPI_Copy` without
+  geometry, with the existing meshes, which the mesher reuses): 22 ms
+  instead of 18 ms for the enclosure's rim preview.
 - `pushPullFaceKeepingEdges`: push/pull that takes fillets and chamfers
   along: split the part on a plane just below the face's non-wall
   neighbours, move the top piece, fill the gap with the extruded
@@ -257,11 +267,14 @@ Document (UUID, display unit)
   stored in the face's frame like a sketch on it, so they follow the face;
   diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
-  body), Mirror and Pattern (copies joined into the body), DeleteFaces,
-  OffsetFace, Split and SplitPiece (below), Copy (a base feature: another
-  body's current shape mirrored or moved — Mirror / Pattern with "Separate
-  bodies") and Imported (a base feature holding a STEP-imported solid's
-  exact geometry; projects store it in `imports/`, see Files). Planes, axes and directions are stored as geometry, not as
+  body), Mirror (the image joined into the body; with `keepOriginal` off the
+  body becomes its image: the last step of a mirror copy) and Pattern
+  (copies joined into the body), DeleteFaces, OffsetFace, Split (below),
+  SplitPiece and Copy (base features that follow another body: split-off
+  pieces and "Separate bodies" copies in files from before independent
+  copies; they still load and compute, the UI no longer makes them) and
+  Imported (a base feature holding a STEP-imported solid's exact geometry;
+  projects store it in `imports/`, see Files). Planes, axes and directions are stored as geometry, not as
   references; only faces/edges (`FaceRef` / `EdgeRef`), sketches and tool
   bodies are references. So an Align or Mirror step does not follow the face
   it was aimed at when that face moves later.
@@ -271,16 +284,25 @@ Document (UUID, display unit)
 - **Split into bodies** (`cmd::makeSplitBodyCommand`, one undo step): a
   `Split` step keeps the body's largest piece and records every piece's
   `geom::SolidSignature` (volume, centroid, box); each other piece becomes a
-  new body whose base `SplitPiece` step takes piece *k* from the parent's
-  shape just before that Split step. Both use `SplitFeature::assign`
+  new, independent body: a copy of the body's history
+  (`DuplicateBodyCommand`, with its own hidden copies of the sketches and
+  consumed tools it uses) ending in a `Split` step that lists that piece
+  first, so it keeps that piece. Pieces are found by `SplitFeature::assign`
   (`geom::matchSolids`: the kept piece picks first, then the closest pairs,
-  rejecting pieces that moved more than their size), so they always agree.
-  Pieces that appear upstream later stay in the parent; a piece that is gone
-  (the body is whole again) fails with a message. `SplitPiece` depends on the
-  parent body, so `recomputeDependents` (transitive) carries upstream edits
-  — a sketch dimension, a tool body — through the parent to every piece.
+  rejecting pieces that moved more than their size). Pieces that appear
+  upstream later stay in the body whose history grew them; editing one
+  piece (or the body it came from) never changes another. Files from
+  before independent pieces hold `SplitPiece` bodies (piece *k* of the
+  parent's shape just before its Split step, following every upstream edit
+  through `recomputeDependents`); they still load and compute as before.
+  Each piece of an imported body stores its geometry again, so a split that
+  would take the project beyond `Document::importedGeometryLimit` is
+  refused before anything changes (see `DuplicateBodyCommand`).
 - `Document::preview(body, feature)` evaluates a feature without mutating
-  anything; interactive previews use it.
+  anything; interactive previews use it. `Document::snapshot()` copies the
+  bodies (histories, cached step results, shapes shared: they are
+  immutable) and sketches for the preview worker (0.04 ms for a 21-body
+  model).
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
   know when to re-tessellate and when topology indices are stale.
 
@@ -357,11 +379,31 @@ belongs to that history alone is copied too — the sketches its steps use
 Combine steps consumed (copied hidden, recursively) — then every reference is
 re-pointed at the copies (`Feature::remapReferences`, sketch attachments and
 host bodies). Editing the copy (a step, its sketch, its tool) never changes
-the source, nor the other way round. The other bodies a history builds on
-(the parent of a split-off piece, the source of a mirror copy) stay shared.
+the source, nor the other way round. A body from before independent copies
+whose base step follows another body (a `Copy`, a `SplitPiece`) is copied
+without that link: the base step is replaced by the other body's history
+(resolved the same way; up to its Split step for a piece) and the step that
+made it (a Mirror keeping the image, a Move, a Split keeping the piece), so
+the copy follows nothing; only when that body cannot be built up to there
+does the copy keep the old step (shared, like before).
 What is copied depends on the kind of reference, never on visibility (a tool
 shown again is still consumed; a hidden source is still shared). The copy's
 id is fixed at construction so the UI can select it and redo recreates it.
+The same command makes Mirror and Pattern copies and split-off pieces (a
+name and one more step after the cloned history: a Mirror step keeping only
+the image, a Move step, a Split step; `makeCopyBodiesCommand` groups several
+into one undo step) and refuses when that step fails or changes nothing.
+The cloned steps **take over the source's results** (`Body::adoptResults`,
+`Document::addBody`'s `computeFrom`: the shapes are shared, only the added
+step is computed): 10 pattern copies of a 14-step body took 18 ms instead of
+about 3.3 s (333 ms per recompute of that history). A resolved legacy
+history differs from the source's, so it is computed in full.
+Each copied Imported step is one more `imports/` entry in the project: the
+command refuses (plainly, changing nothing) a copy that would take the
+document beyond `Document::importedGeometryLimit` (512 MiB, what a project
+can save; lower only in tests), and `cmd::checkImportedCopiesFit` /
+`DuplicateBodyCommand::importedBytesOfCopy` let Mirror, Pattern and Split
+check before they start.
 
 ## Interaction (`interaction/`)
 
@@ -448,6 +490,57 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   A ring is grabbed only once the pointer moves: a click on a ring activates
   it, except over an edge in Rotate, where it picks the edge (the rings
   cover edges near the body's center).
+- **Previews off the GUI thread** (`Operation::setValue`, `PreviewWorker`):
+  `setValue` checks the value at once (`checkValue`, the neutral value),
+  then - when the operation has a `PreviewScheduler` (the app; headless
+  tests stay synchronous) - hands the worker a self-contained job: a
+  `clone()` of the operation and a `Document::snapshot()` (cached per
+  document and undo revision), and returns. The job runs on the single
+  preview worker thread exactly what the synchronous path runs:
+  `resetAutomaticChoices`, `computePreview` (`makeFeature` +
+  `Document::preview`), `reconsider`/`reconsiderRefusal`, `tessellate`.
+  The latest request wins: a newer value replaces a job that has not
+  started; a running one finishes. Its result comes back as a queued call
+  (`InteractionController::deliverPreviews`, which the UI calls when the
+  worker's notify arrives) and `Operation::acceptPreview` decides: another
+  operation's, or older than the shown one or than a reset (Esc, a sync
+  refusal) or a parameter change - dropped; the newest request's - shown
+  with its error and automatic choices (`adoptAutomaticChoices`); a
+  superseded value's - shown if it worked (the preview keeps up during a
+  drag), its error dropped. Only drag steps and typed values
+  (`setValue(..., Change::ValueOnly)`) let earlier results keep up; every
+  other `setValue` (the setters: mode, Through all, count, preset, target)
+  is a parameter change, after which an earlier request's result is the
+  old geometry and is dropped. The last good preview stays on screen
+  meanwhile; `previewMeshBody()` says which body it stands in for.
+  `canCommit()` counts a pending preview as committable (`previewUsable()`):
+  the command computes the step again; commit waits for it only when an
+  automatic choice depends on it (`commitNeedsPreview`: an extrusion that
+  becomes a new body), and drops a job that has not started. When the
+  command refuses a value whose preview had not come back, that refusal
+  becomes the value's verdict (`refusePendingValue`: the message in the
+  value chip, no preview, nothing left pending), as a refused preview's
+  would be; the tool stays as it was (one-shot resets - Align, Mirror and
+  Pattern back to Move, the Hole tool's remembered settings - happen only
+  once the command is accepted), and the value chip keeps the keyboard
+  (`AppController::commitOperation` returns whether it applied). Tab to
+  the next field (the Hole tool's X, Y) waits for the typed value's verdict
+  (`confirmValueText`), so a hole typed off the face keeps its field; a
+  keystroke never waits. A click elsewhere first takes a finished preview's verdict
+  (`deliverPreviews`); when the command refuses a value whose preview had
+  not come back yet, the click goes on to select, as it does when the
+  refusal is shown (`applyBeforeSelecting`); Import, Duplicate, Split and a
+  Model panel row go on the same way (`applyPendingValue`). Random sessions through these entry points give
+  the same documents and operations with and without the worker
+  (`AsyncPreview.RandomSessionsMatchSynchronousOnes`). Operations
+  created while previews are asynchronous get the scheduler
+  (`PreviewSchedulerScope` in `rebuildOperation`), so Pattern's, the
+  insert's and the counterbore's first previews are computed on the worker
+  too. An operation
+  without `clone()` keeps synchronous previews. The UI reads selection
+  facts (`selectionSummary`, which face actions to offer) from a cache
+  keyed by the selection and its bodies' shape revisions, so a drag step
+  makes no kernel call on the GUI thread (a test counts them).
 - **Operation hooks** (`Operation.h`): `prompt()` while a further pick is
   needed (Align's target, Mirror's plane); `labelAnchor()` for a value editor
   without an arrow; `neutralValue()` (what Esc returns to, e.g. a hole's
@@ -456,7 +549,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (typed `+5` / `-5` are relative to it); `checkValue()` (refuse a value
   before any kernel call, e.g. a thickness of 0);
   `resetAutomaticChoices()` / `reconsider()` (revise an automatic choice once
-  the preview is known); `canCommit()`; `clearPreview()`.
+  the preview is known: an extrusion's new body, Mirror's and Pattern's
+  separate bodies); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
   Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
@@ -474,13 +568,15 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   or Intersect, that leaves new pieces says so in a message:
   `suggestSplit`). The Delete key deletes the selected bodies in one undo
   step (`deleteBodies`), except a body that others are built from
-  (`Document::bodiesUsing`: split-off pieces, separate copies, bodies that
-  consumed it as a tool): that one is hidden instead, with a message, and a
+  (`Document::bodiesUsing`: bodies that consumed it as a tool; in files from
+  before independent copies also its split-off pieces and separate copies):
+  that one is hidden instead, with a message, and a
   hidden one cannot be deleted (its Model-panel row says why). Two or more bodies offer Union / Subtract /
   Intersect, applied as one `CompositeCommand` (add `Combine` steps + hide the
   tool bodies); the first selected body is kept and Swap exchanges the two.
-  A body built from the other (a Copy or SplitPiece of it) cannot be its
-  tool: Union and Intersect then keep the result in the copy instead.
+  A body built from the other (a Copy or SplitPiece of it, in older files)
+  cannot be its tool: Union and Intersect then keep the result in the copy
+  instead.
 - **Hole tool:** "Hole" on a single flat face (or the palette) arms
   `HoleOperation` (no arrows; the value chip sits at the current hole via
   `labelAnchor()`). Clicks on that face (picked as faces only) add holes:
@@ -492,7 +588,14 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   where the hole would go. A click on a placed hole makes it the current
   one; Remove hole drops it. A position typed off the face fails the preview
   with "Hole N is off the face" (the step's own "no longer lies on its
-  face" is for upstream changes). Hole again keeps the placed holes. The chip
+  face" is for upstream changes), so Apply waits for a pending preview
+  (`commitNeedsPreview`). Previews run on the preview worker like the
+  others. Snapping (hover and clicks) tests points against the outline's
+  boundary segments (`geom::outlineContains`: curved edges as chords within
+  1e-5 of the face's size), not the kernel's classifier, so hovering never
+  waits for a preview's kernel call (it did for 110 ms on the enclosure's
+  wall); the preview itself checks the holes exactly (`faceContains`).
+  Hole again keeps the placed holes. The chip
   edits one field at a time (`field:` actions, Tab = `nextField`):
   diameter, depth (when not through all) and the current hole's X / Y from
   the face's reference corner (the outline's minimum corner) or from the
@@ -518,13 +621,26 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the action bar) and has no value; Apply or Enter commits. Pattern previews
   right away (spacing = the body's extent plus 5 mm); the arrow sets the
   spacing (angle when circular), ± copy changes the count, and clicking an
-  edge or a hole/shaft sets the direction or axis. Both commit one step with
-  the copies joined into the body — or, with the "Separate bodies" option,
-  one new body per copy (one undo step) whose base `Copy` step is the source
-  body's current shape mirrored or moved, so the copies follow every later
-  change of the source. Their preview shows the source and the copies side
-  by side, unfused (`Operation::computePreview`); at most 100 copies.
-- **Profiles in model mode:** sketch regions are pickable (a region lying on a
+  edge or a hole/shaft sets the direction or axis. Copies that touch or
+  overlap the body are joined into it (one Mirror or Pattern step: a half
+  part mirrored across its own face becomes one symmetric body). Copies
+  that touch neither the body nor each other (the joined preview has
+  (copies + 1) times the body's pieces: `reconsider`, as for an extrusion's
+  new body; a body in pieces mirrored across one piece's face joins) become
+  **separate, independent bodies** as in Shapr3D, unless there would be
+  more than 100 or their imported geometry would not fit in the project;
+  the "Separate bodies" option shows the choice and overrides it both ways
+  (`separateIsAutomatic()` tells which). Each separate copy is a new body
+  (one undo step for all, named like new bodies) made by
+  `DuplicateBodyCommand`: the source's history cloned, then a Mirror step
+  with `keepOriginal` off or a Move step named "Pattern copy". Editing or
+  moving the source later never changes a copy, nor the other way round.
+  Their preview shows the source and the copies side by side, unfused
+  (`Operation::computePreview`); a message says what happened ("Mirrored as
+  a separate body: the image does not touch the original."), and so does
+  the hint line before.
+- **Profiles in model mode:** sketch regions are pickable, tested on their
+  display meshes (no kernel call while hovering; TD-20) (a region lying on a
   face wins over the face; a consumed sketch's region only when it is
   coplanar with the body face hit, so used sketches do not steal clicks);
   selecting profiles arms `ExtrudeOperation`, whose
@@ -595,6 +711,54 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 
+## Threads
+
+- **GUI thread:** Qt events, QML, the interaction core, commands and
+  recompute, meshing of changed bodies (`SceneCache`), file I/O.
+- **Render thread** (Qt Quick's threaded render loop): `ViewportRenderer`
+  copies the `RenderScene` in `synchronize()` while the GUI thread waits.
+- **Preview worker** (`interaction/PreviewWorker`, one `std::thread`, owned
+  by `InteractionController` after `enableAsyncPreviews`, which the app
+  calls): computes and meshes previews on document snapshots. Its log
+  lines start with `[worker] `.
+- **OpenCASCADE's own threads:** `BRepMesh` meshes faces in parallel inside
+  one call.
+- **The kernel lock** (`geometry/internal/KernelUtil.h`, TD-4): one thread
+  at a time runs OpenCASCADE code. Every kernel entry takes it: the
+  `OS_KERNEL_SIGNALS_TO_EXCEPTIONS` scope (so `guarded()`), and a
+  `KernelLock` in the functions without one (volume, bounding boxes,
+  `solids`, `isValid`, ...). It is recursive, and a scope releases at its
+  end the locks a kernel fault jumped over. Meshing writes triangulations
+  into faces and polygons into edges that other shapes share, and nearly
+  every algorithm reads edges' lists of representations, so a lock around
+  meshing alone would not do. With the lock held, OCCT's signal handlers
+  are installed and removed by the thread that runs the kernel code (the
+  Windows C runtime keeps them per thread): a fault on the worker becomes
+  a failed preview like one on the GUI thread (tested). On Windows the
+  handler is our own (`onKernelSignal`): OCCT's leaves a process-wide mutex
+  locked after a fault, and a later fault on the other thread froze the app
+  (`KernelThreads.FaultsOnTwoThreadsInTurnAreAllContained`). On POSIX
+  (macOS, iPad) handlers belong to the process, so a kernel call installs
+  a dispatcher instead that hands a fault to OCCT only when the faulting
+  thread is inside a kernel try block (`Standard_ErrorHandler::IsInTryBlock`,
+  per thread); a crash on any other thread meanwhile reaches the crash log
+  and the system's crash report as before
+  (`KernelThreads.FaultOnAnotherThreadDuringAKernelCallIsNotTheKernels`). The tight
+  bounding-box cache in `ShapeData` is guarded by it too (a
+  `std::call_once` would stay blocked after a fault jumped out of it).
+  While a preview computes, a GUI-thread kernel call (a click on another
+  face, a commit's recompute) waits for the worker's current kernel call;
+  `geom::interactiveKernelWaits()` counts these waits and the log shows
+  them ("gui: waiting for the kernel ... took N ms"). During a drag the GUI
+  thread makes none.
+- **Where the time goes** (bench_session, a 20-step push/pull drag on the
+  249-face enclosure's rim): with previews on the GUI thread each pointer
+  move blocked it for 133 ms on average, 259 ms at most; on the worker,
+  0.1 ms at most. In the real window (acceptance scenario `previews`, a
+  119-face tray) the longest pointer move went from 90 ms to 0.6 ms.
+  `ViewportItem` times each pointer move (controller plus the QML updates
+  it causes) and `AppController` logs slow ones and each drag's longest.
+
 ## Rendering (`render/`, `ui/ViewportItem`)
 
 `ViewportItem` is a `QQuickRhiItem`, so the viewport is part of the Qt Quick
@@ -641,7 +805,11 @@ All draws share one dynamic uniform buffer with per-draw offsets.
 
 `InteractionController::historyRows()` flattens sketches, bodies and each
 body's features into rows (name, detail, status — ok, warning, failed,
-blocked, suppressed — explanation, editable length parameters). Hovering a row
+blocked, suppressed — explanation, editable length parameters).
+`AppController` gives QML new rows (`historyChanged`) and a new action list
+(`contextActionsChanged`) only when they differ from the last ones: a new
+list rebuilds the panel's delegates, and most state changes (a drag step, a
+preview arriving) change neither (TD-18). Hovering a row
 calls `setHistoryHighlight(id)`: bodies and base features highlight the whole
 body, other steps their new faces (`facesCreatedBy`, falling back to
 `facesChangedBy`), sketches draw highlighted even when hidden. Clicking a
@@ -828,7 +996,10 @@ them on a hidden menu separator after the Open Recent sub-menu).
   restores the run's window size for the next scenario); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
-  touch layout); scenarios `recovery` (a real crash
+  touch layout); `copies` (Mirror and Pattern clicked on a box off the
+  origin: separate bodies without asking, the hint line and the toggle,
+  then the original's top face pushed twice while the copies stay as they
+  were); scenarios `recovery` (a real crash
   of a second OpenShape via `--simulate-crash`, the restore prompt, and a
   second OpenShape ended with unsaved work via `--simulate-quit`),
   `recent`, `preferences` and `files` (Import STEP from the File menu, Ctrl+I
@@ -843,9 +1014,16 @@ them on a hidden menu separator after the Open Recent sub-menu).
   (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the
   item (both directions) to bring it on screen, and lays out freshly created
   buttons before clicking (a click once landed on the Delete button that
-  still sat where Fillet was about to go).
+  still sat where Fillet was about to go). Before each step the runner
+  waits until camera animations end and previews (computed on the worker)
+  are shown; scenario `previews` drags on a 119-face tray and checks that
+  no pointer move blocks the window for 50 ms, that Ctrl+Z and Enter work
+  while a preview computes, that a refusal arrives from the worker, and a
+  drag with 81 Model panel rows.
 - `tools/bench/bench_session.cpp` (`-DOPENSHAPE_BUILD_TOOLS=ON`) times drag
-  previews, tessellation, recompute and bounding boxes on a filleted part;
+  previews, tessellation, recompute and bounding boxes on a filleted part,
+  and the GUI thread during a push/pull drag and while hovering in the
+  Hole tool on the enclosure (previews on the GUI thread and on the worker);
   `scripts/dev/` has a Win32 input driver and a live log watcher (see
   BUILDING.md, "Developer tools").
 
@@ -882,12 +1060,24 @@ them on a hidden menu separator after the Open Recent sub-menu).
   the dialogs, clicked by UI Automation; both only accept a test build of
   the setup, whose desktop shortcut goes to a test folder). `.github/workflows/release.yml` runs the whole chain and
   publishes tags `v*` as GitHub Releases.
+- **Code signing** (docs/CODE_SIGNING.md): when its SignPath secret and
+  variable exist, `release.yml` sends `OpenShape.exe` to SignPath after
+  packaging and the installer after `make-installer.sh` (GitHub workflow
+  artifacts; artifact configurations in `.signpath/artifact-configurations/`),
+  and `scripts/windows/use-signed.sh` puts each signed file in place only if
+  `scripts/windows/pe-signature.py` finds it byte-identical to the sent file
+  apart from the signature and Windows accepts the signature (updating
+  `SHA256SUMS.txt`). The release notes (`scripts/ci/install-notes.sh` from
+  `packaging/windows/release-notes.md`) say whether a release is signed.
+  Both scripts are also checked on every Release run and by ctest on
+  Windows (`scripts/ci/test-install-notes.sh`, `pe-signature.py self-test`),
+  since otherwise they would only run when a tag is published.
 
 ## Known architectural limits (tracked in docs/TECHNICAL_DEBT.md)
 
-- Tessellation and previews run synchronously on the GUI thread.
-- Sketch-profile picking still runs an exact face classifier per region under
-  the cursor (TD-20; ~0.06 ms per hover on the benchmark enclosure).
+- Previews run on the preview worker; commits (the command's recompute),
+  undo/redo and meshing of changed bodies still run on the GUI thread, and
+  a running kernel call cannot be interrupted (TD-1).
 - Only linear per-body history. Features may depend on sketches and (Combine)
   on other bodies; `Document::recomputeDependents` propagates changes
   transitively (a body that changed updates the bodies built on it in turn)

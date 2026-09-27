@@ -251,7 +251,10 @@ Preferences, the installer).
   Foundation** (free for open source; the owner applies, then two GitHub
   secrets); add a default **FDM clearance allowance (+0.2 mm)** for screw
   holes; **Noto Sans** (SIL OFL) for text emboss/deboss; real-UI tests may
-  run while they are away from the PC.
+  run while they are away from the PC. They applied to SignPath Foundation
+  the same day (waiting for approval; the repository side is ready:
+  docs/CODE_SIGNING.md). SignPath concerns only the Windows download: the
+  iPhone/iPad app is signed by Apple (TestFlight / App Store).
 - **CI:** every push runs Windows and macOS (`ci.yml`, free since the
   repository is public; documentation-only pushes skip it). The macOS
   acceptance run (`continue-on-error`, a 1024x653 window) passed completely

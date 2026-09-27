@@ -595,6 +595,8 @@ TEST(Interaction, MirrorPlaneClickBesideAnEdgeTakesTheFace)
     EXPECT_NEAR(geom::boundingBox(h.body().shape()).max.x, 30.0, 1e-6);
 }
 
+// Across YZ, 5 mm away: the image would not touch the body, so it becomes a
+// body of its own unless Separate bodies is turned off (then joined).
 TEST(Interaction, MirrorAcrossAnOriginPlane)
 {
     Harness h;
@@ -602,7 +604,9 @@ TEST(Interaction, MirrorAcrossAnOriginPlane)
     ASSERT_TRUE(h.controller.selectBody(a, false).ok());
     ASSERT_TRUE(h.controller.triggerAction("mirror").ok());
     ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // across YZ
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok()); // off: join
     ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
     const auto bb = geom::boundingBox(h.document.body(a)->shape());
     EXPECT_NEAR(bb.min.x, -15.0, 1e-6);
     EXPECT_EQ(h.document.body(a)->shape().solidCount(), 2);
@@ -612,8 +616,10 @@ TEST(Interaction, MirrorAcrossAnOriginPlane)
     EXPECT_TRUE(detail);
 }
 
-// Pattern defaults to three copies side by side along X; the count stays
-// editable in the model panel; circular patterns turn around the center.
+// Pattern defaults to three copies side by side along X (5 mm apart: they
+// become separate bodies, test_bodies.cpp); copies that touch are joined, and
+// the count stays editable in the model panel; circular patterns turn around
+// the center.
 TEST(Interaction, PatternLinearThenEditCount)
 {
     Harness h;
@@ -625,8 +631,14 @@ TEST(Interaction, PatternLinearThenEditCount)
     EXPECT_EQ(pattern->count(), 3);
     EXPECT_NEAR(pattern->value(), 25.0, 1e-9); // 20 mm body + 5 mm gap
     EXPECT_TRUE(pattern->hasPreview());
+    EXPECT_TRUE(pattern->separate());
+    EXPECT_EQ(h.controller.setValueText("20"), ""); // side by side, touching
+    pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    EXPECT_FALSE(pattern->separate());
     EXPECT_TRUE(h.controller.keyPress(Key::Enter));
-    EXPECT_NEAR(geom::boundingBox(h.body().shape()).size().x, 20.0 + 2 * 25.0, 1e-6);
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(geom::boundingBox(h.body().shape()).size().x, 3 * 20.0, 1e-6);
     EXPECT_NEAR(geom::volume(h.body().shape()), 3 * 8000.0, 1e-3);
 
     const Uuid step = h.body().features().back()->id();

@@ -11,6 +11,7 @@
 #include "document/Feature.h"
 #include "sketch/Sketch.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -53,35 +54,71 @@ private:
 // with fresh ids, plus what belongs to that history alone - the sketches its
 // steps use (copied hidden) and the tool bodies its Combine steps consumed
 // (copied hidden, recursively), all re-pointed at the copies. Editing the
-// copy never changes the source, nor the other way round. The other bodies
-// the history builds on (the body a piece was split off, a separate copy's
-// source) stay shared, shown or hidden: the copy follows them like the
-// source does.
+// copy never changes the source, nor the other way round. A base step from
+// files before independent copies (a Copy of another body, a SplitPiece of
+// one) is replaced by that body's history (resolved the same way) and the
+// step that made it (a Mirror keeping the image, a Move, a Split keeping the
+// piece), so the copy does not follow that body either; one whose body
+// cannot be built up to there stays as it is (shared). Copies whose history
+// is the source's own take over its results (Body::adoptResults) instead of
+// computing again. Refused, changing nothing, when the imported geometry it
+// copies would take the document beyond Document::importedGeometryLimit (a
+// project holding more cannot be saved).
 class DuplicateBodyCommand final : public Command {
 public:
     explicit DuplicateBodyCommand(Uuid sourceId) : sourceId_(sourceId) {}
-    std::string label() const override { return "Duplicate"; }
+    // A copy named `name` whose history ends with one more step, `lastStep`:
+    // Mirror and Pattern copies (a Mirror step keeping only the image, a Move
+    // step) and split-off pieces (a Split step keeping that piece). Fails,
+    // leaving the document untouched, when that step fails or changes nothing.
+    DuplicateBodyCommand(Uuid sourceId, std::string name, std::unique_ptr<doc::Feature> lastStep, std::string label);
+    std::string label() const override { return label_; }
     Status execute(doc::Document& document) override;
     void undo(doc::Document& document) override;
     // The new body's id, fixed at construction (redo recreates the same identity).
     const Uuid& copyId() const { return copyId_; }
 
+    // The imported geometry (bytes of BRep text) one copy of `sourceId` would
+    // add to the document: its Imported steps and those of everything copied
+    // with it.
+    static std::uint64_t importedBytesOfCopy(const doc::Document& document, const Uuid& sourceId);
+
 private:
     Status plan(const doc::Document& document);
+    std::uint64_t plannedImportedBytes() const;
 
     Uuid sourceId_;
     Uuid copyId_ = Uuid::generate();
+    std::string name_;                        // empty: "<source name> copy"
+    std::unique_ptr<doc::Feature> lastStep_;  // may be null
+    std::string label_ = "Duplicate";
     bool planned_ = false;
     std::vector<sketch::Sketch> sketches_;           // copies, in document order
     std::vector<std::unique_ptr<doc::Body>> bodies_; // copies: consumed tools first, the copy last
+    std::vector<Uuid> originals_;                    // the body each of bodies_ copies
+    std::vector<bool> verbatim_;                     // its steps cloned one to one (results can be taken over)
 };
+
+// Fails with a plain message when `copies` copies of `sourceId` would take the
+// document beyond its imported-geometry limit (Mirror and Pattern with
+// separate bodies, Split into bodies: checked before anything changes).
+Status checkImportedCopiesFit(const doc::Document& document, const Uuid& sourceId, std::size_t copies);
+
+// One new, independent body per step in `lastSteps`, each a copy of the
+// source body (its history cloned, DuplicateBodyCommand) ending in that step,
+// named `names[i]`; as one undo step labelled `label`. Mirror and Pattern
+// with separate bodies.
+std::unique_ptr<Command> makeCopyBodiesCommand(const Uuid& sourceId, std::vector<std::unique_ptr<doc::Feature>> lastSteps,
+                                               const std::vector<std::string>& names, const std::string& label);
 
 // Splits a body that is in several separate pieces into bodies, as one undo
 // step: a Split step keeps its largest piece, and every other piece becomes a
-// new body (named like new bodies) whose first step is that piece of this
-// body (SplitPieceFeature). They stay linked: upstream edits update every
-// piece. Fails when the body is in one piece.
-Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId);
+// new, independent body (named like new bodies): a copy of this body's
+// history (DuplicateBodyCommand) ending in a Split step that keeps that piece.
+// Editing a piece never changes the others. Fails when the body is in one
+// piece. `pieceCount` (optional) receives the number of pieces.
+Result<std::unique_ptr<Command>> makeSplitBodyCommand(const doc::Document& document, const Uuid& bodyId,
+                                                      int* pieceCount = nullptr);
 
 class DeleteBodyCommand final : public Command {
 public:

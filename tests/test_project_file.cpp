@@ -137,6 +137,45 @@ TEST(ProjectFile, RotatedMoveRoundTrips)
     EXPECT_FALSE(io::documentFromJson(broken).ok());
 }
 
+// A Mirror step that keeps only the image (the last step of a mirror copy)
+// survives save and reopen. Its plane sits under "plane": a reader that does
+// not know keepOriginal (an older build) finds no plane and refuses the file
+// instead of joining the image to the body.
+TEST(ProjectFile, MirrorImageRoundTrips)
+{
+    Uuid bodyId;
+    auto d = mvpDocument(&bodyId); // (0,0,0)..(60,40,20), filleted
+    auto image = std::make_unique<doc::MirrorFeature>();
+    image->planeOrigin = {-10, 0, 0};
+    image->planeNormal = {1, 0, 0};
+    image->keepOriginal = false;
+    d->insertFeature(bodyId, std::move(image));
+    ASSERT_FALSE(d->body(bodyId)->hasFailures());
+    const double volume = geom::volume(d->body(bodyId)->shape());
+    const auto before = geom::boundingBox(d->body(bodyId)->shape());
+    EXPECT_NEAR(before.min.x, -80.0, 1e-6);
+    EXPECT_NEAR(before.max.x, -20.0, 1e-6);
+
+    const auto json = io::documentToJson(*d);
+    auto again = io::documentFromJson(json);
+    ASSERT_TRUE(again.ok()) << again.developerMessage();
+    const doc::Body& body = *again.value()->body(bodyId);
+    const auto& step = static_cast<const doc::MirrorFeature&>(*body.features().back());
+    EXPECT_FALSE(step.keepOriginal);
+    EXPECT_NEAR(geom::volume(body.shape()), volume, 1e-6);
+    const auto after = geom::boundingBox(body.shape());
+    EXPECT_NEAR((after.min - before.min).length() + (after.max - before.max).length(), 0.0, 1e-6);
+    EXPECT_EQ(io::documentToJson(*again.value()), json);
+
+    // What an older build reads: no keepOriginal, and no plane where it looks.
+    auto older = json;
+    for (auto& b : older["bodies"])
+        for (auto& f : b["features"])
+            if (f["type"] == "Mirror")
+                f["params"].erase("keepOriginal");
+    EXPECT_FALSE(io::documentFromJson(older).ok());
+}
+
 TEST(ProjectFile, RejectsNewerVersion)
 {
     auto j = io::documentToJson(*mvpDocument());
