@@ -35,8 +35,8 @@ struct UniformData {
     float light[4];   // direction towards the key light
     float lights[4];  // sky, ground, key, fill (core/Lighting.h)
     float gloss[4];   // specular strength, exponent
-    float grid[4];    // grid center xy, minor step; shadows: footprint center xy, half size xy
-    float fade[4];    // grid radius, axis radius, eye fade start, end; shadows: blur
+    float grid[4];    // grid center xy, minor step
+    float fade[4];    // grid radius, axis radius, eye fade start, end; shadows: x = blur (mm)
 };
 static_assert(sizeof(UniformData) == 3 * 64 + 10 * 16);
 

@@ -816,7 +816,14 @@ view direction in orthographic) is flipped. The acceptance scenario
 rounded cube and a plate, 10 views x 2 projections): faces meeting at an
 edge differ by at least 21 of 255 levels (it was 0-1 for the two sides in
 the isometric view before), tops are lighter than sides, undersides darker,
-nothing below 70 or above 229 (the background is ~237).
+nothing below 70 or above 229 (the background is ~237). On whole models
+(`--face-contrast`: every visible face's median shade; the `committed`
+box, `rounded`, `bracket` and `enclosure` demos from 7 views: iso,
+orbiting, from behind, low, high, below), the faces meeting at a sharp
+edge differ by at least 20 levels, median 47, in both projections; with
+the earlier view-space lighting it was 1, median 30, and 11 of 88 pairs
+under 8 levels (the two sides seen at once in the isometric, orbiting and
+back views). Faces range from 94 (an underside) to 208.
 
 **Depth bias** (edges, sketch curves and fills over faces; the ground
 behind them): a point is moved along its view ray by N device pixels' worth
