@@ -203,7 +203,9 @@ beside your finger, not under it.
   (tap empty space first to pick a face again). A tap beside the Move
   arrows, on another body, adds that body; right on an arrow it chooses the
   arrow. With two bodies selected, **Union**, **Subtract** and **Intersect**
-  appear. The same works with a pen.
+  appear. The same works with a pen. In a tool that waits for a target
+  (Mirror's plane, Align's target), a double-tap on a
+  target picks it just as a tap does; it never applies the tool.
 
 ---
 

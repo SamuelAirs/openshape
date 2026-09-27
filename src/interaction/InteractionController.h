@@ -493,7 +493,8 @@ private:
         LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
         int ring = -1;            // rotation ring pressed on (grabbed once it moves), or -1
         RingManipulator ringHandle;
-        bool handleMoved = false; // a finger's manipulator drag went past its drag threshold
+        bool handleMoved = false;   // a finger's handle or ring drag went past its drag threshold
+        bool doubleClicked = false; // a double-click came during this press: its release does not click
     } drag_;
 
     // What was selected when each of the last two left presses began, and
@@ -506,8 +507,10 @@ private:
         std::vector<Uuid> bodyIds; // those bodies, in selection order
         Vec2 position;
         bool valid = false;
+        bool toolPick = false; // its click was a pick for the tool (Mirror's plane, Rotate's axis, ...)
     };
     PressMemo pressMemos_[2];     // [1] the latest press, [0] the one before
+    bool clickPickedForTool_ = false; // the last click() was taken by the tool (not the usual select/apply)
     bool latestPressReleased_ = true;
     PressMemo selectionMemo(Vec2 position) const; // the selection now
     // The memo for a double-click arriving now: touch sends both taps'

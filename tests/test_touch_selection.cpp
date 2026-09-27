@@ -576,3 +576,153 @@ TEST(TouchMultiSelect, UnionAfterTwoDoubleTaps)
     EXPECT_FALSE(s.document.body(s.b)->isVisible());
 }
 
+// Review 2026-09-27: a finger dragging a Rotate ring from a point over the
+// other body turns the body; it is not a tap beside an arrow (Rotate has no
+// arrows), so the rotation stays pending and nothing is selected.
+TEST(TouchMultiSelect, RingDragOverAnotherBodyKeepsRotate)
+{
+    TwoBoxes s(kIphone);
+    Finger finger(s);
+    finger.doubleTap(s.topA());
+    ASSERT_TRUE(s.bodiesSelected({s.a})) << finger.trace();
+    ASSERT_TRUE(s.controller.triggerAction("rotate").ok());
+    const Operation* rotate = s.controller.operation();
+    ASSERT_NE(rotate, nullptr);
+    ASSERT_GT(rotate->ringCount(), 0);
+    const std::string title = rotate->title();
+    const Camera& cam = s.controller.camera();
+    const InputProfile touch = InputProfile::forDevice(PointerDevice::Touch);
+    int ring = -1;
+    double start = 0;
+    for (int i = 0; i < rotate->ringCount() && ring < 0; ++i)
+        for (int k = 0; k < 360 && ring < 0; ++k) {
+            const double angle = 2 * kPi * k / 360.0;
+            const Vec2 p = cam.project(rotate->ring(i).pointAt(cam, angle));
+            const auto hit = s.controller.pickAt(p, touch);
+            if (hit.kind == sel::PickKind::Face && hit.bodyId == s.b && rotate->ring(i).hitTest(cam, p, 2)) {
+                ring = i;
+                start = angle;
+            }
+        }
+    ASSERT_GE(ring, 0) << "on the phone, a ring of A crosses B";
+    const RingManipulator arc = rotate->ring(ring);
+    ++finger.id;
+    finger.frame({{finger.id, cam.project(arc.pointAt(cam, start)), State::Pressed}});
+    for (int step = 1; step <= 12; ++step) {
+        finger.time += 0.03;
+        finger.frame({{finger.id, cam.project(arc.pointAt(cam, start + kPi / 2 * step / 12.0)), State::Moved}});
+    }
+    finger.time += 0.03;
+    finger.frame({{finger.id, cam.project(arc.pointAt(cam, start + kPi / 2)), State::Released}});
+    finger.pause(1.0);
+    ASSERT_NE(s.controller.operation(), nullptr) << finger.trace();
+    EXPECT_EQ(s.controller.operation()->title(), title) << "Rotate stays open" << finger.trace();
+    EXPECT_NEAR(std::abs(s.controller.operation()->value()), 90.0, 1e-9) << finger.trace();
+    EXPECT_TRUE(s.bodiesSelected({s.a})) << finger.trace();
+    EXPECT_EQ(s.stack.size(), 2u) << "nothing applied" << finger.trace();
+}
+
+// Review 2026-09-27: in tools whose clicks pick a target (Mirror's plane,
+// Align's target), a double-tap or double-click on a face of the other body
+// picks it as a single click does; it never applies the tool.
+TEST(TouchMultiSelect, DoubleTapOnATargetDoesNotApplyTheTool)
+{
+    for (const std::string tool : {"mirror", "align"})
+        for (const bool mouse : {false, true}) {
+            TwoBoxes s;
+            Finger finger(s);
+            if (tool == "mirror") {
+                finger.doubleTap(s.topA());
+                ASSERT_TRUE(s.bodiesSelected({s.a})) << finger.trace();
+            } else {
+                finger.tap(s.topA()); // a face: Align moves it onto a target
+                finger.pause(1.0);
+            }
+            ASSERT_TRUE(s.controller.triggerAction(tool).ok()) << tool;
+            const std::string title = s.controller.operation() ? s.controller.operation()->title() : "";
+            ASSERT_FALSE(title.empty());
+            if (mouse) {
+                s.controller.setTouchLayout(false);
+                PointerEvent e;
+                e.device = PointerDevice::Mouse;
+                e.position = s.frontB();
+                s.controller.pointerPress(e);
+                s.controller.pointerRelease(e);
+                s.controller.pointerPress(e);
+                s.controller.pointerDoubleClick(e);
+                s.controller.pointerRelease(e);
+            } else {
+                finger.doubleTap(s.frontB(), s.frontB() + Vec2{3, -2});
+            }
+            EXPECT_EQ(s.stack.size(), 2u) << tool << (mouse ? " mouse" : " touch") << ": nothing applied " << s.state()
+                                          << finger.trace();
+            ASSERT_NE(s.controller.operation(), nullptr) << tool << finger.trace();
+            EXPECT_EQ(s.controller.operation()->title(), title) << tool << (mouse ? " mouse" : " touch") << finger.trace();
+        }
+}
+
+// Review 2026-09-27: with the mouse, the button kept down after a
+// double-click and dragged still orbits; the double-click still selects.
+TEST(TouchMultiSelect, MouseDragAfterADoubleClickOrbits)
+{
+    // In the middle of the top face (the second press lands on the Push/Pull
+    // arrow the first click brought up), and off it.
+    for (const Vec3 point : {Vec3{10, 10, 20}, Vec3{4, 4, 20}}) {
+        TwoBoxes s;
+        s.controller.setTouchLayout(false);
+        PointerEvent e;
+        e.device = PointerDevice::Mouse;
+        e.position = s.screen(point);
+        s.controller.pointerPress(e);
+        s.controller.pointerRelease(e);
+        s.controller.pointerPress(e);
+        s.controller.pointerDoubleClick(e);
+        EXPECT_TRUE(s.bodiesSelected({s.a})) << s.state();
+        const Vec3 eye = s.controller.camera().eye();
+        const Vec2 from = e.position;
+        for (int step = 1; step <= 5; ++step) {
+            e.position = from + Vec2{12.0 * step, 0};
+            s.controller.pointerMove(e);
+        }
+        EXPECT_GT((s.controller.camera().eye() - eye).length(), 1e-3) << "the drag orbits";
+        s.controller.pointerRelease(e);
+        EXPECT_TRUE(s.bodiesSelected({s.a})) << "the release does not click " << s.state();
+        EXPECT_EQ(s.stack.size(), 2u);
+        // Without a drag, the second release does not click either.
+        e.position = {5, 5}; // empty space: nothing selected
+        s.controller.pointerPress(e);
+        s.controller.pointerRelease(e);
+        ASSERT_TRUE(s.controller.selection().empty()) << s.state();
+        e.position = from;
+        s.controller.pointerPress(e);
+        s.controller.pointerRelease(e);
+        s.controller.pointerPress(e);
+        s.controller.pointerDoubleClick(e);
+        s.controller.pointerRelease(e);
+        EXPECT_TRUE(s.bodiesSelected({s.a})) << s.state();
+    }
+}
+
+// Review 2026-09-27: bodies selected, two quick taps on two neighbouring
+// bodies (the recognizer sees a double-tap) add both.
+TEST(TouchMultiSelect, QuickTapsOnTwoNeighboursAddBoth)
+{
+    TwoBoxes s;
+    const Uuid c = s.addBox("C", {62, 0, 0});
+    s.controller.documentChanged();
+    s.controller.fitAll(false);
+    Finger finger(s);
+    finger.doubleTap(s.topA());
+    ASSERT_TRUE(s.bodiesSelected({s.a})) << finger.trace();
+    const Vec2 onB = s.screen({59, 10, 20});
+    const Vec2 onC = s.screen({63, 10, 20});
+    const InputProfile touch = InputProfile::forDevice(PointerDevice::Touch);
+    ASSERT_EQ(s.controller.pickAt(onB, touch).bodyId, s.b);
+    ASSERT_EQ(s.controller.pickAt(onC, touch).bodyId, c);
+    ASSERT_LT((onC - onB).length(), 32.0);
+    finger.tap(onB);
+    finger.pause(0.1);
+    finger.tap(onC);
+    finger.pause(1.0);
+    EXPECT_TRUE(s.bodiesSelected({s.a, s.b, c})) << finger.trace();
+}

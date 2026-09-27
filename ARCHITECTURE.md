@@ -853,9 +853,16 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   before its first press (`PressMemo`, kept for the last two left presses;
   Qt's mouse double-click uses the same memo) and toggles the body under it
   into that selection; with no press on record it takes the selection as it
-  is. On touch and pen, a tap on a body while bodies are selected toggles
+  is. Two taps on two different bodies stay two taps (each one's click
+  stands); a pending value is applied first unless a click of the
+  double-click was a pick for the tool (`PressMemo::toolPick`: Mirror's
+  plane, Align's target, Rotate's axis, a hole's spot), as a single click
+  there never applies; Qt's second mouse press is kept as a pending drag
+  (`Drag::doubleClicked` only stops its click), so a drag after a
+  double-click still orbits. On touch and pen, a tap on a body while bodies are selected toggles
   that body (not a face), and a tap in the outer part of a Move arrow's
-  finger zone on an unselected body is that body's tap (`tapBesideHandle`);
+  finger zone on an unselected body is that body's tap (`tapBesideHandle`;
+  never after a drag, a ring's included);
   a finger's press on an arrow moves nothing until it passes the drag
   threshold. Pen mode (turned on
   by the first pen press, or the Pen switch) makes finger presses

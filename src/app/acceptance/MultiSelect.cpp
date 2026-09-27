@@ -10,13 +10,17 @@
 // (402x874 with its safe areas): double-tap one box, double-tap the other,
 // both are selected and Union is offered and applied (volume); undo, then a
 // double-tap on a selected body takes it out again, and a single tap on
-// another body adds it (bodies selected: Shapr3D). A mouse Shift+double-
+// another body adds it (bodies selected: Shapr3D; on the phone the tap lands
+// on B inside the finger zone of A's Move arrow, beside it, and moves
+// nothing). A mouse Shift+double-
 // click adds a body too. The window goes back to the run's size at the end.
 
 #include "app/AcceptanceRunner.h"
 #include "commands/DocumentCommands.h"
 #include "geometry/Modeling.h"
+#include "interaction/InputEvents.h"
 #include "interaction/InteractionController.h"
+#include "interaction/Operation.h"
 #include "ui/AppController.h"
 
 #include <QtCore/QElapsedTimer>
@@ -31,6 +35,7 @@
 
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace os::app {
@@ -135,6 +140,48 @@ bool shown(AcceptanceRunner& r, const QString& name)
     return item && item->isVisible();
 }
 
+// On a phone the first body's Move arrows reach over the second, and a
+// finger's grab zone reaches 28 px past an arrow: a point on B inside that
+// zone but 24 px beside the shaft (a tap there is a tap on B, not on the
+// arrow), in the view (no panel over it), if there is one.
+std::optional<QPointF> besideArrowOnB(AcceptanceRunner& r, const Scene& s)
+{
+    const interact::InteractionController& c = r.app().interaction();
+    const interact::Operation* move = c.operation();
+    const Camera& cam = c.camera();
+    const auto touch = interact::InputProfile::forDevice(interact::PointerDevice::Touch);
+    constexpr double kBeside = 24;
+    const auto onAnArrow = [&](Vec2 p, double tolerance) {
+        for (int i = 0; move && i < move->handleCount(); ++i)
+            if (move->handle(i).hitTest(cam, p, move->handleOffset(i), tolerance))
+                return true;
+        return false;
+    };
+    for (int i = 0; move && i < move->handleCount(); ++i) {
+        const interact::LinearManipulator& arrow = move->handle(i);
+        const Vec2 base = cam.project(arrow.base());
+        Vec2 along = cam.project(arrow.base() + arrow.direction()) - base;
+        if (along.length() < 1e-9)
+            continue;
+        along = along * (1.0 / along.length());
+        for (const Vec2 across : {Vec2{-along.y, along.x}, Vec2{along.y, -along.x}})
+            for (double t = 0; t < 300; t += 1) {
+                const Vec2 shaft = base + along * t;
+                const auto d = arrow.hitTest(cam, shaft, move->handleOffset(i), 0);
+                if (!d || *d >= 0.5)
+                    continue;
+                const Vec2 p = shaft + across * kBeside;
+                const auto hit = c.pickAt(p, touch);
+                const QPointF q(p.x, p.y);
+                const bool inView = q.x() >= 0 && q.y() >= 0 && q.x() < r.window()->width() && q.y() < r.window()->height();
+                if (hit.kind == sel::PickKind::Face && hit.bodyId == s.b && onAnArrow(p, touch.handleTolerance) && !onAnArrow(p, 8)
+                    && inView && r.itemAt(q) && r.itemAt(q)->objectName() == QLatin1String("viewport"))
+                    return q;
+            }
+    }
+    return std::nullopt;
+}
+
 // Two 20 mm boxes overlapping by 5 mm: A from x -18 to 2, B from -3 to 17
 // (their union is 14000 mm³).
 void makeBoxes(AcceptanceRunner& r, Scene& s)
@@ -210,14 +257,26 @@ void addPass(Steps& steps, AcceptanceRunner& r, const std::shared_ptr<Scene>& s,
         doubleTap(r, r.screenPoint(-12, 0, 20));
     });
     wait(steps, 3);
-    steps.push_back([&r, s, where] {
+    const bool phone = width < 600;
+    steps.push_back([&r, s, where, phone] {
         r.check(bodiesSelected(r, {s->a}), where + QStringLiteral(": A selected again"), selectionText(r, *s));
-        tap(r, r.screenPoint(12, 0, 20)); // one tap on B while a body is selected
+        if (!phone) {
+            tap(r, r.screenPoint(12, 0, 20)); // one tap on B while a body is selected
+            return;
+        }
+        // On the phone: a tap on B right beside A's Move arrow (in its finger zone).
+        const std::optional<QPointF> beside = besideArrowOnB(r, *s);
+        r.check(beside.has_value(), where + QStringLiteral(": a spot on B in the finger zone of A's Move arrow, beside it"));
+        tap(r, beside ? *beside : r.screenPoint(12, 0, 20));
     });
     wait(steps, 3);
     steps.push_back([&r, s, where] {
         r.check(bodiesSelected(r, {s->a, s->b}), where + QStringLiteral(": a single tap on another body adds it"),
                 selectionText(r, *s));
+        const doc::Body* a = r.app().document().body(s->a);
+        r.check(a && std::abs(geom::boundingBox(a->shape()).min.x + 18.0) < 1e-9
+                    && r.app().interaction().undoStack().index() == 2 && r.app().interaction().undoStack().canRedo(),
+                where + QStringLiteral(": the tap moved nothing"));
         doubleTap(r, r.screenPoint(-12, 0, 20)); // A again: out
     });
     steps.push_back([&r, s, where] {
