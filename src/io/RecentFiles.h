@@ -47,4 +47,12 @@ std::vector<std::string> homeProjects(const std::vector<std::string>& recent, co
 std::string rebasedIntoFolder(const std::string& path, const std::string& folder,
                               const RecentFileExists& exists = recentFileExists);
 
+// Where a Home card says its project is: `directory` (the project's folder)
+// as the user knows it. Inside the app's own folder `appFolder` (iPhone /
+// iPad: Documents, which the Files app shows by the app's name) that is
+// "OpenShape (Files app)", or "OpenShape → Sub → Folder (Files app)" below
+// it, not the sandbox path (/var/mobile/Containers/Data/Application/<id>/
+// Documents); any other directory, or no app folder, is `directory` itself.
+std::string homeFolderLabel(const std::string& directory, const std::string& appFolder);
+
 } // namespace os::io

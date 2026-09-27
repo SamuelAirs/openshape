@@ -130,4 +130,21 @@ std::string rebasedIntoFolder(const std::string& path, const std::string& folder
     return exists(candidate) ? candidate : path;
 }
 
+std::string homeFolderLabel(const std::string& directory, const std::string& appFolder)
+{
+    if (appFolder.empty() || directory.empty())
+        return directory;
+    const std::vector<std::string> inside = components(directory);
+    const std::vector<std::string> app = components(appFolder);
+    if (app.empty() || inside.size() < app.size())
+        return directory;
+    for (std::size_t i = 0; i < app.size(); ++i)
+        if (!sameRecentPath(inside[i], app[i]))
+            return directory;
+    std::string label = "OpenShape";
+    for (std::size_t i = app.size(); i < inside.size(); ++i)
+        label += " \xE2\x86\x92 " + inside[i]; // →
+    return label + " (Files app)";
+}
+
 } // namespace os::io

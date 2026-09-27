@@ -81,6 +81,20 @@ Rectangle {
                     text: "Free software under the <a href=\"https://mozilla.org/MPL/2.0/\">Mozilla Public License 2.0</a>. "
                         + "Source code: <a href=\"https://github.com/SamuelAirs/openshape\">github.com/SamuelAirs/openshape</a>."
                 }
+                // The privacy policy, linked inside the app as the App Store
+                // asks (docs/APP_STORE.md). The whole line is the link, so a
+                // tap anywhere on it opens it; as wide as its text.
+                Text {
+                    objectName: "aboutPrivacyLink"
+                    readonly property string url: "https://github.com/SamuelAirs/openshape/blob/main/docs/PRIVACY.md"
+                    Layout.maximumWidth: content.width
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 13
+                    textFormat: Text.StyledText
+                    linkColor: Theme.accent
+                    onLinkActivated: (link) => Qt.openUrlExternally(link)
+                    text: "<a href=\"" + url + "\">Privacy policy: OpenShape collects no data about you</a>"
+                }
                 SectionLabel { text: "Built with"; Layout.leftMargin: 0 }
                 Repeater {
                     model: [

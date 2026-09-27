@@ -237,6 +237,9 @@ Rectangle {
                 elide: Text.ElideRight
             }
             Text {
+                // Where it is: on iPhone and iPad "OpenShape (Files app)"
+                // (io::homeFolderLabel), not the app's sandbox path.
+                objectName: "homeCardFolder_" + card.cardIndex
                 width: parent.width
                 text: card.project.folder || ""
                 textFormat: Text.PlainText
