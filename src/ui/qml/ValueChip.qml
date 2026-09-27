@@ -48,6 +48,72 @@ Item {
         } else if (!typedTextRefused) {
             errorText.text = app.operationError
         }
+        if (!textField.activeFocus && textField.text !== app.operationText)
+            textField.text = app.operationText
+    }
+
+    // The Text tool: its words are typed in the text field, which takes the
+    // keys as soon as the tool opens (on a tablet the keyboard comes up).
+    // Words remembered from the last use start selected: typing replaces them.
+    readonly property bool takesText: app.operationTakesText
+    onTakesTextChanged: if (takesText) Qt.callLater(chip.startText)
+    function startText() {
+        if (!chip.takesText)
+            return
+        focusText()
+        textField.selectAll()
+    }
+    function focusText() {
+        if (!chip.takesText)
+            return
+        textField.text = app.operationText
+        textField.forceActiveFocus()
+        textField.cursorPosition = textField.text.length
+    }
+    // The Text tool's Depth, Size and Angle buttons: the value field takes
+    // the keys (keys typed in the view go to the words).
+    function focusValue() {
+        if (!app.operationActive)
+            return
+        field.text = app.operationValueText
+        field.forceActiveFocus()
+        field.selectAll()
+    }
+    // Keys typed while the view has the focus (after a click on the face).
+    // Remembered words nobody typed or erased in this use of the tool are
+    // replaced, as when they are selected in the field (the tool opens so):
+    // the order does not matter, place then type or type then place.
+    function typeText(characters) {
+        const replace = !app.operationTextTyped
+        focusText()
+        if (replace)
+            textField.text = characters
+        else
+            textField.insert(textField.cursorPosition, characters)
+        textField.cursorPosition = textField.text.length
+        errorText.text = chip.app.setOperationText(textField.text)
+    }
+    // Backspace or Delete in the view: the last character (or, with
+    // `wholeWord`, the last word) of the words shown.
+    function eraseText(wholeWord) {
+        focusText()
+        const t = textField.text
+        const end = textField.cursorPosition
+        let start = end
+        if (wholeWord) {
+            while (start > 0 && t[start - 1] === " ")
+                --start
+            while (start > 0 && t[start - 1] !== " ")
+                --start
+        } else if (start > 0) {
+            --start
+            // One character, also when it takes two UTF-16 units.
+            if (start > 0 && t.charCodeAt(start) >= 0xDC00 && t.charCodeAt(start) <= 0xDFFF)
+                --start
+        }
+        if (start < end)
+            textField.remove(start, end)
+        errorText.text = chip.app.setOperationText(textField.text)
     }
 
     Connections {
@@ -59,6 +125,66 @@ Item {
     ColumnLayout {
         id: column
         spacing: 6
+
+        // The Text tool's words (the value field below is the depth, size or angle).
+        Panel {
+            Layout.alignment: Qt.AlignHCenter
+            visible: chip.takesText
+            implicitWidth: textRow.implicitWidth + 2 * Theme.panelPadding
+            implicitHeight: Theme.controlHeight + 2 * Theme.panelPadding
+            border.color: errorText.text.length > 0 && textField.activeFocus ? Theme.error : Theme.panelBorder
+
+            RowLayout {
+                id: textRow
+                anchors.centerIn: parent
+                spacing: 6
+                Text {
+                    text: "Text"
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                    Layout.leftMargin: 6
+                }
+                TextField {
+                    id: textField
+                    objectName: "textToolField"
+                    implicitWidth: Math.max(120, Math.min(250, chip.maximumWidth - 90))
+                    implicitHeight: Theme.controlHeight
+                    font.pixelSize: 15
+                    placeholderText: "Type the text"
+                    selectByMouse: true
+                    color: Theme.text
+                    background: Rectangle {
+                        radius: 8
+                        color: textField.activeFocus ? "white" : Theme.fieldIdle
+                        border.color: textField.activeFocus ? Theme.accent : "transparent"
+                        border.width: 1.5
+                    }
+                    onTextEdited: errorText.text = chip.app.setOperationText(text)
+                    Keys.onReturnPressed: apply()
+                    Keys.onEnterPressed: apply()
+                    // Tab goes on to the value (depth, size or angle).
+                    Keys.onTabPressed: {
+                        field.forceActiveFocus()
+                        field.selectAll()
+                    }
+                    Keys.onEscapePressed: {
+                        textField.focus = false
+                        chip.finished()
+                        chip.syncFromModel()
+                    }
+                    function apply() {
+                        errorText.text = chip.app.setOperationText(text)
+                        if (errorText.text.length === 0) {
+                            // Nothing typed: the app says so and the tool stays.
+                            textField.focus = false
+                            chip.app.commitOperation()
+                            chip.finished()
+                            chip.syncFromModel()
+                        }
+                    }
+                }
+            }
+        }
 
         Panel {
             Layout.alignment: Qt.AlignHCenter
@@ -230,7 +356,10 @@ Item {
                 const owner = chip
                 const id = modelData.id
                 owner.app.triggerAction(id)
-                owner.finished()
+                if (owner.takesText && id.startsWith("field:"))
+                    owner.focusValue()
+                else
+                    owner.finished()
             }
         }
     }

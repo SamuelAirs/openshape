@@ -98,6 +98,62 @@ Rectangle {
                           : "While there are unsaved changes, OpenShape keeps a copy in its own folder, a few seconds after "
                             + "you stop editing and at least this often, and offers it after a crash. Your file changes only when you save."
                 }
+
+                SectionLabel { text: "Hole allowance for 3D printing"; Layout.leftMargin: 0; Layout.topMargin: 6 }
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Choice {
+                        name: "prefHoleAllowance"
+                        options: [{ value: 0, label: "0" }, { value: 0.1, label: "0.1" }, { value: 0.2, label: "0.2" },
+                                  { value: 0.3, label: "0.3" }, { value: 0.4, label: "0.4 mm" }]
+                        current: overlay.app.holeAllowance
+                        onChosen: (value) => { allowanceField.text = ""; allowanceError.text = ""; overlay.app.holeAllowance = value }
+                    }
+                    TextField {
+                        id: allowanceField
+                        objectName: "prefHoleAllowanceField"
+                        implicitWidth: 110
+                        implicitHeight: Theme.controlHeight
+                        font.pixelSize: 14
+                        placeholderText: "Other (mm)"
+                        selectByMouse: true
+                        color: Theme.text
+                        background: Rectangle {
+                            radius: 8
+                            color: allowanceField.activeFocus ? "white" : Theme.fieldIdle
+                            border.color: allowanceError.text.length > 0 ? Theme.error
+                                        : allowanceField.activeFocus ? Theme.accent : "transparent"
+                            border.width: 1.5
+                        }
+                        function apply() {
+                            allowanceError.text = overlay.app.setHoleAllowanceText(text)
+                            if (allowanceError.text.length === 0)
+                                allowanceField.focus = false
+                        }
+                        Keys.onReturnPressed: apply()
+                        Keys.onEnterPressed: apply()
+                        onEditingFinished: if (text.length > 0) apply()
+                    }
+                }
+                Text {
+                    id: allowanceError
+                    objectName: "prefHoleAllowanceError"
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    wrapMode: Text.WordWrap
+                    color: Theme.error
+                    font.pixelSize: 12
+                }
+                Note {
+                    objectName: "prefHoleAllowanceNote"
+                    text: "Now " + Number(overlay.app.holeAllowance).toLocaleString(Qt.locale("C"), "f", 2) + " mm. "
+                          + "Printed holes come out smaller than drawn, so this is added to the preset diameters of screw "
+                          + "clearance holes (close and normal fit) and of counterbores and countersinks: M3 close fit is then "
+                          + Number(3.2 + overlay.app.holeAllowance).toLocaleString(Qt.locale("C"), "f", 2) + " mm. "
+                          + "Tap-drill and heat-set insert presets already assume printing and stay as they are. "
+                          + "Sizes you type are used exactly."
+                }
             }
         }
     }

@@ -9,6 +9,7 @@
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "geometry/Tessellation.h"
+#include "geometry/Text.h"
 
 #include <algorithm>
 #include <atomic>
@@ -969,7 +970,7 @@ std::unique_ptr<doc::Feature> InsertOperation::makeFeature(double value) const
 // ---- Counterbore / countersink ------------------------------------------------------
 
 std::unique_ptr<HeadOperation> HeadOperation::create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
-                                                     doc::HoleKind kind, std::size_t presetIndex)
+                                                     doc::HoleKind kind, std::size_t presetIndex, double allowance)
 {
     const doc::Body* body = document.body(bodyId);
     if (!body || kind == doc::HoleKind::Plain)
@@ -988,8 +989,27 @@ std::unique_ptr<HeadOperation> HeadOperation::create(const doc::Document& docume
     auto op = std::unique_ptr<HeadOperation>(new HeadOperation(bodyId, LinearManipulator(placement->center, radial),
                                                                doc::EdgeRef{rimEdge, *signature}, *placement, kind));
     op->radial_ = radial;
+    op->allowance_ = doc::validHoleAllowance(allowance);
     op->setPreset(std::min(presetIndex, doc::metricScrews().size() - 1), document);
     return op;
+}
+
+double HeadOperation::presetDiameter(std::size_t index) const
+{
+    const doc::ScrewSize& screw = doc::metricScrews()[std::min(index, doc::metricScrews().size() - 1)];
+    return kind_ == doc::HoleKind::Counterbore ? doc::counterboreDiameterFor(screw, allowance_)
+                                               : doc::countersinkDiameterFor(screw, allowance_);
+}
+
+void HeadOperation::setAllowance(double allowance, const doc::Document& document)
+{
+    allowance = doc::validHoleAllowance(allowance);
+    if (std::abs(allowance - allowance_) < 1e-12)
+        return;
+    const bool fromPreset = presetIndex().has_value();
+    allowance_ = allowance;
+    if (fromPreset)
+        setPreset(presetIndex_, document); // a typed size stays as typed
 }
 
 std::string HeadOperation::title() const
@@ -1027,8 +1047,8 @@ std::optional<std::size_t> HeadOperation::presetIndex() const
 {
     const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
     const bool counterbore = kind_ == doc::HoleKind::Counterbore;
-    const double d = counterbore ? screw.counterboreDiameter : screw.countersinkDiameter;
-    if (std::abs(diameter() - d) > 1e-9 || (counterbore && std::abs(depth() - screw.counterboreDepth) > 1e-9))
+    if (std::abs(diameter() - presetDiameter(presetIndex_)) > 1e-9
+        || (counterbore && std::abs(depth() - screw.counterboreDepth) > 1e-9))
         return std::nullopt;
     return presetIndex_;
 }
@@ -1037,7 +1057,7 @@ void HeadOperation::setPreset(std::size_t index, const doc::Document& document)
 {
     presetIndex_ = std::min(index, doc::metricScrews().size() - 1);
     const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
-    diameter_ = kind_ == doc::HoleKind::Counterbore ? screw.counterboreDiameter : screw.countersinkDiameter;
+    diameter_ = presetDiameter(presetIndex_);
     depth_ = screw.counterboreDepth;
     setValue(activeHandle() == 1 ? depth_ : diameter_, document); // preview right away
 }
@@ -1054,9 +1074,9 @@ std::unique_ptr<doc::Feature> HeadOperation::makeFeature(double value) const
     // Named after the screw only while the sizes are the preset's.
     const doc::ScrewSize& screw = doc::metricScrews()[presetIndex_];
     const bool counterbore = kind_ == doc::HoleKind::Counterbore;
-    const bool matches = std::abs(feature->diameter - (counterbore ? screw.counterboreDiameter : screw.countersinkDiameter)) < 1e-9
+    const bool matches = std::abs(feature->diameter - presetDiameter(presetIndex_)) < 1e-9
                       && (!counterbore || std::abs(feature->depth - screw.counterboreDepth) < 1e-9);
-    feature->preset = matches ? screw.name : "";
+    feature->preset = matches ? screw.name + doc::allowanceSuffix(allowance_) : "";
     return feature;
 }
 
@@ -1082,6 +1102,7 @@ std::unique_ptr<HoleOperation> HoleOperation::create(const doc::Document& docume
     op->facePoint_ = geom::pointOnFace(shape, faceIndex, info->centroid).value_or(info->centroid);
     op->settings_ = settings;
     op->settings_.screw = std::min(settings.screw, doc::metricScrews().size() - 1);
+    op->settings_.allowance = doc::validHoleAllowance(settings.allowance);
     op->depth_ = settings.depth;
     op->applyPreset();
     op->setStoredValue(op->diameter_);
@@ -1155,7 +1176,28 @@ void HoleOperation::storeValue()
 
 double HoleOperation::presetDiameter() const
 {
-    return doc::holeDiameterFor(doc::metricScrews()[settings_.screw], settings_.fit);
+    return doc::holeDiameterFor(doc::metricScrews()[settings_.screw], settings_.fit, settings_.allowance);
+}
+
+double HoleOperation::headDiameter() const
+{
+    const doc::ScrewSize& screw = doc::metricScrews()[settings_.screw];
+    return settings_.head == doc::HoleKind::Countersink ? doc::countersinkDiameterFor(screw, settings_.allowance)
+                                                        : doc::counterboreDiameterFor(screw, settings_.allowance);
+}
+
+void HoleOperation::setAllowance(double allowance, const doc::Document& document)
+{
+    allowance = doc::validHoleAllowance(allowance);
+    if (std::abs(allowance - settings_.allowance) < 1e-12)
+        return;
+    storeValue();
+    const bool fromPreset = std::abs(diameter_ - presetDiameter()) < 1e-9;
+    settings_.allowance = allowance;
+    if (fromPreset)
+        applyPreset(); // a typed diameter stays as typed
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
 }
 
 void HoleOperation::applyPreset()
@@ -1342,12 +1384,12 @@ std::unique_ptr<doc::Feature> HoleOperation::makeFeature(double value) const
     feature->throughAll = settings_.throughAll;
     const doc::ScrewSize& screw = doc::metricScrews()[settings_.screw];
     feature->head = settings_.head;
-    feature->headDiameter = settings_.head == doc::HoleKind::Countersink ? screw.countersinkDiameter : screw.counterboreDiameter;
+    feature->headDiameter = headDiameter();
     feature->headDepth = screw.counterboreDepth;
     feature->headAngle = doc::kCountersinkAngleDegrees * kPi / 180.0;
     // Named after the screw only while the diameter is the preset's.
     if (std::abs(feature->diameter - presetDiameter()) < 1e-9)
-        feature->preset = doc::holeFitLabel(screw, settings_.fit);
+        feature->preset = doc::holeFitLabel(screw, settings_.fit, settings_.allowance);
     return feature;
 }
 
@@ -1369,6 +1411,318 @@ Result<geom::Shape> HoleOperation::computePreview(double value, const doc::Docum
                 (live.size() == 1 ? std::string("The hole") : "Hole " + std::to_string(i + 1))
                     + " is off the face: type an X / Y on it, or Remove hole.",
                 "hole: position " + std::to_string(i) + " off the face");
+    return Operation::computePreview(value, document);
+}
+
+// ---- Text tool ------------------------------------------------------------------------
+
+std::unique_ptr<TextOperation> TextOperation::create(const doc::Document& document, const Uuid& bodyId, int faceIndex,
+                                                     const TextSettings& settings)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull())
+        return nullptr;
+    const geom::Shape& shape = body->shape();
+    const auto frame = doc::holeFrame(shape, faceIndex);
+    const auto signature = geom::captureFaceSignature(shape, faceIndex);
+    const auto info = geom::faceInfo(shape, faceIndex);
+    if (!frame || !signature || !info)
+        return nullptr;
+    auto op = std::unique_ptr<TextOperation>(new TextOperation(bodyId, doc::FaceRef{faceIndex, *signature}, *frame));
+    op->shape_ = shape;
+    op->outline_ = geom::faceOutline(shape, faceIndex, frame->origin, frame->xAxis, frame->yAxis);
+    if (!op->outline_.valid)
+        return nullptr;
+    // The text starts at the face's center (of its outline), or at a point
+    // inside the face when that is off it (a ring, an L).
+    const Vec2 center{(op->outline_.minU + op->outline_.maxU) / 2, (op->outline_.minV + op->outline_.maxV) / 2};
+    op->position_ = op->onOutline(center)
+                        ? center
+                        : frame->toLocal(geom::pointOnFace(shape, faceIndex, info->centroid).value_or(info->centroid));
+    op->text_ = settings.text;
+    op->size_ = std::clamp(settings.size, geom::kMinCapHeight, geom::kMaxCapHeight);
+    op->depth_ = std::abs(settings.depth) < 1e-3 ? 1.0 : settings.depth;
+    // A remembered angle that was refused (typed out of range) starts over.
+    op->angleDegrees_ = std::abs(settings.angleDegrees) <= 360.0 ? settings.angleDegrees : 0.0;
+    op->bold_ = settings.bold;
+    op->setStoredValue(op->depth_);
+    op->setValue(op->depth_, document); // a remembered text previews at once
+    op->initial_ = op->settings();
+    return op;
+}
+
+bool TextOperation::edited() const
+{
+    if (edited_)
+        return true;
+    const TextSettings now = settings();
+    // A drag of the arrow, or a value typed, changes a field.
+    return now.text != initial_.text || now.bold != initial_.bold || std::abs(now.size - initial_.size) > 1e-12
+        || std::abs(now.depth - initial_.depth) > 1e-12 || std::abs(now.angleDegrees - initial_.angleDegrees) > 1e-12;
+}
+
+std::string TextOperation::valueLabel() const
+{
+    switch (field_) {
+    case Field::Depth: return "Depth";
+    case Field::Size: return "Size";
+    case Field::Angle: return "Angle";
+    }
+    return "Depth";
+}
+
+std::string TextOperation::prompt() const
+{
+    return text_.empty() ? std::string("Type the text in the box \xC2\xB7 click the face to move it "
+                                       "(it snaps to the center and the middles of the edges)")
+                         : std::string();
+}
+
+bool TextOperation::canCommit() const
+{
+    return !text_.empty() && std::abs(depth()) >= 1e-3 && previewUsable();
+}
+
+LinearManipulator TextOperation::handle(int index) const
+{
+    return index == 0 ? LinearManipulator(center(), frame_.normal) : LinearManipulator();
+}
+
+void TextOperation::setActiveHandle(int index)
+{
+    Operation::setActiveHandle(0);
+    if (index == 0 && field_ != Field::Depth) {
+        storeValue();
+        field_ = Field::Depth;
+        setStoredValue(depth_);
+    }
+}
+
+TextSettings TextOperation::settings() const
+{
+    // A value refused in the active field is not kept: the last accepted one is.
+    const bool accepted = checkValue(value()).empty();
+    auto kept = [&](Field field) { return field == field_ && accepted ? value() : fieldValue(field); };
+    return {text_, kept(Field::Size), kept(Field::Depth), kept(Field::Angle), bold_};
+}
+
+double TextOperation::fieldValue(Field field) const
+{
+    switch (field) {
+    case Field::Depth: return depth_;
+    case Field::Size: return size_;
+    case Field::Angle: return angleDegrees_;
+    }
+    return depth_;
+}
+
+void TextOperation::storeValue()
+{
+    // A refused value (an angle beyond 360 degrees, a size of 2000 mm) stays
+    // in its field with its message; the step keeps the last accepted one.
+    if (!checkValue(value()).empty())
+        return;
+    switch (field_) {
+    case Field::Depth: depth_ = value(); break;
+    case Field::Size: size_ = value(); break;
+    case Field::Angle: angleDegrees_ = value(); break;
+    }
+}
+
+std::string TextOperation::checkValue(double value) const
+{
+    if (field_ == Field::Depth && std::abs(value) < 1e-3)
+        return "The depth must not be zero: positive raises the text, negative cuts it in.";
+    if (field_ == Field::Size && (!(value >= geom::kMinCapHeight) || !(value <= geom::kMaxCapHeight)))
+        return "The size (the height of capital letters) must be between 0.5 and 1000 mm.";
+    if (field_ == Field::Angle && !(std::abs(value) <= 360.0 + 1e-9))
+        return "The angle must be between -360\xC2\xB0 and 360\xC2\xB0.";
+    return {};
+}
+
+void TextOperation::setText(const std::string& text, const doc::Document& document)
+{
+    edited_ = true;
+    wordsTyped_ = true; // even the same words: typed on purpose (the next key adds to them)
+    // The same words again (Enter in the text field sends them once more):
+    // the preview shown or computing, or its verdict, stays.
+    if (text == text_ && (previewPending() || hasPreview() || !error().empty()))
+        return;
+    text_ = text;
+    setValue(value(), document);
+}
+
+void TextOperation::setField(Field field, const doc::Document& document)
+{
+    storeValue();
+    field_ = field;
+    setStoredValue(fieldValue(field));
+    setValue(value(), document);
+}
+
+void TextOperation::nextField(const doc::Document& document)
+{
+    setField(field_ == Field::Depth ? Field::Size : field_ == Field::Size ? Field::Angle : Field::Depth, document);
+}
+
+void TextOperation::setAngleDegrees(double degrees, const doc::Document& document)
+{
+    storeValue();
+    angleDegrees_ = degrees;
+    edited_ = true;
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+}
+
+void TextOperation::setRaised(bool raised, const doc::Document& document)
+{
+    storeValue();
+    depth_ = raised ? std::abs(depth_) : -std::abs(depth_);
+    edited_ = true;
+    setStoredValue(fieldValue(field_));
+    setValue(value(), document);
+}
+
+void TextOperation::setBold(bool bold, const doc::Document& document)
+{
+    bold_ = bold;
+    edited_ = true;
+    setValue(value(), document);
+}
+
+bool TextOperation::onFace(Vec2 p) const
+{
+    return geom::faceContains(shape_, face_.indexHint, frame_.toWorld(p));
+}
+
+bool TextOperation::onOutline(Vec2 p) const
+{
+    const double size = std::max({outline_.maxU - outline_.minU, outline_.maxV - outline_.minV, 1.0});
+    return geom::outlineContains(outline_, p, 1e-7 * size);
+}
+
+std::pair<Vec2, std::string> TextOperation::snap(const Vec3& world, double snapDistance) const
+{
+    const Vec2 p = frame_.toLocal(world);
+    const Vec2 center{(outline_.minU + outline_.maxU) / 2, (outline_.minV + outline_.maxV) / 2};
+    std::vector<std::pair<Vec2, const char*>> points{{center, "center"}};
+    for (const Vec3& m : outline_.edgeMidpoints)
+        points.push_back({frame_.toLocal(m), "midpoint"});
+    // Onto a point (on the face), else lined up in X or Y with one.
+    std::optional<Vec2> best;
+    std::string what;
+    double bestDistance = snapDistance;
+    for (const auto& [q, name] : points)
+        if (const double d = (q - p).length(); d <= bestDistance && onOutline(q)) {
+            bestDistance = d;
+            best = q;
+            what = name;
+        }
+    if (best)
+        return {*best, what};
+    double du = snapDistance, dv = snapDistance;
+    std::optional<double> u, v;
+    for (const auto& [q, name] : points) {
+        if (const double d = std::abs(q.x - p.x); d <= du) {
+            du = d;
+            u = q.x;
+        }
+        if (const double d = std::abs(q.y - p.y); d <= dv) {
+            dv = d;
+            v = q.y;
+        }
+    }
+    for (const auto& [x, y] : {std::pair{u, v}, std::pair{u, std::optional<double>()}, std::pair{std::optional<double>(), v}}) {
+        if (!x && !y)
+            continue;
+        const Vec2 q{x.value_or(p.x), y.value_or(p.y)};
+        if (onOutline(q))
+            return {q, "aligned"};
+    }
+    return {p, ""};
+}
+
+std::string TextOperation::placeAt(const Vec3& world, double snapDistance, const doc::Document& document)
+{
+    const auto [point, what] = snap(world, snapDistance);
+    if (!onOutline(point))
+        return {};
+    position_ = point;
+    edited_ = true;
+    setValue(value(), document);
+    return what;
+}
+
+void TextOperation::measureExtent() const
+{
+    const double s = size();
+    if (text_.empty() || (extent_.text == text_ && std::abs(extent_.size - s) <= 1e-12 && extent_.bold == bold_))
+        return;
+    Extent fresh;
+    fresh.text = text_;
+    fresh.size = s;
+    fresh.bold = bold_;
+    const auto faces = geom::textFaces({text_, bold_ ? doc::kTextFontBold : doc::kTextFontRegular, s});
+    if (faces) {
+        const geom::BoundingBox box = geom::approximateBoundingBox(faces.value());
+        fresh.valid = box.valid;
+        fresh.minX = box.min.x;
+        fresh.maxX = box.max.x;
+        fresh.minY = box.min.y;
+        fresh.maxY = box.max.y;
+    }
+    extent_ = fresh;
+}
+
+void TextOperation::adoptAutomaticChoices(const Operation& from)
+{
+    if (const auto* worker = dynamic_cast<const TextOperation*>(&from); worker && !worker->extent_.text.empty())
+        extent_ = worker->extent_;
+}
+
+std::vector<Vec3> TextOperation::textCorners() const
+{
+    // The extent measured with the preview (never here: this runs on the GUI
+    // thread, where a kernel call would wait for the worker's preview).
+    if (text_.empty() || !extent_.valid)
+        return {};
+    const double a = angleDegrees() * kPi / 180.0;
+    const Vec3 along = frame_.xAxis * std::cos(a) + frame_.yAxis * std::sin(a);
+    const Vec3 up = frame_.normal.cross(along);
+    const Vec3 c = center();
+    std::vector<Vec3> corners;
+    for (const auto& [x, y] : {std::pair{extent_.minX, extent_.minY}, std::pair{extent_.maxX, extent_.minY},
+                               std::pair{extent_.maxX, extent_.maxY}, std::pair{extent_.minX, extent_.maxY}})
+        corners.push_back(c + along * x + up * y);
+    return corners;
+}
+
+std::unique_ptr<doc::Feature> TextOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::TextFeature>();
+    feature->face = face_;
+    feature->position = position_;
+    feature->text = text_;
+    feature->size = field_ == Field::Size ? value : size_;
+    feature->depth = field_ == Field::Depth ? value : depth_;
+    // Stored in [0, 2 pi) whatever was typed (-90 degrees is 270).
+    feature->angle = doc::TextFeature::normalizedAngle((field_ == Field::Angle ? value : angleDegrees_) * kPi / 180.0);
+    feature->font = bold_ ? doc::kTextFontBold : doc::kTextFontRegular;
+    return feature;
+}
+
+Result<geom::Shape> TextOperation::computePreview(double value, const doc::Document& document) const
+{
+    measureExtent(); // for textCorners (adopted from the worker's copy)
+    if (text_.empty()) {
+        const doc::Body* body = document.body(bodyId());
+        if (!body)
+            return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "text: body");
+        return Result<geom::Shape>::success(body->shape());
+    }
+    if (!onFace(position_))
+        return Result<geom::Shape>::failure(ErrorCode::InvalidArgument, "The text's center is off the face: click on the face.",
+                                            "text: center off the face");
     return Operation::computePreview(value, document);
 }
 

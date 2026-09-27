@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert, Head, Hole)
+        │         │   Pattern, Insert, Head, Hole, Text)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
@@ -40,7 +40,7 @@ Technology choices and the alternatives considered are in
         ▼
  document/  Document → Sketches + Bodies → Feature history (Box, PushPull,
         │            Fillet, Chamfer, Shell, Extrude, Revolve, Hole, Move,
-        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace);
+        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace, Text, …);
         │            SketchProfiles bridge
         ├──────────────────────────────┐
         ▼                              ▼
@@ -235,6 +235,33 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   hole's depth from its opening; 0 inside material). The side is read from
   the normal of the first face hit: `BRepClass3d_SolidClassifier` crashed
   inside Extrema on a plain holed plate.
+- `Text.h` (emboss / deboss): fonts are **registered by id from bytes**
+  (`registerFont`; the UI layer passes the Noto Sans built into the
+  executable, tests the same files from the source tree); the geometry
+  layer never looks for system fonts, and FreeType's fallback to other
+  fonts is off, so a step makes the same letters everywhere. FreeType runs
+  inside OpenCASCADE, so every font call takes the kernel lock (`guarded()`,
+  and a `KernelLock` in `checkText`).
+  `StdPrs_BRepFont` (TKV3d; `Font_BRepFont` is an alias) only initializes
+  from a file path, so a small subclass feeds its `Font_FTFont` (TKService,
+  FreeType) from memory with the same scale (72 pt at 4800 dpi: one em is
+  the requested size). Glyphs are laid out with the font's advances (no
+  shaping: one line, left to right). `Font_FTFont` asks FreeType's
+  `FT_Get_Kerning`, which reads only a legacy `kern` table; Noto Sans keeps
+  its kerning in GPOS, so its letters are not kerned (TD-60). `size` is the **capital
+  height**: the em size is `size` / (an "H"'s height per em, measured once
+  per font). Each glyph instance is copied (repeated letters share a cached
+  shape) and its wires re-oriented by `ShapeFix_Face::FixOrientation`
+  (OCCT's glyph builder leaves the outline's direction to "ShapeFix", as
+  its source says; a face still of negative area is reversed); counters
+  (O, A, B) are holes in the faces. `embossText` extrudes the faces from the face's plane (as push/pull
+  does; a lead into the material would hang a sliver into a hole under
+  raised letters), fuses or cuts them in one boolean, and checks the volume
+  changed the right way by no more than the letters' area x |depth|
+  (tests: exactly area x depth, 1e-5 relative). `checkText` refuses, in
+  plain words, empty text, line breaks, control characters, invalid UTF-8,
+  more than 200 characters, a character the font lacks, a size outside
+  0.5-1000 mm and a font that is not registered.
 
 ## Document model (`document/`)
 
@@ -263,9 +290,21 @@ Document (UUID, display unit)
   whose exact ring or frustum volume is verified, and which measures the
   existing hole's depth first (`geom::emptyDepth`); sizes from
   `document/Fasteners`, the one place for screw and insert tables with
-  their sources), Holes (the Hole tool: holes at points on a flat face,
+  their sources and for the **FDM hole allowance**: `holeDiameterFor`,
+  `counterboreDiameterFor` and `countersinkDiameterFor` add it — a
+  Preferences value, 0.2 mm by default, 0-1 mm — to clearance fits and
+  head seats, never to tap drills or heat-set insert pilots (already
+  sized for printing); steps store the resulting diameter, so files do
+  not depend on the preference, and the preset's name says it, e.g. "M3
+  close fit +0.2 mm"), Holes (the Hole tool: holes at points on a flat face,
   stored in the face's frame like a sketch on it, so they follow the face;
-  diameter, depth or through all, optional counterbore / countersink), Move (a translation plus an
+  diameter, depth or through all, optional counterbore / countersink),
+  Text (one line of text raised from or cut into a flat face, centered at
+  a point in the face's frame like the Hole tool's, so it follows the face;
+  words, capital height, signed depth, angle and a font id; the words are
+  a *string parameter* — `Feature::textParameters()` /
+  `setTextParameter`, `cmd::SetTextParameterCommand` — which the Model
+  panel edits like the numbers), Move (a translation plus an
   optional rotation: Rotate and Align steps are Moves), Combine (with a tool
   body), Mirror (the image joined into the body; with `keepOriginal` off the
   body becomes its image: the last step of a mirror copy) and Pattern
@@ -552,7 +591,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the preview is known: an extrusion's new body, Mirror's and Pattern's
   separate bodies); `canCommit()`; `clearPreview()`.
 - **Face/body actions:** a single flat face arms Push/Pull and offers Shell,
-  Sketch, Hole, Align and Delete face; a single cylindrical face (hole, shaft) arms
+  Sketch, Hole, Text, Align and Delete face; a single cylindrical face (hole, shaft) arms
   Offset, typed as a diameter; several faces arm Shell. The Delete key on
   selected faces adds a DeleteFaces step. Edges arm Fillet (switchable to
   Chamfer; a hole rim also offers the heat-set insert, Counterbore and
@@ -601,9 +640,55 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the face's reference corner (the outline's minimum corner) or from the
   hole before it. Screw size (M2-M6) x fit (close / normal per ISO 273, or
   tap) sets the diameter; Counterbore / Countersink use the size's head
-  table. Everything placed is one Holes step; Esc leaves the tool; the
+  table (clearance fits and heads plus the print allowance,
+  `HoleSettings::allowance`). Everything placed is one Holes step; Esc leaves the tool; the
   settings are remembered for the next face (`HoleSettings`). The chip's
   actions wrap at 460 px (a hidden row measures their natural width).
+- **Text tool:** "Text" on a single flat face (or the palette) arms
+  `TextOperation` when a font is registered (otherwise it says text is not
+  available). The text starts at the face's center; clicks on that face
+  (faces only) move it, snapping like the Hole tool (`snap()`: the center,
+  the straight edges' middles, else lined up with them). One arrow at the
+  text's center along the face normal sets the signed depth (out = emboss,
+  in = deboss; Emboss / Deboss flip the sign). The chip edits one field at
+  a time (`field:depth|size|angle`, Tab = `nextField`; grabbing the arrow
+  returns to the depth), `angle:0/90/180/270` set the angle, Bold switches
+  to Noto Sans Bold when it is built in. The words are typed in a text
+  field in the chip (`InteractionController::setOperationText`, previewed
+  at once): it takes the keys when the tool opens, remembered words
+  selected so typing replaces them (on a tablet the keyboard comes up);
+  while the tool is open, every printable key typed in the view goes to it,
+  digits and - . + too ("3D", "V2"), AltGr (Ctrl+Alt) characters too, and
+  Backspace/Delete erase in it, with Ctrl or Alt a word (B / K / F are off;
+  `keyPress` never deletes the face while the tool is open). Until the
+  words were typed in this use (`TextOperation::wordsTyped()`, QML
+  `operationTextTyped`) the first key typed in the view replaces them, also
+  after a click placed them. The same words sent again (Enter in the field)
+  keep the preview shown or computing. The Depth, Size and Angle buttons put the
+  keys in the value field (so does Tab from the words). A value refused in
+  its field (an angle beyond +-360 degrees, a size out of range) stays there
+  with its message: switching fields, options and `settings()` keep the
+  last accepted one (`storeValue`). The chip sits
+  beside the letters, not over them (`textCorners()`). Enter with nothing
+  typed says "Type the text first." A typed angle beyond +-360 degrees is
+  refused; the step stores the direction in [0, 2 pi)
+  (`TextFeature::normalizedAngle`, which also reads a file's angle of many
+  turns instead of refusing it). Undo of a words edit puts the old words
+  back unchecked (`Feature::restoreTextParameter`: a file may hold words the
+  geometry cannot make). One Text step; the settings (words, size,
+  depth, angle, bold) are remembered for the next face (`TextSettings`).
+  The remembered words preview when the tool opens, but a click elsewhere
+  (or picking a body in the Model panel, Duplicate, Split, Import) applies
+  them only when something was typed, placed or changed in this use of the
+  tool (`TextOperation::edited()`); otherwise the tool closes and the click
+  selects as usual. Enter and the chip's Apply always apply. Previews run
+  on the preview worker (`clone()`); snapping and placing test the face's
+  outline (`geom::outlineContains`, as the Hole tool), never the kernel; the
+  letters' box for `textCorners()` is measured with the preview on the
+  worker and adopted with it (`adoptAutomaticChoices`), so the GUI thread
+  never measures glyphs; Apply waits for a pending preview
+  (`commitNeedsPreview`: "The text's center is off the face" is the
+  tool's wording, the step's is for upstream changes).
 - **Align:** Align on a face or edge creates an `AlignOperation` that waits
   for a target on another body (`prompt()`), then previews at offset 0; the
   arrow adds an offset along the target, Flip reverses, "Onto ground" (flat
@@ -707,7 +792,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   the UI shows them in the value chip while a manipulator is active and in the
   selection action bar otherwise (`barAction_<id>` object names, used by the
   acceptance run). `runTool(id)` backs the Modify/Combine palette (ids:
-  pushpull, fillet, chamfer, shell, offset, hole, move, rotate, mirror, pattern,
+  pushpull, fillet, chamfer, shell, offset, hole, text, move, rotate, mirror, pattern,
   align, union, subtract, intersect, measure): it runs the tool when the
   selection fits and otherwise explains what to select.
 
@@ -805,7 +890,9 @@ All draws share one dynamic uniform buffer with per-draw offsets.
 
 `InteractionController::historyRows()` flattens sketches, bodies and each
 body's features into rows (name, detail, status — ok, warning, failed,
-blocked, suppressed — explanation, editable length parameters).
+blocked, suppressed — explanation, editable parameters: lengths, angles,
+counts, and strings such as a Text step's words, `Parameter::isText`, which
+`setFeatureParameter` takes as typed).
 `AppController` gives QML new rows (`historyChanged`) and a new action list
 (`contextActionsChanged`) only when they differ from the last ones: a new
 list rebuilds the panel's delegates, and most state changes (a drag step, a
@@ -891,7 +978,10 @@ Measured (bench_session): a copy of a 21-body, 1528-face model takes about
 no worker thread is used.
 
 **Settings** (`ui/AppSettings`, QSettings): preferences (default unit for
-new documents, sketch grid snapping, recovery interval), recent files
+new documents, sketch grid snapping, recovery interval, the hole allowance
+for 3D printing: `InteractionController::setHoleAllowance` passes it to the
+Hole tool and the counterbore / countersink presets, and an open tool
+showing a preset follows at once; a typed diameter stays as typed), recent files
 (`io/RecentFiles`: most recent first; the menu shows the 10 newest that
 exist, and a file that is gone never pushes an existing one out; the File
 menu rereads the list as it opens, `refreshRecentFiles()`; with an app
@@ -1006,7 +1096,11 @@ them on a hidden menu separator after the Open Recent sub-menu).
   and Home, the saved thumbnail, Home's cards, menu, long press and
   buttons; then in a 402 x 874 window: Help over Home, a damaged file's
   message above Home, a long message wrapped, markup in a STEP name shown
-  as text) and `userguide` (the help card's link to
+  as text), `hole_allowance` (the 3D-printing allowance clicked and typed in
+  Preferences, then a Hole tool preset drilled with it), `text` (the Text
+  tool on a plate: typed words, size, depth, applied, edited in the Model
+  panel, undone, saved and reopened, then cut in from the palette) and
+  `userguide` (the help card's link to
   docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
   it, so no browser opens). The whole run also passes at the CI Mac's
   1024x653 (`--size 1024x653`): clicks on model points that a panel or the
@@ -1034,6 +1128,15 @@ them on a hidden menu separator after the Open Recent sub-menu).
   used by the app's `--version`, the About card, the log and project files'
   `metadata.json`); the macOS/iPad bundle and the Windows version resource
   take it from CMake too.
+- **The Text tool's font:** `resources/fonts/` (Noto Sans Regular and Bold
+  v2.013, SIL OFL 1.1; see its README, hashes in `THIRD_PARTY.md`; `*.ttf`
+  are binary in `.gitattributes`) is embedded in the executable
+  (`qt_add_resources` in `src/app/CMakeLists.txt`, checked at configure
+  time); `AppController` registers the bytes with `geom::registerFont` at
+  startup. A checkout without the files still builds and the tool says text
+  is not available; `OPENSHAPE_TEXT_FONT` lets such a development build use
+  another font file in its place. `scripts/package-windows.sh` ships `OFL.txt` as
+  `NotoSans-OFL.txt` and the license gate compares it with the repository.
 - **Windows resources:** `src/app/openshape.rc.in` (icon
   `resources/icons/openshape.ico`, made from the SVG by
   `scripts/windows/make-icon.py`, and VERSIONINFO) is configured and compiled

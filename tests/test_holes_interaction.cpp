@@ -26,10 +26,13 @@ struct HoleHarness {
     std::vector<std::string> messages;
     Uuid body;
 
-    HoleHarness()
+    // Most tests check the standard tables (ISO 273, DIN 974-1, ISO 10642),
+    // so they turn the print allowance off; PrintAllowance* tests keep it.
+    explicit HoleHarness(double allowance = 0.0)
     {
         controller.onMessage = [this](const std::string& m) { messages.push_back(m); };
         controller.setViewportSize({1200, 800});
+        controller.setHoleAllowance(allowance);
     }
 
     static PointerEvent at(Vec2 p)
@@ -405,4 +408,87 @@ TEST(HoleInteraction, SnapsStayOnTheFace)
     std::tie(p, what) = tool->snap({0.3, 15, 10}, 1.5);
     EXPECT_NEAR((p - Vec2{0, 15}).length(), 0, 1e-9);
     EXPECT_EQ(what, "aligned");
+}
+
+// The FDM print allowance (0.2 mm unless changed) on the Hole tool's
+// clearance presets: not on tap drills, never on a typed diameter, and an
+// open tool follows a change at once.
+TEST(HoleInteraction, PrintAllowanceOnHoleToolPresets)
+{
+    {
+        doc::Document document;
+        cmd::UndoStack stack;
+        InteractionController fresh{document, stack};
+        EXPECT_DOUBLE_EQ(fresh.holeAllowance(), 0.2) << "the owner's default";
+    }
+    HoleHarness h(doc::kDefaultHoleAllowance);
+    plateWithTopSelected(h);
+    ASSERT_TRUE(h.controller.triggerAction("hole").ok());
+    const HoleOperation* tool = holeTool(h);
+    ASSERT_NE(tool, nullptr);
+    EXPECT_NEAR(tool->value(), 3.6, 1e-12) << "M3 normal fit 3.4 + 0.2";
+    ASSERT_TRUE(h.controller.triggerAction("fit:close").ok());
+    EXPECT_NEAR(tool->diameter(), 3.4, 1e-12) << "M3 close fit 3.2 + 0.2";
+    EXPECT_EQ(h.controller.operationValueText(), "3.40 mm") << "the chip shows the diameter used";
+    ASSERT_TRUE(h.controller.triggerAction("fit:tap").ok());
+    EXPECT_NEAR(tool->diameter(), 2.5, 1e-12) << "tap drills stay as they are";
+    h.controller.setHoleAllowance(0.5);
+    EXPECT_NEAR(tool->diameter(), 2.5, 1e-12);
+    ASSERT_TRUE(h.controller.triggerAction("fit:close").ok());
+    EXPECT_NEAR(tool->diameter(), 3.7, 1e-12) << "a changed allowance applies to the next preset";
+    h.controller.setHoleAllowance(0.3);
+    EXPECT_NEAR(tool->diameter(), 3.5, 1e-12) << "and to the open tool's preset at once";
+    // A typed diameter is used exactly, whatever the allowance.
+    EXPECT_EQ(h.controller.setValueText("3.3"), "");
+    h.controller.setHoleAllowance(0.1);
+    EXPECT_NEAR(tool->diameter(), 3.3, 1e-12);
+    ASSERT_TRUE(h.controller.triggerAction("fit:close").ok());
+    EXPECT_NEAR(tool->diameter(), 3.3, 1e-12) << "M3 close fit + 0.1";
+    // A countersink seat gets it too (ISO 10642 M3: 6.72 + 0.1).
+    ASSERT_TRUE(h.controller.triggerAction("head:countersink").ok());
+    h.clickAt(h.screen({30, 15, 5}));
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto* holes = dynamic_cast<const doc::HolesFeature*>(h.document.body(h.body)->features().back().get());
+    ASSERT_NE(holes, nullptr);
+    EXPECT_NEAR(holes->diameter, 3.3, 1e-12) << "the step stores the diameter used";
+    EXPECT_NEAR(holes->headDiameter, 6.82, 1e-12);
+    EXPECT_EQ(holes->preset, "M3 close fit +0.1 mm");
+    const double R = 3.41, r = 1.65, depth = R - r;
+    EXPECT_NEAR(h.volume(), 9000 - kPi * r * r * 5 - (frustum(R, r, depth) - kPi * r * r * depth), 1e-6);
+    // Out of range: ignored.
+    h.controller.setHoleAllowance(-1);
+    EXPECT_DOUBLE_EQ(h.controller.holeAllowance(), doc::kDefaultHoleAllowance);
+}
+
+// On a hole's rim: counterbore and countersink presets get the allowance,
+// the heat-set insert pilot does not.
+TEST(HoleInteraction, PrintAllowanceOnHeadSeatsNotOnInserts)
+{
+    HoleHarness h(doc::kDefaultHoleAllowance);
+    h.blockWithHole(3.0);
+    const double holed = h.volume();
+    h.clickAt(h.screen({1.5, 0, 10})); // the top rim
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    ASSERT_TRUE(h.controller.triggerAction("insert").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_NEAR(dynamic_cast<const InsertOperation*>(h.controller.operation())->diameter(), 4.0, 1e-12)
+        << "M3 insert pilot unchanged";
+    ASSERT_TRUE(h.controller.triggerAction("counterbore").ok());
+    EXPECT_EQ(h.controller.operation()->title(), "Counterbore M3");
+    EXPECT_NEAR(h.controller.operation()->value(), 6.7, 1e-12) << "DIN 974-1 6.5 + 0.2";
+    h.controller.setHoleAllowance(0.4);
+    EXPECT_EQ(h.controller.operation()->title(), "Counterbore M3") << "still the preset";
+    EXPECT_NEAR(h.controller.operation()->value(), 6.9, 1e-12);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.volume(), holed - kPi * (3.45 * 3.45 - 1.5 * 1.5) * 3.4, 1e-6);
+    bool listed = false;
+    for (const auto& row : h.controller.historyRows())
+        listed = listed || (row.name == "Counterbore" && row.detail.find("M3 +0.4 mm") != std::string::npos);
+    EXPECT_TRUE(listed);
+    ASSERT_TRUE(h.controller.undo());
+
+    h.controller.setHoleAllowance(0.2);
+    h.clickAt(h.screen({1.5, 0, 10}));
+    ASSERT_TRUE(h.controller.triggerAction("countersink").ok());
+    EXPECT_NEAR(h.controller.operation()->value(), 6.92, 1e-12) << "ISO 10642 6.72 + 0.2";
 }

@@ -4,6 +4,9 @@
 
 #include "document/Fasteners.h"
 
+#include <cmath>
+#include <cstdio>
+
 namespace os::doc {
 
 // Sources (millimeters):
@@ -42,21 +45,45 @@ const std::vector<InsertPreset>& heatSetInsertPresets()
     return presets;
 }
 
-double holeDiameterFor(const ScrewSize& screw, HoleFit fit)
+double validHoleAllowance(double mm)
 {
-    switch (fit) {
-    case HoleFit::Close: return screw.clearanceClose;
-    case HoleFit::Normal: return screw.clearanceNormal;
-    case HoleFit::Tap: return screw.tapDrill;
-    }
-    return screw.clearanceNormal;
+    return std::isfinite(mm) && mm >= 0.0 && mm <= kMaxHoleAllowance ? mm : kDefaultHoleAllowance;
 }
 
-std::string holeFitLabel(const ScrewSize& screw, HoleFit fit)
+double holeDiameterFor(const ScrewSize& screw, HoleFit fit, double allowance)
 {
     switch (fit) {
-    case HoleFit::Close: return std::string(screw.name) + " close fit";
-    case HoleFit::Normal: return std::string(screw.name) + " normal fit";
+    case HoleFit::Close: return screw.clearanceClose + allowance;
+    case HoleFit::Normal: return screw.clearanceNormal + allowance;
+    case HoleFit::Tap: return screw.tapDrill; // already a pilot for printed plastic
+    }
+    return screw.clearanceNormal + allowance;
+}
+
+double counterboreDiameterFor(const ScrewSize& screw, double allowance)
+{
+    return screw.counterboreDiameter + allowance;
+}
+
+double countersinkDiameterFor(const ScrewSize& screw, double allowance)
+{
+    return screw.countersinkDiameter + allowance;
+}
+
+std::string allowanceSuffix(double allowance)
+{
+    if (!(allowance > 1e-9))
+        return {};
+    char text[32];
+    std::snprintf(text, sizeof text, " +%g mm", std::round(allowance * 1000) / 1000);
+    return text;
+}
+
+std::string holeFitLabel(const ScrewSize& screw, HoleFit fit, double allowance)
+{
+    switch (fit) {
+    case HoleFit::Close: return std::string(screw.name) + " close fit" + allowanceSuffix(allowance);
+    case HoleFit::Normal: return std::string(screw.name) + " normal fit" + allowanceSuffix(allowance);
     case HoleFit::Tap: return std::string(screw.name) + " tap";
     }
     return screw.name;

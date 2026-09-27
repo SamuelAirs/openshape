@@ -36,7 +36,8 @@ struct HistoryRow {
     struct Parameter {
         std::string key;
         std::string label;
-        std::string valueText; // formatted in the display unit
+        std::string valueText; // formatted in the display unit (a string parameter: as it is)
+        bool isText = false;   // a string (a Text step's text), not a number
         bool operator==(const Parameter&) const = default;
     };
 
@@ -115,6 +116,11 @@ public:
     // tap areas and sit further apart.
     bool touchLayout() const { return touchLayout_; }
     void setTouchLayout(bool on);
+    // Preferences: the FDM print allowance (mm, 0-1) added to screw clearance
+    // hole and head seat presets (doc::kDefaultHoleAllowance); an open Hole,
+    // counterbore or countersink tool showing a preset follows at once.
+    double holeAllowance() const { return holeSettings_.allowance; }
+    void setHoleAllowance(double mm);
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -129,6 +135,14 @@ public:
     // to the next field). Keystrokes use setValueText and never wait.
     std::string confirmValueText(const std::string& text);
     std::string operationValueText() const;
+    // The Text tool takes words as well as values: the text (UTF-8, as
+    // typed), previewed at once. Returns the error, or "".
+    bool operationTakesText() const;
+    std::string operationText() const;
+    std::string setOperationText(const std::string& text);
+    // Whether the words were typed or erased in this use of the Text tool
+    // (until then a key typed replaces the remembered ones).
+    bool operationTextTyped() const;
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
 
@@ -306,7 +320,7 @@ private:
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
-    // How far (mm, at `point`) the Hole tool's clicks snap: two pick tolerances.
+    // How far (mm, at `point`) the Hole and Text tools' clicks snap: two pick tolerances.
     double holeSnapDistance(const Vec3& point, const InputProfile& profile) const
     {
         return profile.pickTolerance * 2 * camera_.pixelSize(point);
@@ -357,6 +371,7 @@ private:
     doc::HoleKind rimHoleKind_ = doc::HoleKind::Plain;
     std::size_t screwPreset_ = doc::kDefaultScrew;
     HoleSettings holeSettings_; // what the Hole tool used last
+    TextSettings textSettings_; // what the Text tool used last
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
     std::optional<Uuid> historyHighlight_;
     // Faces (of the current body shape) the highlighted step created or changed.

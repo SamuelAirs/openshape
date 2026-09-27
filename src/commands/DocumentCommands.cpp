@@ -93,6 +93,7 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Copy: return "Copy";
     case doc::FeatureKind::Holes: return "Hole";
     case doc::FeatureKind::Imported: return "Import";
+    case doc::FeatureKind::Text: return "Text";
     }
     return "Add step";
 }
@@ -591,6 +592,49 @@ void SetParameterCommand::undo(doc::Document& document)
     if (!feature)
         return;
     (void)feature->setParameter(key_, oldValue_);
+    document.featureChanged(featureId_);
+}
+
+// ---- SetTextParameter -----------------------------------------------------------
+
+SetTextParameterCommand::SetTextParameterCommand(Uuid featureId, std::string key, std::string value, bool rejectIfFeatureFails)
+    : featureId_(featureId), key_(std::move(key)), newValue_(std::move(value)), rejectIfFeatureFails_(rejectIfFeatureFails)
+{
+}
+
+Status SetTextParameterCommand::execute(doc::Document& document)
+{
+    doc::Body* body = document.bodyOfFeature(featureId_);
+    doc::Feature* feature = body ? body->feature(featureId_) : nullptr;
+    if (!feature)
+        return missingFeature();
+    const auto old = feature->textParameter(key_);
+    if (!old)
+        return Status::failure(ErrorCode::InvalidArgument, "This value cannot be edited.", "unknown text parameter " + key_);
+    oldValue_ = *old;
+    if (Status s = feature->setTextParameter(key_, newValue_); !s)
+        return s;
+    document.featureChanged(featureId_);
+
+    const doc::FeatureState& state = body->state(body->featureIndex(featureId_));
+    if (rejectIfFeatureFails_ && (state.status == doc::FeatureStatus::Failed || state.error == ErrorCode::NoEffect)) {
+        Status failure = failureFrom(state);
+        feature->restoreTextParameter(key_, oldValue_);
+        document.featureChanged(featureId_);
+        return failure;
+    }
+    return okStatus();
+}
+
+void SetTextParameterCommand::undo(doc::Document& document)
+{
+    doc::Body* body = document.bodyOfFeature(featureId_);
+    doc::Feature* feature = body ? body->feature(featureId_) : nullptr;
+    if (!feature)
+        return;
+    // As it was, even a value the step would refuse now (a text read from a
+    // file that the geometry cannot make): undo always puts it back.
+    feature->restoreTextParameter(key_, oldValue_);
     document.featureChanged(featureId_);
 }
 

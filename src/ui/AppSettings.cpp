@@ -15,6 +15,7 @@ namespace {
 const QString kDefaultUnit = QStringLiteral("preferences/defaultUnit");
 const QString kGridSnap = QStringLiteral("preferences/sketchGridSnap");
 const QString kRecoveryInterval = QStringLiteral("preferences/recoveryIntervalSeconds");
+const QString kHoleAllowance = QStringLiteral("preferences/holeAllowanceMm");
 const QString kRecentFiles = QStringLiteral("recentFiles");
 const QString kWindowFrame = QStringLiteral("window/frame");
 const QString kWindowClient = QStringLiteral("window/client");
@@ -34,6 +35,10 @@ Preferences loadPreferences(QSettings& settings)
     const int interval = settings.value(kRecoveryInterval).toInt(&ok);
     if (ok && std::find(kRecoveryIntervals.begin(), kRecoveryIntervals.end(), interval) != kRecoveryIntervals.end())
         p.recoveryIntervalSeconds = interval;
+    ok = false;
+    const double allowance = settings.value(kHoleAllowance).toDouble(&ok);
+    if (ok)
+        p.holeAllowance = doc::validHoleAllowance(allowance);
     return p;
 }
 
@@ -42,6 +47,7 @@ void savePreferences(QSettings& settings, const Preferences& p)
     settings.setValue(kDefaultUnit, p.defaultUnit == LengthUnit::Inch ? QStringLiteral("in") : QStringLiteral("mm"));
     settings.setValue(kGridSnap, p.sketchGridSnap);
     settings.setValue(kRecoveryInterval, p.recoveryIntervalSeconds);
+    settings.setValue(kHoleAllowance, doc::validHoleAllowance(p.holeAllowance));
 }
 
 QStringList loadRecentFiles(QSettings& settings)

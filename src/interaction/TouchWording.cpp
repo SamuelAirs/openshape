@@ -23,7 +23,10 @@ namespace {
 // specific first. (Sources: SketchSession::hintText and its messages,
 // Operation::prompt, InteractionController::runTool and messages, and the
 // hints in Main.qml.)
-constexpr std::array<std::pair<std::string_view, std::string_view>, 38> kPhrases{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 40> kPhrases{{
+    // ---- Texts written for both ("click or tap") read "tap or tap" otherwise
+    {"Click or tap", "Tap"},
+    {"click or tap", "tap"},
     // ---- Sketch hints
     {"Click the line to mirror across (a construction line works well) " DOT " Esc cancels",
      "Tap the line to mirror across (a construction line works well) " DOT " tap Mirror again to cancel"},

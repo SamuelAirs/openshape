@@ -136,7 +136,8 @@ Rules:
 - `Hole` params: `{ "rim": edgeRef, "diameter", "depth", "preset", "type"?,
   "angle"? }` — made at a circular rim edge, into the material (the
   direction comes from the flat face next to the rim); `preset` is an
-  informational label such as "M3 heat-set insert" or "M3". `type` is
+  informational label such as "M3 heat-set insert", "M3" or "M3 +0.2 mm"
+  (a head seat with the 3D-printing allowance, already in `diameter`). `type` is
   absent (or `"Plain"`) for a cylinder of `diameter` x `depth` (heat-set
   insert pilot holes; files from before counterbores compute exactly as
   before); `"Counterbore"`: the same cylinder as a screw head's seat on the
@@ -190,7 +191,10 @@ Rules:
   `depth` only when `throughAll` is false. `head` is `"Counterbore"`
   (with `headDiameter`, `headDepth`) or `"Countersink"` (with
   `headDiameter`, `headAngle` in radians); absent: no head. `preset` is an
-  informational label such as "M3 normal fit".
+  informational label such as "M3 normal fit" or, with the 3D-printing
+  hole allowance from Preferences, "M3 normal fit +0.2 mm": the diameters
+  are always stored as drilled (allowance included), so a file does not
+  depend on the preference of the machine that opens it.
 - `Imported` params (a base feature: a body imported from a STEP file):
   `{ "geometry": "imports/<feature uuid>.brep", "hash", "volume", "source" }`
   — the archive entry holding the exact geometry (millimeters, placed as in
@@ -209,9 +213,23 @@ Rules:
   loader reads no more than that; the writer refuses to save more (a plain
   message) rather than write a file it could not open, and the importer
   refuses parts that would not fit.
+- `Text` params: `{ "face": faceRef, "position": [x, y], "text", "size",
+  "depth", "angle", "font" }` — one line of text raised from (`depth` > 0,
+  joined) or cut into (`depth` < 0) a flat face. `position` is the text's
+  center in the face's frame (the same frame as `Holes` positions, so the
+  text follows its face; a center no longer on the face fails the step);
+  `text` is UTF-8 (1 to 4096 bytes; the letters made are limited to 200
+  characters, one line, all in the font); `size` is the height of capital
+  letters in mm (0.5 to 1000); `depth` mm (nonzero, |depth| ≤ 10000);
+  `angle` radians, counter-clockwise seen from outside the face, from the
+  frame's x axis; `font` the id of a font built into OpenShape
+  (`"NotoSans-Regular"`, `"NotoSans-Bold"`). A file naming a font this
+  version does not have opens; the step fails with a message saying so.
+  The text is centered horizontally on its letters' extent and vertically
+  on the capital height (the baseline `size / 2` below `position`).
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`, `Text`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

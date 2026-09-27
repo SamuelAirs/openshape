@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "geometry/Exchange.h"
+#include "geometry/Text.h"
 #include "interaction/TouchWording.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
@@ -18,6 +19,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
@@ -53,16 +55,52 @@ std::filesystem::path withExtension(std::filesystem::path path, const char* exte
 
 QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows);
 
+// The Text tool's fonts: Noto Sans, built into the executable
+// (src/app/CMakeLists.txt), registered with the geometry layer once. A
+// development build without it may name a font file in OPENSHAPE_TEXT_FONT
+// to try the tool (resources/fonts/README.md).
+void registerTextFonts()
+{
+    static bool done = false;
+    if (done)
+        return;
+    done = true;
+    const std::pair<const char*, const char*> fonts[] = {
+        {doc::kTextFontRegular, ":/openshape/fonts/NotoSans-Regular.ttf"},
+        {doc::kTextFontBold, ":/openshape/fonts/NotoSans-Bold.ttf"},
+    };
+    for (const auto& [id, resource] : fonts) {
+        QFile file(QString::fromLatin1(resource));
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        if (!geom::registerFont(id, file.readAll().toStdString()))
+            OS_LOG(Warning, App) << "the built-in font " << id << " could not be read";
+    }
+    if (geom::hasFont(doc::kTextFontRegular))
+        return;
+    const QString substitute = qEnvironmentVariable("OPENSHAPE_TEXT_FONT");
+    QFile file(substitute);
+    if (!substitute.isEmpty() && file.open(QIODevice::ReadOnly)
+        && geom::registerFont(doc::kTextFontRegular, file.readAll().toStdString())) {
+        OS_LOG(Warning, App) << "text uses " << substitute.toStdString()
+                             << " in place of the built-in Noto Sans (OPENSHAPE_TEXT_FONT, for development only)";
+        return;
+    }
+    OS_LOG(Warning, App) << "no font for text: resources/fonts/NotoSans-Regular.ttf was not built in; the Text tool is not available";
+}
+
 } // namespace
 
 AppController::AppController(QObject* parent)
     : QObject(parent), document_(std::make_unique<doc::Document>()), undoStack_(std::make_unique<cmd::UndoStack>()),
       interaction_(std::make_unique<interact::InteractionController>(*document_, *undoStack_))
 {
+    registerTextFonts();
     QSettings settings;
     preferences_ = loadPreferences(settings);
     document_->setDisplayUnit(preferences_.defaultUnit);
     interaction_->setSketchGridSnap(preferences_.sketchGridSnap);
+    interaction_->setHoleAllowance(preferences_.holeAllowance);
 
     recoveryDebounce_.setSingleShot(true);
     recoveryDebounce_.setInterval(kRecoveryDebounceMs);
@@ -221,6 +259,21 @@ bool AppController::operationHasValue() const
 QString AppController::operationPrompt() const
 {
     return interaction_->operation() ? q(interaction_->operation()->prompt()) : QString();
+}
+
+bool AppController::operationTakesText() const
+{
+    return interaction_->operationTakesText();
+}
+
+QString AppController::operationText() const
+{
+    return q(interaction_->operationText());
+}
+
+bool AppController::operationTextTyped() const
+{
+    return interaction_->operationTextTyped();
 }
 
 QPointF AppController::valueLabelPosition() const
@@ -519,6 +572,7 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
             pm.insert(QStringLiteral("key"), q(p.key));
             pm.insert(QStringLiteral("label"), q(p.label));
             pm.insert(QStringLiteral("value"), q(p.valueText));
+            pm.insert(QStringLiteral("isText"), p.isText);
             params.append(pm);
         }
         map.insert(QStringLiteral("parameters"), params);
@@ -924,6 +978,11 @@ QString AppController::setValueText(const QString& text)
 QString AppController::confirmValueText(const QString& text)
 {
     return q(interaction_->confirmValueText(text.toStdString()));
+}
+
+QString AppController::setOperationText(const QString& text)
+{
+    return q(interaction_->setOperationText(text.toStdString()));
 }
 
 void AppController::triggerAction(const QString& id)
@@ -1351,6 +1410,33 @@ void AppController::setRecoveryInterval(int seconds)
         recoveryDeadline_.start(seconds * 1000);
     }
     emit preferencesChanged();
+}
+
+void AppController::setHoleAllowance(double mm)
+{
+    if (!std::isfinite(mm) || mm < 0.0 || mm > doc::kMaxHoleAllowance)
+        return;
+    mm = std::round(mm * 1000.0) / 1000.0; // a micrometer is plenty for a printer
+    if (std::abs(mm - preferences_.holeAllowance) < 1e-12)
+        return;
+    preferences_.holeAllowance = mm;
+    interaction_->setHoleAllowance(mm);
+    savePreferences();
+    emit preferencesChanged();
+    emit stateChanged(); // an open Hole tool's preset diameter changed
+}
+
+QString AppController::setHoleAllowanceText(const QString& text)
+{
+    // Always millimeters here, whatever the document's unit ("0.2" = 0.2 mm);
+    // a unit can still be typed ("0.01in").
+    const auto parsed = parseLength(text.toStdString(), LengthUnit::Millimeter);
+    if (!parsed.millimeters)
+        return q(parsed.error);
+    if (!(*parsed.millimeters >= 0.0) || *parsed.millimeters > doc::kMaxHoleAllowance + 1e-9)
+        return QStringLiteral("The allowance must be between 0 and 1 mm.");
+    setHoleAllowance(std::clamp(*parsed.millimeters, 0.0, doc::kMaxHoleAllowance));
+    return {};
 }
 
 } // namespace os::ui

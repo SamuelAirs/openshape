@@ -6,6 +6,8 @@
 // clicks, Shift, Esc, Enter, Tab, hovering or the scroll wheel. Every hint
 // the sketch tools, the operations and the Modify/Combine tools produce is
 // collected here through the interaction layer and checked.
+#include "TestFonts.h"
+
 #include "commands/Command.h"
 #include "commands/DocumentCommands.h"
 #include "document/Document.h"
@@ -203,6 +205,10 @@ TEST(TouchWording, KnownSentencesGetTouchVersions)
               "Tap the next point \xC2\xB7 tap Line again to end the line");
     EXPECT_EQ(touchWording("Enter to apply \xC2\xB7 Esc to cancel \xC2\xB7 click elsewhere to apply and continue"),
               "\xE2\x9C\x93 applies \xC2\xB7 \xE2\x9C\x95 cancels \xC2\xB7 tap elsewhere to apply and continue");
+    // Texts written for both say it once.
+    EXPECT_EQ(touchWording("Click a flat face, then Hole, then click or tap where each hole goes."),
+              "Tap a flat face, then Hole, then tap where each hole goes.");
+    EXPECT_EQ(touchWording("Click or tap the face where a hole goes"), "Tap the face where a hole goes");
     // Word rules keep word forms right.
     EXPECT_EQ(touchWording("clicking twice, clicked, clicks"), "tapping twice, tapped, taps");
     // Text without mouse or keyboard words is left alone.
@@ -272,10 +278,10 @@ TEST(TouchWording, EveryToolExplanationIsTouchReady)
     Harness h;
     h.controller.setTouchLayout(true);
     // Nothing selected: every Modify/Combine tool says what to select.
-    for (const char* tool : {"pushpull", "fillet", "chamfer", "shell", "offset", "move", "rotate", "mirror", "pattern", "align",
-                             "union", "subtract", "intersect", "measure"})
+    for (const char* tool : {"pushpull", "fillet", "chamfer", "shell", "offset", "hole", "text", "move", "rotate", "mirror",
+                             "pattern", "align", "union", "subtract", "intersect", "measure"})
         EXPECT_FALSE(h.controller.runTool(tool).ok()) << tool;
-    EXPECT_GE(h.messages.size(), 14u);
+    EXPECT_GE(h.messages.size(), 16u);
     for (const std::string& message : h.messages)
         expectTouchMessage(message);
 }
@@ -301,6 +307,23 @@ TEST(TouchWording, OperationPromptsAreTouchReady)
     const std::string mirror = h.controller.operation()->prompt();
     EXPECT_FALSE(mirror.empty());
     expectTouchReady(mirror);
+}
+
+TEST(TouchWording, TextToolPromptIsTouchReady)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    Harness h;
+    h.controller.setTouchLayout(true);
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    h.controller.fitAll(false);
+    h.tap(h.controller.camera().project({3, -3, 20}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    const std::string prompt = h.controller.operation()->prompt();
+    EXPECT_FALSE(prompt.empty());
+    expectTouchReady(prompt);
+    EXPECT_EQ(touchWording(prompt), "Type the text in the box \xC2\xB7 tap the face to move it "
+                                    "(it snaps to the center and the middles of the edges)");
 }
 
 TEST(TouchWording, TappingEmptySpaceGivesUpAWaitingAlignOrMirror)

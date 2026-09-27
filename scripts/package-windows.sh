@@ -114,6 +114,13 @@ rm -f "$OUT_DIR/.deps"
 cp LICENSE "$OUT_DIR/LICENSE.txt"
 cp THIRD_PARTY.md README.md "$OUT_DIR/"
 cp third_party/planegcs/COPYING.LIB "$OUT_DIR/PlaneGCS-COPYING.LIB.txt"
+# Noto Sans (SIL Open Font License 1.1) is built into OpenShape.exe for the
+# Text tool (resources/fonts/); its license goes along.
+if [ -f resources/fonts/OFL.txt ]; then
+    cp resources/fonts/OFL.txt "$OUT_DIR/NotoSans-OFL.txt"
+else
+    echo "warning: resources/fonts/OFL.txt missing (the Noto Sans font's license); the Text tool has no font in this build"
+fi
 
 # The license texts of every bundled library, from the MSYS2 packages they
 # came from (plugins and QML modules belong to the Qt packages found here),

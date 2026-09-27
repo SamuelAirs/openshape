@@ -146,6 +146,9 @@ Rectangle {
                              "Hole tool: X / Y (the next field) from the face's corner, or From last hole; tap a hole to pick it again, Remove hole drops it"],
                             ["Insert for a screw", "Hole rim → Heat-set insert"],
                             ["Seat for a screw head", "Hole rim → Counterbore or Countersink, pick M2–M6 or type the diameter; a counterbore's arrow into the hole sets its depth"],
+                            ["Text on a face", "Flat face → Text: type the words (Noto Sans; digits typed go to the words too; Ctrl+Backspace erases a word), click where they go (snaps to the center and edge middles); drag the arrow out to raise them (emboss) or in to cut them (deboss); Depth, Size (the height of capital letters) or Angle, then type its value; 0° / 90° / 180° / 270°; change the words later in the Model panel",
+                             "Flat face → Text: type the words (Noto Sans), tap where they go (snaps to the center and edge middles); drag the arrow out to raise them (emboss) or in to cut them (deboss), or Emboss / Deboss; tap Depth, Size (the height of capital letters) or Angle to type its value; 0° / 90° / 180° / 270°; change the words later in the Model panel"],
+                            ["Holes that fit when printed","Screw sizes add the hole allowance (0.2 mm unless changed in Preferences) to clearance holes, counterbores and countersinks; Tap and heat-set insert sizes already assume printing; typed sizes are used exactly"],
                             ["Measure", "Select two faces or edges"],
                             ["Apply / cancel", "Enter / Esc (or ✓ / ✕)", "✓ / ✕ beside the value"],
                             ["When a step can't be done", "The red text says why and what to try, e.g. the largest radius that fits"]
@@ -229,8 +232,8 @@ Rectangle {
                             ["From other CAD", "File → Import STEP… (Ctrl+I): each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size",
                              "File → Import STEP…: each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size"],
                             ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
-                            ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies",
-                             "File → Preferences…: units, grid snapping, recovery copies"]
+                            ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies, hole allowance for 3D printing",
+                             "File → Preferences…: units, grid snapping, recovery copies, hole allowance for 3D printing"]
                         ])
                     }
                 }

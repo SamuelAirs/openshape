@@ -13,9 +13,11 @@
 #include "geometry/Holes.h"
 #include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
+#include "geometry/Text.h"
 #include "interaction/InteractionController.h"
 #include "interaction/PreviewWorker.h"
 #include "PortableRandom.h"
+#include "TestFonts.h"
 
 #include <gtest/gtest.h>
 
@@ -815,7 +817,8 @@ TEST(AsyncPreview, HoleToolAndCounterborePreviewOnTheWorker)
     cut.drillShaft = false;
     cut.throughAll = true;
     cut.head = geom::HoleHead::Counterbore;
-    cut.headDiameter = m4.counterboreDiameter;
+    // The preset's seat plus the print allowance (the default: 0.2 mm).
+    cut.headDiameter = doc::counterboreDiameterFor(m4, doc::kDefaultHoleAllowance);
     cut.headDepth = m4.counterboreDepth;
     const double counterbored = drilled - geom::headVolume(cut);
     ASSERT_TRUE(h.controller.waitForPreview());
@@ -1056,4 +1059,77 @@ TEST(AsyncPreview, PatternSeparateChoiceReachesTheShownOperation)
     ASSERT_NE(pattern, nullptr);
     EXPECT_TRUE(pattern->separate()) << "the worker's automatic choice is taken with its preview";
     EXPECT_TRUE(pattern->separateIsAutomatic());
+}
+
+// The Text tool previews on the worker: typing does not wait for the kernel,
+// hovering the face (where a click would move the words) makes no kernel
+// call on the GUI thread, the chip's place beside the words (the letters'
+// box) comes with the preview, and Enter while a preview computes waits for
+// it, so the step is what the preview shows.
+TEST(AsyncPreview, TextToolPreviewsOnTheWorker)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    AsyncHarness h; // a 20 mm box, (-10,-10,0) .. (10,10,20)
+    h.clickAt(h.screen({0, 0, 20}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    const auto* text = dynamic_cast<const TextOperation*>(h.controller.operation());
+    ASSERT_NE(text, nullptr);
+    ASSERT_TRUE(h.controller.waitForPreview());
+    h.uiReads(); // the selection's facts are computed once, as the UI shows the selection
+    h.worker().setJobDelayForTesting(300ms);
+
+    const std::uint64_t kernelCalls = geom::kernelCallsOnThisThread();
+    const auto t0 = std::chrono::steady_clock::now();
+    EXPECT_EQ(h.controller.setOperationText("H"), "");
+    EXPECT_EQ(h.controller.setOperationText("Hi"), "");
+    for (int i = 0; i < 5; ++i)
+        h.controller.pointerMove(AsyncHarness::at(h.screen({-6.0 + 3 * i, 4, 20}), PointerButton::None));
+    h.uiReads();
+    (void)h.controller.valueLabelPosition();
+    EXPECT_LT(msSince(t0), 150.0) << "typing or hovering waited for the (300 ms) kernel";
+    EXPECT_EQ(geom::kernelCallsOnThisThread(), kernelCalls) << "the GUI thread made kernel calls while typing or hovering";
+    EXPECT_TRUE(text->hover().has_value());
+    EXPECT_TRUE(text->previewPending()) << "the words were previewed on the GUI thread";
+    EXPECT_TRUE(text->canCommit()) << "a pending preview counts as committable";
+    EXPECT_TRUE(text->commitNeedsPreview());
+    EXPECT_TRUE(text->textCorners().empty()) << "no letters' box before the words' first preview";
+
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(text->hasPreview());
+    EXPECT_TRUE(text->error().empty()) << text->error();
+    const auto letters = geom::textFaces({"Hi", doc::kTextFontRegular, 10});
+    ASSERT_TRUE(letters.ok()) << letters.developerMessage();
+    const double area = geom::surfaceArea(letters.value());
+    // Raised 1 mm (the mesh's volume: within its chords of the curves).
+    EXPECT_NEAR(meshVolume(*text->previewMesh()), 8000.0 + area, 0.01 * area);
+    // The letters' box, measured on the worker: as wide and tall as the letters.
+    const geom::BoundingBox box = geom::approximateBoundingBox(letters.value());
+    const auto corners = text->textCorners();
+    ASSERT_EQ(corners.size(), 4u);
+    EXPECT_NEAR((corners[1] - corners[0]).length(), box.size().x, 1e-9);
+    EXPECT_NEAR((corners[2] - corners[1]).length(), box.size().y, 1e-9);
+    EXPECT_NEAR(corners[0].z, 20.0, 1e-9) << "on the top face";
+
+    // The same words again (Enter in the text field sends them once more):
+    // the preview shown stays, nothing is computed again, so Apply need not wait.
+    const std::uint64_t shown = text->previewKey();
+    const std::uint64_t jobs = h.worker().jobsRun();
+    EXPECT_EQ(h.controller.setOperationText("Hi"), "");
+    EXPECT_FALSE(text->previewPending()) << "the same words were previewed again";
+    EXPECT_EQ(text->previewKey(), shown);
+    EXPECT_FALSE(h.worker().busy());
+    EXPECT_EQ(h.worker().jobsRun(), jobs);
+    EXPECT_TRUE(text->canCommit());
+
+    // Enter while the next words' preview computes: it waits, and applies them.
+    EXPECT_EQ(h.controller.setOperationText("Hi!"), "");
+    ASSERT_TRUE(text->previewPending());
+    EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+    EXPECT_EQ(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.stack.undoLabel(), "Text");
+    const auto more = geom::textFaces({"Hi!", doc::kTextFontRegular, 10});
+    ASSERT_TRUE(more.ok());
+    const double moreArea = geom::surfaceArea(more.value());
+    EXPECT_NEAR(geom::volume(h.body().shape()), 8000.0 + moreArea, 1e-6 * moreArea);
+    h.worker().setJobDelayForTesting(0ms);
 }

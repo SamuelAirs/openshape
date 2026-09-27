@@ -5,6 +5,7 @@
 #pragma once
 
 #include "core/Units.h"
+#include "document/Fasteners.h"
 
 #include <QtCore/QList>
 #include <QtCore/QRect>
@@ -27,6 +28,9 @@ struct Preferences {
     LengthUnit defaultUnit = LengthUnit::Millimeter; // for new documents
     bool sketchGridSnap = true;
     int recoveryIntervalSeconds = 60; // at least this often while unsaved; 0 = no recovery copies
+    // Added to screw clearance hole and head seat presets (mm, 0-1). Stored
+    // values outside the range fall back to the default.
+    double holeAllowance = doc::kDefaultHoleAllowance;
 };
 // The recovery intervals the Preferences panel offers (0 = off).
 inline constexpr std::array<int, 4> kRecoveryIntervals{0, 30, 60, 300};

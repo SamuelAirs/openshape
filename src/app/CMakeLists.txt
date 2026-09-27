@@ -18,6 +18,26 @@ qt_add_resources(openshape "openshape_icons"
     BASE ${PROJECT_SOURCE_DIR}/resources
     FILES ${PROJECT_SOURCE_DIR}/resources/icons/openshape.svg
 )
+# The Text tool's font, Noto Sans (SIL Open Font License 1.1; see
+# resources/fonts/README.md and THIRD_PARTY.md), built into the executable:
+# AppController registers it with the geometry layer at startup. Without it
+# the app still builds, and the Text tool says that text is not available.
+set(OPENSHAPE_FONT_FILES)
+foreach(font NotoSans-Regular.ttf NotoSans-Bold.ttf)
+    if(EXISTS ${PROJECT_SOURCE_DIR}/resources/fonts/${font})
+        list(APPEND OPENSHAPE_FONT_FILES ${PROJECT_SOURCE_DIR}/resources/fonts/${font})
+    endif()
+endforeach()
+if(OPENSHAPE_FONT_FILES)
+    qt_add_resources(openshape "openshape_fonts"
+        PREFIX "/openshape"
+        BASE ${PROJECT_SOURCE_DIR}/resources
+        FILES ${OPENSHAPE_FONT_FILES}
+    )
+else()
+    message(WARNING "resources/fonts/NotoSans-Regular.ttf is missing (see resources/fonts/README.md): "
+                    "the Text tool will say that text is not available in this build.")
+endif()
 set_target_properties(openshape PROPERTIES OUTPUT_NAME "OpenShape")
 if(WIN32)
     # Icon and version information of OpenShape.exe (Explorer, shortcuts,

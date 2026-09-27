@@ -701,13 +701,15 @@ private:
 };
 
 // Counterbore or countersink for a screw head on an existing round hole (at
-// its rim). Screw presets (M2-M6, doc::metricScrews) set the sizes; the
+// its rim). Screw presets (M2-M6, doc::metricScrews) set the sizes, their
+// diameters plus the print allowance (doc::kDefaultHoleAllowance); the
 // radial arrow (handle 0) sets the diameter, a counterbore's arrow into the
 // hole (handle 1) its depth. Typed values go to the active arrow.
 class HeadOperation final : public Operation {
 public:
     static std::unique_ptr<HeadOperation> create(const doc::Document& document, const Uuid& bodyId, int rimEdge,
-                                                 doc::HoleKind kind, std::size_t presetIndex);
+                                                 doc::HoleKind kind, std::size_t presetIndex,
+                                                 double allowance = doc::kDefaultHoleAllowance);
 
     std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new HeadOperation(*this)); }
     std::string title() const override;
@@ -728,6 +730,10 @@ public:
     void setPreset(std::size_t index, const doc::Document& document);
     double diameter() const { return activeHandle() == 1 ? diameter_ : value(); }
     double depth() const { return activeHandle() == 1 ? value() : depth_; }
+    // The print allowance changed (Preferences): sizes from a preset follow it.
+    void setAllowance(double allowance, const doc::Document& document);
+    // The preset's head diameter, allowance included.
+    double presetDiameter(std::size_t index) const;
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
@@ -735,6 +741,7 @@ protected:
 private:
     HeadOperation(Uuid bodyId, LinearManipulator m, doc::EdgeRef rim, doc::HolePlacement placement, doc::HoleKind kind)
         : Operation(bodyId, std::move(m)), rim_(std::move(rim)), placement_(placement), kind_(kind) {}
+    double allowance_ = doc::kDefaultHoleAllowance;
     doc::EdgeRef rim_;
     doc::HolePlacement placement_;
     doc::HoleKind kind_;
@@ -751,6 +758,9 @@ struct HoleSettings {
     bool throughAll = true;
     double depth = 10;                        // mm, when not through all
     doc::HoleKind head = doc::HoleKind::Plain; // Plain = no counterbore / countersink
+    // The print allowance (a preference, set by the controller): added to
+    // clearance and head diameters from presets, not to tap drills.
+    double allowance = doc::kDefaultHoleAllowance;
 };
 
 // The Hole tool: round holes drilled into one flat face where the user
@@ -807,8 +817,12 @@ public:
     void nextField(const doc::Document& document);
     void setScrew(std::size_t index, const doc::Document& document);
     void setFit(doc::HoleFit fit, const doc::Document& document);
-    // The diameter the screw size and fit give (the presets).
+    // The print allowance changed (Preferences): a preset diameter follows it.
+    void setAllowance(double allowance, const doc::Document& document);
+    // The diameter the screw size and fit give (the presets, allowance included).
     double presetDiameter() const;
+    // The counterbore / countersink diameter the screw size gives (allowance included).
+    double headDiameter() const;
     void setThroughAll(bool throughAll, const doc::Document& document);
     void setHead(doc::HoleKind head, const doc::Document& document);
     bool fromLastHole() const { return fromLastHole_; }
@@ -853,6 +867,145 @@ private:
     int current_ = -1;
     bool fromLastHole_ = false;
     std::optional<Vec2> hover_;
+};
+
+// What the Text tool remembers between uses (a new face starts with these).
+struct TextSettings {
+    std::string text;         // the last text typed
+    double size = 10;         // mm: the height of capital letters
+    double depth = 1;         // mm: > 0 raised (emboss), < 0 cut in (deboss)
+    double angleDegrees = 0;  // counter-clockwise, seen from outside the face
+    bool bold = false;        // Noto Sans Bold instead of Regular
+};
+
+// The Text tool: one line of text raised from or cut into a flat face (one
+// Text step). The text starts at the face's center; a click or tap on the
+// face moves it there, snapping like the Hole tool (the face's center and
+// the middles of its straight edges, else lined up with them). The arrow at
+// the text's center sets the depth: outward raises the letters (emboss),
+// inward cuts them in (deboss). The value chip edits one field at a time:
+// the depth, the size (the capital height) or the angle; the text itself is
+// typed in the chip's text field (setText).
+class TextOperation final : public Operation {
+public:
+    enum class Field { Depth, Size, Angle };
+    static std::unique_ptr<TextOperation> create(const doc::Document& document, const Uuid& bodyId, int faceIndex,
+                                                 const TextSettings& settings);
+
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new TextOperation(*this)); }
+    std::string title() const override { return "Text"; }
+    std::string valueLabel() const override;
+    bool allowsNegative() const override { return field_ != Field::Size; }
+    bool isAngle() const override { return field_ == Field::Angle; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::Text; }
+    std::string prompt() const override;
+    bool canCommit() const override;
+    // Apply waits for the preview: its refusal is worded for what is being
+    // done ("The text's center is off the face"; the step's own is worded
+    // for upstream changes).
+    bool commitNeedsPreview() const override { return true; }
+    // Esc leaves the tool (there is no value to fall back to).
+    double neutralValue() const override { return value(); }
+    LinearManipulator handle(int index) const override;
+    double handleOffset(int index) const override { return index == 0 ? depth() : 0.0; }
+    // Grabbing the arrow edits the depth.
+    void setActiveHandle(int index) override;
+
+    int faceIndex() const { return face_.indexHint; }
+    const doc::HoleFrame& frame() const { return frame_; }
+    Vec2 position() const { return position_; }
+    Vec3 center() const { return frame_.toWorld(position_); }
+    Field field() const { return field_; }
+    double depth() const { return field_ == Field::Depth ? value() : depth_; }
+    double size() const { return field_ == Field::Size ? value() : size_; }
+    double angleDegrees() const { return field_ == Field::Angle ? value() : angleDegrees_; }
+    const std::string& text() const { return text_; }
+    bool bold() const { return bold_; }
+    // The settings to remember (with the fields' current values; for a value
+    // refused in the active field, its last accepted one).
+    TextSettings settings() const;
+    // Whether the user did anything in this use of the tool (typed, placed,
+    // changed a value or option). A stray click elsewhere applies only then:
+    // remembered text alone is applied by Enter or Apply, not by a tap that
+    // was meant to leave the tool.
+    bool edited() const;
+    void markEdited() { edited_ = true; }
+    // Whether the words were typed (or erased, or confirmed) in this use of
+    // the tool. Until then they are the remembered ones, which the first key
+    // typed replaces (they start selected), also after a click placed them.
+    bool wordsTyped() const { return wordsTyped_; }
+
+    void setText(const std::string& text, const doc::Document& document);
+    void setField(Field field, const doc::Document& document);
+    void nextField(const doc::Document& document);
+    void setAngleDegrees(double degrees, const doc::Document& document);
+    // Emboss (raised) or deboss (cut in): the depth's sign.
+    void setRaised(bool raised, const doc::Document& document);
+    void setBold(bool bold, const doc::Document& document);
+    // The point a click at `world` (on the face) would use, and what it
+    // snapped to ("center", "midpoint", "aligned" or "").
+    std::pair<Vec2, std::string> snap(const Vec3& world, double snapDistance) const;
+    // Moves the text to the snapped point; returns what it snapped to.
+    std::string placeAt(const Vec3& world, double snapDistance, const doc::Document& document);
+    void setHover(std::optional<Vec2> point) { hover_ = point; }
+    const std::optional<Vec2>& hover() const { return hover_; }
+    // The corners of the letters' box on the face (world), so the value chip
+    // can sit beside the text rather than on it; empty while nothing is typed.
+    // No kernel call (the GUI thread asks while the worker computes): the
+    // letters' extent comes with the preview, so while a preview for new
+    // words computes, the box is the one of the words shown.
+    std::vector<Vec3> textCorners() const;
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    // Nothing typed yet: the body as it is (no error). The center off the
+    // face (a click there is not taken, but an upstream change could): says so.
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
+    bool neutralIsIdentity() const override { return false; }
+    std::string checkValue(double value) const override;
+    // The letters' extent the worker's copy measured with the preview shown.
+    void adoptAutomaticChoices(const Operation& from) override;
+
+private:
+    TextOperation(Uuid bodyId, doc::FaceRef face, doc::HoleFrame frame)
+        : Operation(bodyId, LinearManipulator(frame.origin, frame.normal)), face_(std::move(face)), frame_(frame) {}
+    TextOperation(const TextOperation&) = default;
+    // The active field's value written to where it belongs (only an
+    // accepted one: a refused value is never carried into later previews).
+    void storeValue();
+    double fieldValue(Field field) const;
+    // Whether the text's center `p` lies on the face: exactly (the kernel;
+    // the preview's check, on the worker) or by the face's outline (snapping
+    // and placing, on the GUI thread: no kernel call, so no wait for the
+    // worker's preview).
+    bool onFace(Vec2 p) const;
+    bool onOutline(Vec2 p) const;
+    // Measures the letters' extent for textCorners when the words, size or
+    // font changed (the kernel: with the preview, on the worker).
+    void measureExtent() const;
+    geom::Shape shape_; // the body as the tool started (previews never change it)
+    doc::FaceRef face_;
+    doc::HoleFrame frame_;
+    geom::FaceOutline outline_;
+    Vec2 position_;
+    std::string text_;
+    Field field_ = Field::Depth;
+    double depth_ = 1, size_ = 10, angleDegrees_ = 0; // the fields that are not active
+    bool bold_ = false;
+    bool edited_ = false;
+    bool wordsTyped_ = false;
+    TextSettings initial_; // as the tool opened (edited() compares)
+    std::optional<Vec2> hover_;
+    // The letters' extent for textCorners (in the text's own frame), made
+    // again only when the words, size or font change (measureExtent).
+    struct Extent {
+        std::string text;
+        double size = 0;
+        bool bold = false;
+        bool valid = false;
+        double minX = 0, maxX = 0, minY = 0, maxY = 0;
+    };
+    mutable Extent extent_;
 };
 
 // Shell: hollows the body through the selected faces. The arrow starts on the

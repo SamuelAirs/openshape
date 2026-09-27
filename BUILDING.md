@@ -92,7 +92,8 @@ Demo scenes: `empty`, `hover`, `pushpull` (the cube's top face set to a
 selected), `history` (a fillet step highlighted from the Model panel),
 `rotate` (a 30° preview about Z), `mirror`, `pattern` (their previews),
 `holes` (the Hole tool with two countersunk holes, the second one's Y being
-typed),
+typed), `text` (the Text tool: "Hello" raised 1 mm on a 20 x 20 x 5 plate,
+4 mm capitals, being previewed; needs the built-in font, see below),
 `arc` (a sketch with arcs), `polygon` (a center rectangle and a hexagon
 being drawn: size and side-count labels, the -/+ counter) and
 `constraints` (the same finished, plus a tangent arc, in the Select tool:
@@ -129,6 +130,19 @@ each drag, a wait for the kernel while the worker held it).
 `OPENSHAPE_SYNC_PREVIEWS=1` computes previews on the GUI thread again, as
 before 2026-09-26 (to compare).
 
+
+**The Text tool's font.** Noto Sans Regular and Bold (`resources/fonts/`,
+in the repository since 2026-09-26; see its README and `THIRD_PARTY.md` for
+the release and hashes) are built into the executable at CMake's configure
+time (after replacing the files, re-run the configure step; a checkout
+without them builds with a CMake warning, and the tool says text is not
+available). For development only, `OPENSHAPE_TEXT_FONT=<file.ttf>` makes a
+build without them use another font in its place. The text tests
+(`test_text*.cpp`, and the Text test in `test_async_preview.cpp`) read the
+bundled Noto Sans from the source tree (`tests/TestFonts.h`; they fail when
+it cannot be read); `OPENSHAPE_TEST_FONT=<file.ttf>` tries another typeface
+for the regular font (the checks are areas, volumes and extents, which hold
+for any outline font).
 
 Where the app keeps things (Windows):
 

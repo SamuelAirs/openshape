@@ -10,10 +10,12 @@
 #include "core/Units.h"
 #include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
+#include "geometry/Text.h"
 #include "interaction/TouchWording.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 namespace os::interact {
 
@@ -568,6 +570,10 @@ void InteractionController::pointerLeave()
         hole->setHover(std::nullopt);
         notifyView();
     }
+    if (auto* text = dynamic_cast<TextOperation*>(operation_.get()); text && text->hover()) {
+        text->setHover(std::nullopt);
+        notifyView();
+    }
     if (hover_.hit() || hoveredHandle_ >= 0 || hoveredRing_ >= 0) {
         hover_ = {};
         hoveredHandle_ = -1;
@@ -638,6 +644,11 @@ bool InteractionController::keyPress(Key key)
         return false;
     case Key::Delete:
     case Key::Backspace:
+        // The Text tool's face is selected, but Delete / Backspace there are
+        // for the words (the view sends them to its text field): never
+        // remove the face under the text being written.
+        if (dynamic_cast<const TextOperation*>(operation_.get()))
+            return true;
         if (selection_.allOfKind(sel::SelectionKind::Body)) {
             (void)deleteSelectedBodies();
             return true;
@@ -667,6 +678,17 @@ void InteractionController::updateHover(const PointerEvent& event)
         const auto& before = hole->hover();
         if (at.has_value() != before.has_value() || (at && (*at - *before).length() > 1e-9)) {
             hole->setHover(at);
+            notifyView();
+        }
+    }
+    // The Text tool likewise shows where a click would move the text.
+    if (auto* text = dynamic_cast<TextOperation*>(operation_.get())) {
+        std::optional<Vec2> at;
+        if (hit.kind == sel::PickKind::Face && hit.bodyId == text->bodyId() && hit.index == text->faceIndex())
+            at = text->snap(hit.point, holeSnapDistance(hit.point, profile)).first;
+        const auto& before = text->hover();
+        if (at.has_value() != before.has_value() || (at && (*at - *before).length() > 1e-9)) {
+            text->setHover(at);
             notifyView();
         }
     }
@@ -716,6 +738,25 @@ void InteractionController::click(const PointerEvent& event)
         notifyState();
         notifyView();
         return;
+    }
+    // Text tool: a click on its face moves the text there; elsewhere it
+    // applies what was typed or changed in this use of the tool. Remembered
+    // text nobody touched is not applied by a stray click (Enter or Apply
+    // still apply it): the tool closes and the click selects as usual.
+    if (auto* text = dynamic_cast<TextOperation*>(operation_.get())) {
+        if (hit.kind == sel::PickKind::Face && hit.bodyId == text->bodyId() && hit.index == text->faceIndex()) {
+            (void)text->placeAt(hit.point, holeSnapDistance(hit.point, profile), *document_);
+            textSettings_ = text->settings();
+            notifyState();
+            notifyView();
+            return;
+        }
+        if (!text->edited()) {
+            selection_.clear();
+            rebuildOperation(); // back to the usual tools
+            hit = pickAt(event.position, profile); // edges too, as without the tool
+            additive = false;
+        }
     }
     // Extrude "Up to face": the next face click sets the distance.
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && extrude->pickingTarget()) {
@@ -883,6 +924,10 @@ void InteractionController::rebuildOperation()
             operation_ = HoleOperation::create(*document_, first.bodyId, first.index, holeSettings_);
         if (!operation_ && faceOperationKind_ == doc::FeatureKind::Holes)
             faceOperationKind_ = doc::FeatureKind::PushPull; // not a flat face
+        if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::Text && geom::hasFont(doc::kTextFontRegular))
+            operation_ = TextOperation::create(*document_, first.bodyId, first.index, textSettings_);
+        if (!operation_ && faceOperationKind_ == doc::FeatureKind::Text)
+            faceOperationKind_ = doc::FeatureKind::PushPull; // not a flat face (or no font)
         if (selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::OffsetFace)
             operation_ = OffsetFaceOperation::create(*document_, first.bodyId, first.index);
         if (!operation_ && selection_.size() == 1 && faceOperationKind_ == doc::FeatureKind::PushPull)
@@ -908,7 +953,7 @@ void InteractionController::rebuildOperation()
                 operation_ = InsertOperation::create(*document_, *selection_.singleBody(), edges.front(), insertPreset_);
             else
                 operation_ = HeadOperation::create(*document_, *selection_.singleBody(), edges.front(), rimHoleKind_,
-                                                   screwPreset_);
+                                                   screwPreset_, holeSettings_.allowance);
         }
         if (!operation_) {
             if (edgeOperationKind_ == doc::FeatureKind::Hole)
@@ -954,10 +999,13 @@ std::string InteractionController::setValueText(const std::string& text)
     const auto first = text.find_first_not_of(" \t");
     if (const auto base = operation_->relativeBase(); base && first != std::string::npos && (text[first] == '+' || text[first] == '-'))
         value += *base;
-    if (operation_->isAngle() && value > 360.0 + 1e-9)
+    // (The Text tool's angle may be negative: it checks its own range.)
+    if (operation_->isAngle() && value > 360.0 + 1e-9 && !dynamic_cast<const TextOperation*>(operation_.get()))
         return "The angle must be between 0° and 360°.";
     if (!operation_->allowsNegative() && value <= 0)
         return operation_->valueLabel() + " must be greater than zero.";
+    if (auto* words = dynamic_cast<TextOperation*>(operation_.get()))
+        words->markEdited(); // a value typed, even the one it had
     // The same value again (Enter after typing it) keeps the preview that is
     // shown or still computing, and its verdict.
     const bool known = value == operation_->value()
@@ -988,6 +1036,36 @@ std::string InteractionController::operationValueText() const
     return formatLength(operation_->value(), document_->displayUnit());
 }
 
+bool InteractionController::operationTakesText() const
+{
+    return dynamic_cast<const TextOperation*>(operation_.get()) != nullptr;
+}
+
+std::string InteractionController::operationText() const
+{
+    const auto* text = dynamic_cast<const TextOperation*>(operation_.get());
+    return text ? text->text() : std::string();
+}
+
+bool InteractionController::operationTextTyped() const
+{
+    const auto* text = dynamic_cast<const TextOperation*>(operation_.get());
+    return text && text->wordsTyped();
+}
+
+std::string InteractionController::setOperationText(const std::string& value)
+{
+    auto* text = dynamic_cast<TextOperation*>(operation_.get());
+    if (!text)
+        return "Select a flat face, then Text.";
+    text->setText(value, *document_);
+    textSettings_ = text->settings();
+    notifyState();
+    notifyView();
+    // A preview still computing has no verdict yet (it arrives with a state change).
+    return text->previewPending() ? std::string() : text->error();
+}
+
 std::optional<Vec2> InteractionController::valueLabelPosition() const
 {
     if (operation_ && operation_->ringCount() > 0) {
@@ -1009,7 +1087,13 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
     const LinearManipulator handle = operation_->handle(active);
     const Vec3 anchor = handle.anchor(operation_->handleOffset(active));
     const double px = camera_.pixelSize(anchor);
-    return camera_.project(anchor + handle.direction() * (style.totalPx() * px));
+    Vec2 tip = camera_.project(anchor + handle.direction() * (style.totalPx() * px));
+    // The Text tool's arrow stands in the middle of the text: the chip goes
+    // beside the letters, not over them.
+    if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get()))
+        for (const Vec3& corner : text->textCorners())
+            tip.x = std::max(tip.x, camera_.project(corner).x);
+    return tip;
 }
 
 std::vector<InteractionController::AxisMark> InteractionController::axisTriad() const
@@ -1034,7 +1118,10 @@ Status InteractionController::commitOperation()
     if (!operation_)
         return Status::failure(ErrorCode::InvalidArgument, "Nothing to apply.", "commit without operation");
     if (!operation_->canCommit()) {
-        const std::string text = operation_->error().empty() ? "Drag the arrow or type a value first." : operation_->error();
+        const auto* words = dynamic_cast<const TextOperation*>(operation_.get());
+        const std::string text = !operation_->error().empty()   ? operation_->error()
+                               : words && words->text().empty() ? "Type the text first."
+                                                                : "Drag the arrow or type a value first.";
         return Status::failure(ErrorCode::InvalidArgument, text, "commit of non-committable operation");
     }
     // Fillets consume their edges and extrusions their profiles: clear those
@@ -1050,6 +1137,9 @@ Status InteractionController::commitOperation()
     std::optional<HoleSettings> appliedHoleSettings;
     if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get()))
         appliedHoleSettings = hole->settings();
+    std::optional<TextSettings> appliedTextSettings;
+    if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get()))
+        appliedTextSettings = text->settings();
     // Copies made as separate bodies: say so (and why, when it was not asked for).
     std::string done;
     if (const auto* mirror = dynamic_cast<const MirrorOperation*>(operation_.get()); mirror && mirror->separate())
@@ -1085,6 +1175,8 @@ Status InteractionController::commitOperation()
         bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
     if (appliedHoleSettings)
         holeSettings_ = *appliedHoleSettings;
+    if (appliedTextSettings)
+        textSettings_ = *appliedTextSettings;
     operation_.reset();
     if (!done.empty())
         message(done);
@@ -1112,6 +1204,10 @@ InteractionController::ApplyResult InteractionController::applyBeforeSelecting()
     if (previewWorker_)
         (void)deliverPreviews();
     if (!operation_ || !operation_->canCommit())
+        return ApplyResult::Dropped;
+    // Words remembered from the last use, untouched in this one, are applied
+    // only on purpose (Enter, Apply), not by picking something else.
+    if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get()); text && !text->edited())
         return ApplyResult::Dropped;
     // Without a verdict yet (the preview still computes) the command decides.
     // Refused, the click goes on, as it would have with the refusal shown:
@@ -1494,6 +1590,20 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({"fromLast", "From last hole", hole->fromLastHole()});
         return actions;
     }
+    if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get())) {
+        using Field = TextOperation::Field;
+        actions.push_back({"emboss", "Emboss", text->depth() > 0});
+        actions.push_back({"deboss", "Deboss", text->depth() < 0});
+        actions.push_back({"field:depth", "Depth", text->field() == Field::Depth});
+        actions.push_back({"field:size", "Size", text->field() == Field::Size});
+        actions.push_back({"field:angle", "Angle", text->field() == Field::Angle});
+        for (int degrees : {0, 90, 180, 270})
+            actions.push_back({"angle:" + std::to_string(degrees), std::to_string(degrees) + "\xC2\xB0",
+                               std::abs(text->angleDegrees() - degrees) < 1e-9});
+        if (geom::hasFont(doc::kTextFontBold))
+            actions.push_back({"bold", "Bold", text->bold()});
+        return actions;
+    }
     if (const auto* align = dynamic_cast<const AlignOperation*>(operation_.get())) {
         actions.push_back({"flip", "Flip", align->flipped()});
         if (align->canUseGround())
@@ -1554,6 +1664,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({"sketch", "Sketch", false});
         if (single && planar)
             actions.push_back({"hole", "Hole", false});
+        if (single && planar)
+            actions.push_back({"text", "Text", false});
         if (single && !planar)
             actions.push_back({"offset", "Offset", operation_->featureKind() == doc::FeatureKind::OffsetFace});
         if (single)
@@ -1664,6 +1776,49 @@ Status InteractionController::triggerAction(const std::string& id)
             notifyView();
             return okStatus();
         }
+    }
+    if (auto* text = dynamic_cast<TextOperation*>(operation_.get())) {
+        using Field = TextOperation::Field;
+        bool handled = true;
+        if (id == "emboss" || id == "deboss")
+            text->setRaised(id == "emboss", *document_);
+        else if (id == "field:depth" || id == "field:size" || id == "field:angle")
+            text->setField(id == "field:size" ? Field::Size : id == "field:angle" ? Field::Angle : Field::Depth, *document_);
+        else if (id == "nextField")
+            text->nextField(*document_);
+        else if (id.rfind("angle:", 0) == 0)
+            text->setAngleDegrees(std::strtod(id.c_str() + 6, nullptr), *document_);
+        else if (id == "bold")
+            text->setBold(!text->bold(), *document_);
+        else if (id == "text") {
+            // Text again (palette or face): keep what is typed.
+        } else
+            handled = false;
+        if (handled) {
+            textSettings_ = text->settings();
+            notifyState();
+            notifyView();
+            return okStatus();
+        }
+    }
+    if (id == "text") {
+        if (!geom::hasFont(doc::kTextFontRegular)) {
+            const std::string text = "Text is not available in this build: its font (Noto Sans) is missing.";
+            message(text);
+            return Status::failure(ErrorCode::Unsupported, text, "text: no font registered");
+        }
+        faceOperationKind_ = doc::FeatureKind::Text;
+        rebuildOperation();
+        if (!dynamic_cast<TextOperation*>(operation_.get())) {
+            const std::string text = "Text goes on a flat face: select one, then Text.";
+            message(text);
+            notifyState();
+            notifyView();
+            return Status::failure(ErrorCode::InvalidArgument, text, "text: not a flat face");
+        }
+        notifyState();
+        notifyView();
+        return okStatus();
     }
     if (id == "hole") {
         faceOperationKind_ = doc::FeatureKind::Holes;
@@ -2227,6 +2382,15 @@ RenderScene InteractionController::renderScene() const
                 circle(*hole->hover(), SketchStyle::Hovered);
             scene.sketches.push_back(std::move(guide));
         }
+        // The Text tool: the text's center, and where a click would move it.
+        if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get())) {
+            RenderSketch guide;
+            guide.editing = true;
+            guide.points.push_back({text->center(), SketchStyle::Selected});
+            if (text->hover())
+                guide.points.push_back({text->frame().toWorld(*text->hover()), SketchStyle::Hovered});
+            scene.sketches.push_back(std::move(guide));
+        }
     }
 
     // Grid on the XY plane, spaced for the current zoom.
@@ -2279,7 +2443,7 @@ sel::PickResult InteractionController::operationPickAt(Vec2 screen, const InputP
 {
     const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get());
     if (dynamic_cast<const MirrorOperation*>(operation_.get()) || (extrude && extrude->pickingTarget())
-        || dynamic_cast<const HoleOperation*>(operation_.get()))
+        || dynamic_cast<const HoleOperation*>(operation_.get()) || dynamic_cast<const TextOperation*>(operation_.get()))
         return sel::pickFace(pickTargets(), camera_, screen);
     if (dynamic_cast<const AlignOperation*>(operation_.get())) {
         sel::PickOptions options;
@@ -2408,6 +2572,22 @@ void InteractionController::setTouchLayout(bool on)
     notifyView();
 }
 
+void InteractionController::setHoleAllowance(double mm)
+{
+    mm = doc::validHoleAllowance(mm);
+    if (std::abs(mm - holeSettings_.allowance) < 1e-12)
+        return;
+    holeSettings_.allowance = mm;
+    if (auto* hole = dynamic_cast<HoleOperation*>(operation_.get()))
+        hole->setAllowance(mm, *document_);
+    else if (auto* head = dynamic_cast<HeadOperation*>(operation_.get()))
+        head->setAllowance(mm, *document_);
+    else
+        return;
+    notifyState();
+    notifyView();
+}
+
 void InteractionController::finishSketch()
 {
     if (!session_)
@@ -2532,6 +2712,7 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Copy: return static_cast<const doc::CopyFeature&>(f).mirror ? "Mirror copy" : "Copy";
     case doc::FeatureKind::Holes: return static_cast<const doc::HolesFeature&>(f).positions.size() == 1 ? "Hole" : "Holes";
     case doc::FeatureKind::Imported: return "Import";
+    case doc::FeatureKind::Text: return "Text";
     }
     return "Step";
 }
@@ -2693,6 +2874,17 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
         const auto& imported = static_cast<const doc::ImportedFeature&>(f);
         return imported.source.empty() ? std::string("STEP") : imported.source;
     }
+    case doc::FeatureKind::Text: {
+        // "“Hello” · 10.00 mm · raised 1.00 mm" (the text as typed: a name from the file)
+        const auto& t = static_cast<const doc::TextFeature&>(f);
+        std::string text = "\xE2\x80\x9C" + t.text + "\xE2\x80\x9D" + dot + formatLength(t.size, unit) + dot
+                         + (t.depth >= 0 ? "raised " : "cut ") + formatLength(std::abs(t.depth), unit);
+        if (std::abs(t.angle) > 1e-9)
+            text += dot + formatAngle(t.angle);
+        if (t.font == doc::kTextFontBold)
+            text += dot + std::string("Bold");
+        return text;
+    }
     }
     return {};
 }
@@ -2780,13 +2972,15 @@ std::vector<HistoryRow> InteractionController::historyRows() const
             // A step that left the body in pieces (and it still is): offer the split there too.
             row.canSplit = state.status == doc::FeatureStatus::Ok && state.output.solidCount() > 1
                         && body->shape().solidCount() > 1 && !body->hasFailures();
+            for (const auto& p : f.textParameters())
+                row.parameters.push_back({p.key, p.label, p.value, true});
             for (const auto& p : f.parameters()) {
                 if (p.kind == doc::ParameterKind::Length)
-                    row.parameters.push_back({p.key, p.label, formatLength(p.value, unit)});
+                    row.parameters.push_back({p.key, p.label, formatLength(p.value, unit), false});
                 else if (p.kind == doc::ParameterKind::Angle)
-                    row.parameters.push_back({p.key, p.label, formatAngle(p.value)});
+                    row.parameters.push_back({p.key, p.label, formatAngle(p.value), false});
                 else if (p.kind == doc::ParameterKind::Count)
-                    row.parameters.push_back({p.key, p.label, std::to_string(std::lround(p.value))});
+                    row.parameters.push_back({p.key, p.label, std::to_string(std::lround(p.value)), false});
             }
             rows.push_back(std::move(row));
         }
@@ -2796,12 +2990,26 @@ std::vector<HistoryRow> InteractionController::historyRows() const
 
 Status InteractionController::setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text)
 {
-    bool isAngle = false, isCount = false;
-    if (const doc::Body* body = document_->bodyOfFeature(featureId))
+    bool isAngle = false, isCount = false, isText = false;
+    if (const doc::Body* body = document_->bodyOfFeature(featureId)) {
         for (const auto& p : body->feature(featureId)->parameters()) {
             isAngle = isAngle || (p.key == key && p.kind == doc::ParameterKind::Angle);
             isCount = isCount || (p.key == key && p.kind == doc::ParameterKind::Count);
         }
+        isText = body->feature(featureId)->textParameter(key).has_value();
+    }
+    if (isText) {
+        // A string (a Text step's text): taken as typed.
+        Status status = undoStack_->push(
+            std::make_unique<cmd::SetTextParameterCommand>(featureId, key, text, /*rejectIfFeatureFails=*/false), *document_);
+        if (!status)
+            return status;
+        operation_.reset();
+        afterDocumentEdit();
+        if (const doc::Body* body = document_->bodyOfFeature(featureId); body && body->hasFailures())
+            message("Some steps can no longer be built. They are marked in the history; undo restores the previous value.");
+        return status;
+    }
     double value = 0;
     if (isCount) {
         // Whole numbers only: "5", not "5mm" or "2.5".
@@ -3128,6 +3336,12 @@ Status InteractionController::runTool(const std::string& id)
         if (faces && selection_.size() == 1)
             return triggerAction("hole");
         return explain("Click a flat face, then Hole, then click or tap where each hole goes.");
+    }
+    if (id == "text") {
+        if (faces && selection_.size() == 1)
+            return triggerAction("text");
+        return explain("Click a flat face, then Text: type the words, click where they go, and drag the arrow "
+                       "out to raise them or in to cut them.");
     }
     if (id == "measure")
         return explain("Select two faces or edges (Shift-click the second); the distance and angle appear at the bottom left.");

@@ -54,6 +54,12 @@ class AppController : public QObject {
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
+    // The Text tool: the chip shows a text field for the words (setOperationText).
+    Q_PROPERTY(bool operationTakesText READ operationTakesText NOTIFY stateChanged)
+    Q_PROPERTY(QString operationText READ operationText NOTIFY stateChanged)
+    // The words were typed or erased in this use of the tool (until then the
+    // first key typed in the view replaces the remembered ones).
+    Q_PROPERTY(bool operationTextTyped READ operationTextTyped NOTIFY stateChanged)
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
@@ -98,6 +104,8 @@ class AppController : public QObject {
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
     // Seconds; 0 = no recovery copies. One of kRecoveryIntervals.
     Q_PROPERTY(int recoveryInterval READ recoveryInterval WRITE setRecoveryInterval NOTIFY preferencesChanged)
+    // Millimeters (0-1) added to screw clearance hole and head seat presets.
+    Q_PROPERTY(double holeAllowance READ holeAllowance WRITE setHoleAllowance NOTIFY preferencesChanged)
     // iPhone / iPad: projects are saved by name into the app's own folder
     // (Documents, which the Files app shows) and exports go to its Exports
     // folder: iOS has no save dialog (Qt's FileDialog opens only). False on
@@ -128,6 +136,9 @@ public:
     bool operationCanCommit() const;
     bool operationHasValue() const;
     QString operationPrompt() const;
+    bool operationTakesText() const;
+    QString operationText() const;
+    bool operationTextTyped() const;
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariantList axisTriad() const;
@@ -164,6 +175,11 @@ public:
     void setSketchGridSnap(bool on);
     int recoveryInterval() const { return preferences_.recoveryIntervalSeconds; }
     void setRecoveryInterval(int seconds);
+    double holeAllowance() const { return preferences_.holeAllowance; }
+    // Ignored outside 0-1 mm; applied at once (an open Hole tool follows).
+    void setHoleAllowance(double mm);
+    // Text typed in Preferences ("0.25", "0.3 mm"): "" when taken, else why not.
+    Q_INVOKABLE QString setHoleAllowanceText(const QString& text);
 
     // ---- Recovery copies (see io/Recovery.h) ----
     // Starts this run's recovery session in `directory`; until then no copies
@@ -275,6 +291,8 @@ public:
     // The same, waiting for the verdict of a preview still computing: Tab to
     // the next field moves on only with a usable value.
     Q_INVOKABLE QString confirmValueText(const QString& text);
+    // The Text tool's words (previewed at once); returns the error, or "".
+    Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
     Q_INVOKABLE void setView(const QString& name);
     Q_INVOKABLE void fitAll();
