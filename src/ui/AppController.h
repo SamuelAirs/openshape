@@ -52,6 +52,11 @@ class AppController : public QObject {
     Q_PROPERTY(QString operationValueLabel READ operationValueLabel NOTIFY stateChanged)
     Q_PROPERTY(QString operationValueText READ operationValueText NOTIFY stateChanged)
     Q_PROPERTY(QString operationError READ operationError NOTIFY stateChanged)
+    // Why the value typed was refused when it was taken (not a length, out of
+    // range; InteractionController::typedValueError), "" otherwise.
+    Q_PROPERTY(QString typedValueError READ typedValueError NOTIFY stateChanged)
+    // A value typed key by key waits for its pause (typeValueText).
+    Q_PROPERTY(bool typingPending READ typingPending NOTIFY stateChanged)
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
@@ -143,6 +148,8 @@ public:
     QString operationValueLabel() const;
     QString operationValueText() const;
     QString operationError() const;
+    QString typedValueError() const;
+    bool typingPending() const;
     bool operationCanCommit() const;
     bool operationHasValue() const;
     QString operationPrompt() const;
@@ -310,6 +317,18 @@ public:
     // The same, waiting for the verdict of a preview still computing: Tab to
     // the next field moves on only with a usable value.
     Q_INVOKABLE QString confirmValueText(const QString& text);
+    // A key typed into the value chip's field (the whole text so far): it is
+    // previewed once typing pauses (0.7 s) or when it is confirmed (Enter,
+    // Tab, leaving the field, a tap elsewhere), so the model does not jump
+    // through 1, 10, 100 while "100" is typed. Its verdict comes with a
+    // state change (typedValueError, operationError).
+    Q_INVOKABLE void typeValueText(const QString& text);
+    // The same for the sketch's focused live value (a shape being drawn).
+    Q_INVOKABLE void typeSketchValue(const QString& text);
+    // Takes the value typed now (leaving the field); returns why it was refused, or "".
+    Q_INVOKABLE QString flushTyping();
+    // Forgets the value typed (Esc).
+    Q_INVOKABLE void dropTyping();
     // The Text tool's words (previewed at once); returns the error, or "".
     Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
@@ -328,7 +347,8 @@ public:
     Q_INVOKABLE bool faceSelected() const;
     Q_INVOKABLE void finishSketch();
     Q_INVOKABLE void setSketchTool(const QString& name);
-    // Replaces the focused input's text while drawing; returns an error or "".
+    // Replaces the focused input's text while drawing, at once; returns an
+    // error or "". (Keys use typeSketchValue.)
     Q_INVOKABLE QString sketchType(const QString& text);
     Q_INVOKABLE void focusNextSketchInput();
     Q_INVOKABLE void commitSketchTool();
@@ -406,6 +426,9 @@ private:
     std::vector<io::RecoveryEntry> orphans_; // offered for restoring
     QTimer recoveryDebounce_; // edits settled
     QTimer recoveryDeadline_; // at least this often while editing
+    QTimer typingPause_;      // a value typed key by key: its pause is over
+    // (Re)starts typingPause_ for the value typed (InteractionController::typingDeadline).
+    void armTypingPause();
     std::uint64_t seenRevision_ = 0;  // undo-stack revision at the last noteEdits()
     std::uint64_t copyRevision_ = ~std::uint64_t(0); // revision in this run's copy (~0: none)
     std::uint64_t discardedRevision_ = ~std::uint64_t(0); // revision the user chose Don't Save at

@@ -251,6 +251,7 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
 {
     document_ = &document;
     undoStack_ = &undoStack;
+    dropTyping();
     session_.reset();
     cameraBeforeSketch_.reset();
     selection_.clear();
@@ -404,6 +405,9 @@ void InteractionController::skipAnimation()
 
 void InteractionController::pointerPress(const PointerEvent& event)
 {
+    // A value typed just now is taken before the press acts (a sketch's
+    // typed length, then the tap that places the line's end).
+    (void)flushTyping();
     animation_.reset();
     drag_ = {};
     drag_.press = event;
@@ -746,6 +750,11 @@ void InteractionController::twoFingerRotate(double dxPixels, double dyPixels)
 bool InteractionController::keyPress(Key key)
 {
     if (session_) {
+        // Enter takes the value typed just now; Esc drops it with the shape.
+        if (key == Key::Enter)
+            (void)flushTyping();
+        else if (key == Key::Escape)
+            dropTyping();
         const bool handled = session_->keyPress(key);
         notifyState();
         notifyView();
@@ -760,6 +769,9 @@ bool InteractionController::keyPress(Key key)
         cancelOperation();
         return true;
     case Key::Enter:
+        // A value typed just now is what Enter applies (its error, if refused, shows).
+        if (typing_.pending() && typingTarget_ == TypingTarget::OperationValue && !flushTyping().empty())
+            return true;
         if (operation_ && operation_->canCommit()) {
             (void)commitOperation();
             return true;
@@ -1073,6 +1085,10 @@ void InteractionController::click(const PointerEvent& event)
 
 void InteractionController::rebuildOperation()
 {
+    // Keys typed for the operation that goes (the callers that keep what was
+    // typed take it first: a commit, a press, an action).
+    if (typingTarget_ == TypingTarget::OperationValue)
+        dropTyping();
     // The Axis / Plane tool runs with nothing selected (its picks are its
     // own): a selection made elsewhere (a body's Model-panel row, a
     // double-click, Duplicate) ends it.
@@ -1182,13 +1198,13 @@ void InteractionController::rebuildOperation()
     }
 }
 
-std::string InteractionController::setValueText(const std::string& text)
+InteractionController::TypedValue InteractionController::parseTypedValue(const std::string& text) const
 {
     if (!operation_)
-        return "Select a face or an edge first.";
+        return {std::nullopt, "Select a face or an edge first."};
     const auto parsed = operation_->isAngle() ? parseAngle(text) : parseLength(text, document_->displayUnit());
     if (!parsed.millimeters)
-        return parsed.error;
+        return {std::nullopt, parsed.error};
     // Angle operations keep their value in degrees.
     double value = operation_->isAngle() ? *parsed.millimeters * 180.0 / kPi : *parsed.millimeters;
     // "+5" / "-5" change a measured value (e.g. a push/pull's thickness) by that much.
@@ -1197,9 +1213,84 @@ std::string InteractionController::setValueText(const std::string& text)
         value += *base;
     // (The Text tool's angle may be negative: it checks its own range.)
     if (operation_->isAngle() && value > 360.0 + 1e-9 && !dynamic_cast<const TextOperation*>(operation_.get()))
-        return "The angle must be between 0° and 360°.";
+        return {std::nullopt, "The angle must be between 0° and 360°."};
     if (!operation_->allowsNegative() && value <= 0)
-        return operation_->valueLabel() + " must be greater than zero.";
+        return {std::nullopt, operation_->valueLabel() + " must be greater than zero."};
+    return {value, {}};
+}
+
+std::string InteractionController::setValueText(const std::string& text)
+{
+    // The whole text, confirmed: keys typed before it (still waiting for
+    // their pause) are part of it.
+    if (typingTarget_ == TypingTarget::OperationValue)
+        typing_.clear();
+    const TypedValue typed = parseTypedValue(text);
+    typedValueError_ = typed.error;
+    if (!typed.value)
+        return typed.error;
+    return previewTypedValue(*typed.value);
+}
+
+// ---- Values typed key by key ------------------------------------------------------
+
+void InteractionController::typeValue(TypingTarget target, const std::string& text)
+{
+    // Keys typed into another value first confirm what was typed before (a
+    // sketch value, then the operation's: not possible at once, but safe).
+    if (typing_.pending() && typingTarget_ != target)
+        (void)flushTyping();
+    typingTarget_ = target;
+    typedValueError_.clear(); // not judged until it is taken
+    typing_.type(text, clock_());
+}
+
+bool InteractionController::advanceTyping()
+{
+    const auto text = typing_.takeIfDue(clock_());
+    if (!text)
+        return false;
+    (void)applyTyped(*text);
+    return true;
+}
+
+std::string InteractionController::flushTyping()
+{
+    const auto text = typing_.take();
+    return text ? applyTyped(*text) : std::string();
+}
+
+void InteractionController::dropTyping()
+{
+    typing_.clear();
+    typedValueError_.clear();
+}
+
+std::string InteractionController::applyTyped(const std::string& text)
+{
+    if (typingTarget_ == TypingTarget::SketchInput) {
+        // The shape may be finished (or the sketch left) since: nothing to set.
+        if (!session_ || !session_->hasInputs())
+            return {};
+        typedValueError_ = session_->typeIntoInput(text);
+        notifyState();
+        notifyView();
+        return typedValueError_;
+    }
+    if (!operation_)
+        return {};
+    const TypedValue typed = parseTypedValue(text);
+    typedValueError_ = typed.error;
+    if (!typed.value) {
+        notifyState(); // the value editor shows why
+        return typed.error;
+    }
+    (void)previewTypedValue(*typed.value);
+    return {};
+}
+
+std::string InteractionController::previewTypedValue(double value)
+{
     if (auto* words = dynamic_cast<TextOperation*>(operation_.get()))
         words->markEdited(); // a value typed, even the one it had
     // The same value again (Enter after typing it) keeps the preview that is
@@ -1519,6 +1610,11 @@ std::vector<InteractionController::AxisMark> InteractionController::axisTriad() 
 
 Status InteractionController::commitOperation()
 {
+    // A value typed just now (its pause not over) is what is applied.
+    if (typing_.pending() && typingTarget_ == TypingTarget::OperationValue) {
+        if (const std::string refused = flushTyping(); !refused.empty())
+            return Status::failure(ErrorCode::InvalidArgument, refused, "commit of a refused typed value");
+    }
     if (!operation_)
         return Status::failure(ErrorCode::InvalidArgument, "Nothing to apply.", "commit without operation");
     // The command computes the step again, so a pending preview is not waited
@@ -1624,6 +1720,8 @@ Status InteractionController::commitOperation()
 
 Status InteractionController::applyPendingValue(const char* action)
 {
+    if (typingTarget_ == TypingTarget::OperationValue)
+        (void)flushTyping(); // a value typed just now counts
     if (operation_ && operation_->canCommit() && applyBeforeSelecting() == ApplyResult::Refused)
         return Status::failure(ErrorCode::InvalidArgument,
                                operation_ && !operation_->error().empty() ? operation_->error() : "The value could not be applied.",
@@ -1633,6 +1731,9 @@ Status InteractionController::applyPendingValue(const char* action)
 
 InteractionController::ApplyResult InteractionController::applyBeforeSelecting()
 {
+    // A value typed just now counts, as if its pause were over.
+    if (typingTarget_ == TypingTarget::OperationValue)
+        (void)flushTyping();
     // A finished preview's verdict first (its delivery may still be queued).
     if (previewWorker_)
         (void)deliverPreviews();
@@ -1663,6 +1764,8 @@ void InteractionController::suggestSplit(const Uuid& bodyId, int piecesBefore)
 
 void InteractionController::cancelOperation()
 {
+    if (typingTarget_ == TypingTarget::OperationValue)
+        dropTyping();
     // The Axis / Plane tool steps back one pick at a time, then ends.
     if (auto* construct = dynamic_cast<DatumOperation*>(operation_.get())) {
         if (!construct->dropLastPick(*document_)) {
@@ -1828,6 +1931,7 @@ ThumbnailImage InteractionController::renderThumbnail(int size)
 
 bool InteractionController::undo()
 {
+    dropTyping(); // a value typed for what undo takes away
     if (!undoStack_->undo(*document_))
         return false;
     operation_.reset();
@@ -1837,6 +1941,7 @@ bool InteractionController::undo()
 
 bool InteractionController::redo()
 {
+    dropTyping();
     Status status = undoStack_->redo(*document_);
     if (!status) {
         if (undoStack_->canRedo() || status.error() != ErrorCode::InvalidArgument)
@@ -2214,6 +2319,9 @@ std::vector<ContextAction> InteractionController::contextActions() const
 
 Status InteractionController::triggerAction(const std::string& id)
 {
+    // A value typed just now belongs to the value it was typed into, not to
+    // the field or mode the action switches to.
+    (void)flushTyping();
     if (session_) {
         Status status = session_->triggerAction(id);
         notifyState();
@@ -3403,6 +3511,7 @@ Status InteractionController::editSketch(const Uuid& sketchId)
 
 void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
 {
+    dropTyping();
     selection_.clear();
     operation_.reset();
     datumTool_.reset();
@@ -3470,6 +3579,7 @@ void InteractionController::finishSketch()
         return;
     const Uuid id = session_->sketchId();
     const bool empty = !session_->sketch().hasGeometry();
+    dropTyping();
     session_.reset();
     drag_ = {};
     // An empty sketch is clutter; remove it (undoable like everything else).
@@ -3490,10 +3600,36 @@ void InteractionController::finishSketch()
     }
 }
 
+Status InteractionController::commitSketchTool()
+{
+    if (!session_)
+        return Status::failure(ErrorCode::InvalidArgument, "Nothing is being drawn.", "commitSketchTool outside a sketch");
+    if (const std::string refused = flushTyping(); !refused.empty()) {
+        notifyState();
+        notifyView();
+        return Status::failure(ErrorCode::InvalidArgument, refused, "commitSketchTool: the typed value is refused");
+    }
+    Status status = session_->commitTool();
+    notifyState();
+    notifyView();
+    return status;
+}
+
+void InteractionController::focusNextSketchInput()
+{
+    if (!session_)
+        return;
+    (void)flushTyping(); // the value typed stays with the input it was typed into
+    session_->focusNextInput();
+    notifyState();
+    notifyView();
+}
+
 void InteractionController::setSketchTool(SketchTool tool)
 {
     if (!session_)
         return;
+    dropTyping(); // the shape being drawn goes
     session_->setTool(tool);
     notifyState();
     notifyView();

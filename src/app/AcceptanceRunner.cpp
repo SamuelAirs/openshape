@@ -1179,10 +1179,12 @@ void AcceptanceRunner::runNext()
     // the animation to end (up to 3 s) before the next step (TD-31, TD-35).
     // Previews compute on a worker thread: wait until the last one is shown
     // (up to 30 s), so a step sees the preview (or the error) of what the
-    // step before it typed or dragged. The event loop runs meanwhile: the
-    // result arrives as the app would get it.
+    // step before it typed or dragged. A value typed key by key is previewed
+    // once typing pauses (0.7 s): that is waited for too, as a user pausing
+    // would. The event loop runs meanwhile: the result arrives as the app
+    // would get it.
     const bool animating = app_->interaction().isAnimating() && animationWaitMs_ < 3000;
-    const bool previewing = app_->interaction().previewBusy() && previewWaitMs_ < 30000;
+    const bool previewing = (app_->interaction().previewBusy() || app_->interaction().typingPending()) && previewWaitMs_ < 30000;
     if (animating || previewing) {
         (animating ? animationWaitMs_ : previewWaitMs_) += 10;
         QTimer::singleShot(10, this, &AcceptanceRunner::runNext);

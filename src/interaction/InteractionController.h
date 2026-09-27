@@ -17,6 +17,7 @@
 #include "interaction/SceneCache.h"
 #include "interaction/SketchSession.h"
 #include "interaction/Thumbnail.h"
+#include "interaction/TypingPause.h"
 #include "selection/Picking.h"
 #include "selection/Selection.h"
 
@@ -144,6 +145,33 @@ public:
     // to the next field). Keystrokes use setValueText and never wait.
     std::string confirmValueText(const std::string& text);
     std::string operationValueText() const;
+
+    // ---- Values typed key by key (TypingPause) ----
+    // What a value typed key by key goes to: the operation's value (the value
+    // chip) or the sketch's focused live value (a shape being drawn).
+    enum class TypingTarget { OperationValue, SketchInput };
+    // A key typed: `text` is the whole text typed so far. Nothing is parsed
+    // or previewed yet: that happens once typing pauses (TypingPause::kPause:
+    // the UI calls advanceTyping() at typingDeadline()) or when the value is
+    // confirmed: flushTyping() (Tab or Next, leaving the field), setValueText
+    // and confirmValueText (Enter), a commit, a press in the view, an action,
+    // a Model panel edit, the sketch's next value or Enter. Esc, cancelling,
+    // undo and a new document drop it (dropTyping()).
+    void typeValue(TypingTarget target, const std::string& text);
+    bool typingPending() const { return typing_.pending(); }
+    TypingPause::Clock::time_point typingDeadline() const { return typing_.deadline(); }
+    // Previews the text typed if its pause is over; true when it did.
+    bool advanceTyping();
+    // Previews the text typed now. Returns why it was refused ("" when it
+    // was taken, or when nothing was typed).
+    std::string flushTyping();
+    void dropTyping();
+    // Why the text typed was refused when it was taken (not a length, out of
+    // range): the value editor shows it until the next key. The preview's
+    // own verdict is the operation's error.
+    const std::string& typedValueError() const { return typedValueError_; }
+    // Tests: the clock the typing pause is measured with (steady_clock by default).
+    void setClockForTesting(std::function<TypingPause::Clock::time_point()> clock) { clock_ = std::move(clock); }
     // The Text tool takes words as well as values: the text (UTF-8, as
     // typed), previewed at once. Returns the error, or "".
     bool operationTakesText() const;
@@ -228,6 +256,13 @@ public:
     // Leaves sketch mode. An empty sketch is deleted.
     void finishSketch();
     void setSketchTool(SketchTool tool);
+    // The shape being drawn, completed with the values typed (Enter or the
+    // keypad's check mark), after the value typed just now is taken; refused
+    // with that value's error when it is not a usable value.
+    Status commitSketchTool();
+    // Tab or the keypad's Next: the value typed just now is taken, then the
+    // next live value takes the keys.
+    void focusNextSketchInput();
 
     // ---- History (model tree) ----
     std::vector<HistoryRow> historyRows() const;
@@ -509,6 +544,24 @@ private:
         double durationSeconds = 0.3;
     };
     std::optional<Animation> animation_;
+
+    // A value typed key by key, waiting for its pause (typeValue).
+    TypingPause typing_;
+    TypingTarget typingTarget_ = TypingTarget::OperationValue;
+    std::string typedValueError_;
+    std::function<TypingPause::Clock::time_point()> clock_ = [] { return TypingPause::Clock::now(); };
+    // The typed text as the operation's value (its unit, degrees for an
+    // angle, a leading + or - on a measured value), or why it is refused.
+    struct TypedValue {
+        std::optional<double> value;
+        std::string error;
+    };
+    TypedValue parseTypedValue(const std::string& text) const;
+    // Previews `value` (parsed from typed text); returns the preview's verdict
+    // when it is known ("" while it computes).
+    std::string previewTypedValue(double value);
+    // Takes the text typed, now: previews it (or records why it is refused).
+    std::string applyTyped(const std::string& text);
 
     mutable SelectionMemo selectionMemo_;
     std::shared_ptr<const doc::Document> snapshot_; // the last preview snapshot, reused while nothing changed

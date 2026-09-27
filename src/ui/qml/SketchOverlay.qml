@@ -26,8 +26,14 @@ Item {
     readonly property real bottomStackTop: actionPanel.visible && Theme.compact ? actionPanel.y : toolPanel.y
 
     // Characters typed while drawing go to the focused value (e.g. width).
+    // The shape takes them once typing pauses (app.typeSketchValue), or at
+    // once with Tab, Enter or a tap that places the next point.
     property string typing: ""
-    property string typingError: ""
+    readonly property string typingError: app.sketchMode ? app.typedValueError : ""
+    function typeKeys(text) {
+        typing = text
+        app.typeSketchValue(text)
+    }
 
     function handleKey(event) {
         if (!app.sketchMode)
@@ -42,29 +48,26 @@ Item {
             if (event.key === Qt.Key_Tab) {
                 app.focusNextSketchInput()
                 typing = ""
-                typingError = ""
                 return true
             }
             if (event.key === Qt.Key_Backspace) {
-                typing = typing.slice(0, -1)
-                typingError = app.sketchType(typing)
+                typeKeys(typing.slice(0, -1))
                 return true
             }
             if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 app.commitSketchTool()
-                typing = ""
-                typingError = ""
+                // A typed value refused stays with its message; otherwise the shape is done.
+                if (app.typedValueError.length === 0)
+                    typing = ""
                 return true
             }
             if (event.key === Qt.Key_Escape) {
                 typing = ""
-                typingError = ""
                 return app.handleKey(event.key)
             }
             if (event.text.length === 1 && /[0-9.,+\-*/()a-zA-Z" ]/.test(event.text)
                     && !(event.modifiers & Qt.ControlModifier)) {
-                typing += event.text
-                typingError = app.sketchType(typing)
+                typeKeys(typing + event.text)
                 return true
             }
         }
@@ -85,10 +88,8 @@ Item {
     Connections {
         target: overlay.app
         function onStateChanged() {
-            if (!overlay.app.sketchDrawing) {
+            if (!overlay.app.sketchDrawing)
                 overlay.typing = ""
-                overlay.typingError = ""
-            }
         }
     }
 

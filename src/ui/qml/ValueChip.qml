@@ -34,31 +34,34 @@ Item {
     width: column.implicitWidth
     height: column.implicitHeight
 
-    // The typed text itself is refused (not a length, out of range): its
-    // message stays while typing. Otherwise the preview's verdict shows, which
-    // may arrive after the keystroke (previews compute off the GUI thread).
-    property bool typedTextRefused: false
-
+    // The value typed, confirmed (Enter): taken at once. Keys typed wait for
+    // a pause in typing (keyTyped): the model does not jump through 1, 10,
+    // 100 while "100" is typed. The typed text itself refused (not a length,
+    // out of range) shows its message until the next key; otherwise the
+    // preview's verdict shows, which may arrive later (previews compute off
+    // the GUI thread).
     function typeValue(text) {
         const error = app.setValueText(text)
-        typedTextRefused = error.length > 0 && error !== app.operationError
         errorText.text = error
         return error
+    }
+    function keyTyped(text) {
+        app.typeValueText(text)
     }
 
     function beginTyping(firstChar) {
         field.text = firstChar
         field.forceActiveFocus()
         field.cursorPosition = field.text.length
-        typeValue(field.text)
+        keyTyped(field.text)
     }
 
     function syncFromModel() {
         if (!field.activeFocus) {
             field.text = app.operationValueText
             errorText.text = app.operationError
-        } else if (!typedTextRefused) {
-            errorText.text = app.operationError
+        } else {
+            errorText.text = app.typedValueError.length > 0 ? app.typedValueError : app.operationError
         }
         if (!textField.activeFocus && textField.text !== app.operationText)
             textField.text = app.operationText
@@ -242,8 +245,14 @@ Item {
                         border.color: field.activeFocus ? Theme.accent : "transparent"
                         border.width: 1.5
                     }
-                    onTextEdited: chip.typeValue(text)
-                    onActiveFocusChanged: if (activeFocus) selectAll()
+                    onTextEdited: chip.keyTyped(text)
+                    // Leaving the field takes what was typed (unless Esc dropped it).
+                    onActiveFocusChanged: {
+                        if (activeFocus)
+                            selectAll()
+                        else
+                            chip.app.flushTyping()
+                    }
                     Keys.onReturnPressed: apply()
                     Keys.onEnterPressed: apply()
                     // Operations with several fields (the Hole tool's
@@ -263,6 +272,7 @@ Item {
                         }
                     }
                     Keys.onEscapePressed: {
+                        chip.app.dropTyping()
                         field.focus = false
                         chip.finished()
                         chip.syncFromModel()
@@ -277,7 +287,6 @@ Item {
                         // field with the message, as for a refused preview.
                         if (!chip.app.commitOperation() && chip.app.operationActive) {
                             field.forceActiveFocus()
-                            chip.typedTextRefused = false
                             chip.syncFromModel()
                             return
                         }
@@ -289,10 +298,15 @@ Item {
                     objectName: "valueChipApply"
                     text: "✓"
                     accent: true
-                    enabled: chip.app.operationCanCommit
+                    // A value typed and not yet previewed counts too.
+                    enabled: chip.app.operationCanCommit || (field.activeFocus && chip.app.typingPending)
                     implicitWidth: Theme.controlHeight
                     onClicked: {
-                        field.focus = false
+                        // While typing: as Enter (the text typed is applied, or its error shown).
+                        if (field.activeFocus) {
+                            field.apply()
+                            return
+                        }
                         chip.app.commitOperation()
                         chip.finished()
                     }
