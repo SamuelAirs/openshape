@@ -735,10 +735,62 @@ TEST(Interaction, WheelZoomsTowardCursor)
             EXPECT_NEAR(h.controller.camera().orthoHeight, heightBefore * factor, 1e-9);
         } else {
             EXPECT_NEAR((h.controller.camera().eye() - onFace).length(), distanceBefore * factor, 1e-6);
-            for (int i = 0; i < 80; ++i)
+            for (int i = 0; i < 120; ++i)
                 h.controller.wheel(cursor, 1);
-            EXPECT_GT(h.controller.camera().depthOf(onFace), 0.0) << "never through the face";
+            const Camera& camera = h.controller.camera();
+            EXPECT_GT(camera.depthOf(onFace), 0.0) << "never through the face";
             EXPECT_NEAR((h.screen(onFace) - cursor).length(), 0.0, 1e-6);
+            // As close as it gets, and the face is still inside the clipping
+            // range: in front of the near plane (depth 0 to 1 in clip space).
+            EXPECT_NEAR(camera.distance, Camera::kMinDistance, 1e-9);
+            const double clipDepth = camera.viewProjection().transformPoint(onFace).z;
+            EXPECT_GT(clipDepth, 0.0) << "not cut by the near plane";
+            EXPECT_LT(clipDepth, 1.0);
+            // A further notch in stays put (it does not back away either).
+            const Vec3 eye = camera.eye();
+            h.controller.wheel(cursor, 1);
+            EXPECT_NEAR((h.controller.camera().eye() - eye).length(), 0.0, 1e-9);
+        }
+    }
+}
+
+// Switching the projection while a view animation runs (a standard view,
+// Fit, opening a sketch) sticks: the animation ends in the projection chosen
+// (the choice is remembered for the next start), at the view it was heading
+// for, as if the switch had come after it.
+TEST(Interaction, ProjectionChosenDuringAViewAnimationSticks)
+{
+    for (const auto chosen : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        const auto other = chosen == Camera::Projection::Perspective ? Camera::Projection::Orthographic
+                                                                     : Camera::Projection::Perspective;
+        Harness reference;
+        ASSERT_TRUE(reference.controller.createBox(20).ok());
+        reference.controller.setProjection(other);
+        reference.controller.fitAll(false);
+        reference.controller.setStandardView(StandardView::Top, false);
+        reference.controller.setProjection(chosen);
+
+        Harness h;
+        ASSERT_TRUE(h.controller.createBox(20).ok());
+        h.controller.setProjection(other);
+        h.controller.fitAll(false);
+        h.controller.setStandardView(StandardView::Top, true);
+        ASSERT_TRUE(h.controller.isAnimating());
+        h.controller.advanceAnimation();
+        h.controller.setProjection(chosen);
+        EXPECT_EQ(h.controller.camera().projection, chosen);
+        h.controller.skipAnimation();
+        ASSERT_FALSE(h.controller.isAnimating());
+        const Camera& got = h.controller.camera();
+        const Camera& want = reference.controller.camera();
+        EXPECT_EQ(got.projection, chosen) << "the animation's end view keeps the choice";
+        EXPECT_NEAR(got.pitch, want.pitch, 1e-9);
+        EXPECT_NEAR(got.yaw, want.yaw, 1e-9);
+        EXPECT_NEAR((got.target - want.target).length(), 0.0, 1e-9);
+        if (chosen == Camera::Projection::Perspective) {
+            EXPECT_NEAR(got.distance, want.distance, 1e-9 * want.distance);
+        } else {
+            EXPECT_NEAR(got.orthoHeight, want.orthoHeight, 1e-9 * want.orthoHeight);
         }
     }
 }

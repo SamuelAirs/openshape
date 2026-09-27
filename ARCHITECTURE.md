@@ -442,7 +442,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   occlusion test in perspective. The ray-triangle test has a 1e-9
   barycentric tolerance, so a ray through the diagonal two triangles share
   (a face's center) hits one of them. An unused sketch profile clearly in
-  front of a picked edge wins over the edge.
+  front of a picked edge wins over the edge, unless the edge lies in the
+  sketch's plane (the far edge of the face it was drawn on, a body's bottom
+  edge beside a ground sketch: a receding plane is nearer the eye a few
+  pixels inside such an edge) or the surface under the cursor is in front
+  of the sketch.
 - **Push/pull shows the size:** `PushPullOperation` places its arrow on the
   face (`geom::pointOnFace`: a washer's centroid is in its hole) and measures
   the part behind it (`geom::faceThickness`: a line into the material must
@@ -464,7 +468,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   perspective the wheel and pinch zoom head for the surface under the
   pointer (`InteractionController::zoomAt`: the target first moves along the
   view axis to the picked depth, which leaves the image unchanged), so
-  zooming in approaches that surface and never passes through it. Sketches
+  zooming in approaches that surface and never passes through it; the eye
+  stops `Camera::kMinDistance` (0.05 mm, five times the near plane's floor)
+  from it, so the near plane never cuts it either. Switching the projection
+  during a view animation also switches the animation's start and end views
+  (`Camera::setProjection`), so the view shown is the one remembered. Sketches
   keep the projection: the view faces the sketch plane head-on, which
   perspective shows undistorted.
 - **Sketch mode:** `startSketch()` creates a sketch on the selected planar face

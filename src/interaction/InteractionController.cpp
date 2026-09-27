@@ -233,13 +233,14 @@ void InteractionController::setProjection(Camera::Projection projection)
 {
     if (camera_.projection == projection)
         return;
-    // Match the perspective distance to the orthographic zoom so the model
-    // keeps roughly the same size on screen.
-    if (projection == Camera::Projection::Perspective)
-        camera_.distance = camera_.orthoHeight / (2 * std::tan(camera_.fovY / 2));
-    else
-        camera_.orthoHeight = 2 * camera_.distance * std::tan(camera_.fovY / 2);
-    camera_.projection = projection;
+    camera_.setProjection(projection);
+    // A view animation running (a standard view, Fit, opening a sketch) ends
+    // in the projection chosen: its end view would otherwise put the old one
+    // back while the setting remembers the new one.
+    if (animation_) {
+        animation_->from.setProjection(projection);
+        animation_->to.setProjection(projection);
+    }
     notifyView();
     notifyState();
 }
@@ -2323,10 +2324,22 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     const double slack = camera_.pixelSize(region.point) * 2;
     const bool consumed = region.hit() && !document_->dependentFeatures(region.bodyId).empty();
     // Edges are the smallest targets: keep them reachable, unless a sketch
-    // not used yet lies clearly in front of the edge (a circle drawn beside
-    // a box, with the box's far edge passing behind it on screen).
-    if (body.kind == sel::PickKind::Edge)
-        return region.hit() && !consumed && region.depth + slack < body.depth ? region : body;
+    // not used yet floats clearly in front of the edge (a circle drawn beside
+    // a box, with the box's far edge passing behind it on screen). An edge
+    // in the sketch's plane is never behind it: the far edge of the face a
+    // sketch lies on recedes with the plane, so a point of the plane a few
+    // pixels inside that edge is nearer the eye than the edge, and a body's
+    // bottom edge lies in a sketch on the ground in front of it.
+    if (body.kind == sel::PickKind::Edge) {
+        if (!region.hit() || consumed || region.depth + slack >= body.depth)
+            return body;
+        const sketch::Sketch* sk = document_->sketch(region.bodyId);
+        if (!sk || std::abs((body.point - sk->plane().origin).dot(sk->plane().normal().normalized())) <= slack)
+            return body;
+        // And the sketch is in front of the surface under the cursor.
+        const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
+        return !face.hit() || region.depth + slack < face.depth ? region : body;
+    }
     // A sketch lying on a face is "on top" of it. A sketch already used by a
     // step only wins where it lies on the surface hit: otherwise, e.g. the
     // circle over a hole it cut, it would hide the body behind it.

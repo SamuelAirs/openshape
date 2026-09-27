@@ -19,6 +19,11 @@ class Camera {
 public:
     enum class Projection { Orthographic, Perspective };
 
+    // The closest the eye comes to the target in perspective (mm): five
+    // times the near plane's floor, so the surface a zoom heads for is never
+    // clipped by the near plane.
+    static constexpr double kMinDistance = 0.05;
+
     Vec3 target{0, 0, 0};
     double yaw = -kPi / 4;          // radians, around +Z; 0 = looking from +X
     double pitch = 0.6154797087;    // radians, elevation; +90deg = from above (atan(1/sqrt2))
@@ -60,10 +65,16 @@ public:
     // ---- Navigation ----
     void orbit(double dxPixels, double dyPixels, const Vec3& pivot);
     void pan(Vec2 fromScreen, Vec2 toScreen);
-    // factor < 1 zooms in. Keeps the point under `screen` fixed.
+    // factor < 1 zooms in. Keeps the point under `screen` fixed. In
+    // perspective the distance stops at kMinDistance (a zoom in never moves
+    // the eye back when it is already closer).
     void zoomAt(Vec2 screen, double factor);
     void fit(const Vec3& boxMin, const Vec3& boxMax);
     void setStandardView(StandardView view);
+
+    // Switches the projection, keeping the model about the same size on
+    // screen (the perspective distance matches the orthographic height).
+    void setProjection(Projection p);
 
     static Camera interpolate(const Camera& a, const Camera& b, double t);
 
