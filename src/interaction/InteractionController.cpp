@@ -2028,8 +2028,15 @@ RenderScene InteractionController::renderScene() const
 RenderGrid InteractionController::groundGrid() const
 {
     RenderGrid grid;
-    // Lines spaced for the current zoom, around the target.
-    const double minor = snapIncrement(camera_.pixelSize(camera_.target), 14.0);
+    // Lines spaced for the current zoom, around the target: at the ground
+    // below it (in perspective the target can sit on a tall part's top,
+    // nearer than the ground), unless that point is not in front of the eye.
+    const Vec3 below{camera_.target.x, camera_.target.y, 0};
+    const Vec3 scaleAt = camera_.projection == Camera::Projection::Perspective
+                                 && camera_.depthOf(below) < 0.25 * camera_.depthOf(camera_.target)
+                             ? camera_.target
+                             : below;
+    const double minor = snapIncrement(camera_.pixelSize(scaleAt), 14.0);
     grid.minorStep = minor;
     grid.majorStep = minor * 10;
     const double major = grid.majorStep;
@@ -2037,7 +2044,7 @@ RenderGrid InteractionController::groundGrid() const
     // About a view's width around the target at this zoom, and at least twice
     // as far as any corner of the visible bodies' footprint: the grid only
     // starts fading at half its radius, so the lines under a model never do.
-    const double visible = std::max(camera_.viewportSize.x, camera_.viewportSize.y) * camera_.pixelSize(camera_.target);
+    const double visible = std::max(camera_.viewportSize.x, camera_.viewportSize.y) * camera_.pixelSize(scaleAt);
     double radius = std::clamp(visible, 10 * minor, 150 * minor);
     if (visibleBox_.valid) {
         for (const double x : {visibleBox_.min.x, visibleBox_.max.x})

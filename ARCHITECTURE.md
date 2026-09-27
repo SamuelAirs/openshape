@@ -667,8 +667,9 @@ screen-space derivatives), fading out between half the grid's radius and
 the radius, with distance from the eye in perspective (the far side, towards
 the horizon, first), where neighbouring lines come closer than ~10 px (a
 receding plane: no moire) and when the plane is seen nearly edge-on. The
-interaction layer picks the spacing (`snapIncrement` for ~14 px at the
-target, as before), the center (on a major line near the target) and the
+interaction layer picks the spacing (`snapIncrement` for ~14 px on the
+ground below the target: in perspective the target can sit on a tall part's
+top), the center (on a major line near the target) and the
 radius (`InteractionController::groundGrid`: about a view's width around the
 target, at least twice the distance to the visible bodies' farthest
 footprint corner, so the lines under a model never fade). The axes are
