@@ -247,6 +247,8 @@ public:
     double rotationAngle = 0; // radians
 
     geom::RigidMotion motion() const;
+    // The step that moves a body by `m` (a rotation when m.angle is not 0).
+    void setMotion(const geom::RigidMotion& m);
 
     FeatureKind kind() const override { return FeatureKind::Move; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MoveFeature(*this)); }
@@ -291,11 +293,14 @@ public:
 
 // Keeps the body and adds its mirror image across a plane, joined into one.
 // The plane is stored as geometry (from a picked face or an origin plane).
+// With keepOriginal off the body becomes its mirror image instead: the last
+// step of an independent copy made by Mirror as a separate body.
 class MirrorFeature final : public Feature {
 public:
     using Feature::Feature;
     Vec3 planeOrigin;
     Vec3 planeNormal{1, 0, 0};
+    bool keepOriginal = true; // files without the field: joined
 
     FeatureKind kind() const override { return FeatureKind::Mirror; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new MirrorFeature(*this)); }
@@ -360,7 +365,9 @@ public:
 // The first step of a body split off another: piece `piece` of the source
 // body's shape just before its Split step (`splitFeature`). Follows every
 // upstream edit of the source; fails with a clear message when the piece is
-// no longer separate or no longer exists.
+// no longer separate or no longer exists. Files only: Split into bodies now
+// makes each piece an independent copy of the source's history ending in a
+// Split step that keeps that piece (cmd::makeSplitBodyCommand).
 class SplitPieceFeature final : public Feature {
 public:
     using Feature::Feature;
@@ -380,9 +387,11 @@ public:
     void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
-// The first step of a body made by Mirror or Pattern with "Separate bodies":
-// the source body's current shape, mirrored across a plane or moved by a
-// rigid motion. It follows every change of the source body.
+// The first step of a body made by Mirror or Pattern with "Separate bodies"
+// in files from before independent copies: the source body's current shape,
+// mirrored across a plane or moved by a rigid motion. It follows every change
+// of the source body. Files only: Mirror and Pattern now make independent
+// copies (the source's history cloned, then a Mirror or Move step).
 class CopyFeature final : public Feature {
 public:
     using Feature::Feature;

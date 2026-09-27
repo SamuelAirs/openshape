@@ -406,6 +406,15 @@ geom::RigidMotion MoveFeature::motion() const
     return m;
 }
 
+void MoveFeature::setMotion(const geom::RigidMotion& m)
+{
+    translation = m.translation;
+    rotates = std::abs(m.angle) > 0;
+    rotationCenter = rotates ? m.center : Vec3{};
+    rotationAxis = rotates ? m.axis : Vec3{0, 0, 1};
+    rotationAngle = rotates ? m.angle : 0.0;
+}
+
 Result<geom::Shape> MoveFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
     const geom::RigidMotion m = motion();
@@ -563,7 +572,9 @@ Status OffsetFaceFeature::readParams(const json& in)
 
 Result<geom::Shape> MirrorFeature::compute(const geom::Shape& input, const EvalContext&) const
 {
-    return geom::mirrorJoined(input, planeOrigin, planeNormal);
+    if (keepOriginal)
+        return geom::mirrorJoined(input, planeOrigin, planeNormal);
+    return geom::mirrored(input, planeOrigin, planeNormal);
 }
 
 Status MirrorFeature::setParameter(std::string_view key, double)
@@ -573,18 +584,47 @@ Status MirrorFeature::setParameter(std::string_view key, double)
 
 void MirrorFeature::writeParams(json& out) const
 {
-    out["origin"] = vecToJson(planeOrigin);
-    out["normal"] = vecToJson(planeNormal);
+    const json plane{{"origin", vecToJson(planeOrigin)}, {"normal", vecToJson(planeNormal)}};
+    if (keepOriginal) {
+        out["origin"] = plane["origin"];
+        out["normal"] = plane["normal"];
+        return;
+    }
+    // The image alone: the plane goes under "plane", so builds that predate
+    // this mode refuse the file instead of joining the image to the body.
+    out["keepOriginal"] = false;
+    out["plane"] = plane;
 }
 
 Status MirrorFeature::readParams(const json& in)
 {
-    const auto origin = vecFromJson(in, "origin");
-    const auto normal = vecFromJson(in, "normal");
+    auto bad = [](const char* why) {
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid mirror.", std::string("Mirror: ") + why);
+    };
+    bool keep = true;
+    if (in.contains("keepOriginal")) {
+        if (!in["keepOriginal"].is_boolean())
+            return bad("keepOriginal is not a boolean");
+        keep = in["keepOriginal"].get<bool>();
+    }
+    // Joined: the plane at the top level; the image alone: under "plane" (never both).
+    if (!keep && (in.contains("origin") || in.contains("normal")))
+        return bad("image-only mirror with a top-level plane");
+    if (keep && in.contains("plane"))
+        return bad("joined mirror with a nested plane");
+    const json* source = &in;
+    if (!keep) {
+        if (!in.contains("plane") || !in["plane"].is_object())
+            return bad("image-only mirror without its plane");
+        source = &in["plane"];
+    }
+    const auto origin = vecFromJson(*source, "origin");
+    const auto normal = vecFromJson(*source, "normal");
     if (!origin || !normal || normal->length() < 1e-9)
-        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid mirror.", "Mirror: bad plane");
+        return bad("bad plane");
     planeOrigin = *origin;
     planeNormal = *normal;
+    keepOriginal = keep;
     return okStatus();
 }
 

@@ -46,13 +46,13 @@ Body* Document::bodyOfFeature(const Uuid& featureId) const
     return nullptr;
 }
 
-Body& Document::addBody(std::unique_ptr<Body> body, int index)
+Body& Document::addBody(std::unique_ptr<Body> body, int index, int computeFrom)
 {
     if (index < 0 || index > static_cast<int>(bodies_.size()))
         index = static_cast<int>(bodies_.size());
     Body& ref = *body;
     bodies_.insert(bodies_.begin() + index, std::move(body));
-    ref.recompute(0, context());
+    ref.recompute(std::max(computeFrom, 0), context());
     recomputeDependents(ref.id()); // bodies that combine with this one
     OS_LOG(Debug, Document) << "added body " << ref.id().toString() << " '" << ref.name() << "'";
     syncSketchAttachments();
@@ -143,6 +143,22 @@ Result<geom::Shape> Document::preview(const Uuid& bodyId, const Feature& feature
     if (!b)
         return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "preview: unknown body");
     return feature.compute(b->shape(), interactive);
+}
+
+std::shared_ptr<const Document> Document::snapshot() const
+{
+    auto copy = std::make_shared<Document>();
+    copy->id_ = id_;
+    copy->displayUnit_ = displayUnit_;
+    copy->bodies_.reserve(bodies_.size());
+    for (const auto& b : bodies_)
+        copy->bodies_.push_back(std::make_unique<Body>(*b));
+    copy->sketches_.reserve(sketches_.size());
+    for (const auto& s : sketches_)
+        copy->sketches_.push_back(std::make_unique<sketch::Sketch>(*s));
+    copy->sketchRevisions_ = sketchRevisions_;
+    copy->revision_ = revision_;
+    return copy;
 }
 
 sketch::Sketch* Document::sketch(const Uuid& id) const
@@ -265,6 +281,16 @@ std::vector<Uuid> Document::bodiesUsing(const Uuid& objectId) const
             out.push_back(b->id());
     }
     return out;
+}
+
+std::uint64_t Document::importedGeometryBytes() const
+{
+    std::uint64_t total = 0;
+    for (const auto& b : bodies_)
+        for (const auto& f : b->features())
+            if (const auto* imported = dynamic_cast<const ImportedFeature*>(f.get()))
+                total += imported->brepText().size();
+    return total;
 }
 
 void Document::recomputeDependents(const Uuid& objectId)

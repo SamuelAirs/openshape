@@ -11,6 +11,13 @@ UI for features that don't work yet — no buttons that lead to "TODO".
 
 - OpenCASCADE headers are included **only** in `src/geometry/`. Everything
   else uses `geom::Shape` and the `geometry/*.h` APIs.
+- Every public geometry function that reads or writes OpenCASCADE data runs
+  inside a try block that starts with `OS_KERNEL_SIGNALS_TO_EXCEPTIONS` (or
+  inside `guarded()`), or holds a `detail::KernelLock`
+  (`geometry/internal/KernelUtil.h`). The preview worker runs kernel code
+  while the GUI thread does too (ARCHITECTURE.md, "Threads"): a bare
+  `BRepGProp` or `BRepMesh` call races with it, fails at random and no test
+  catches it reliably.
 - Only `src/render`, `src/ui` and `src/app` may depend on Qt.
 - Every document mutation is a `cmd::Command` pushed on the `UndoStack`.
   Commands reference objects by UUID, never by pointer.
@@ -21,6 +28,11 @@ UI for features that don't work yet — no buttons that lead to "TODO".
 - Touch must remain a first-class input: no workflow may require hover,
   right-click, tiny targets or keyboard modifiers.
 - Imported files (projects, STEP, STL) are untrusted input.
+- Release builds decide what gets code-signed (`.github/workflows/release.yml`,
+  `scripts/windows/`, `packaging/`, `.signpath/`): they follow the code
+  signing policy in `docs/CODE_SIGNING.md` — signed files come only from CI
+  builds of this repository, other projects' binaries are never signed —
+  and the policy is updated with them.
 
 ## Code style
 
@@ -94,7 +106,20 @@ field (`-Wmissing-field-initializers`) fails CI.
 **A new operation or tool**
 1. `interaction/Operation.h/.cpp`: an `Operation` subclass (`makeFeature`,
    `title`, `valueLabel`; hooks such as `prompt()`, `neutralValue()`,
-   `labelAnchor()` as needed).
+   `labelAnchor()` as needed). Give it `clone()` (one line, like the
+   others) or its previews stay on the GUI thread; `canCommit()` uses
+   `previewUsable()` (a pending preview counts); an automatic choice made
+   from the preview needs `adoptAutomaticChoices()` and
+   `commitNeedsPreview()`. Everything its preview reads must come from the
+   operation's own members and the document passed in (a snapshot on the
+   worker), never from the controller. A setter that changes what the
+   preview computes (a mode, a count, a target) calls `setValue(value(),
+   document)` with the default `Change::Parameters`, so a result computed
+   before the change is not shown; only a pure value change (a drag step, a
+   typed value) passes `Change::ValueOnly`. A query the GUI thread makes
+   while hovering or dragging (snapping, picking, labels) must not call the
+   kernel: the kernel lock makes it wait for the worker's preview (use the
+   display mesh, the operation's own members or a memoized result).
 2. `InteractionController`: arm it in `rebuildOperation()`, offer it in
    `contextActions()`, handle its id in `triggerAction()`, and in `runTool()`
    when it belongs in the palette.

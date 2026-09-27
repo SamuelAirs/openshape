@@ -450,6 +450,60 @@ TEST(Holes, HoleFrameOfATopFaceIsWorldXY)
     EXPECT_FALSE(doc::holeFrame(plate.shape(), -1));
 }
 
+// The Hole tool snaps with the outline's boundary segments (no kernel call
+// while hovering): the same answer as the kernel's face classifier except
+// within the boundary's chord deflection of a curved edge. A plate with a
+// 20 mm hole and rounded corners (arcs outside, a circle inside).
+TEST(Holes, OutlineContainsAgreesWithTheKernel)
+{
+    HoledPlate plate(20); // 40 x 40 x 10, the hole through the middle
+    auto round = std::make_unique<doc::FilletFeature>();
+    round->size = 5;
+    for (int i = 0; i < plate.shape().edgeCount(); ++i)
+        if (const auto e = geom::edgeInfo(plate.shape(), i);
+            e && e->kind == geom::CurveKind::Line && std::abs(std::abs(e->tangent.z) - 1) < 1e-9
+            && std::abs(std::abs(e->midpoint.x) - 20) < 1e-9 && std::abs(std::abs(e->midpoint.y) - 20) < 1e-9)
+            round->edges.push_back({i, *geom::captureEdgeSignature(plate.shape(), i)});
+    ASSERT_EQ(round->edges.size(), 4u);
+    ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::AddFeatureCommand>(plate.body, std::move(round)), plate.document).ok());
+    const int top = test::faceWithNormal(plate.shape(), {0, 0, 1});
+    ASSERT_GE(top, 0);
+    const auto frame = doc::holeFrame(plate.shape(), top);
+    ASSERT_TRUE(frame);
+    const auto outline = geom::faceOutline(plate.shape(), top, frame->origin, frame->xAxis, frame->yAxis);
+    ASSERT_TRUE(outline.valid);
+    EXPECT_GT(outline.boundaryDeflection, 0.0);
+    EXPECT_LT(outline.boundaryDeflection, 1e-3);
+    EXPECT_GT(outline.boundary.size(), 4u + 4 * 8 + 32) << "curves are split into chords";
+    constexpr double kTolerance = 4e-6;
+    // How far a point on the top's plane is from the face's boundary.
+    auto boundaryDistance = [](const Vec3& p) {
+        const double qx = std::abs(p.x) - 15, qy = std::abs(p.y) - 15;
+        const double rim = std::hypot(std::max(qx, 0.0), std::max(qy, 0.0)) + std::min(std::max(qx, qy), 0.0) - 5;
+        return std::min(std::abs(rim), std::abs(std::hypot(p.x, p.y) - 10));
+    };
+    int inside = 0, disagreements = 0;
+    for (int i = 0; i <= 80; ++i)
+        for (int j = 0; j <= 80; ++j) {
+            const Vec3 p{-21 + 42.0 * i / 80 + 0.013, -21 + 42.0 * j / 80 + 0.007, 10};
+            const bool exact = geom::faceContains(plate.shape(), top, p);
+            const bool outlined = geom::outlineContains(outline, frame->toLocal(p), kTolerance);
+            inside += exact ? 1 : 0;
+            if (exact != outlined && boundaryDistance(p) > 2 * outline.boundaryDeflection)
+                ++disagreements;
+        }
+    EXPECT_GT(inside, 2000);
+    EXPECT_EQ(disagreements, 0);
+    // On a straight edge counts as on the face (the middles the tool snaps to).
+    for (const Vec3& on : {Vec3{0, -20, 10}, Vec3{20, 0, 10}, Vec3{-20, 3, 10}}) {
+        EXPECT_TRUE(geom::faceContains(plate.shape(), top, on));
+        EXPECT_TRUE(geom::outlineContains(outline, frame->toLocal(on), kTolerance));
+    }
+    EXPECT_FALSE(geom::outlineContains(outline, frame->toLocal({0, 0, 10}), kTolerance)) << "in the hole";
+    EXPECT_FALSE(geom::outlineContains(outline, frame->toLocal({19.5, 19.5, 10}), kTolerance)) << "in a rounded-off corner";
+    EXPECT_TRUE(geom::outlineContains(outline, frame->toLocal({15, 15, 10}), kTolerance));
+}
+
 // Through-all holes on a 5 mm plate: each removes pi r^2 x 5, exactly where it was placed.
 TEST(Holes, HolesThroughAPlateAtTheirPositions)
 {

@@ -8,6 +8,7 @@
 #include "document/SketchProfiles.h"
 #include "core/Log.h"
 #include "core/Units.h"
+#include "geometry/KernelSignals.h"
 #include "geometry/Modeling.h"
 #include "geometry/Text.h"
 #include "interaction/TouchWording.h"
@@ -26,6 +27,26 @@ constexpr double kMinSceneRadius = 50.0;
 bool sameHover(const sel::PickResult& a, const sel::PickResult& b)
 {
     return a.kind == b.kind && a.bodyId == b.bodyId && a.index == b.index;
+}
+
+// Whether `p` (on the sketch plane) lies in a profile region, tested on the
+// region's display mesh: hovering makes no kernel call, so it never waits
+// for the preview worker (the kernel lock) - and it is cheaper than OCCT's
+// face classifier (TD-20). Near a curved edge the mesh is off by its
+// deflection (0.1% of the region's size), far below a pointer's reach.
+bool meshContains(const geom::Mesh& mesh, const sketch::Plane& plane, const Vec3& p)
+{
+    const Vec2 q = plane.toLocal(p);
+    auto cross = [](Vec2 u, Vec2 v) { return u.x * v.y - u.y * v.x; };
+    for (std::size_t t = 0; t < mesh.triangleCount(); ++t) {
+        const Vec2 a = plane.toLocal(mesh.vertex(mesh.indices[3 * t]));
+        const Vec2 b = plane.toLocal(mesh.vertex(mesh.indices[3 * t + 1]));
+        const Vec2 c = plane.toLocal(mesh.vertex(mesh.indices[3 * t + 2]));
+        const double d1 = cross(b - a, q - a), d2 = cross(c - b, q - b), d3 = cross(a - c, q - c);
+        if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))
+            return true;
+    }
+    return false;
 }
 
 std::string surfaceName(geom::SurfaceKind kind)
@@ -57,6 +78,105 @@ InteractionController::InteractionController(doc::Document& document, cmd::UndoS
     afterDocumentEdit();
 }
 
+InteractionController::~InteractionController()
+{
+    // The worker first (it is also the last member): a running preview finishes, its result is dropped.
+    previewWorker_.reset();
+}
+
+// ---- Previews off the GUI thread ----------------------------------------------------
+
+void InteractionController::enableAsyncPreviews(std::function<void()> notify)
+{
+    geom::setInteractiveThread();
+    previewWorker_ = std::make_unique<PreviewWorker>(std::move(notify));
+    if (operation_)
+        operation_->setPreviewScheduler(this);
+}
+
+void InteractionController::disableAsyncPreviews()
+{
+    if (!previewWorker_)
+        return;
+    (void)waitForPreview();
+    if (operation_)
+        operation_->setPreviewScheduler(nullptr);
+    previewWorker_.reset();
+}
+
+bool InteractionController::deliverPreviews()
+{
+    if (!previewWorker_)
+        return false;
+    const std::uint64_t before = previewsShown_;
+    previewWorker_->deliver();
+    return previewsShown_ != before;
+}
+
+bool InteractionController::previewBusy() const
+{
+    return previewWorker_ && previewWorker_->busy();
+}
+
+bool InteractionController::waitForPreview(std::chrono::milliseconds timeout)
+{
+    if (!previewWorker_)
+        return true;
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (previewWorker_ && previewWorker_->busy()) {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (left.count() <= 0)
+            return false;
+        (void)previewWorker_->waitUntilIdle(left);
+        previewWorker_->deliver();
+    }
+    return true;
+}
+
+std::shared_ptr<const doc::Document> InteractionController::previewSnapshot(const doc::Document& document)
+{
+    // One copy per document state: a drag previews many values of one state.
+    if (!snapshot_ || snapshotOf_ != &document || snapshotRevision_ != document.revision()
+        || snapshotUndoRevision_ != undoStack_->revision()) {
+        snapshot_ = document.snapshot();
+        snapshotOf_ = &document;
+        snapshotRevision_ = document.revision();
+        snapshotUndoRevision_ = undoStack_->revision();
+    }
+    return snapshot_;
+}
+
+void InteractionController::schedulePreview(std::function<PreviewOutcome()> compute)
+{
+    if (!previewWorker_) {
+        receivePreview(compute());
+        return;
+    }
+    previewWorker_->submit([this, compute = std::move(compute)]() -> PreviewWorker::Delivery {
+        auto outcome = std::make_shared<const PreviewOutcome>(compute());
+        // Logged as "[worker] preview took" (off the GUI thread; scripts/dev/watch_log.py tells them apart).
+        OS_LOG(Debug, Performance) << "preview took " << outcome->milliseconds << " ms";
+        return [this, outcome] { receivePreview(*outcome); };
+    });
+}
+
+void InteractionController::dropScheduledPreview()
+{
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
+}
+
+void InteractionController::receivePreview(const PreviewOutcome& outcome)
+{
+    if (!operation_ || !operation_->acceptPreview(outcome)) {
+        ++previewsDropped_;
+        return;
+    }
+    ++previewsShown_;
+    notifyState();
+    notifyView();
+}
+
 void InteractionController::setDocument(doc::Document& document, cmd::UndoStack& undoStack)
 {
     document_ = &document;
@@ -65,6 +185,10 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
     cameraBeforeSketch_.reset();
     selection_.clear();
     operation_.reset();
+    snapshot_.reset();
+    snapshotOf_ = nullptr;
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
     hover_ = {};
     drag_ = {};
     historyHighlight_.reset();
@@ -339,7 +463,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
             const double degrees = drag_.ringHandle.dragTo(camera_, event.position) * 180.0 / kPi;
             const double value = snapValue(degrees, event.modifiers.alt ? 1.0 : 15.0);
             if (value != operation_->value()) {
-                operation_->setValue(value, *document_);
+                operation_->setValue(value, *document_, Operation::Change::ValueOnly);
                 notifyState();
             }
         } else if (operation_) {
@@ -348,7 +472,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
             if (!event.modifiers.alt)
                 value = snapValue(value, snapIncrement(camera_.pixelSize(operation_->anchor())));
             if (value != operation_->value()) {
-                operation_->setValue(value, *document_);
+                operation_->setValue(value, *document_, Operation::Change::ValueOnly);
                 notifyState();
             }
         }
@@ -716,10 +840,13 @@ void InteractionController::click(const PointerEvent& event)
     if (operation_ && operation_->canCommit()) {
         // Clicking anywhere else accepts the pending operation (direct-manipulation
         // convention); then the click selects against the updated geometry.
-        if (!commitOperation())
+        const ApplyResult applied = applyBeforeSelecting();
+        if (applied == ApplyResult::Refused)
             return;
-        hit = pickAt(event.position, profile);
-        additive = false;
+        if (applied == ApplyResult::Applied) {
+            hit = pickAt(event.position, profile);
+            additive = false;
+        }
     }
 
     if (!hit.hit()) {
@@ -761,6 +888,12 @@ void InteractionController::click(const PointerEvent& event)
 void InteractionController::rebuildOperation()
 {
     operation_.reset();
+    // A preview of the previous operation that has not started is of no use.
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
+    // The new operation computes its previews (also one while it is created)
+    // on the worker when previews are asynchronous.
+    const PreviewSchedulerScope scheduler(previewWorker_ ? static_cast<PreviewScheduler*>(this) : nullptr);
     if (selection_.empty()) {
         faceOperationKind_ = doc::FeatureKind::PushPull;
         if (edgeOperationKind_ == doc::FeatureKind::Hole)
@@ -861,16 +994,32 @@ std::string InteractionController::setValueText(const std::string& text)
     const auto first = text.find_first_not_of(" \t");
     if (const auto base = operation_->relativeBase(); base && first != std::string::npos && (text[first] == '+' || text[first] == '-'))
         value += *base;
-    if (operation_->isAngle() && value > 360.0 + 1e-9)
+    // (The Text tool's angle may be negative: it checks its own range.)
+    if (operation_->isAngle() && value > 360.0 + 1e-9 && !dynamic_cast<const TextOperation*>(operation_.get()))
         return "The angle must be between 0° and 360°.";
     if (!operation_->allowsNegative() && value <= 0)
         return operation_->valueLabel() + " must be greater than zero.";
     if (auto* words = dynamic_cast<TextOperation*>(operation_.get()))
         words->markEdited(); // a value typed, even the one it had
-    operation_->setValue(value, *document_);
+    // The same value again (Enter after typing it) keeps the preview that is
+    // shown or still computing, and its verdict.
+    const bool known = value == operation_->value()
+                    && (operation_->previewPending() || operation_->hasPreview() || !operation_->error().empty());
+    if (!known)
+        operation_->setValue(value, *document_, Operation::Change::ValueOnly);
     notifyState();
     notifyView();
-    return operation_->error();
+    // A preview still computing has no verdict yet (it arrives with a state change).
+    return operation_->previewPending() ? std::string() : operation_->error();
+}
+
+std::string InteractionController::confirmValueText(const std::string& text)
+{
+    const std::string error = setValueText(text);
+    if (!error.empty() || !operation_ || !operation_->previewPending())
+        return error;
+    (void)waitForPreview();
+    return operation_ ? operation_->error() : std::string();
 }
 
 std::string InteractionController::operationValueText() const
@@ -902,7 +1051,8 @@ std::string InteractionController::setOperationText(const std::string& value)
     textSettings_ = text->settings();
     notifyState();
     notifyView();
-    return text->error();
+    // A preview still computing has no verdict yet (it arrives with a state change).
+    return text->previewPending() ? std::string() : text->error();
 }
 
 std::optional<Vec2> InteractionController::valueLabelPosition() const
@@ -950,6 +1100,12 @@ Status InteractionController::commitOperation()
 {
     if (!operation_)
         return Status::failure(ErrorCode::InvalidArgument, "Nothing to apply.", "commit without operation");
+    // The command computes the step again, so a pending preview is not waited
+    // for - unless an automatic choice (join or new body) depends on it.
+    if (operation_->previewPending() && (operation_->commitNeedsPreview() || !operation_->canCommit()))
+        (void)waitForPreview();
+    if (!operation_)
+        return Status::failure(ErrorCode::InvalidArgument, "Nothing to apply.", "commit without operation");
     if (!operation_->canCommit()) {
         const auto* words = dynamic_cast<const TextOperation*>(operation_.get());
         const std::string text = !operation_->error().empty()   ? operation_->error()
@@ -962,23 +1118,57 @@ Status InteractionController::commitOperation()
     const doc::FeatureKind kind = operation_->featureKind();
     const bool clearSelection = kind != doc::FeatureKind::PushPull && kind != doc::FeatureKind::Move
                              && kind != doc::FeatureKind::Mirror && kind != doc::FeatureKind::Pattern;
-    if (dynamic_cast<const AlignOperation*>(operation_.get()))
-        alignRequested_ = false; // done: the source face/edge offers its usual tools again
-    if (kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern)
-        bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    // One-shot tool resets, applied only once the command is accepted: a
+    // refused apply (possible while a preview is still pending) keeps the
+    // tool - Align, Pattern, Mirror - for the next rebuild.
+    const bool isAlign = dynamic_cast<const AlignOperation*>(operation_.get()) != nullptr;
+    const bool isOneShotBodyTool = kind == doc::FeatureKind::Mirror || kind == doc::FeatureKind::Pattern;
+    std::optional<HoleSettings> appliedHoleSettings;
     if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get()))
-        holeSettings_ = hole->settings();
+        appliedHoleSettings = hole->settings();
+    std::optional<TextSettings> appliedTextSettings;
     if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get()))
-        textSettings_ = text->settings();
+        appliedTextSettings = text->settings();
+    // Copies made as separate bodies: say so (and why, when it was not asked for).
+    std::string done;
+    if (const auto* mirror = dynamic_cast<const MirrorOperation*>(operation_.get()); mirror && mirror->separate())
+        done = mirror->separateIsAutomatic() ? "Mirrored as a separate body: the image does not touch the original."
+                                             : "Mirrored as a separate body.";
+    if (const auto* pattern = dynamic_cast<const PatternOperation*>(operation_.get()); pattern && pattern->separate()) {
+        const int copies = pattern->count() - 1;
+        const char* why = copies == 1 ? ": the copy does not touch the original." : ": the copies do not touch the original.";
+        done = "Patterned as " + std::to_string(copies) + (copies == 1 ? " separate body" : " separate bodies")
+             + (pattern->separateIsAutomatic() ? why : ".");
+    }
     const Uuid target = operation_->bodyId();
     const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
     const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
+    // A preview still waiting to start would only delay the command's recompute.
+    if (previewWorker_)
+        previewWorker_->dropWaiting();
     Status status = undoStack_->push(operation_->makeCommand(*document_), *document_);
     if (!status) {
+        // Refused before its preview came back (the waiting job was dropped
+        // above): the refusal is the value's verdict, as a refused preview's
+        // would be, and no preview of another value stays shown.
+        if (operation_->previewPending())
+            operation_->refusePendingValue(status.userMessage());
         message(status.userMessage());
+        notifyState();
+        notifyView();
         return status;
     }
+    if (isAlign)
+        alignRequested_ = false; // done: the source face/edge offers its usual tools again
+    if (isOneShotBodyTool)
+        bodyTool_ = BodyTool::Move; // one-shot: the body stays selected with plain arrows
+    if (appliedHoleSettings)
+        holeSettings_ = *appliedHoleSettings;
+    if (appliedTextSettings)
+        textSettings_ = *appliedTextSettings;
     operation_.reset();
+    if (!done.empty())
+        message(done);
     suggestSplit(target, piecesBefore);
     // Edges consumed by a fillet/chamfer no longer exist; a face that was
     // pushed still does and stays selected for the next push.
@@ -986,6 +1176,35 @@ Status InteractionController::commitOperation()
         selection_.clear();
     afterDocumentEdit();
     return status;
+}
+
+Status InteractionController::applyPendingValue(const char* action)
+{
+    if (operation_ && operation_->canCommit() && applyBeforeSelecting() == ApplyResult::Refused)
+        return Status::failure(ErrorCode::InvalidArgument,
+                               operation_ && !operation_->error().empty() ? operation_->error() : "The value could not be applied.",
+                               std::string(action) + ": the pending operation was refused");
+    return okStatus();
+}
+
+InteractionController::ApplyResult InteractionController::applyBeforeSelecting()
+{
+    // A finished preview's verdict first (its delivery may still be queued).
+    if (previewWorker_)
+        (void)deliverPreviews();
+    if (!operation_ || !operation_->canCommit())
+        return ApplyResult::Dropped;
+    // Words remembered from the last use, untouched in this one, are applied
+    // only on purpose (Enter, Apply), not by picking something else.
+    if (const auto* text = dynamic_cast<const TextOperation*>(operation_.get()); text && !text->edited())
+        return ApplyResult::Dropped;
+    // Without a verdict yet (the preview still computes) the command decides.
+    // Refused, the click goes on, as it would have with the refusal shown:
+    // a click never applies a refused value, it selects.
+    const bool verdictKnown = !operation_->previewPending();
+    if (commitOperation())
+        return ApplyResult::Applied;
+    return verdictKnown ? ApplyResult::Refused : ApplyResult::Dropped;
 }
 
 void InteractionController::suggestSplit(const Uuid& bodyId, int piecesBefore)
@@ -1101,9 +1320,8 @@ Status InteractionController::importBodies(const std::vector<geom::NamedShape>& 
     if (session_)
         finishSketch();
     // Like clicking elsewhere: a pending value is applied first.
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (Status status = applyPendingValue("importBodies"); !status)
+        return status;
     std::vector<std::string> taken;
     for (const auto& body : document_->bodies())
         taken.push_back(body->name());
@@ -1420,11 +1638,14 @@ std::vector<ContextAction> InteractionController::contextActions() const
                        || operation_->featureKind() == doc::FeatureKind::Shell
                        || operation_->featureKind() == doc::FeatureKind::OffsetFace)) {
         const bool single = selection_.size() == 1;
-        bool planar = false;
-        if (single)
+        SelectionMemo& memo = selectionMemo();
+        if (single && !memo.planarFace) {
+            memo.planarFace = false;
             if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
                 if (const auto info = geom::faceInfo(body->shape(), selection_.items().front().index))
-                    planar = info->isPlanar();
+                    memo.planarFace = info->isPlanar();
+        }
+        const bool planar = single && *memo.planarFace;
         if (single && planar)
             actions.push_back({"pushpull", "Push/Pull", operation_->featureKind() == doc::FeatureKind::PushPull});
         actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
@@ -1443,10 +1664,14 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
         // A hole's rim: offer the heat-set insert helper.
-        bool rim = false;
-        if (selection_.size() == 1)
-            if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
-                rim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
+        SelectionMemo& memo = selectionMemo();
+        if (!memo.holeRim) {
+            memo.holeRim = false;
+            if (selection_.size() == 1)
+                if (const doc::Body* body = document_->body(selection_.items().front().bodyId))
+                    memo.holeRim = doc::holePlacement(body->shape(), selection_.items().front().index).has_value();
+        }
+        const bool rim = *memo.holeRim;
         if (rim) {
             const bool hole = edgeOperationKind_ == doc::FeatureKind::Hole;
             actions.push_back({"insert", "Heat-set insert", hole && rimHoleKind_ == doc::HoleKind::Plain});
@@ -1842,7 +2067,32 @@ Status InteractionController::triggerAction(const std::string& id)
 
 // ---- State -----------------------------------------------------------------------
 
+InteractionController::SelectionMemo& InteractionController::selectionMemo() const
+{
+    // What the cached facts depend on: the items, their bodies' shapes (or
+    // sketches), the display unit.
+    std::string key = std::to_string(static_cast<int>(document_->displayUnit()));
+    for (const auto& item : selection_.items()) {
+        key += '|' + std::to_string(static_cast<int>(item.kind)) + ':' + item.bodyId.toString() + ':' + std::to_string(item.index);
+        const doc::Body* body = document_->body(item.bodyId);
+        key += ':' + std::to_string(body ? body->shapeRevision() : document_->sketchRevision(item.bodyId));
+        if (body)
+            key += ':' + body->name(); // a summary of several bodies names them
+    }
+    if (key != selectionMemo_.key)
+        selectionMemo_ = SelectionMemo{std::move(key), std::nullopt, std::nullopt, std::nullopt};
+    return selectionMemo_;
+}
+
 std::string InteractionController::selectionSummary() const
+{
+    SelectionMemo& memo = selectionMemo();
+    if (!memo.summary)
+        memo.summary = computeSelectionSummary();
+    return *memo.summary;
+}
+
+std::string InteractionController::computeSelectionSummary() const
 {
     if (selection_.empty())
         return {};
@@ -1939,7 +2189,8 @@ RenderScene InteractionController::renderScene() const
             continue;
         RenderBody rb;
         rb.id = body->id();
-        if (operation_ && !operation_->previewBody().isNil() && operation_->previewBody() == body->id() && operation_->hasPreview()) {
+        if (operation_ && operation_->hasPreview() && !operation_->previewMeshBody().isNil()
+            && operation_->previewMeshBody() == body->id()) {
             rb.mesh = operation_->previewMesh();
             rb.meshKey = operation_->previewKey();
             rb.isPreview = true;
@@ -1978,7 +2229,7 @@ RenderScene InteractionController::renderScene() const
     }
 
     // A new-body preview has no document body to stand in for.
-    if (operation_ && operation_->previewBody().isNil() && operation_->hasPreview()) {
+    if (operation_ && operation_->hasPreview() && operation_->previewMeshBody().isNil()) {
         RenderBody rb;
         rb.mesh = operation_->previewMesh();
         rb.meshKey = operation_->previewKey();
@@ -2403,8 +2654,8 @@ sel::PickResult InteractionController::pickProfile(Vec2 screen) const
         const double depth = camera_.depthOf(p);
         if (best.hit() && depth >= best.depth)
             continue;
-        for (std::size_t i = 0; i < entry->regions.size(); ++i) {
-            if (geom::regionContains(entry->regions[i].face, p)) {
+        for (std::size_t i = 0; i < entry->regions.size() && i < entry->meshes.size(); ++i) {
+            if (entry->meshes[i] && meshContains(*entry->meshes[i], sk->plane(), p)) {
                 best.kind = sel::PickKind::Profile;
                 best.bodyId = sk->id();
                 best.index = static_cast<int>(i);
@@ -2441,7 +2692,7 @@ std::string featureTitle(const doc::Feature& f)
         case doc::HoleKind::Countersink: return "Countersink";
         }
         return "Hole";
-    case doc::FeatureKind::Mirror: return "Mirror";
+    case doc::FeatureKind::Mirror: return static_cast<const doc::MirrorFeature&>(f).keepOriginal ? "Mirror" : "Mirror image";
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
     case doc::FeatureKind::OffsetFace: return "Offset face";
@@ -2878,9 +3129,8 @@ Status InteractionController::duplicateBody(const Uuid& bodyId)
     if (!document_->body(bodyId))
         return Status::failure(ErrorCode::InvalidReference, "That body no longer exists.", "duplicate: unknown body");
     // Like clicking elsewhere: a pending value is applied first.
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (Status status = applyPendingValue("duplicateBody"); !status)
+        return status;
     auto command = std::make_unique<cmd::DuplicateBodyCommand>(bodyId);
     const Uuid copy = command->copyId();
     Status status = undoStack_->push(std::move(command), *document_);
@@ -2905,23 +3155,23 @@ Status InteractionController::splitBody(const Uuid& bodyId)
         message("Finish the sketch first.");
         return Status::failure(ErrorCode::InvalidArgument, "Finish the sketch first.", "split in sketch mode");
     }
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
-    auto command = cmd::makeSplitBodyCommand(*document_, bodyId);
+    if (Status status = applyPendingValue("splitBody"); !status)
+        return status;
+    int pieces = 0;
+    auto command = cmd::makeSplitBodyCommand(*document_, bodyId, &pieces);
     if (!command) {
         message(command.userMessage());
         return Status::failureFrom(command);
     }
-    const std::size_t before = document_->bodies().size();
     Status status = undoStack_->push(std::move(command.value()), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
     }
     operation_.reset();
-    const std::size_t made = document_->bodies().size() - before;
-    message(made == 1 ? std::string("Split into 2 bodies.") : "Split into " + std::to_string(made + 1) + " bodies.");
+    // (Counted from the pieces: each new body may bring hidden copies of the
+    // tools its history consumed.)
+    message("Split into " + std::to_string(pieces) + " bodies.");
     afterDocumentEdit();
     return status;
 }
@@ -2989,9 +3239,8 @@ Status InteractionController::selectBody(const Uuid& bodyId, BodyPick how)
                        [&](const sel::SelectionItem& selected) { return selected.bodyId == bodyId; }))
         return okStatus();
     // Like clicking elsewhere in the view: a pending value is applied first.
-    if (operation_ && operation_->canCommit())
-        if (Status status = commitOperation(); !status)
-            return status;
+    if (Status status = applyPendingValue("selectBody"); !status)
+        return status;
     auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, bodyId, -1);
     if (!item)
         return Status::failure(ErrorCode::InvalidReference, "That body has no shape to select.", "selectBody: no item");

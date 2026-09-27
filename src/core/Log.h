@@ -41,6 +41,10 @@ bool isLogEnabled(LogLevel level);
 
 void log(LogLevel level, LogCategory category, const std::string& message);
 
+// Put in front of every message logged by the calling thread (e.g. "[worker] "
+// on the preview worker), so timings off the GUI thread are told apart.
+void setThreadLogPrefix(std::string prefix);
+
 // Stream-style helper: OS_LOG(Info, Geometry) << "made box " << dx;
 class LogLine {
 public:

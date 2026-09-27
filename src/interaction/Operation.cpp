@@ -12,7 +12,10 @@
 #include "geometry/Text.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <exception>
 
 namespace os::interact {
 
@@ -24,35 +27,172 @@ std::uint64_t nextPreviewKey()
     static std::uint64_t counter = 1ull << 62;
     return ++counter;
 }
+
+// Preview requests, numbered across all operations (0 = none).
+std::atomic<std::uint64_t> g_previewSerial{0};
+std::uint64_t nextPreviewSerial()
+{
+    return ++g_previewSerial;
+}
+
+std::atomic<std::uint64_t> g_operationInstances{0};
+thread_local PreviewScheduler* t_creationScheduler = nullptr;
 } // namespace
 
-void Operation::setValue(double value, const doc::Document& document)
+Operation::Operation(Uuid bodyId, LinearManipulator manipulator)
+    : bodyId_(bodyId), manipulator_(std::move(manipulator)), instance_(++g_operationInstances),
+      scheduler_(t_creationScheduler), floorSerial_(g_previewSerial.load() + 1)
+{
+}
+
+PreviewSchedulerScope::PreviewSchedulerScope(PreviewScheduler* scheduler) : previous_(t_creationScheduler)
+{
+    t_creationScheduler = scheduler;
+}
+
+PreviewSchedulerScope::~PreviewSchedulerScope()
+{
+    t_creationScheduler = previous_;
+}
+
+void Operation::setValue(double value, const doc::Document& document, Change change)
 {
     if (!allowsNegative() && value < 0)
         value = 0;
     value_ = value;
-    error_.clear();
     if (std::string why = checkValue(value); !why.empty()) {
-        previewMesh_.reset();
+        dropPreviews();
         error_ = std::move(why);
         return;
     }
     if (std::abs(value - neutralValue()) < 1e-12 && handleCount() == 1 && neutralIsIdentity()) {
-        previewMesh_.reset();
+        dropPreviews();
+        error_.clear();
         return;
     }
-    resetAutomaticChoices();
-    auto result = computePreview(value, document);
-    if (result ? reconsider(result.value(), document) : reconsiderRefusal(result.error()))
-        result = computePreview(value, document);
-    if (!result) {
-        previewMesh_.reset();
-        error_ = result.userMessage();
-        OS_LOG(Debug, Interaction) << title() << " preview failed at " << value << ": " << result.developerMessage();
-        return;
+    if (scheduler_) {
+        if (std::shared_ptr<Operation> copy = clone()) {
+            // The worker gets everything it reads: this operation as it is now
+            // and the document as it is now. The shown preview stays until
+            // the result arrives (acceptPreview).
+            copy->scheduler_ = nullptr;
+            std::shared_ptr<const doc::Document> snapshot = scheduler_->previewSnapshot(document);
+            const std::uint64_t serial = nextPreviewSerial();
+            pendingSerial_ = serial;
+            // Earlier requests computed other parameters: none of them may
+            // show any more (the shown preview stays until this one arrives).
+            if (change == Change::Parameters)
+                floorSerial_ = serial;
+            scheduler_->schedulePreview([copy, snapshot, value, serial]() {
+                PreviewOutcome outcome = copy->computeOutcome(value, *snapshot);
+                outcome.serial = serial;
+                outcome.computedBy = copy;
+                return outcome;
+            });
+            return;
+        }
     }
-    previewMesh_ = std::make_shared<const geom::Mesh>(geom::tessellate(result.value()));
-    previewKey_ = nextPreviewKey();
+    error_.clear();
+    PreviewOutcome outcome = computeOutcome(value, document);
+    // Anything still coming from the worker is older than this.
+    outcome.serial = nextPreviewSerial();
+    if (pendingSerial_ != 0 && scheduler_)
+        scheduler_->dropScheduledPreview();
+    pendingSerial_ = 0;
+    floorSerial_ = outcome.serial;
+    resolvedSerial_ = outcome.serial;
+    if (!outcome.error.empty())
+        OS_LOG(Debug, Interaction) << title() << " preview failed at " << value << ": " << outcome.developerMessage;
+    error_ = outcome.error;
+    showOutcome(outcome);
+}
+
+PreviewOutcome Operation::computeOutcome(double value, const doc::Document& document)
+{
+    const auto start = std::chrono::steady_clock::now();
+    PreviewOutcome outcome;
+    outcome.operation = instance_;
+    outcome.value = value;
+    try {
+        resetAutomaticChoices();
+        auto result = computePreview(value, document);
+        if (result ? reconsider(result.value(), document) : reconsiderRefusal(result.error()))
+            result = computePreview(value, document);
+        outcome.meshBody = previewBody();
+        if (!result) {
+            outcome.error = result.userMessage();
+            outcome.developerMessage = result.developerMessage();
+        } else {
+            // Isolated: the result shares faces and edges with the document's
+            // body, which must not collect this preview's mesh.
+            geom::TessellationParams params;
+            params.isolated = true;
+            outcome.mesh = std::make_shared<const geom::Mesh>(geom::tessellate(result.value(), params));
+        }
+    } catch (const std::exception& e) {
+        // Kernel failures come back as Results; this would be a bug (or memory).
+        outcome.mesh.reset();
+        outcome.error = "Unable to preview this.";
+        outcome.developerMessage = std::string("preview threw: ") + e.what();
+        OS_LOG(Error, Interaction) << title() << " " << outcome.developerMessage;
+    } catch (...) {
+        // E.g. a kernel exception outside guarded(). Still an outcome: the
+        // operation awaits one for every request it made.
+        outcome.mesh.reset();
+        outcome.error = "Unable to preview this.";
+        outcome.developerMessage = "preview threw an unknown exception";
+        OS_LOG(Error, Interaction) << title() << " " << outcome.developerMessage;
+    }
+    outcome.milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    return outcome;
+}
+
+void Operation::showOutcome(const PreviewOutcome& outcome)
+{
+    previewMesh_ = outcome.mesh;
+    previewMeshBody_ = outcome.meshBody;
+    if (previewMesh_)
+        previewKey_ = nextPreviewKey();
+}
+
+bool Operation::acceptPreview(const PreviewOutcome& outcome)
+{
+    if (outcome.operation != instance_ || outcome.serial < floorSerial_ || outcome.serial <= resolvedSerial_)
+        return false;
+    const bool latest = outcome.serial == pendingSerial_;
+    if (!latest && (!outcome.mesh || pendingSerial_ == 0))
+        return false; // a value the user has left: its failure is no news
+    resolvedSerial_ = outcome.serial;
+    if (latest) {
+        pendingSerial_ = 0;
+        if (outcome.computedBy)
+            adoptAutomaticChoices(*outcome.computedBy);
+        error_ = outcome.error;
+        if (!outcome.error.empty())
+            OS_LOG(Debug, Interaction) << title() << " preview failed at " << outcome.value << ": "
+                                       << outcome.developerMessage;
+    } else {
+        error_.clear(); // an older value that works, shown while the newest computes
+    }
+    showOutcome(outcome);
+    return true;
+}
+
+void Operation::refusePendingValue(std::string message)
+{
+    // As a synchronous preview's refusal: the message, and no preview of
+    // another value left on screen.
+    dropPreviews();
+    error_ = std::move(message);
+}
+
+void Operation::dropPreviews()
+{
+    previewMesh_.reset();
+    floorSerial_ = nextPreviewSerial();
+    if (pendingSerial_ != 0 && scheduler_)
+        scheduler_->dropScheduledPreview();
+    pendingSerial_ = 0;
 }
 
 Result<geom::Shape> Operation::computePreview(double value, const doc::Document& document) const
@@ -72,20 +212,26 @@ namespace {
 // recompute and a mesh each); a joined pattern has no such limit.
 constexpr std::size_t kMaxSeparateCopies = 100;
 
-// Separate bodies: the source and its copies side by side, not fused.
+// Separate bodies: the source and its copies side by side, not fused. Each
+// copy is the source with its last step (`steps`: the Mirror or Move step the
+// copy's own history ends with) applied.
 Result<geom::Shape> previewCopies(const doc::Document& document, const Uuid& source,
-                                  const std::vector<std::unique_ptr<doc::CopyFeature>>& copies)
+                                  const std::vector<std::unique_ptr<doc::Feature>>& steps)
 {
-    if (copies.size() > kMaxSeparateCopies)
+    if (steps.size() > kMaxSeparateCopies)
         return Result<geom::Shape>::failure(ErrorCode::InvalidArgument,
                                             "Separate bodies work for up to " + std::to_string(kMaxSeparateCopies) + " copies.",
                                             "separate copies: too many");
     const doc::Body* body = document.body(source);
     if (!body || body->shape().isNull())
         return Result<geom::Shape>::failure(ErrorCode::InvalidReference, "The body no longer exists.", "previewCopies: body");
+    // Each copy stores the body's imported geometry again.
+    if (Status fits = cmd::checkImportedCopiesFit(document, source, steps.size()); !fits)
+        return Result<geom::Shape>::failure(fits.error(), fits.userMessage() + " Turn off Separate bodies to join them.",
+                                            fits.developerMessage());
     std::vector<geom::Shape> shapes{body->shape()};
-    for (const auto& copy : copies) {
-        auto shape = document.preview(Uuid(), *copy);
+    for (const auto& step : steps) {
+        auto shape = document.preview(source, *step);
         if (!shape)
             return shape;
         shapes.push_back(shape.value());
@@ -93,15 +239,30 @@ Result<geom::Shape> previewCopies(const doc::Document& document, const Uuid& sou
     return geom::gatherSolids(shapes);
 }
 
-// One new body per copy ("Body 2", "Body 3", ...), as one undo step.
-std::unique_ptr<cmd::Command> createCopyBodies(const doc::Document& document,
-                                               std::vector<std::unique_ptr<doc::CopyFeature>> copies, const char* label)
+// One new, independent body per copy ("Body 2", "Body 3", ...), as one undo step.
+std::unique_ptr<cmd::Command> createCopyBodies(const doc::Document& document, const Uuid& source,
+                                               std::vector<std::unique_ptr<doc::Feature>> steps, const char* label)
 {
-    const std::vector<std::string> names = document.nextBodyNames(copies.size());
-    std::vector<std::unique_ptr<cmd::Command>> steps;
-    for (std::size_t i = 0; i < copies.size(); ++i)
-        steps.push_back(std::make_unique<cmd::CreateBodyCommand>(names[i], std::move(copies[i])));
-    return std::make_unique<cmd::CompositeCommand>(label, std::move(steps));
+    const std::vector<std::string> names = document.nextBodyNames(steps.size());
+    return cmd::makeCopyBodiesCommand(source, std::move(steps), names, label);
+}
+
+// A join whose result has more separate pieces than the body had did not
+// touch it: the user meant a new body (as Shapr3D does).
+bool joinMissedBody(const geom::Shape& result, const doc::Document& document, const std::optional<Uuid>& host)
+{
+    const doc::Body* body = host ? document.body(*host) : nullptr;
+    return body && result.solidCount() > std::max(body->shape().solidCount(), 1);
+}
+
+// Copies (a mirror image, pattern copies) of which none touches the body or
+// another copy: the joined result has (copies + 1) times the body's pieces.
+// Then the user meant separate bodies (as Shapr3D does). One that touches a
+// piece of a body in several pieces joins it: the result has fewer.
+bool copiesMissedBody(const geom::Shape& result, const doc::Document& document, const Uuid& host, int copies)
+{
+    const doc::Body* body = document.body(host);
+    return body && copies > 0 && result.solidCount() == (copies + 1) * std::max(body->shape().solidCount(), 1);
 }
 
 } // namespace
@@ -288,7 +449,7 @@ Vec3 MoveOperation::translation() const
 
 bool MoveOperation::canCommit() const
 {
-    return translation().length() > 1e-9 && error().empty() && hasPreview();
+    return translation().length() > 1e-9 && previewUsable();
 }
 
 LinearManipulator MoveOperation::handle(int index) const
@@ -413,33 +574,43 @@ std::unique_ptr<doc::Feature> MirrorOperation::makeFeature(double) const
 
 void MirrorOperation::setSeparate(bool separate, const doc::Document& document)
 {
-    separate_ = separate;
+    separateChoice_ = separate;
     if (plane_)
         setValue(value(), document);
 }
 
-std::vector<std::unique_ptr<doc::CopyFeature>> MirrorOperation::makeCopies() const
+std::vector<std::unique_ptr<doc::Feature>> MirrorOperation::makeCopySteps() const
 {
-    std::vector<std::unique_ptr<doc::CopyFeature>> copies;
+    std::vector<std::unique_ptr<doc::Feature>> steps;
     if (!plane_)
-        return copies;
-    auto copy = std::make_unique<doc::CopyFeature>();
-    copy->sourceBody = bodyId();
-    copy->mirror = true;
-    copy->planeOrigin = plane_->origin;
-    copy->planeNormal = plane_->normal;
-    copies.push_back(std::move(copy));
-    return copies;
+        return steps;
+    auto image = std::make_unique<doc::MirrorFeature>();
+    image->planeOrigin = plane_->origin;
+    image->planeNormal = plane_->normal;
+    image->keepOriginal = false;
+    steps.push_back(std::move(image));
+    return steps;
 }
 
 Result<geom::Shape> MirrorOperation::computePreview(double value, const doc::Document& document) const
 {
-    return separate_ ? previewCopies(document, bodyId(), makeCopies()) : Operation::computePreview(value, document);
+    return separate() ? previewCopies(document, bodyId(), makeCopySteps()) : Operation::computePreview(value, document);
+}
+
+bool MirrorOperation::reconsider(const geom::Shape& result, const doc::Document& document)
+{
+    // The joined image would not touch the body: it becomes its own body
+    // (unless its imported geometry would not fit in the project).
+    if (separateChoice_ || autoSeparate_ || !copiesMissedBody(result, document, bodyId(), 1)
+        || !cmd::checkImportedCopiesFit(document, bodyId(), 1))
+        return false;
+    autoSeparate_ = true;
+    return true;
 }
 
 std::unique_ptr<cmd::Command> MirrorOperation::makeCommand(const doc::Document& document) const
 {
-    return separate_ ? createCopyBodies(document, makeCopies(), "Mirror") : Operation::makeCommand(document);
+    return separate() ? createCopyBodies(document, bodyId(), makeCopySteps(), "Mirror") : Operation::makeCommand(document);
 }
 
 // ---- Pattern -----------------------------------------------------------------------
@@ -548,31 +719,45 @@ std::unique_ptr<doc::Feature> PatternOperation::makeFeature(double value) const
 
 void PatternOperation::setSeparate(bool separate, const doc::Document& document)
 {
-    separate_ = separate;
+    separateChoice_ = separate;
     setValue(value(), document);
 }
 
-std::vector<std::unique_ptr<doc::CopyFeature>> PatternOperation::makeCopies(double value) const
+std::vector<std::unique_ptr<doc::Feature>> PatternOperation::makeCopySteps(double value) const
 {
-    std::vector<std::unique_ptr<doc::CopyFeature>> copies;
+    std::vector<std::unique_ptr<doc::Feature>> steps;
     const auto feature = makeFeature(value);
     for (const geom::RigidMotion& motion : static_cast<const doc::PatternFeature&>(*feature).copies()) {
-        auto copy = std::make_unique<doc::CopyFeature>();
-        copy->sourceBody = bodyId();
-        copy->motion = motion;
-        copies.push_back(std::move(copy));
+        auto move = std::make_unique<doc::MoveFeature>();
+        move->setName("Pattern copy");
+        move->setMotion(motion);
+        steps.push_back(std::move(move));
     }
-    return copies;
+    return steps;
 }
 
 Result<geom::Shape> PatternOperation::computePreview(double value, const doc::Document& document) const
 {
-    return separate_ ? previewCopies(document, bodyId(), makeCopies(value)) : Operation::computePreview(value, document);
+    return separate() ? previewCopies(document, bodyId(), makeCopySteps(value)) : Operation::computePreview(value, document);
+}
+
+bool PatternOperation::reconsider(const geom::Shape& result, const doc::Document& document)
+{
+    // Copies that would touch neither the body nor each other become bodies
+    // of their own (not beyond the separate-bodies limit, nor when their
+    // imported geometry would not fit in the project: then they stay joined).
+    if (separateChoice_ || autoSeparate_ || count_ - 1 > static_cast<int>(kMaxSeparateCopies)
+        || !copiesMissedBody(result, document, bodyId(), count_ - 1)
+        || !cmd::checkImportedCopiesFit(document, bodyId(), std::size_t(count_ - 1)))
+        return false;
+    autoSeparate_ = true;
+    return true;
 }
 
 std::unique_ptr<cmd::Command> PatternOperation::makeCommand(const doc::Document& document) const
 {
-    return separate_ ? createCopyBodies(document, makeCopies(value()), "Pattern") : Operation::makeCommand(document);
+    return separate() ? createCopyBodies(document, bodyId(), makeCopySteps(value()), "Pattern")
+                      : Operation::makeCommand(document);
 }
 
 // ---- Rotate ------------------------------------------------------------------------
@@ -713,16 +898,6 @@ Uuid RevolveOperation::previewBody() const
 {
     return mode() == doc::ExtrudeMode::NewBody ? Uuid() : host_.value_or(Uuid());
 }
-
-namespace {
-// A join whose result has more separate pieces than the body had did not
-// touch it: the user meant a new body (as Shapr3D does).
-bool joinMissedBody(const geom::Shape& result, const doc::Document& document, const std::optional<Uuid>& host)
-{
-    const doc::Body* body = host ? document.body(*host) : nullptr;
-    return body && result.solidCount() > std::max(body->shape().solidCount(), 1);
-}
-} // namespace
 
 bool RevolveOperation::reconsider(const geom::Shape& result, const doc::Document& document)
 {
@@ -1035,6 +1210,12 @@ bool HoleOperation::onFace(Vec2 p) const
     return geom::faceContains(shape_, face_.indexHint, frame_.toWorld(p));
 }
 
+bool HoleOperation::onOutline(Vec2 p) const
+{
+    const double size = std::max({outline_.maxU - outline_.minU, outline_.maxV - outline_.minV, 1.0});
+    return geom::outlineContains(outline_, p, 1e-7 * size);
+}
+
 std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapDistance) const
 {
     const Vec2 p = frame_.toLocal(world);
@@ -1045,7 +1226,7 @@ std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapD
     std::string what;
     double bestDistance = snapDistance;
     auto consider = [&](const Vec2& q, const char* name) {
-        if (const double d = (q - p).length(); d <= bestDistance && onFace(q)) {
+        if (const double d = (q - p).length(); d <= bestDistance && onOutline(q)) {
             bestDistance = d;
             best = q;
             what = name;
@@ -1082,7 +1263,7 @@ std::pair<Vec2, std::string> HoleOperation::snap(const Vec3& world, double snapD
         if (!x && !y)
             continue;
         const Vec2 q{x.value_or(p.x), y.value_or(p.y)};
-        if (onFace(q))
+        if (onOutline(q))
             return {q, "aligned"};
     }
     return {p, ""};
@@ -1255,7 +1436,7 @@ std::unique_ptr<TextOperation> TextOperation::create(const doc::Document& docume
     // The text starts at the face's center (of its outline), or at a point
     // inside the face when that is off it (a ring, an L).
     const Vec2 center{(op->outline_.minU + op->outline_.maxU) / 2, (op->outline_.minV + op->outline_.maxV) / 2};
-    op->position_ = op->onFace(center)
+    op->position_ = op->onOutline(center)
                         ? center
                         : frame->toLocal(geom::pointOnFace(shape, faceIndex, info->centroid).value_or(info->centroid));
     op->text_ = settings.text;
@@ -1299,7 +1480,7 @@ std::string TextOperation::prompt() const
 
 bool TextOperation::canCommit() const
 {
-    return !text_.empty() && std::abs(depth()) >= 1e-3 && error().empty() && hasPreview();
+    return !text_.empty() && std::abs(depth()) >= 1e-3 && previewUsable();
 }
 
 LinearManipulator TextOperation::handle(int index) const
@@ -1402,6 +1583,12 @@ bool TextOperation::onFace(Vec2 p) const
     return geom::faceContains(shape_, face_.indexHint, frame_.toWorld(p));
 }
 
+bool TextOperation::onOutline(Vec2 p) const
+{
+    const double size = std::max({outline_.maxU - outline_.minU, outline_.maxV - outline_.minV, 1.0});
+    return geom::outlineContains(outline_, p, 1e-7 * size);
+}
+
 std::pair<Vec2, std::string> TextOperation::snap(const Vec3& world, double snapDistance) const
 {
     const Vec2 p = frame_.toLocal(world);
@@ -1414,7 +1601,7 @@ std::pair<Vec2, std::string> TextOperation::snap(const Vec3& world, double snapD
     std::string what;
     double bestDistance = snapDistance;
     for (const auto& [q, name] : points)
-        if (const double d = (q - p).length(); d <= bestDistance && onFace(q)) {
+        if (const double d = (q - p).length(); d <= bestDistance && onOutline(q)) {
             bestDistance = d;
             best = q;
             what = name;
@@ -1437,7 +1624,7 @@ std::pair<Vec2, std::string> TextOperation::snap(const Vec3& world, double snapD
         if (!x && !y)
             continue;
         const Vec2 q{x.value_or(p.x), y.value_or(p.y)};
-        if (onFace(q))
+        if (onOutline(q))
             return {q, "aligned"};
     }
     return {p, ""};
@@ -1446,7 +1633,7 @@ std::pair<Vec2, std::string> TextOperation::snap(const Vec3& world, double snapD
 std::string TextOperation::placeAt(const Vec3& world, double snapDistance, const doc::Document& document)
 {
     const auto [point, what] = snap(world, snapDistance);
-    if (!onFace(point))
+    if (!onOutline(point))
         return {};
     position_ = point;
     edited_ = true;
@@ -1454,28 +1641,38 @@ std::string TextOperation::placeAt(const Vec3& world, double snapDistance, const
     return what;
 }
 
+void TextOperation::measureExtent() const
+{
+    const double s = size();
+    if (text_.empty() || (extent_.text == text_ && std::abs(extent_.size - s) <= 1e-12 && extent_.bold == bold_))
+        return;
+    Extent fresh;
+    fresh.text = text_;
+    fresh.size = s;
+    fresh.bold = bold_;
+    const auto faces = geom::textFaces({text_, bold_ ? doc::kTextFontBold : doc::kTextFontRegular, s});
+    if (faces) {
+        const geom::BoundingBox box = geom::approximateBoundingBox(faces.value());
+        fresh.valid = box.valid;
+        fresh.minX = box.min.x;
+        fresh.maxX = box.max.x;
+        fresh.minY = box.min.y;
+        fresh.maxY = box.max.y;
+    }
+    extent_ = fresh;
+}
+
+void TextOperation::adoptAutomaticChoices(const Operation& from)
+{
+    if (const auto* worker = dynamic_cast<const TextOperation*>(&from); worker && !worker->extent_.text.empty())
+        extent_ = worker->extent_;
+}
+
 std::vector<Vec3> TextOperation::textCorners() const
 {
-    if (text_.empty())
-        return {};
-    const double s = size();
-    if (extent_.text != text_ || std::abs(extent_.size - s) > 1e-12 || extent_.bold != bold_) {
-        Extent fresh;
-        fresh.text = text_;
-        fresh.size = s;
-        fresh.bold = bold_;
-        const auto faces = geom::textFaces({text_, bold_ ? doc::kTextFontBold : doc::kTextFontRegular, s});
-        if (faces) {
-            const geom::BoundingBox box = geom::approximateBoundingBox(faces.value());
-            fresh.valid = box.valid;
-            fresh.minX = box.min.x;
-            fresh.maxX = box.max.x;
-            fresh.minY = box.min.y;
-            fresh.maxY = box.max.y;
-        }
-        extent_ = fresh;
-    }
-    if (!extent_.valid)
+    // The extent measured with the preview (never here: this runs on the GUI
+    // thread, where a kernel call would wait for the worker's preview).
+    if (text_.empty() || !extent_.valid)
         return {};
     const double a = angleDegrees() * kPi / 180.0;
     const Vec3 along = frame_.xAxis * std::cos(a) + frame_.yAxis * std::sin(a);
@@ -1504,6 +1701,7 @@ std::unique_ptr<doc::Feature> TextOperation::makeFeature(double value) const
 
 Result<geom::Shape> TextOperation::computePreview(double value, const doc::Document& document) const
 {
+    measureExtent(); // for textCorners (adopted from the worker's copy)
     if (text_.empty()) {
         const doc::Body* body = document.body(bodyId());
         if (!body)

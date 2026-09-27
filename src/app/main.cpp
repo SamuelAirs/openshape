@@ -791,6 +791,8 @@ int main(int argc, char* argv[])
             };
             const auto panel = panels.find(demo);
             runDemo(controller, panel == panels.end() ? demo : panel->first, dataDir);
+            // Previews compute on a worker thread: show the scene's before the screenshot.
+            (void)controller.interaction().waitForPreview();
             if (panel == panels.end())
                 return;
             if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second)))

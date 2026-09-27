@@ -13,6 +13,7 @@ struct ContextAction {
     std::string id;     // stable identifier passed back to triggerAction()
     std::string label;  // user-facing
     bool active = false;
+    bool operator==(const ContextAction&) const = default;
 };
 
 } // namespace os::interact

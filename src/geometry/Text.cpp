@@ -422,10 +422,10 @@ bool registerFont(const std::string& id, std::string bytes)
     auto file = std::make_shared<FontFile>();
     file->id = id;
     file->bytes = std::move(bytes);
-    file->buffer = new NCollection_Buffer(Handle(NCollection_BaseAllocator)(), file->bytes.size(),
-                                          reinterpret_cast<Standard_Byte*>(file->bytes.data()));
     // Readable, and this OpenCASCADE renders glyphs (it may be built without FreeType).
     const auto usable = guarded("registerFont", "Unable to read the font.", [&]() -> Result<bool> {
+        file->buffer = new NCollection_Buffer(Handle(NCollection_BaseAllocator)(), file->bytes.size(),
+                                              reinterpret_cast<Standard_Byte*>(file->bytes.data()));
         Handle(MemoryBRepFont) font = new MemoryBRepFont();
         return Result<bool>::success(font->initFromMemory(*file, 10.0) && !font->RenderGlyph(U'H').IsNull());
     });
@@ -471,7 +471,9 @@ std::string checkText(const TextSpec& spec)
         return "Type the text first.";
     if (codepoints->size() > kMaxTextLength)
         return "The text is too long: at most " + std::to_string(kMaxTextLength) + " characters.";
-    // The font only answers for what it has; ask it once.
+    // The font only answers for what it has; ask it once. FreeType through
+    // OpenCASCADE: the kernel lock (the preview worker may be making letters).
+    const KernelLock kernel;
     Handle(Font_FTFont) font = new Font_FTFont();
     font->SetUseUnicodeSubsetFallback(Standard_False);
     if (!font->Init(file->buffer, TCollection_AsciiString(file->id.c_str()), Font_FTFontParams(kFontPoints, kFontDpi), 0))
