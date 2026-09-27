@@ -772,6 +772,8 @@ const HistoryRow* rowNamed(const std::vector<HistoryRow>& rows, const std::strin
             return &r;
     return nullptr;
 }
+// historyRows() returns a copy: a row pointer into it must not outlive it.
+const HistoryRow* rowNamed(std::vector<HistoryRow>&& rows, const std::string& name) = delete;
 
 bool separateShown(const InteractionController& controller)
 {
@@ -1212,7 +1214,8 @@ TEST(Copies, LegacyCopyFollowsItsSource)
     ASSERT_TRUE(h.stack.push(std::make_unique<cmd::CreateBodyCommand>("Body 2", std::move(mirror)), h.document).ok());
     h.controller.documentChanged();
     const Uuid b = h.document.bodies().back()->id();
-    const HistoryRow* copyRow = rowNamed(h.controller.historyRows(), "Mirror copy");
+    const std::vector<HistoryRow> rows = h.controller.historyRows();
+    const HistoryRow* copyRow = rowNamed(rows, "Mirror copy");
     ASSERT_NE(copyRow, nullptr);
     EXPECT_EQ(copyRow->detail, "Of Body 1 \xC2\xB7 Across YZ");
     ASSERT_TRUE(h.controller.setFeatureParameter(h.document.body(a)->features()[0]->id(), "width", "20").ok());
