@@ -99,12 +99,29 @@ esac
 # The archive carries the app's dSYM (testflight.sh uploads it with the
 # build): without it no crash report from a tester can be read.
 DSYMS="$BUILD/OpenShape.xcarchive/dSYMs"
+DSYM="$DSYMS/OpenShape.app.dSYM"
+if [ ! -d "$DSYM" ]; then
+    # CMake's Xcode project gives each target its own output folder
+    # (CONFIGURATION_BUILD_DIR); dsymutil writes the dSYM beside the app
+    # there, where Xcode's archive step does not collect it (CI run 37 of
+    # ipad.yml: an empty dSYMs folder). Put it in; the UUID check below makes
+    # sure it is this build's.
+    built=$(find "$BUILD" "$HOME/Library/Developer/Xcode/DerivedData" -name OpenShape.app.dSYM -type d \
+                -not -path "*.xcarchive/*" 2>/dev/null | head -n 1 || true)
+    echo "The archive has no dSYM of its own; the build's: ${built:-none}"
+    if [ -n "$built" ]; then
+        mkdir -p "$DSYMS"
+        cp -R "$built" "$DSYMS/"
+    fi
+fi
 if [ -z "$(ls -A "$DSYMS" 2>/dev/null)" ]; then
+    echo "dSYMs anywhere in the build: $(find "$BUILD" "$HOME/Library/Developer/Xcode/DerivedData" -name '*.dSYM' -type d 2>/dev/null | head -n 10 | tr '\n' ' ')"
+    xcodebuild -project "$BUILD/OpenShape.xcodeproj" -target openshape -configuration Release -showBuildSettings 2>/dev/null \
+        | grep -E ' (DEBUG_INFORMATION_FORMAT|GCC_GENERATE_DEBUGGING_SYMBOLS|DWARF_DSYM_FOLDER_PATH|CONFIGURATION_BUILD_DIR|BUILT_PRODUCTS_DIR) =' || true
     echo "error: the archive's dSYMs folder is empty or missing ($DSYMS): crash reports would not symbolicate"
     exit 1
 fi
 ls -la "$DSYMS"
-DSYM="$DSYMS/OpenShape.app.dSYM"
 DWARF="$DSYM/Contents/Resources/DWARF/OpenShape"
 test -f "$DWARF" || { echo "error: no dSYM for the app ($DWARF missing)"; exit 1; }
 app_uuid=$(dwarfdump --uuid "$APP/OpenShape" | awk '{print $2}')
