@@ -63,9 +63,13 @@ if grep -q "will not be linked" "$BUILD/configure.log"; then
 fi
 
 rm -rf "$BUILD/OpenShape.xcarchive"
+# Release with debug information (same optimization) and a dSYM, so crash
+# reports from TestFlight testers symbolicate (the top-level CMakeLists.txt
+# sets the same for Xcode; given here too, for every target).
 xcodebuild -project "$BUILD/OpenShape.xcodeproj" -scheme openshape -configuration Release \
     -destination 'generic/platform=iOS' -archivePath "$BUILD/OpenShape.xcarchive" \
-    -quiet CODE_SIGNING_ALLOWED=NO archive
+    -quiet CODE_SIGNING_ALLOWED=NO \
+    DEBUG_INFORMATION_FORMAT=dwarf-with-dsym GCC_GENERATE_DEBUGGING_SYMBOLS=YES archive
 
 APP="$BUILD/OpenShape.xcarchive/Products/Applications/OpenShape.app"
 test -d "$APP" || { echo "error: the archive has no app (Products/Applications/OpenShape.app)"; exit 1; }
@@ -83,4 +87,36 @@ echo "Device families: $families"
 case "$families" in
     *1*2*) ;;
     *) echo "error: the app is not universal (UIDeviceFamily $families; expected 1 and 2)"; exit 1 ;;
+esac
+# "Open in OpenShape": the document types other apps may hand over.
+doctypes=$(plutil -extract CFBundleDocumentTypes json -o - "$APP/Info.plist" 2>/dev/null || echo none)
+echo "Document types: $doctypes"
+case "$doctypes" in
+    *io.github.samuelairs.openshape.project*org.iso.step*) ;;
+    *) echo "error: the app does not declare projects and STEP files as document types (CFBundleDocumentTypes)"; exit 1 ;;
+esac
+
+# The archive carries the app's dSYM (testflight.sh uploads it with the
+# build): without it no crash report from a tester can be read.
+DSYMS="$BUILD/OpenShape.xcarchive/dSYMs"
+if [ -z "$(ls -A "$DSYMS" 2>/dev/null)" ]; then
+    echo "error: the archive's dSYMs folder is empty or missing ($DSYMS): crash reports would not symbolicate"
+    exit 1
+fi
+ls -la "$DSYMS"
+DSYM="$DSYMS/OpenShape.app.dSYM"
+DWARF="$DSYM/Contents/Resources/DWARF/OpenShape"
+test -f "$DWARF" || { echo "error: no dSYM for the app ($DWARF missing)"; exit 1; }
+app_uuid=$(dwarfdump --uuid "$APP/OpenShape" | awk '{print $2}')
+dsym_uuid=$(dwarfdump --uuid "$DSYM" | awk '{print $2}')
+echo "App binary UUID: $app_uuid; dSYM UUID: $dsym_uuid; dSYM size: $(du -sh "$DSYM" | cut -f1)"
+if [ -z "$app_uuid" ] || [ "$app_uuid" != "$dsym_uuid" ]; then
+    echo "error: the dSYM does not belong to the app binary (UUIDs differ)"
+    exit 1
+fi
+# OpenShape's own code has debug information in it (a function found by name).
+found=$(dwarfdump --name=shareFile "$DWARF" 2>/dev/null | head -c 4000 || true)
+case "$found" in
+    *shareFile*) echo "dSYM: OpenShape's code has debug information (AppController::shareFile found)" ;;
+    *) echo "error: the dSYM has no debug information for OpenShape's code (AppController::shareFile not found)"; exit 1 ;;
 esac

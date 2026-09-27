@@ -4,7 +4,9 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # Signs an OpenShape archive for the App Store and uploads it to TestFlight
-# (internal testers only). Xcode creates the distribution certificate and
+# with its dSYM (testers' crash reports symbolicate). Builds may go to
+# external testers as well (the public beta, decided 2026-09-27; docs/IPAD.md
+# says what to set up in App Store Connect). Xcode creates the distribution certificate and
 # the provisioning profile itself ("cloud signing"), authenticated with an
 # App Store Connect API key with the Admin role; the app record must exist
 # in App Store Connect (docs/IPAD.md).
@@ -17,6 +19,11 @@ ARCHIVE=${1:?usage: testflight.sh <archive> <work-dir>}
 WORK=${2:?usage: testflight.sh <archive> <work-dir>}
 : "${APPLE_TEAM_ID:?}" "${ASC_KEY_ID:?}" "${ASC_ISSUER_ID:?}" "${ASC_KEY_PATH:?}"
 mkdir -p "$WORK"
+# uploadSymbols (below) sends the archive's dSYMs; scripts/ios/build-app.sh checks them.
+if [ -z "$(ls -A "$ARCHIVE/dSYMs" 2>/dev/null)" ]; then
+    echo "error: $ARCHIVE has no dSYMs: crash reports from testers would not symbolicate"
+    exit 1
+fi
 
 cat > "$WORK/ExportOptions.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -32,7 +39,7 @@ cat > "$WORK/ExportOptions.plist" <<EOF
     <key>signingStyle</key>
     <string>automatic</string>
     <key>testFlightInternalTestingOnly</key>
-    <true/>
+    <false/>
     <key>manageAppVersionAndBuildNumber</key>
     <false/>
     <key>uploadSymbols</key>

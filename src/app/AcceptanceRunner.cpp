@@ -1148,6 +1148,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     // without a simulated safe area or an open compact panel.
     window_->setProperty("simulatedSafeArea", QVariant());
     app_->setAppFolder(initialAppFolder_); // a scenario may save as on an iPhone
+    app_->setShareHandler(ui::platformShareHandler()); // ...and put a stub share sheet in
     window_->setProperty("historyOpen", false);
     window_->setProperty("viewMenuOpen", false);
     if (window_->size() != initialSize_) {

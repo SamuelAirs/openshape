@@ -247,12 +247,32 @@ ApplicationWindow {
     }
 
     // Exports: a file dialog on the desktop; OpenShape's Exports folder on an
-    // iPhone or iPad.
+    // iPhone or iPad, then the share sheet (a slicer, AirDrop, Mail).
     function exportAs(format, dialog) {
         if (app.savesToAppFolder)
-            app.exportToAppFolder(format)
+            app.exportToAppFolder(format, shareAnchor())
         else
             dialog.open()
+    }
+
+    // Where the share sheet points on an iPad (a popover): the File button,
+    // whose menu started it (window coordinates).
+    function shareAnchor() {
+        return fileButton.mapToItem(null, 0, 0, fileButton.width, fileButton.height)
+    }
+
+    // File → Share Project…: the project's file as it is now, so it is saved
+    // first (a new project asks for its name, as Save does).
+    function shareProject() {
+        const share = () => window.app.shareProject(window.shareAnchor())
+        if (!app.hasProjectPath()) {
+            window.afterSave = share
+            saveAs()
+            return
+        }
+        if (app.dirty && !app.saveProject())
+            return
+        share()
     }
 
     // Runs `action` now if there are no unsaved changes, otherwise asks first.
@@ -296,7 +316,7 @@ ApplicationWindow {
                 Layout.leftMargin: 6
                 Layout.rightMargin: 8
             }
-            ActionButton { objectName: "fileMenuButton"; text: "File"; onClicked: fileMenu.popup(this, 0, height + 6) }
+            ActionButton { id: fileButton; objectName: "fileMenuButton"; text: "File"; onClicked: fileMenu.popup(this, 0, height + 6) }
             Separator {}
             ActionButton {
                 objectName: "undoButton"
@@ -394,6 +414,15 @@ ApplicationWindow {
         MenuSeparator {}
         MenuItem { objectName: "saveMenuItem"; text: "Save"; onTriggered: window.save() }
         MenuItem { objectName: "saveAsMenuItem"; text: "Save As…"; onTriggered: window.saveAs() }
+        // iPhone / iPad: the project file to AirDrop, Mail, the Files app...
+        // (no share sheet on the desktop: no gap either).
+        MenuItem {
+            objectName: "shareProjectMenuItem"
+            text: "Share Project…"
+            visible: window.app.canShare && window.app.savesToAppFolder
+            height: visible ? implicitHeight : 0
+            onTriggered: window.shareProject()
+        }
         MenuSeparator {}
         // (No "…" on an iPhone or iPad: the file goes straight into Exports.)
         MenuItem {
@@ -1111,6 +1140,7 @@ ApplicationWindow {
         id: helpOverlay
         objectName: "helpOverlay"
         appFolder: window.app.savesToAppFolder
+        share: window.app.canShare && window.app.savesToAppFolder
         anchors.fill: parent
         z: 100
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
@@ -1233,6 +1263,9 @@ ApplicationWindow {
     Connections {
         target: window.app
         function onMessage(text) { toast.show(text) }
+        // A file from another app ("Open in OpenShape") while there are
+        // unsaved changes: asked about first, as Home's Open does.
+        function onIncomingFileWaiting() { window.confirmDiscard(() => window.app.openPendingIncomingFile()) }
     }
 
     // ---------------------------------------------------------------- safe-area preview

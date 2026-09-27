@@ -5,9 +5,11 @@
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 # What the app remembers (settings, recent files, window place), recovery
-# sessions and Home's preview sources: Qt Core only, so tests/test_uistate needs no GUI.
+# sessions, Home's preview sources and where files from other apps go: Qt
+# Core only, so tests/test_uistate needs no GUI.
 add_library(openshape_uistate STATIC
     AppSettings.cpp AppSettings.h
+    IncomingFiles.cpp IncomingFiles.h
     RecoverySession.cpp RecoverySession.h
     ThumbnailSource.cpp ThumbnailSource.h
 )
@@ -43,7 +45,16 @@ qt_add_qml_module(openshape_ui
         AppController.cpp AppController.h
         ThumbnailProvider.cpp ThumbnailProvider.h
         ViewportItem.cpp ViewportItem.h
+        Share.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)
 target_include_directories(openshape_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_ui)
+
+# The share sheet (UIActivityViewController, ui/Share.h): Objective-C++,
+# iOS only, with ARC (other platforms have no share sheet).
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_sources(openshape_ui PRIVATE ios/ShareSheet.mm)
+    set_source_files_properties(ios/ShareSheet.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(openshape_ui PRIVATE "-framework UIKit")
+endif()
