@@ -385,26 +385,40 @@ QVariantList AppController::sketchLabels() const
     return list;
 }
 
+namespace {
+// One construction plane selected: a sketch goes on it.
+bool datumPlaneSelected(const sel::SelectionSet& sel, const doc::Document& document)
+{
+    if (sel.size() != 1 || sel.items().front().kind != sel::SelectionKind::Datum)
+        return false;
+    const doc::Datum* datum = document.datum(sel.items().front().bodyId);
+    return datum && datum->kind() == doc::DatumKind::Plane;
+}
+} // namespace
+
 bool AppController::canStartSketch() const
 {
     if (interaction_->sketchSession())
         return false;
     const auto& sel = interaction_->selection();
-    // Nothing selected: sketch on the ground plane. One flat face: sketch on
-    // it. One profile: continue its sketch.
+    // Nothing selected: sketch on the ground plane. One flat face or
+    // construction plane: sketch on it. One profile: continue its sketch.
     return sel.empty()
         || (sel.size() == 1
             && (sel.items().front().kind == sel::SelectionKind::Face
-                || sel.items().front().kind == sel::SelectionKind::SketchProfile));
+                || sel.items().front().kind == sel::SelectionKind::SketchProfile))
+        || datumPlaneSelected(sel, *document_);
 }
 
 bool AppController::faceSelected() const
 {
-    // A face (sketch on it) or a profile (continue its sketch): no plane menu.
+    // A face or construction plane (sketch on it) or a profile (continue its
+    // sketch): no plane menu.
     const auto& sel = interaction_->selection();
-    return sel.size() == 1
-        && (sel.items().front().kind == sel::SelectionKind::Face
-            || sel.items().front().kind == sel::SelectionKind::SketchProfile);
+    return (sel.size() == 1
+            && (sel.items().front().kind == sel::SelectionKind::Face
+                || sel.items().front().kind == sel::SelectionKind::SketchProfile))
+        || datumPlaneSelected(sel, *document_);
 }
 
 void AppController::startSketch(const QString& plane)
@@ -495,9 +509,10 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
     QVariantList list;
     for (const auto& row : rows) {
         QVariantMap map;
-        map.insert(QStringLiteral("kind"), row.kind == interact::HistoryRow::Kind::Sketch ? QStringLiteral("sketch")
-                                           : row.kind == interact::HistoryRow::Kind::Body ? QStringLiteral("body")
-                                                                                          : QStringLiteral("feature"));
+        map.insert(QStringLiteral("kind"), row.kind == interact::HistoryRow::Kind::Sketch  ? QStringLiteral("sketch")
+                                           : row.kind == interact::HistoryRow::Kind::Body  ? QStringLiteral("body")
+                                           : row.kind == interact::HistoryRow::Kind::Datum ? QStringLiteral("datum")
+                                                                                           : QStringLiteral("feature"));
         map.insert(QStringLiteral("id"), q(row.id.toString()));
         map.insert(QStringLiteral("name"), q(row.name));
         map.insert(QStringLiteral("detail"), q(row.detail));
@@ -565,6 +580,8 @@ void AppController::deleteHistoryItem(const QString& kind, const QString& idText
         status = interaction_->deleteBody(*id);
     else if (kind == QLatin1String("sketch"))
         status = interaction_->deleteSketch(*id);
+    else if (kind == QLatin1String("datum"))
+        status = interaction_->deleteDatum(*id);
     if (!status)
         notifyMessage(q(status.userMessage()));
 }
@@ -575,6 +592,7 @@ void AppController::setHistoryItemVisible(const QString& kind, const QString& id
     if (!id)
         return;
     const Status status = kind == QLatin1String("sketch") ? interaction_->setSketchVisible(*id, visible)
+                        : kind == QLatin1String("datum")  ? interaction_->setDatumVisible(*id, visible)
                                                           : interaction_->setBodyVisible(*id, visible);
     if (!status)
         notifyMessage(q(status.userMessage()));
@@ -604,6 +622,12 @@ void AppController::addBodyToSelection(const QString& bodyId)
 {
     if (const auto id = uuidOf(bodyId))
         (void)interaction_->selectBody(*id, interact::InteractionController::BodyPick::Add);
+}
+
+void AppController::selectDatum(const QString& datumId)
+{
+    if (const auto id = uuidOf(datumId))
+        (void)interaction_->selectDatum(*id); // failures explain themselves via message()
 }
 
 void AppController::duplicateBody(const QString& bodyId)

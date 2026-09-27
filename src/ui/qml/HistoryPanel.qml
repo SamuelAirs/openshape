@@ -7,7 +7,8 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import OpenShape
 
-// The model tree: sketches, bodies and each body's steps, in order. Hovering
+// The model tree: sketches, construction axes and planes, bodies and each
+// body's steps, in order. Hovering
 // a row highlights its geometry in the view (so does an expanded row: touch
 // has no hover); clicking a body selects it (Shift, or any tap in the touch
 // layout, adds another, e.g. to combine); clicking a step edits its values.
@@ -98,6 +99,8 @@ Panel {
                             owner.app.addBodyToSelection(data.id)
                         else if (data.kind === "body" && data.visible)
                             owner.app.selectBody(data.id, (mouse.modifiers & Qt.ShiftModifier) !== 0)
+                        else if (data.kind === "datum" && data.visible && !wasExpanded)
+                            owner.app.selectDatum(data.id) // its actions appear (Sketch on a plane)
                         owner.expandedId = wasExpanded ? "" : data.id
                     }
                     onDoubleClicked: if (row.modelData.kind === "sketch") panel.app.editSketch(row.modelData.id)

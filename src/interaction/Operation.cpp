@@ -65,7 +65,8 @@ void Operation::setValue(double value, const doc::Document& document, Change cha
         return;
     }
     if (!previewsShape()) {
-        previewMesh_.reset();
+        // Worked out here, without the kernel (DatumOperation): no worker.
+        dropPreviews();
         error_ = refreshPreview(value, document);
         return;
     }
@@ -1711,6 +1712,7 @@ void DatumOperation::startOver(const doc::Document& document)
 {
     refs_.clear();
     picked_.clear();
+    resolvedStale_ = true;
     originIndex_ = -1;
     offsetBase_.reset();
     preview_.reset();
@@ -1741,6 +1743,7 @@ void DatumOperation::setOriginPlane(int normalAxis, const doc::Document& documen
         setMode(Mode::PlaneOffset, document);
     refs_.clear();
     picked_.clear();
+    resolvedStale_ = true;
     originIndex_ = std::clamp(normalAxis, 0, 2);
     offsetBase_ = std::pair{Vec3{}, axisVector(originIndex_)};
     setValue(value(), document); // a typed distance is kept
@@ -1812,14 +1815,26 @@ Status DatumOperation::pick(const doc::Document& document, const Uuid& bodyId, g
             clearPicks();
             added = add(K::Edge, kind, index);
             edgeMiddle_ = edge->midpoint;
-            // The angle is measured from the flat face next to the edge that
-            // it runs along (another face can be clicked instead).
-            for (int f : geom::facesOfEdge(body->shape(), index))
-                if (const auto info = geom::faceInfo(body->shape(), f);
-                    info && info->isPlanar() && std::abs(info->normal.normalized().dot(edge->tangent.normalized())) < 1e-6) {
-                    add(K::Face, geom::SubShapeKind::Face, f);
-                    break;
+            // The angle is measured from a flat face next to the edge that it
+            // runs along: the one facing up the most (a box's top rather than
+            // its side), then the larger one; another face can be clicked.
+            {
+                int best = -1;
+                double bestUp = 0, bestArea = 0;
+                for (int f : geom::facesOfEdge(body->shape(), index)) {
+                    const auto info = geom::faceInfo(body->shape(), f);
+                    if (!info || !info->isPlanar() || std::abs(info->normal.normalized().dot(edge->tangent.normalized())) > 1e-6)
+                        continue;
+                    const double up = info->normal.normalized().z;
+                    if (best < 0 || up > bestUp + 1e-9 || (std::abs(up - bestUp) <= 1e-9 && info->area > bestArea + 1e-9)) {
+                        best = f;
+                        bestUp = up;
+                        bestArea = info->area;
+                    }
                 }
+                if (best >= 0)
+                    add(K::Face, geom::SubShapeKind::Face, best);
+            }
         } else if (face && face->isPlanar()) {
             if (refs_.empty())
                 return refuse("Click the straight edge the plane goes through first.");
@@ -1847,6 +1862,7 @@ Status DatumOperation::pick(const doc::Document& document, const Uuid& bodyId, g
         added = add(K::Face, kind, index);
         break;
     }
+    resolvedStale_ = true;
     if (!added)
         return refuse("That cannot be used here.");
     setValue(value(), document);
@@ -1866,6 +1882,7 @@ bool DatumOperation::dropLastPick(const doc::Document& document)
     } else {
         return false;
     }
+    resolvedStale_ = true;
     setValue(value(), document);
     return true;
 }
@@ -1909,10 +1926,26 @@ std::string DatumOperation::refreshPreview(double, const doc::Document& document
                                                       : refs_.size() == needed;
     if (!complete)
         return {}; // still picking: nothing to show, nothing wrong
-    const auto resolved = doc::resolveDatum(datum(), document.context());
-    if (!resolved)
-        return resolved.userMessage();
-    preview_ = resolved.value();
+    const doc::Datum d = datum();
+    // The kernel only for new picks or a changed document; a new distance or
+    // angle (a drag step) is plain arithmetic on what was resolved.
+    if (resolvedStale_ || resolvedIn_ != &document || resolvedRevision_ != document.revision()) {
+        resolved_.clear();
+        resolveError_.clear();
+        if (auto refs = doc::resolveDatumRefs(d, document.context()))
+            resolved_ = std::move(refs.value());
+        else
+            resolveError_ = refs.userMessage();
+        resolvedIn_ = &document;
+        resolvedRevision_ = document.revision();
+        resolvedStale_ = false;
+    }
+    if (!resolveError_.empty())
+        return resolveError_;
+    const auto geometry = doc::datumGeometry(d, resolved_);
+    if (!geometry)
+        return geometry.userMessage();
+    preview_ = geometry.value();
     return {};
 }
 

@@ -156,6 +156,11 @@ std::shared_ptr<const Document> Document::snapshot() const
     copy->sketches_.reserve(sketches_.size());
     for (const auto& s : sketches_)
         copy->sketches_.push_back(std::make_unique<sketch::Sketch>(*s));
+    // A sketch on a construction plane follows it during recompute.
+    copy->datums_.reserve(datums_.size());
+    for (const auto& d : datums_)
+        copy->datums_.push_back(std::make_unique<Datum>(*d));
+    copy->datumRevision_ = datumRevision_;
     copy->sketchRevisions_ = sketchRevisions_;
     copy->revision_ = revision_;
     return copy;

@@ -23,7 +23,7 @@ namespace {
 // specific first. (Sources: SketchSession::hintText and its messages,
 // Operation::prompt, InteractionController::runTool and messages, and the
 // hints in Main.qml.)
-constexpr std::array<std::pair<std::string_view, std::string_view>, 38> kPhrases{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 40> kPhrases{{
     // ---- Sketch hints
     {"Click the line to mirror across (a construction line works well) " DOT " Esc cancels",
      "Tap the line to mirror across (a construction line works well) " DOT " tap Mirror again to cancel"},
@@ -69,6 +69,8 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 38> kPhrases
     {"Enter to apply " DOT " Esc to cancel " DOT " click elsewhere to apply and continue",
      CHECK " applies " DOT " " CROSS " cancels " DOT " tap elsewhere to apply and continue"},
     {"Enter or Apply mirrors it", "Apply mirrors it"},
+    {"Enter or Apply adds", "Apply adds"},
+    {" " DOT " Esc goes back a pick", ""}, // the Axis and Plane tools (a tap on empty space applies)
     {"Delete removes the face instead", "Delete face removes it instead"},
     {"Esc clears the selection", "tap empty space to clear the selection"},
     {" " DOT " Esc cancels", " " DOT " tap empty space to cancel"},

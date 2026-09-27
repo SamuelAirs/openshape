@@ -1005,10 +1005,17 @@ private:
 // to a flat face it runs along (value = the angle; the face next to the edge
 // is taken until another one is clicked), or midway between two parallel
 // flat faces. Commits an AddDatumCommand; nothing touches the document before.
+// Its preview is where the datum would be, not a body's shape: the picks are
+// resolved when they are made (and again after the document changes), and a
+// new distance or angle only recomputes the position without the kernel, so
+// it never goes to the preview worker and dragging its arrow is instant.
 class DatumOperation final : public Operation {
 public:
     enum class Mode { Axis, AxisTwoPoints, AxisParallel, PlaneOffset, PlaneAngle, PlaneMidway };
     static std::unique_ptr<DatumOperation> create(doc::DatumKind kind);
+
+    // Like the others (previewsShape() is false: setValue never schedules it).
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new DatumOperation(*this)); }
 
     std::string title() const override { return kind_ == doc::DatumKind::Axis ? "Axis" : "Plane"; }
     std::string valueLabel() const override;
@@ -1070,6 +1077,13 @@ private:
     std::vector<Picked> picked_;
     std::optional<doc::DatumGeometry> preview_;
     Vec3 edgeMiddle_; // PlaneAngle: where the angle's value sits
+    // refs_ resolved (the kernel work), for the document revision they were
+    // resolved in; picks and document changes make them stale.
+    std::vector<doc::ResolvedRef> resolved_;
+    std::string resolveError_;
+    const doc::Document* resolvedIn_ = nullptr;
+    std::uint64_t resolvedRevision_ = 0;
+    bool resolvedStale_ = true;
 };
 
 } // namespace os::interact

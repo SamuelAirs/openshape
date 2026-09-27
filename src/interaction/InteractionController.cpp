@@ -1162,7 +1162,10 @@ Status InteractionController::commitOperation()
     // A new construction axis or plane comes out selected (Sketch on a plane
     // is then one step away).
     if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get())) {
-        Status status = undoStack_->push(construct->makeCommand(*document_), *document_);
+        std::unique_ptr<cmd::Command> command = construct->makeCommand(*document_);
+        const auto* add = dynamic_cast<const cmd::AddDatumCommand*>(command.get());
+        const Uuid made = add ? add->datumId() : Uuid();
+        Status status = undoStack_->push(std::move(command), *document_);
         if (!status) {
             message(status.userMessage());
             return status;
@@ -1170,10 +1173,10 @@ Status InteractionController::commitOperation()
         operation_.reset();
         datumTool_.reset();
         selection_.clear();
-        if (!document_->datums().empty()) {
+        if (document_->datum(made)) {
             sel::SelectionItem item;
             item.kind = sel::SelectionKind::Datum;
-            item.bodyId = document_->datums().back()->id();
+            item.bodyId = made;
             selection_.set(item);
         }
         afterDocumentEdit();

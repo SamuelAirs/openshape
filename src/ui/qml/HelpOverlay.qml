@@ -174,6 +174,20 @@ Rectangle {
                         ]
                     }
                     HelpSection {
+                        title: "Construct"
+                        rows: [
+                            ["Axis", "Axis (in the tools), then click a hole, a shaft, a circle or a straight edge · Two points: two corners or circle centers · Parallel to X / Y / Z through a corner (an edge clicked near its end)",
+                             "Axis (in the tools), then tap a hole, a shaft, a circle or a straight edge · Two points: two corners or circle centers · Parallel to X / Y / Z through a corner (an edge tapped near its end)"],
+                            ["Plane", "Plane, then click a flat face and drag or type the distance (From XY / XZ / YZ starts at an origin plane) · At angle: an edge, then the angle to its face · Midway: two parallel faces",
+                             "Plane, then tap a flat face and drag or type the distance (From XY / XZ / YZ starts at an origin plane) · At angle: an edge, then the angle to its face · Midway: two parallel faces"],
+                            ["Use them", "Rotate about an axis, Pattern around or along one, Mirror across a plane, Align onto either: click it while the tool waits · select a plane → Sketch (the sketch moves with it)",
+                             "Rotate about an axis, Pattern around or along one, Mirror across a plane, Align onto either: tap it while the tool waits · select a plane → Sketch (the sketch moves with it)"],
+                            ["They follow", "They move with the faces and edges they were made from; when those are gone they turn red, stay where they were, and the Model panel says why"],
+                            ["Change, hide, delete", "Model panel: click the row to select it, type a new distance or angle, Hide or Delete · Delete removes a selected one",
+                             "Model panel: tap the row to select it, type a new distance or angle, Hide or Delete"]
+                        ]
+                    }
+                    HelpSection {
                         title: "Sketch"
                         rows: [
                             ["Tools", "On the left · S select · L line · R rectangle · E center rectangle · P polygon · C circle · A arc · G tangent arc · O slot · T trim",

@@ -310,6 +310,8 @@ public:
     // A tap on a body's row in the touch layout: adds the body (never takes it
     // out: tapping the row again folds it and keeps the body selected).
     Q_INVOKABLE void addBodyToSelection(const QString& bodyId);
+    // Selects a construction axis or plane from its row (its actions appear).
+    Q_INVOKABLE void selectDatum(const QString& datumId);
     // Model panel row actions for a body.
     Q_INVOKABLE void duplicateBody(const QString& bodyId);
     Q_INVOKABLE void splitBody(const QString& bodyId);

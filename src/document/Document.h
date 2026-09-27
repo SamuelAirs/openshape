@@ -103,7 +103,8 @@ public:
 
     // A copy another thread may read while this one keeps changing: every
     // body (its history, cached step results and shape; shapes are immutable
-    // and shared, not copied) and sketch, the display unit, no listeners.
+    // and shared, not copied), sketch and construction axis or plane, the
+    // display unit, no listeners.
     // Interactive previews are computed on one (Operation::setValue).
     std::shared_ptr<const Document> snapshot() const;
 

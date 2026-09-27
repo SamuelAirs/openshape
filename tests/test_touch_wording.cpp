@@ -303,6 +303,44 @@ TEST(TouchWording, OperationPromptsAreTouchReady)
     expectTouchReady(mirror);
 }
 
+TEST(TouchWording, ConstructPromptsAreTouchReady)
+{
+    // Every way of the Axis and Plane tools asks for its picks in touch
+    // words, and so do the refusals of picks that do not fit.
+    Harness h;
+    h.controller.setTouchLayout(true);
+    ASSERT_TRUE(h.controller.createBox(20).ok());
+    h.controller.fitAll(false);
+    std::set<std::string> prompts;
+    const Vec2 top = h.controller.camera().project({0, 0, 20});
+    const Vec2 edge = h.controller.camera().project({0, -10, 20});
+    ASSERT_TRUE(h.controller.runTool("axis").ok());
+    for (const char* mode : {"datum:axis", "datum:twoPoints", "datum:parallel:2"}) {
+        ASSERT_TRUE(h.controller.triggerAction(mode).ok()) << mode;
+        prompts.insert(h.controller.operation()->prompt());
+        h.tap(top); // a face: refused (a message) for every axis mode
+        h.tap(edge);
+        prompts.insert(h.controller.operation()->prompt());
+    }
+    h.controller.cancelOperation();
+    h.controller.cancelOperation();
+    ASSERT_TRUE(h.controller.runTool("plane").ok());
+    for (const char* mode : {"datum:offset", "datum:angle", "datum:midway"}) {
+        ASSERT_TRUE(h.controller.triggerAction(mode).ok()) << mode;
+        prompts.insert(h.controller.operation()->prompt());
+        h.tap(edge); // an edge first: refused where a face is wanted
+        h.tap(top);
+        prompts.insert(h.controller.operation()->prompt());
+    }
+    prompts.erase(std::string());
+    EXPECT_GE(prompts.size(), 6u);
+    for (const std::string& prompt : prompts)
+        expectTouchReady(prompt);
+    EXPECT_GE(h.messages.size(), 3u);
+    for (const std::string& message : h.messages)
+        expectTouchMessage(message);
+}
+
 TEST(TouchWording, TappingEmptySpaceGivesUpAWaitingAlignOrMirror)
 {
     // The touch prompts say "tap empty space to cancel": it must be true.

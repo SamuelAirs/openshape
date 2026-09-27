@@ -97,45 +97,44 @@ Result<Resolved> resolveRef(const GeometryRef& ref, const EvalContext& context)
     return R::success(Resolved{state.output, *index});
 }
 
-Result<geom::FaceInfo> flatFace(const GeometryRef& ref, const EvalContext& context)
+// One reference resolved to the facts datumGeometry works from.
+Result<ResolvedRef> resolveOne(const GeometryRef& ref, const EvalContext& context)
 {
-    using R = Result<geom::FaceInfo>;
+    using R = Result<ResolvedRef>;
     auto resolved = resolveRef(ref, context);
     if (!resolved)
         return R::failureFrom(resolved);
-    const auto info = geom::faceInfo(resolved.value().shape, resolved.value().index);
-    if (!info || !info->isPlanar() || info->normal.length() < 0.5)
-        return R::failure(ErrorCode::NotPlanar, "The face it was made from is no longer flat.", "datum: face not planar");
-    return R::success(*info);
-}
-
-Result<geom::EdgeInfo> edgeOf(const GeometryRef& ref, const EvalContext& context)
-{
-    using R = Result<geom::EdgeInfo>;
-    auto resolved = resolveRef(ref, context);
-    if (!resolved)
-        return R::failureFrom(resolved);
+    ResolvedRef out;
+    out.kind = ref.kind;
+    if (ref.kind == GeometryRef::Kind::Face) {
+        const auto info = geom::faceInfo(resolved.value().shape, resolved.value().index);
+        if (!info)
+            return R::failure(ErrorCode::InvalidReference, "The face it was made from no longer exists.", "datum: face info");
+        out.face = *info;
+        return R::success(out);
+    }
     const auto info = geom::edgeInfo(resolved.value().shape, resolved.value().index);
     if (!info)
         return R::failure(ErrorCode::InvalidReference, "The edge it was made from no longer exists.", "datum: edge info");
-    return R::success(*info);
-}
-
-Result<Vec3> pointOf(const GeometryRef& ref, const EvalContext& context)
-{
-    using R = Result<Vec3>;
-    auto edge = edgeOf(ref, context);
-    if (!edge)
-        return R::failureFrom(edge);
-    const geom::EdgeInfo& e = edge.value();
+    out.edge = *info;
     if (ref.kind == GeometryRef::Kind::Center) {
-        if (e.kind != geom::CurveKind::Circle)
+        if (info->kind != geom::CurveKind::Circle)
             return R::failure(ErrorCode::InvalidReference, "The circle it was made from is no longer round.",
                               "datum: center of a non-circle");
-        return R::success(e.center);
+        out.point = info->center;
+    } else if (ref.kind == GeometryRef::Kind::Vertex) {
+        // The end of the edge nearest where the corner was when picked.
+        out.point = (info->start - ref.point).length() <= (info->end - ref.point).length() ? info->start : info->end;
     }
-    // The end of the edge nearest where the corner was when picked.
-    return R::success((e.start - ref.point).length() <= (e.end - ref.point).length() ? e.start : e.end);
+    return R::success(out);
+}
+
+Result<geom::FaceInfo> flatFace(const ResolvedRef& ref)
+{
+    using R = Result<geom::FaceInfo>;
+    if (ref.kind != GeometryRef::Kind::Face || !ref.face.isPlanar() || ref.face.normal.length() < 0.5)
+        return R::failure(ErrorCode::NotPlanar, "The face it was made from is no longer flat.", "datum: face not planar");
+    return R::success(ref.face);
 }
 
 double halfSizeForArea(double area)
@@ -217,73 +216,85 @@ sketch::Plane sketchPlaneOn(const DatumGeometry& plane)
 
 Result<DatumGeometry> resolveDatum(const Datum& datum, const EvalContext& context)
 {
+    auto refs = resolveDatumRefs(datum, context);
+    if (!refs)
+        return Result<DatumGeometry>::failureFrom(refs);
+    return datumGeometry(datum, refs.value());
+}
+
+Result<std::vector<ResolvedRef>> resolveDatumRefs(const Datum& datum, const EvalContext& context)
+{
+    using R = Result<std::vector<ResolvedRef>>;
+    std::vector<ResolvedRef> out;
+    out.reserve(datum.refs.size());
+    for (const GeometryRef& ref : datum.refs) {
+        auto one = resolveOne(ref, context);
+        if (!one)
+            return R::failureFrom(one);
+        out.push_back(one.value());
+    }
+    return R::success(std::move(out));
+}
+
+Result<DatumGeometry> datumGeometry(const Datum& datum, const std::vector<ResolvedRef>& refs)
+{
     using R = Result<DatumGeometry>;
-    auto needRefs = [&](std::size_t count) { return datum.refs.size() == count; };
+    // The references must be the datum's, resolved: the same count and kinds.
+    bool matches = refs.size() == datum.refs.size();
+    for (std::size_t i = 0; matches && i < refs.size(); ++i)
+        matches = refs[i].kind == datum.refs[i].kind;
+    if (!matches)
+        return refused("This construction axis or plane is damaged.", "datumGeometry: references do not match");
+    auto needRefs = [&](std::size_t count) { return refs.size() == count; };
+    auto isEdge = [](const ResolvedRef& r) { return r.kind != GeometryRef::Kind::Face; };
+    auto isPoint = [](const ResolvedRef& r) { return r.kind == GeometryRef::Kind::Vertex || r.kind == GeometryRef::Kind::Center; };
     DatumGeometry g;
     switch (datum.method) {
     case DatumMethod::AxisThrough: {
         if (!needRefs(1))
             return refused("This axis is damaged.", "AxisThrough needs one reference");
-        const GeometryRef& ref = datum.refs[0];
+        const ResolvedRef& ref = refs[0];
         if (ref.kind == GeometryRef::Kind::Face) {
-            auto resolved = resolveRef(ref, context);
-            if (!resolved)
-                return R::failureFrom(resolved);
-            const auto info = geom::faceInfo(resolved.value().shape, resolved.value().index);
-            if (!info || !info->hasAxis() || info->axisDirection.length() < 0.5)
+            if (!ref.face.hasAxis() || ref.face.axisDirection.length() < 0.5)
                 return refused("The hole or shaft it was made from is no longer round.", "AxisThrough face has no axis");
-            g.origin = info->axisOrigin;
-            g.direction = info->axisDirection.normalized();
+            g.origin = ref.face.axisOrigin;
+            g.direction = ref.face.axisDirection.normalized();
         } else {
-            auto edge = edgeOf(ref, context);
-            if (!edge)
-                return R::failureFrom(edge);
-            if (edge.value().kind != geom::CurveKind::Circle || edge.value().axis.length() < 0.5)
+            if (ref.edge.kind != geom::CurveKind::Circle || ref.edge.axis.length() < 0.5)
                 return refused("The circle it was made from is no longer round.", "AxisThrough edge is not a circle");
-            g.origin = edge.value().center;
-            g.direction = edge.value().axis.normalized();
+            g.origin = ref.edge.center;
+            g.direction = ref.edge.axis.normalized();
         }
         break;
     }
     case DatumMethod::AxisAlongEdge: {
-        if (!needRefs(1))
-            return refused("This axis is damaged.", "AxisAlongEdge needs one reference");
-        auto edge = edgeOf(datum.refs[0], context);
-        if (!edge)
-            return R::failureFrom(edge);
-        if (edge.value().kind != geom::CurveKind::Line)
+        if (!needRefs(1) || !isEdge(refs[0]))
+            return refused("This axis is damaged.", "AxisAlongEdge needs one edge");
+        if (refs[0].edge.kind != geom::CurveKind::Line)
             return refused("The edge it was made from is no longer straight.", "AxisAlongEdge edge is not a line");
-        g.origin = edge.value().midpoint;
-        g.direction = edge.value().tangent.normalized();
+        g.origin = refs[0].edge.midpoint;
+        g.direction = refs[0].edge.tangent.normalized();
         break;
     }
     case DatumMethod::AxisTwoPoints: {
-        if (!needRefs(2))
-            return refused("This axis is damaged.", "AxisTwoPoints needs two references");
-        auto a = pointOf(datum.refs[0], context);
-        if (!a)
-            return R::failureFrom(a);
-        auto b = pointOf(datum.refs[1], context);
-        if (!b)
-            return R::failureFrom(b);
-        if ((b.value() - a.value()).length() < 1e-6)
+        if (!needRefs(2) || !isPoint(refs[0]) || !isPoint(refs[1]))
+            return refused("This axis is damaged.", "AxisTwoPoints needs two points");
+        const Vec3 a = refs[0].point, b = refs[1].point;
+        if ((b - a).length() < 1e-6)
             return refused("The two points are at the same place.", "AxisTwoPoints: coincident points");
-        g.origin = (a.value() + b.value()) * 0.5;
-        g.direction = (b.value() - a.value()).normalized();
+        g.origin = (a + b) * 0.5;
+        g.direction = (b - a).normalized();
         break;
     }
     case DatumMethod::AxisParallel: {
-        if (!needRefs(1) || datum.originIndex < 0 || datum.originIndex > 2)
+        if (!needRefs(1) || !isPoint(refs[0]) || datum.originIndex < 0 || datum.originIndex > 2)
             return refused("This axis is damaged.", "AxisParallel needs a point and an origin axis");
-        auto p = pointOf(datum.refs[0], context);
-        if (!p)
-            return R::failureFrom(p);
-        g.origin = p.value();
+        g.origin = refs[0].point;
         g.direction = axisVector(datum.originIndex);
         break;
     }
     case DatumMethod::PlaneOffset: {
-        if (datum.refs.empty()) {
+        if (refs.empty()) {
             if (datum.originIndex < 0 || datum.originIndex > 2)
                 return refused("This plane is damaged.", "PlaneOffset without a face needs an origin plane");
             g.direction = axisVector(datum.originIndex);
@@ -294,7 +305,7 @@ Result<DatumGeometry> resolveDatum(const Datum& datum, const EvalContext& contex
         }
         if (!needRefs(1))
             return refused("This plane is damaged.", "PlaneOffset takes one face");
-        auto face = flatFace(datum.refs[0], context);
+        auto face = flatFace(refs[0]);
         if (!face)
             return R::failureFrom(face);
         g.direction = face.value().normal.normalized();
@@ -305,23 +316,21 @@ Result<DatumGeometry> resolveDatum(const Datum& datum, const EvalContext& contex
         return R::success(g);
     }
     case DatumMethod::PlaneAngle: {
-        if (!needRefs(2))
+        if (!needRefs(2) || !isEdge(refs[0]))
             return refused("This plane is damaged.", "PlaneAngle needs an edge and a face");
-        auto edge = edgeOf(datum.refs[0], context);
-        if (!edge)
-            return R::failureFrom(edge);
-        if (edge.value().kind != geom::CurveKind::Line)
+        const geom::EdgeInfo& edge = refs[0].edge;
+        if (edge.kind != geom::CurveKind::Line)
             return refused("The edge it was made from is no longer straight.", "PlaneAngle edge is not a line");
-        auto face = flatFace(datum.refs[1], context);
+        auto face = flatFace(refs[1]);
         if (!face)
             return R::failureFrom(face);
-        const Vec3 d = edge.value().tangent.normalized();
+        const Vec3 d = edge.tangent.normalized();
         const Vec3 n = face.value().normal.normalized();
         if (std::abs(d.dot(n)) > 1e-3)
             return refused("The edge no longer runs along the face.", "PlaneAngle: edge not parallel to the face");
         // Across the edge, into the face (from the edge toward the face's
         // middle): at 0 the plane is the face's, at 90 degrees it stands up.
-        const Vec3 toMiddle = face.value().centroid - edge.value().midpoint;
+        const Vec3 toMiddle = face.value().centroid - edge.midpoint;
         Vec3 inward = toMiddle - d * toMiddle.dot(d) - n * toMiddle.dot(n);
         if (inward.length() < 1e-9)
             inward = n.cross(d);
@@ -330,20 +339,20 @@ Result<DatumGeometry> resolveDatum(const Datum& datum, const EvalContext& contex
         Vec3 normal = d.cross(across).normalized();
         if (d.cross(inward).dot(n) < 0)
             normal = normal * -1.0; // the face's own normal at 0
-        g.size = std::max(edge.value().length * 0.6, 5.0);
-        g.origin = edge.value().midpoint;
+        g.size = std::max(edge.length * 0.6, 5.0);
+        g.origin = edge.midpoint;
         g.direction = normal;
         g.xAxis = d;
-        g.center = edge.value().midpoint + across * g.size;
+        g.center = edge.midpoint + across * g.size;
         return R::success(g);
     }
     case DatumMethod::PlaneMidway: {
         if (!needRefs(2))
             return refused("This plane is damaged.", "PlaneMidway needs two faces");
-        auto a = flatFace(datum.refs[0], context);
+        auto a = flatFace(refs[0]);
         if (!a)
             return R::failureFrom(a);
-        auto b = flatFace(datum.refs[1], context);
+        auto b = flatFace(refs[1]);
         if (!b)
             return R::failureFrom(b);
         const Vec3 n = a.value().normal.normalized();

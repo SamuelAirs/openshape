@@ -117,8 +117,23 @@ private:
 // Where the datum is now, from its references in the document (during a body
 // recompute only the steps before the one evaluated count). Fails with a
 // plain message when a reference is gone or no longer fits (a face no longer
-// flat, two faces no longer parallel).
+// flat, two faces no longer parallel). The two halves below, in one call.
 Result<DatumGeometry> resolveDatum(const Datum& datum, const EvalContext& context);
+
+// What a datum's references resolved to: the facts of a face or edge, and
+// for a corner or a circle's center the point. Resolving is the kernel work
+// (finding the face or edge again); the datum's geometry follows from these
+// alone (datumGeometry), so the Plane tool previews any distance or angle
+// while its arrow is dragged without calling the kernel.
+struct ResolvedRef {
+    GeometryRef::Kind kind = GeometryRef::Kind::Face;
+    geom::FaceInfo face; // Face
+    geom::EdgeInfo edge; // Edge, Vertex, Center
+    Vec3 point;          // Vertex, Center
+};
+Result<std::vector<ResolvedRef>> resolveDatumRefs(const Datum& datum, const EvalContext& context);
+// No kernel calls: `refs` are datum.refs resolved.
+Result<DatumGeometry> datumGeometry(const Datum& datum, const std::vector<ResolvedRef>& refs);
 
 // A sketch plane on a datum plane: the world origin projected onto it (as for
 // a sketch on a face), x kept horizontal where possible.
