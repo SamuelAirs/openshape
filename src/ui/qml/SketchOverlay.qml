@@ -532,11 +532,10 @@ Item {
             },
             next: () => {},
             done: () => dimensionEditor.apply(),
-            // A phone's docked keypad: the field moves up out from under it.
-            keepAbove: (top) => {
-                if (dimensionEditor.y + dimensionEditor.height + 24 > top)
-                    dimensionEditor.y = Math.max(Theme.insetTop, top - dimensionEditor.height - 24)
-            },
+            // A keypad over the field (a phone's): the field moves out from
+            // under it, above it when there is room below the top bar,
+            // otherwise beside it.
+            avoidKeypad: (pad) => dimensionEditor.moveOffKeypad(pad),
             target: () => dimensionEditor.mapToItem(null, 0, 0, dimensionEditor.width, dimensionEditor.height),
             keepClear: "sketch",
             takesFocus: false
@@ -563,6 +562,18 @@ Item {
             selectAll()
             if (overlay.usesKeypad)
                 overlay.keypad.attach(keypadClient)
+        }
+        function moveOffKeypad(pad) {
+            const e = mapToItem(null, 0, 0, width, height)
+            if (!(e.x < pad.x + pad.width && pad.x < e.x + e.width && e.y < pad.y + pad.height && pad.y < e.y + e.height))
+                return
+            const topRoom = Theme.insetTop + Theme.controlHeight + 2 * Theme.panelPadding + 8
+            if (pad.y - height - 24 >= topRoom)
+                y += pad.y - height - 24 - e.y
+            else if (pad.x + pad.width + 8 + width <= overlay.width - Theme.insetRight)
+                x += pad.x + pad.width + 8 - e.x
+            else
+                x += Math.max(Theme.insetLeft, pad.x - width - 8) - e.x
         }
         function close() {
             if (overlay.keypad)

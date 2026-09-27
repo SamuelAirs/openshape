@@ -225,6 +225,7 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
             // Off the face, and Tab at once, while its preview still
             // computes on the worker: Tab waits for the verdict and stays.
             r.type(QStringLiteral("70"));
+            r.app().flushTyping(); // (typing paused: its preview starts)
             const auto* tool = holeTool(r);
             r.check(tool && tool->previewPending(), "hole tool: the typed X is still being previewed");
             r.key(Qt::Key_Tab);

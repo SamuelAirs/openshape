@@ -32,6 +32,7 @@ Technology choices and the alternatives considered are in
         │         │   Pattern, Insert, Head, Hole, Text)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ OverlayPlacement (value chip clear of the selection, labels clear of a finger)
+        │         ├─ TypingPause (typed values previewed once typing pauses), NumericKeypad (touch keypad model, placement)
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
         │         ▼
@@ -957,6 +958,55 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   bottom inset), whole and inside the safe area (the window's
   safe insets reach the sketch through `AppController.safeInsets` ->
   `InteractionController::setSafeInsets` -> `SketchSession::setSafeInsets`).
+- **Typed values wait for a pause** (`interaction/TypingPause`, Qt-free,
+  the time passed in): keys typed into the value chip
+  (`AppController.typeValueText`) or into a sketch's focused live value
+  (`typeSketchValue`) go to `InteractionController::typeValue(target,
+  text)`, which only keeps the whole text so far; it is parsed and
+  previewed once typing pauses (`TypingPause::kPause`, 0.7 s: the UI's
+  single-shot `QTimer` calls `advanceTyping()` at `typingDeadline()`), or
+  at once when it is confirmed: `flushTyping()` (leaving the field, Tab /
+  Next, a press in the view, an action, a commit, `setValueText` /
+  `confirmValueText` for Enter). Esc, cancelling, undo/redo, a new
+  document, a new sketch tool drop it (`dropTyping()`). A refused text's
+  message is `typedValueError()`. The acceptance runner waits for a
+  pending pause like for a preview. Model panel values and sketch
+  dimensions are applied only on Enter / ✓, so they never previewed per
+  key. Tests: `test_typing_pause.cpp` (a test clock; worker jobs counted).
+- **The numeric keypad** (touch; `interaction/NumericKeypad`, Qt-free, and
+  `ui/qml/NumericKeypad.qml`): `keypadLayout(mode, hasNext)` gives the keys
+  (5 columns: digits, `.`, `+ − × ÷`, parentheses, mm / cm / in or °, ⌫,
+  C, Next, ✓; digits only for a count), `pressKeypadKey(state, key, mode)`
+  edits the text (a unit replaces the unit the text ends with; ⌫ takes a
+  whole unit, never leaving `25m`; the value shown selected is replaced by
+  the first key) and `typeIntoKeypad` adds a hardware keyboard's
+  characters. QML reaches them through `AppController.keypadRows /
+  keypadPress / keypadType`. On touch the numeric `TextField`s (value
+  chip, sketch dimension editor, Model panel numbers) are `readOnly`, so
+  they take no input method and the system keyboard stays down (checked
+  in the acceptance run with an `ImEnabled` query on the focus object);
+  the keypad types into its **client** (a JS object: `mode()`,
+  `hasNext()`, `text()`, `replacing()`, `setText()`, `next()`, `done()`,
+  `target()`, `keepClear`), attached when a field gains the focus and
+  detached when it loses it; their `Keys.onPressed` passes a hardware
+  keyboard's keys to `hardwareKey()`. A sketch's live values have no field:
+  a tap on one (`AppController.focusSketchInput`) attaches a client that
+  gives the keypad itself the focus (keys go to `SketchOverlay.handleKey`;
+  it closes when the focus goes, e.g. a tap in the view) and shows the
+  typed text in a display line. `placeKeypad` (pure): docked along the
+  bottom in a compact window (the chip docks at the top while typing, and
+  `InteractionController::revealKeepClear(region)` pans, zooming out if
+  needed, so the keep-clear rectangle lies between them); otherwise beside
+  the value box (below, above, right, left; centered on that side, then
+  flush with either end), then a corner, clear of the value box, the
+  controls and the keep-clear rectangle (`keepClearRect`, or
+  `sketchScreenRect()` for a sketch's values), else docked. `Main.qml`
+  places it when a client attaches and when the window changes size (not
+  while the chip moves: no binding loop), and adds it to
+  `chipObstacles()`. The Text tool's words keep the system keyboard;
+  numeric fields ask for numbers (`Qt.ImhPreferNumbers`) wherever the
+  system keyboard is used. Tests: `test_numeric_keypad.cpp`; acceptance
+  scenario `numpad`.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -1346,7 +1396,17 @@ them on a hidden menu separator after the Open Recent sub-menu).
   area; on the phone it keeps its place while the arrow is dragged, its
   buttons work (Chamfer, Fillet, the edge's Select body, ✕, the field, ✓,
   and the face's Select body, out of sight until its row scrolls) and it
-  docks below the top bar while the value is typed); `appfolder`
+  docks below the top bar while the value is typed); `numpad` (at 402x874
+  with the iPhone's safe areas and at 1180x820, by touch: a box's top face
+  and its value tapped, the numeric keypad instead of the system keyboard
+  (the focused field takes no input method), keys of 44 pt and more,
+  docked on the phone with the value box at the top and the face between
+  them, beside the value box on the iPad and off the face, the value box
+  and the controls; 1, 0, 0 tapped quickly previews nothing until ✓, which
+  makes the box 100 mm high; a hardware keyboard types 25 + Enter into the
+  open keypad's field; the Model panel's Box Height 30 from the keypad; a
+  rectangle's live W 12, Next, H 8, ✓, then its width dimension 15, the
+  keypad clear of the rectangle on the iPad); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
   touch layout); `copies` (Mirror and Pattern clicked on a box off the

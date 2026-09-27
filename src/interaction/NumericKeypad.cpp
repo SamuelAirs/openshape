@@ -212,11 +212,22 @@ KeypadPlacement placeKeypad(const KeypadPlacementInput& in)
     const ScreenRect& area = in.area;
     const auto clampX = [&](double x) { return std::max(area.left, std::min(x, area.right - w)); };
     const auto clampY = [&](double y) { return std::max(area.top, std::min(y, area.bottom - h)); };
+    const ScreenRect& t = in.target;
     const KeypadPlacement docked{{area.left + std::max(0.0, (area.width() - w) / 2), area.bottom - h}, true, false};
+    if (in.compact && area.width() > area.height()) {
+        // A phone held sideways: a bottom row as tall as the keypad would
+        // leave no room for the model; it goes to a bottom corner, on the
+        // side away from the value box (the Model panel is on the right).
+        const Vec2 leftCorner{area.left, area.bottom - h}, rightCorner{area.right - w, area.bottom - h};
+        const bool leftFirst = t.center().x > area.center().x;
+        for (const Vec2 corner : {leftFirst ? leftCorner : rightCorner, leftFirst ? rightCorner : leftCorner})
+            if (!ScreenRect::at(corner, in.size).intersects(t.inflated(kKeypadGap - 1)))
+                return {corner, true, true};
+        return {leftFirst ? leftCorner : rightCorner, true, false};
+    }
     if (in.compact)
         return docked;
 
-    const ScreenRect& t = in.target;
     // Each side of the value box, the keypad centered on it, then flush
     // with one end and with the other (past a control near one end).
     std::vector<Vec2> candidates;

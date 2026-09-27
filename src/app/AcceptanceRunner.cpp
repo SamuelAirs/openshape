@@ -457,8 +457,15 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             screenshot(QStringLiteral("04_drag_preview"));
         },
         // 11. Type the exact new height (typing goes straight to the value field).
+        // The model waits until typing pauses (0.7 s: not 3 mm, then 35 mm).
         [=, this, &in] {
+            const double before = in.operation() ? in.operation()->value() : 0.0;
             type(QStringLiteral("35"));
+            check(in.typingPending() && in.operation() && in.operation()->value() == before,
+                  "typed quickly, 35 waits for a pause in typing", in.operation() ? num(in.operation()->value()) : QString());
+        },
+        // (The runner waited for the pause, as a user pausing would.)
+        [=, this, &in] {
             check(in.operation() && std::abs(in.operation()->value() - 35.0) < 1e-12, "typing 35 sets the height to 35 mm",
                   in.operation() ? num(in.operation()->value()) : QString());
             screenshot(QStringLiteral("05_typed_35"));

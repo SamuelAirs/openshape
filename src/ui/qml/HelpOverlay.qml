@@ -153,6 +153,8 @@ Rectangle {
                              "Flat face → Text: type the words (Noto Sans), tap where they go (snaps to the center and edge middles); drag the arrow out to raise them (emboss) or in to cut them (deboss), or Emboss / Deboss; Bold for Noto Sans Bold; tap Depth, Size (the height of capital letters) or Angle to type its value; 0° / 90° / 180° / 270°; change the words later in the Model panel"],
                             ["Holes that fit when printed","Screw sizes add the hole allowance (0.2 mm unless changed in Preferences) to clearance holes, counterbores and countersinks; Tap and heat-set insert sizes already assume printing; typed sizes are used exactly"],
                             ["Measure", "Select two faces or edges"],
+                            ["Typing a value", "Just type it: units and arithmetic work (1in, 20+5, 100/4); the model follows once you pause or Enter",
+                             "Tap the value: the keypad (digits, + − × ÷, mm / cm / in or °, ⌫, C, Next, ✓) types it; the model follows once you pause or tap ✓"],
                             ["Apply / cancel", "Enter / Esc (or ✓ / ✕)", "✓ / ✕ beside the value"],
                             ["When a step can't be done", "The red text says why and what to try, e.g. the largest radius that fits"]
                         ]
@@ -213,9 +215,10 @@ Rectangle {
                             ["Arc", "Click start, click end, then bend it (or type a radius)", "Tap start, tap end, then tap a point the arc passes through"],
                             ["Tangent arc", "Click the free end of a line or arc, then where the arc ends (or type a radius); it keeps going from there until Esc",
                              "Tap the free end of a line or arc, then where the arc ends; it keeps going until you tap Tangent arc again"],
-                            ["Exact size while drawing", "Type, Tab to the next value, Enter", "Draw it, then tap a dimension and type the value"],
+                            ["Exact size while drawing", "Type, Tab to the next value, Enter",
+                             "Tap the first corner, then a live value (W, H, L, Ø): type it on the keypad, Next for the next one, ✓ draws it"],
                             ["Stop drawing lines", "Right-click or Esc (again: leave the tool)", "Tap the Line tool again"],
-                            ["Change a dimension", "Click its label", "Tap its label"],
+                            ["Change a dimension", "Click its label", "Tap its label and type it on the keypad"],
                             ["Angle", "Select two lines → Angle; click the ° label to type a new one", "Select two lines → Angle; tap the ° label to type a new one"],
                             ["Constrain", "Select 1–2 items → Parallel, Perpendicular, Equal, Tangent, Concentric, …"],
                             ["See / remove constraints", "Small glyphs beside the geometry (H, V, ∥, ⊥, =, T, …): with the Select tool click or tap one, then Delete",

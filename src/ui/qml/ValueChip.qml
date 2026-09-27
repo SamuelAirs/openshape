@@ -293,7 +293,7 @@ Item {
                         border.width: 1.5
                     }
                     onTextEdited: chip.keyTyped(text)
-                    // Leaving the field takes what was typed (unless Esc dropped it).
+                    // Leaving the field (Esc too) takes what was typed.
                     onActiveFocusChanged: {
                         if (activeFocus) {
                             selectAll()
@@ -320,8 +320,10 @@ Item {
                         }
                         chip.nextField()
                     }
+                    // Esc leaves the field; the value typed stays (it is
+                    // previewed, as it was while each key previewed at once).
                     Keys.onEscapePressed: {
-                        chip.app.dropTyping()
+                        chip.app.flushTyping()
                         field.focus = false
                         chip.finished()
                         chip.syncFromModel()

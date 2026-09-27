@@ -128,6 +128,36 @@ display unit (**mm** or **in**, bottom right). Angles are in degrees.
 | `+5`, `-5` (in a size like Height) | 5 more or 5 less than now |
 | `90`, `90deg`, `90°`, `1.5rad` (angles in the value box) | an angle |
 
+**The model waits until you have typed the whole value.** Typing `100` does
+not show the model at 1 mm, then 10 mm, then 100 mm: the preview follows
+once you pause (about 0.7 s), or at once when you confirm the value with
+`Enter` or **✓**, `Tab` or **Next**, or by clicking or tapping somewhere
+else. `Esc` forgets what you typed. (Sketch values while drawing wait the
+same way. Model panel values and sketch dimensions change only when you
+confirm them.)
+
+**On an iPhone or iPad**, tapping a value opens OpenShape's own keypad
+instead of the system keyboard, so you never have to switch the keyboard
+to numbers. It has the digits, the decimal point, minus, `+ − × ÷` and
+parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
+**⌫** (backspace, which takes a whole unit at once), **C** (clear), **Next**
+(on to the next value, such as a rectangle's height or a hole's Y) and
+**✓** (apply). The keys are large enough for a finger or the Apple Pencil.
+
+- On an **iPhone** the keypad sits along the bottom and the value box moves
+  to the top; the view shifts so that what you selected stays in sight
+  between them.
+- On an **iPad** the keypad opens beside the value box, away from what you
+  selected and from the other controls.
+- The keypad also types a sketch's values: while drawing, tap the live
+  value (**W**, **H**, **L**, **Ø**) to type it; tap a dimension's label to
+  change it. And it types the numbers of a step in the Model panel.
+- A **hardware keyboard** (an iPad keyboard case) still types into the
+  value while the keypad is open. The Text tool's words use the system
+  keyboard.
+- Apple Pencil handwriting (Scribble) does not work in OpenShape's fields
+  yet; tap the keypad's keys with the Pencil instead.
+
 ---
 
 ## Navigating the view
@@ -540,6 +570,8 @@ Shell, Extrude …) with their main values.
 - **Hover a row** to see its geometry highlighted in the view.
 - **Click a step** to open it: its values appear as fields; type a new value
   and press `Enter`, and the model is rebuilt with it (`Esc` leaves it).
+  On an iPhone or iPad a number is typed on the keypad (tap **✓**; see
+  [Typing values](#typing-values)).
   **Suppress** switches the step off without deleting it (**Restore**
   switches it back on); **Delete** removes it. The first step of a body
   cannot be suppressed or deleted.

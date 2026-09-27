@@ -27,7 +27,7 @@ import OpenShape
 //   keepClear   what stays in sight: "selection" (the selection and its arrow:
 //               the value chip), "sketch" (a sketch's values) or ""
 //   display()   (optional) the text to show above the keys (a live value the keypad may cover)
-//   keepAbove(y) (optional) a docked keypad's top: the value box moves above it
+//   avoidKeypad(rect) (optional) where the keypad went: a value box it covers moves off it
 //   takesFocus  the keypad takes the keys itself (a sketch's live values have no
 //               field): a hardware keyboard's keys go to key(event), and the
 //               keypad closes when the focus goes elsewhere (a tap in the view)

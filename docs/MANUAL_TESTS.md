@@ -149,6 +149,13 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     on the ground. The Perspective / Orthographic button switches back;
     close and start again: your choice is kept. Is anything harder to
     read than before (edges, sketches, selected faces)?
+18. **Typing without jumps (your report: "as I type in 100, the model snaps
+    to 1mm, then 10mm, and finally 100").** Click a box's top face and type
+    `100` quickly: the model stays at 20 mm until you stop typing (about
+    0.7 s) or press Enter. Type `5`, wait: it follows. Press Enter right
+    after typing `30`: exactly 30. The same while drawing a rectangle
+    (type the width, Tab, the height). On a touch screen the numeric keypad
+    types instead (see IPAD.md).
 
 ## The Windows installer (optional)
 

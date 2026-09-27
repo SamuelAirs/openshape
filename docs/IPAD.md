@@ -207,8 +207,15 @@ picked file — copy them into OpenShape's folder in the Files app first.
 - Files: see above; the Open picker for projects outside OpenShape's folder
   needs testing on a device.
 - No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
-- Typing values: tap the value field for the on-screen keyboard (typing
-  without tapping needs a hardware keyboard).
+- Typing values: tap the value field for OpenShape's numeric keypad
+  (typing without tapping needs a hardware keyboard).
+- Apple Pencil Scribble (handwriting into a field) does not work: Qt's iOS
+  text input (Qt 6.11) does not take part in Scribble (no
+  `UIScribbleInteraction` / `UIIndirectScribbleInteraction` for Qt Quick
+  fields; upstream QTBUG-90932, open), and making it work would mean
+  patching Qt's iOS platform plugin. The value fields are read-only on
+  touch anyway (the keypad types into them, so the system keyboard stays
+  down); the keypad's keys take Pencil taps. See TD-76.
 - Not measured yet: speed and memory with bigger parts.
 
 The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → Logs →
@@ -231,8 +238,14 @@ relinking.
    space (orbits), double-tap a body (selects it).
 3. Two fingers: pan and pinch-zoom; a quick two-finger tap undoes, three
    fingers redo.
-4. Box → tap the top face → drag the arrow; tap the value field and type a
-   height → Enter.
+4. Box → tap the top face → drag the arrow; tap the value field: the
+   numeric keypad opens beside the value box (never the system keyboard),
+   away from the face and its arrow; tap `1`, `0`, `0` quickly: the model
+   does not jump to 1 mm and 10 mm; ✓ makes it 100 mm. Again with the
+   Pencil, and with `2`, `5`, `mm`, then `in` (it becomes 25 in), ⌫ (the
+   whole unit goes), `×` `2`, pause: the preview follows after a moment.
+   With a keyboard case: tap the value and type on the keyboard (the
+   keypad stays open, the keys still type).
 5. Sketch: draw a rectangle with a finger, then with the Pencil; turn on
    **Pen** and check that a resting hand does not draw or select.
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
@@ -269,7 +282,14 @@ relinking.
    your palm on the screen while the box shows: it does not move. Draw a
    rectangle and a circle with a finger: the live width / height /
    diameter show above the finger, not under it.
-13. Note anything slow, hard to hit, or missing — with a screenshot
+13. The keypad elsewhere: in a sketch, tap the first corner of a rectangle,
+   then its live **W**: the keypad shows what you type; `40`, **Next**,
+   `25`, ✓ draws a 40 × 25 rectangle. Tap its width label: the keypad
+   again; `50` ✓. In the Model panel, tap the Box step, then Height:
+   `30` ✓. The Hole tool: tap the diameter, **Next** goes to depth, X, Y.
+   Try Apple Pencil handwriting in a value field (Scribble): it is not
+   expected to work (TD-76); tell us if you miss it.
+14. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 
 ## What to test on the iPhone
@@ -289,11 +309,15 @@ margins (BUILDING.md).
 4. **View** (beside the X/Y/Z marker) opens Fit, Iso, Top, Front, Right,
    the projection and the unit; each works and closes the menu.
 5. Box → tap the top face → drag the arrow, or tap the value field: the
-   on-screen keyboard must not hide the field; ✓ applies.
+   numeric keypad comes up along the bottom (not the system keyboard), the
+   value box moves to the top and the face stays in sight between them;
+   `1`, `0`, `0` typed quickly previews only 100; ✓ applies.
 6. Select two bodies (double-tap one, double-tap the other): the actions
    (Union, Subtract, …) scroll sideways above the tool strip.
 7. Sketch: the Draw / Edit tools are in the bottom strip; draw a rectangle
-   and a circle, tap a dimension to change it, **Finish sketch**, extrude.
+   and a circle, tap a dimension to change it (the keypad; the dimension's
+   field moves above it), **Finish sketch**, extrude. Tap a rectangle's
+   first corner, then its live **W**: type `12`, **Next**, `8`, ✓.
 8. Turn the phone to landscape and back, in the middle of an operation: the
    layout follows at once, nothing overlaps (in landscape the Dynamic Island
    is on the left or right: no button sits under it).

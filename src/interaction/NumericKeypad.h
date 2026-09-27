@@ -92,7 +92,7 @@ struct KeypadPlacementInput {
 
 struct KeypadPlacement {
     Vec2 position;       // top-left corner
-    bool docked = false; // along the bottom of the window (a phone, or no room beside the value box)
+    bool docked = false; // along the bottom of the window (a phone, or no room beside the value box), or a sideways phone's corner
     bool clear = false;  // off the value box, the controls and the keep-clear rectangle
 };
 
@@ -103,7 +103,9 @@ inline constexpr double kKeypadGap = 10;
 inline constexpr double kKeypadKeepClearMargin = 20;
 
 // A phone (compact): docked along the bottom, the value chip is at the top
-// while a value is typed there. Larger windows (an iPad): beside the value
+// while a value is typed there; held sideways (the area wider than high), in
+// the bottom corner away from the value box instead (the other one when
+// that one reaches over it). Larger windows (an iPad): beside the value
 // box, below it, above it, right of it or left of it (centered on that side,
 // else flush with either end), else in a corner of the
 // area, the first that covers neither the value box, nor a control, nor the

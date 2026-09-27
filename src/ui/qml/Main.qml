@@ -1094,7 +1094,9 @@ ApplicationWindow {
         objectName: "numericKeypad"
         app: window.app
         z: 8 // over the value chip and the Model panel it types for
-        docked: Theme.compact
+        // Along the whole bottom of a phone held upright (sideways it goes
+        // to a bottom corner, at its own size: interact::placeKeypad).
+        docked: Theme.compact && window.height >= window.width
         width: docked ? window.width - Theme.safeLeft - Theme.safeRight - 8 : implicitWidth
         onClientChanged: if (client) Qt.callLater(window.placeKeypad)
         onHeightChanged: if (open) Qt.callLater(window.placeKeypad)
@@ -1123,13 +1125,23 @@ ApplicationWindow {
         })
         keypad.x = placement.x
         keypad.y = placement.y
-        if (keypad.docked && client.keepAbove)
-            client.keepAbove(keypad.y)
-        // A phone: the selection and its arrow move into sight between the
-        // value chip (docked below the top bar while typing) and the keypad.
-        if (keypad.docked && client.keepClear === "selection" && valueChip.visible) {
+        if (client.avoidKeypad)
+            client.avoidKeypad(Qt.rect(keypad.x, keypad.y, keypad.width, keypad.height))
+        // A phone: the selection and its arrow move into sight in the room
+        // the value chip (docked below the top bar while typing) and the
+        // keypad leave: above the keypad, or beside it when the phone is
+        // held sideways.
+        if (Theme.compact && client.keepClear === "selection" && valueChip.visible) {
             const top = valueChip.y + valueChip.height + 8
-            app.revealKeepClear(Qt.rect(Theme.insetLeft, top, window.width - Theme.insetLeft - Theme.insetRight, keypad.y - 8 - top))
+            const bottom = keypad.docked ? keypad.y - 8 : window.height - Theme.insetBottom
+            const leftRoom = keypad.x - 8 - Theme.insetLeft
+            const rightRoom = window.width - Theme.insetRight - (keypad.x + keypad.width + 8)
+            const room = keypad.docked ? Qt.rect(Theme.insetLeft, top, window.width - Theme.insetLeft - Theme.insetRight, bottom - top)
+                       : leftRoom >= rightRoom ? Qt.rect(Theme.insetLeft, top, leftRoom, bottom - top)
+                       : Qt.rect(keypad.x + keypad.width + 8, top, rightRoom, bottom - top)
+            // (Too little room: the view stays as it is.)
+            if (room.width >= 120 && room.height >= 120)
+                app.revealKeepClear(room)
         }
     }
 

@@ -10,7 +10,8 @@
 // up instead of the system keyboard (the field takes no input method), with
 // keys of 44 pt and more, docked along the bottom of the phone (the value
 // box at the top, the face in sight between them) and beside the value box
-// on the iPad, clear of the face, the value box and the controls. 1, 0, 0
+// on the iPad, clear of the face, the value box and the controls (a phone
+// held sideways, 874x402: in a bottom corner, the face beside it). 1, 0, 0
 // tapped quickly previews nothing until the check mark, which makes the box
 // 100 mm high. A hardware keyboard still types into the field (25, Enter).
 // The Model panel's Box step takes a height from the keypad; a rectangle's
@@ -126,7 +127,8 @@ struct Config {
     int height = 0;
     QVariant safeArea;
     double safe[4] = {0, 0, 0, 0};
-    bool phone() const { return width < 600; }
+    bool phone() const { return width < 600 || height < 500; }
+    bool sideways() const { return phone() && width > height; }
 };
 
 struct State {
@@ -180,7 +182,10 @@ void checkKeypad(AcceptanceRunner& r, const Config& c, const QString& what)
     r.check(keys >= 4 && smallest >= 44, c.name + QStringLiteral(": the keys are 44 pt or more (") + what + QStringLiteral(")"),
             QStringLiteral("%1 keys, smallest %2").arg(keys).arg(smallest));
     r.check(!systemKeyboardWanted(), c.name + QStringLiteral(": the system keyboard stays down (") + what + QStringLiteral(")"), focusName());
-    if (c.phone())
+    if (c.sideways())
+        r.check(std::abs(pad.bottom() - (h - c.safe[2])) <= 8 && pad.width() < w / 2,
+                c.name + QStringLiteral(": the keypad is in a bottom corner, the model keeps the rest (") + what + QStringLiteral(")"), rectText(pad));
+    else if (c.phone())
         r.check(std::abs(pad.bottom() - (h - c.safe[2])) <= 8 && pad.width() >= w - c.safe[1] - c.safe[3] - 10,
                 c.name + QStringLiteral(": the keypad is docked along the bottom (") + what + QStringLiteral(")"), rectText(pad));
 }
@@ -429,8 +434,10 @@ Steps steps(AcceptanceRunner& r)
     Steps out;
     auto state = std::make_shared<State>();
     Config phone{QStringLiteral("iphone"), 402, 874, QVariantList{62, 0, 34, 0}, {62, 0, 34, 0}};
+    Config sideways{QStringLiteral("iphone_landscape"), 874, 402, QVariantList{0, 62, 21, 62}, {0, 62, 21, 62}};
     Config tablet{QStringLiteral("ipad"), 1180, 820, QVariant(), {0, 0, 0, 0}};
     addConfig(out, r, phone, state);
+    addConfig(out, r, sideways, state);
     addConfig(out, r, tablet, state);
     out.push_back([&r] {
         r.window()->setProperty("simulatedSafeArea", QVariant());

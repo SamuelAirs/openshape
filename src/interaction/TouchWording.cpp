@@ -18,6 +18,7 @@ namespace {
 #define CHECK "\xE2\x9C\x93" // ✓ the value chip's Apply
 #define CROSS "\xE2\x9C\x95" // ✕ the value chip's Cancel
 #define DEGREE "\xC2\xB0"
+#define DIAMETER "\xC3\x98" // Ø, the circle's live value
 
 // Whole sentences and clauses with a hand-written touch version, most
 // specific first. (Sources: SketchSession::hintText and its messages,
@@ -36,16 +37,18 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 42> kPhrases
      " " DOT " " MINUS " / + change the count " DOT " Apply adds them"},
     {"Move to the side to offset to and click " DOT " or type a distance and press Enter " DOT " Esc cancels",
      "Tap on the side to offset to " DOT " tap Offset again to cancel"},
-    {"Move to set the width and click, or type a width and press Enter", "Tap to set the width"},
+    {"Move to set the width and click, or type a width and press Enter", "Tap to set the width, or tap W to type it"},
+    // (A live value tapped while drawing is typed on the numeric keypad.)
     {"Click the opposite corner, or type width, Tab, height, Enter",
-     "Tap the opposite corner (then tap a dimension to type an exact size)"},
+     "Tap the opposite corner, or tap W or H to type it (Next goes on to the other)"},
     {"Click or drag to draw a rectangle", "Tap two corners, or drag, to draw a rectangle"},
-    {"Click a corner, or type width, Tab, height, Enter", "Tap a corner (then tap a dimension to type an exact size)"},
+    {"Click a corner, or type width, Tab, height, Enter", "Tap a corner, or tap W or H to type it (Next goes on to the other)"},
     {"The pointer sets the middle of a side " DOT " type the size across flats, Tab for the sides " DOT " +/- change the sides",
-     "Tap the middle of a side to set the size " DOT " " MINUS " / + change the sides"},
+     "Tap the middle of a side to set the size, or tap the size to type it " DOT " " MINUS " / + change the sides"},
     {"+/- change the number of sides", MINUS " / + change the number of sides"},
-    {"Click to set the size, or type a diameter and press Enter", "Tap to set the size (then tap its dimension to type an exact one)"},
-    {"Click the next point " DOT " type a length " DOT " Esc ends the line", "Tap the next point " DOT " tap Line again to end the line"},
+    {"Click to set the size, or type a diameter and press Enter", "Tap to set the size, or tap " DIAMETER " to type it"},
+    {"Click the next point " DOT " type a length " DOT " Esc ends the line",
+     "Tap the next point, or tap L to type a length " DOT " tap Line again to end the line"},
     {"Click where the arc ends, or type a radius and press Enter " DOT " Esc ends",
      "Tap where the arc ends " DOT " tap Tangent arc again to stop"},
     {"Move to bend the arc and click, or type a radius and press Enter", "Tap a point the arc passes through"},
@@ -108,6 +111,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 12> kWords{{
 #undef CHECK
 #undef CROSS
 #undef DEGREE
+#undef DIAMETER
 
 void replaceAll(std::string& text, std::string_view from, std::string_view to)
 {

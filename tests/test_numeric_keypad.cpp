@@ -200,6 +200,28 @@ TEST(KeypadPlacement, PhoneDocksAlongTheBottom)
     EXPECT_DOUBLE_EQ(p.position.y + in.size.y, 840) << "down to the home indicator's safe area";
 }
 
+TEST(KeypadPlacement, SidewaysPhoneUsesABottomCornerAwayFromTheValueBox)
+{
+    KeypadPlacementInput in;
+    in.area = {66, 4, 808, 377}; // 874x402 with the Dynamic Island on the left
+    in.size = {336, 290};
+    in.target = {100, 10, 400, 66}; // a value box docked at the top, on the left
+    in.compact = true;
+    const KeypadPlacement p = placeKeypad(in);
+    EXPECT_TRUE(p.docked);
+    EXPECT_DOUBLE_EQ(p.position.x + in.size.x, 808) << "right: the value box leans left";
+    EXPECT_DOUBLE_EQ(p.position.y + in.size.y, 377);
+    EXPECT_LT(in.size.x, in.area.width() / 2) << "the model keeps the other half";
+    in.target = {500, 70, 808, 300}; // the Model panel on the right
+    EXPECT_DOUBLE_EQ(placeKeypad(in).position.x, 66) << "left of the Model panel";
+    in.target = {70, 203, 470, 243}; // (both corners reach it)
+    EXPECT_FALSE(placeKeypad(in).clear) << "the value box has to move (a dimension's field does)";
+    in.target = {70, 203, 190, 243};
+    const KeypadPlacement q = placeKeypad(in);
+    EXPECT_TRUE(q.clear);
+    EXPECT_DOUBLE_EQ(q.position.x + in.size.x, 808);
+}
+
 TEST(KeypadPlacement, BesideTheValueBoxClearOfTheSelectionAndTheControls)
 {
     KeypadPlacementInput in = ipad();
