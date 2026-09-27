@@ -113,9 +113,12 @@ scenarios; the release build (own OpenCASCADE) passes 583 tests.
 planes, documentation, the new look) and docs/IPAD.md (items 10-12 and the
 iPhone section: text, axes, the value box, the on-screen keyboard).
 
-**Questions for you:**
-1. Publish these as **v0.2.0** (a new pre-release with the notes in
-   CHANGELOG.md), or wait for your test pass first?
+**Published:** you said yes, so **v0.2.0** is out as a pre-release
+(https://github.com/SamuelAirs/openshape/releases/tag/v0.2.0, 2026-09-27):
+installer, zip and checksums, the release notes (CHANGELOG.md, reviewed
+against the code by agents before tagging), and, new with this release, the
+source code of the bundled LGPL libraries (TD-46). The downloaded installer
+matches its published SHA-256.
 
 **Known limits worth knowing** (details in docs/TECHNICAL_DEBT.md): the
 value box keeps clear of a fillet's edge but not its whole new surface
@@ -677,9 +680,9 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 1. The owner's second test pass (docs/MANUAL_TESTS.md 14-17, docs/IPAD.md
    items 10-12 and the iPhone section): act on what they report.
-2. With the owner's OK: tag **v0.2.0** (bump `project(VERSION)` in
-   CMakeLists.txt, date the CHANGELOG section, tag, push the tag; release.yml
-   publishes the notes).
+2. Attach the 0.1.0 package's LGPL sources to the v0.1.0 release (TD-46;
+   v0.2.0 has them). The next release follows BUILDING.md's "Before tagging
+   a release" steps.
 3. When SignPath approves: the owner follows docs/CODE_SIGNING.md, then a
    test signing through release.yml.
 4. Follow-ups from the reviews: keep the value box off a fillet's whole new

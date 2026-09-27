@@ -254,7 +254,8 @@ while moving bodies, an icon set (TD-9), sketch and grid geometry cached
   license gate over every packaged file, per-user NSIS installer, portable
   zip and checksums, icon and version resource; 269 files / 160 MB
   (installer 40 MB, zip 59 MB); `release.yml` (tag → GitHub Release) ran
-  green. ✅ v0.1.0 published as a pre-release (2026-09-26). 🟡 Code
+  green. ✅ v0.1.0 (2026-09-26) and v0.2.0 (2026-09-27, with the LGPL libraries'
+  sources attached) published as pre-releases. 🟡 Code
   signing (TD-44): the SignPath Foundation steps are in `release.yml`
   (docs/CODE_SIGNING.md); the owner applied, approval pending
 - ⬜ MSVC + vcpkg build
