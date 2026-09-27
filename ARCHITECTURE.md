@@ -1057,8 +1057,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   1400x900: the chip is off the projected edge or face (with the margin),
   the arrow tip, the keep-clear rectangle and the controls, inside the safe
   area; on the phone it keeps its place while the arrow is dragged, its
-  buttons work (Chamfer, Fillet, Select body scrolled into sight, ✕, the
-  field, ✓) and it docks below the top bar while the value is typed); `appfolder`
+  buttons work (Chamfer, Fillet, the edge's Select body, ✕, the field, ✓,
+  and the face's Select body, out of sight until its row scrolls) and it
+  docks below the top bar while the value is typed); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
   touch layout); `copies` (Mirror and Pattern clicked on a box off the

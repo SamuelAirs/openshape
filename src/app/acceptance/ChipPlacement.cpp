@@ -10,10 +10,11 @@
 // the selected edge or face as projected on screen, of the arrow and its tip,
 // and of the controls, inside the safe area. On the phone the chip is docked
 // and keeps its place while the arrow is dragged; its buttons are tapped
-// (Chamfer, Fillet, the last action scrolled into sight, ✕, the field, ✓), and while
-// the value is typed it docks below the top bar (the on-screen keyboard
-// comes up from below). The window goes back to the run's size at the end
-// (the runner's reset restores it too).
+// (Chamfer, Fillet, the edge's last action, ✕, the field, ✓, and the face's
+// last action, which starts out of sight), and while the value is typed it
+// docks below the top bar (the on-screen keyboard comes up from below). The
+// window goes back to the run's size at the end (the runner's reset
+// restores it too).
 
 #include "app/AcceptanceRunner.h"
 #include "geometry/Modeling.h"
@@ -319,6 +320,33 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
         steps.push_back([&r, c, s] {
             r.check(std::abs(r.bodyVolume() - s->volume) < 1e-6, c.name + QStringLiteral(": Undo takes the push back"),
                     AcceptanceRunner::num(r.bodyVolume()));
+            r.key(Qt::Key_Escape);
+        });
+        // ---- An action out of sight: the face's last one (its row is longer
+        // than the bar), scrolled into sight and tapped.
+        steps.push_back([&r, c] {
+            r.check(r.app().interaction().selection().empty(), c.name + QStringLiteral(": Esc clears the selection before the face"));
+            select(r, c, r.screenPoint(0, -10, 10));
+        });
+        wait(steps, 2); // the chip lays out its new row
+        steps.push_back([&r, c] {
+            r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the face again (Push/Pull)"),
+                    r.app().operationTitle());
+            const QVariantList actions = r.app().contextActions();
+            const QString last = actions.isEmpty() ? QString() : actions.back().toMap().value(QStringLiteral("id")).toString();
+            r.check(last == QStringLiteral("selectBody"), c.name + QStringLiteral(": the face's last action is Select body"), last);
+            QQuickItem* button = r.findItem(QStringLiteral("action_selectBody"));
+            const QRectF row = sceneRect(r, QStringLiteral("valueChipActions"));
+            const QRectF rect = button ? button->mapRectToScene(QRectF(0, 0, button->width(), button->height())) : QRectF();
+            r.check(button && !row.isEmpty() && !row.adjusted(-0.5, -0.5, 0.5, 0.5).contains(rect),
+                    c.name + QStringLiteral(": Select body starts out of sight in the face's row"), rectText(rect) + QStringLiteral(" / ") + rectText(row));
+            r.check(r.clickItem(QStringLiteral("action_selectBody")), c.name + QStringLiteral(": tap Select body, scrolled into sight"));
+        });
+        steps.push_back([&r, c] {
+            const auto& selection = r.app().interaction().selection();
+            r.check(selection.size() == 1 && selection.allOfKind(sel::SelectionKind::Body) && r.app().operationTitle() == QStringLiteral("Move"),
+                    c.name + QStringLiteral(": Select body from the face selects the body (Move)"), r.app().operationTitle());
+            r.check(r.clickItem(QStringLiteral("valueChipCancel")), c.name + QStringLiteral(": tap ✕ in the value box (the body)"));
         });
     }
     steps.push_back([&r] {
