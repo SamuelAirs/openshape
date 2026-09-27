@@ -682,6 +682,15 @@ edited as a model.
 **File → Export STEP…** writes the exact geometry (millimeters) for other
 CAD programs.
 
+On an **iPhone or iPad**, **File → Export STL**, **Export 3MF** and
+**Export STEP** save the file into OpenShape's *Exports* folder and then
+open the share sheet: pick your slicer app (for example Bambu Handy,
+PrusaSlicer or Cura for iOS, whichever you have installed), **AirDrop** it to
+the computer next to the printer, **Save to Files** or send it by **Mail**.
+On an iPad the share sheet opens next to the **File** button. Closing the
+share sheet is fine: the file stays in *Exports* (see "Files on iPhone and
+iPad" below).
+
 ---
 
 ## Files, recovery and preferences
@@ -707,14 +716,32 @@ CAD programs.
   installing, double-clicking an `.openshape` file opens it too.
 - Before New, Open or closing with unsaved changes, OpenShape asks: **Save**,
   **Don't Save** or **Cancel**.
-- **On iPhone and iPad** there are no save dialogs: **Save** asks only for a
-  name and puts the project into OpenShape's folder (in the Files app: *On
-  My iPhone / iPad → OpenShape*); **File → Export STL**, **Export 3MF** and
-  **Export STEP** write straight into its *Exports* folder, and a message
-  names the file. **Open…** picks any project there, and Home lists the
-  projects in that folder too.
 - A project from a newer OpenShape version is refused with a message rather
   than opened wrongly.
+
+### Files on iPhone and iPad
+
+- There are no save dialogs: **Save** asks only for a name and puts the
+  project into OpenShape's folder (in the Files app: *On My iPhone / iPad →
+  OpenShape*). Home lists the projects in that folder.
+- **File → Export STL**, **Export 3MF** and **Export STEP** write straight
+  into its *Exports* folder (a message names the file), then open the share
+  sheet: a slicer app, AirDrop, Save to Files or Mail.
+- **File → Share Project…** sends the project itself (the `.openshape`
+  file, with its full history) by AirDrop, Mail or to the Files app. It
+  saves first; a new project is asked for its name.
+- **From other apps:** in the Files app, tap a project to open it in
+  OpenShape, or use **Share → OpenShape** on a project or a STEP file (`.step`,
+  `.stp`); in Mail, touch and hold an attachment and choose OpenShape. A
+  project from elsewhere (iCloud Drive, another app, Mail) is **copied into
+  OpenShape's folder** and opened; the original stays as it was, and your
+  changes go into the copy (the same file opened again uses that copy; a
+  different project with the same name becomes "Name 2"). A STEP file
+  becomes a **new project**, as Home's **Import STEP…** does. If the open
+  project has unsaved changes, OpenShape asks first.
+- **Open…** picks any project; one outside OpenShape's folder is copied in
+  the same way. **Import STEP…** reads STEP files from anywhere (iCloud
+  Drive, On My iPhone / iPad).
 
 ### Recovery after a crash
 

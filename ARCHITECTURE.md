@@ -1308,13 +1308,52 @@ stays Qt's `FileDialog` (the system document picker there). After a menu or over
 closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
 them on a hidden menu separator after the Open Recent sub-menu).
 
+**Share sheet** (iOS; `ui/Share.h`): `AppController` holds a
+`ShareHandler` (`setShareHandler`; `canShare`), at start
+`platformShareHandler()`: on iOS `src/ui/ios/ShareSheet.mm` (Objective-C++,
+ARC, compiled for iOS only; `enable_language(OBJCXX)` there) presents a
+`UIActivityViewController` for the file from the window's view controller
+(the `QWindow`'s `winId()` is its `UIView`), on the main thread, as a
+popover at the anchor on an iPad; elsewhere it is empty. After an export
+into the app folder `exportToAppFolder(format, anchor)` shares the file;
+File → Share Project… (`window.shareProject()`: Save first, the name prompt
+for a new project, then `shareProject(anchor)`) shares the project file.
+The anchor is the File button's rectangle in window coordinates (= UIKit
+points). The sheet's end comes back once (`ShareOutcome`): sent and closed
+are logged, a failure becomes a message. The acceptance run puts a stub in;
+`AcceptanceRunner` restores the platform's for each scenario.
+
+**Files from other apps** (`ui/IncomingFiles`, Qt Core, tested in
+`test_uistate`): `Info.plist` declares projects (Owner) and STEP files
+(Alternate, imported type `org.iso.step`) in `CFBundleDocumentTypes`. Qt
+6.11's iOS scene delegate turns `openURLContexts` into
+`QWindowSystemInterface::handleFileOpenEvent` — after registering the URL
+with its security-scoped file engine, which starts and stops the access
+iOS granted around every `QFile` use — so a `QFileOpenEvent` reaches the
+application object; `AppController::eventFilter` queues
+`openIncomingFile(url)`. The file is staged at once through `QFile` only
+(OpenCASCADE and the project reader open paths themselves, outside Qt's
+engine): a project outside the app folder is copied into it (an identical
+copy there is reused; another of the same name gets "Name 2"), a STEP file
+into a scratch folder (`<temp>/openshape-incoming`, removed after the
+import), and the system's copy in `Documents/Inbox` (Mail) is moved rather
+than copied, an empty Inbox removed; a file inside the app folder is used
+in place, and without an app folder (a Mac's Finder) every file is. Then,
+with no unsaved changes, it opens (`openProjectFile`) or imports as a new
+project (`importStepFile`); otherwise `incomingFileWaiting` makes Main.qml
+ask "Save changes?" and continue with `openPendingIncomingFile()`. The
+document pickers' files take the same staging when there is an app folder
+(`openProject`, `importStepFrom`): on iOS they lie outside the sandbox too.
+
 ## Testing
 
 - GTest suites (`tests/`): core (units, UUID, math), geometry (measurable
   invariants: volumes, bounding boxes, face counts), document/commands/files,
   camera/picking/interaction including a **headless Milestone 0 script**;
-  `test_uistate` (Qt Core, no window): settings, window placement and
-  recovery sessions with real lock files.
+  `test_uistate` (Qt Core, no window): settings, window placement,
+  recovery sessions with real lock files, and where files from other apps
+  go (`ui/IncomingFiles`: copies, reuse, "Name 2", the Inbox, scratch
+  copies, refusals).
 - Robustness suite (`test_robustness`): seeded random modeling sessions
   (`tests/StressHarness.h`: boxes, push/pull, fillets, chamfers, shells,
   sketches, extrusions, moves, rotations, mirrors, patterns, booleans,
@@ -1349,7 +1388,19 @@ them on a hidden menu separator after the Open Recent sub-menu).
   docks below the top bar while the value is typed); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
-  touch layout); `copies` (Mirror and Pattern clicked on a box off the
+  touch layout); `share` (with a stub share sheet in the app-folder mode:
+  Export STL / 3MF / STEP and File → Share Project… on a new, a changed
+  and a saved project hand the sheet an existing, non-empty file with the
+  right name and the File button's rectangle, also at iPhone size; closed
+  says nothing, a failure is said; no Share Project and no gap on the
+  desktop); `openin` (real project and STEP files handed over through
+  `QWindowSystemInterface::handleFileOpenEvent`, as Qt's iOS delegate does:
+  "Save changes?" first, the project copied byte for byte into the app
+  folder and opened, no second copy the next time, Mail's STEP file moved
+  out of the Inbox and imported as a new project with its volumes, Cancel
+  and Save with the name prompt, an unsupported file refused; the Open and
+  Import STEP pickers with files from elsewhere; on the desktop a file
+  opens where it is); `copies` (Mirror and Pattern clicked on a box off the
   origin: separate bodies without asking, the hint line and the toggle,
   then the original's top face pushed twice while the copies stay as they
   were); `alignorigin` (a hole's axis onto Z by the action and by clicking
@@ -1414,6 +1465,18 @@ them on a hidden menu separator after the Open Recent sub-menu).
   is not available; `OPENSHAPE_TEXT_FONT` lets such a development build use
   another font file in its place. `scripts/package-windows.sh` ships `OFL.txt` as
   `NotoSans-OFL.txt` and the license gate compares it with the repository.
+- **iOS archive** (`scripts/ios/build-app.sh`, `ipad.yml`): Release with
+  debug information at the same optimization and `dwarf-with-dsym`
+  (`CMAKE_XCODE_ATTRIBUTE_*` in the top-level `CMakeLists.txt` and on the
+  `xcodebuild` line), so the archive carries `OpenShape.app.dSYM`; the
+  script fails when it is missing, when its UUID is not the app binary's or
+  when OpenShape's functions are not in it, and when `Info.plist` lacks the
+  document types. `scripts/ios/testflight.sh` exports with
+  `uploadSymbols` (and refuses an archive without dSYMs) and
+  `testFlightInternalTestingOnly` false (the public beta). OpenCASCADE's
+  static libraries (`build-deps.sh`, Release) have no debug information,
+  nor may Qt's prebuilt ones: frames in them symbolicate to function names
+  only (TD-70).
 - **Windows resources:** `src/app/openshape.rc.in` (icon
   `resources/icons/openshape.ico`, made from the SVG by
   `scripts/windows/make-icon.py`, and VERSIONINFO) is configured and compiled

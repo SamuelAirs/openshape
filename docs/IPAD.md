@@ -16,7 +16,10 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
 | iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ✅ built on CI |
-| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); internal testing only (`testFlightInternalTestingOnly`): the owner's devices |
+| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); since 2026-09-27 builds may also go to external testers (`testFlightInternalTestingOnly` false: the public beta, section 1b) |
+| Debug symbols (dSYM) | 2026-09-27: Release is built with debug information (same optimization) and the archive carries `OpenShape.app.dSYM`; `build-app.sh` fails without it (UUID must match the app, OpenShape's functions must be in it); the upload sends it (`uploadSymbols`), so TestFlight crash reports symbolicate |
+| Share sheet after exports, File → Share Project… | 2026-09-27: built on CI (`src/ui/ios/ShareSheet.mm`); on Windows the `share` acceptance scenario checks it with a stub sheet; **to try on the devices** |
+| Open in OpenShape (Files app, Mail) | 2026-09-27: document types for projects and STEP files, `QFileOpenEvent` handling; the `openin` scenario checks it on Windows through Qt's own entry point; **to try on the devices** |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
 
@@ -97,6 +100,32 @@ Needs the paid Apple Developer Program (the owner has it).
 7. **After the first upload:** App Store Connect → OpenShape → TestFlight →
    Internal Testing → **+** → a group (e.g. `Me`) with automatic
    distribution → add yourself. Later builds then arrive by themselves.
+
+## 1b. The public beta (external testers; the owner, once)
+
+Decided 2026-09-27: a public TestFlight beta before the paid App Store
+release. Builds uploaded since then may go to external testers
+(`scripts/ios/testflight.sh` no longer marks them internal-only; builds
+uploaded before stay internal). In App Store Connect → OpenShape →
+TestFlight:
+
+1. **Test Information** (left column): Beta App Description (what to try),
+   Feedback Email, Marketing URL (e.g. the GitHub page) and Privacy Policy
+   URL.
+2. **Beta App Review Information** (same page): a contact name, e-mail and
+   phone; sign-in required: **No** (OpenShape has no accounts).
+3. **External Testing → +** → a group (e.g. `Public beta`) → add a build →
+   **Submit for Review**. Apple reviews the first build of each version
+   (usually within a day); later builds of the same version go out without
+   a review.
+4. In the group: **Public Link → Enable** (optionally a tester limit, up to
+   10,000) and share the link; anyone with it installs TestFlight and joins.
+   A **What to Test** note per build is shown to the testers.
+
+Testers' crash reports and screenshot feedback appear under TestFlight →
+Feedback (crashes symbolicated with the uploaded dSYM). The App Store
+listing itself (description, screenshots, price, age rating, privacy
+answers) is a separate checklist: docs/APP_STORE.md.
 
 ## 2. Getting a new build onto the iPhone or iPad
 
@@ -180,32 +209,60 @@ OpenShape):
 - **Open** is the system document picker, starting in OpenShape's folder;
   `Info.plist` declares the `.openshape` type
   (`io.github.samuelairs.openshape.project`) so the picker shows projects.
+  A project picked outside OpenShape's folder (iCloud Drive, On My iPad) is
+  copied in and the copy opened (below).
 - **Export STL / 3MF / STEP** write `Exports/<project name>.<ext>` in
-  OpenShape's folder at once (replacing an earlier export of that name) and
-  say where; from the Files app they can be shared to a slicer, AirDrop or
-  Mail.
+  OpenShape's folder at once (replacing an earlier export of that name),
+  say where, and then open the **share sheet** with the file
+  (`UIActivityViewController`: a slicer app, AirDrop, Save to Files, Mail;
+  on an iPad a popover at the File button). **File → Share Project…** saves
+  (a new project asks for its name) and shares the `.openshape` file.
+  Sent or closed is only logged; a failure is said in a message. The sheet
+  is Objective-C++ (`src/ui/ios/ShareSheet.mm`), behind a handler the
+  acceptance run replaces with a stub (`AppController::setShareHandler`).
+- **Open in OpenShape:** `Info.plist` lists projects (rank Owner) and STEP
+  files (rank Alternate; an imported type `org.iso.step` for `.step` /
+  `.stp`, as Apple declares none) in `CFBundleDocumentTypes`. How Qt 6.11.2
+  delivers them (read from its iOS plugin, `qiosapplicationdelegate.mm`):
+  its scene delegate's `scene:openURLContexts:` (and the URL contexts of a
+  cold start) passes each file URL through
+  `qt_apple_urlFromPossiblySecurityScopedURL` — which starts security-scoped
+  access, keeps a bookmark and stops again; Qt's security-scoped file engine
+  then starts and stops access around each `QFile` use — and on to
+  `QWindowSystemInterface::handleFileOpenEvent`, a `QFileOpenEvent` to the
+  application object (not `QDesktopServices`, which gets only non-file
+  URLs). `AppController` filters that event into `openIncomingFile()`.
+  Since OpenCASCADE and the project reader open files themselves, the file
+  is first brought inside through `QFile` (`ui/IncomingFiles`): a project
+  into OpenShape's folder (an identical copy there is reused, a different
+  one of the same name becomes "Name 2"; the system's copy in
+  `Documents/Inbox`, as Mail leaves attachments, is moved out and the empty
+  Inbox removed), a STEP file into a scratch copy that is removed after the
+  import. Then it opens like Home's Open or Import STEP (a new project),
+  after "Save changes?" when there are unsaved changes. A project already in
+  OpenShape's folder (tapped in the Files app) opens in place.
 - Open Recent, recovery copies and the log (`Logs/openshape.log`) work as on
   the desktop. iOS gives an updated app (every TestFlight build) a new data
   folder, so remembered paths into OpenShape's folder go stale: Open Recent
   entries and a recovery copy's project follow the folder to its new place
-  (`io::rebasedIntoFolder`). A project opened from outside OpenShape's
-  folder (iCloud Drive) drops out of Open Recent once iOS no longer lets the
-  app read it (no security-scoped bookmarks yet, TD-53).
-- Windows and macOS are unchanged (file dialogs). `--app-folder <dir>`
-  tries the iOS behaviour on the desktop; the acceptance scenario
-  `appfolder` checks it.
+  (`io::rebasedIntoFolder`). A project from outside OpenShape's folder is
+  opened as its copy there, so Open Recent lists the copy.
+- Windows and macOS are unchanged (file dialogs; no Share Project). On a Mac
+  a file handed over by Finder opens where it is.
 
-Not done yet: the system share sheet straight from Export (needs a few
-lines of Objective-C: `UIActivityViewController` with the file URL); opening
-a project from the Files app into OpenShape (needs `CFBundleDocumentTypes`
-and handling `QFileOpenEvent`); projects outside OpenShape's folder (iCloud
-Drive) may not open if Qt does not start security-scoped access for the
-picked file — copy them into OpenShape's folder in the Files app first.
+Try without an iPhone: `--app-folder <dir>` on the desktop; the acceptance
+scenarios `appfolder` (saving by name, exports), `share` (a stub share
+sheet) and `openin` (files handed over through `handleFileOpenEvent`, the
+call Qt's iOS delegate makes; the Open and Import STEP pickers with files
+from elsewhere) check it. Not verified on a device yet (TD-69): the share
+sheet itself, which apps offer "Open in OpenShape" for STEP files (another
+app's own STEP type may win, TD-68), and files in iCloud Drive that are not
+downloaded yet.
 
 ## Expected rough edges
 
-- Files: see above; the Open picker for projects outside OpenShape's folder
-  needs testing on a device.
+- Files: see above; sharing and "Open in OpenShape" need trying on the
+  devices (the tests below).
 - No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
 - Typing values: tap the value field for the on-screen keyboard (typing
   without tapping needs a hardware keyboard).
@@ -271,6 +328,24 @@ relinking.
    diameter show above the finger, not under it.
 13. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
+14. Share to a slicer: File → Export STL: the share sheet opens as a
+   popover pointing at **File**; pick the slicer app (the file arrives
+   there), then Export 3MF and **AirDrop** it to a Mac or iPhone; Export
+   STEP and **Save to Files**; close the sheet once without choosing (no
+   message; the file is in OpenShape → Exports). Then with the iPad in
+   Split View at half width: the sheet still appears.
+15. File → Share Project… on a new project: it asks for a name, saves, then
+   the sheet offers AirDrop / Mail / Save to Files; send it to yourself by
+   Mail.
+16. Open in OpenShape: in the Files app, on a `.openshape` project in
+   iCloud Drive: Share → OpenShape (or tap it): OpenShape opens it and says
+   "a copy in OpenShape's folder"; the copy is in On My iPad → OpenShape.
+   Tap a project in On My iPad → OpenShape: it opens directly (no copy).
+   A `.step` file in the Files app: Share → OpenShape: a new project with its
+   bodies. In Mail (the project mailed in 15, and a STEP attachment): touch
+   and hold the attachment → OpenShape. With unsaved changes, each first
+   asks "Save changes?". Afterwards On My iPad → OpenShape has no "Inbox"
+   folder left.
 
 ## What to test on the iPhone
 
@@ -303,7 +378,9 @@ margins (BUILDING.md).
    screen and scroll.
 11. File → Save: the first time it asks for a name and saves into OpenShape's
    folder (Files app → On My iPhone → OpenShape); File → Open shows the
-   system file picker; Export STL/3MF/STEP writes into Exports there.
+   system file picker (a project from iCloud Drive opens as a copy in
+   OpenShape's folder); Export STL/3MF/STEP writes into Exports there and
+   opens the share sheet.
    After the next TestFlight update, File → Open Recent still lists those
    projects and opens them.
 12. iPhone Duo (once available): fold and unfold with a model open, and use
@@ -318,3 +395,10 @@ margins (BUILDING.md).
    type. Swipe its row of actions sideways and tap the last one.
    Draw a rectangle with a finger, also next to the Dynamic Island in
    landscape: its width and height show above the finger, whole.
+14. Share: File → Export STL: the share sheet slides up from the bottom;
+   send it to the slicer app, AirDrop it to the iPad or a Mac; File → Share
+   Project… (asks a name for a new project) → Mail. Open the mailed project
+   and a mailed STEP file from Mail (touch and hold the attachment →
+   OpenShape), and a STEP file from the Files app (Share → OpenShape): the
+   project opens as a copy in OpenShape's folder, the STEP file as a new
+   project.
