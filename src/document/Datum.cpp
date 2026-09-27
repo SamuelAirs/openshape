@@ -382,25 +382,32 @@ std::vector<ParameterInfo> Datum::parameters() const
     return {};
 }
 
+Status checkDatumValues(const Datum& datum)
+{
+    if (!std::isfinite(datum.distance) || !std::isfinite(datum.angle))
+        return Status::failure(ErrorCode::InvalidArgument, "Enter a number.", "datum value not finite");
+    if (std::abs(datum.distance) > kMaxDatumDistance)
+        return Status::failure(ErrorCode::InvalidArgument, "The distance is too large.",
+                               "datum distance out of range: " + std::to_string(datum.distance));
+    if (std::abs(datum.angle) > kPi + 1e-12)
+        return Status::failure(ErrorCode::InvalidArgument, "The angle must be between -180° and 180°.",
+                               "datum angle out of range: " + std::to_string(datum.angle));
+    return okStatus();
+}
+
 Status Datum::setParameter(std::string_view key, double value)
 {
-    if (!std::isfinite(value))
-        return Status::failure(ErrorCode::InvalidArgument, "Enter a number.", "datum parameter not finite");
-    if (key == "distance" && method == DatumMethod::PlaneOffset) {
-        if (std::abs(value) > 1e6)
-            return Status::failure(ErrorCode::InvalidArgument, "The distance is too large.", "datum distance out of range");
-        distance = value;
-        return okStatus();
-    }
-    if (key == "angle" && method == DatumMethod::PlaneAngle) {
-        if (std::abs(value) > kPi + 1e-12)
-            return Status::failure(ErrorCode::InvalidArgument, "The angle must be between -180° and 180°.",
-                                   "datum angle out of range");
-        angle = value;
-        return okStatus();
-    }
-    return Status::failure(ErrorCode::InvalidArgument, "This value cannot be changed.",
-                           "datum: unknown parameter '" + std::string(key) + "'");
+    const bool known = (key == "distance" && method == DatumMethod::PlaneOffset)
+                    || (key == "angle" && method == DatumMethod::PlaneAngle);
+    if (!known)
+        return Status::failure(ErrorCode::InvalidArgument, "This value cannot be changed.",
+                               "datum: unknown parameter '" + std::string(key) + "'");
+    Datum edited = *this;
+    (key == "distance" ? edited.distance : edited.angle) = value;
+    if (Status status = checkDatumValues(edited); !status)
+        return status;
+    *this = std::move(edited);
+    return okStatus();
 }
 
 std::vector<Uuid> Datum::bodies() const
@@ -489,7 +496,7 @@ Result<Datum> Datum::fromJson(const json& j)
     }
     if (j.contains("distance")) {
         const auto distance = numberFrom(j, "distance");
-        if (!distance || std::abs(*distance) > 1e6)
+        if (!distance || std::abs(*distance) > kMaxDatumDistance)
             return bad("invalid distance");
         d.distance = *distance;
     }

@@ -328,9 +328,18 @@ Document (UUID, display unit)
   follows edits of that step and earlier ones, not later steps (TD-64).
   Commands: `AddDatumCommand`, `EditDatumCommand` (visibility, name,
   distance / angle; before/after snapshots), `DeleteDatumCommand` (sketches
-  on the plane stay where they are and follow it again after undo). Steps
-  that use a datum (Rotate, Pattern, Mirror, Align) store its position as
-  geometry (TD-65); only a sketch references one (below).
+  on the plane stay where they are and follow it again after undo). The
+  Add and Edit commands, the Plane tool's value and `Datum::setParameter`
+  refuse what the file could not read back (`checkDatumValues`: an offset
+  beyond +-`kMaxDatumDistance` = 10^6 mm, an angle beyond +-180 degrees).
+  Steps that use a datum (Rotate, Pattern, Mirror, Align) store its
+  position as geometry (TD-65); only a sketch references one (below). An
+  independent copy (`DuplicateBodyCommand`) of a body with a sketch on a
+  plane made from something it copies takes a hidden copy of that plane
+  (`Datum::copyWithId`, references re-pointed at the copy, added before the
+  sketches and bodies, removed after them), so editing the source never
+  moves the copy; a plane made from other bodies or an origin plane stays
+  shared, like a face of another body.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
   know when to re-tessellate and when topology indices are stale.
 
@@ -653,7 +662,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   one-time placement, not linked to the target.
 - **Construct (Axis, Plane):** `runTool("axis" / "plane")` starts a
   `DatumOperation` (`datumTool_` keeps it across document changes; another
-  tool ends it) whose modes are its actions (`datum:axis`,
+  tool ends it, and so does any selection: the tool runs with nothing
+  selected, so a body picked in the Model panel or by a double-click ends
+  it in `rebuildOperation`) whose modes are its actions (`datum:axis`,
   `datum:twoPoints`, `datum:parallel:<0-2>`, `datum:offset`,
   `datum:origin:<0-2>`, `datum:angle`, `datum:midway`). Clicks on faces and
   edges are its picks (`pick()` says why one does not fit); a fitting

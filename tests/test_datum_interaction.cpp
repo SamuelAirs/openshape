@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 using namespace os;
 using namespace os::interact;
@@ -696,4 +697,102 @@ TEST(DatumInteraction, SnapshotsKeepDatums)
     ASSERT_EQ(snapshot->datums().size(), 1u);
     expectVec(snapshot->datums().front()->geometry().origin, {0, 0, 30}, "the copy's plane");
     EXPECT_NEAR(doc::effectivePlane(onPlane, snapshot->context()).origin.z, 30.0, 1e-9);
+}
+
+// A typed distance or angle beyond what a project file holds is refused with
+// the Model panel's message (never clamped, never made): an offset of more
+// than 10^6 mm, an angle beyond +-180 degrees.
+TEST(DatumInteraction, PlaneToolRefusesValuesAFileCannotHold)
+{
+    Harness h;
+    h.addBox("Body 1", {0, 0, 0}, {20, 20, 10});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.runTool("plane").ok());
+    ASSERT_TRUE(h.controller.triggerAction("datum:origin:2").ok()); // from XY
+    ASSERT_TRUE(h.construct()->preview().has_value());
+    EXPECT_EQ(h.controller.setValueText("2000000"), "The distance is too large.");
+    EXPECT_FALSE(h.controller.operation()->canCommit());
+    EXPECT_FALSE(h.construct()->preview().has_value()) << "no preview of a refused value";
+    EXPECT_FALSE(h.controller.commitOperation().ok());
+    EXPECT_EQ(h.controller.setValueText("-1000001"), "The distance is too large.");
+    EXPECT_TRUE(h.document.datums().empty());
+    EXPECT_EQ(h.controller.setValueText("1000000"), ""); // the limit itself
+    EXPECT_TRUE(h.controller.operation()->canCommit());
+    EXPECT_EQ(h.controller.setValueText("25"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.datums().size(), 1u);
+    EXPECT_DOUBLE_EQ(h.document.datums().back()->distance, 25.0);
+
+    // At an angle: 270 degrees is refused, not turned into 180.
+    ASSERT_TRUE(h.controller.runTool("plane").ok());
+    ASSERT_TRUE(h.controller.triggerAction("datum:angle").ok());
+    h.clickAt(h.screen({10, 0, 10})); // the top face's front edge
+    ASSERT_EQ(h.construct()->picked().size(), 2u) << (h.messages.empty() ? "" : h.messages.back());
+    EXPECT_EQ(h.controller.setValueText("270"), "The angle must be between -180° and 180°.");
+    EXPECT_FALSE(h.controller.operation()->canCommit());
+    EXPECT_EQ(h.controller.setValueText("-181"), "The angle must be between -180° and 180°.");
+    EXPECT_EQ(h.controller.setValueText("180"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.datums().size(), 2u);
+    EXPECT_NEAR(h.document.datums().back()->angle, kPi, 1e-12);
+}
+
+// Clicking a Rotate ring where a construction plane lies behind it makes the
+// ring the active one (a plane is not an axis to turn about); Rotate stays.
+TEST(DatumInteraction, RotateRingOverAPlaneStaysTheRing)
+{
+    Harness h;
+    const Uuid cube = h.addBox("Cube", {0, 0, 0}, {4, 4, 4});
+    h.addBox("Far", {120, 120, 0}, {4, 4, 4}); // zoomed out: the rings reach beyond the cube
+    ASSERT_TRUE(h.controller.runTool("plane").ok());
+    ASSERT_TRUE(h.controller.triggerAction("datum:origin:2").ok()); // XY, moved up through the cube's middle
+    EXPECT_EQ(h.controller.setValueText("2"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.selectBody(cube, false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    const Operation* op = h.controller.operation();
+    ASSERT_TRUE(op && op->ringCount() == 3);
+    const_cast<Operation*>(op)->setActiveHandle(0);
+    // A spot on the Z ring (in the plane) with the plane under it, away from the other rings.
+    const Camera& cam = h.controller.camera();
+    const RingManipulator ring = op->ring(2);
+    std::optional<Vec2> spot;
+    for (int i = 0; i < 96 && !spot; ++i) {
+        const Vec2 p = cam.project(ring.pointAt(cam, 2 * kPi * i / 96.0));
+        if (op->ring(0).hitTest(cam, p, 16) || op->ring(1).hitTest(cam, p, 16))
+            continue;
+        if (h.controller.pickAt(p, InputProfile::forDevice(PointerDevice::Mouse)).kind == sel::PickKind::Datum)
+            spot = p;
+    }
+    ASSERT_TRUE(spot.has_value()) << "no spot on the ring over the plane";
+    h.clickAt(*spot);
+    const auto* rotate = dynamic_cast<const RotateOperation*>(h.controller.operation());
+    ASSERT_NE(rotate, nullptr) << "Rotate ended";
+    EXPECT_EQ(rotate->activeHandle(), 2) << "the clicked ring is the active one";
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Body);
+}
+
+// Selecting a body in the Model panel while the Axis or Plane tool waits for
+// its picks ends the tool: the body comes with its Move arrows.
+TEST(DatumInteraction, SelectingABodyEndsTheTool)
+{
+    Harness h;
+    const Uuid a = h.addBox("Body 1", {0, 0, 0}, {10, 10, 10});
+    h.controller.fitAll(false);
+    ASSERT_TRUE(h.controller.runTool("axis").ok());
+    ASSERT_NE(h.construct(), nullptr);
+    EXPECT_FALSE(h.controller.operation()->canCommit());
+    ASSERT_TRUE(h.controller.selectBody(a, false).ok());
+    EXPECT_EQ(h.construct(), nullptr);
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Move");
+    // A face clicked now is an ordinary selection, not an axis pick.
+    h.controller.cancelOperation();
+    h.clickAt(h.screen({5, 5, 10}));
+    EXPECT_EQ(h.construct(), nullptr);
+    EXPECT_TRUE(h.document.datums().empty());
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_EQ(h.controller.selection().items()[0].kind, sel::SelectionKind::Face);
 }

@@ -305,14 +305,20 @@ QString AcceptanceRunner::describeClick() const
         path = path.isEmpty() ? name : name + QLatin1Char('>') + path;
     }
     const auto& hover = app_->interaction().hover();
-    const char* kinds[] = {"nothing", "a face", "an edge", "a sketch profile"};
+    // One name per sel::PickKind (None, Face, Edge, Profile, OriginAxis, Datum).
+    const char* const kinds[] = {"nothing", "a face", "an edge", "a sketch profile", "an origin axis",
+                                 "a construction axis or plane"};
+    constexpr int kindCount = int(sizeof(kinds) / sizeof(kinds[0]));
+    static_assert(int(sel::PickKind::Datum) == kindCount - 1, "a name for every PickKind");
+    const int kind = int(hover.kind);
+    const char* kindName = kind >= 0 && kind < kindCount ? kinds[kind] : "something";
     return QStringLiteral("at %1,%2 in a %3x%4 window: %5; the view picks %6 there")
         .arg(lastClick_.x(), 0, 'f', 0)
         .arg(lastClick_.y(), 0, 'f', 0)
         .arg(window_->width())
         .arg(window_->height())
         .arg(path.isEmpty() ? QStringLiteral("no item") : path)
-        .arg(QString::fromLatin1(kinds[int(hover.kind)]) + (hover.hit() ? QStringLiteral(" #%1").arg(hover.index) : QString()));
+        .arg(QString::fromLatin1(kindName) + (hover.hit() ? QStringLiteral(" #%1").arg(hover.index) : QString()));
 }
 
 void AcceptanceRunner::screenshot(const QString& name)

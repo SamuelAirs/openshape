@@ -269,6 +269,170 @@ TEST(Datums, FollowUpstreamEditsAndFailPlainly)
     EXPECT_NEAR(cube.document.datum(planeId)->geometry().origin.z, 45.0, 1e-9); // 30 + 5 + 10
 }
 
+// An independent copy (a separate Pattern or Mirror copy, Duplicate, a split
+// piece) of a body built on a construction plane made from that body takes a
+// hidden copy of the plane, made from the copy: editing the source never
+// moves the copy (and editing the copy moves its own plane). A plane made
+// from other bodies or an origin plane stays shared, as a face of another
+// body does.
+TEST(Datums, IndependentCopiesTakeTheirOwnPlane)
+{
+    Cube cube(5); // top at 25
+    doc::Datum offset;
+    offset.method = doc::DatumMethod::PlaneOffset;
+    offset.refs = {cube.ref(doc::GeometryRef::Kind::Face, cube.face({0, 0, 1}))};
+    offset.distance = 10;
+    offset.setName("Plane 1");
+    const Uuid planeId = offset.id();
+    cube.add(offset);
+    ASSERT_NEAR(cube.document.datum(planeId)->geometry().origin.z, 35.0, 1e-9);
+
+    // A 6 x 4 rectangle on the plane, extruded 10 down onto the top and joined.
+    sketch::Sketch sk(Uuid::generate(), doc::sketchPlaneOn(cube.document.datum(planeId)->geometry()));
+    sk.setDatumPlane(planeId);
+    sketch::addRectangle(sk, {2, 2}, {8, 6});
+    const Uuid sketchId = sk.id();
+    ASSERT_TRUE(cube.stack.push(std::make_unique<cmd::CreateSketchCommand>(sk), cube.document).ok());
+    const sketch::Sketch& onPlane = *cube.document.sketch(sketchId);
+    auto boss = std::make_unique<doc::ExtrudeFeature>();
+    boss->sketchId = sketchId;
+    boss->profiles = {doc::makeProfileRef(doc::sketchRegions(onPlane).value().front(), onPlane)};
+    boss->distance = -10;
+    boss->mode = doc::ExtrudeMode::Join;
+    ASSERT_TRUE(cube.stack.push(std::make_unique<cmd::AddFeatureCommand>(cube.body, std::move(boss)), cube.document).ok());
+    const double volume = 20.0 * 20.0 * 25.0 + 6.0 * 4.0 * 10.0;
+    ASSERT_NEAR(geom::volume(cube.shape()), volume, 1e-6);
+    ASSERT_NEAR(geom::boundingBox(cube.shape()).max.z, 35.0, 1e-6);
+
+    // A separate pattern copy 40 mm along X.
+    std::vector<std::unique_ptr<doc::Feature>> moveStep;
+    auto move = std::make_unique<doc::MoveFeature>();
+    move->translation = {40, 0, 0};
+    moveStep.push_back(std::move(move));
+    ASSERT_TRUE(
+        cube.stack.push(cmd::makeCopyBodiesCommand(cube.body, std::move(moveStep), {"Cube 2"}, "Pattern"), cube.document).ok());
+    ASSERT_EQ(cube.document.bodies().size(), 2u);
+    const Uuid copyId = cube.document.bodies()[1]->id();
+    auto copyShape = [&]() -> const geom::Shape& { return cube.document.body(copyId)->shape(); };
+    EXPECT_NEAR(geom::volume(copyShape()), volume, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(copyShape()).min.x, 40.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(copyShape()).max.z, 35.0, 1e-6);
+    // Its hidden sketch is on a hidden copy of the plane, made from the copy.
+    ASSERT_EQ(cube.document.datums().size(), 2u);
+    const doc::Datum& planeCopy = *cube.document.datums()[1];
+    EXPECT_EQ(planeCopy.name(), "Plane 1 copy");
+    EXPECT_FALSE(planeCopy.isVisible());
+    EXPECT_FALSE(planeCopy.failed()) << planeCopy.error();
+    ASSERT_EQ(planeCopy.refs.size(), 1u);
+    EXPECT_EQ(planeCopy.refs[0].body, copyId);
+    EXPECT_EQ(planeCopy.refs[0].feature, cube.document.body(copyId)->features()[1]->id()) << "the copy's own push step";
+    EXPECT_NEAR(planeCopy.geometry().origin.z, 35.0, 1e-9) << "where the source's is: the copy moves after its history";
+    const Uuid planeCopyId = planeCopy.id();
+    const auto sketchesOnCopy = cube.document.sketchesOn(planeCopyId);
+    ASSERT_EQ(sketchesOnCopy.size(), 1u);
+    EXPECT_NE(sketchesOnCopy[0], sketchId);
+    EXPECT_EQ(cube.document.sketchesOn(planeId), std::vector<Uuid>{sketchId});
+
+    // Taller source box: the source's plane and boss go up 10; the copy does not change.
+    ASSERT_TRUE(cube.stack.push(std::make_unique<cmd::SetParameterCommand>(cube.box, "height", 30.0), cube.document).ok());
+    EXPECT_NEAR(cube.document.datum(planeId)->geometry().origin.z, 45.0, 1e-9);
+    EXPECT_NEAR(geom::boundingBox(cube.shape()).max.z, 45.0, 1e-6);
+    EXPECT_NEAR(geom::volume(copyShape()), volume, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(copyShape()).max.z, 35.0, 1e-6) << "editing the source never moves the copy";
+    EXPECT_NEAR(cube.document.datum(planeCopyId)->geometry().origin.z, 35.0, 1e-9);
+    ASSERT_TRUE(cube.stack.undo(cube.document));
+
+    // Taller copy box: its own plane and boss go up; the source stays.
+    const Uuid copyBox = cube.document.body(copyId)->features()[0]->id();
+    ASSERT_TRUE(cube.stack.push(std::make_unique<cmd::SetParameterCommand>(copyBox, "height", 30.0), cube.document).ok());
+    EXPECT_NEAR(cube.document.datum(planeCopyId)->geometry().origin.z, 45.0, 1e-9);
+    EXPECT_NEAR(geom::boundingBox(copyShape()).max.z, 45.0, 1e-6);
+    EXPECT_NEAR(geom::volume(copyShape()), volume + 20.0 * 20.0 * 10.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(cube.shape()).max.z, 35.0, 1e-6);
+    EXPECT_NEAR(cube.document.datum(planeId)->geometry().origin.z, 35.0, 1e-9);
+
+    // Save and open: the hidden plane and the copy's sketch on it come back.
+    auto reopened = io::documentFromJson(io::documentToJson(cube.document));
+    ASSERT_TRUE(reopened.ok()) << reopened.developerMessage();
+    ASSERT_NE(reopened.value()->datum(planeCopyId), nullptr);
+    EXPECT_FALSE(reopened.value()->datum(planeCopyId)->isVisible());
+    EXPECT_EQ(reopened.value()->sketchesOn(planeCopyId), sketchesOnCopy);
+    EXPECT_NEAR(geom::boundingBox(reopened.value()->body(copyId)->shape()).max.z, 45.0, 1e-6);
+    ASSERT_TRUE(cube.stack.undo(cube.document));
+
+    // Undo the pattern: the hidden plane goes with the copy; redo brings both back.
+    ASSERT_TRUE(cube.stack.undo(cube.document));
+    EXPECT_EQ(cube.document.datums().size(), 1u);
+    EXPECT_EQ(cube.document.bodies().size(), 1u);
+    ASSERT_TRUE(cube.stack.redo(cube.document).ok());
+    ASSERT_NE(cube.document.datum(planeCopyId), nullptr);
+    EXPECT_FALSE(cube.document.datum(planeCopyId)->failed());
+    EXPECT_NEAR(geom::boundingBox(copyShape()).max.z, 35.0, 1e-6);
+
+    // A plane from an origin plane is shared by a copy (nothing of it is copied).
+    doc::Datum high;
+    high.method = doc::DatumMethod::PlaneOffset;
+    high.originIndex = 2;
+    high.distance = 50;
+    const Uuid highId = high.id();
+    cube.add(high);
+    sketch::Sketch top(Uuid::generate(), doc::sketchPlaneOn(cube.document.datum(highId)->geometry()));
+    top.setDatumPlane(highId);
+    sketch::addRectangle(top, {0, 0}, {5, 5});
+    const Uuid topId = top.id();
+    ASSERT_TRUE(cube.stack.push(std::make_unique<cmd::CreateSketchCommand>(top), cube.document).ok());
+    auto tile = std::make_unique<doc::ExtrudeFeature>();
+    tile->sketchId = topId;
+    tile->profiles = {doc::makeProfileRef(doc::sketchRegions(*cube.document.sketch(topId)).value().front(),
+                                          *cube.document.sketch(topId))};
+    tile->distance = 2;
+    auto createTile = std::make_unique<cmd::CreateBodyCommand>("Tile", std::move(tile));
+    const Uuid tileId = createTile->bodyId();
+    ASSERT_TRUE(cube.stack.push(std::move(createTile), cube.document).ok());
+    auto duplicate = std::make_unique<cmd::DuplicateBodyCommand>(tileId);
+    const Uuid tileCopy = duplicate->copyId();
+    ASSERT_TRUE(cube.stack.push(std::move(duplicate), cube.document).ok());
+    EXPECT_EQ(cube.document.datums().size(), 3u) << "no copy of the origin-based plane";
+    EXPECT_EQ(cube.document.sketchesOn(highId).size(), 2u);
+    EXPECT_NEAR(geom::boundingBox(cube.document.body(tileCopy)->shape()).min.z, 50.0, 1e-6);
+}
+
+TEST(Datums, ValuesAFileCannotHoldAreRefused)
+{
+    Cube cube;
+    doc::Datum far;
+    far.method = doc::DatumMethod::PlaneOffset;
+    far.originIndex = 2;
+    far.distance = 2e6;
+    const Uuid farId = far.id();
+    const Status added = cube.stack.push(std::make_unique<cmd::AddDatumCommand>(far), cube.document);
+    ASSERT_FALSE(added.ok());
+    EXPECT_EQ(added.userMessage(), "The distance is too large.");
+    EXPECT_EQ(cube.document.datum(farId), nullptr);
+    far.distance = 1e6; // the limit itself is fine
+    const doc::Datum& atLimit = cube.add(far);
+    EXPECT_NEAR(atLimit.geometry().origin.z, 1e6, 1e-6);
+    doc::Datum edited = atLimit;
+    edited.distance = -1e6 - 1;
+    const Status edit = cube.stack.push(std::make_unique<cmd::EditDatumCommand>(edited, "Change distance"), cube.document);
+    ASSERT_FALSE(edit.ok());
+    EXPECT_EQ(edit.userMessage(), "The distance is too large.");
+    EXPECT_NEAR(cube.document.datum(farId)->distance, 1e6, 1e-9);
+    EXPECT_EQ(edited.setParameter("distance", 3e6).userMessage(), "The distance is too large.");
+
+    doc::Datum angled;
+    angled.method = doc::DatumMethod::PlaneAngle;
+    angled.refs = {cube.ref(doc::GeometryRef::Kind::Edge, cube.edgeAt({10, 0, 25})),
+                   cube.ref(doc::GeometryRef::Kind::Face, cube.face({0, 0, 1}))};
+    angled.angle = kPi * 1.5;
+    const Status tooSteep = cube.stack.push(std::make_unique<cmd::AddDatumCommand>(angled), cube.document);
+    ASSERT_FALSE(tooSteep.ok());
+    EXPECT_EQ(tooSteep.userMessage(), "The angle must be between -180° and 180°.");
+    EXPECT_EQ(angled.setParameter("angle", -kPi * 1.01).userMessage(), "The angle must be between -180° and 180°.");
+    // Everything the document holds can be saved and opened again.
+    EXPECT_TRUE(io::documentFromJson(io::documentToJson(cube.document)).ok());
+}
+
 TEST(Datums, UndoRedoAddHideDelete)
 {
     Cube cube;

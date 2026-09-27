@@ -71,9 +71,29 @@ struct DatumGeometry {
     double size = 0;
 };
 
+class Datum;
+
+// The largest offset a plane may have (mm): what a project file holds
+// (Datum::fromJson refuses more).
+inline constexpr double kMaxDatumDistance = 1e6;
+
+// Whether a datum's values can be kept and read back from a file: an offset
+// within +-kMaxDatumDistance, an angle within +-180 degrees, both finite.
+// Fails with the plain message the Model panel's fields show (the Plane
+// tool's value and AddDatumCommand / EditDatumCommand check it too).
+Status checkDatumValues(const Datum& datum);
+
 class Datum {
 public:
     explicit Datum(Uuid id = Uuid::generate()) : id_(id) {}
+    // The same datum under another id (a hidden copy that goes with a copied
+    // body, DuplicateBodyCommand).
+    Datum copyWithId(Uuid id) const
+    {
+        Datum copy = *this;
+        copy.id_ = id;
+        return copy;
+    }
 
     const Uuid& id() const { return id_; }
     const std::string& name() const { return name_; }

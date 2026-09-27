@@ -1910,7 +1910,7 @@ doc::Datum DatumOperation::datum() const
         break;
     case Mode::PlaneAngle:
         d.method = doc::DatumMethod::PlaneAngle;
-        d.angle = std::clamp(value(), -180.0, 180.0) * kPi / 180.0;
+        d.angle = value() * kPi / 180.0; // beyond +-180 degrees: refused (refreshPreview)
         break;
     case Mode::PlaneMidway: d.method = doc::DatumMethod::PlaneMidway; break;
     }
@@ -1920,13 +1920,17 @@ doc::Datum DatumOperation::datum() const
 std::string DatumOperation::refreshPreview(double, const doc::Document& document)
 {
     preview_.reset();
+    const doc::Datum d = datum();
+    // The limits of the Model panel's fields and of the file: a typed
+    // distance or angle beyond them is refused, never clamped or kept.
+    if (const Status values = doc::checkDatumValues(d); !values)
+        return values.userMessage();
     const std::size_t needed = mode_ == Mode::AxisTwoPoints || mode_ == Mode::PlaneAngle || mode_ == Mode::PlaneMidway ? 2 : 1;
     const bool complete = mode_ == Mode::PlaneOffset ? (!refs_.empty() || originIndex_ >= 0)
                         : mode_ == Mode::AxisParallel ? (refs_.size() == 1 && originIndex_ >= 0)
                                                       : refs_.size() == needed;
     if (!complete)
         return {}; // still picking: nothing to show, nothing wrong
-    const doc::Datum d = datum();
     // The kernel only for new picks or a changed document; a new distance or
     // angle (a drag step) is plain arithmetic on what was resolved.
     if (resolvedStale_ || resolvedIn_ != &document || resolvedRevision_ != document.revision()) {

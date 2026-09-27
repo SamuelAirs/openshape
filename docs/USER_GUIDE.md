@@ -354,7 +354,12 @@ in the Model panel, and are saved with the project.
   turns red and says why, and it stays where it was.
 - **In the Model panel:** click the row to select it; an offset plane's
   distance and an angled plane's angle can be typed there; **Hide** /
-  **Show** and **Delete**.
+  **Show** and **Delete**. A distance goes up to 1000 m either way, an
+  angle from -180° to 180°.
+- **Copies:** a separate copy of a body built on a plane made from that
+  body (Duplicate, a separate Mirror or Pattern copy, a split piece) gets
+  its own hidden copy of the plane, so changing the original never moves
+  the copy. A plane made from another body or an origin plane is shared.
 
 ### Duplicate and split
 

@@ -138,8 +138,12 @@ Rules:
   failed and a message) when a reference no longer resolves. A method a
   build does not know makes the file unreadable with a "newer version"
   message; refs that do not fit the method, a wrong type or a missing field
-  make it invalid. Builds before construction geometry (2026-09-26) ignore
-  `datums` and `datumPlane`: such a sketch stays where it was saved.
+  make it invalid (OpenShape refuses such a distance or angle when it is
+  typed, so it never writes one). A hidden datum named "... copy" is the
+  plane an independent copy's hidden sketch is on: an ordinary datum whose
+  refs name the copy's body and steps. Builds before construction geometry
+  (2026-09-26) ignore `datums` and `datumPlane`: such a sketch stays where
+  it was saved.
 - Datums are loaded first, then sketches, then bodies: a sketch may lie on a
   construction plane, and extrusions look sketches up during the initial
   recompute.

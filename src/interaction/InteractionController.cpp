@@ -579,12 +579,14 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     // Only a left click or a tap selects (and applies a pending value); right
     // and middle buttons orbit/pan when dragged and do nothing on a click.
     // In Rotate, what a click on a ring crosses may be what the user wants to
-    // turn about: an edge, or a hole or shaft (a round face).
+    // turn about: an edge, a construction axis (not a plane: Rotate does not
+    // use one), or a hole or shaft (a round face).
     bool axisUnderRing = false;
     if (pendingRing >= 0 && dynamic_cast<const RotateOperation*>(operation_.get())) {
         const sel::PickResult hit = pickAt(press.position, InputProfile::forDevice(press.device));
         const doc::Body* body = hit.hit() ? document_->body(hit.bodyId) : nullptr;
-        axisUnderRing = hit.kind == sel::PickKind::Edge || hit.kind == sel::PickKind::Datum
+        const doc::Datum* datum = hit.kind == sel::PickKind::Datum ? document_->datum(hit.bodyId) : nullptr;
+        axisUnderRing = hit.kind == sel::PickKind::Edge || (datum && datum->kind() == doc::DatumKind::Axis)
                      || (hit.kind == sel::PickKind::Face && body && [&] {
                             const auto face = geom::faceInfo(body->shape(), hit.index);
                             return face && face->hasAxis();
@@ -981,6 +983,11 @@ void InteractionController::click(const PointerEvent& event)
 
 void InteractionController::rebuildOperation()
 {
+    // The Axis / Plane tool runs with nothing selected (its picks are its
+    // own): a selection made elsewhere (a body's Model-panel row, a
+    // double-click, Duplicate) ends it.
+    if (datumTool_ && !selection_.empty())
+        datumTool_.reset();
     // The Axis / Plane tool keeps its picks across document changes (its
     // preview is worked out again from the document as it is now).
     if (datumTool_) {
@@ -3650,6 +3657,7 @@ Status InteractionController::selectBody(const Uuid& bodyId, BodyPick how)
     auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, bodyId, -1);
     if (!item)
         return Status::failure(ErrorCode::InvalidReference, "That body has no shape to select.", "selectBody: no item");
+    datumTool_.reset(); // selecting a body ends the Axis / Plane tool (as selecting a datum does)
     if (how != BodyPick::Replace && selection_.allOfKind(sel::SelectionKind::Body)) {
         if (how == BodyPick::Toggle)
             selection_.toggle(*item);

@@ -53,8 +53,11 @@ private:
 // Duplicates a body as an independent copy named "<name> copy": its history
 // with fresh ids, plus what belongs to that history alone - the sketches its
 // steps use (copied hidden) and the tool bodies its Combine steps consumed
-// (copied hidden, recursively), all re-pointed at the copies. Editing the
-// copy never changes the source, nor the other way round. A base step from
+// (copied hidden, recursively), all re-pointed at the copies; a sketch on a
+// construction plane made from what is copied goes onto a hidden copy of
+// that plane made from the copy (a plane made from other bodies, or from an
+// origin plane, is shared, as a face of another body is). Editing the copy
+// never changes the source, nor the other way round. A base step from
 // files before independent copies (a Copy of another body, a SplitPiece of
 // one) is replaced by that body's history (resolved the same way) and the
 // step that made it (a Mirror keeping the image, a Move, a Split keeping the
@@ -93,6 +96,7 @@ private:
     std::unique_ptr<doc::Feature> lastStep_;  // may be null
     std::string label_ = "Duplicate";
     bool planned_ = false;
+    std::vector<doc::Datum> datums_;                 // hidden copies of construction planes its sketches are on
     std::vector<sketch::Sketch> sketches_;           // copies, in document order
     std::vector<std::unique_ptr<doc::Body>> bodies_; // copies: consumed tools first, the copy last
     std::vector<Uuid> originals_;                    // the body each of bodies_ copies
