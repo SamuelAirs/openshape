@@ -322,6 +322,11 @@ public:
     Q_INVOKABLE bool openIncomingFile(const QUrl& url);
     // Opens or imports the file openIncomingFile() kept (false if none).
     Q_INVOKABLE bool openPendingIncomingFile();
+    // "Save changes?" was cancelled: the waiting file is dropped, and the
+    // copy made for it in OpenShape's folder (or its scratch copy) removed.
+    Q_INVOKABLE void dropPendingIncomingFile();
+    // Whether a file from another app waits for "Save changes?".
+    bool hasPendingIncomingFile() const { return pendingIncoming_.has_value(); }
     // Qt delivers files from other apps to the application object.
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -451,6 +456,10 @@ private:
     bool importStepFile(const QString& path, const QString& sourceName, bool asProject);
     // Opens a project file as it is (no staging).
     bool openProjectFile(const QString& path);
+    // Removes what stageIncomingFile made for a file that is not used after
+    // all: a new copy in the app folder, or a scratch copy (never the open
+    // project's file).
+    void discardStagedFile(const StagedFile& staged) const;
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;

@@ -42,6 +42,7 @@ struct StagedFile {
     QString path;           // the file to open or import; empty on failure
     bool temporary = false; // a scratch copy: remove it once it has been read
     bool copied = false;    // a project copied or moved into the app folder
+    bool created = false;   // ...as a new file (not one found there already): remove it if it is not used
     QString error;          // why not, in plain words (when path is empty)
 };
 

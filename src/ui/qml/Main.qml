@@ -40,6 +40,7 @@ ApplicationWindow {
 
     property bool closeConfirmed: false
     property var afterSave: null   // action to run once a Save As completes
+    property var afterSaveCancelled: null // ...and what to run if it does not
     property bool importAsProject: false // the import dialog makes a new document (from Home)
     // A question the user must answer first: the window's shortcuts wait
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
@@ -269,6 +270,7 @@ ApplicationWindow {
         const share = () => window.app.shareProject(window.shareAnchor())
         if (!app.hasProjectPath()) {
             window.afterSave = share
+            window.afterSaveCancelled = null
             saveAs()
             return
         }
@@ -277,13 +279,29 @@ ApplicationWindow {
         share()
     }
 
-    // Runs `action` now if there are no unsaved changes, otherwise asks first.
-    function confirmDiscard(action) {
+    // Runs `action` now if there are no unsaved changes, otherwise asks
+    // first; `cancelled` (optional) runs if the user cancels instead.
+    function confirmDiscard(action, cancelled) {
         if (!app.dirty) {
             action()
             return
         }
-        unsavedDialog.ask(action)
+        unsavedDialog.ask(action, cancelled)
+    }
+
+    // A Save As (name prompt or save dialog) has ended: go on with what
+    // waited for it, or give that up.
+    function finishSaveAs(saved) {
+        const action = window.afterSave
+        const cancelled = window.afterSaveCancelled
+        window.afterSave = null
+        window.afterSaveCancelled = null
+        if (saved) {
+            if (action)
+                action()
+        } else if (cancelled) {
+            cancelled()
+        }
     }
 
     onClosing: (close) => {
@@ -1174,12 +1192,15 @@ ApplicationWindow {
         app: window.app
         anchors.fill: parent
         z: 120 // above the restore prompt, whose Restore asks it
-        onSaveRequested: (action) => {
+        onSaveRequested: (action, cancelled) => {
             if (window.app.hasProjectPath()) {
                 if (window.app.saveProject())
                     action()
+                else if (cancelled)
+                    cancelled()
             } else {
                 window.afterSave = action
+                window.afterSaveCancelled = cancelled
                 window.saveAs()
             }
         }
@@ -1193,14 +1214,8 @@ ApplicationWindow {
         app: window.app
         anchors.fill: parent
         z: 125 // above "Save changes?", whose Save may ask for the name
-        onSaved: {
-            if (window.afterSave) {
-                const action = window.afterSave
-                window.afterSave = null
-                action()
-            }
-        }
-        onCancelled: window.afterSave = null
+        onSaved: window.finishSaveAs(true)
+        onCancelled: window.finishSaveAs(false)
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
@@ -1269,7 +1284,9 @@ ApplicationWindow {
         function onMessage(text) { toast.show(text) }
         // A file from another app ("Open in OpenShape") while there are
         // unsaved changes: asked about first, as Home's Open does.
-        function onIncomingFileWaiting() { window.confirmDiscard(() => window.app.openPendingIncomingFile()) }
+        function onIncomingFileWaiting() {
+            window.confirmDiscard(() => window.app.openPendingIncomingFile(), () => window.app.dropPendingIncomingFile())
+        }
     }
 
     // ---------------------------------------------------------------- safe-area preview
@@ -1323,14 +1340,8 @@ ApplicationWindow {
         defaultSuffix: "openshape"
         currentFolder: window.app.projectFolder
         nameFilters: ["OpenShape projects (*.openshape)"]
-        onAccepted: {
-            if (window.app.saveProjectAs(selectedFile) && window.afterSave) {
-                const action = window.afterSave
-                window.afterSave = null
-                action()
-            }
-        }
-        onRejected: window.afterSave = null
+        onAccepted: window.finishSaveAs(window.app.saveProjectAs(selectedFile))
+        onRejected: window.finishSaveAs(false)
     }
     FileDialog {
         id: importDialog

@@ -165,6 +165,7 @@ StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places
         }
         staged.path = target;
         staged.copied = true;
+        staged.created = !alreadyThere;
     } else {
         if (places.stagingFolder.isEmpty() || !QDir().mkpath(places.stagingFolder)) {
             staged.error = QStringLiteral("“%1” could not be read: there is no room for a working copy.").arg(name);

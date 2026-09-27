@@ -725,8 +725,9 @@ iPad" below).
   project into OpenShape's folder (in the Files app: *On My iPhone / iPad →
   OpenShape*). Home lists the projects in that folder.
 - **File → Export STL**, **Export 3MF** and **Export STEP** write straight
-  into its *Exports* folder (a message names the file), then open the share
-  sheet: a slicer app, AirDrop, Save to Files or Mail.
+  into its *Exports* folder, then open the share sheet: a slicer app,
+  AirDrop, Save to Files or Mail (closing it is fine: the file stays in
+  *Exports*).
 - **File → Share Project…** sends the project itself (the `.openshape`
   file, with its full history) by AirDrop, Mail or to the Files app. It
   saves first; a new project is asked for its name.
@@ -738,7 +739,9 @@ iPad" below).
   changes go into the copy (the same file opened again uses that copy; a
   different project with the same name becomes "Name 2"). A STEP file
   becomes a **new project**, as Home's **Import STEP…** does. If the open
-  project has unsaved changes, OpenShape asks first.
+  project has unsaved changes, OpenShape asks first (Cancel keeps your work
+  and makes no copy). A project that cannot be opened (damaged, or from a
+  newer OpenShape) is not kept in OpenShape's folder.
 - **Open…** picks any project; one outside OpenShape's folder is copied in
   the same way. **Import STEP…** reads STEP files from anywhere (iCloud
   Drive, On My iPhone / iPad).

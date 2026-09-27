@@ -293,6 +293,8 @@ struct OpenInState {
     QString spacer;     // a STEP file elsewhere: 1200 mm³
     QString picked;     // a project elsewhere for the Open picker: 1000 mm³
     QString readme;     // not a model
+    QString brokenMailed; // a damaged project Mail put into the Inbox
+    QString brokenPicked; // a damaged project elsewhere, for the Open picker
     QStringList messages;
     QMetaObject::Connection listening;
 };
@@ -341,6 +343,13 @@ Steps openInSteps(AcceptanceRunner& r)
         QFile readme(s->readme);
         if (readme.open(QIODevice::WriteOnly))
             readme.write("not a model\n");
+        s->brokenMailed = s->documents + QStringLiteral("/Inbox/Broken.openshape");
+        s->brokenPicked = elsewhere + QStringLiteral("/Damaged.openshape");
+        for (const QString& broken : {s->brokenMailed, s->brokenPicked}) {
+            QFile file(broken);
+            r.check(file.open(QIODevice::WriteOnly) && file.write("not a zip, not a project\n") > 0, "open in: a damaged project",
+                    broken);
+        }
         app.setAppFolder(s->documents);
         app.setTouchMode(true);
         s->listening = QObject::connect(&app, &ui::AppController::message, &app, [s](const QString& t) { s->messages << t; });
@@ -356,10 +365,24 @@ Steps openInSteps(AcceptanceRunner& r)
     steps.push_back([&r, &app, s] {
         r.check(shown(r, QStringLiteral("unsavedDialog")), "open in: Save changes? is asked first");
         r.check(app.bodyCount() == 1, "open in: nothing replaced yet");
+        r.check(QFileInfo::exists(s->documents + QStringLiteral("/Gear plate.openshape")),
+                "open in: the project is already copied into OpenShape's folder");
+        r.check(r.clickItem(QStringLiteral("unsavedCancel")), "open in: Cancel");
+    });
+    steps.push_back([&r, &app, s] {
+        r.check(!shown(r, QStringLiteral("unsavedDialog")) && app.bodyCount() == 1 && app.dirty(), "open in: Cancel keeps the work");
+        r.check(!app.hasPendingIncomingFile(), "open in: the file no longer waits");
+        r.check(QDir(s->documents).entryList({QStringLiteral("*.openshape")}, QDir::Files).isEmpty(),
+                "open in: Cancel removes the copy made for it (nothing left in OpenShape's folder)");
+        r.check(QFileInfo::exists(s->gearPlate), "open in: the original stays where it was");
+        handOver(s->gearPlate); // handed over again
+    });
+    steps.push_back([&r, &app, s] {
+        r.check(shown(r, QStringLiteral("unsavedDialog")) && app.bodyCount() == 1, "open in: asked again");
         const QString copy = s->documents + QStringLiteral("/Gear plate.openshape");
         QFile file(copy);
         r.check(file.open(QIODevice::ReadOnly) && file.readAll() == s->gearPlateBytes,
-                "open in: the project is already copied into OpenShape's folder, byte for byte");
+                "open in: copied into OpenShape's folder again, byte for byte");
         r.screenshot(QStringLiteral("openin_asked"));
         r.check(r.clickItem(QStringLiteral("unsavedDiscard")), "open in: Don't Save");
     });
@@ -382,6 +405,19 @@ Steps openInSteps(AcceptanceRunner& r)
         r.check(!shown(r, QStringLiteral("unsavedDialog")) && app.bodyCount() == 2, "open in: without changes it opens at once");
         r.check(QDir(s->documents).entryList({QStringLiteral("*.openshape")}, QDir::Files).size() == 1,
                 "open in: the same file again makes no second copy");
+        // ---- A damaged project from Mail: refused, and no copy is kept.
+        s->messages.clear();
+        handOver(s->brokenMailed);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, &app, s] {
+        r.check(!lastMessage(s).isEmpty(), "open in: a damaged project says why it cannot be opened", lastMessage(s));
+        r.check(app.documentTitle() == QStringLiteral("Gear plate") && app.bodyCount() == 2, "open in: the open project stays",
+                app.documentTitle());
+        r.check(!QFileInfo::exists(s->documents + QStringLiteral("/Broken.openshape")) && !QFileInfo::exists(s->brokenMailed),
+                "open in: no copy of the damaged project is left in OpenShape's folder");
+        r.check(QDir(s->documents).entryList({QStringLiteral("*.openshape")}, QDir::Files).size() == 1,
+                "open in: only the good project is in OpenShape's folder");
         handOver(s->mailedStep); // Mail: "Open in OpenShape" on the attachment
     });
     wait(steps, 3);
@@ -458,6 +494,21 @@ Steps openInSteps(AcceptanceRunner& r)
         r.check(app.bodyCount() == 2 && std::abs(documentVolume(r) - 2200.0) < 1e-3, "open in: the spacer is imported into the project",
                 num(documentVolume(r)));
         r.check(!QFileInfo::exists(QDir::tempPath() + QStringLiteral("/openshape-incoming/Spacer.stp")), "open in: no scratch copy left");
+        // ---- Home → Open… on a damaged project elsewhere: no copy is kept.
+        app.setNextFileChoice(QUrl::fromLocalFile(s->brokenPicked));
+        s->messages.clear();
+        r.check(r.clickItem(QStringLiteral("fileMenuButton")), "open in: File menu");
+    });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("homeMenuItem")), "open in: File → Home"); });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("homeOpen")), "open in: Home → Open… (a damaged project)"); });
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("unsavedDiscard")), "open in: Don't Save (the import)"); });
+    wait(steps, 2);
+    steps.push_back([&r, &app, s] {
+        r.check(!lastMessage(s).isEmpty(), "open in: the picker's damaged project says why", lastMessage(s));
+        r.check(app.documentTitle() == QStringLiteral("Picked") && app.bodyCount() == 2, "open in: the open project stays",
+                app.documentTitle());
+        r.check(!QFileInfo::exists(s->documents + QStringLiteral("/Damaged.openshape")) && QFileInfo::exists(s->brokenPicked),
+                "open in: no copy of it in OpenShape's folder; the original stays");
         // ---- The desktop: files are opened where they are.
         app.setAppFolder({});
         app.newDocument();

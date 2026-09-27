@@ -110,9 +110,23 @@ builds uploaded before stay internal). The steps in App Store Connect (Test
 Information with the Privacy Policy URL, Beta App Review information, the
 `Public beta` group, adding a build, the public link) and the texts to paste
 are in one place: [APP_STORE.md, section 5](APP_STORE.md#5-the-public-beta-testflight).
-In short: TestFlight → **Test Information** → an external group
-`Public beta` → **Add Builds** → **Submit Review** → after the review,
-`Public beta` → **Testers** → **Create Public Link**.
+In short (enough to do it without that file):
+
+1. App Store Connect → OpenShape → **TestFlight** → **Test Information**:
+   a *Beta App Description* (what OpenShape is, what to try), a *Feedback
+   Email* (shown to testers), *Marketing URL*
+   `https://github.com/SamuelAirs/openshape`, *Privacy Policy URL* (the
+   public web address of OpenShape's privacy policy, the same one the App
+   Store listing uses: OpenShape collects no data). **Beta App Review
+   Information**: your name, phone (international format) and email;
+   **Sign-in required: unchecked** (OpenShape has no accounts); *Review
+   Notes*: that it needs no account and no network.
+2. The **+** next to *External Testing* → group `Public beta`.
+3. In `Public beta` → **Add Builds** → a build uploaded from `main` since
+   2026-09-27 → *What to Test* (e.g. model a part, then Export STL and pick
+   the slicer or AirDrop in the share sheet) → **Submit Review**.
+4. After Beta App Review (an email; plan 1 to 2 days): `Public beta` →
+   **Testers** → **Create Public Link** → share the link.
 
 Testers' crash reports and screenshot feedback appear under TestFlight →
 Feedback (crashes symbolicated with the uploaded dSYM). The App Store

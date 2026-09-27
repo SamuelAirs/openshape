@@ -821,9 +821,23 @@ bool AppController::openProject(const QUrl& url)
             OS_LOG(Info, File) << "open: " << localPath(url).toStdString() << " copied into the app folder as "
                                << staged.path.toStdString();
         }
-        return openProjectFile(staged.path);
+        if (!openProjectFile(staged.path)) {
+            // A damaged project, or one from a newer OpenShape: its copy
+            // would only sit in OpenShape's folder failing every time.
+            discardStagedFile(staged);
+            return false;
+        }
+        return true;
     }
     return openProjectFile(localPath(url));
+}
+
+void AppController::discardStagedFile(const StagedFile& staged) const
+{
+    if (staged.path.isEmpty() || !(staged.created || staged.temporary) || staged.path == path_)
+        return;
+    OS_LOG(Info, File) << "removing the unused copy " << staged.path.toStdString();
+    QFile::remove(staged.path);
 }
 
 bool AppController::openProjectFile(const QString& file)
@@ -1190,8 +1204,12 @@ bool AppController::openIncomingFile(const QUrl& url)
     OS_LOG(Info, File) << "from another app: " << source.toStdString() << " -> " << staged.path.toStdString()
                        << (staged.copied ? " (in the app folder)" : staged.temporary ? " (a scratch copy)" : "");
     // A file still waiting (the question was cancelled) gives way.
-    if (pendingIncoming_ && pendingIncoming_->temporary && pendingIncoming_->path != staged.path)
-        QFile::remove(pendingIncoming_->path);
+    if (pendingIncoming_) {
+        if (pendingIncoming_->path != staged.path)
+            discardStagedFile(*pendingIncoming_);
+        else
+            staged.created = staged.created || pendingIncoming_->created; // the same copy, still unused
+    }
     pendingIncoming_ = staged;
     pendingIncomingName_ = QFileInfo(source).fileName();
     if (dirty()) {
@@ -1216,11 +1234,23 @@ bool AppController::openPendingIncomingFile()
         });
         return importStepFile(staged.path, name, true);
     }
-    if (!openProjectFile(staged.path))
+    if (!openProjectFile(staged.path)) {
+        discardStagedFile(staged);
         return false;
+    }
     if (staged.copied)
         notifyMessage(QStringLiteral("Opened \u201c%1\u201d, a copy in OpenShape\u2019s folder").arg(QFileInfo(staged.path).completeBaseName()));
     return true;
+}
+
+void AppController::dropPendingIncomingFile()
+{
+    if (!pendingIncoming_)
+        return;
+    OS_LOG(Info, File) << "not opened (cancelled): " << pendingIncomingName_.toStdString();
+    discardStagedFile(*pendingIncoming_);
+    pendingIncoming_.reset();
+    pendingIncomingName_.clear();
 }
 
 // ---- Actions ----------------------------------------------------------------------------

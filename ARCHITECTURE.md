@@ -1341,7 +1341,11 @@ than copied, an empty Inbox removed; a file inside the app folder is used
 in place, and without an app folder (a Mac's Finder) every file is. Then,
 with no unsaved changes, it opens (`openProjectFile`) or imports as a new
 project (`importStepFile`); otherwise `incomingFileWaiting` makes Main.qml
-ask "Save changes?" and continue with `openPendingIncomingFile()`. The
+ask "Save changes?" and continue with `openPendingIncomingFile()` (Cancel:
+`dropPendingIncomingFile()`). A copy the staging made anew
+(`StagedFile::created`, never one that was there already) is removed when
+it is not used: the project cannot be opened (damaged, newer), the question
+is cancelled, or another incoming file replaces the waiting one. The
 document pickers' files take the same staging when there is an app folder
 (`openProject`, `importStepFrom`): on iOS they lie outside the sandbox too.
 

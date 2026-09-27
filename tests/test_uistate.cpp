@@ -533,6 +533,7 @@ TEST(IncomingFiles, ProjectFromElsewhereIsCopiedInOnce)
     ASSERT_FALSE(first.path.isEmpty()) << first.error.toStdString();
     EXPECT_EQ(first.path, f.places.appFolder + QStringLiteral("/Bracket.openshape"));
     EXPECT_TRUE(first.copied);
+    EXPECT_TRUE(first.created) << "a new file: removed again if it cannot be opened";
     EXPECT_FALSE(first.temporary);
     EXPECT_EQ(bytesOf(first.path), bytesOf(project));
     EXPECT_TRUE(QFileInfo::exists(project)) << "the original stays where it was";
@@ -541,6 +542,8 @@ TEST(IncomingFiles, ProjectFromElsewhereIsCopiedInOnce)
     // The same file again: the copy there is used, no second one.
     const StagedFile again = stageIncomingFile(project, f.places);
     EXPECT_EQ(again.path, first.path);
+    EXPECT_TRUE(again.copied);
+    EXPECT_FALSE(again.created) << "the copy that was there already is never removed";
     EXPECT_EQ(projectsIn(f.places.appFolder), 1);
 
     // A different project of the same name: "Bracket 2", then "Bracket 3".
@@ -548,6 +551,7 @@ TEST(IncomingFiles, ProjectFromElsewhereIsCopiedInOnce)
     writeProject(other, 20);
     const StagedFile second = stageIncomingFile(other, f.places);
     EXPECT_EQ(second.path, f.places.appFolder + QStringLiteral("/Bracket 2.openshape"));
+    EXPECT_TRUE(second.created);
     EXPECT_NEAR(copyVolume(std::filesystem::path(second.path.toStdWString())), 8000.0, 1e-6);
     const QString third = f.elsewhere + QStringLiteral("/third/Bracket.openshape");
     writeProject(third, 30);
@@ -566,6 +570,7 @@ TEST(IncomingFiles, ProjectInTheAppFolderIsOpenedInPlace)
         const StagedFile staged = stageIncomingFile(path, f.places);
         EXPECT_EQ(staged.path, QFileInfo(path).absoluteFilePath());
         EXPECT_FALSE(staged.copied);
+        EXPECT_FALSE(staged.created) << "the user's own project is never removed";
     }
     EXPECT_EQ(projectsIn(f.places.appFolder), 1);
 }
@@ -580,6 +585,7 @@ TEST(IncomingFiles, InboxCopiesAreMovedOut)
     const StagedFile staged = stageIncomingFile(mailed, f.places);
     EXPECT_EQ(staged.path, f.places.appFolder + QStringLiteral("/Hinge.openshape"));
     EXPECT_TRUE(staged.copied);
+    EXPECT_TRUE(staged.created);
     EXPECT_EQ(bytesOf(staged.path), bytes);
     EXPECT_FALSE(QFileInfo::exists(mailed)) << "moved, not copied";
     EXPECT_FALSE(QFileInfo::exists(f.inbox())) << "an empty Inbox is removed";
@@ -588,7 +594,9 @@ TEST(IncomingFiles, InboxCopiesAreMovedOut)
     // The same project mailed again: the one there is used, the Inbox copy removed.
     writeBytes(f.inbox() + QStringLiteral("/other.txt"), "stays");
     ASSERT_TRUE(QFile::copy(staged.path, mailed));
-    EXPECT_EQ(stageIncomingFile(mailed, f.places).path, staged.path);
+    const StagedFile mailedAgain = stageIncomingFile(mailed, f.places);
+    EXPECT_EQ(mailedAgain.path, staged.path);
+    EXPECT_FALSE(mailedAgain.created);
     EXPECT_FALSE(QFileInfo::exists(mailed));
     EXPECT_TRUE(QFileInfo::exists(f.inbox())) << "an Inbox with other files stays";
     EXPECT_EQ(projectsIn(f.places.appFolder), 1);
@@ -615,6 +623,7 @@ TEST(IncomingFiles, StepFilesAreReadFromAScratchCopy)
     EXPECT_EQ(staged.path, f.places.stagingFolder + QStringLiteral("/Motor mount.STP"));
     EXPECT_TRUE(staged.temporary);
     EXPECT_FALSE(staged.copied);
+    EXPECT_FALSE(staged.created);
     EXPECT_EQ(bytesOf(staged.path), kStepText);
     EXPECT_TRUE(QFileInfo::exists(step));
     EXPECT_EQ(QDir(f.places.appFolder).entryList(QDir::Files | QDir::NoDotAndDotDot).size(), 0) << "nothing in OpenShape's folder";
