@@ -124,6 +124,9 @@ public:
     bool focusInput(const std::string& key);
     // Completes the shape being drawn using typed values (Enter).
     Status commitTool();
+    // The sketch on screen: its points, circles and the shape being drawn
+    // (what a numeric keypad beside a value keeps clear of); nullopt when empty.
+    std::optional<ScreenRect> screenBounds(const Camera& camera) const;
     // Changes a dimension's value. Returns an error message or "".
     std::string setDimension(sketch::EntityId constraint, const std::string& text);
 

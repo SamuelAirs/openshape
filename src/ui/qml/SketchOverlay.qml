@@ -14,6 +14,10 @@ Item {
     id: overlay
 
     required property AppController app
+    // The numeric keypad (Main.qml): on a touch screen a tap on a live value
+    // or a dimension types it there.
+    property NumericKeypad keypad: null
+    readonly property bool usesKeypad: Theme.touch && keypad !== null
     signal finished()
 
     // The top row's free room (Main.qml): the tool bar sits there, centered,
@@ -88,9 +92,60 @@ Item {
     Connections {
         target: overlay.app
         function onStateChanged() {
-            if (!overlay.app.sketchDrawing)
+            if (!overlay.app.sketchDrawing) {
                 overlay.typing = ""
+                // The shape is done (or gone): the keypad for its values goes.
+                if (overlay.keypad && overlay.keypad.serves("sketchInput")) {
+                    overlay.keypad.close()
+                    overlay.finished() // the keys go back to the view
+                }
+            }
         }
+    }
+
+    // ---- The keypad for the live values of the shape being drawn (touch)
+    // The focused live value: its label (sketchLabels), or undefined.
+    function focusedInput() {
+        return app.sketchLabels.find(l => l.kind === "input" && l.focused)
+    }
+    readonly property var inputKeypadClient: ({
+        name: "sketchInput",
+        mode: () => {
+            const input = overlay.focusedInput()
+            return input && input.key === "sides" ? "count" : "length"
+        },
+        hasNext: () => overlay.app.sketchLabels.filter(l => l.kind === "input").length > 1,
+        text: () => overlay.typing,
+        replacing: () => overlay.typing.length === 0,
+        setText: (text, replacing) => overlay.typeKeys(text),
+        next: () => {
+            overlay.app.focusNextSketchInput()
+            overlay.typing = ""
+        },
+        done: () => {
+            overlay.app.commitSketchTool()
+            if (overlay.app.typedValueError.length === 0)
+                overlay.typing = ""
+        },
+        target: () => {
+            const input = overlay.focusedInput()
+            return input ? Qt.rect(input.x - 60, input.y - 16, 120, 32) : Qt.rect(overlay.width / 2, overlay.height / 2, 0, 0)
+        },
+        keepClear: "sketch",
+        takesFocus: true,
+        key: (event) => overlay.handleKey(event),
+        // The keypad shows what is typed too: a phone's docked keypad may cover the live value.
+        display: () => {
+            const input = overlay.focusedInput()
+            return overlay.typing.length > 0 ? overlay.typing : input ? input.text : ""
+        }
+    })
+    // A live value tapped: the keypad types into it.
+    function typeIntoInput(key) {
+        if (!app.focusSketchInput(key))
+            return
+        typing = ""
+        keypad.attach(inputKeypadClient)
     }
 
     // ------------------------------------------------------------ tool bar
@@ -418,11 +473,20 @@ Item {
                     }
                 }
                 MouseArea {
+                    objectName: pill.isInput ? "sketchInput_" + labelItem.modelData.key : ""
                     anchors.fill: parent
-                    enabled: labelItem.modelData.kind === "dimension"
+                    // A finger-sized target for a live value (44 px high).
+                    anchors.margins: pill.isInput ? -10 : 0
+                    enabled: labelItem.modelData.kind === "dimension" || (pill.isInput && overlay.usesKeypad)
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: dimensionEditor.open(labelItem.modelData.constraint, labelItem.modelData.text,
-                                                    labelItem.x + labelItem.width / 2, labelItem.y + labelItem.height / 2)
+                    onClicked: {
+                        if (pill.isInput) {
+                            overlay.typeIntoInput(labelItem.modelData.key)
+                            return
+                        }
+                        dimensionEditor.open(labelItem.modelData.constraint, labelItem.modelData.text,
+                                             labelItem.x + labelItem.width / 2, labelItem.y + labelItem.height / 2)
+                    }
                 }
             }
         }
@@ -441,13 +505,46 @@ Item {
     // ------------------------------------------------------------ dimension editor
     TextField {
         id: dimensionEditor
+        objectName: "dimensionEditor"
         property int constraintId: 0
+        property bool isAngle: false
         visible: false
-        width: 96
-        height: 30
-        font.pixelSize: 13
+        width: overlay.usesKeypad ? 120 : 96
+        height: overlay.usesKeypad ? 40 : 30
+        font.pixelSize: overlay.usesKeypad ? 16 : 13
         horizontalAlignment: TextInput.AlignHCenter
-        selectByMouse: true
+        selectByMouse: !overlay.usesKeypad
+        // Touch: the numeric keypad types (read-only: no system keyboard).
+        readOnly: overlay.usesKeypad
+        inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
+        readonly property var keypadClient: ({
+            name: "dimension",
+            mode: () => dimensionEditor.isAngle ? "angle" : "length",
+            hasNext: () => false,
+            text: () => dimensionEditor.text,
+            replacing: () => dimensionEditor.text.length > 0 && dimensionEditor.selectedText === dimensionEditor.text,
+            setText: (text, replacing) => {
+                dimensionEditor.text = text
+                if (replacing)
+                    dimensionEditor.selectAll()
+                else
+                    dimensionEditor.cursorPosition = text.length
+            },
+            next: () => {},
+            done: () => dimensionEditor.apply(),
+            // A phone's docked keypad: the field moves up out from under it.
+            keepAbove: (top) => {
+                if (dimensionEditor.y + dimensionEditor.height + 24 > top)
+                    dimensionEditor.y = Math.max(Theme.insetTop, top - dimensionEditor.height - 24)
+            },
+            target: () => dimensionEditor.mapToItem(null, 0, 0, dimensionEditor.width, dimensionEditor.height),
+            keepClear: "sketch",
+            takesFocus: false
+        })
+        Keys.onPressed: (event) => {
+            if (overlay.usesKeypad && overlay.keypad.serves("dimension") && overlay.keypad.hardwareKey(event))
+                event.accepted = true
+        }
         background: Rectangle {
             radius: 8
             color: "white"
@@ -456,6 +553,7 @@ Item {
         }
         function open(id, text, cx, cy) {
             constraintId = id
+            isAngle = text.indexOf("°") >= 0
             this.text = text.replace("Ø", "").replace("°", "")
             x = cx - width / 2
             y = cy - height / 2
@@ -463,8 +561,12 @@ Item {
             visible = true
             forceActiveFocus()
             selectAll()
+            if (overlay.usesKeypad)
+                overlay.keypad.attach(keypadClient)
         }
         function close() {
+            if (overlay.keypad)
+                overlay.keypad.detach(keypadClient)
             visible = false
             overlay.finished()
         }

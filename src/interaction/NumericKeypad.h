@@ -104,7 +104,8 @@ inline constexpr double kKeypadKeepClearMargin = 20;
 
 // A phone (compact): docked along the bottom, the value chip is at the top
 // while a value is typed there. Larger windows (an iPad): beside the value
-// box, below it, above it, right of it or left of it, else in a corner of the
+// box, below it, above it, right of it or left of it (centered on that side,
+// else flush with either end), else in a corner of the
 // area, the first that covers neither the value box, nor a control, nor the
 // keep-clear rectangle; else the first that covers neither the value box
 // nor the keep-clear rectangle; else docked along the bottom.

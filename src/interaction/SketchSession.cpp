@@ -1227,6 +1227,26 @@ bool SketchSession::focusInput(const std::string& key)
     return false;
 }
 
+std::optional<ScreenRect> SketchSession::screenBounds(const Camera& camera) const
+{
+    std::optional<ScreenRect> bounds;
+    auto include = [&](const ScreenRect& r) { bounds = bounds ? bounds->united(r) : r; };
+    for (const auto& [id, p] : working_.points())
+        include(ScreenRect::around(toScreen(p.position, camera)));
+    for (const auto& [id, circle] : working_.circles()) {
+        if (const auto* center = working_.point(circle.center)) {
+            const Vec2 c = center->position;
+            for (const Vec2 d : {Vec2{circle.radius, 0}, Vec2{-circle.radius, 0}, Vec2{0, circle.radius}, Vec2{0, -circle.radius}})
+                include(ScreenRect::around(toScreen(c + d, camera)));
+        }
+    }
+    if (anchor_) {
+        include(ScreenRect::around(toScreen(anchor_->position, camera)));
+        include(ScreenRect::around(toScreen(cursor_.position, camera)));
+    }
+    return bounds;
+}
+
 Status SketchSession::commitTool()
 {
     if (isPatterning())

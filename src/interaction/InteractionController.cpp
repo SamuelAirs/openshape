@@ -1570,6 +1570,14 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
     return all.rect->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y});
 }
 
+std::optional<ScreenRect> InteractionController::sketchScreenRect() const
+{
+    if (!session_)
+        return std::nullopt;
+    const auto bounds = session_->screenBounds(camera_);
+    return bounds ? bounds->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y}) : std::nullopt;
+}
+
 bool InteractionController::revealKeepClear(const ScreenRect& region)
 {
     if (region.width() <= 1 || region.height() <= 1)

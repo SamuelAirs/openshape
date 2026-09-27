@@ -217,16 +217,19 @@ KeypadPlacement placeKeypad(const KeypadPlacementInput& in)
         return docked;
 
     const ScreenRect& t = in.target;
-    std::vector<Vec2> candidates{
-        {clampX(t.center().x - w / 2), t.bottom + kKeypadGap}, // below
-        {clampX(t.center().x - w / 2), t.top - kKeypadGap - h}, // above
-        {t.right + kKeypadGap, clampY(t.top)},                  // right
-        {t.left - kKeypadGap - w, clampY(t.top)},               // left
-        {area.right - w, area.bottom - h},                      // the corners
-        {area.left, area.bottom - h},
-        {area.right - w, area.top},
-        {area.left, area.top},
-    };
+    // Each side of the value box, the keypad centered on it, then flush
+    // with one end and with the other (past a control near one end).
+    std::vector<Vec2> candidates;
+    for (const double y : {t.bottom + kKeypadGap, t.top - kKeypadGap - h}) // below, above
+        for (const double x : {t.center().x - w / 2, t.left, t.right - w})
+            candidates.push_back({clampX(x), y});
+    for (const double x : {t.right + kKeypadGap, t.left - kKeypadGap - w}) // right, left
+        for (const double y : {t.top, t.center().y - h / 2, t.bottom - h})
+            candidates.push_back({x, clampY(y)});
+    // The corners of the area.
+    for (const Vec2 corner : {Vec2{area.right - w, area.bottom - h}, Vec2{area.left, area.bottom - h}, Vec2{area.right - w, area.top},
+                              Vec2{area.left, area.top}})
+        candidates.push_back(corner);
     const ScreenRect targetZone = t.inflated(kKeypadGap - 1);
     const std::optional<ScreenRect> keepZone =
         in.keepClear ? std::optional<ScreenRect>(in.keepClear->inflated(kKeypadKeepClearMargin)) : std::nullopt;

@@ -1178,6 +1178,12 @@ QVariantMap AppController::placeKeypad(const QVariantMap& layout) const
 
 bool AppController::revealKeepClear(const QRectF& region) { return interaction_->revealKeepClear(toScreenRect(region)); }
 
+QVariant AppController::sketchScreenRect() const
+{
+    const auto rect = interaction_->sketchScreenRect();
+    return rect ? QVariant::fromValue(toQRect(*rect)) : QVariant();
+}
+
 bool AppController::focusSketchInput(const QString& key)
 {
     typingPause_.stop();

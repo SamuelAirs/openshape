@@ -17,6 +17,8 @@ Panel {
     id: panel
 
     required property AppController app
+    // The numeric keypad (Main.qml): on a touch screen a step's numbers are typed there.
+    property NumericKeypad keypad: null
     property real maximumHeight: 600
     property bool collapsed: false
     property string expandedId: ""
@@ -69,6 +71,7 @@ Panel {
             delegate: Rectangle {
                 id: row
                 required property var modelData
+                required property int index
                 readonly property bool isFeature: modelData.kind === "feature"
                 readonly property bool expanded: panel.expandedId === modelData.id
                 readonly property bool failed: modelData.status === "failed"
@@ -201,30 +204,81 @@ Panel {
                             TextField {
                                 id: valueField
                                 objectName: "historyParam_" + row.modelData.id + "_" + paramRow.modelData.key
+                                // A number on a touch screen: typed with the numeric keypad
+                                // (read-only: no system keyboard). A Text step's words keep it.
+                                readonly property bool usesKeypad: Theme.touch && panel.keypad !== null && !paramRow.modelData.isText
                                 Layout.fillWidth: true
-                                implicitHeight: 30
+                                implicitHeight: Theme.touch ? 40 : 30
                                 text: paramRow.modelData.value
                                 font.pixelSize: 13
                                 // Text (a Text step's words) reads from the left; numbers line up on the right.
                                 horizontalAlignment: paramRow.modelData.isText ? TextInput.AlignLeft : TextInput.AlignRight
-                                selectByMouse: true
+                                selectByMouse: !usesKeypad
+                                readOnly: usesKeypad
+                                inputMethodHints: paramRow.modelData.isText ? Qt.ImhNone
+                                                                            : Qt.ImhPreferNumbers | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
                                 background: Rectangle {
                                     radius: 6
                                     color: "white"
                                     border.color: valueField.activeFocus ? Theme.accent : Theme.panelBorder
                                     border.width: valueField.activeFocus ? 1.5 : 1
                                 }
-                                onActiveFocusChanged: if (activeFocus) selectAll()
-                                onAccepted: {
+                                readonly property var keypadClient: ({
+                                    name: "parameter",
+                                    mode: () => paramRow.modelData.mode,
+                                    hasNext: () => false,
+                                    text: () => valueField.text,
+                                    replacing: () => valueField.text.length > 0 && valueField.selectedText === valueField.text,
+                                    setText: (text, replacing) => {
+                                        valueField.text = text
+                                        if (replacing)
+                                            valueField.selectAll()
+                                        else
+                                            valueField.cursorPosition = text.length
+                                    },
+                                    next: () => {},
+                                    done: () => valueField.apply(),
+                                    // Beside the panel (a phone's keypad docks along the bottom).
+                                    target: () => panel.mapToItem(null, 0, 0, panel.width, panel.height),
+                                    keepClear: "",
+                                    takesFocus: false
+                                })
+                                onActiveFocusChanged: {
+                                    if (activeFocus) {
+                                        selectAll()
+                                        if (usesKeypad) {
+                                            panel.keypad.attach(keypadClient)
+                                            // In sight above a phone's keypad (the list is shorter while it is up).
+                                            const view = list
+                                            const at = row.index
+                                            Qt.callLater(() => view.positionViewAtIndex(at, ListView.Contain))
+                                        }
+                                    } else if (panel.keypad) {
+                                        panel.keypad.detach(keypadClient)
+                                    }
+                                }
+                                function apply() {
                                     // A successful edit rebuilds the history and
                                     // destroys this delegate: capture first.
                                     const owner = panel
+                                    const pad = panel.keypad
+                                    const client = keypadClient
                                     const error = owner.app.setFeatureParameter(row.modelData.id, paramRow.modelData.key, text)
                                     if (error.length === 0) {
+                                        // (This field is gone, without losing the focus first.)
+                                        if (pad)
+                                            pad.detach(client)
                                         owner.finished()
                                         return
                                     }
                                     paramError.text = error
+                                }
+                                Keys.onReturnPressed: apply()
+                                Keys.onEnterPressed: apply()
+                                // A hardware keyboard on a touch screen (the field is read-only there).
+                                Keys.onPressed: (event) => {
+                                    if (usesKeypad && panel.keypad.serves("parameter") && panel.keypad.hardwareKey(event))
+                                        event.accepted = true
                                 }
                                 Keys.onEscapePressed: {
                                     const owner = panel

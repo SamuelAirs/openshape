@@ -203,6 +203,9 @@ public:
     // leave free), zooming out first when it is larger. False when it
     // already lies there, or there is nothing to keep clear.
     bool revealKeepClear(const ScreenRect& region);
+    // While sketching: the sketch on screen (SketchSession::screenBounds),
+    // clipped to the view; nullopt outside a sketch or when it is empty.
+    std::optional<ScreenRect> sketchScreenRect() const;
     // An arrow or ring is being dragged.
     bool manipulatorDragging() const { return drag_.mode == DragMode::Manipulator; }
     // Where the value editor goes (interact::placeValueChip). The spot is

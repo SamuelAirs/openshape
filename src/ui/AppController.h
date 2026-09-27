@@ -349,6 +349,9 @@ public:
     // arrow lie in `region`, the part of the window left free
     // (InteractionController::revealKeepClear). True when it moved.
     Q_INVOKABLE bool revealKeepClear(const QRectF& region);
+    // While sketching: the sketch on screen (a keypad beside a value keeps
+    // clear of it; InteractionController::sketchScreenRect), or undefined.
+    Q_INVOKABLE QVariant sketchScreenRect() const;
     // The Text tool's words (previewed at once); returns the error, or "".
     Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);

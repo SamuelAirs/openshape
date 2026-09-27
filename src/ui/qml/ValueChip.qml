@@ -25,9 +25,12 @@ Item {
     // Where the field and the actions sit when the chip is wider than they
     // are: toward the arrow tip (Qt.AlignLeft when the chip is right of it).
     property int alignment: Qt.AlignHCenter
+    // The numeric keypad (Main.qml): on a touch screen the value is typed
+    // there instead of on the system keyboard.
+    property NumericKeypad keypad: null
     // The value is being typed (the field has the focus): on a touch screen
-    // the on-screen keyboard is up, so a docked chip goes to the top.
-    // Typing into the value or the Text tool's words (the on-screen keyboard is up).
+    // the numeric keypad (or, for the Text tool's words, the on-screen
+    // keyboard) is up, so a docked chip goes to the top.
     readonly property bool typing: field.activeFocus || textField.activeFocus
     signal finished()
 
@@ -47,6 +50,47 @@ Item {
     }
     function keyTyped(text) {
         app.typeValueText(text)
+    }
+
+    // The value field on a touch screen: read-only (so the system keyboard
+    // stays down) and typed into with the numeric keypad; a hardware
+    // keyboard still types (NumericKeypad.hardwareKey).
+    readonly property bool usesKeypad: Theme.touch && keypad !== null
+    readonly property var keypadClient: ({
+        name: "valueChip",
+        mode: () => chip.app.operationIsAngle ? "angle" : "length",
+        hasNext: () => chip.hasNextField(),
+        text: () => field.text,
+        replacing: () => field.text.length > 0 && field.selectedText === field.text,
+        setText: (text, replacing) => {
+            field.text = text
+            if (replacing)
+                field.selectAll()
+            else
+                field.cursorPosition = text.length
+            chip.keyTyped(text)
+        },
+        next: () => chip.nextField(),
+        done: () => field.apply(),
+        target: () => chip.mapToItem(null, 0, 0, chip.width, chip.height),
+        keepClear: "selection",
+        takesFocus: false
+    })
+
+    // Operations with several fields (the Hole tool's diameter, depth, X,
+    // Y): Tab or Next goes to the next one, only with a usable value (it
+    // waits for the verdict of a preview still computing, e.g. a hole off
+    // the face).
+    function hasNextField() {
+        return app.contextActions.some(a => a.id.startsWith("field:"))
+    }
+    function nextField() {
+        errorText.text = app.confirmValueText(field.text)
+        if (errorText.text.length === 0) {
+            app.triggerAction("nextField")
+            field.text = app.operationValueText
+            field.selectAll()
+        }
     }
 
     function beginTyping(firstChar) {
@@ -237,7 +281,10 @@ Item {
                     implicitHeight: Theme.controlHeight
                     font.pixelSize: 15
                     horizontalAlignment: TextInput.AlignRight
-                    selectByMouse: true
+                    selectByMouse: !chip.usesKeypad
+                    // Touch: the numeric keypad types (read-only: no system keyboard).
+                    readOnly: chip.usesKeypad
+                    inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
                     color: Theme.text
                     background: Rectangle {
                         radius: 8
@@ -248,28 +295,30 @@ Item {
                     onTextEdited: chip.keyTyped(text)
                     // Leaving the field takes what was typed (unless Esc dropped it).
                     onActiveFocusChanged: {
-                        if (activeFocus)
+                        if (activeFocus) {
                             selectAll()
-                        else
+                            if (chip.usesKeypad)
+                                chip.keypad.attach(chip.keypadClient)
+                        } else {
+                            if (chip.keypad)
+                                chip.keypad.detach(chip.keypadClient)
                             chip.app.flushTyping()
+                        }
+                    }
+                    // A hardware keyboard on a touch screen (the field is read-only there).
+                    Keys.onPressed: (event) => {
+                        if (chip.usesKeypad && chip.keypad.serves("valueChip") && chip.keypad.hardwareKey(event))
+                            event.accepted = true
                     }
                     Keys.onReturnPressed: apply()
                     Keys.onEnterPressed: apply()
-                    // Operations with several fields (the Hole tool's
-                    // diameter, depth, X, Y): Tab goes to the next one, only
-                    // with a usable value (it waits for the verdict of a
-                    // preview still computing, e.g. a hole off the face).
+                    // Several fields (the Hole tool): Tab goes to the next one.
                     Keys.onTabPressed: (event) => {
-                        if (!chip.app.contextActions.some(a => a.id.startsWith("field:"))) {
+                        if (!chip.hasNextField()) {
                             event.accepted = false
                             return
                         }
-                        errorText.text = chip.app.confirmValueText(text)
-                        if (errorText.text.length === 0) {
-                            chip.app.triggerAction("nextField")
-                            field.text = chip.app.operationValueText
-                            field.selectAll()
-                        }
+                        chip.nextField()
                     }
                     Keys.onEscapePressed: {
                         chip.app.dropTyping()

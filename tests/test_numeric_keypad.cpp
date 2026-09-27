@@ -228,6 +228,27 @@ TEST(KeypadPlacement, BesideTheValueBoxClearOfTheSelectionAndTheControls)
     EXPECT_FALSE(r.intersects(in.avoid[0]));
 }
 
+TEST(KeypadPlacement, SlidesAlongTheValueBoxPastAControl)
+{
+    // The acceptance run's iPad case: a wide value box (its actions below the
+    // field) low in the window, the face and its arrow above it, the tool
+    // column on the left and the axis marker low on the right. Right of the
+    // value box, centered on it instead of level with its top, clears the
+    // axis marker.
+    KeypadPlacementInput in = ipad();
+    in.area = {4, 4, 1176, 816};
+    in.size = {340, 290};
+    in.target = {360, 430, 820, 576};
+    in.keepClear = ScreenRect{412, 218, 767, 410};
+    in.avoid = {{16, 16, 361, 72}, {16, 88, 106, 732}, {670, 748, 1164, 804}, {1084, 660, 1164, 740}, {16, 748, 654, 804}, {874, 16, 1164, 136}};
+    const KeypadPlacement p = placeKeypad(in);
+    EXPECT_TRUE(p.clear);
+    EXPECT_FALSE(p.docked);
+    EXPECT_DOUBLE_EQ(p.position.x, 820 + kKeypadGap);
+    EXPECT_DOUBLE_EQ(p.position.y + in.size.y / 2, (430.0 + 576.0) / 2);
+    EXPECT_LE(p.position.y + in.size.y, 660) << "above the axis marker";
+}
+
 TEST(KeypadPlacement, NeverOverTheValueBoxOrOutsideTheWindow)
 {
     // Value boxes all over the window: the keypad is inside the area and off
@@ -285,4 +306,43 @@ TEST(KeypadReveal, TheSelectionMovesIntoTheRoomTheKeypadLeaves)
     ASSERT_TRUE(small.has_value());
     EXPECT_TRUE(band.contains(*small)) << small->top << " " << small->bottom;
     EXPECT_EQ(document.bodies().size(), 1u) << "only the view moved";
+}
+
+// ---- A keypad beside a sketch's value keeps clear of the sketch -----------------------
+
+TEST(KeypadReveal, SketchOnScreenHoldsItsCornersAndTheShapeBeingDrawn)
+{
+    doc::Document document;
+    cmd::UndoStack stack;
+    InteractionController controller{document, stack};
+    controller.setViewportSize({1200, 800});
+    EXPECT_FALSE(controller.sketchScreenRect().has_value()) << "no sketch";
+    ASSERT_TRUE(controller.startSketch().ok());
+    controller.skipAnimation();
+    const auto click = [&](Vec2 p) {
+        PointerEvent e;
+        e.position = p;
+        e.button = PointerButton::Left;
+        controller.pointerPress(e);
+        controller.pointerRelease(e);
+    };
+    const auto move = [&](Vec2 p) {
+        PointerEvent e;
+        e.position = p;
+        controller.pointerMove(e);
+    };
+    click({500, 300});
+    move({560, 380});
+    const auto drawing = controller.sketchScreenRect();
+    ASSERT_TRUE(drawing.has_value()) << "the shape being drawn";
+    EXPECT_TRUE(drawing->contains({500, 300, 560, 380}, 3.0))
+        << drawing->left << "," << drawing->top << " " << drawing->right << "," << drawing->bottom;
+    click({700, 450});
+    const auto drawn = controller.sketchScreenRect();
+    ASSERT_TRUE(drawn.has_value());
+    // (The corners snap to the grid: within a few pixels of the clicks.)
+    EXPECT_NEAR(drawn->left, 500, 3.0);
+    EXPECT_NEAR(drawn->top, 300, 3.0);
+    EXPECT_NEAR(drawn->right, 700, 3.0);
+    EXPECT_NEAR(drawn->bottom, 450, 3.0);
 }
