@@ -485,10 +485,12 @@ QVariantList AppController::sketchLabels() const
         case interact::SketchLabel::Kind::Input: kind = QStringLiteral("input"); break;
         case interact::SketchLabel::Kind::Hint: kind = QStringLiteral("hint"); break;
         case interact::SketchLabel::Kind::Constraint: kind = QStringLiteral("constraint"); break;
+        case interact::SketchLabel::Kind::Size: kind = QStringLiteral("size"); break;
         }
         map.insert(QStringLiteral("kind"), kind);
         map.insert(QStringLiteral("key"), q(label.key));
         map.insert(QStringLiteral("constraint"), int(label.constraint));
+        map.insert(QStringLiteral("entity"), int(label.entity));
         map.insert(QStringLiteral("text"), q(label.text));
         map.insert(QStringLiteral("caption"), q(label.caption));
         map.insert(QStringLiteral("x"), label.screen.x);

@@ -362,6 +362,9 @@ private:
     // Duplicate, Split, a Model panel row): fails only when Refused.
     Status applyPendingValue(const char* action);
     sel::PickResult pickProfile(Vec2 screen) const;
+    // The sketch's tapped closed shape (Select tool) straight to Extrude:
+    // finishes the sketch, selects that profile, the arrow where it was tapped.
+    Status extrudeSketchRegion();
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     void alignViewTo(const sketch::Plane& plane);
     void updateHover(const PointerEvent& event);
@@ -423,6 +426,15 @@ private:
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;
+    // Where the arrow of a profile's Extrude / Revolve starts when it was
+    // tapped inside the sketch (extrudeSketchRegion), while that profile
+    // stays the first one selected; otherwise the region's interior point.
+    struct ProfileAnchor {
+        Uuid sketch;
+        int index = -1;
+        Vec3 point;
+    };
+    std::optional<ProfileAnchor> profileAnchor_;
     bool alignRequested_ = false; // the selected face/edge is the source of an Align
     std::optional<doc::DatumKind> datumTool_; // the Axis or Plane tool is running
     // What the model spans (for drawing construction geometry beyond it).

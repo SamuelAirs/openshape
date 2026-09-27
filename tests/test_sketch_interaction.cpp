@@ -738,13 +738,21 @@ TEST(SketchInteraction, DraggingAPointReshapes)
     h.controller.skipAnimation();
     h.drag(h.sketchScreen({0, 0}), h.sketchScreen({10, 10}));
     h.controller.setSketchTool(SketchTool::Select);
-    // Drag the far corner to (16, 12); the rectangle follows and stays square-cornered.
-    h.drag(h.sketchScreen({10, 10}), h.sketchScreen({16, 12}));
-    bool moved = false;
+    // Drag the far corner to (20, 15) (a dragged point snaps to the grid like
+    // a drawn one); the rectangle follows and stays square-cornered.
+    h.drag(h.sketchScreen({10, 10}), h.sketchScreen({20, 15}));
+    std::vector<Vec2> corners;
     for (const auto& [id, p] : h.session().sketch().points())
-        moved = moved || ((p.position - Vec2{16, 12}).length() < 0.05);
-    EXPECT_TRUE(moved);
+        corners.push_back(p.position);
+    ASSERT_EQ(corners.size(), 4u); // the first corner is the origin
+    auto has = [&](Vec2 q) {
+        return std::any_of(corners.begin(), corners.end(), [&](Vec2 c) { return (c - q).length() < 1e-6; });
+    };
+    EXPECT_TRUE(has({20, 15}));
+    EXPECT_TRUE(has({20, 0}));
+    EXPECT_TRUE(has({0, 15}));
     EXPECT_TRUE(h.session().sketch().solveReport().ok);
+    EXPECT_EQ(h.stack.undoLabel(), "Move point");
 }
 
 TEST(SketchInteraction, PositionHoleFromOrigin)

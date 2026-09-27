@@ -348,14 +348,19 @@ Item {
             id: labelItem
             required property var modelData
             readonly property bool isConstraint: modelData.kind === "constraint"
+            // A size label (the selected line's length, a circle's Ø, an arc's R)
+            // edits like a dimension: typing a value adds that dimension.
+            readonly property bool isSize: modelData.kind === "size"
+            readonly property int editId: isSize ? modelData.entity : modelData.constraint
             objectName: isConstraint ? "constraintIcon_" + modelData.constraint
-                      : modelData.kind === "dimension" ? "dimensionLabel_" + modelData.constraint : ""
+                      : modelData.kind === "dimension" ? "dimensionLabel_" + modelData.constraint
+                      : isSize ? "sizeLabel_" + modelData.entity : ""
             x: modelData.x - width / 2
             y: modelData.y - height / 2
             width: isConstraint ? badge.width : pill.width
             height: isConstraint ? badge.height : pill.height
-            visible: !(dimensionEditor.visible && dimensionEditor.constraintId === modelData.constraint
-                       && modelData.kind === "dimension")
+            visible: !(dimensionEditor.visible && dimensionEditor.constraintId === editId
+                       && (modelData.kind === "dimension" || isSize))
 
             // A constraint glyph: tap or click it with the Select tool to select the
             // constraint (Delete removes it). It takes no input itself: the sketch
@@ -390,10 +395,12 @@ Item {
                 width: label.implicitWidth + (caption.visible ? caption.implicitWidth + 4 : 0) + (isHint ? 12 : 16)
                 height: isHint ? 20 : 24
                 radius: height / 2
+                // A size is measured, not set: dimmer than a dimension.
+                opacity: labelItem.isSize ? 0.8 : 1.0
                 color: isHint ? "transparent"
                      : isInput && labelItem.modelData.focused ? "white" : Theme.panel
                 border.color: isInput && labelItem.modelData.focused ? Theme.accent
-                            : isHint ? "transparent" : Theme.panelBorder
+                            : isHint ? "transparent" : labelItem.isSize ? Theme.accent : Theme.panelBorder
                 border.width: isInput && labelItem.modelData.focused ? 1.5 : 1
                 Row {
                     anchors.centerIn: parent
@@ -404,7 +411,7 @@ Item {
                               ? overlay.typing : labelItem.modelData.text
                         font.pixelSize: pill.isHint ? 11 : 12
                         font.weight: labelItem.modelData.locked ? Font.DemiBold : Font.Normal
-                        color: pill.isHint ? Theme.accent : Theme.text
+                        color: pill.isHint ? Theme.accent : labelItem.isSize ? Theme.mutedText : Theme.text
                     }
                     // What the value is ("across flats", "sides").
                     Text {
@@ -417,10 +424,13 @@ Item {
                     }
                 }
                 MouseArea {
-                    anchors.fill: parent
-                    enabled: labelItem.modelData.kind === "dimension"
+                    // At least 44 px to tap in the touch layout.
+                    anchors.centerIn: parent
+                    width: Math.max(parent.width, Theme.touch ? 44 : 0)
+                    height: Math.max(parent.height, Theme.touch ? 44 : 0)
+                    enabled: labelItem.modelData.kind === "dimension" || labelItem.isSize
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: dimensionEditor.open(labelItem.modelData.constraint, labelItem.modelData.text,
+                    onClicked: dimensionEditor.open(labelItem.editId, labelItem.modelData.text,
                                                     labelItem.x + labelItem.width / 2, labelItem.y + labelItem.height / 2)
                 }
             }
@@ -455,7 +465,7 @@ Item {
         }
         function open(id, text, cx, cy) {
             constraintId = id
-            this.text = text.replace("Ø", "").replace("°", "")
+            this.text = text.replace("Ø", "").replace("°", "").replace(/^R/, "")
             x = cx - width / 2
             y = cy - height / 2
             dimensionError.text = ""

@@ -384,17 +384,7 @@ PolygonIds addPolygon(Sketch& s, Vec2 center, Vec2 sideMiddle, int sides, Entity
 
 namespace {
 
-// The points a curve is made of.
-std::vector<EntityId> curvePoints(const Sketch& s, EntityId curve)
-{
-    if (const auto* l = s.line(curve))
-        return {l->start, l->end};
-    if (const auto* c = s.circle(curve))
-        return {c->center};
-    if (const auto* a = s.arc(curve))
-        return {a->center, a->start, a->end};
-    return {};
-}
+// (The points a curve is made of: curvePoints, public.)
 
 // The distinct curves of a selection, in order, without `except`.
 std::vector<EntityId> curvesOnly(const Sketch& s, const std::vector<EntityId>& ids, EntityId except = kNoEntity)
@@ -807,6 +797,139 @@ std::vector<Vec2> trimPreview(const Sketch& s, EntityId id, Vec2 at)
     for (int i = 0; i <= n; ++i)
         out.push_back(pointAt(c, lo + sweep * i / n));
     return out;
+}
+
+// ---- Dragging: joining points, chains -----------------------------------------------------
+
+Status mergePoints(Sketch& sketch, EntityId from, EntityId into)
+{
+    const SketchPoint* moved = sketch.point(from);
+    if (!moved || !sketch.point(into) || from == into)
+        return failure("Those points cannot be joined.", "mergePoints: unknown or equal points");
+    if (moved->fixed)
+        return failure("A fixed point cannot be joined to another one.", "mergePoints: from is fixed");
+    auto replace = [&](EntityId& e) {
+        if (e == from)
+            e = into;
+    };
+    // A curve that would lose its size: both ends of a line, an arc's ends or center.
+    for (const auto& [id, l] : sketch.lines())
+        if ((l.start == from && l.end == into) || (l.start == into && l.end == from))
+            return failure("A line cannot end where it starts.", "mergePoints: collapses a line");
+    for (const auto& [id, arc] : sketch.arcs()) {
+        std::vector<EntityId> ends{arc.center, arc.start, arc.end};
+        for (EntityId& e : ends)
+            replace(e);
+        if (ends[0] == ends[1] || ends[0] == ends[2] || ends[1] == ends[2])
+            return failure("An arc cannot end where it starts.", "mergePoints: collapses an arc");
+    }
+    std::vector<EntityId> lines, circles, arcs, constraints;
+    for (const auto& [id, l] : sketch.lines())
+        lines.push_back(id);
+    for (const auto& [id, c] : sketch.circles())
+        circles.push_back(id);
+    for (const auto& [id, arc] : sketch.arcs())
+        arcs.push_back(id);
+    for (const auto& [id, c] : sketch.constraints())
+        constraints.push_back(id);
+    for (const EntityId id : lines) {
+        replace(sketch.line(id)->start);
+        replace(sketch.line(id)->end);
+    }
+    for (const EntityId id : circles)
+        replace(sketch.circle(id)->center);
+    for (const EntityId id : arcs) {
+        replace(sketch.arc(id)->center);
+        replace(sketch.arc(id)->start);
+        replace(sketch.arc(id)->end);
+    }
+    for (const EntityId id : constraints) {
+        SketchConstraint* c = sketch.constraint(id);
+        replace(c->a);
+        replace(c->b);
+        replace(c->c);
+    }
+    // Constraints that became meaningless (Coincident of one point with
+    // itself, a point on its own line) or repeated go.
+    std::vector<SketchConstraint> kept;
+    for (const EntityId id : constraints) {
+        const SketchConstraint c = *sketch.constraint(id);
+        const bool repeated = std::any_of(kept.begin(), kept.end(), [&](const SketchConstraint& k) {
+            return k.kind == c.kind && !c.isDimension() && k.c == c.c
+                && ((k.a == c.a && k.b == c.b) || (k.a == c.b && k.b == c.a));
+        });
+        if (!sketch.isValid(c) || repeated)
+            (void)sketch.remove(id);
+        else
+            kept.push_back(c);
+    }
+    (void)sketch.remove(from);
+    return okStatus();
+}
+
+namespace {
+// The end points of a curve (not a circle's or an arc's center).
+std::vector<EntityId> curveEnds(const Sketch& sketch, EntityId curve)
+{
+    if (const auto* l = sketch.line(curve))
+        return {l->start, l->end};
+    if (const auto* a = sketch.arc(curve))
+        return {a->start, a->end};
+    return {};
+}
+} // namespace
+
+std::vector<EntityId> connectedCurves(const Sketch& sketch, EntityId curve)
+{
+    std::vector<EntityId> all;
+    for (const auto& [id, l] : sketch.lines())
+        all.push_back(id);
+    for (const auto& [id, c] : sketch.circles())
+        all.push_back(id);
+    for (const auto& [id, a] : sketch.arcs())
+        all.push_back(id);
+    if (std::find(all.begin(), all.end(), curve) == all.end())
+        return {};
+    // Points joined by a Coincident constraint count as one.
+    auto joined = [&](EntityId p, EntityId q) {
+        if (p == q)
+            return true;
+        for (const auto& [id, c] : sketch.constraints())
+            if (c.kind == ConstraintKind::Coincident && ((c.a == p && c.b == q) || (c.a == q && c.b == p)))
+                return true;
+        return false;
+    };
+    std::vector<EntityId> chain{curve}, todo{curve};
+    while (!todo.empty()) {
+        const EntityId at = todo.back();
+        todo.pop_back();
+        const auto ends = curveEnds(sketch, at);
+        for (const EntityId other : all) {
+            if (std::find(chain.begin(), chain.end(), other) != chain.end())
+                continue;
+            const auto otherEnds = curveEnds(sketch, other);
+            const bool touches = std::any_of(ends.begin(), ends.end(), [&](EntityId p) {
+                return std::any_of(otherEnds.begin(), otherEnds.end(), [&](EntityId q) { return joined(p, q); });
+            });
+            if (touches) {
+                chain.push_back(other);
+                todo.push_back(other);
+            }
+        }
+    }
+    std::sort(chain.begin(), chain.end());
+    return chain;
+}
+
+std::vector<EntityId> curvePoints(const Sketch& sketch, EntityId curve)
+{
+    if (const auto* l = sketch.line(curve))
+        return {l->start, l->end};
+    if (const auto* c = sketch.circle(curve))
+        return {c->center};
+    if (const auto* a = sketch.arc(curve))
+        return {a->center, a->start, a->end};
+    return {};
 }
 
 } // namespace os::sketch

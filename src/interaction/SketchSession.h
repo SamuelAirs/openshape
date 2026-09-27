@@ -28,10 +28,13 @@ enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, Center
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
     // Constraint: a small glyph near constrained geometry (tap to select it).
-    enum class Kind { Dimension, Input, Hint, Constraint };
+    // Size: the length, diameter or radius of the one selected line, circle
+    // or arc that no dimension sets yet (tap it to type one: setDimension).
+    enum class Kind { Dimension, Input, Hint, Constraint, Size };
     Kind kind = Kind::Hint;
     std::string key;                          // Input: "width", "height", "diameter", "length"
     sketch::EntityId constraint = sketch::kNoEntity; // Dimension, Constraint: constraint id
+    sketch::EntityId entity = sketch::kNoEntity;     // Size: the line, circle or arc
     std::string text;
     std::string caption; // what the value is, shown after it in muted text ("across flats", "sides")
     Vec2 screen;
@@ -85,9 +88,22 @@ public:
     // ---- Input (screen coordinates in logical pixels) ----
     // Returns true if the press was consumed by the sketch (tool or geometry);
     // false lets the caller orbit/pan instead.
+    //
+    // With the Select tool a drag edits what the press is on (mouse, pen or
+    // finger alike): a point moves (snapping to other points, midpoints and
+    // curves, and joined to what it is dropped on), a line moves with both
+    // ends, a circle's or arc's rim sets its radius and an arc's center moves
+    // the arc, a press inside a closed shape moves the whole shape, and a
+    // press on one of several selected items moves them all. Constraints
+    // hold (sketch::solveDragging); the release commits one step and keeps
+    // the selection. A tap inside a closed shape selects it (Extrude).
     bool pointerPress(const PointerEvent& event, const Camera& camera);
     void pointerMove(const PointerEvent& event, const Camera& camera);
     void pointerRelease(const PointerEvent& event, const Camera& camera);
+    // A double-click or double-tap. Select tool: on a curve (or a point of
+    // one), selects the curves joined to it end to end (a whole shape).
+    // Returns true when it did.
+    bool doubleClick(const PointerEvent& event, const Camera& camera);
     // The press became something else (a second finger arrived: a pan or a
     // pinch; the system cancelled the touch): it neither draws, drags nor
     // selects. A shape this press started goes; one already under way (its
@@ -121,12 +137,22 @@ public:
     void focusNextInput();
     // Completes the shape being drawn using typed values (Enter).
     Status commitTool();
-    // Changes a dimension's value. Returns an error message or "".
-    std::string setDimension(sketch::EntityId constraint, const std::string& text);
+    // Changes a dimension's value; for a line, circle or arc (its Size
+    // label) adds the dimension that sets its length, diameter or radius to
+    // the value. Returns an error message or "".
+    std::string setDimension(sketch::EntityId constraintOrCurve, const std::string& text);
 
     // ---- Selection & actions ----
     const std::vector<sketch::EntityId>& selection() const { return selected_; }
     void select(sketch::EntityId id, bool additive);
+    // The closed shape (region index) a tap selected, and where (sketch
+    // coordinates, inside it); its action "extrude" is the controller's.
+    std::optional<int> selectedRegion() const
+    {
+        return selectedRegion_ >= 0 ? std::optional<int>(selectedRegion_) : std::nullopt;
+    }
+    Vec2 selectedRegionPoint() const { return selectedRegionPoint_; }
+    const std::vector<geom::Region>& regions() const { return regions_; }
     std::vector<ContextAction> contextActions() const;
     Status triggerAction(const std::string& id);
 
@@ -147,14 +173,47 @@ public:
     std::function<void()> onCommitted;
 
 private:
-    enum class SnapKind { None, Grid, Point, Origin, Midpoint };
+    // OnLine, OnCircle: only for a dragged point (dragSnapAt).
+    enum class SnapKind { None, Grid, Point, Origin, Midpoint, OnLine, OnCircle };
     struct Snap {
         Vec2 position;
         SnapKind kind = SnapKind::None;
         sketch::EntityId point = sketch::kNoEntity;
+        sketch::EntityId curve = sketch::kNoEntity; // Midpoint (of a dragged point), OnLine, OnCircle: the curve
         bool horizontal = false; // inferred relative to the anchor
         bool vertical = false;
     };
+    // Select tool: what a press took hold of, and how a drag moves it.
+    struct Grab {
+        enum class Kind {
+            None,
+            Point,  // one point, to where the pointer snaps (joined to what it is dropped on)
+            Rigid,  // `points` all move by the pointer's travel (a line, an arc, a selection)
+            Rim,    // a circle's or arc's rim follows the pointer (its radius)
+            Region, // a press inside a closed shape: the curves around it move (points found on the drag)
+        };
+        Kind kind = Kind::None;
+        sketch::EntityId entity = sketch::kNoEntity; // Point: the point; Rim: the circle or arc
+        std::vector<sketch::EntityId> points;        // Rigid, Region
+        int region = -1;                             // Region
+        std::string label;                           // the undo step
+        bool refused = false;                        // nothing of it can move (said once)
+    };
+    Grab grabAt(sketch::EntityId hit) const;
+    // The points of the curves around region `index` (a kernel classification per curve).
+    std::vector<sketch::EntityId> regionLoopPoints(int index) const;
+    // Region under a sketch position (display meshes: no kernel call), or -1.
+    int regionAt(Vec2 local) const;
+    // Whether anything the grab moves can move at all (the solver's report).
+    bool grabCanMove() const;
+    // Where a dragged point lands: other points, midpoints, curves (not its
+    // own, nor what moves with it), then the grid.
+    Snap dragSnapAt(Vec2 screen, const Camera& camera, PointerDevice device, sketch::EntityId dragged) const;
+    void dragTo(const PointerEvent& event, const Camera& camera);
+    // A dropped point joins what it snapped to (merged into a point; on a
+    // line, circle or at a midpoint by a constraint). False: nothing added.
+    bool connectDropped(sketch::Sketch& next, sketch::EntityId point, const Snap& snap) const;
+    bool showsCursor() const;
     struct Input {
         std::string key;
         std::string label;
@@ -258,10 +317,16 @@ private:
     bool dragging_ = false;
     Vec2 pressScreen_;
     PointerEvent pressEvent_;
-    sketch::EntityId dragPoint_ = sketch::kNoEntity;
+    Vec2 pressLocal_;              // Select: where the press met the sketch plane
+    Grab grab_;                    // Select: what the press took hold of
+    std::optional<Snap> dragSnap_; // a dragged point's snap (shown; joined on release)
+    bool keepSelectionOnRelease_ = false; // a double-click chose the selection
     sketch::Sketch dragStart_;
 
     std::vector<sketch::EntityId> selected_;
+    int selectedRegion_ = -1;      // a tapped closed shape (Extrude)
+    Vec2 selectedRegionPoint_;
+    int hoveredRegion_ = -1;
     sketch::EntityId hovered_ = sketch::kNoEntity;
     sketch::EntityId hoveredGlyph_ = sketch::kNoEntity; // Select tool: a constraint glyph under the pointer
 

@@ -95,6 +95,22 @@ struct Motion2D {
 };
 std::vector<Motion2D> patternMotions(const PatternLayout& layout);
 
+// Joins point `from` into point `into` (a point dragged onto another):
+// every curve and constraint that used `from` uses `into` instead, and
+// `from` is removed. Constraints that no longer make sense (the two points
+// of a Coincident, a point on its own line) go. Refused, changing nothing,
+// when a curve would collapse (both ends of one line) or `from` is fixed.
+Status mergePoints(Sketch& sketch, EntityId from, EntityId into);
+
+// The curves joined to `curve` end to end (shared end points or Coincident
+// ends), `curve` included: a rectangle's four sides, a polyline, a slot. A
+// circle is a chain of its own. Sorted.
+std::vector<EntityId> connectedCurves(const Sketch& sketch, EntityId curve);
+
+// The points that move with a curve moved as a whole: a line's ends, a
+// circle's center, an arc's center and ends.
+std::vector<EntityId> curvePoints(const Sketch& sketch, EntityId curve);
+
 // Removes the piece of a line, circle or arc around `at` that lies between
 // its nearest crossings with other curves (or its own ends): a circle
 // becomes an arc, a line or arc may split in two. New ends are kept on the
