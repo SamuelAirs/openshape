@@ -99,7 +99,8 @@ std::vector<Motion2D> patternMotions(const PatternLayout& layout);
 // every curve and constraint that used `from` uses `into` instead, and
 // `from` is removed. Constraints that no longer make sense (the two points
 // of a Coincident, a point on its own line) go. Refused, changing nothing,
-// when a curve would collapse (both ends of one line) or `from` is fixed.
+// when a curve would collapse (both ends of one line), would lie on top of
+// another (two lines with the same ends, two arcs alike) or `from` is fixed.
 Status mergePoints(Sketch& sketch, EntityId from, EntityId into);
 
 // The curves joined to `curve` end to end (shared end points or Coincident

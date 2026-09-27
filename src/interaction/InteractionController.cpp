@@ -592,7 +592,7 @@ void InteractionController::pointerRelease(const PointerEvent& event)
         else if (mode == DragMode::Pending && press.button == PointerButton::Right)
             (void)session_->keyPress(Key::Escape); // right-click finishes the line chain / shape, like Esc
         else if (mode == DragMode::Pending && press.button == PointerButton::Left)
-            session_->select(sketch::kNoEntity, false); // click on empty space
+            session_->tapBackground(press, camera_); // empty space, or a closed shape not selected yet
         notifyState();
         notifyView();
         return;

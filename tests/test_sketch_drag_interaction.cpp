@@ -16,6 +16,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
+#include <optional>
 
 using namespace os;
 using namespace os::interact;
@@ -259,11 +261,18 @@ TEST(SketchDragInteraction, FingerDragsALineAndACircleRim)
 
 TEST(SketchDragInteraction, DragInsideAShapeMovesItWhole)
 {
+    // Tap a shape (it is selected, Extrude offered), then drag inside it: it
+    // moves whole and stays selected.
     for (const bool touch : {false, true}) {
         Harness h(touch);
         h.rectangle();
         const sketch::EntityId circle = h.circle();
         const Vec2 center = h.pos(h.sketch().circle(circle)->center);
+        if (touch)
+            h.tap({30, 20});
+        else
+            h.click({30, 20});
+        ASSERT_TRUE(h.session().selectedRegion());
         if (touch)
             h.stroke({30, 20}, {40, 15});
         else
@@ -276,6 +285,34 @@ TEST(SketchDragInteraction, DragInsideAShapeMovesItWhole)
         EXPECT_NEAR((h.pos(h.sketch().circle(circle)->center) - center).length(), 0, 1e-9);
         // And the camera did not orbit (still looking straight down).
         EXPECT_NEAR(h.controller.camera().forward().z, -1.0, 1e-9);
+        // The moved shape is still the selected one (Extrude is still
+        // offered), where it went.
+        ASSERT_TRUE(h.session().selectedRegion()) << (touch ? "touch" : "mouse");
+        EXPECT_TRUE(h.offers("extrude"));
+        const Vec2 inside = h.session().selectedRegionPoint();
+        EXPECT_NEAR(inside.x, 40, 1e-6);
+        EXPECT_NEAR(inside.y, 15, 1e-6);
+    }
+}
+
+TEST(SketchDragInteraction, DragInsideAShapeNotSelectedOrbits)
+{
+    // One finger (or the left button) inside a shape not tapped first turns
+    // the view as before: a sketched plate may fill a phone's view.
+    for (const bool touch : {false, true}) {
+        Harness h(touch);
+        h.rectangle();
+        const sketch::Sketch before = h.sketch();
+        const std::size_t steps = h.stack.index();
+        if (touch)
+            h.stroke({30, 20}, {40, 30});
+        else
+            h.drag({30, 20}, {40, 30});
+        for (const auto& [id, p] : h.sketch().points())
+            EXPECT_NEAR((p.position - before.point(id)->position).length(), 0, 1e-12);
+        EXPECT_EQ(h.stack.index(), steps);
+        EXPECT_TRUE(h.messages.empty());
+        EXPECT_GT(std::abs(h.controller.camera().forward().z + 1.0), 1e-3) << (touch ? "touch" : "mouse") << ": orbited";
     }
 }
 
@@ -318,6 +355,8 @@ TEST(SketchDragInteraction, AFullySizedShapeSaysSoAndStays)
     const std::size_t steps = h.stack.index();
     const sketch::Sketch before = h.sketch();
 
+    h.click({30, 20}); // the shape, tapped: its drag is refused plainly
+    ASSERT_TRUE(h.session().selectedRegion());
     for (const auto& [from, to] : {std::pair{Vec2{30, 40}, Vec2{30, 50}}, std::pair{Vec2{30, 20}, Vec2{40, 30}}}) {
         h.messages.clear();
         h.drag(from, to);
@@ -331,6 +370,14 @@ TEST(SketchDragInteraction, AFullySizedShapeSaysSoAndStays)
     const RenderSketch render = h.session().renderData(h.controller.camera());
     for (const auto& line : render.lines)
         EXPECT_NE(line.style, SketchStyle::Normal);
+    // A drag inside it when it is not selected turns the view, and says nothing.
+    h.click({-80, -60}); // empty space
+    ASSERT_FALSE(h.session().selectedRegion());
+    h.messages.clear();
+    h.drag({30, 20}, {40, 30});
+    EXPECT_TRUE(h.messages.empty());
+    EXPECT_EQ(h.stack.index(), steps);
+    EXPECT_GT(std::abs(h.controller.camera().forward().z + 1.0), 1e-3);
 }
 
 TEST(SketchDragInteraction, MovableAndFixedItemsAreColoredApart)
@@ -420,6 +467,132 @@ TEST(SketchDragInteraction, ADroppedPointJoinsWhatItLandsOn)
     EXPECT_TRUE(h.sketch().solveReport().ok);
 }
 
+TEST(SketchDragInteraction, ADroppedPointSlidesAlongItsLineWithoutRepeatingTheConstraint)
+{
+    Harness h;
+    h.rectangle();
+    // A free line whose end is dropped on the bottom side: On line.
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click({-10, 60});
+    h.click({-30, 70});
+    ASSERT_TRUE(h.controller.keyPress(Key::Escape));
+    h.controller.setSketchTool(SketchTool::Select);
+    h.drag({-10, 60}, {20, 10});
+    ASSERT_EQ(h.count(sketch::ConstraintKind::PointOnLine), 1u);
+    const std::size_t constraints = h.sketch().constraints().size();
+    // Slid along the side, and to (near) its middle: it stays held by the
+    // one constraint it has; nothing is added, nothing is redundant.
+    Vec2 at{20, 10};
+    for (const Vec2 to : {Vec2{40, 10}, Vec2{15, 10}, Vec2{31, 10}}) {
+        h.drag(at, to);
+        EXPECT_EQ(h.stack.undoLabel(), "Move point") << to.x;
+        EXPECT_EQ(h.sketch().constraints().size(), constraints) << to.x;
+        EXPECT_EQ(h.count(sketch::ConstraintKind::PointOnLine), 1u);
+        EXPECT_EQ(h.count(sketch::ConstraintKind::Midpoint), 0u);
+        EXPECT_TRUE(h.sketch().solveReport().redundant.empty());
+        at = {std::round(to.x / 5) * 5, 10}; // on the grid
+        EXPECT_TRUE(h.hasPoint(at)) << to.x;
+    }
+}
+
+TEST(SketchDragInteraction, ADroppedPointNeverLaysALineOnAnother)
+{
+    // A polyline (0, 50) - (20, 55) - (25, 75): its first end dropped on its
+    // last one, or onto the second line, would lay one line on the other.
+    // It snaps to neither and nothing joins.
+    Harness h;
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click({0, 50});
+    h.click({20, 55});
+    h.click({25, 75});
+    ASSERT_TRUE(h.controller.keyPress(Key::Escape));
+    h.controller.setSketchTool(SketchTool::Select);
+    ASSERT_EQ(h.sketch().lines().size(), 2u);
+    const std::size_t points = h.sketch().points().size();
+    for (const Vec2 to : {Vec2{25, 75}, Vec2{22.5, 65}}) { // its far end; the second line's middle
+        h.drag({0, 50}, to);
+        EXPECT_EQ(h.sketch().points().size(), points);
+        EXPECT_TRUE(h.sketch().constraints().empty());
+        EXPECT_EQ(h.stack.undoLabel(), "Move point");
+        EXPECT_NE(h.lineAt({20, 55}, {25, 75}), sketch::kNoEntity);
+        ASSERT_TRUE(h.controller.undo());
+    }
+}
+
+TEST(SketchDragInteraction, ASizeLabelOnTouchKeepsClearOfItsLine)
+{
+    // The touch layout's 44 px tap target of a size label stops beyond a
+    // finger's pick reach of its line: a drag that starts beside the line on
+    // the label's side moves the line.
+    Harness h(true);
+    h.rectangle();
+    const sketch::EntityId top = h.lineAt({10, 30}, {50, 30});
+    h.tap({30, 30});
+    ASSERT_EQ(h.session().selection(), std::vector<sketch::EntityId>{top});
+    std::optional<SketchLabel> label;
+    for (const auto& l : h.session().labels(h.controller.camera()))
+        if (l.kind == SketchLabel::Kind::Size)
+            label = l;
+    ASSERT_TRUE(label);
+    const Vec2 a = h.screen({10, 30}), b = h.screen({50, 30});
+    const Vec2 d = (b - a) * (1.0 / (b - a).length());
+    const Vec2 rel = label->screen - a;
+    const double off = std::abs(rel.x * d.y - rel.y * d.x); // px from the line
+    const double reach = InputProfile::forDevice(PointerDevice::Touch).pickTolerance + 2;
+    EXPECT_GE(off - 22, reach) << "the label's target (22 px half) starts beyond the finger's reach";
+    // Outside the rectangle (a drag inside it moves the shape).
+    const Vec2 inward = h.screen({30, 20}) - (a + b) * 0.5;
+    const Vec2 fromMiddle = label->screen - (a + b) * 0.5;
+    EXPECT_LT(fromMiddle.x * inward.x + fromMiddle.y * inward.y, 0);
+    // A finger 3 px off the line, on the label's side, drags the line.
+    const Vec2 side = (label->screen - (a + b) * 0.5) * (1.0 / (label->screen - (a + b) * 0.5).length());
+    const Vec2 start = (a + b) * 0.5 + side * 3.0;
+    const Vec2 end = start + (h.screen({30, 40}) - h.screen({30, 30}));
+    h.frame(TouchPoint::State::Pressed, start);
+    for (int i = 1; i <= 8; ++i)
+        h.frame(TouchPoint::State::Moved, start + (end - start) * (i / 8.0));
+    h.frame(TouchPoint::State::Released, end);
+    EXPECT_EQ(h.stack.undoLabel(), "Move line");
+    EXPECT_TRUE(h.hasPoint({10, 40}));
+    EXPECT_TRUE(h.hasPoint({50, 40}));
+}
+
+TEST(SketchDragInteraction, SizesShowOnlyWhereTheyCanBeTyped)
+{
+    // A rectangle typed width x height: its typed sides carry dimensions,
+    // and the opposite sides (set through them) show no size to tap.
+    Harness h;
+    h.controller.setSketchTool(SketchTool::Rectangle);
+    h.click({0, 0});
+    h.controller.pointerMove(Harness::at(h.screen({35, 22}), PointerButton::None));
+    EXPECT_EQ(h.session().typeIntoInput("60"), "");
+    h.session().focusNextInput();
+    EXPECT_EQ(h.session().typeIntoInput("40"), "");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    h.controller.setSketchTool(SketchTool::Select);
+    auto sizeLabel = [&]() {
+        for (const auto& label : h.session().labels(h.controller.camera()))
+            if (label.kind == SketchLabel::Kind::Size)
+                return true;
+        return false;
+    };
+    for (const auto& [a, b] : {std::pair{Vec2{0, 0}, Vec2{60, 0}}, std::pair{Vec2{0, 40}, Vec2{60, 40}},
+                               std::pair{Vec2{0, 0}, Vec2{0, 40}}, std::pair{Vec2{60, 0}, Vec2{60, 40}}}) {
+        const sketch::EntityId side = h.lineAt(a, b);
+        ASSERT_NE(side, sketch::kNoEntity);
+        h.session().select(side, false);
+        EXPECT_FALSE(sizeLabel()) << a.x << "," << a.y << " - " << b.x << "," << b.y;
+    }
+    // A free line beside it shows its length.
+    h.controller.setSketchTool(SketchTool::Line);
+    h.click({80, 0});
+    h.click({100, 0});
+    ASSERT_TRUE(h.controller.keyPress(Key::Escape));
+    h.controller.setSketchTool(SketchTool::Select);
+    h.session().select(h.lineAt({80, 0}, {100, 0}), false);
+    EXPECT_TRUE(sizeLabel());
+}
+
 TEST(SketchDragInteraction, TappingASizeTypesIt)
 {
     // Tap a rectangle side -> its length shows; typing one resizes it.
@@ -456,9 +629,11 @@ TEST(SketchDragInteraction, TappingASizeTypesIt)
     }();
     ASSERT_NE(bottom, sketch::kNoEntity);
     EXPECT_NEAR((h.pos(h.sketch().line(bottom)->end) - h.pos(h.sketch().line(bottom)->start)).length(), 25, 1e-9);
-    // That side's size is set by the other one now: typing it is refused plainly.
+    // That side's size is set by the other one now: no size to tap, and
+    // typing it is refused plainly.
     h.tap({-80, -60}); // empty space
     h.session().select(bottom, false);
+    EXPECT_FALSE(sizeLabel());
     EXPECT_EQ(h.session().setDimension(bottom, "30"), "Other dimensions already set this size: change one of them.");
 
     // A circle: its diameter.

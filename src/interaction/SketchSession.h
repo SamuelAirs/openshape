@@ -93,13 +93,19 @@ public:
     // finger alike): a point moves (snapping to other points, midpoints and
     // curves, and joined to what it is dropped on), a line moves with both
     // ends, a circle's or arc's rim sets its radius and an arc's center moves
-    // the arc, a press inside a closed shape moves the whole shape, and a
-    // press on one of several selected items moves them all. Constraints
-    // hold (sketch::solveDragging); the release commits one step and keeps
-    // the selection. A tap inside a closed shape selects it (Extrude).
+    // the arc, a press inside a closed shape selected by a tap moves the
+    // whole shape, and a press on one of several selected items moves them
+    // all. Constraints hold (sketch::solveDragging); the release commits one
+    // step and keeps the selection. A press inside a closed shape not
+    // selected is not taken (a drag there orbits; tapBackground selects it).
     bool pointerPress(const PointerEvent& event, const Camera& camera);
     void pointerMove(const PointerEvent& event, const Camera& camera);
     void pointerRelease(const PointerEvent& event, const Camera& camera);
+    // A tap the sketch did not take (pointerPress returned false: empty
+    // space, or inside a closed shape not selected yet, where a drag orbits).
+    // Select tool: selects the closed shape under it (Extrude; a drag then
+    // moves it), otherwise clears the selection.
+    void tapBackground(const PointerEvent& event, const Camera& camera);
     // A double-click or double-tap. Select tool: on a curve (or a point of
     // one), selects the curves joined to it end to end (a whole shape).
     // Returns true when it did.
@@ -164,6 +170,10 @@ public:
     std::vector<SketchLabel> labels(const Camera& camera) const;
     // About the size of a live value's label on screen (px), for keeping it clear of a finger.
     static constexpr Vec2 kLiveLabelSize{88, 24};
+    // Touch layout: how far a size label sits from its curve (px). Its 44 px
+    // tap target then starts 22 px out, beyond a finger's pick reach of the
+    // curve (InputProfile), so a drag that starts on the curve moves it.
+    static constexpr double kSizeLabelTouchOffset = 44.0;
     RenderSketch renderData(const Camera& camera) const;
     std::string statusText() const;
     std::string hintText() const;
@@ -190,7 +200,7 @@ private:
             Point,  // one point, to where the pointer snaps (joined to what it is dropped on)
             Rigid,  // `points` all move by the pointer's travel (a line, an arc, a selection)
             Rim,    // a circle's or arc's rim follows the pointer (its radius)
-            Region, // a press inside a closed shape: the curves around it move (points found on the drag)
+            Region, // a press inside the tapped (selected) closed shape: the curves around it move (points found on the drag)
         };
         Kind kind = Kind::None;
         sketch::EntityId entity = sketch::kNoEntity; // Point: the point; Rim: the circle or arc
@@ -206,10 +216,20 @@ private:
     int regionAt(Vec2 local) const;
     // Whether anything the grab moves can move at all (the solver's report).
     bool grabCanMove() const;
+    // The dimension a size label adds to a line, circle or arc (its length,
+    // diameter or radius at the present size), or none where other
+    // dimensions already set that size (it would be redundant) or it cannot
+    // be added. `solved`: the sketch with it, solved.
+    std::optional<sketch::SketchConstraint> sizeDimension(sketch::EntityId curve, sketch::Sketch* solved = nullptr) const;
+    // Whether the size label of `curve` can take a typed size (cached per
+    // working-copy change: one solve).
+    bool sizeCanBeSet(sketch::EntityId curve) const;
     // Where a dragged point lands: other points, midpoints, curves (not its
     // own, nor what moves with it), then the grid.
     Snap dragSnapAt(Vec2 screen, const Camera& camera, PointerDevice device, sketch::EntityId dragged) const;
     void dragTo(const PointerEvent& event, const Camera& camera);
+    // How far a drag has moved the first of `points` (a dragged shape's travel).
+    Vec2 travel(const std::vector<sketch::EntityId>& points) const;
     // A dropped point joins what it snapped to (merged into a point; on a
     // line, circle or at a midpoint by a constraint). False: nothing added.
     bool connectDropped(sketch::Sketch& next, sketch::EntityId point, const Snap& snap) const;
@@ -290,6 +310,13 @@ private:
     Uuid sketchId_;
     sketch::Sketch working_;
     std::uint64_t syncedRevision_ = 0;
+    std::uint64_t workingChanges_ = 0; // counts working_'s geometry changes (regionsChanged)
+    struct SizeCheck {
+        sketch::EntityId curve = sketch::kNoEntity;
+        std::uint64_t changes = ~std::uint64_t(0);
+        bool settable = false;
+    };
+    mutable SizeCheck sizeCheck_;
 
     SketchTool tool_ = SketchTool::Select;
     bool gridSnap_ = true;

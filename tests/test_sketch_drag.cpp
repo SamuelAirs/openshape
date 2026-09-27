@@ -247,6 +247,40 @@ TEST(SketchDrag, MergingAPointJoinsTheCurves)
     EXPECT_NE(s.line(second), nullptr);
 }
 
+TEST(SketchDrag, MergingNeverLaysACurveOnAnother)
+{
+    // A polyline A-B-C: A dropped on C would make A-B a copy of B-C.
+    Sketch s;
+    const EntityId a = s.addPoint({0, 0}), b = s.addPoint({10, 0}), c = s.addPoint({10, 10});
+    s.addLine(a, b);
+    s.addLine(b, c);
+    const Sketch before = s;
+    const Status status = mergePoints(s, a, c);
+    EXPECT_FALSE(status.ok());
+    EXPECT_EQ(status.userMessage(), "Two lines would lie on top of each other.");
+    EXPECT_EQ(s.points().size(), before.points().size());
+    EXPECT_EQ(s.lines().size(), 2u);
+    EXPECT_NE(s.point(a), nullptr);
+
+    // A rectangle's corner on the opposite corner: two sides would double two others.
+    Sketch r;
+    const auto rect = addRectangle(r, {0, 0}, {20, 10});
+    EXPECT_FALSE(mergePoints(r, rect.corners[0], rect.corners[2]).ok());
+    EXPECT_EQ(r.points().size(), 4u + 1u); // and the origin
+
+    // Two arcs about one center: an end of one on the other's end is fine,
+    // but not when both of its ends would match the other arc's.
+    Sketch t;
+    const EntityId center = t.addPoint({0, 0});
+    const EntityId p = t.addPoint({10, 0}), q = t.addPoint({0, 10}), q2 = t.addPoint({0.1, 10});
+    t.addArc(center, p, q);
+    t.addArc(center, p, q2);
+    EXPECT_FALSE(mergePoints(t, q2, q).ok());
+    // A point on its own joins either way.
+    const EntityId lone = t.addPoint({30, 30});
+    EXPECT_TRUE(mergePoints(t, lone, q).ok());
+}
+
 TEST(SketchDrag, ConnectedChains)
 {
     Sketch s;

@@ -35,7 +35,8 @@ odd: a screenshot and a sentence is plenty. Starting the app with
      click the line. Pattern: select a hole, "Pattern", click where the next
      one goes, + for more, Apply; try "Circular" too.
    - Editing by dragging (Select tool): drag a rectangle's side, a circle's
-     rim and its center, the inside of a shape, and one of several
+     rim and its center, the inside of a shape clicked first (without the
+     click the drag orbits), and one of several
      Shift-selected items; drop a line's end on a corner, on a side and on
      a side's middle (it stays joined: drag the corner and the line
      follows). Click a side, then its dimmed length, type `30`, Enter.

@@ -605,8 +605,15 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   point"); a line, an arc's center or one of several selected items
   (`Rigid`: every point moves by the pointer's travel on the plane, in grid
   steps); a circle's or arc's rim (`Rim`: the radius, in grid steps); a
-  press inside a closed region (`Region`: the curves bounding it, found at
-  the drag's start by classifying a hair to each side of each curve). Every
+  press inside the selected closed region (`Region`: the curves bounding it,
+  found at the drag's start by classifying a hair to each side of each
+  curve; it stays selected through the drag). A press inside a region not
+  selected is not taken, so a drag there orbits (a sketch may fill a
+  phone's view) and the controller's tap on it calls `tapBackground`, which
+  selects it. A point already held on a curve does not snap to that curve
+  again, nor to a line next to one of its own, and a drop never merges
+  points where two lines or arcs would coincide (`mergePoints` refuses);
+  a join that would add a redundant constraint is not made. Every
   move re-solves from the drag's start with `solveDragging`, so constraints
   and dimensions hold and what cannot move stays; a grab of which nothing is
   movable (`SolveReport::movable`) is refused once with "Fully sized: change
@@ -618,10 +625,14 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`extrudeSketchRegion`: finishes the sketch, selects the profile under the
   tapped point and anchors its arrow there). A double-click or double-tap on
   a curve selects its `connectedCurves` chain. One selected line, circle or
-  arc without a dimension setting its size shows a `SketchLabel::Kind::Size`
-  label (length, Ø, R; dimmer than a dimension); `setDimension(curveId, …)`
-  adds the Distance / Diameter / Radius at the present size, refuses one
-  that other dimensions already fix, then sets the typed value (one step).
+  arc whose size can still take a dimension (`sizeDimension`: the Distance /
+  Diameter / Radius at the present size solves without a new redundant
+  constraint; cached per change of the working copy) shows a
+  `SketchLabel::Kind::Size` label (length, Ø, R; dimmer than a dimension),
+  beside it and outside the region a side bounds; in the touch layout 44 px
+  off (`kSizeLabelTouchOffset`), so its 44 px tap target ends beyond a
+  finger's reach of the curve. `setDimension(curveId, …)` adds that
+  dimension, then sets the typed value (one step).
   Lines, circles, arcs and points are drawn movable (accent) or fixed (the
   dark "defined" color) item by item from `SolveReport::movable`.
 - **Operations with several handles:** an `Operation` may expose several

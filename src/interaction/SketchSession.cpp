@@ -359,28 +359,53 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
     for (const auto& [id, a] : working_.arcs())
         if (uses({a.center, a.start, a.end}))
             ownCurves.push_back(id);
+    // A line next to one of its own lines (they share the far end): the
+    // point on it would fold its line onto that one.
+    std::vector<sketch::EntityId> neighbours;
+    for (const auto& [id, l] : working_.lines()) {
+        if (!uses({l.start, l.end}))
+            continue;
+        const sketch::EntityId far = uses({l.start}) ? l.end : l.start;
+        for (const auto& [other, m] : working_.lines())
+            if (other != id && (m.start == far || m.end == far))
+                neighbours.push_back(other);
+    }
     for (const auto curve : ownCurves)
         for (const auto p : sketch::curvePoints(working_, curve))
             ownPoints.push_back(p);
+    ownCurves.insert(ownCurves.end(), neighbours.begin(), neighbours.end());
+    // A curve the point is already held on (On line, Midpoint, On circle) is
+    // its own too: sliding along it must not add the same constraint again.
+    for (const auto& [id, c] : working_.constraints())
+        if ((c.kind == sketch::ConstraintKind::PointOnLine || c.kind == sketch::ConstraintKind::Midpoint
+             || c.kind == sketch::ConstraintKind::PointOnCircle)
+            && std::find(joined.begin(), joined.end(), c.a) != joined.end())
+            ownCurves.push_back(c.b);
     auto own = [](const std::vector<sketch::EntityId>& list, sketch::EntityId id) {
         return std::find(list.begin(), list.end(), id) != list.end();
     };
 
-    // 1. Points (the origin included).
+    // 1. Points (the origin included), nearest first; not one the point
+    // cannot join (it would lay a curve on top of another: mergePoints).
     double best = tolerance;
+    std::vector<std::pair<double, sketch::EntityId>> near;
     for (const auto& [id, p] : working_.points()) {
         if (own(ownPoints, id))
             continue;
-        const double d = (toScreen(p.position, camera) - screen).length();
-        if (d < best) {
-            best = d;
-            snap.position = p.position;
-            snap.point = id;
-            snap.kind = id == sketch::kOriginId ? SnapKind::Origin : SnapKind::Point;
-        }
+        if (const double d = (toScreen(p.position, camera) - screen).length(); d < best)
+            near.emplace_back(d, id);
     }
-    if (snap.point != sketch::kNoEntity)
+    std::sort(near.begin(), near.end());
+    for (const auto& candidate : near) {
+        const sketch::EntityId id = candidate.second;
+        sketch::Sketch trial = working_;
+        if (!sketch::mergePoints(trial, dragged, id).ok())
+            continue;
+        snap.position = working_.point(id)->position;
+        snap.point = id;
+        snap.kind = id == sketch::kOriginId ? SnapKind::Origin : SnapKind::Point;
         return snap;
+    }
     // 2. Line midpoints.
     for (const auto& [id, l] : working_.lines()) {
         if (own(ownCurves, id))
@@ -630,21 +655,42 @@ void SketchSession::dragTo(const PointerEvent& event, const Camera& camera)
     if (sketch::solveDragging(trial, targets).ok) {
         working_ = std::move(trial);
         regionsChanged();
+        if (grab_.kind == Grab::Kind::Region) // the moved shape stays selected
+            selectedRegion_ = regionAt(selectedRegionPoint_ + travel(grab_.points));
     }
+}
+
+Vec2 SketchSession::travel(const std::vector<sketch::EntityId>& points) const
+{
+    if (points.empty())
+        return {};
+    const auto* now = working_.point(points.front());
+    const auto* before = dragStart_.point(points.front());
+    return now && before ? now->position - before->position : Vec2{};
 }
 
 bool SketchSession::connectDropped(sketch::Sketch& next, sketch::EntityId point, const Snap& snap) const
 {
     using K = sketch::ConstraintKind;
-    auto solves = [](sketch::Sketch& s) { return sketch::solve(s).ok; };
+    // What it joins must solve and hold nothing twice (a redundant
+    // constraint: the sketch would be over-sized without saying so).
+    sketch::Sketch baseline = next;
+    const std::size_t redundant = sketch::solve(baseline).redundant.size();
+    auto solves = [&](sketch::Sketch& s) {
+        const sketch::SolveReport report = sketch::solve(s);
+        return report.ok && report.conflicting.empty() && report.redundant.size() <= redundant;
+    };
     switch (snap.kind) {
     case SnapKind::Point:
     case SnapKind::Origin: {
         // Dropped on a point: one point from now on (so curves meeting there
         // share it, as when drawn from it); a Coincident constraint when
-        // they cannot be merged.
+        // the merged sketch does not solve. Never when the merge is refused
+        // (a curve would collapse or lie on top of another).
         sketch::Sketch merged = next;
-        if (sketch::mergePoints(merged, point, snap.point).ok() && solves(merged)) {
+        if (!sketch::mergePoints(merged, point, snap.point).ok())
+            return false;
+        if (solves(merged)) {
             next = std::move(merged);
             return true;
         }
@@ -660,6 +706,10 @@ bool SketchSession::connectDropped(sketch::Sketch& next, sketch::EntityId point,
     case SnapKind::OnLine:
     case SnapKind::OnCircle: {
         const K kind = snap.kind == SnapKind::Midpoint ? K::Midpoint : snap.kind == SnapKind::OnLine ? K::PointOnLine : K::PointOnCircle;
+        for (const auto& [id, existing] : next.constraints())
+            if ((existing.kind == K::PointOnLine || existing.kind == K::Midpoint || existing.kind == K::PointOnCircle)
+                && existing.a == point && existing.b == snap.curve)
+                return false; // already held there
         sketch::Sketch held = next;
         const sketch::SketchConstraint c{kind, point, snap.curve};
         if (held.isValid(c) && held.addConstraint(c) != sketch::kNoEntity && solves(held)) {
@@ -1170,6 +1220,7 @@ void SketchSession::message(const std::string& text) const
 void SketchSession::regionsChanged()
 {
     // Region indices change with the geometry: a tapped shape is forgotten.
+    ++workingChanges_;
     selectedRegion_ = -1;
     hoveredRegion_ = -1;
     regions_.clear();
@@ -1219,8 +1270,12 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
             // (a glyph's tap target never hides geometry); the release selects it.
             if (glyphAt(event.position, camera) != sketch::kNoEntity)
                 return true;
-            // Inside a closed shape: a drag moves the shape, a tap selects it.
-            if (const int region = local ? regionAt(*local) : -1; region >= 0) {
+            // Inside the closed shape a tap selected: a drag moves the shape.
+            // Inside one not selected the press is not taken: a drag there
+            // orbits (a sketched plate may fill a phone's view) and a tap
+            // selects it (tapBackground), as Shapr3D selects a profile
+            // before dragging it.
+            if (const int region = local ? regionAt(*local) : -1; region >= 0 && region == selectedRegion_) {
                 grab_.kind = Grab::Kind::Region;
                 grab_.region = region;
                 grab_.label = "Move shape";
@@ -1267,6 +1322,8 @@ void SketchSession::cancelPress()
     if (grab_.kind != Grab::Kind::None && dragging_) {
         working_ = dragStart_; // what was dragged goes back
         regionsChanged();
+        if (grab_.kind == Grab::Kind::Region)
+            selectedRegion_ = regionAt(selectedRegionPoint_);
     }
     grab_ = {};
     dragSnap_.reset();
@@ -1381,6 +1438,8 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
         if (moved) {
             // A drag moved something: one step, and the selection stays.
             if (!grab.refused) {
+                if (grab.kind == Grab::Kind::Region)
+                    selectedRegionPoint_ = selectedRegionPoint_ + travel(grab.points);
                 sketch::Sketch next = working_;
                 const bool joined = grab.kind == Grab::Kind::Point && dropped && connectDropped(next, grab.entity, *dropped);
                 working_ = dragStart_;
@@ -1391,6 +1450,14 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
                     return !working_.point(id) && !working_.line(id) && !working_.circle(id) && !working_.arc(id)
                         && !working_.constraint(id);
                 });
+                if (grab.kind == Grab::Kind::Region) { // the moved shape stays selected (Extrude)
+                    selectedRegion_ = regionAt(selectedRegionPoint_);
+                    const auto local = toLocal(event.position, camera);
+                    if (selectedRegion_ < 0 && local && regionAt(*local) >= 0) {
+                        selectedRegionPoint_ = *local;
+                        selectedRegion_ = regionAt(*local);
+                    }
+                }
             }
         } else if (grab.kind == Grab::Kind::Region) {
             // A tap inside a closed shape selects the shape (Extrude).
@@ -1488,6 +1555,22 @@ void SketchSession::leave()
     hoveredGlyph_ = sketch::kNoEntity;
     hoveredRegion_ = -1;
     cursorValid_ = false;
+}
+
+void SketchSession::tapBackground(const PointerEvent& event, const Camera& camera)
+{
+    notePointer(event);
+    if (tool_ == SketchTool::Select && !isOffsetting() && !isMirroring() && !isPatterning()) {
+        const auto local = toLocal(event.position, camera);
+        if (const int region = local ? regionAt(*local) : -1; region >= 0) {
+            // Inside a closed shape: it is selected (Extrude; a drag moves it).
+            selected_.clear();
+            selectedRegion_ = region;
+            selectedRegionPoint_ = *local;
+            return;
+        }
+    }
+    select(sketch::kNoEntity, false);
 }
 
 bool SketchSession::doubleClick(const PointerEvent& event, const Camera& camera)
@@ -1702,6 +1785,46 @@ Status SketchSession::commitTool()
     return okStatus();
 }
 
+std::optional<sketch::SketchConstraint> SketchSession::sizeDimension(sketch::EntityId curve, sketch::Sketch* solved) const
+{
+    using K = sketch::ConstraintKind;
+    sketch::SketchConstraint dimension;
+    if (const auto* l = working_.line(curve)) {
+        const double length = (working_.point(l->end)->position - working_.point(l->start)->position).length();
+        if (length < 1e-9)
+            return std::nullopt;
+        dimension = {K::Distance, l->start, l->end, length};
+    } else if (const auto* circle = working_.circle(curve)) {
+        dimension = {K::Diameter, curve, sketch::kNoEntity, 2 * circle->radius};
+    } else if (working_.arc(curve)) {
+        dimension = {K::Radius, curve, sketch::kNoEntity, working_.arcRadius(curve)};
+    } else {
+        return std::nullopt;
+    }
+    // The redundancy the sketch has already (none, normally).
+    sketch::Sketch before = working_;
+    const std::size_t redundant = sketch::solve(before).redundant.size();
+    sketch::Sketch next = working_;
+    if (!next.isValid(dimension) || next.addConstraint(dimension) == sketch::kNoEntity)
+        return std::nullopt;
+    const sketch::SolveReport now = sketch::solve(next);
+    if (!now.ok || !now.conflicting.empty() || now.redundant.size() > redundant)
+        return std::nullopt;
+    if (solved)
+        *solved = std::move(next);
+    return dimension;
+}
+
+bool SketchSession::sizeCanBeSet(sketch::EntityId curve) const
+{
+    if (sizeCheck_.curve != curve || sizeCheck_.changes != workingChanges_) {
+        sizeCheck_.curve = curve;
+        sizeCheck_.changes = workingChanges_;
+        sizeCheck_.settable = sizeDimension(curve).has_value();
+    }
+    return sizeCheck_.settable;
+}
+
 std::string SketchSession::setDimension(sketch::EntityId constraintId, const std::string& text)
 {
     if (working_.line(constraintId) || working_.isRound(constraintId)) {
@@ -1712,29 +1835,19 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
             return parsed.error;
         if (*parsed.millimeters <= 0)
             return "Sizes must be greater than zero.";
-        using K = sketch::ConstraintKind;
-        sketch::SketchConstraint dimension;
-        std::string label;
-        if (const auto* l = working_.line(curve)) {
-            dimension = {K::Distance, l->start, l->end,
-                         (working_.point(l->end)->position - working_.point(l->start)->position).length()};
-            label = "Length";
-        } else if (const auto* circle = working_.circle(curve)) {
-            dimension = {K::Diameter, curve, sketch::kNoEntity, 2 * circle->radius};
-            label = "Diameter";
-        } else {
-            dimension = {K::Radius, curve, sketch::kNoEntity, working_.arcRadius(curve)};
-            label = "Radius";
-        }
         // At its present size first: a size other dimensions already set
         // (a rectangle's side opposite a typed width) cannot take one more.
-        sketch::Sketch next = working_;
-        const sketch::EntityId id = next.addConstraint(dimension);
+        sketch::Sketch next;
+        const auto dimension = sizeDimension(curve, &next);
+        if (!dimension)
+            return "Other dimensions already set this size: change one of them.";
+        const std::string label = working_.line(curve) ? "Length" : working_.circle(curve) ? "Diameter" : "Radius";
+        sketch::EntityId id = sketch::kNoEntity;
+        for (const auto& [cid, c] : next.constraints())
+            if (c.kind == dimension->kind && c.a == dimension->a && c.b == dimension->b && !working_.constraint(cid))
+                id = cid;
         if (id == sketch::kNoEntity)
             return "That size cannot be set here.";
-        const sketch::SolveReport now = sketch::solve(next);
-        if (!now.ok || !now.conflicting.empty() || now.redundant.size() > working_.solveReport().redundant.size())
-            return "Other dimensions already set this size: change one of them.";
         next.constraint(id)->value = *parsed.millimeters;
         if (!commit(std::move(next), label))
             return "The sketch cannot take that size.";
@@ -2375,8 +2488,9 @@ std::string SketchSession::hintText() const
                "\xC2\xB7 Delete removes";
     if (!selected_.empty())
         return "Drag one of them to move them all \xC2\xB7 add constraints below \xC2\xB7 Delete removes";
-    return "Drag lines, circles and shapes to move or resize them \xC2\xB7 click one, then its size, to type an exact one \xC2\xB7 "
-           "double-click selects a whole shape \xC2\xB7 click inside a shape to extrude it \xC2\xB7 pick a tool to draw";
+    return "Drag lines and circles to move or resize them \xC2\xB7 click one, then its size, to type an exact one \xC2\xB7 "
+           "double-click selects a whole shape \xC2\xB7 click inside a shape to extrude or move it \xC2\xB7 drag elsewhere to orbit "
+           "\xC2\xB7 pick a tool to draw";
 }
 
 std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
@@ -2472,45 +2586,42 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             out[index].screen = out[index].screen + step;
     }
 
-    // The size of the one selected line, circle or arc, where no dimension
-    // sets it yet: tap it to type one (Shapr3D shows it on selection).
-    if (selected_.size() == 1 && !anchor_ && !isOffsetting() && !isMirroring() && !isPatterning()) {
+    // The size of the one selected line, circle or arc, where it can take a
+    // dimension (none sets it yet, directly or through others): tap it to
+    // type one (Shapr3D shows it on selection). Not while it is dragged.
+    if (selected_.size() == 1 && !anchor_ && !isOffsetting() && !isMirroring() && !isPatterning()
+        && !(dragging_ && grab_.kind != Grab::Kind::None) && sizeCanBeSet(selected_.front())) {
         const sketch::EntityId id = selected_.front();
         const double pixel = camera.pixelSize(plane.origin);
-        const double offset = 22 * pixel;
-        auto sized = [&](sketch::ConstraintKind kind, sketch::EntityId a, sketch::EntityId b) {
-            for (const auto& [cid, c] : working_.constraints())
-                if (c.kind == kind && ((c.a == a && c.b == b) || (c.a == b && c.b == a)))
-                    return true;
-            return false;
-        };
+        // Beside the curve, clear of it: in the touch layout the label's
+        // 44 px tap target ends outside a finger's reach of the curve (a
+        // drag that starts on the curve moves it).
+        const double offset = (largeTargets_ ? kSizeLabelTouchOffset : 22.0) * pixel;
         SketchLabel label;
         label.kind = SketchLabel::Kind::Size;
         label.entity = id;
         if (const auto* l = working_.line(id)) {
-            using K = sketch::ConstraintKind;
             const Vec2 a = working_.point(l->start)->position, b = working_.point(l->end)->position;
             const Vec2 d = b - a;
             const double len = d.length();
-            // A length already set on its two ends (typed while drawing, or Length).
-            const bool dimensioned = sized(K::Distance, l->start, l->end)
-                                  || (sized(K::HorizontalDistance, l->start, l->end) && std::abs(d.y) < 1e-9)
-                                  || (sized(K::VerticalDistance, l->start, l->end) && std::abs(d.x) < 1e-9);
-            if (!dimensioned && len > 1e-9) {
-                const Vec2 n{-d.y / len, d.x / len};
+            if (len > 1e-9) {
+                Vec2 n{-d.y / len, d.x / len};
+                // Outside the shape the side bounds (clear of a drag inside it).
+                if (regionAt((a + b) * 0.5 + n * offset) >= 0 && regionAt((a + b) * 0.5 - n * offset) < 0)
+                    n = n * -1.0;
                 label.screen = screen((a + b) * 0.5 + n * offset);
                 label.text = trimmed(len, unit);
                 out.push_back(label);
             }
         } else if (const auto* c = working_.circle(id)) {
-            if (!sized(sketch::ConstraintKind::Diameter, id, sketch::kNoEntity)) {
+            {
                 const Vec2 center = working_.point(c->center)->position;
                 label.screen = screen(center + Vec2{c->radius * 0.7071 + offset * 0.7, c->radius * 0.7071 + offset * 0.7});
                 label.text = "\xC3\x98" + trimmed(2 * c->radius, unit);
                 out.push_back(label);
             }
         } else if (const auto* arc = working_.arc(id)) {
-            if (!sized(sketch::ConstraintKind::Radius, id, sketch::kNoEntity)) {
+            {
                 const Vec2 center = working_.point(arc->center)->position;
                 const double a0 = angleOf(center, working_.point(arc->start)->position);
                 const double mid = a0 + ccw(a0, angleOf(center, working_.point(arc->end)->position)) / 2;

@@ -7,11 +7,14 @@
 // clicking and dragging unconstrained lines"; "I have no idea how to resize
 // rectangles"). Twice: on the desktop with the mouse, then on an iPhone 16
 // Pro (402x874, the Dynamic Island's safe area) with one finger. Each time:
-// a rectangle side dragged out, a circle's rim dragged (its size), the whole
-// rectangle dragged from inside, a side tapped and its size typed, a line's
-// end dropped on a corner (joined), the rectangle double-tapped (the whole
-// chain, the line too) and deleted, and a tap inside the circle -> Extrude
-// -> a measured volume.
+// a rectangle side dragged out, a circle's rim dragged (its size) and its
+// center (it moves), the rectangle tapped and dragged whole from inside, a
+// side and the circle selected together and dragged, a side dragged from
+// just beside it on its size label's side, then its size tapped and typed,
+// a line's end dropped on a corner (joined), the rectangle double-tapped
+// (the whole chain, the line too) and deleted, the circle sized fully and
+// its drag refused plainly, and a tap inside the circle -> Extrude -> a
+// measured volume.
 
 #include "app/AcceptanceRunner.h"
 #include "core/Log.h"
@@ -48,6 +51,11 @@ struct State {
     sketch::EntityId top = sketch::kNoEntity;
     sketch::EntityId circle = sketch::kNoEntity;
     std::size_t pointsBefore = 0;
+    QPointF besideTop;              // screen: just beside the top side, toward its size label
+    QPointF besideTopEnd;           // ... and one unit up from there
+    QString undoBefore;             // the undo step before a refused drag
+    std::vector<QString> messages;  // what the app said (a refused drag)
+    QMetaObject::Connection listening;
 };
 using Shared = std::shared_ptr<State>;
 
@@ -109,22 +117,39 @@ double lineLength(AcceptanceRunner& r, sketch::EntityId id)
     return l ? (sk->point(l->end)->position - sk->point(l->start)->position).length() : -1;
 }
 
-void tap(AcceptanceRunner& r, const Shared& s, QPointF p)
+void tap(AcceptanceRunner& r, const Shared& s, QPointF p, Qt::KeyboardModifiers mods = Qt::NoModifier)
 {
     if (s->touch)
         r.touchTap({p});
     else
-        r.click(p);
+        r.click(p, mods);
+}
+
+// An empty spot of the view (clears the selection).
+QPointF empty(AcceptanceRunner& r, const Shared& s)
+{
+    return at(r, s, 6, -0.5);
+}
+
+const sketch::SketchCircle* theCircle(AcceptanceRunner& r, const Shared& s)
+{
+    const auto* sk = activeSketch(r);
+    return sk ? sk->circle(s->circle) : nullptr;
+}
+
+Vec2 circleCenter(AcceptanceRunner& r, const Shared& s)
+{
+    const auto* c = theCircle(r, s);
+    return c ? activeSketch(r)->point(c->center)->position : Vec2{1e9, 1e9};
 }
 
 // A press, four moves and a release, one per step (Qt Quick holds a
 // finger's moves until its next frame; the steps give it frames). The ends
-// (in units) are read when the drag runs.
-void drag(Steps& steps, AcceptanceRunner& r, const Shared& s, std::function<Vec2()> from, std::function<Vec2()> to)
+// (screen) are read when the drag runs.
+void dragScreen(Steps& steps, AcceptanceRunner& r, const Shared& s, std::function<QPointF()> from, std::function<QPointF()> to)
 {
     steps.push_back([&r, s, from] {
-        const Vec2 f = from();
-        const QPointF p = at(r, s, f.x, f.y);
+        const QPointF p = from();
         if (s->touch) {
             r.touchPress(p);
         } else {
@@ -134,21 +159,34 @@ void drag(Steps& steps, AcceptanceRunner& r, const Shared& s, std::function<Vec2
     });
     for (int i = 1; i <= 4; ++i)
         steps.push_back([&r, s, from, to, i] {
-            const Vec2 q = from() + (to() - from()) * (i / 4.0);
-            const QPointF p = at(r, s, q.x, q.y);
+            const QPointF p = from() + (to() - from()) * (i / 4.0);
             if (s->touch)
                 r.touchMove(p);
             else
                 r.mouseMove(p, Qt::LeftButton);
         });
     steps.push_back([&r, s, to] {
-        const Vec2 t = to();
-        const QPointF p = at(r, s, t.x, t.y);
+        const QPointF p = to();
         if (s->touch)
             r.touchRelease(p);
         else
             r.mouseRelease(p);
     });
+}
+
+// The same with the ends in units.
+void drag(Steps& steps, AcceptanceRunner& r, const Shared& s, std::function<Vec2()> from, std::function<Vec2()> to)
+{
+    dragScreen(
+        steps, r, s,
+        [&r, s, from] {
+            const Vec2 f = from();
+            return at(r, s, f.x, f.y);
+        },
+        [&r, s, to] {
+            const Vec2 t = to();
+            return at(r, s, t.x, t.y);
+        });
 }
 
 void drag(Steps& steps, AcceptanceRunner& r, const Shared& s, Vec2 from, Vec2 to)
@@ -256,25 +294,99 @@ Steps part(AcceptanceRunner& r, bool touch)
     });
     wait(steps, 3);
 
-    // ---- From inside the rectangle, right by one: the whole shape moves.
+    // ---- Its center, to (1, -4): the circle moves, its size stays.
+    drag(steps, r, s, {0, -3}, {1, -4});
+    steps.push_back([&r, s] {
+        const auto* c = theCircle(r, s);
+        r.check(c && std::abs(c->radius - 3 * s->u) < 1e-6 && (circleCenter(r, s) - Vec2{s->u, -4 * s->u}).length() < 1e-6,
+                s->where + QStringLiteral(": dragging the center moved the circle, its size stayed"), points(r));
+        r.check(r.app().undoText() == QStringLiteral("Move circle"), s->where + QStringLiteral(": Move circle"),
+                r.app().undoText());
+    });
+    wait(steps, 3);
+
+    // ---- Tap inside the rectangle (it is selected), then drag it right by one: the whole shape moves.
+    steps.push_back([&r, s] { tap(r, s, at(r, s, 0, 2.5)); });
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        const auto* ss = session(r);
+        r.check(ss && ss->selectedRegion().has_value(), s->where + QStringLiteral(": a tap inside the rectangle selects it"));
+    });
     drag(steps, r, s, {0, 2.5}, {1, 2.5});
     steps.push_back([&r, s] {
         r.check(hasPoint(r, s, -1, 1) && hasPoint(r, s, 3, 1) && hasPoint(r, s, 3, 4) && hasPoint(r, s, -1, 4),
                 s->where + QStringLiteral(": dragging inside moved the whole rectangle"), points(r));
         r.check(r.app().undoText() == QStringLiteral("Move shape"), s->where + QStringLiteral(": Move shape"), r.app().undoText());
-        const auto* sk = activeSketch(r);
-        const auto* c = sk ? sk->circle(s->circle) : nullptr;
-        r.check(c && (sk->point(c->center)->position - Vec2{0, -3 * s->u}).length() < 1e-6,
-                s->where + QStringLiteral(": the circle stayed"));
+        r.check((circleCenter(r, s) - Vec2{s->u, -4 * s->u}).length() < 1e-6, s->where + QStringLiteral(": the circle stayed"));
         r.check(std::abs(r.app().interaction().camera().forward().z + 1) < 1e-9,
                 s->where + QStringLiteral(": the view did not orbit"));
+        const auto* ss = session(r);
+        r.check(ss && ss->selectedRegion().has_value() && r.findItem(QStringLiteral("sketchAction_extrude")),
+                s->where + QStringLiteral(": the moved rectangle stays selected (Extrude offered)"));
         r.screenshot(QStringLiteral("sketchdrag_") + s->where + QStringLiteral("_3_shape_moved"));
     });
     wait(steps, 3);
 
-    // ---- Tap the top side, then its size, and type 5 units: the rectangle is 5 wide.
+    // ---- The top side and the circle selected together, dragged up by one from the side: both move.
     steps.push_back([&r, s] { tap(r, s, at(r, s, 1, 4)); });
     wait(steps, 2);
+    steps.push_back([&r, s] { tap(r, s, at(r, s, 1, -1), Qt::ShiftModifier); }); // the circle's top
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        const auto* ss = session(r);
+        r.check(ss && ss->selection().size() == 2, s->where + QStringLiteral(": the top side and the circle are selected"),
+                ss ? QString::number(ss->selection().size()) : QString());
+    });
+    drag(steps, r, s, {1, 4}, {1, 5});
+    steps.push_back([&r, s] {
+        r.check(hasPoint(r, s, -1, 5) && hasPoint(r, s, 3, 5) && hasPoint(r, s, -1, 1),
+                s->where + QStringLiteral(": the selected side moved up"), points(r));
+        r.check((circleCenter(r, s) - Vec2{s->u, -3 * s->u}).length() < 1e-6, s->where + QStringLiteral(": the selected circle moved with it"),
+                points(r));
+        r.check(r.app().undoText() == QStringLiteral("Move shape"), s->where + QStringLiteral(": one step, Move shape"),
+                r.app().undoText());
+        const auto* ss = session(r);
+        r.check(ss && ss->selection().size() == 2, s->where + QStringLiteral(": both stay selected"));
+    });
+    wait(steps, 2);
+    drag(steps, r, s, {1, 5}, {1, 4}); // and back
+    steps.push_back([&r, s] {
+        r.check(hasPoint(r, s, -1, 4) && hasPoint(r, s, 3, 4) && (circleCenter(r, s) - Vec2{s->u, -4 * s->u}).length() < 1e-6,
+                s->where + QStringLiteral(": and back"), points(r));
+        tap(r, s, empty(r, s));
+    });
+    wait(steps, 3);
+
+    // ---- Tap the top side; a drag from just beside it, on its size label's side, moves it.
+    steps.push_back([&r, s] { tap(r, s, at(r, s, 1, 4)); });
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        const auto* ss = session(r);
+        QPointF label;
+        if (ss)
+            for (const auto& l : ss->labels(r.app().interaction().camera()))
+                if (l.kind == interact::SketchLabel::Kind::Size && l.entity == s->top)
+                    label = QPointF(l.screen.x, l.screen.y);
+        const QPointF mid = at(r, s, 1, 4);
+        const QPointF toward = label - mid;
+        const double length = std::hypot(toward.x(), toward.y());
+        r.check(length > 1, s->where + QStringLiteral(": the top side shows its size"));
+        s->besideTop = mid + (length > 1 ? toward * (3.0 / length) : QPointF(0, -3));
+        s->besideTopEnd = s->besideTop + (at(r, s, 1, 5) - mid);
+    });
+    dragScreen(steps, r, s, [s] { return s->besideTop; }, [s] { return s->besideTopEnd; });
+    steps.push_back([&r, s] {
+        r.check(hasPoint(r, s, -1, 5) && hasPoint(r, s, 3, 5) && r.app().undoText() == QStringLiteral("Move line"),
+                s->where + QStringLiteral(": a drag from beside the side, toward its size, moved the side"),
+                r.app().undoText() + QStringLiteral(": ") + points(r));
+        QQuickItem* editor = r.findItem(QStringLiteral("dimensionEditor"));
+        r.check(!editor || !editor->isVisible(), s->where + QStringLiteral(": and did not open the size's editor"));
+    });
+    wait(steps, 2);
+    drag(steps, r, s, {1, 5}, {1, 4}); // and back
+    wait(steps, 2);
+
+    // ---- Its size, tapped, and 5 units typed: the rectangle is 5 wide.
     steps.push_back([&r, s] {
         const auto* ss = session(r);
         r.check(ss && ss->selection() == std::vector<sketch::EntityId>{s->top}, s->where + QStringLiteral(": the top side is selected"),
@@ -393,8 +505,54 @@ Steps part(AcceptanceRunner& r, bool touch)
     });
     wait(steps, 3);
 
+    // ---- The circle sized fully: its center placed from the origin, its diameter set. Its rim won't move.
+    steps.push_back([&r, s] {
+        s->messages.clear();
+        s->listening = QObject::connect(&r.app(), &ui::AppController::message, &r.app(), [s](const QString& text) { s->messages.push_back(text); });
+        tap(r, s, at(r, s, 1, -4)); // the center
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s] { tap(r, s, at(r, s, 0, 0), Qt::ShiftModifier); }); // the origin
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        r.check(r.clickItem(QStringLiteral("sketchAction_hdistance")), s->where + QStringLiteral(": Horizontal distance from the origin"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        r.check(r.clickItem(QStringLiteral("sketchAction_vdistance")), s->where + QStringLiteral(": Vertical distance from the origin"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s] { tap(r, s, empty(r, s)); });
+    wait(steps, 2);
+    steps.push_back([&r, s] { tap(r, s, at(r, s, 1, -7)); }); // the circle's bottom
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        r.check(r.clickItem(QStringLiteral("sketchAction_diameter")), s->where + QStringLiteral(": Diameter"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        const auto* sk = activeSketch(r);
+        r.check(sk && !sk->solveReport().canMove(s->circle), s->where + QStringLiteral(": the circle is fully sized"));
+        s->undoBefore = r.app().undoText();
+        s->messages.clear();
+    });
+    drag(steps, r, s, {1, -7}, {1, -8});
+    steps.push_back([&r, s] {
+        QObject::disconnect(s->listening);
+        const auto* c = theCircle(r, s);
+        r.check(c && std::abs(c->radius - 3 * s->u) < 1e-6 && (circleCenter(r, s) - Vec2{s->u, -4 * s->u}).length() < 1e-6,
+                s->where + QStringLiteral(": the fully sized circle did not move"), points(r));
+        r.check(r.app().undoText() == s->undoBefore, s->where + QStringLiteral(": no step was added"), r.app().undoText());
+        const bool said = std::find(s->messages.begin(), s->messages.end(),
+                                    QStringLiteral("Fully sized: change or remove a dimension to move it."))
+                       != s->messages.end();
+        r.check(said, s->where + QStringLiteral(": it says why"), s->messages.empty() ? QString() : s->messages.back());
+        tap(r, s, empty(r, s));
+    });
+    wait(steps, 3);
+
     // ---- Tap inside the circle -> Extrude, 10 mm.
-    steps.push_back([&r, s] { tap(r, s, at(r, s, 1.2, -4.2)); }); // clear of the center point (a finger reaches 20 px)
+    steps.push_back([&r, s] { tap(r, s, at(r, s, 2.2, -5.2)); }); // clear of the center point (a finger reaches 20 px)
     wait(steps, 2);
     steps.push_back([&r, s] {
         const auto* ss = session(r);

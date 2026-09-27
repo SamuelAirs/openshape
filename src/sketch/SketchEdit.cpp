@@ -823,6 +823,29 @@ Status mergePoints(Sketch& sketch, EntityId from, EntityId into)
         if (ends[0] == ends[1] || ends[0] == ends[2] || ends[1] == ends[2])
             return failure("An arc cannot end where it starts.", "mergePoints: collapses an arc");
     }
+    // A curve that would lie on top of another one (a line's end dropped on
+    // the far end of the line next to it, a rectangle's corner on the
+    // opposite corner): two lines with the same ends, two arcs alike.
+    auto renamed = [&](EntityId e) { return e == from ? into : e; };
+    auto lineEnds = [&](const SketchLine& l) {
+        const EntityId a = renamed(l.start), b = renamed(l.end);
+        return std::pair<EntityId, EntityId>(std::min(a, b), std::max(a, b));
+    };
+    for (const auto& [id, l] : sketch.lines()) {
+        if (l.start != from && l.end != from)
+            continue;
+        for (const auto& [other, m] : sketch.lines())
+            if (other != id && lineEnds(l) == lineEnds(m))
+                return failure("Two lines would lie on top of each other.", "mergePoints: duplicates a line");
+    }
+    for (const auto& [id, a] : sketch.arcs()) {
+        if (a.center != from && a.start != from && a.end != from)
+            continue;
+        for (const auto& [other, b] : sketch.arcs())
+            if (other != id && renamed(a.center) == renamed(b.center) && renamed(a.start) == renamed(b.start)
+                && renamed(a.end) == renamed(b.end))
+                return failure("Two arcs would lie on top of each other.", "mergePoints: duplicates an arc");
+    }
     std::vector<EntityId> lines, circles, arcs, constraints;
     for (const auto& [id, l] : sketch.lines())
         lines.push_back(id);

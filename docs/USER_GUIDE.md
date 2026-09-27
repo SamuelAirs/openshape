@@ -484,11 +484,16 @@ need to select first):
   rectangle grows (its corners stay square).
 - **A circle's rim** changes its size; **its center** moves it. **An arc's
   rim** changes its radius; its center moves the whole arc.
-- **Inside a closed shape**: the whole shape moves.
+- **Inside a closed shape** you clicked or tapped first (it is
+  highlighted): the whole shape moves. Inside a shape that is not selected,
+  a drag turns the view as anywhere else, so you can orbit even when a
+  sketch fills the screen.
 - **One of several selected items**: they all move together.
 - **A point** moves on its own. Dropped on another point, a line, a circle
   or the middle of a line, it stays joined to it (the hint next to it says
-  *Endpoint*, *On line*, *On circle* or *Midpoint* while you drag).
+  *Endpoint*, *On line*, *On circle* or *Midpoint* while you drag). A point
+  already on a line or circle slides along it. It never snaps where one
+  line would end up lying on another (the far end of the line next to it).
 
 Dimensions and constraints always hold, so a drag moves only what they
 leave free: a line with a length turns instead of stretching, a line from
@@ -499,18 +504,20 @@ step to undo (*Move line*, *Resize circle*, *Move shape*, …), and what was
 selected stays selected.
 
 **Type an exact size.** Select one line, circle or arc: its length,
-diameter (Ø) or radius (R) shows in a dimmed label. Click or tap the label
-and type a value: that becomes its dimension. On a rectangle's side this
-resizes the rectangle. (A size already set by other dimensions says so;
-change one of those instead.)
+diameter (Ø) or radius (R) shows in a dimmed label beside it, outside the
+shape. Click or tap the label and type a value: that becomes its
+dimension. On a rectangle's side this resizes the rectangle. A size that
+other dimensions already set (the side opposite a typed width) shows no
+label: change that dimension instead.
 
 **A whole shape.** Double-click (double-tap) a curve to select everything
 joined to it — a rectangle's four sides, a chain of lines — then drag it,
 delete it, offset or mirror it.
 
 **Extrude straight away.** Click or tap inside a closed shape: it is
-highlighted and **Extrude** appears at the bottom. Extrude finishes the
-sketch and starts extruding that shape, with the arrow where you tapped.
+highlighted and **Extrude** appears at the bottom (it stays selected when
+you drag it). Extrude finishes the sketch and starts extruding that shape,
+with the arrow where you tapped.
 
 **Actions.** With curves or points selected (`Shift` or taps add), the
 actions for them appear at the bottom:

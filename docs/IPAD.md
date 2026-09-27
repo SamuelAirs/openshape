@@ -321,8 +321,10 @@ margins (BUILDING.md).
 14. **Editing a sketch by dragging** (your report of 2026-09-27). In a
    sketch, pick **Select** at the end of the strip, then with one finger:
    drag a rectangle's side (it moves, the rectangle grows), a circle's rim
-   (its size) and the inside of a shape (all of it moves); tap a side, tap
-   its dimmed length and type one (the rectangle resizes); double-tap a
+   (its size); tap inside a shape, then drag inside it (all of it moves);
+   a drag inside a shape you did not tap first turns the view. Tap a side,
+   then a finger right beside it drags it (not its size label); tap its
+   dimmed length and type one (the rectangle resizes); double-tap a
    side (the whole rectangle is selected) and Delete; drag the end of a
    line onto a corner or a side (it stays joined). Blue items can still
    move, dark ones cannot; dragging a fully sized one says so. Tap inside
