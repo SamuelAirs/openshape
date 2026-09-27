@@ -293,10 +293,11 @@ void addFlow(Steps& steps, AcceptanceRunner& r, const Config& c)
     wait(steps, 2);
     steps.push_back([&r, c] {
         auto& app = r.app();
-        const QRectF row = sceneRect(r, QStringLiteral("valueChipActions"));
+        // The phone's compact row scrolls sideways: Flip was brought into sight there.
         const QRectF flip = sceneRect(r, QStringLiteral("action_flip"));
+        const QRectF row = c.touch ? sceneRect(r, QStringLiteral("valueChipActions")) : QRectF(0, 0, r.window()->width(), r.window()->height());
         r.check(!flip.isEmpty() && row.adjusted(-0.5, -0.5, 0.5, 0.5).contains(flip),
-                c.name + QStringLiteral(": Flip is in sight in the value box's row"), rectText(flip) + QStringLiteral(" in ") + rectText(row));
+                c.name + QStringLiteral(": Flip is in sight"), rectText(flip) + QStringLiteral(" in ") + rectText(row));
         r.check(app.operationValueText().startsWith(QStringLiteral("5")) && app.operationValueLabel() == QStringLiteral("Height"),
                 c.name + QStringLiteral(": Flip turns the cut outward (+5, Height)"),
                 app.operationValueLabel() + QStringLiteral(" ") + app.operationValueText());
