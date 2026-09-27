@@ -76,8 +76,9 @@ On a desktop-sized window:
   When something cannot be done, the reason appears there or under the
   value box in red.
 - **View buttons** (bottom right): **Fit**, **Iso**, **Top**, **Front**,
-  **Right**, the projection (**Orthographic** or **Perspective**; click to
-  switch), **Pen** (in the touch layout) and the display unit (**mm** or
+  **Right**, the projection (**Perspective**, the default, or
+  **Orthographic**; click to switch, and OpenShape remembers your choice),
+  **Pen** (in the touch layout) and the display unit (**mm** or
   **in**; click to switch). Above them, the axis marker shows which way X
   (red), Y (green) and Z (blue, up) point.
 - Short messages ("Saved", "Exported STL", or why something failed) appear
@@ -128,12 +129,15 @@ display unit (**mm** or **in**, bottom right). Angles are in degrees.
 | Undo / redo | `Ctrl+Z` / `Ctrl+Y` | tap with two / three fingers | two / three fingers |
 
 - Orbiting turns around the point under the pointer, so what you look at
-  stays in place.
+  stays in place. Zooming (wheel or pinch) heads for what is under the
+  pointer.
 - **Fit** (or `F`) shows everything; **Zoom to** (in a selected body's
   actions) shows that body.
 - **Iso**, **Top**, **Front** and **Right** turn the view to the standard
   directions (Front looks along +Y, Right looks along −X); the grid is the
-  ground (the XY plane), Z points up.
+  ground (the XY plane, fading out towards its edge), Z points up. The
+  light comes from above, so tops are lightest and undersides darkest from
+  every angle.
 - Dragging an arrow or a ring changes a value instead of turning the view.
 
 **Touch layout.** The first time you touch the screen, OpenShape switches

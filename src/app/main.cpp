@@ -4,6 +4,7 @@
 
 #include "app/AcceptanceRunner.h"
 #include "app/CrashLog.h"
+#include "app/FaceContrast.h"
 #include "core/Log.h"
 #include "core/Version.h"
 #include "geometry/Modeling.h"
@@ -14,8 +15,10 @@
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QLockFile>
 #include <QtCore/QMap>
+#include <QtCore/QScopeGuard>
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
@@ -33,6 +36,7 @@
 #include <QtQuickControls2/QQuickStyle>
 
 #include <cstdio>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -441,11 +445,13 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
         interaction.setValueText("35"); // the new height (the chip shows 20 before)
         if (demo == QLatin1String("committed"))
             (void)interaction.commitOperation();
-    } else if (demo == QLatin1String("fillet")) {
+    } else if (demo == QLatin1String("fillet") || demo == QLatin1String("rounded")) {
         click.position = interaction.camera().project({10, -10, 10});
         interaction.pointerPress(click);
         interaction.pointerRelease(click);
         interaction.setValueText("4");
+        if (demo == QLatin1String("rounded"))
+            (void)interaction.commitOperation(); // the rounded block, applied
     } else if (demo == QLatin1String("move")) {
         interaction.pointerPress(click);
         interaction.pointerRelease(click);
@@ -455,6 +461,32 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
         click.button = os::interact::PointerButton::None;
         interaction.pointerMove(click);
     }
+}
+
+// --view: a standard view (iso, front, back, left, right, top, bottom) or
+// "yaw,pitch" in degrees (yaw 0 looks from +X, -90 from the front; pitch 90
+// from above), then everything framed: screenshots from any angle.
+bool applyView(os::ui::AppController& app, const QString& view)
+{
+    auto& interaction = app.interaction();
+    static const QMap<QString, os::StandardView> named{
+        {QStringLiteral("iso"), os::StandardView::Isometric}, {QStringLiteral("front"), os::StandardView::Front},
+        {QStringLiteral("back"), os::StandardView::Back},     {QStringLiteral("left"), os::StandardView::Left},
+        {QStringLiteral("right"), os::StandardView::Right},   {QStringLiteral("top"), os::StandardView::Top},
+        {QStringLiteral("bottom"), os::StandardView::Bottom}};
+    if (const auto it = named.find(view); it != named.end()) {
+        interaction.setStandardView(*it, false);
+    } else {
+        const QStringList parts = view.split(QLatin1Char(','));
+        bool okYaw = false, okPitch = false;
+        const double yaw = parts.size() == 2 ? parts[0].trimmed().toDouble(&okYaw) : 0.0;
+        const double pitch = parts.size() == 2 ? parts[1].trimmed().toDouble(&okPitch) : 0.0;
+        if (!okYaw || !okPitch)
+            return false;
+        interaction.setViewAngles(yaw * os::kPi / 180.0, pitch * os::kPi / 180.0, false);
+    }
+    interaction.fitAll(false);
+    return true;
 }
 
 // ---- Remembered window -------------------------------------------------------------------
@@ -578,6 +610,16 @@ int main(int argc, char* argv[])
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
                                         QStringLiteral("file"));
+    QCommandLineOption viewOption(QStringLiteral("view"),
+                                  QStringLiteral("With --demo: look from this direction, framed: iso, front, back, left, right, top, "
+                                                 "bottom, or yaw,pitch in degrees (e.g. 30,20; yaw -90 is the front)."),
+                                  QStringLiteral("view"));
+    QCommandLineOption faceContrastOption(QStringLiteral("face-contrast"),
+                                          QStringLiteral("With --demo and --screenshot: clear the selection first and log how "
+                                                         "different the shades of faces meeting at an edge are."));
+    QCommandLineOption projectionOption(QStringLiteral("projection"),
+                                        QStringLiteral("Start in this projection: perspective or orthographic (not remembered)."),
+                                        QStringLiteral("kind"));
     QCommandLineOption acceptanceOption(QStringLiteral("acceptance"),
                                         QStringLiteral("Run the end-to-end acceptance script, write screenshots to <dir>, exit with the failure count."),
                                         QStringLiteral("dir"));
@@ -612,6 +654,9 @@ int main(int argc, char* argv[])
     parser.addOption(appFolderOption);
     parser.addOption(acceptanceOption);
     parser.addOption(demoOption);
+    parser.addOption(viewOption);
+    parser.addOption(projectionOption);
+    parser.addOption(faceContrastOption);
     parser.addOption(screenshotOption);
     parser.addOption(dataDirOption);
     parser.addOption(simulateCrashOption);
@@ -705,6 +750,14 @@ int main(int argc, char* argv[])
     controller.startRecovery(recoveryDir);
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
+    if (parser.isSet(projectionOption)) {
+        const QString kind = parser.value(projectionOption);
+        if (kind == QLatin1String("perspective") || kind == QLatin1String("orthographic"))
+            controller.interaction().setProjection(kind == QLatin1String("perspective") ? os::Camera::Projection::Perspective
+                                                                                       : os::Camera::Projection::Orthographic);
+        else
+            OS_LOG(Warning, App) << "--projection expects perspective or orthographic";
+    }
     // Home at launch without a file (never in automated runs, which start
     // from an empty document; the "home" demo shows it).
     if (!automated && parser.positionalArguments().isEmpty())
@@ -775,10 +828,19 @@ int main(int argc, char* argv[])
     } else if (parser.isSet(demoOption) || parser.isSet(screenshotOption)) {
         const QString demo = parser.value(demoOption);
         const QString shot = parser.value(screenshotOption);
+        // Several views ("iso;front;30,20") make one screenshot each.
+        const QStringList views = parser.value(viewOption).split(QLatin1Char(';'), Qt::SkipEmptyParts);
+        const QString view = views.isEmpty() ? QString() : views.front();
+        const bool faceContrast = parser.isSet(faceContrastOption);
         // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, window, demo, dataDir] {
+        QTimer::singleShot(600, &controller, [&controller, window, demo, view, dataDir, faceContrast] {
             if (demo.isEmpty())
                 return;
+            // Seen from --view once the scene is built (below).
+            const auto lookFromView = qScopeGuard([&controller, &view] {
+                if (!view.isEmpty() && !applyView(controller, view))
+                    OS_LOG(Warning, App) << "--view expects a view name (iso, front, top, ...) or yaw,pitch in degrees";
+            });
             // Panels to look at (layout checks at phone sizes): the help card,
             // About, Preferences; the compact layout's Model panel and View menu.
             static const QMap<QString, QPair<QString, const char*>> panels{
@@ -793,6 +855,16 @@ int main(int argc, char* argv[])
             runDemo(controller, panel == panels.end() ? demo : panel->first, dataDir);
             // Previews compute on a worker thread: show the scene's before the screenshot.
             (void)controller.interaction().waitForPreview();
+            if (faceContrast) {
+                // Every face in its lit colour: no value, selection or hover
+                // (not even from a mouse pointer resting over the window).
+                if (auto* viewport = window->findChild<QQuickItem*>(QStringLiteral("viewport")))
+                    viewport->setAcceptHoverEvents(false);
+                controller.interaction().keyPress(os::interact::Key::Escape);
+                controller.interaction().keyPress(os::interact::Key::Escape);
+                controller.interaction().pointerMove(
+                    {os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, {-100, -100}, {}});
+            }
             if (panel == panels.end())
                 return;
             if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second)))
@@ -801,13 +873,33 @@ int main(int argc, char* argv[])
                 window->setProperty(panel->second, true); // the compact layout's switches (Main.qml)
         });
         if (!shot.isEmpty()) {
-            QTimer::singleShot(1600, window, [window, shot] {
+            // One screenshot per view (<file>-<view>.png when there are
+            // several), each after the next view has been drawn.
+            auto next = std::make_shared<std::function<void(int)>>();
+            *next = [&controller, window, shot, views, faceContrast, self = std::weak_ptr(next)](int i) {
+                QString file = shot;
+                if (views.size() > 1) {
+                    const QFileInfo info(shot);
+                    QString name = views[i];
+                    name.replace(QLatin1Char(','), QLatin1Char('_'));
+                    file = info.path() + QLatin1Char('/') + info.completeBaseName() + QLatin1Char('-') + name + QLatin1Char('.')
+                         + info.suffix();
+                }
                 const QImage image = window->grabWindow();
-                const bool ok = image.save(shot);
-                OS_LOG(Info, App) << "screenshot " << shot.toStdString() << (ok ? " saved" : " FAILED") << " ("
-                                  << image.width() << "x" << image.height() << ")";
-                QCoreApplication::exit(ok ? 0 : 2);
-            });
+                const bool ok = image.save(file);
+                OS_LOG(Info, App) << "screenshot " << file.toStdString() << (ok ? " saved" : " FAILED") << " (" << image.width()
+                                  << "x" << image.height() << ")";
+                if (faceContrast)
+                    OS_LOG(Info, App) << os::app::faceContrastReport(image, window, controller.interaction()).toStdString();
+                if (!ok || i + 1 >= views.size()) {
+                    QCoreApplication::exit(ok ? 0 : 2);
+                    return;
+                }
+                if (!applyView(controller, views[i + 1]))
+                    OS_LOG(Warning, App) << "--view expects a view name (iso, front, top, ...) or yaw,pitch in degrees";
+                QTimer::singleShot(400, window, [step = self.lock(), i] { (*step)(i + 1); });
+            };
+            QTimer::singleShot(1600, window, [next] { (*next)(0); });
         }
     }
 

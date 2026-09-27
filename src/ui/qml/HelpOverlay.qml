@@ -110,9 +110,11 @@ Rectangle {
                         rows: [
                             ["Orbit", "Drag empty space · one finger", "Drag empty space with one finger"],
                             ["Pan", "Shift+drag or middle-drag · two fingers", "Drag with two fingers"],
-                            ["Zoom", "Wheel · pinch (toward the pointer)", "Pinch with two fingers"],
+                            ["Zoom", "Wheel · pinch (toward what is under the pointer)", "Pinch with two fingers"],
                             ["Fit everything", "F", "Fit (in the View menu on a phone)"],
                             ["Standard views", "Iso / Top / Front / Right buttons", "Iso / Top / Front / Right (in the View menu on a phone)"],
+                            ["Perspective", "The Perspective / Orthographic button switches the projection (remembered)",
+                             "Perspective / Orthographic switches the projection (in the View menu on a phone; remembered)"],
                             ["Axes", "X red, Y green, Z blue (the marker shows which way they point)"],
                             ["Display unit", "The mm / in button; any value can be typed in any unit, e.g. 1in or 25mm"]
                         ]

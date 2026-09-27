@@ -3,8 +3,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-layout(location = 0) in vec3 vWorld;
-layout(location = 0) out vec4 fragColor;
+// A soft contact shadow: the triangles a body rests on the ground with
+// (interaction/ContactShadow), flattened onto the ground and drawn as 37
+// faint instances spread over a disc of radius `fade.x` (the center, then
+// three rings of 12), which add up to a blurred footprint.
+layout(location = 0) in vec3 position;
 
 // Shared by every shader (ViewportRenderer.cpp, UniformData).
 layout(std140, binding = 0) uniform Frame {
@@ -23,26 +26,27 @@ layout(std140, binding = 0) uniform Frame {
     vec4 fade;    // x: grid radius (shadows: blur), y: axis radius, z/w: eye distances where the grid starts/ends fading (0: never)
 };
 
+// Moves a point along its view ray by `params.w` device pixels' worth of
+// depth (negative: away from the viewer, so bottom faces on the ground hide
+// the shadow instead of fighting it).
+vec4 biasedClip(vec3 p)
+{
+    vec4 v = view * vec4(p, 1.0);
+    if (eye.w > 0.5)
+        v.xyz *= max(1.0 - params.w * camera.x, 0.0);
+    else
+        v.z += params.w * camera.x;
+    return proj * v;
+}
+
 void main()
 {
-    float alpha = color.a;
-    if (params2.x > 0.5) {
-        // The X/Y/Z axes fade out like the grid, further out (grid.frag).
-        float reach = fade.y / max(fade.x, 1e-6);
-        alpha *= 1.0 - smoothstep(0.5 * fade.y, fade.y, length(vWorld - vec3(grid.xy, 0.0)));
-        if (fade.w > 0.0) {
-            float toEye = length(eye.xyz - vWorld);
-            alpha *= 1.0 - smoothstep(fade.z * reach, fade.w * reach, toEye);
-            // Close to the eye (the Z axis seen from above) a line would
-            // sweep across the whole view: it fades out there too.
-            alpha *= smoothstep(0.25 * fade.z, 0.5 * fade.z, toEye);
-        }
-        // The Z axis's half on the far side of the ground (below it, seen
-        // from above) is faint: drawn fully it read as a line on the ground
-        // running towards the viewer. eye.z is the eye's height, or in
-        // orthographic the view direction's (the same sign).
-        if (vWorld.z * eye.z < 0.0)
-            alpha *= 0.3;
+    vec2 offset = vec2(0.0);
+    if (gl_InstanceIndex > 0) {
+        int ring = (gl_InstanceIndex - 1) / 12;
+        int k = gl_InstanceIndex - 1 - ring * 12;
+        float angle = (float(k) + 0.5 * float(ring)) * (6.2831853 / 12.0);
+        offset = fade.x * float(ring + 1) / 3.0 * vec2(cos(angle), sin(angle));
     }
-    fragColor = vec4(color.rgb, alpha);
+    gl_Position = biasedClip(vec3(position.xy + offset, 0.0));
 }

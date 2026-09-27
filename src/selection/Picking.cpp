@@ -120,6 +120,15 @@ PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Ve
         const double d = distanceToSegment2D(screen, camera.project(a), camera.project(b), &t);
         if (d > bestDistance)
             return;
+        // The point of the edge under the cursor. In perspective the place on
+        // the projected segment is not the place on the edge (1/depth is what
+        // varies linearly on screen); taking one for the other put the point
+        // millimetres off along a long edge, and the occlusion test below
+        // then threw out a visible edge.
+        if (camera.projection == Camera::Projection::Perspective) {
+            const double wa = camera.depthOf(a), wb = camera.depthOf(b);
+            t = t * wa / (t * wa + (1 - t) * wb);
+        }
         const Vec3 onEdge = a + (b - a) * t;
         // Occlusion: reject edges clearly behind the visible surface.
         if (face.hit()) {

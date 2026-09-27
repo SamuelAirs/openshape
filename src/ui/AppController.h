@@ -296,7 +296,10 @@ public:
     Q_INVOKABLE void triggerAction(const QString& id);
     Q_INVOKABLE void setView(const QString& name);
     Q_INVOKABLE void fitAll();
+    // The View buttons' projection toggle; the choice is remembered for the
+    // next start (QSettings).
     Q_INVOKABLE void togglePerspective();
+    Q_INVOKABLE void setPerspective(bool on);
     Q_INVOKABLE void setDisplayUnit(const QString& symbol);
     Q_INVOKABLE bool handleKey(int key);
 

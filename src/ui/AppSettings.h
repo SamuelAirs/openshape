@@ -40,6 +40,12 @@ inline constexpr int kRecoveryDebounceMs = 3000;
 Preferences loadPreferences(QSettings& settings);
 void savePreferences(QSettings& settings, const Preferences& preferences);
 
+// The view's projection as the user last chose it (the View buttons'
+// Perspective / Orthographic toggle): perspective unless they chose
+// orthographic.
+bool loadPerspective(QSettings& settings);
+void savePerspective(QSettings& settings, bool perspective);
+
 QStringList loadRecentFiles(QSettings& settings);
 void saveRecentFiles(QSettings& settings, const QStringList& files);
 

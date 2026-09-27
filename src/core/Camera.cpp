@@ -194,7 +194,7 @@ void Camera::zoomAt(Vec2 screen, double factor)
     if (projection == Projection::Orthographic)
         orthoHeight = std::clamp(orthoHeight * factor, kMinOrthoHeight, kMaxOrthoHeight);
     else
-        distance = std::clamp(distance * factor, 1e-3, 1e7);
+        distance = std::clamp(distance * factor, std::min(kMinDistance, distance), 1e7);
     const Vec3 after = pointOnViewPlane(screen, target);
     target += before - after;
 }
@@ -221,6 +221,17 @@ void Camera::setStandardView(StandardView view)
     case StandardView::Bottom: yaw = -kPi / 2; pitch = -kPi / 2; break;
     case StandardView::Isometric: yaw = -kPi / 4; pitch = std::atan(1 / std::sqrt(2.0)); break;
     }
+}
+
+void Camera::setProjection(Projection p)
+{
+    if (projection == p)
+        return;
+    if (p == Projection::Perspective)
+        distance = std::max(orthoHeight / (2 * std::tan(fovY / 2)), kMinDistance);
+    else
+        orthoHeight = std::clamp(2 * distance * std::tan(fovY / 2), kMinOrthoHeight, kMaxOrthoHeight);
+    projection = p;
 }
 
 Camera Camera::interpolate(const Camera& a, const Camera& b, double t)

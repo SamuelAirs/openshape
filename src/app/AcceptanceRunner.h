@@ -63,6 +63,8 @@ public:
     void mouseRelease(QPointF p, Qt::MouseButton button = Qt::LeftButton, Qt::KeyboardModifiers mods = Qt::NoModifier);
     void click(QPointF p, Qt::KeyboardModifiers mods = Qt::NoModifier);
     void drag(QPointF from, QPointF to, int steps = 10);
+    // Mouse wheel notches at `p` (positive zooms in).
+    void wheel(QPointF p, int notches);
     void key(int key, Qt::KeyboardModifiers mods = Qt::NoModifier, const QString& text = {});
     void type(const QString& text);
     // A quick multi-finger tap through Qt's touch path (fingers at `points`).
@@ -78,6 +80,9 @@ public:
     // phone). The next scenario starts at the size the run started with.
     void resizeWindow(int width, int height);
     QSize initialWindowSize() const { return initialSize_; }
+    // Whether the window was in perspective when the run started (a new
+    // window with fresh settings, before any scenario).
+    bool startedInPerspective() const { return startedInPerspective_; }
 
     // The document's body `index`. If an earlier failure left fewer bodies,
     // records a failure and abandons the rest of the current scenario
@@ -126,6 +131,7 @@ private:
     int previewWaitMs_ = 0;   // for previews (computed on the worker) to be shown
     QSize initialSize_;
     QSize initialMinimum_;
+    bool startedInPerspective_ = false;
     QString initialAppFolder_;
     QPointF lastClick_;
     bool hasLastClick_ = false;
@@ -134,8 +140,9 @@ private:
 
 // A named part of the acceptance run. Scenarios run by `order` (then name);
 // each one after the first starts from a new, empty document (touch and pen
-// mode off, millimeters, isometric view, no overlays open, the window at the
-// size the run started with).
+// mode off, millimeters, isometric view in perspective, no overlays open,
+// the window at the size the run started with). A scenario whose checks
+// depend on the projection sets it itself.
 //
 // To add one, create src/app/acceptance/<Name>.cpp (CMake picks it up) with
 //

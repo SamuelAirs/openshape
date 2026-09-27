@@ -78,6 +78,9 @@ public:
     const Camera& camera() const { return camera_; }
     void setViewportSize(Vec2 size);
     void setStandardView(StandardView view, bool animate = true);
+    // Looks from any direction (radians; Camera::yaw / Camera::pitch), keeping
+    // the target and zoom: screenshots and checks from arbitrary angles.
+    void setViewAngles(double yaw, double pitch, bool animate = true);
     void setProjection(Camera::Projection projection);
     void fitAll(bool animate = true);
     void fitSelection(bool animate = true);
@@ -334,6 +337,11 @@ private:
     void suggestSplit(const Uuid& bodyId, int piecesBefore);
     void afterDocumentEdit();
     void updateSceneBounds();
+    // Wheel and pinch zoom (factor < 1 zooms in), keeping the point under
+    // `screen` in place.
+    void zoomAt(Vec2 screen, double factor);
+    // The ground grid for the current view (renderScene).
+    RenderGrid groundGrid() const;
     void startAnimation(const Camera& to);
     std::vector<sel::PickTarget> pickTargets() const;
     void notifyView();
@@ -347,6 +355,9 @@ private:
     doc::Document* document_;
     cmd::UndoStack* undoStack_;
     Camera camera_;
+    // The visible bodies' approximate box (the grid reaches past its
+    // footprint), set with the scene bounds.
+    geom::BoundingBox visibleBox_;
     SceneCache scene_;
     sel::SelectionSet selection_;
     sel::PickResult hover_;

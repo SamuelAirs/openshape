@@ -16,6 +16,7 @@ const QString kDefaultUnit = QStringLiteral("preferences/defaultUnit");
 const QString kGridSnap = QStringLiteral("preferences/sketchGridSnap");
 const QString kRecoveryInterval = QStringLiteral("preferences/recoveryIntervalSeconds");
 const QString kHoleAllowance = QStringLiteral("preferences/holeAllowanceMm");
+const QString kPerspective = QStringLiteral("view/perspective");
 const QString kRecentFiles = QStringLiteral("recentFiles");
 const QString kWindowFrame = QStringLiteral("window/frame");
 const QString kWindowClient = QStringLiteral("window/client");
@@ -48,6 +49,18 @@ void savePreferences(QSettings& settings, const Preferences& p)
     settings.setValue(kGridSnap, p.sketchGridSnap);
     settings.setValue(kRecoveryInterval, p.recoveryIntervalSeconds);
     settings.setValue(kHoleAllowance, doc::validHoleAllowance(p.holeAllowance));
+}
+
+bool loadPerspective(QSettings& settings)
+{
+    // Only a stored "false" (or 0) means orthographic; anything else is the default.
+    const QString value = settings.value(kPerspective).toString();
+    return value != QLatin1String("false") && value != QLatin1String("0");
+}
+
+void savePerspective(QSettings& settings, bool perspective)
+{
+    settings.setValue(kPerspective, perspective);
 }
 
 QStringList loadRecentFiles(QSettings& settings)

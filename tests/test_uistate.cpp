@@ -118,6 +118,24 @@ TEST(AppSettings, PreferencesRoundTripAndDefaults)
     }
 }
 
+// The projection toggle is remembered; a new install starts in perspective.
+TEST(AppSettings, PerspectiveRoundTripAndDefault)
+{
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+    EXPECT_TRUE(loadPerspective(settings)) << "perspective by default";
+    savePerspective(settings, false);
+    EXPECT_FALSE(loadPerspective(settings));
+    settings.sync();
+    QSettings reread(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+    EXPECT_FALSE(loadPerspective(reread)) << "kept across runs";
+    savePerspective(settings, true);
+    EXPECT_TRUE(loadPerspective(settings));
+    // Stored values are untrusted: anything unexpected is the default.
+    settings.setValue(QStringLiteral("view/perspective"), QStringLiteral("sideways"));
+    EXPECT_TRUE(loadPerspective(settings));
+}
+
 TEST(AppSettings, RecentFilesAndWindowPlacementRoundTrip)
 {
     QTemporaryDir dir;

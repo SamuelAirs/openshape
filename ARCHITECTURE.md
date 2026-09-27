@@ -52,7 +52,7 @@ Technology choices and the alternatives considered are in
 
  render/    ViewportRenderer (QRhi) — consumes interaction::RenderScene
  io/        .openshape project container (ZIP + JSON), recovery copies, recent-files list
- core/      Result, Log, Uuid, Units, Math, Camera, Timer
+ core/      Result, Log, Uuid, Units, Math, Camera, Lighting, Timer
 ```
 
 Library targets and their dependencies (`src/CMakeLists.txt`):
@@ -83,8 +83,14 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   parsed with `parseLength(text, displayUnit)`, which accepts units (`1in`,
   `2.5cm`) and arithmetic (`20+5`, `(10+2)*3`). A bare number uses the
   document display unit. Saved files state `"lengthUnit": "mm"`.
-- `Camera` (`core/Camera.h`): Z-up turntable, orthographic by default,
-  perspective optional. Pure math shared by picking, interaction and rendering.
+- `Camera` (`core/Camera.h`): Z-up turntable, perspective by default (35
+  degree vertical field of view: depth cues, so a box cannot flip in the
+  viewer's mind), orthographic optional (the View buttons' toggle, remembered
+  in QSettings `view/perspective`). Pure math shared by picking, interaction
+  and rendering.
+- `StudioLighting` (`core/Lighting.h`): the viewport's lighting model, one
+  formula for the GPU (the renderer passes its numbers to `mesh.frag`) and
+  the CPU (project thumbnails, `tests/test_lighting.cpp`). See Rendering.
 - Logging (`core/Log.h`): categories APP, DOCUMENT, COMMAND, GEOMETRY, KERNEL,
   SKETCH, CONSTRAINT, SELECTION, INTERACTION, RENDER, FILE, PERFORMANCE.
   `ScopedTimer` logs kernel/tessellation/recompute/file timings at debug level.
@@ -469,7 +475,17 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   tolerance times the pixel size at the box's far side, so the cull is
   conservative) and runs the unchanged per-segment logic on them in mesh
   order. Results are identical to the linear scan, which remains the path
-  for targets without an accelerator (tests compare the two).
+  for targets without an accelerator (tests compare the two). The point of
+  an edge under the cursor is interpolated perspective-correctly (1/depth
+  is linear on screen): taken linearly, a visible long edge failed the
+  occlusion test in perspective. The ray-triangle test has a 1e-9
+  barycentric tolerance, so a ray through the diagonal two triangles share
+  (a face's center) hits one of them. An unused sketch profile clearly in
+  front of a picked edge wins over the edge, unless the edge lies in the
+  sketch's plane (the far edge of the face it was drawn on, a body's bottom
+  edge beside a ground sketch: a receding plane is nearer the eye a few
+  pixels inside such an edge) or the surface under the cursor is in front
+  of the sketch.
 - **Push/pull shows the size:** `PushPullOperation` places its arrow on the
   face (`geom::pointOnFace`: a washer's centroid is in its hole) and measures
   the part behind it (`geom::faceThickness`: a line into the material must
@@ -487,7 +503,17 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Typing sets exact values. Enter or clicking elsewhere commits a command;
   Esc clears the value, a second Esc clears the selection.
 - **Camera:** orbit about the point under the cursor, pan and zoom keep the
-  point under the cursor fixed, animated standard views and fit.
+  point under the cursor fixed, animated standard views and fit. In
+  perspective the wheel and pinch zoom head for the surface under the
+  pointer (`InteractionController::zoomAt`: the target first moves along the
+  view axis to the picked depth, which leaves the image unchanged), so
+  zooming in approaches that surface and never passes through it; the eye
+  stops `Camera::kMinDistance` (0.05 mm, five times the near plane's floor)
+  from it, so the near plane never cuts it either. Switching the projection
+  during a view animation also switches the animation's start and end views
+  (`Camera::setProjection`), so the view shown is the one remembered. Sketches
+  keep the projection: the view faces the sketch plane head-on, which
+  perspective shows undistorted.
 - **Sketch mode:** `startSketch()` creates a sketch on the selected planar face
   (host body recorded) or the XY plane, animates the view to face it, and hands
   input to a `SketchSession`. The session edits a working copy; tools are
@@ -850,13 +876,14 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
 scene (QML overlays compose naturally) and runs on whatever backend Qt Quick
 uses (Direct3D 11 on Windows by default, Vulkan/Metal/OpenGL elsewhere).
 `ViewportRenderer` copies a `RenderScene` in `synchronize()` (GUI thread
-blocked) and draws with 4× MSAA:
+blocked) and draws with 4x MSAA:
 
 1. bodies (lit, two-sided shading), keyed by mesh key so unchanged bodies are
    never re-uploaded;
-2. adaptive grid + X/Y/Z axes through the origin (depth-tested, no depth
-   write; the orientation marker is QML: `AxisTriad` from
-   `InteractionController::axisTriad()`);
+2. the ground (depth-tested, no depth write, pushed 1.5 px of depth away
+   from the viewer so a body's bottom face on the ground hides it): soft
+   **contact shadows**, the **grid** and the X/Y/Z **axes** (the orientation
+   marker is QML: `AxisTriad` from `InteractionController::axisTriad()`);
 3. face highlights (hover, selection, and the orange Model-panel highlight
    with adjacent ranges merged) as **index sub-ranges of the body mesh** (no
    extra buffers);
@@ -865,6 +892,72 @@ blocked) and draws with 4× MSAA:
    markers as zero-length line quads; the sketch being edited draws on top;
 6. manipulator arrows and rotation rings on top (no depth test), sized in
    screen pixels.
+
+**Lighting** (`core/Lighting.h`, evaluated in world space by `mesh.frag`):
+a sky/ground hemisphere ambient (0.72 for a face turned up, 0.44 turned
+down) and a key light at a fixed 50 degree elevation make up-facing faces
+the lightest and down-facing ones the darkest from every angle; the key
+light's direction around the vertical stays 50 degrees to the viewer's
+left (a turntable rig: with lights fixed in the world, some turn of any
+box shows two sides in the same shade, and a part seen from behind is in
+shadow), so the two sides of a box always differ, the left one lighter; a
+faint fill from the viewer and a soft Blinn highlight (strength 0.08,
+exponent 40) show curvature. Two-sided without relying on winding: a normal
+turned away from the viewer (the eye minus the fragment in perspective, the
+view direction in orthographic) is flipped. The acceptance scenario
+`shading` measures it on the rendered window (face centres of a cube, a
+rounded cube and a plate, 10 views x 2 projections): faces meeting at an
+edge differ by at least 21 of 255 levels (it was 0-1 for the two sides in
+the isometric view before), tops are lighter than sides, undersides darker,
+nothing below 70 or above 229 (the background is ~237). On whole models
+(`--face-contrast`: every visible face's median shade; the `committed`
+box, `rounded`, `bracket` and `enclosure` demos from 7 views: iso,
+orbiting, from behind, low, high, below), the faces meeting at a sharp
+edge differ by at least 20 levels, median 47, in both projections; with
+the earlier view-space lighting it was 1, median 30, and 11 of 88 pairs
+under 8 levels (the two sides seen at once in the isometric, orbiting and
+back views). Faces range from 94 (an underside) to 208.
+
+**Depth bias** (edges, sketch curves and fills over faces; the ground
+behind them): a point is moved along its view ray by N device pixels' worth
+of depth at its distance (`biasedClip` in the vertex shaders: scale by
+1 - N x pixel size at depth 1 in perspective, shift z in orthographic).
+It replaced a fixed offset in normalized depth, which in perspective came to
+~30 mm at the model and showed hidden edges through the body.
+
+**Grid** (`shaders/grid.vert` / `grid.frag`, one quad on z = 0): minor and
+major lines computed per pixel from the world position (anti-aliased with
+screen-space derivatives), fading out between half the grid's radius and
+the radius, with distance from the eye in perspective (the far side, towards
+the horizon, first), where neighbouring lines come closer than ~10 px (a
+receding plane: no moire) and when the plane is seen nearly edge-on. The
+interaction layer picks the spacing (`snapIncrement` for ~14 px on the
+ground below the target: in perspective the target can sit on a tall part's
+top), the center (on a major line near the target) and the
+radius (`InteractionController::groundGrid`: about a view's width around the
+target, at least twice the distance to the visible bodies' farthest
+footprint corner, so the lines under a model never fade). The axes are
+line quads in the line shader's fading mode, reaching 1.5 times the grid's
+radius (near the eye they fade too: the Z axis seen from above); the Z
+axis's half on the far side of the ground is drawn at 30 % (drawn fully,
+the part below the ground read as a line on the ground running towards the
+viewer). The
+`perspective` scenario follows a major grid line across the fade on the
+rendered window, in both projections, and checks that it falls smoothly to
+nothing (a hard border shows as a step of 17-24 levels).
+
+**Contact shadows** (`interaction/ContactShadow`, `shaders/shadow.vert`):
+the triangles of a body's lowest faces that face straight down (its exact
+footprint: an L-shaped part casts an L), flattened onto the ground and drawn
+as 37 faint instances spread over a disc (the center and three rings of
+12), which add up to a blurred footprint; strength 0.22 when resting on the
+ground, fading out as the body rises to half its footprint size, blur 8 %
+of the footprint (0.5-6 mm) plus half the height. Not drawn when the eye is
+below the ground. Computed once per uploaded mesh.
+
+All shaders share one uniform block (`UniformData`: matrices, colour,
+per-draw parameters, eye, pixel scale, lights, grid and fade parameters);
+all draws share one dynamic uniform buffer with per-draw offsets.
 
 Sketch labels (dimensions, live inputs, inference hints, constraint glyphs)
 are QML items positioned from `SketchSession::labels()` screen coordinates.
@@ -883,8 +976,9 @@ tapping the glyph itself always reaches it. Clicking one selects the
 constraint (`constraintIcon_<id>`), never mixed with geometry, and its
 geometry is highlighted; Delete removes it.
 
-Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages.
-All draws share one dynamic uniform buffer with per-draw offsets.
+Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages
+(SPIR-V, HLSL, MSL, GLSL), so they run on Direct3D 11 and on Metal (macOS,
+iPadOS) unchanged.
 
 ## History panel
 
@@ -981,7 +1075,8 @@ no worker thread is used.
 new documents, sketch grid snapping, recovery interval, the hole allowance
 for 3D printing: `InteractionController::setHoleAllowance` passes it to the
 Hole tool and the counterbore / countersink presets, and an open tool
-showing a preset follows at once; a typed diameter stays as typed), recent files
+showing a preset follows at once; a typed diameter stays as typed), the view's
+projection (`view/perspective`, set by the View buttons' toggle), recent files
 (`io/RecentFiles`: most recent first; the menu shows the 10 newest that
 exist, and a file that is gone never pushes an existing one out; the File
 menu rereads the list as it opens, `refreshRecentFiles()`; with an app
@@ -1102,7 +1197,11 @@ them on a hidden menu separator after the Open Recent sub-menu).
   panel, undone, saved and reopened, then cut in from the palette) and
   `userguide` (the help card's link to
   docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
-  it, so no browser opens). The whole run also passes at the CI Mac's
+  it, so no browser opens), `shading` and `perspective` (the viewport's
+  look measured on the rendered window, see Rendering; perspective's Fit,
+  wheel zoom, orbit pivot, picking, Top view and sketch plane, contact
+  shadow). Scenarios start in perspective; a new window's projection is
+  checked before the first. The whole run also passes at the CI Mac's
   1024x653 (`--size 1024x653`): clicks on model points that a panel or the
   value chip may cover in a small window pick a free point of the same edge
   (`uncoveredScreenPoint`). `clickItem` scrolls any Flickable around the

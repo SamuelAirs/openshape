@@ -4,7 +4,9 @@
 
 #include "render/ViewportRenderer.h"
 
+#include "core/Lighting.h"
 #include "core/Log.h"
+#include "interaction/ContactShadow.h"
 
 #include <QtCore/QFile>
 #include <QtQuick/QQuickRhiItem>
@@ -13,21 +15,30 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 
 namespace os::render {
 
 namespace {
 
-// std140 layout shared by all shaders (see shaders/*.vert).
+// std140 layout shared by all shaders (the Frame block in shaders/*).
 struct UniformData {
     float mvp[16];
     float view[16];
+    float proj[16];
     float color[4];
-    float params[4];  // viewport w/h (px), line width (px), depth bias
-    float params2[4]; // shading mode
+    float params[4];  // viewport w/h (device px), line width (device px), depth bias (device px towards the viewer)
+    float params2[4]; // mode (meshes: lit / tint / overlay; lines: faded axes); grid: minor, major alpha
+    float eye[4];     // eye (perspective) or direction towards the viewer (orthographic); 1 = perspective
+    float camera[4];  // world size of a device pixel (at view depth 1 in perspective)
+    float light[4];   // direction towards the key light
+    float lights[4];  // sky, ground, key, fill (core/Lighting.h)
+    float gloss[4];   // specular strength, exponent
+    float grid[4];    // grid center xy, minor step
+    float fade[4];    // grid radius, axis radius, eye fade start, end; shadows: x = blur (mm)
 };
-static_assert(sizeof(UniformData) == 176);
+static_assert(sizeof(UniformData) == 3 * 64 + 10 * 16);
 
 using Color = std::array<float, 4>;
 // Calm, neutral palette; the model is the loudest thing on screen.
@@ -39,8 +50,11 @@ constexpr Color kAccent{0.16f, 0.47f, 0.93f, 1.0f};
 constexpr Color kAccentHover{0.35f, 0.62f, 1.0f, 1.0f};
 constexpr Color kAccentActive{0.10f, 0.36f, 0.80f, 1.0f};
 constexpr Color kError{0.90f, 0.28f, 0.30f, 1.0f};
-constexpr Color kGridMinor{0.0f, 0.0f, 0.0f, 0.05f};
-constexpr Color kGridMajor{0.0f, 0.0f, 0.0f, 0.11f};
+constexpr Color kGridLine{0.0f, 0.0f, 0.0f, 1.0f};
+constexpr float kGridMinorAlpha = 0.06f;
+constexpr float kGridMajorAlpha = 0.12f;
+constexpr Color kShadow{0.10f, 0.12f, 0.16f, 1.0f};
+constexpr quint32 kShadowLayers = 37; // shadow.vert: the center and three rings of 12
 constexpr Color kAxisX{0.86f, 0.27f, 0.27f, 0.6f};
 constexpr Color kAxisY{0.27f, 0.66f, 0.33f, 0.6f};
 constexpr Color kAxisZ{0.25f, 0.45f, 0.88f, 0.6f};
@@ -52,6 +66,12 @@ constexpr Color kSketchDimension{0.36f, 0.39f, 0.44f, 0.9f};
 
 
 constexpr quint32 kLineVertexFloats = 8; // p0(3) p1(3) corner(2)
+// Edges and sketch curves are pulled this many logical pixels' worth of depth
+// towards the viewer, so they win against the faces they lie on.
+constexpr float kEdgeBiasPx = 2.5f;
+// The grid, axes and shadows are pushed this far away from the viewer, so a
+// body's bottom face on the ground hides them rather than fighting them.
+constexpr float kGroundBiasPx = 1.5f;
 
 Color withAlpha(Color c, float a)
 {
@@ -118,6 +138,14 @@ void appendSegment(std::vector<float>& out, const Vec3& a, const Vec3& b)
     }
 }
 
+// Two triangles covering a rectangle on the ground (z = 0).
+void appendGroundQuad(std::vector<float>& out, Vec2 center, Vec2 half)
+{
+    const float x0 = float(center.x - half.x), x1 = float(center.x + half.x);
+    const float y0 = float(center.y - half.y), y1 = float(center.y + half.y);
+    out.insert(out.end(), {x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y0, 0, x1, y1, 0, x0, y1, 0});
+}
+
 void appendTriangle(std::vector<float>& pos, std::vector<float>& nrm, const Vec3& a, const Vec3& b, const Vec3& c,
                     const Vec3& na, const Vec3& nb, const Vec3& nc)
 {
@@ -160,7 +188,7 @@ void appendArrow(std::vector<float>& pos, std::vector<float>& nrm, const Vec3& a
 } // namespace
 
 struct ViewportRenderer::Draw {
-    enum class Kind { Mesh, Lines, Arrow } kind = Kind::Mesh;
+    enum class Kind { Mesh, Lines, Arrow, Ground, Shadow } kind = Kind::Mesh;
     QRhiGraphicsPipeline* pipeline = nullptr;
     const GpuBody* body = nullptr;
     QRhiBuffer* lineBuffer = nullptr;
@@ -184,9 +212,12 @@ void ViewportRenderer::initialize(QRhiCommandBuffer*)
         overlayPipeline_.reset();
         linePipeline_.reset();
         overlayLinePipeline_.reset();
+        gridPipeline_.reset();
+        shadowPipeline_.reset();
         srb_.reset();
         uniforms_.reset();
         gridVertices_.reset();
+        groundVertices_.reset();
         arrowPositions_.reset();
         arrowNormals_.reset();
         rhi_ = rhi();
@@ -216,30 +247,43 @@ void ViewportRenderer::createPipelines()
     const QShader meshFs = loadShader(QStringLiteral(":/openshape/shaders/mesh.frag.qsb"));
     const QShader lineVs = loadShader(QStringLiteral(":/openshape/shaders/line.vert.qsb"));
     const QShader lineFs = loadShader(QStringLiteral(":/openshape/shaders/line.frag.qsb"));
+    const QShader groundVs = loadShader(QStringLiteral(":/openshape/shaders/grid.vert.qsb"));
+    const QShader gridFs = loadShader(QStringLiteral(":/openshape/shaders/grid.frag.qsb"));
+    const QShader shadowVs = loadShader(QStringLiteral(":/openshape/shaders/shadow.vert.qsb"));
+    const QShader shadowFs = loadShader(QStringLiteral(":/openshape/shaders/shadow.frag.qsb"));
 
     using Op = QRhiGraphicsPipeline::CompareOp;
-    meshPipeline_ = makePipeline(meshVs, meshFs, false, true, true, false, Op::Less);
-    tintPipeline_ = makePipeline(meshVs, meshFs, false, true, false, true, Op::LessOrEqual);
-    overlayPipeline_ = makePipeline(meshVs, meshFs, false, false, false, true, Op::Always);
-    linePipeline_ = makePipeline(lineVs, lineFs, true, true, false, true, Op::LessOrEqual);
-    overlayLinePipeline_ = makePipeline(lineVs, lineFs, true, false, false, true, Op::Always);
+    meshPipeline_ = makePipeline(meshVs, meshFs, Layout::Mesh, true, true, false, Op::Less);
+    tintPipeline_ = makePipeline(meshVs, meshFs, Layout::Mesh, true, false, true, Op::LessOrEqual);
+    overlayPipeline_ = makePipeline(meshVs, meshFs, Layout::Mesh, false, false, true, Op::Always);
+    linePipeline_ = makePipeline(lineVs, lineFs, Layout::Line, true, false, true, Op::LessOrEqual);
+    overlayLinePipeline_ = makePipeline(lineVs, lineFs, Layout::Line, false, false, true, Op::Always);
+    gridPipeline_ = makePipeline(groundVs, gridFs, Layout::Ground, true, false, true, Op::LessOrEqual);
+    shadowPipeline_ = makePipeline(shadowVs, shadowFs, Layout::Ground, true, false, true, Op::LessOrEqual);
 }
 
-std::unique_ptr<QRhiGraphicsPipeline> ViewportRenderer::makePipeline(const QShader& vs, const QShader& fs, bool lines,
+std::unique_ptr<QRhiGraphicsPipeline> ViewportRenderer::makePipeline(const QShader& vs, const QShader& fs, Layout vertices,
                                                                     bool depthTest, bool depthWrite, bool blend,
                                                                     QRhiGraphicsPipeline::CompareOp op)
 {
     std::unique_ptr<QRhiGraphicsPipeline> ps(rhi_->newGraphicsPipeline());
     ps->setShaderStages({{QRhiShaderStage::Vertex, vs}, {QRhiShaderStage::Fragment, fs}});
     QRhiVertexInputLayout layout;
-    if (lines) {
+    switch (vertices) {
+    case Layout::Line:
         layout.setBindings({{kLineVertexFloats * sizeof(float)}});
         layout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float3, 0},
                               {0, 1, QRhiVertexInputAttribute::Float3, 3 * sizeof(float)},
                               {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)}});
-    } else {
+        break;
+    case Layout::Mesh:
         layout.setBindings({{3 * sizeof(float)}, {3 * sizeof(float)}});
         layout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float3, 0}, {1, 1, QRhiVertexInputAttribute::Float3, 0}});
+        break;
+    case Layout::Ground:
+        layout.setBindings({{3 * sizeof(float)}});
+        layout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float3, 0}});
+        break;
     }
     ps->setVertexInputLayout(layout);
     ps->setShaderResourceBindings(srb_.get());
@@ -272,7 +316,7 @@ void ViewportRenderer::synchronize(QQuickRhiItem* item)
         devicePixelRatio_ = static_cast<float>(item->window()->effectiveDevicePixelRatio());
 }
 
-void ViewportRenderer::uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u)
+void ViewportRenderer::uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u, bool castsShadow)
 {
     auto makeStatic = [&](std::unique_ptr<QRhiBuffer>& buffer, QRhiBuffer::UsageFlags usage, const void* data, quint32 bytes) {
         buffer.reset();
@@ -287,6 +331,12 @@ void ViewportRenderer::uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiReso
     makeStatic(gpu.indices, QRhiBuffer::IndexBuffer, mesh.indices.data(), quint32(mesh.indices.size() * sizeof(quint32)));
     gpu.indexCount = quint32(mesh.indices.size());
     gpu.faceTriangleOffset.assign(mesh.faceTriangleOffset.begin(), mesh.faceTriangleOffset.end());
+    const interact::ContactFootprint footprint = castsShadow ? interact::contactFootprint(mesh) : interact::ContactFootprint{};
+    makeStatic(gpu.groundIndices, QRhiBuffer::IndexBuffer, footprint.indices.data(),
+               quint32(footprint.indices.size() * sizeof(quint32)));
+    gpu.groundIndexCount = quint32(footprint.indices.size());
+    gpu.shadowStrength = float(footprint.strength());
+    gpu.shadowBlur = float(footprint.blur());
 
     std::vector<float> lines;
     gpu.edgeRanges.clear();
@@ -322,7 +372,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         auto it = bodies_.find(rb.id);
         GpuBody gpu = it != bodies_.end() ? std::move(it->second) : GpuBody{};
         if (gpu.meshKey != rb.meshKey || !gpu.positions) {
-            uploadBody(gpu, *rb.mesh, u);
+            uploadBody(gpu, *rb.mesh, u, true);
             gpu.meshKey = rb.meshKey;
         }
         kept.emplace(rb.id, std::move(gpu));
@@ -338,7 +388,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             auto it = regions_.find(region.meshKey);
             GpuBody gpu = it != regions_.end() ? std::move(it->second) : GpuBody{};
             if (!gpu.positions) {
-                uploadBody(gpu, *region.mesh, u);
+                uploadBody(gpu, *region.mesh, u, false);
                 gpu.meshKey = region.meshKey;
             }
             keptRegions.emplace(region.meshKey, std::move(gpu));
@@ -346,24 +396,48 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     }
     regions_ = std::move(keptRegions);
 
-    // ---- Matrices --------------------------------------------------------------------
+    // ---- Matrices and the frame's uniforms ---------------------------------------------
     const Mat4 view = camera.viewMatrix();
-    const Mat4 mvp = toMat4(rhi_->clipSpaceCorrMatrix()) * camera.projectionMatrix(false) * view;
-    auto uniformsFor = [&](const Color& color, float lineWidthPx, float depthBias, float mode) {
-        UniformData d{};
-        storeMatrix(d.mvp, mvp);
-        storeMatrix(d.view, view);
+    const Mat4 proj = toMat4(rhi_->clipSpaceCorrMatrix()) * camera.projectionMatrix(false);
+    const Mat4 mvp = proj * view;
+    const bool perspective = camera.projection == Camera::Projection::Perspective;
+    const float heightPx = float(std::max(pixelSize.height(), 1));
+    const auto& grid = scene_.grid;
+    UniformData frame{};
+    storeMatrix(frame.mvp, mvp);
+    storeMatrix(frame.view, view);
+    storeMatrix(frame.proj, proj);
+    frame.params[0] = float(pixelSize.width());
+    frame.params[1] = float(pixelSize.height());
+    {
+        const Vec3 e = perspective ? camera.eye() : camera.backward();
+        const float eye[4] = {float(e.x), float(e.y), float(e.z), perspective ? 1.0f : 0.0f};
+        std::memcpy(frame.eye, eye, sizeof eye);
+        // World size of one device pixel (at view depth 1 in perspective).
+        frame.camera[0] = perspective ? float(2 * std::tan(camera.fovY / 2)) / heightPx : float(camera.orthoHeight) / heightPx;
+        const StudioLighting lighting;
+        const Vec3 key = lighting.keyDirection(camera);
+        const float light[4] = {float(key.x), float(key.y), float(key.z), 0.0f};
+        std::memcpy(frame.light, light, sizeof light);
+        const float lights[4] = {float(lighting.sky), float(lighting.ground), float(lighting.key), float(lighting.fill)};
+        std::memcpy(frame.lights, lights, sizeof lights);
+        frame.gloss[0] = float(lighting.specular);
+        frame.gloss[1] = float(lighting.shininess);
+        const float g[4] = {float(grid.center.x), float(grid.center.y), float(grid.minorStep), 0.0f};
+        std::memcpy(frame.grid, g, sizeof g);
+        const float f[4] = {float(grid.radius), float(grid.axisRadius), float(grid.eyeFadeStart), float(grid.eyeFadeEnd)};
+        std::memcpy(frame.fade, f, sizeof f);
+    }
+    auto uniformsFor = [&](const Color& color, float lineWidthPx, float depthBiasPx, float mode) {
+        UniformData d = frame;
         std::memcpy(d.color, color.data(), sizeof d.color);
-        d.params[0] = float(pixelSize.width());
-        d.params[1] = float(pixelSize.height());
         d.params[2] = lineWidthPx * dpr;
-        d.params[3] = depthBias;
+        d.params[3] = depthBiasPx * dpr;
         d.params2[0] = mode;
         return d;
     };
 
     std::vector<Draw> draws;
-    constexpr float kEdgeBias = 0.0004f;
     auto meshDraw = [&](QRhiGraphicsPipeline* p, const GpuBody* b, quint32 first, quint32 count, const Color& c, float mode,
                         float bias = 0) {
         Draw d;
@@ -376,7 +450,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         draws.push_back(d);
     };
     auto lineDraw = [&](QRhiGraphicsPipeline* p, QRhiBuffer* buffer, quint32 first, quint32 count, const Color& c, float width,
-                        float bias) {
+                        float bias, float mode = 0) {
         if (count == 0 || !buffer)
             return;
         Draw d;
@@ -385,7 +459,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         d.lineBuffer = buffer;
         d.first = first;
         d.count = count;
-        d.uniforms = uniformsFor(c, width, bias, 0);
+        d.uniforms = uniformsFor(c, width, bias, mode);
         draws.push_back(d);
     };
 
@@ -396,52 +470,70 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             meshDraw(meshPipeline_.get(), &gpu, 0, gpu.indexCount, rb.isPreview ? kPreviewBody : kBody, 0);
     }
 
-    // ---- 2. Grid (depth-tested so bodies hide it) ------------------------------------
-    {
-        const auto& g = scene_.grid;
-        std::vector<float> minor, major, axisX, axisY, axisZ;
-        const double extent = g.halfLines * g.minorStep;
-        for (int i = -g.halfLines; i <= g.halfLines; ++i) {
-            const double x = g.center.x + i * g.minorStep;
-            const double y = g.center.y + i * g.minorStep;
-            const bool isMajor = (i % 10) == 0;
-            auto& target = isMajor ? major : minor;
-            if (std::abs(x) > g.minorStep * 1e-6)
-                appendSegment(target, {x, g.center.y - extent, 0}, {x, g.center.y + extent, 0});
-            if (std::abs(y) > g.minorStep * 1e-6)
-                appendSegment(target, {g.center.x - extent, y, 0}, {g.center.x + extent, y, 0});
+    // ---- 2. Ground: contact shadows, the grid and the X/Y/Z axes (depth-tested so
+    //         bodies hide them, no depth writes) ---------------------------------------
+    if (grid.visible) {
+        // Soft shadows where bodies rest on the ground, seen from above it.
+        if ((perspective ? camera.eye().z : camera.backward().z) > 0) {
+            for (const auto& rb : scene_.bodies) {
+                const GpuBody& gpu = bodies_.at(rb.id);
+                if (!gpu.groundIndexCount || gpu.shadowStrength <= 0)
+                    continue;
+                Draw d;
+                d.kind = Draw::Kind::Shadow;
+                d.pipeline = shadowPipeline_.get();
+                d.body = &gpu;
+                d.count = gpu.groundIndexCount;
+                // Each of the layers is this faint, so together they reach the strength.
+                const float layer = 1.0f - std::pow(1.0f - gpu.shadowStrength, 1.0f / float(kShadowLayers));
+                d.uniforms = uniformsFor(withAlpha(kShadow, layer), 0, -kGroundBiasPx, 0);
+                d.uniforms.fade[0] = gpu.shadowBlur;
+                draws.push_back(d);
+            }
         }
-        if (std::abs(g.center.y) <= extent)
-            appendSegment(axisX, {g.center.x - extent, 0, 0}, {g.center.x + extent, 0, 0});
-        if (std::abs(g.center.x) <= extent)
-            appendSegment(axisY, {0, g.center.y - extent, 0}, {0, g.center.y + extent, 0});
-        // Z through the origin, as tall as the grid is wide (bodies hide it).
-        if (std::abs(g.center.x) <= extent && std::abs(g.center.y) <= extent)
-            appendSegment(axisZ, {0, 0, -extent}, {0, 0, extent});
+        std::vector<float> ground;
+        appendGroundQuad(ground, {grid.center.x, grid.center.y}, {grid.radius, grid.radius});
+        const quint32 bytes = quint32(ground.size() * sizeof(float));
+        ensureDynamicBuffer(groundVertices_, bytes, QRhiBuffer::VertexBuffer);
+        u->updateDynamicBuffer(groundVertices_.get(), 0, bytes, ground.data());
+        Draw d;
+        d.kind = Draw::Kind::Ground;
+        d.pipeline = gridPipeline_.get();
+        d.first = 0;
+        d.count = 6;
+        d.uniforms = uniformsFor(kGridLine, 1.0f, -kGroundBiasPx, 0);
+        d.uniforms.params2[1] = kGridMinorAlpha;
+        d.uniforms.params2[2] = kGridMajorAlpha;
+        draws.push_back(d);
 
-        std::vector<float> all;
-        all.reserve(minor.size() + major.size() + axisX.size() + axisY.size() + axisZ.size());
-        const quint32 minorFirst = 0, minorCount = quint32(minor.size() / kLineVertexFloats);
-        all.insert(all.end(), minor.begin(), minor.end());
-        const quint32 majorFirst = quint32(all.size() / kLineVertexFloats), majorCount = quint32(major.size() / kLineVertexFloats);
-        all.insert(all.end(), major.begin(), major.end());
-        const quint32 axisXFirst = quint32(all.size() / kLineVertexFloats), axisXCount = quint32(axisX.size() / kLineVertexFloats);
-        all.insert(all.end(), axisX.begin(), axisX.end());
-        const quint32 axisYFirst = quint32(all.size() / kLineVertexFloats), axisYCount = quint32(axisY.size() / kLineVertexFloats);
-        all.insert(all.end(), axisY.begin(), axisY.end());
-        const quint32 axisZFirst = quint32(all.size() / kLineVertexFloats), axisZCount = quint32(axisZ.size() / kLineVertexFloats);
-        all.insert(all.end(), axisZ.begin(), axisZ.end());
-
-        if (g.visible && !all.empty()) {
-            const quint32 bytes = quint32(all.size() * sizeof(float));
-            ensureDynamicBuffer(gridVertices_, bytes, QRhiBuffer::VertexBuffer);
-            u->updateDynamicBuffer(gridVertices_.get(), 0, bytes, all.data());
-            lineDraw(linePipeline_.get(), gridVertices_.get(), minorFirst, minorCount, kGridMinor, 1.0f, 0);
-            lineDraw(linePipeline_.get(), gridVertices_.get(), majorFirst, majorCount, kGridMajor, 1.0f, 0);
-            lineDraw(linePipeline_.get(), gridVertices_.get(), axisXFirst, axisXCount, kAxisX, 1.5f, 0);
-            lineDraw(linePipeline_.get(), gridVertices_.get(), axisYFirst, axisYCount, kAxisY, 1.5f, 0);
-            if (axisZCount)
-                lineDraw(linePipeline_.get(), gridVertices_.get(), axisZFirst, axisZCount, kAxisZ, 1.5f, 0);
+        // The axes through the origin where they cross the axes' disc (the Z
+        // axis as high as they reach); they fade out further than the grid.
+        std::vector<float> axes;
+        const double r = grid.axisRadius;
+        const Vec3 c = grid.center;
+        quint32 xCount = 0, yCount = 0, zCount = 0;
+        if (std::abs(c.y) < r) {
+            const double half = std::sqrt(r * r - c.y * c.y);
+            appendSegment(axes, {c.x - half, 0, 0}, {c.x + half, 0, 0});
+            xCount = 6;
+        }
+        if (std::abs(c.x) < r) {
+            const double half = std::sqrt(r * r - c.x * c.x);
+            appendSegment(axes, {0, c.y - half, 0}, {0, c.y + half, 0});
+            yCount = 6;
+        }
+        if (const double fromCenter = std::hypot(c.x, c.y); fromCenter < r) {
+            const double half = std::sqrt(r * r - fromCenter * fromCenter);
+            appendSegment(axes, {0, 0, -half}, {0, 0, half});
+            zCount = 6;
+        }
+        if (!axes.empty()) {
+            const quint32 axisBytes = quint32(axes.size() * sizeof(float));
+            ensureDynamicBuffer(gridVertices_, axisBytes, QRhiBuffer::VertexBuffer);
+            u->updateDynamicBuffer(gridVertices_.get(), 0, axisBytes, axes.data());
+            lineDraw(linePipeline_.get(), gridVertices_.get(), 0, xCount, kAxisX, 1.5f, -kGroundBiasPx, 1);
+            lineDraw(linePipeline_.get(), gridVertices_.get(), xCount, yCount, kAxisY, 1.5f, -kGroundBiasPx, 1);
+            lineDraw(linePipeline_.get(), gridVertices_.get(), xCount + yCount, zCount, kAxisZ, 1.5f, -kGroundBiasPx, 1);
         }
     }
 
@@ -488,14 +580,14 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
     // ---- 4. Edges ------------------------------------------------------------------------
     for (const auto& rb : scene_.bodies) {
         const GpuBody& gpu = bodies_.at(rb.id);
-        lineDraw(linePipeline_.get(), gpu.edgeVertices.get(), 0, gpu.edgeVertexCount, kEdge, 1.25f, kEdgeBias);
+        lineDraw(linePipeline_.get(), gpu.edgeVertices.get(), 0, gpu.edgeVertexCount, kEdge, 1.25f, kEdgeBiasPx);
         for (int e : rb.selectedEdges)
             if (auto it = gpu.edgeRanges.find(e); it != gpu.edgeRanges.end())
                 lineDraw(linePipeline_.get(), gpu.edgeVertices.get(), it->second.first, it->second.second, kAccent, 3.5f,
-                         kEdgeBias * 2);
+                         kEdgeBiasPx * 2);
         if (auto it = gpu.edgeRanges.find(rb.hoverEdge); rb.hoverEdge >= 0 && it != gpu.edgeRanges.end())
             lineDraw(linePipeline_.get(), gpu.edgeVertices.get(), it->second.first, it->second.second, kAccentHover, 3.0f,
-                     kEdgeBias * 2);
+                     kEdgeBiasPx * 2);
     }
 
     // ---- 5. Sketches: profile fills, curves, points --------------------------------------------
@@ -517,7 +609,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
                                   : region.style == interact::SketchStyle::Hovered  ? 0.22f
                                                                                     : 0.08f;
                 meshDraw(sketch.editing ? overlayPipeline_.get() : tintPipeline_.get(), &it->second, 0, it->second.indexCount,
-                         withAlpha(kAccent, alpha), 1, kEdgeBias);
+                         withAlpha(kAccent, alpha), 1, kEdgeBiasPx);
             }
             // Group segments by style so each style is one draw call.
             for (int s = 0; s <= int(interact::SketchStyle::Conflict); ++s) {
@@ -547,7 +639,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             u->updateDynamicBuffer(sketchVertices_.get(), 0, bytes, lines.data());
             for (const auto& b : batches)
                 lineDraw(b.onTop ? overlayLinePipeline_.get() : linePipeline_.get(), sketchVertices_.get(), b.first, b.count,
-                         b.color, b.width, kEdgeBias * 2);
+                         b.color, b.width, kEdgeBiasPx * 2);
         }
     }
 
@@ -673,6 +765,18 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             const QRhiCommandBuffer::VertexInput inputs[] = {{arrowPositions_.get(), 0}, {arrowNormals_.get(), 0}};
             cb->setVertexInput(0, 2, inputs);
             cb->draw(d.count, 1, d.first);
+            break;
+        }
+        case Draw::Kind::Ground: {
+            const QRhiCommandBuffer::VertexInput input(groundVertices_.get(), 0);
+            cb->setVertexInput(0, 1, &input);
+            cb->draw(d.count, 1, d.first);
+            break;
+        }
+        case Draw::Kind::Shadow: {
+            const QRhiCommandBuffer::VertexInput input(d.body->positions.get(), 0);
+            cb->setVertexInput(0, 1, &input, d.body->groundIndices.get(), 0, QRhiCommandBuffer::IndexUInt32);
+            cb->drawIndexed(d.count, kShadowLayers);
             break;
         }
         }

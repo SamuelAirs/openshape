@@ -8,6 +8,7 @@ qt_add_executable(openshape WIN32 MACOSX_BUNDLE
     main.cpp
     AcceptanceRunner.cpp AcceptanceRunner.h
     CrashLog.cpp CrashLog.h
+    FaceContrast.cpp FaceContrast.h
     ${OPENSHAPE_ACCEPTANCE_SCENARIOS}
 )
 # GuiPrivate: QWindowSystemInterface for realistic input injection in --acceptance.

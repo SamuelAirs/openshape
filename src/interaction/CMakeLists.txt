@@ -4,6 +4,7 @@
 
 # Framework-independent interaction logic (no Qt).
 add_library(openshape_interaction STATIC
+    ContactShadow.cpp ContactShadow.h
     InputEvents.h
     InteractionController.cpp InteractionController.h
     Manipulator.cpp Manipulator.h

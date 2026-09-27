@@ -50,6 +50,31 @@ TEST(Math, RayTriangle)
     EXPECT_FALSE(intersectRayTriangle({{0.2, 0.2, 5}, {0, 0, 1}}, {0, 0, 0}, {1, 0, 0}, {0, 1, 0}).has_value());
 }
 
+// A ray through the diagonal two triangles of a square share hits one of
+// them from any eye position (rounding once put such rays outside both: a
+// perspective pick at a box face's center went through to the face behind).
+TEST(Math, RayThroughASharedEdgeHitsOneTriangle)
+{
+    const Vec3 a{0, 0, 0}, b{10, 0, 0}, c{10, 0, 10}, d{0, 0, 10}; // a square on y = 0, split along a-c
+    int misses = 0;
+    for (int i = 0; i < 400; ++i) {
+        const double s = 0.05 + 0.9 * (i % 20) / 19.0;                  // along the diagonal
+        const Vec3 onDiagonal = a + (c - a) * s;
+        const Vec3 eye{151.2 - i * 0.731, -111.2 - i * 0.37, 131.16 + i * 0.113}; // in front (y < 0)
+        const Ray ray{eye, (onDiagonal - eye).normalized()};
+        const auto first = intersectRayTriangle(ray, a, b, c);
+        const auto second = intersectRayTriangle(ray, a, c, d);
+        if (!first && !second)
+            ++misses;
+        for (const auto& hit : {first, second}) {
+            if (hit) {
+                EXPECT_NEAR((ray.at(*hit) - onDiagonal).length(), 0.0, 1e-9);
+            }
+        }
+    }
+    EXPECT_EQ(misses, 0);
+}
+
 TEST(Math, ClosestLineParameterToRay)
 {
     // Line along +Z through origin; ray along +X at height 7 crosses it.

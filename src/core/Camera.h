@@ -10,12 +10,19 @@ namespace os {
 
 enum class StandardView { Front, Back, Left, Right, Top, Bottom, Isometric };
 
-// Z-up turntable camera. Pure math: shared by picking, interaction and the
-// renderer. Screen coordinates are logical (device-independent) pixels with
-// the origin at the top-left and y pointing down.
+// Z-up turntable camera, perspective by default (depth cues: a box cannot
+// flip in the viewer's mind), orthographic optional. Pure math: shared by
+// picking, interaction and the renderer. Screen coordinates are logical
+// (device-independent) pixels with the origin at the top-left and y pointing
+// down.
 class Camera {
 public:
     enum class Projection { Orthographic, Perspective };
+
+    // The closest the eye comes to the target in perspective (mm): five
+    // times the near plane's floor, so the surface a zoom heads for is never
+    // clipped by the near plane.
+    static constexpr double kMinDistance = 0.05;
 
     Vec3 target{0, 0, 0};
     double yaw = -kPi / 4;          // radians, around +Z; 0 = looking from +X
@@ -23,7 +30,7 @@ public:
     double orthoHeight = 80.0;      // mm visible vertically (orthographic)
     double distance = 150.0;        // eye-target distance (perspective)
     double fovY = 0.61;             // radians (~35 degrees)
-    Projection projection = Projection::Orthographic;
+    Projection projection = Projection::Perspective;
 
     Vec2 viewportSize{800, 600};    // logical pixels
     // Bounding sphere of everything that must not be clipped.
@@ -58,10 +65,16 @@ public:
     // ---- Navigation ----
     void orbit(double dxPixels, double dyPixels, const Vec3& pivot);
     void pan(Vec2 fromScreen, Vec2 toScreen);
-    // factor < 1 zooms in. Keeps the point under `screen` fixed.
+    // factor < 1 zooms in. Keeps the point under `screen` fixed. In
+    // perspective the distance stops at kMinDistance (a zoom in never moves
+    // the eye back when it is already closer).
     void zoomAt(Vec2 screen, double factor);
     void fit(const Vec3& boxMin, const Vec3& boxMax);
     void setStandardView(StandardView view);
+
+    // Switches the projection, keeping the model about the same size on
+    // screen (the perspective distance matches the orthographic height).
+    void setProjection(Projection p);
 
     static Camera interpolate(const Camera& a, const Camera& b, double t);
 

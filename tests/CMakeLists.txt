@@ -16,7 +16,7 @@ function(openshape_add_test name)
     gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
 endfunction()
 
-openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp test_version.cpp)
+openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp test_version.cpp test_lighting.cpp)
 target_link_libraries(test_core PRIVATE openshape_core)
 target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJECT_VERSION}")
 
@@ -35,7 +35,7 @@ target_link_libraries(test_document PRIVATE openshape_commands openshape_io libz
 target_compile_definitions(test_document PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_interaction.cpp test_sketch_interaction.cpp test_history.cpp test_touch.cpp test_touch_wording.cpp test_bodies.cpp test_holes_interaction.cpp test_draft_interaction.cpp test_import_interaction.cpp test_thumbnail.cpp
-    test_text_interaction.cpp test_async_preview.cpp)
+    test_text_interaction.cpp test_async_preview.cpp test_contact_shadow.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
 # test_touch_wording reads the QML hints and the help card; test_bodies a
 # project saved by an older build (tests/data).

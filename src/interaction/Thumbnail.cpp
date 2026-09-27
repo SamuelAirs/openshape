@@ -5,6 +5,7 @@
 #include "interaction/Thumbnail.h"
 
 #include "core/Camera.h"
+#include "core/Lighting.h"
 #include "core/Timer.h"
 
 #include <algorithm>
@@ -23,21 +24,12 @@ struct Rgb {
 constexpr Rgb kBody{0.78f, 0.80f, 0.83f};
 constexpr Rgb kEdge{0.17f, 0.19f, 0.22f};
 
-// Shades a view-space normal like mesh.frag: soft studio light, two-sided.
-Rgb shade(Vec3 n)
+// Shades a world normal seen from `toViewer` with the viewport's studio
+// lighting (core/Lighting.h, which mesh.frag evaluates too). Two-sided.
+Rgb shade(const Vec3& normal, const Vec3& toViewer, const Vec3& keyDirection)
 {
-    if (n.z < 0)
-        n = n * -1.0;
-    const Vec3 keyDir = Vec3{-0.35, 0.55, 0.76}.normalized();
-    const Vec3 fillDir = Vec3{0.6, -0.25, 0.45}.normalized();
-    const double key = std::max(n.dot(keyDir), 0.0);
-    const double fill = std::max(n.dot(fillDir), 0.0);
-    const double rim = std::pow(1.0 - n.z, 3.0);
-    const Vec3 halfVec = (keyDir + Vec3{0, 0, 1}).normalized();
-    const double spec = std::pow(std::max(n.dot(halfVec), 0.0), 48.0);
-    const double light = 0.60 + 0.32 * key + 0.14 * fill;
-    const double extra = 0.08 * spec + 0.04 * rim;
-    auto channel = [&](float c) { return static_cast<float>(std::min(1.0, c * light + extra)); };
+    const StudioLighting::Shade s = StudioLighting{}.shade(normal, toViewer, keyDirection);
+    auto channel = [&](float c) { return static_cast<float>(std::min(1.0, c * s.diffuse + s.specular)); };
     return {channel(kBody.r), channel(kBody.g), channel(kBody.b)};
 }
 
@@ -160,6 +152,7 @@ ThumbnailImage renderThumbnail(const std::vector<std::shared_ptr<const geom::Mes
 
     Canvas canvas(frame.n);
     const Vec3 backward = frame.forward * -1.0;
+    const Vec3 key = StudioLighting{}.keyDirection(camera);
     for (const auto& mesh : meshes) {
         if (!mesh)
             continue;
@@ -168,7 +161,7 @@ ThumbnailImage renderThumbnail(const std::vector<std::shared_ptr<const geom::Mes
         for (std::size_t i = 0; i < mesh->vertexCount(); ++i) {
             projected[i] = frame.project(mesh->vertex(i));
             const Vec3 n{mesh->normals[3 * i], mesh->normals[3 * i + 1], mesh->normals[3 * i + 2]};
-            colors[i] = shade({n.dot(frame.right), n.dot(frame.up), n.dot(backward)});
+            colors[i] = shade(n, backward, key);
         }
         for (std::size_t t = 0; t + 2 < mesh->indices.size(); t += 3) {
             const auto ia = mesh->indices[t], ib = mesh->indices[t + 1], ic = mesh->indices[t + 2];

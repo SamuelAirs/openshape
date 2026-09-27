@@ -46,12 +46,20 @@ struct RenderRing {
     int axis = 2; // 0/1/2 = X/Y/Z colors
 };
 
+// The ground grid on z = 0, drawn per pixel (render/shaders/grid.frag): its
+// lines fade out between half the radius and the radius, so it has no hard
+// border; the X/Y/Z axes fade out further away.
 struct RenderGrid {
     bool visible = true;
-    double minorStep = 1.0;  // mm
-    double majorStep = 10.0; // mm
-    Vec3 center;             // grid is drawn around this point on z = 0
-    int halfLines = 60;      // minor lines on each side of the center
+    double minorStep = 1.0;   // mm
+    double majorStep = 10.0;  // mm
+    Vec3 center;              // on a major line, on z = 0
+    double radius = 60.0;     // mm from the center
+    double axisRadius = 90.0; // mm from the center
+    // Perspective: the grid also fades with distance from the eye, between
+    // these distances (0 = not at all).
+    double eyeFadeStart = 0;
+    double eyeFadeEnd = 0;
 };
 
 // ---- Sketches ----

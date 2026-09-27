@@ -1683,3 +1683,99 @@ TEST(SketchInteraction, AngleDimensionBetweenTwoLines)
     EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6);
     EXPECT_TRUE(h.messages.empty());
 }
+
+// A circle drawn on a box's top plane but beside the box floats in front of
+// the box's far edges: in both projections a click on it selects its
+// profile (in perspective an edge behind it on screen used to win).
+TEST(SketchInteraction, ProfileBesideABoxWinsOverAnEdgeBehindIt)
+{
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Harness h;
+        h.controller.setProjection(projection);
+        ASSERT_TRUE(h.controller.createBox(20).ok());
+        h.controller.skipAnimation();
+        h.controller.fitAll(false);
+        h.click(h.controller.camera().project({0, 0, 20}));
+        ASSERT_TRUE(h.controller.startSketch().ok());
+        h.controller.skipAnimation();
+        h.controller.setSketchTool(SketchTool::Circle);
+        h.click(h.controller.camera().project({17, 0, 20}));
+        h.move(h.controller.camera().project({19, 0, 20}));
+        h.type("6");
+        ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+        h.controller.finishSketch();
+        h.controller.skipAnimation();
+        h.controller.setStandardView(StandardView::Isometric, false);
+        h.controller.fitAll(false);
+        h.click(h.controller.camera().project({17, 0, 20}));
+        ASSERT_NE(h.controller.operation(), nullptr);
+        EXPECT_EQ(h.controller.operation()->title(), "Extrude");
+    }
+}
+
+// A sketch not used yet never hides a body's edge lying in its plane: the far
+// edge of the face it was drawn on (the plane recedes with the face, so a
+// point a few pixels inside that edge is nearer the eye than the edge), or a
+// body's bottom edge beside a sketch on the ground. A click over the sketch
+// within the pick tolerance of such an edge picks the edge, in both
+// projections, with the mouse and with touch.
+TEST(SketchInteraction, EdgesInAnUnusedSketchPlaneStayReachable)
+{
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Harness h;
+        h.controller.setProjection(projection);
+        ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0)..(10,10,20)
+        h.controller.skipAnimation();
+        h.controller.fitAll(false);
+        auto circle = [&h](Vec3 center, Vec3 rim, const std::string& diameter) {
+            h.controller.setSketchTool(SketchTool::Circle);
+            h.click(h.controller.camera().project(center));
+            h.move(h.controller.camera().project(rim));
+            h.type(diameter);
+            ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+            h.controller.finishSketch();
+            h.controller.skipAnimation();
+        };
+        // On the ground in front of the box, reaching under its front edge.
+        h.controller.keyPress(Key::Escape);
+        ASSERT_TRUE(h.controller.selection().empty());
+        ASSERT_TRUE(h.controller.startSketch().ok());
+        h.controller.skipAnimation();
+        ASSERT_NEAR(h.session().sketch().plane().normal().z, 1.0, 1e-9);
+        ASSERT_NEAR(h.session().sketch().plane().origin.z, 0.0, 1e-9);
+        circle({0, -20, 0}, {5, -20, 0}, "24");
+        // On the top face, reaching past all four of its edges.
+        h.click(h.controller.camera().project({0, 0, 20}));
+        ASSERT_TRUE(h.controller.startSketch().ok());
+        h.controller.skipAnimation();
+        circle({0, 0, 20}, {5, 0, 20}, "26");
+        ASSERT_EQ(h.document.sketches().size(), 2u);
+
+        h.controller.setStandardView(StandardView::Isometric, false);
+        h.controller.fitAll(false);
+        const Camera& camera = h.controller.camera();
+        ASSERT_GT(camera.forward().y, 0.0) << "the +Y edge of the top face is its far edge";
+        for (const auto device : {PointerDevice::Mouse, PointerDevice::Touch}) {
+            const auto profile = InputProfile::forDevice(device);
+            for (const double pixels : {2.0, 0.6 * profile.pickTolerance}) {
+                // Inside the top face, off its far edge.
+                const Vec3 farEdge{0, 10, 20};
+                const Vec3 inside{0, 10 - pixels * camera.pixelSize(farEdge), 20};
+                const auto far = h.controller.pickAt(camera.project(inside), profile);
+                ASSERT_EQ(far.kind, sel::PickKind::Edge) << "far edge, " << pixels << " px";
+                EXPECT_NEAR(far.point.y, 10.0, 1e-6);
+                EXPECT_NEAR(far.point.z, 20.0, 1e-6);
+                // On the ground sketch, in front of the bottom front edge.
+                const Vec3 bottomEdge{0, -10, 0};
+                const Vec3 inFront{0, -10 - pixels * camera.pixelSize(bottomEdge), 0};
+                const auto bottom = h.controller.pickAt(camera.project(inFront), profile);
+                ASSERT_EQ(bottom.kind, sel::PickKind::Edge) << "bottom edge, " << pixels << " px";
+                EXPECT_NEAR(bottom.point.y, -10.0, 1e-6);
+                EXPECT_NEAR(bottom.point.z, 0.0, 1e-6);
+            }
+            // Away from the edges the sketches are picked.
+            EXPECT_EQ(h.controller.pickAt(camera.project({0, 0, 20}), profile).kind, sel::PickKind::Profile);
+            EXPECT_EQ(h.controller.pickAt(camera.project({0, -25, 0}), profile).kind, sel::PickKind::Profile);
+        }
+    }
+}

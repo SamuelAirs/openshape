@@ -99,12 +99,17 @@ std::optional<double> intersectRayTriangle(const Ray& ray, const Vec3& a, const 
         return std::nullopt;
     const double invDet = 1.0 / det;
     const Vec3 t = ray.origin - a;
+    // A hair of tolerance: a ray through the edge two triangles share must
+    // hit one of them (rounding could put it outside both, and the pick then
+    // went through the face to one behind it: the center of a box's face lies
+    // on its diagonal).
+    constexpr double kEdge = 1e-9;
     const double u = t.dot(p) * invDet;
-    if (u < 0.0 || u > 1.0)
+    if (u < -kEdge || u > 1.0 + kEdge)
         return std::nullopt;
     const Vec3 q = t.cross(e1);
     const double v = ray.direction.dot(q) * invDet;
-    if (v < 0.0 || u + v > 1.0)
+    if (v < -kEdge || u + v > 1.0 + kEdge)
         return std::nullopt;
     const double dist = e2.dot(q) * invDet;
     if (dist < 0.0)

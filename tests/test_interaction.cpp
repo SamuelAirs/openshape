@@ -658,14 +658,141 @@ TEST(Interaction, DoubleClickSelectsBodyAndDeleteRemovesIt)
     EXPECT_EQ(h.document.bodies().size(), 1u);
 }
 
-TEST(Interaction, WheelZoomsTowardCursor)
+// The ground grid (drawn per pixel, fading out from half its radius): spaced
+// for the zoom at the ground, reaching past the model's footprint, fading
+// with distance from the eye only in perspective, the axes further out.
+TEST(Interaction, GroundGridCoversTheFootprintAndFollowsTheZoom)
+{
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Harness h;
+        h.controller.setProjection(projection);
+        addBox(h, "Long", {0, -10, 0}, {300, 20, 10});
+        h.controller.fitAll(false);
+        // Zoomed in on the far end: the view shows little of the part.
+        for (int i = 0; i < 12; ++i)
+            h.controller.wheel(h.screen({290, 0, 10}), 1);
+        const Camera& camera = h.controller.camera();
+        const RenderGrid grid = h.controller.renderScene().grid;
+        EXPECT_NEAR(grid.majorStep, 10 * grid.minorStep, 1e-12);
+        EXPECT_NEAR(std::remainder(grid.center.x, grid.majorStep), 0.0, 1e-9) << "the center lies on a major line";
+        EXPECT_EQ(grid.center.z, 0.0);
+        double reach = 0;
+        for (const double x : {0.0, 300.0})
+            for (const double y : {-10.0, 10.0})
+                reach = std::max(reach, std::hypot(x - grid.center.x, y - grid.center.y));
+        EXPECT_GE(grid.radius, 2 * reach - 1e-9) << "the whole footprint lies inside the unfaded half";
+        EXPECT_NEAR(grid.axisRadius, 1.5 * grid.radius, 1e-9);
+        const Vec3 below{camera.target.x, camera.target.y, 0};
+        EXPECT_NEAR(grid.minorStep, snapIncrement(camera.pixelSize(below), 14.0), 1e-12) << "spaced for the ground";
+        if (projection == Camera::Projection::Perspective) {
+            EXPECT_GT(grid.eyeFadeStart, 0.0);
+            EXPECT_GT(grid.eyeFadeEnd, grid.eyeFadeStart);
+        } else {
+            EXPECT_EQ(grid.eyeFadeEnd, 0.0) << "no distance fade in orthographic";
+        }
+        // Everything on the ground stays inside the clipping range.
+        EXPECT_GE(h.controller.renderScene().camera.sceneRadius, grid.axisRadius);
+    }
+}
+
+// In perspective, zoomed onto the top of a tall part, the grid is spaced for
+// the ground far below, not for the top.
+TEST(Interaction, GroundGridIsSpacedForTheGroundInPerspective)
 {
     Harness h;
-    ASSERT_TRUE(h.controller.createBox(20).ok());
+    addBox(h, "Tower", {-10, -10, 0}, {20, 20, 200});
+    h.controller.setStandardView(StandardView::Top, false);
     h.controller.fitAll(false);
-    const double before = h.controller.camera().orthoHeight;
-    h.controller.wheel({600, 400}, 2);
-    EXPECT_LT(h.controller.camera().orthoHeight, before);
+    for (int i = 0; i < 10; ++i)
+        h.controller.wheel(h.screen({0, 0, 200}), 1);
+    const Camera& camera = h.controller.camera();
+    ASSERT_NEAR(camera.target.z, 200.0, 1e-6) << "the zoom headed for the top face";
+    const RenderGrid grid = h.controller.renderScene().grid;
+    EXPECT_NEAR(grid.minorStep, snapIncrement(camera.pixelSize({0, 0, 0}), 14.0), 1e-12);
+    EXPECT_GT(grid.minorStep, snapIncrement(camera.pixelSize(camera.target), 14.0));
+}
+
+// The point under the cursor stays there. In perspective the zoom heads for
+// the surface under the cursor (not the target's depth), so the eye closes
+// in on that point by the zoom factor and never passes through it.
+TEST(Interaction, WheelZoomsTowardCursor)
+{
+    for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        Harness h;
+        h.controller.setProjection(projection);
+        ASSERT_TRUE(h.controller.createBox(20).ok());
+        h.controller.fitAll(false);
+        const Vec3 onFace{6, -10, 14}; // the front face, off the view's center and the target's depth
+        const Vec2 cursor = h.screen(onFace);
+        const double heightBefore = h.controller.camera().orthoHeight;
+        const double distanceBefore = (h.controller.camera().eye() - onFace).length();
+        h.controller.wheel(cursor, 2);
+        const Vec2 after = h.screen(onFace);
+        EXPECT_NEAR(after.x, cursor.x, 1e-6);
+        EXPECT_NEAR(after.y, cursor.y, 1e-6);
+        const double factor = 0.85 * 0.85;
+        if (projection == Camera::Projection::Orthographic) {
+            EXPECT_NEAR(h.controller.camera().orthoHeight, heightBefore * factor, 1e-9);
+        } else {
+            EXPECT_NEAR((h.controller.camera().eye() - onFace).length(), distanceBefore * factor, 1e-6);
+            for (int i = 0; i < 120; ++i)
+                h.controller.wheel(cursor, 1);
+            const Camera& camera = h.controller.camera();
+            EXPECT_GT(camera.depthOf(onFace), 0.0) << "never through the face";
+            EXPECT_NEAR((h.screen(onFace) - cursor).length(), 0.0, 1e-6);
+            // As close as it gets, and the face is still inside the clipping
+            // range: in front of the near plane (depth 0 to 1 in clip space).
+            EXPECT_NEAR(camera.distance, Camera::kMinDistance, 1e-9);
+            const double clipDepth = camera.viewProjection().transformPoint(onFace).z;
+            EXPECT_GT(clipDepth, 0.0) << "not cut by the near plane";
+            EXPECT_LT(clipDepth, 1.0);
+            // A further notch in stays put (it does not back away either).
+            const Vec3 eye = camera.eye();
+            h.controller.wheel(cursor, 1);
+            EXPECT_NEAR((h.controller.camera().eye() - eye).length(), 0.0, 1e-9);
+        }
+    }
+}
+
+// Switching the projection while a view animation runs (a standard view,
+// Fit, opening a sketch) sticks: the animation ends in the projection chosen
+// (the choice is remembered for the next start), at the view it was heading
+// for, as if the switch had come after it.
+TEST(Interaction, ProjectionChosenDuringAViewAnimationSticks)
+{
+    for (const auto chosen : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
+        const auto other = chosen == Camera::Projection::Perspective ? Camera::Projection::Orthographic
+                                                                     : Camera::Projection::Perspective;
+        Harness reference;
+        ASSERT_TRUE(reference.controller.createBox(20).ok());
+        reference.controller.setProjection(other);
+        reference.controller.fitAll(false);
+        reference.controller.setStandardView(StandardView::Top, false);
+        reference.controller.setProjection(chosen);
+
+        Harness h;
+        ASSERT_TRUE(h.controller.createBox(20).ok());
+        h.controller.setProjection(other);
+        h.controller.fitAll(false);
+        h.controller.setStandardView(StandardView::Top, true);
+        ASSERT_TRUE(h.controller.isAnimating());
+        h.controller.advanceAnimation();
+        h.controller.setProjection(chosen);
+        EXPECT_EQ(h.controller.camera().projection, chosen);
+        h.controller.skipAnimation();
+        ASSERT_FALSE(h.controller.isAnimating());
+        const Camera& got = h.controller.camera();
+        const Camera& want = reference.controller.camera();
+        EXPECT_EQ(got.projection, chosen) << "the animation's end view keeps the choice";
+        EXPECT_NEAR(got.pitch, want.pitch, 1e-9);
+        EXPECT_NEAR(got.yaw, want.yaw, 1e-9);
+        EXPECT_NEAR((got.target - want.target).length(), 0.0, 1e-9);
+        if (chosen == Camera::Projection::Perspective) {
+            EXPECT_NEAR(got.distance, want.distance, 1e-9 * want.distance);
+        } else {
+            EXPECT_NEAR(got.orthoHeight, want.orthoHeight, 1e-9 * want.orthoHeight);
+        }
+    }
 }
 
 TEST(Interaction, PanWithMiddleButton)
