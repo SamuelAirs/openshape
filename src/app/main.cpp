@@ -834,7 +834,10 @@ int main(int argc, char* argv[])
             // Previews compute on a worker thread: show the scene's before the screenshot.
             (void)controller.interaction().waitForPreview();
             if (faceContrast) {
-                // Every face in its lit colour: no value, selection or hover.
+                // Every face in its lit colour: no value, selection or hover
+                // (not even from a mouse pointer resting over the window).
+                if (auto* viewport = window->findChild<QQuickItem*>(QStringLiteral("viewport")))
+                    viewport->setAcceptHoverEvents(false);
                 controller.interaction().keyPress(os::interact::Key::Escape);
                 controller.interaction().keyPress(os::interact::Key::Escape);
                 controller.interaction().pointerMove(

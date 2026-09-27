@@ -116,7 +116,9 @@ and `viewmenu` (the compact View menu open on `combine`). Without
 view (`iso`, `front`, `back`, `left`, `right`, `top`, `bottom`) or from
 `yaw,pitch` in degrees (yaw -90 is the front view, 0 looks from +X; pitch 90
 from above, negative from below; write `--view=-60,12` when yaw is
-negative), with everything framed. `--projection perspective|orthographic`
+negative), with everything framed; several views separated by `;`
+(`--view "iso;front;30,20"`) save one screenshot each, `<file>-<view>.png`,
+from one run. `--projection perspective|orthographic`
 starts in that projection without remembering it (automated runs start in
 perspective, the default, as their settings file is new). `--face-contrast`
 (with `--screenshot`) first clears the value, selection and hover, then logs
