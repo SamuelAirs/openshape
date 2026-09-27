@@ -21,10 +21,10 @@ OpenShape stores only what it needs to work, on your own device:
 | Settings: preferences, the list of recent projects, the view's projection, on Windows the window's position | the app's private settings (*Library/Preferences*) | the registry, `HKEY_CURRENT_USER\Software\OpenShape\OpenShape` |
 
 - A project file contains your model, its history, a small preview picture
-  of it and the OpenShape version that saved it. STL and 3MF exports
-  contain the shapes and the name "OpenShape"; STEP exports contain the
-  shapes and the standard STEP header (the file's name and the time it was
-  written). None of them contain your name, your device's name or where
+  of it and the OpenShape version that saved it. Exports (STL, 3MF, STEP)
+  contain the shapes and, depending on the format, the names of your bodies
+  and of the program that wrote them; a STEP file also records the date and
+  time it was written. None of them contain your name, your device's name or where
   you are.
 - A recovery copy is deleted when you save, choose **Don't Save**, or
   choose **Discard** after a crash. The log starts over when it reaches

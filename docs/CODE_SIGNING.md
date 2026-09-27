@@ -99,7 +99,8 @@ copies and the log stay on your computer. The only network access is a web
 link you click (the user guide and the license and source links in Help and
 About), which opens in your browser. The bundled libraries do not contact
 the network in OpenShape. (Windows' own error reporting, if a program
-crashes, follows your Windows settings.)
+crashes, follows your Windows settings.) The full privacy policy, for
+Windows and for iPhone and iPad, is [docs/PRIVACY.md](PRIVACY.md).
 
 ## Checking a signed release
 

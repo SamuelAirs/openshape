@@ -109,7 +109,7 @@ projects and their previews; try `--touch --size 402x874`, `874x402` and
 `1180x820` for phones and the iPad) and `enclosure` (a 60 x 40 x 25 mm
 project box built from a box: sizes typed, corners rounded, shelled, a
 cable hole cut, and the hole's diameter being set to 10.4 mm; the
-README's picture). Panels to look at (layout checks at phone
+README's picture); the App Store scenes `store-*` (below). Panels to look at (layout checks at phone
 sizes): `help`, `about`, `preferences`, `savename` (the overlay open),
 `modelpanel` (the compact layout's Model panel open on the `history` scene)
 and `viewmenu` (the compact View menu open on `combine`). Without
@@ -144,6 +144,26 @@ Dynamic Island and the home indicator drawn in: iPhone 16 Pro portrait
 a name only and writes `<dir>/<name>.openshape`, exports go to
 `<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
 demo scene shows that prompt.
+
+**App Store screenshots.** `bash scripts/dev/appstore_screenshots.sh
+[names...]` (docs/APP_STORE.md, section 3) renders the six App Store scenes
+(`store-enclosure`, `store-text`, `store-sketch`, `store-planes`,
+`store-history`, `store-home`; `src/app/StoreScenes.cpp`, built with the
+same tools a user taps) for the iPhone 6.9" (`--size 440x956 --dpr 3
+--safe-area 62,0,34,0`, 1320 x 2868 pixels) and the iPad 13" (`--size
+1376x1032 --dpr 2 --safe-area 24,0,20,0`, 2752 x 2064) into
+`docs/appstore/screenshots/`, then checks them with
+`scripts/dev/check_appstore_screenshots.py` (exact size, no alpha channel,
+not blank); about three minutes. `--dpr <factor>` draws at that device pixel
+ratio whatever the monitor's scaling (it turns off Qt's use of the screen's
+scale). `--store-screenshot` (with `--screenshot` and `--size`) makes the
+window frameless and exactly `--size`, also taller than the desktop (Windows
+keeps framed windows within its height), stops the view reacting to the mouse
+pointer and moves the pointer off the window, keeps the `--safe-area` insets
+free without shading them, hides a message left by building the scene, and
+saves the picture without an alpha channel (App Store Connect refuses those).
+`python scripts/dev/check_appstore_texts.py` checks the listing texts in
+docs/APP_STORE.md against Apple's length limits.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log; those computed on
 the preview worker thread start with `[worker]`, and GUI-thread blocks

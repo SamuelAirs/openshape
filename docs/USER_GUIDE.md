@@ -712,7 +712,7 @@ CAD programs.
   My iPhone / iPad → OpenShape*); **File → Export STL**, **Export 3MF** and
   **Export STEP** write straight into its *Exports* folder, and a message
   names the file. **Open…** picks any project there, and Home lists the
-  projects in that folder too.
+  projects in that folder too (their cards say *OpenShape (Files app)*).
 - A project from a newer OpenShape version is refused with a message rather
   than opened wrongly.
 
@@ -739,8 +739,9 @@ remembered:
   counterbore and countersink seats (0.2 mm to start with; see
   [Holes that fit](#holes-that-fit)).
 
-**File → About OpenShape** shows the version, the license and where the
-source code is.
+**File → About OpenShape** shows the version, the license, where the
+source code is and the [privacy policy](PRIVACY.md) (OpenShape collects no
+data about you). Help and contact routes: [SUPPORT.md](SUPPORT.md).
 
 ### Where things are kept (Windows)
 

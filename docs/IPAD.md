@@ -19,6 +19,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); internal testing only (`testFlightInternalTestingOnly`): the owner's devices |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
+| App Store (paid, after a public TestFlight beta; target 2026-10-23) | 🟡 ready in the repository: [APP_STORE.md](APP_STORE.md) (the owner's checklist: agreements, listing texts, price, public beta, submission, timeline), [PRIVACY.md](PRIVACY.md) (linked in About), [SUPPORT.md](SUPPORT.md), 6 screenshots per device at Apple's required sizes (`docs/appstore/screenshots/`, `scripts/dev/appstore_screenshots.sh`); the owner's steps in App Store Connect are still to do |
 
 What is ready:
 
@@ -79,6 +80,8 @@ Needs the paid Apple Developer Program (the owner has it).
    iOS, name `OpenShape` (names are unique store-wide; if taken, e.g.
    `OpenShape CAD` — the home screen still says OpenShape), language,
    the bundle ID from step 2, SKU `openshape`, Full Access → Create.
+   Before the App Store release, see [APP_STORE.md](APP_STORE.md) section
+   0: a free app called OpenShape3D does the same thing.
 4. **API key:** App Store Connect → Users and Access → Integrations → App
    Store Connect API (Request Access the first time) → Team Keys → **+** →
    name `GitHub`, access **Admin** (Xcode's cloud signing needs it to create
@@ -216,6 +219,18 @@ The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → L
 TestFlight also collects crash reports and screenshot feedback in App Store
 Connect.
 
+## The App Store
+
+The paid release after a public TestFlight beta is prepared in
+[APP_STORE.md](APP_STORE.md): what to do in App Store Connect, in order
+(agreements, tax and bank, the Small Business Program, app information,
+the "Data Not Collected" privacy answers, age rating, listing texts,
+price, the public beta, the submission) with a dated timeline to
+2026-10-23. The privacy policy is [PRIVACY.md](PRIVACY.md) (also linked in
+File → About), the support page [SUPPORT.md](SUPPORT.md). The screenshots
+(iPhone 6.9" 1320 x 2868, iPad 13" 2752 x 2064) are made on Windows from
+the real app by `bash scripts/dev/appstore_screenshots.sh` (BUILDING.md).
+
 ## Licenses
 
 For your own iPhone and iPad there is nothing to do. For the App Store see
@@ -300,12 +315,14 @@ margins (BUILDING.md).
 9. The hint line under the model is one short line: tap it to read all of it.
 10. **?** opens the help card: it talks about taps and two-finger gestures
    (no mouse or keyboard terms); File → Preferences and About fit the
-   screen and scroll.
+   screen and scroll. About's line "Privacy policy: OpenShape collects no
+   data about you" opens the policy in Safari.
 11. File → Save: the first time it asks for a name and saves into OpenShape's
    folder (Files app → On My iPhone → OpenShape); File → Open shows the
    system file picker; Export STL/3MF/STEP writes into Exports there.
    After the next TestFlight update, File → Open Recent still lists those
-   projects and opens them.
+   projects and opens them. On Home, the project's card says *OpenShape
+   (Files app)* under its date (before: a long /var/mobile/… path).
 12. iPhone Duo (once available): fold and unfold with a model open, and use
    the inner display's Split View: the layout changes live, no restart.
 13. The value box never covers what you tapped (your screen recording of

@@ -1267,7 +1267,10 @@ is set by `main.cpp` at launch without a file (never in automated runs; the
 recent project, importing as a project and restoring a recovery copy clear
 it (Esc and Back return to the open document). `homeProjects` lists the
 recent files with name, folder, date and a preview source, and on iPadOS
-also the projects in the app's Documents folder (`io::homeProjects`).
+also the projects in the app's Documents folder (`io::homeProjects`). The
+folder of a project in the app folder reads "OpenShape (Files app)" (or
+"OpenShape → Sub (Files app)" below it), as the Files app shows it, not the
+sandbox path (`io::homeFolderLabel`).
 Previews come from `ui/ThumbnailProvider` (`image://thumbnail/<mtime>/<path>`,
 loaded off the GUI thread with `io::readProjectThumbnail`; the time stamp
 makes a re-saved project show its new preview). The path in the source is
@@ -1372,7 +1375,11 @@ them on a hidden menu separator after the Open Recent sub-menu).
   panel, undone, saved and reopened, then cut in from the palette) and
   `userguide` (the help card's link to
   docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
-  it, so no browser opens), `shading` and `perspective` (the viewport's
+  it, so no browser opens), `privacy` (About's link to docs/PRIVACY.md
+  clicked the same way, in the desktop and the phone layout: the App Store
+  wants the policy inside the app), `homefolder` (a project saved into the
+  app folder shows on Home as in "OpenShape (Files app)", not at its path),
+  `shading` and `perspective` (the viewport's
   look measured on the rendered window, see Rendering; perspective's Fit,
   wheel zoom, orbit pivot, picking, Top view and sketch plane, contact
   shadow). Scenarios start in perspective; a new window's projection is
@@ -1397,6 +1404,17 @@ them on a hidden menu separator after the Open Recent sub-menu).
   Hole tool on the enclosure (previews on the GUI thread and on the worker);
   `scripts/dev/` has a Win32 input driver and a live log watcher (see
   BUILDING.md, "Developer tools").
+- **App Store screenshots:** `src/app/StoreScenes.cpp` builds the App Store
+  scenes (`--demo store-*`) through the interaction core, placing every
+  click from the camera at the window's size, so one scene serves the
+  iPhone and the iPad (a `Builder` frames the parts for a tall phone or a
+  landscape iPad by panning and wheel-zooming). main.cpp's `--dpr` sets
+  Qt's scale factor before `QGuiApplication` exists (screen scaling off) and
+  `--store-screenshot` makes the window frameless at exactly `--size` (a
+  framed Windows window is clamped to the desktop's height, 2142 of 2868
+  pixels here); `QQuickWindow::grabWindow` reads the whole back buffer even
+  where the window is off-screen. `scripts/dev/appstore_screenshots.sh` runs
+  them; docs/APP_STORE.md, section 3.
 
 ## Builds and releases
 

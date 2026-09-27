@@ -91,7 +91,7 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 | Platform | Status |
 |---|---|
 | Windows (64-bit; tested on Windows 11) | Installer and portable zip on the [Releases page](https://github.com/SamuelAirs/openshape/releases) |
-| iPhone and iPad | In testing through TestFlight (one app for both; phone, tablet and Split View layouts) |
+| iPhone and iPad | In testing through TestFlight (one app for both; phone, tablet and Split View layouts); a public beta, then the App Store, are being prepared ([docs/APP_STORE.md](docs/APP_STORE.md)) |
 | macOS | Builds and passes the tests in CI; no download yet |
 | Linux | Not tried yet (see [BUILDING.md](BUILDING.md)) |
 
@@ -157,8 +157,11 @@ card.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the code is organized
 - [ROADMAP.md](ROADMAP.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md):
   where the project stands
-- [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md): code signing policy and
-  privacy
+- [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md): code signing policy
+- [docs/PRIVACY.md](docs/PRIVACY.md): privacy policy (OpenShape collects no
+  data); [docs/SUPPORT.md](docs/SUPPORT.md): getting help
+- [docs/APP_STORE.md](docs/APP_STORE.md): the App Store listing, pricing,
+  public beta and screenshots
 - [docs/](docs/): file format, licensing, technical debt, development log
 
 ## License
