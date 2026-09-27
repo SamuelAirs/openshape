@@ -1110,6 +1110,17 @@ TEST(AsyncPreview, TextToolPreviewsOnTheWorker)
     EXPECT_NEAR((corners[2] - corners[1]).length(), box.size().y, 1e-9);
     EXPECT_NEAR(corners[0].z, 20.0, 1e-9) << "on the top face";
 
+    // The same words again (Enter in the text field sends them once more):
+    // the preview shown stays, nothing is computed again, so Apply need not wait.
+    const std::uint64_t shown = text->previewKey();
+    const std::uint64_t jobs = h.worker().jobsRun();
+    EXPECT_EQ(h.controller.setOperationText("Hi"), "");
+    EXPECT_FALSE(text->previewPending()) << "the same words were previewed again";
+    EXPECT_EQ(text->previewKey(), shown);
+    EXPECT_FALSE(h.worker().busy());
+    EXPECT_EQ(h.worker().jobsRun(), jobs);
+    EXPECT_TRUE(text->canCommit());
+
     // Enter while the next words' preview computes: it waits, and applies them.
     EXPECT_EQ(h.controller.setOperationText("Hi!"), "");
     ASSERT_TRUE(text->previewPending());

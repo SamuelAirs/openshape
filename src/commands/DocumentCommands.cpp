@@ -619,7 +619,7 @@ Status SetTextParameterCommand::execute(doc::Document& document)
     const doc::FeatureState& state = body->state(body->featureIndex(featureId_));
     if (rejectIfFeatureFails_ && (state.status == doc::FeatureStatus::Failed || state.error == ErrorCode::NoEffect)) {
         Status failure = failureFrom(state);
-        (void)feature->setTextParameter(key_, oldValue_);
+        feature->restoreTextParameter(key_, oldValue_);
         document.featureChanged(featureId_);
         return failure;
     }
@@ -632,7 +632,9 @@ void SetTextParameterCommand::undo(doc::Document& document)
     doc::Feature* feature = body ? body->feature(featureId_) : nullptr;
     if (!feature)
         return;
-    (void)feature->setTextParameter(key_, oldValue_);
+    // As it was, even a value the step would refuse now (a text read from a
+    // file that the geometry cannot make): undo always puts it back.
+    feature->restoreTextParameter(key_, oldValue_);
     document.featureChanged(featureId_);
 }
 

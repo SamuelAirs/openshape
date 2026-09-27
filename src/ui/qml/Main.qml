@@ -107,13 +107,20 @@ ApplicationWindow {
             // and Backspace go to its words, never to shortcuts or Delete
             // (which would remove the face). The depth, size and angle are
             // typed in their own field (Tab from the words, or tap it).
-            if (window.app.operationTakesText && !(event.modifiers & Qt.ControlModifier)) {
+            if (window.app.operationTakesText) {
+                const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+                const alt = (event.modifiers & Qt.AltModifier) !== 0
+                // Backspace / Delete with any modifier: with Ctrl (Cmd on a
+                // Mac) or Alt they erase the last word.
                 if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) {
-                    valueChip.eraseText()
+                    valueChip.eraseText(ctrl || alt)
                     event.accepted = true
                     return
                 }
-                if (event.text.length > 0 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
+                // Ctrl+Alt is AltGr on Windows ('@', '€', '{' on German or
+                // French keyboards): a character for the words, not a shortcut.
+                if ((!ctrl || alt) && event.text.length > 0 && event.text.charCodeAt(0) >= 32
+                        && event.text.charCodeAt(0) !== 127) {
                     valueChip.typeText(event.text)
                     event.accepted = true
                     return

@@ -8,9 +8,11 @@
 // typed; back to 0), applied (the volume grows by the letters' area x 1 mm),
 // the words changed in the Model panel, undo, and a project saved and
 // reopened with the text. Then from the palette on the same face: Deboss, a
-// click on the face moves the words, a digit typed in the view goes to the
-// words, Emboss and Deboss again, Bold, applied (the cut removes the bold
-// letters' area x 1 mm). Needs the built-in font (resources/fonts/).
+// click on the face moves the words, keys typed in the view go to the words
+// (the first replaces the remembered ones; digits, an AltGr character;
+// Ctrl+Backspace erases a word, never the face), Emboss and Deboss again,
+// Bold, applied (the cut removes the bold letters' area x 1 mm). Needs the
+// built-in font (resources/fonts/).
 
 #include "app/AcceptanceRunner.h"
 #include "document/Body.h"
@@ -290,19 +292,58 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     tool ? AcceptanceRunner::num(tool->position().x) : QString());
         },
         [&r] {
-            // The view has the keys after the click: a digit goes to the words.
-            r.type(QStringLiteral("2"));
+            // The view has the keys after the click. The remembered words were
+            // not typed in this use: the first key replaces them.
+            r.type(QStringLiteral("V"));
+        },
+        [&r] {
+            r.check(r.app().operationText() == QStringLiteral("V"),
+                    "text: the first key typed in the view replaces the remembered words", r.app().operationText());
+            auto* field = r.findItem(QStringLiteral("textToolField"));
+            r.check(field && field->hasActiveFocus(), "text: the text field has the keys now");
+            // Digits too, and the next keys add to the words.
+            r.type(QStringLiteral("2 X"));
         },
         [&r] {
             const auto* tool = textTool(r);
-            r.check(r.app().operationText() == QStringLiteral("OK2"), "text: a digit typed in the view goes to the words",
-                    r.app().operationText());
-            r.check(tool && std::abs(tool->depth() + 1) < 1e-9, "text: not to the depth",
+            r.check(r.app().operationText() == QStringLiteral("V2 X"), "text: later keys add to the words", r.app().operationText());
+            r.check(tool && std::abs(tool->depth() + 1) < 1e-9, "text: a digit goes to the words, not to the depth",
                     tool ? AcceptanceRunner::num(tool->depth()) : QString());
+            // Back to the view (a click on the face, where the words are).
+            r.click(r.screenPoint(0, -6.5, 5));
+        },
+        [&r] {
+            // Ctrl+Backspace in the view: the last word, never the face (its
+            // Delete would remove the face under the words).
+            r.key(Qt::Key_Backspace, Qt::ControlModifier);
+        },
+        [&r] {
+            r.check(r.app().operationText() == QStringLiteral("V2 "), "text: Ctrl+Backspace in the view erases the last word",
+                    r.app().operationText());
+            r.check(textTool(r) != nullptr && r.body(0).features().size() == 3, "text: and never the face (the tool stays)",
+                    r.app().operationTitle());
             r.key(Qt::Key_Backspace);
         },
         [&r] {
-            r.check(r.app().operationText() == QStringLiteral("OK"), "text: Backspace takes it back", r.app().operationText());
+            r.check(r.app().operationText() == QStringLiteral("V2"), "text: Backspace erases a character", r.app().operationText());
+            r.click(r.screenPoint(0, -6.5, 5));
+        },
+        [&r] {
+            // AltGr (Ctrl+Alt on Windows) types '@', the euro sign or '{' on many keyboards.
+            r.key(Qt::Key_At, Qt::ControlModifier | Qt::AltModifier, QStringLiteral("@"));
+        },
+        [&r] {
+            r.check(r.app().operationText() == QStringLiteral("V2@"), "text: an AltGr character typed in the view goes to the words",
+                    r.app().operationText());
+            r.key(Qt::Key_Backspace);
+        },
+        [&r] {
+            const auto* tool = textTool(r);
+            r.check(r.app().operationText() == QStringLiteral("V2"), "text: the words to cut", r.app().operationText());
+            r.check(tool && std::abs(tool->position().x) < 1e-6 && std::abs(tool->position().y + 6.5) < 0.3,
+                    "text: the clicks kept them where they were placed",
+                    tool ? AcceptanceRunner::num(tool->position().x) + QStringLiteral(", ") + AcceptanceRunner::num(tool->position().y)
+                         : QString());
             r.check(r.clickItem(QStringLiteral("action_emboss")), "text: Emboss");
         },
         [&r] {
@@ -327,7 +368,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         [&r, s] {
             const double before = r.bodyVolume();
             r.key(Qt::Key_Return);
-            const double regular = letterArea("OK", 6), bold = letterArea("OK", 6, true);
+            const double regular = letterArea("V2", 6), bold = letterArea("V2", 6, true);
             r.check(bold > regular * 1.1, "text: bold letters are heavier",
                     AcceptanceRunner::num(bold) + QStringLiteral(" vs ") + AcceptanceRunner::num(regular));
             r.check(std::abs((before - r.bodyVolume()) - bold * 1.0) < 1e-4 * bold,

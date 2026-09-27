@@ -644,6 +644,11 @@ bool InteractionController::keyPress(Key key)
         return false;
     case Key::Delete:
     case Key::Backspace:
+        // The Text tool's face is selected, but Delete / Backspace there are
+        // for the words (the view sends them to its text field): never
+        // remove the face under the text being written.
+        if (dynamic_cast<const TextOperation*>(operation_.get()))
+            return true;
         if (selection_.allOfKind(sel::SelectionKind::Body)) {
             (void)deleteSelectedBodies();
             return true;
@@ -1040,6 +1045,12 @@ std::string InteractionController::operationText() const
 {
     const auto* text = dynamic_cast<const TextOperation*>(operation_.get());
     return text ? text->text() : std::string();
+}
+
+bool InteractionController::operationTextTyped() const
+{
+    const auto* text = dynamic_cast<const TextOperation*>(operation_.get());
+    return text && text->wordsTyped();
 }
 
 std::string InteractionController::setOperationText(const std::string& value)

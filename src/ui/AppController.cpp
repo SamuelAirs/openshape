@@ -271,6 +271,11 @@ QString AppController::operationText() const
     return q(interaction_->operationText());
 }
 
+bool AppController::operationTextTyped() const
+{
+    return interaction_->operationTextTyped();
+}
+
 QPointF AppController::valueLabelPosition() const
 {
     const auto p = interaction_->valueLabelPosition();

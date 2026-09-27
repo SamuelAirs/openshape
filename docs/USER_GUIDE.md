@@ -526,8 +526,10 @@ datasheet.
    where the words, size, depth and angle can be changed later; the text
    follows its face when earlier steps move it. The next time, **Text**
    starts with the same words and settings: `Enter` applies them again,
-   typing replaces the words, and a click elsewhere without changing
-   anything just leaves the tool.
+   typing replaces the words (also after clicking where they go), and a
+   click elsewhere without changing anything just leaves the tool.
+   `Backspace` erases a letter, `Ctrl`+`Backspace` a word; while the tool is
+   open they never delete the face.
 
 As a starting point for printing, try capitals of 5 mm or more and a depth
 of 0.6–1 mm.

@@ -295,3 +295,55 @@ TEST(Text, AnglesAreKeptAsDirections)
         EXPECT_NEAR(*body.feature(id)->parameter("angle"), kPi / 2 + kPi, 1e-9) << stored;
     }
 }
+
+// Undo puts back the words a step had, even ones it could not make (a file
+// holding more characters than the geometry takes): the document and the
+// undo history never disagree. A refused edit (the step still fails) puts
+// them back likewise.
+TEST(Text, UndoPutsBackWordsTheStepCouldNotMake)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextPlate plate;
+    auto f = plate.text("AB", 1.0);
+    const Uuid id = f->id();
+    ASSERT_TRUE(plate.stack.push(std::make_unique<cmd::AddFeatureCommand>(plate.body, std::move(f)), plate.document).ok());
+    const double v0 = 60 * 30 * 5;
+    const std::string tooLong(300, 'A'); // the geometry takes at most 200 characters
+    auto json = io::documentToJson(plate.document);
+    for (auto& feature : json["bodies"][0]["features"])
+        if (feature["type"] == "Text")
+            feature["params"]["text"] = tooLong;
+    auto opened = io::documentFromJson(json);
+    ASSERT_TRUE(opened.ok()) << opened.developerMessage();
+    doc::Document& document = *opened.value();
+    ASSERT_TRUE(document.body(plate.body)->hasFailures()) << "the step cannot make 300 characters";
+    doc::Feature& step = *document.body(plate.body)->feature(id);
+
+    cmd::UndoStack stack;
+    ASSERT_TRUE(stack.push(std::make_unique<cmd::SetTextParameterCommand>(id, "text", "HI", false), document).ok());
+    EXPECT_EQ(*step.textParameter("text"), "HI");
+    EXPECT_FALSE(document.body(plate.body)->hasFailures());
+    EXPECT_NEAR(geom::volume(document.body(plate.body)->shape()) - v0, letterArea("HI", 8), 1e-5 * letterArea("HI", 8));
+    ASSERT_TRUE(stack.undo(document));
+    EXPECT_EQ(*step.textParameter("text"), tooLong) << "undo puts back the words the step had";
+    EXPECT_TRUE(document.body(plate.body)->hasFailures());
+    ASSERT_TRUE(stack.redo(document));
+    EXPECT_EQ(*step.textParameter("text"), "HI");
+    ASSERT_TRUE(stack.undo(document));
+    EXPECT_EQ(*step.textParameter("text"), tooLong);
+
+    // Its center off the face as well: new words alone cannot mend the step,
+    // so the edit is refused and the words it had are put back.
+    for (auto& feature : json["bodies"][0]["features"])
+        if (feature["type"] == "Text")
+            feature["params"]["position"] = nlohmann::json::array({90.0, 15.0});
+    auto off = io::documentFromJson(json);
+    ASSERT_TRUE(off.ok()) << off.developerMessage();
+    doc::Document& offDocument = *off.value();
+    cmd::UndoStack offStack;
+    const Status refused = offStack.push(std::make_unique<cmd::SetTextParameterCommand>(id, "text", "HI"), offDocument);
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.userMessage(), "The text no longer lies on its face.");
+    EXPECT_EQ(*offDocument.body(plate.body)->feature(id)->textParameter("text"), tooLong);
+    EXPECT_FALSE(offStack.canUndo());
+}

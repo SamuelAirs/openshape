@@ -80,15 +80,39 @@ Item {
         field.selectAll()
     }
     // Keys typed while the view has the focus (after a click on the face).
+    // Remembered words nobody typed or erased in this use of the tool are
+    // replaced, as when they are selected in the field (the tool opens so):
+    // the order does not matter, place then type or type then place.
     function typeText(characters) {
+        const replace = !app.operationTextTyped
         focusText()
-        textField.insert(textField.cursorPosition, characters)
+        if (replace)
+            textField.text = characters
+        else
+            textField.insert(textField.cursorPosition, characters)
+        textField.cursorPosition = textField.text.length
         errorText.text = chip.app.setOperationText(textField.text)
     }
-    function eraseText() {
+    // Backspace or Delete in the view: the last character (or, with
+    // `wholeWord`, the last word) of the words shown.
+    function eraseText(wholeWord) {
         focusText()
-        if (textField.cursorPosition > 0)
-            textField.remove(textField.cursorPosition - 1, textField.cursorPosition)
+        const t = textField.text
+        const end = textField.cursorPosition
+        let start = end
+        if (wholeWord) {
+            while (start > 0 && t[start - 1] === " ")
+                --start
+            while (start > 0 && t[start - 1] !== " ")
+                --start
+        } else if (start > 0) {
+            --start
+            // One character, also when it takes two UTF-16 units.
+            if (start > 0 && t.charCodeAt(start) >= 0xDC00 && t.charCodeAt(start) <= 0xDFFF)
+                --start
+        }
+        if (start < end)
+            textField.remove(start, end)
         errorText.text = chip.app.setOperationText(textField.text)
     }
 

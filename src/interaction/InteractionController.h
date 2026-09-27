@@ -140,6 +140,9 @@ public:
     bool operationTakesText() const;
     std::string operationText() const;
     std::string setOperationText(const std::string& text);
+    // Whether the words were typed or erased in this use of the Text tool
+    // (until then a key typed replaces the remembered ones).
+    bool operationTextTyped() const;
     // Screen position of the manipulator tip; the value editor sits beside it.
     std::optional<Vec2> valueLabelPosition() const;
 

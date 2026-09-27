@@ -658,14 +658,24 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   at once): it takes the keys when the tool opens, remembered words
   selected so typing replaces them (on a tablet the keyboard comes up);
   while the tool is open, every printable key typed in the view goes to it,
-  digits and - . + too ("3D", "V2"), and Backspace/Delete erase in it (B /
-  K / F and Delete face are off). The Depth, Size and Angle buttons put the
-  keys in the value field (so does Tab from the words). The chip sits
+  digits and - . + too ("3D", "V2"), AltGr (Ctrl+Alt) characters too, and
+  Backspace/Delete erase in it, with Ctrl or Alt a word (B / K / F are off;
+  `keyPress` never deletes the face while the tool is open). Until the
+  words were typed in this use (`TextOperation::wordsTyped()`, QML
+  `operationTextTyped`) the first key typed in the view replaces them, also
+  after a click placed them. The same words sent again (Enter in the field)
+  keep the preview shown or computing. The Depth, Size and Angle buttons put the
+  keys in the value field (so does Tab from the words). A value refused in
+  its field (an angle beyond +-360 degrees, a size out of range) stays there
+  with its message: switching fields, options and `settings()` keep the
+  last accepted one (`storeValue`). The chip sits
   beside the letters, not over them (`textCorners()`). Enter with nothing
   typed says "Type the text first." A typed angle beyond +-360 degrees is
   refused; the step stores the direction in [0, 2 pi)
   (`TextFeature::normalizedAngle`, which also reads a file's angle of many
-  turns instead of refusing it). One Text step; the settings (words, size,
+  turns instead of refusing it). Undo of a words edit puts the old words
+  back unchecked (`Feature::restoreTextParameter`: a file may hold words the
+  geometry cannot make). One Text step; the settings (words, size,
   depth, angle, bold) are remembered for the next face (`TextSettings`).
   The remembered words preview when the tool opens, but a click elsewhere
   (or picking a body in the Model panel, Duplicate, Split, Import) applies

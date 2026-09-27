@@ -110,7 +110,11 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     - Text: click a flat face, "Text", type a word (the letters appear in
       the middle), click elsewhere on the face to move it, drag the arrow
       up (raised) or down (cut in), click Size and type `5`, 90°, Deboss;
-      type a digit after clicking the face (it goes to the words); Enter. In
+      type a digit after clicking the face (it goes to the words); Enter.
+      Text again on another face: click where the words go, then type (the
+      remembered words are replaced, not added to); Ctrl+Backspace erases a
+      word, never the face; on a German or French keyboard AltGr+Q or
+      AltGr+0 types @. In
       the Model panel, click the Text step and change the words. Print a
       label: are 5 mm capitals 0.6-1 mm deep readable?
 15. **The documentation.** Follow the Quick start in README.md step by step

@@ -1500,7 +1500,10 @@ void TextOperation::setActiveHandle(int index)
 
 TextSettings TextOperation::settings() const
 {
-    return {text_, size(), depth(), angleDegrees(), bold_};
+    // A value refused in the active field is not kept: the last accepted one is.
+    const bool accepted = checkValue(value()).empty();
+    auto kept = [&](Field field) { return field == field_ && accepted ? value() : fieldValue(field); };
+    return {text_, kept(Field::Size), kept(Field::Depth), kept(Field::Angle), bold_};
 }
 
 double TextOperation::fieldValue(Field field) const
@@ -1515,6 +1518,10 @@ double TextOperation::fieldValue(Field field) const
 
 void TextOperation::storeValue()
 {
+    // A refused value (an angle beyond 360 degrees, a size of 2000 mm) stays
+    // in its field with its message; the step keeps the last accepted one.
+    if (!checkValue(value()).empty())
+        return;
     switch (field_) {
     case Field::Depth: depth_ = value(); break;
     case Field::Size: size_ = value(); break;
@@ -1535,8 +1542,13 @@ std::string TextOperation::checkValue(double value) const
 
 void TextOperation::setText(const std::string& text, const doc::Document& document)
 {
-    text_ = text;
     edited_ = true;
+    wordsTyped_ = true; // even the same words: typed on purpose (the next key adds to them)
+    // The same words again (Enter in the text field sends them once more):
+    // the preview shown or computing, or its verdict, stays.
+    if (text == text_ && (previewPending() || hasPreview() || !error().empty()))
+        return;
+    text_ = text;
     setValue(value(), document);
 }
 

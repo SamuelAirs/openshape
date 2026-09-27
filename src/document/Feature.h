@@ -109,6 +109,10 @@ public:
     virtual std::vector<TextParameterInfo> textParameters() const { return {}; }
     virtual Status setTextParameter(std::string_view key, const std::string& value);
     std::optional<std::string> textParameter(std::string_view key) const;
+    // Puts back a value the step held before (undo, a refused edit): never
+    // checked again, since it may be one setTextParameter would refuse (read
+    // from a file: a text too long for the geometry, a font this build lacks).
+    virtual void restoreTextParameter(std::string_view key, const std::string& value) { (void)setTextParameter(key, value); }
 
     virtual void writeParams(nlohmann::json& out) const = 0;
     virtual Status readParams(const nlohmann::json& in) = 0;
@@ -618,6 +622,7 @@ public:
     Status setParameter(std::string_view key, double value) override;
     std::vector<TextParameterInfo> textParameters() const override;
     Status setTextParameter(std::string_view key, const std::string& value) override;
+    void restoreTextParameter(std::string_view key, const std::string& value) override;
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
 };

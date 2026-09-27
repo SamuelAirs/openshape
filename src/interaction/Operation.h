@@ -921,7 +921,8 @@ public:
     double angleDegrees() const { return field_ == Field::Angle ? value() : angleDegrees_; }
     const std::string& text() const { return text_; }
     bool bold() const { return bold_; }
-    // The settings to remember (with the fields' current values).
+    // The settings to remember (with the fields' current values; for a value
+    // refused in the active field, its last accepted one).
     TextSettings settings() const;
     // Whether the user did anything in this use of the tool (typed, placed,
     // changed a value or option). A stray click elsewhere applies only then:
@@ -929,6 +930,10 @@ public:
     // was meant to leave the tool.
     bool edited() const;
     void markEdited() { edited_ = true; }
+    // Whether the words were typed (or erased, or confirmed) in this use of
+    // the tool. Until then they are the remembered ones, which the first key
+    // typed replaces (they start selected), also after a click placed them.
+    bool wordsTyped() const { return wordsTyped_; }
 
     void setText(const std::string& text, const doc::Document& document);
     void setField(Field field, const doc::Document& document);
@@ -965,7 +970,8 @@ private:
     TextOperation(Uuid bodyId, doc::FaceRef face, doc::HoleFrame frame)
         : Operation(bodyId, LinearManipulator(frame.origin, frame.normal)), face_(std::move(face)), frame_(frame) {}
     TextOperation(const TextOperation&) = default;
-    // The active field's value written to where it belongs.
+    // The active field's value written to where it belongs (only an
+    // accepted one: a refused value is never carried into later previews).
     void storeValue();
     double fieldValue(Field field) const;
     // Whether the text's center `p` lies on the face: exactly (the kernel;
@@ -987,6 +993,7 @@ private:
     double depth_ = 1, size_ = 10, angleDegrees_ = 0; // the fields that are not active
     bool bold_ = false;
     bool edited_ = false;
+    bool wordsTyped_ = false;
     TextSettings initial_; // as the tool opened (edited() compares)
     std::optional<Vec2> hover_;
     // The letters' extent for textCorners (in the text's own frame), made

@@ -421,3 +421,88 @@ TEST(TextInteraction, TextNeedsAFlatFace)
     EXPECT_FALSE(h.controller.operationTakesText());
     EXPECT_EQ(h.controller.setOperationText("Hi"), "Select a flat face, then Text.");
 }
+
+// A value refused in its field (an angle beyond 360 degrees, a size of
+// 2000 mm) stays there with its message; moving on to another field never
+// carries it into the next previews, the step or the remembered settings:
+// the last accepted value is used.
+TEST(TextInteraction, ARefusedValueIsNotCarriedIntoTheStep)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextHarness h;
+    h.plateWithTopSelected();
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_EQ(h.controller.setOperationText("R"), "");
+    ASSERT_TRUE(h.controller.triggerAction("angle:90").ok());
+    ASSERT_TRUE(h.controller.triggerAction("field:angle").ok());
+    EXPECT_EQ(h.controller.setValueText("500"), "The angle must be between -360\xC2\xB0 and 360\xC2\xB0.");
+    EXPECT_DOUBLE_EQ(h.tool()->settings().angleDegrees, 90.0) << "the last accepted angle is remembered";
+    ASSERT_TRUE(h.controller.triggerAction("field:depth").ok());
+    EXPECT_DOUBLE_EQ(h.tool()->angleDegrees(), 90.0) << "500 was refused: the angle stays 90";
+    EXPECT_TRUE(h.tool()->hasPreview()) << h.tool()->error();
+    EXPECT_TRUE(h.tool()->error().empty()) << h.tool()->error();
+    ASSERT_TRUE(h.controller.triggerAction("field:angle").ok());
+    EXPECT_DOUBLE_EQ(h.tool()->value(), 90.0) << "the field shows the accepted angle again";
+
+    // A refused size is not carried into the depth's previews either.
+    ASSERT_TRUE(h.controller.triggerAction("field:size").ok());
+    EXPECT_EQ(h.controller.setValueText("2000"), "The size (the height of capital letters) must be between 0.5 and 1000 mm.");
+    ASSERT_TRUE(h.controller.triggerAction("deboss").ok()); // an option clicked meanwhile
+    ASSERT_TRUE(h.controller.triggerAction("field:depth").ok());
+    EXPECT_DOUBLE_EQ(h.tool()->size(), 10.0);
+    EXPECT_TRUE(h.tool()->error().empty()) << h.tool()->error();
+    EXPECT_EQ(h.controller.setValueText("-0.5"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto* step = dynamic_cast<const doc::TextFeature*>(h.document.body(h.body)->features().back().get());
+    ASSERT_NE(step, nullptr);
+    EXPECT_NEAR(step->angle, kPi / 2, 1e-12);
+    EXPECT_DOUBLE_EQ(step->size, 10.0);
+    EXPECT_DOUBLE_EQ(step->depth, -0.5);
+    const double area = letterArea("R", 10);
+    EXPECT_NEAR(9000 - h.volume(), area * 0.5, 1e-5 * area);
+}
+
+// While the Text tool is open its face is selected, but Delete and
+// Backspace never remove it (in the view they erase the words).
+TEST(TextInteraction, DeleteNeverRemovesTheFaceUnderTheText)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextHarness h;
+    h.plateWithTopSelected();
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_EQ(h.controller.setOperationText("OK"), "");
+    EXPECT_TRUE(h.controller.keyPress(Key::Delete));
+    EXPECT_TRUE(h.controller.keyPress(Key::Backspace));
+    ASSERT_NE(h.tool(), nullptr) << "the tool stays open";
+    EXPECT_EQ(h.tool()->text(), "OK");
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 1u) << "no Delete Faces step";
+    EXPECT_NEAR(h.volume(), 9000, 1e-9);
+    EXPECT_TRUE(h.tool()->canCommit()) << "the words' preview stays";
+}
+
+// Remembered words count as typed only once a key changed them in this use
+// of the tool (the view then adds keys to them; until then the first key
+// replaces them): placing the words, or an option, does not.
+TEST(TextInteraction, RememberedWordsAreTypedOverUntilAKeyChangesThem)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextHarness h;
+    h.plateWithTopSelected();
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    EXPECT_FALSE(h.controller.operationTextTyped());
+    ASSERT_EQ(h.controller.setOperationText("OK"), "");
+    EXPECT_TRUE(h.controller.operationTextTyped());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+
+    h.clickAt(h.screen({52, 5, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_NE(h.tool(), nullptr);
+    EXPECT_EQ(h.controller.operationText(), "OK");
+    EXPECT_FALSE(h.controller.operationTextTyped()) << "remembered, not typed";
+    h.clickAt(h.screen({45, 22, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("deboss").ok());
+    EXPECT_TRUE(h.tool()->edited());
+    EXPECT_FALSE(h.controller.operationTextTyped()) << "placed and cut in, but the words are still the remembered ones";
+    ASSERT_EQ(h.controller.setOperationText("V"), "");
+    EXPECT_TRUE(h.controller.operationTextTyped());
+}

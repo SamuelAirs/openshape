@@ -1917,6 +1917,12 @@ Status TextFeature::setTextParameter(std::string_view key, const std::string& va
     return okStatus();
 }
 
+void TextFeature::restoreTextParameter(std::string_view key, const std::string& value)
+{
+    if (key == "text")
+        text = value;
+}
+
 void TextFeature::writeParams(json& out) const
 {
     out["face"] = faceRefToJson(face);

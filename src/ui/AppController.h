@@ -57,6 +57,9 @@ class AppController : public QObject {
     // The Text tool: the chip shows a text field for the words (setOperationText).
     Q_PROPERTY(bool operationTakesText READ operationTakesText NOTIFY stateChanged)
     Q_PROPERTY(QString operationText READ operationText NOTIFY stateChanged)
+    // The words were typed or erased in this use of the tool (until then the
+    // first key typed in the view replaces the remembered ones).
+    Q_PROPERTY(bool operationTextTyped READ operationTextTyped NOTIFY stateChanged)
     Q_PROPERTY(QPointF valueLabelPosition READ valueLabelPosition NOTIFY viewChanged)
     Q_PROPERTY(bool valueLabelVisible READ valueLabelVisible NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
@@ -135,6 +138,7 @@ public:
     QString operationPrompt() const;
     bool operationTakesText() const;
     QString operationText() const;
+    bool operationTextTyped() const;
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariantList axisTriad() const;
