@@ -1,27 +1,130 @@
 # Project status
 
-_Last updated: 2026-09-26 morning, after the first overnight session (lead
-engineer + parallel agents). New here? Read "Handoff" first; the morning
-report is at its top._
+_Last updated: 2026-09-27, after the owner's iPhone/iPad feedback was
+answered (lead engineer + parallel agents). New here? Read "Handoff" first;
+the latest report is at its top._
 
 ## Current milestone
 
 **Milestones 0, 1 and 2 complete; Milestone 4 core (editable history) done;
-Milestones 3 and 5 partial; the Windows build is distributable.** The
-overnight session (2026-09-25 → 26) added a GPL-free release build with an
-installer, a portable zip and a release workflow; recovery copies with a
-restore prompt and kernel-crash containment; stress tests and a project-file
-fuzzer; the third part of the sketch toolkit; body tools (duplicate, split
-into bodies, mirror/pattern as separate bodies, rotate about an edge or
-point); counterbores, countersinks, a Hole tool and extrude with draft.
-Still open from the owner's list for the night: text emboss, STEP import in
-the UI, thumbnails and a start screen, previews off the GUI thread, the
-universal iPhone/iPad layout, first-run guidance and a user guide, and the
-first tagged release.
+Milestones 3 and 5 mostly done; v0.1.0 published; the universal iPhone/iPad
+app runs on the owner's devices through TestFlight.** Since v0.1.0
+(2026-09-26): previews on a worker thread, independent copies, construction
+axes and planes with Align onto the origin, a clearer look (perspective,
+world-anchored light, fading grid, contact shadows), a value box that keeps
+clear of what was tapped, a 3D-printing hole allowance and text. Everything
+from the owner's first iPhone/iPad test pass is answered; the next step is
+their second test pass (docs/MANUAL_TESTS.md 14-17, docs/IPAD.md) and, if
+they agree, v0.2.0.
 
 ## Handoff: where we left off
 
-### Morning report (2026-09-26) — the overnight session
+### Session report (2026-09-27) — the owner's iPhone/iPad feedback
+
+**In one paragraph:** everything you reported after trying the app on your
+iPhone and iPad is fixed and merged: the value box no longer covers what
+you tapped, mirrored and patterned copies are independent, the view is
+easier to read at every angle (perspective, a light fixed to the world, a
+grid that fades out, soft shadows), and you can align to the X/Y/Z axes and
+origin planes and create your own construction axes and planes. The print
+helpers you approved are in too: a +0.2 mm hole allowance and raised or cut
+text in Noto Sans. Before these, the same session added STEP import, a Home
+screen with project previews, the universal iPhone + iPad app, previews on a
+worker thread, the README and user guide, and published v0.1.0. Each feature
+was built in its own worktree, reviewed twice, fixed, then merged, built with
+warnings as errors and tested by the lead (all headless tests and the full
+real-UI run) before each push.
+
+**What changed (and how it was verified):**
+
+- **The value box keeps clear** (your report: it covered what you tapped).
+  It avoids one rectangle: the selection, where the tool has taken it (a
+  pushed face, a moved body), the arrows and rings, and where you tapped.
+  On phones it docks below the top bar or above the hint line, on the side
+  away from the selection, and moves to the top while the on-screen keyboard
+  is up; on iPad and desktop it sits beside the arrow or just past the
+  selection. Sketch sizes shown while drawing move out from under the
+  finger. Verified: 23 placement tests and a `chipplacement` scenario that
+  checks the box against the selection at phone, iPad and desktop sizes and
+  taps its buttons in the phone layouts. Not checkable on Windows: the real
+  on-screen keyboard (docs/IPAD.md).
+- **Independent copies** (your report: mirrored copies stayed linked).
+  Mirror/Pattern copies made as separate bodies and split pieces are now
+  independent bodies: editing the source changes none of them (and the
+  other way round). Projects saved by 0.1.0 keep their linked copies, so
+  they still open as they were.
+- **A clearer look** (your report: "confusing and not realistic at
+  different angles", "the grid cuts off abruptly"). Perspective by default
+  (the button switches; your choice is remembered), a light whose height is
+  fixed to the world (tops lightest, undersides darkest) and which turns
+  with you around the vertical, so two sides seen at once never share a
+  shade; the grid fades out softly, also towards the horizon; a soft
+  shadow where a body stands on the ground. Measured over 7 views of 4
+  parts: the smallest difference in shade between two faces meeting at an
+  edge went from 1 to 20 (of 255), the median from 30 to 47, nothing washed
+  out (`shading` and `perspective` scenarios).
+- **Axes** (your question: "can you align to an axis? And can you create
+  axis?"). Align onto the X, Y or Z axis, the XY, XZ or YZ plane or the
+  origin (buttons, or click the drawn axis line). **Construct → Axis**
+  (through a hole or shaft, along an edge, through two points, parallel to
+  X/Y/Z) and **Construct → Plane** (offset from a face or origin plane, at
+  an angle through an edge, midway between two faces): Rotate about them,
+  Pattern around or along them, Mirror across them, Align onto them, Sketch
+  on them. They follow the faces they were made from, have their own rows
+  in the Model panel, and are saved. Verified with exact geometry tests and
+  the `construct` and `alignorigin` scenarios (every mode and consumer
+  clicked).
+- **Print helpers** (your decisions). A hole allowance for 3D printing
+  (Preferences; 0.2 mm to start with) widens clearance holes and
+  counterbore/countersink seats; tap drills and heat-set insert holes stay
+  as they are. **Text**: select a flat face, Text, type; size, depth
+  (raised or cut in), angle, bold; editable later in the Model panel.
+  Noto Sans (SIL OFL) is bundled, its hashes in THIRD_PARTY.md.
+- **Earlier in the same session:** STEP import (Ctrl+I; the exact geometry
+  is stored in the project), 256 px project previews and a Home screen, the
+  universal iPhone + iPad app (compact layout below 600x500 that adapts live,
+  safe areas, touch-worded hints), previews computed on a worker thread
+  (TD-1; a kernel lock keeps OpenCASCADE single-threaded), README with
+  screenshots and docs/USER_GUIDE.md, SignPath signing steps ready in
+  `release.yml` (docs/CODE_SIGNING.md), **v0.1.0 published** as a
+  pre-release.
+- **CI:** a macOS-only test failure on main (a test kept a pointer into a
+  temporary list; libc++ reuses freed memory, libstdc++ happened not to)
+  was fixed; CI is green on Windows, macOS, the iPad build and the release
+  workflow.
+
+**Tests:** 582 headless tests; 1879 real-UI checks in 33
+scenarios; the release build (own OpenCASCADE) passes 583 tests.
+`dist/OpenShape` (your desktop shortcut) is the new release build.
+
+**Decisions made for you (all reversible):**
+- The light's direction around the vertical follows the camera (a fully
+  fixed light makes two sides look the same from some angles, the effect
+  you reported); sketching stays in perspective, facing the sketch plane.
+- Field of view 35°; perspective is the default for new installs.
+- Construction axes and planes follow the step they were made from (like a
+  sketch on a face), not steps added later; Rotate/Pattern/Mirror/Align use
+  where the axis or plane is when you apply them.
+- Text is one line on a flat face, centered where you place it; kerning is
+  missing (OpenCASCADE's font reader cannot read Noto Sans's kerning table).
+- Copies in old projects stay linked (so those projects look the same).
+
+**Try first:** docs/MANUAL_TESTS.md items 14-17 (print helpers, axes and
+planes, documentation, the new look) and docs/IPAD.md (items 10-12 and the
+iPhone section: text, axes, the value box, the on-screen keyboard).
+
+**Questions for you:**
+1. Publish these as **v0.2.0** (a new pre-release with the notes in
+   CHANGELOG.md), or wait for your test pass first?
+
+**Known limits worth knowing** (details in docs/TECHNICAL_DEBT.md): the
+value box keeps clear of a fillet's edge but not its whole new surface
+(TD-58); no shadows from one body onto another (TD-62); text has no
+kerning and works on flat faces only (TD-60); construction methods cover
+the common cases (TD-67); orbiting can still carry the eye inside a
+surface; the Windows installer stays unsigned until SignPath approves.
+
+### Overnight session report (2026-09-26)
 
 **In one paragraph:** OpenShape now has a GPL-free Windows build with an
 installer and a CI release pipeline, never loses work (recovery copies and
@@ -82,35 +185,6 @@ Windows, macOS, the iPad build and the new release workflow.
 - **iPad.** Unused Qt Controls styles no longer linked (TD-36): 50 → 47 MB.
   The Mac CI acceptance run improved from 127/144 to 135/144 (TD-35).
 
-**CI status:** CI #31 (Windows, macOS), iPad #20 and Release #1 green for
-`cc1838c`; `aa4b8d3` (holes) pushed after that. The macOS acceptance step
-is informational (TD-35).
-
-**Since the first draft (merged, 885/885 real-UI checks in 24 scenarios,
-432 headless tests):** STEP import (Ctrl+I; exact geometry stored in the
-project), 256 px project thumbnails and a Home screen with recent projects;
-the **universal iPhone + iPad app** (compact layout below 600x500 px that
-adapts live to folding/Split View, safe areas, touch-worded hints, saving
-into the app's folder on iOS); README with screenshots and
-docs/USER_GUIDE.md; a first-extrusion hint bug fixed. The Mac CI
-acceptance run passes every check (TD-35 resolved).
-
-**Not finished (usage limit reached ~09:40):**
-- CI #34 (the STEP/Home merge) was still in its Windows test step after
-  20+ minutes (locally all tests pass in 25 s): check the annotations with
-  `python scripts/dev/ci_status.py status`; a test from that merge
-  (test_step / test_import / test_home / thumbnails) probably hangs on the
-  runner.
-- The previews-off-the-GUI-thread track (TD-1) was still running in its
-  worktree; merge it only after review and a full run.
-- The README/user guide don't mention Home, STEP import, the hole tools
-  or the phone layout yet; screenshots predate them.
-- v0.1.0 is not tagged yet (wait for a green CI; `git tag v0.1.0 && git
-  push origin v0.1.0` publishes the pre-release through release.yml).
-- An invisible OpenShape.exe (offscreen) holds the automation lock so no
-  UI test grabs your mouse while you work: end it in Task Manager when you
-  want automated UI runs again.
-
 **Decisions made for you (all reversible):**
 - Installer: per user (no admin), desktop shortcut off by default,
   publisher "OpenShape contributors", version 0.1.0 as a pre-release.
@@ -121,8 +195,8 @@ acceptance run passes every check (TD-35 resolved).
 - Split into bodies is never automatic (a toast suggests it) and keeps the
   largest piece; separate-body copies follow their source; Duplicate is a
   fully independent copy.
-- Screw tables: ISO values with no FDM allowance (one table,
-  `src/document/Fasteners.cpp`, if you want e.g. +0.2 mm).
+- Screw tables: ISO values; the FDM allowance you chose (+0.2 mm) is added
+  on top (Preferences), the tables stay ISO.
 - The app always uses the light color scheme (dark Windows made menus black).
 - The House AI service was paused overnight (with your OK) to free memory
   for parallel builds; it was started again at ~09:40 (running).
@@ -132,21 +206,6 @@ shortcut (`OneDrive\Desktop\OpenShape.lnk`). It was recreated with the
 same target (`dist\OpenShape\OpenShape.exe`) and working folder; if you
 had added arguments (e.g. `--touch`), add them again. The test scripts now
 refuse to run a setup that could touch the real desktop.
-
-**Questions for you:**
-1. OK to publish **v0.1.0** as a public pre-release now (you approved a
-   tag; this only checks the timing suits you)?
-2. Code signing (removes SmartScreen's warning) needs a paid certificate —
-   worth it now, or later?
-3. Screw holes: add an FDM clearance allowance by default (e.g. +0.2 mm)?
-4. Text emboss/deboss needs a bundled font: OK to use Noto Sans (SIL OFL)?
-5. Apple access is approved: follow docs/IPAD.md section 1 (about 10
-   minutes) to switch on TestFlight for iPhone and iPad.
-
-**Try first:** docs/MANUAL_TESTS.md (new: holes, bodies, recovery,
-Preferences, the installer).
-
-**What's next:** see "Next concrete tasks" below.
 
 ### Earlier notes
 
@@ -508,38 +567,30 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 ## Partially implemented
 
-- STEP import: kernel function and tests; not exposed in the UI.
-- Touch/pen: gestures (tap, drag, double-tap, two-finger pan/pinch after real
-  movement, two-finger tap = undo, three-finger tap = redo), pen mode with a
-  Pen switch, the touch layout and constraint-glyph taps are implemented and
-  tested with synthetic Qt touch events; not yet tried on real touch
-  hardware or an iPad.
-- iPad: CI builds the archive on a GitHub Mac (47 MB); the TestFlight upload
-  waits for the owner's Apple setup; never run on a device.
+- iPhone / iPad: the universal app runs on the owner's iPhone 16 Pro and
+  iPad through TestFlight; the value box's docking above the on-screen
+  keyboard and the Pencil palm check are untried on a device
+  (docs/IPAD.md); the iPhone Duo ships 2026-10-23.
 - Windows release: works end to end locally and on CI, but the installer
-  and exe are unsigned, so SmartScreen warns (TD-44). CLAUDE.md's "Package"
-  command still makes the dev package (not distributable; the script says
-  so).
-- Project thumbnails: the file format and the project writer accept a
-  `thumbnail.png`, but nothing renders one yet (TD-11).
+  and exe are unsigned, so SmartScreen warns (TD-44); SignPath Foundation's
+  approval is pending (docs/CODE_SIGNING.md). CLAUDE.md's "Package"
+  command makes the dev package (not distributable; the script says so).
 - Sketch toolkit part 3 without TD-27 (separate sketches on one plane still
   do not split each other's shapes) and TD-28's remainder (no center-point
   arc; a sketch pattern's spacing cannot be edited after Apply).
 - Hole tool: positions cannot be changed once the step is applied (TD-47).
-- Text emboss/deboss: planned (font registry, `Font_BRepTextBuilder`, prism,
-  join or cut), not started.
+- Text: one line on a flat face, no kerning, Noto Sans only (TD-60).
+- Construction geometry: axes and planes only (no points), common
+  construction methods (TD-67); consumers use a datum where it is when
+  applied (TD-65).
 
 ## Broken / missing
 
-- No STEP import in the UI, no start screen with recent projects, no
-  thumbnails, no text or emboss.
-- Previews and recompute run on the GUI thread: about 0.2 s per push/pull
-  drag step and up to 1 s per recompute on the 249-face enclosure (TD-1).
-- No iPhone build: the iOS app is iPad-only (`TARGETED_DEVICE_FAMILY` 2) and
-  has no compact layout yet.
-- No first-run guidance or user guide; help is the F1 card.
+- Recompute after an edit still runs on the GUI thread (previews do not):
+  up to 1 s on the 249-face enclosure.
 - CI covers Windows and macOS; Linux is unverified.
-- Sketch: no splines, text or center-point arc.
+- Sketch: no splines, text in sketches or center-point arc.
+- No shadows cast by one body onto another (TD-62).
 - Push/pull carries fillets only where everything it moves through is
   straight walls; elsewhere it falls back to prism + boolean (TD-21).
 
@@ -612,9 +663,9 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
   with the first public release.
 - Unsigned installer and exe: SmartScreen warns (TD-44).
 - Topological naming on symmetric parts after large upstream edits (TD-3).
-- GUI-thread previews and QML binding churn stutter on big models (TD-1,
-  TD-18, TD-19): measured 171-195 ms per push/pull drag step on the
-  249-face enclosure.
+- Previews run on a worker thread under one kernel lock (TD-1, TD-4):
+  anything new that calls OpenCASCADE must take it (CONTRIBUTING.md);
+  recompute after an edit still runs on the GUI thread.
 - QRhi via GuiPrivate ties builds to a Qt minor version (TD-5).
 - Smaller limits recorded for later: failed history rows do not suggest a
   working size (TD-43); Hole-tool positions are fixed once applied and all
@@ -623,69 +674,50 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 ## Next concrete tasks (owner priorities)
 
-1. The owner's test pass (docs/MANUAL_TESTS.md, now with bodies, holes and
-   the installer): act on what they report.
-2. iPad: the first TestFlight build once the Apple setup is done, then the
-   owner's test pass on the iPad (docs/IPAD.md, "What to test").
-3. The rest of the overnight plan:
-   - text emboss/deboss (needs a font; download it only with the owner's OK
-     in chat);
-   - STEP import in the UI, project thumbnails (TD-11), a start screen with
-     recent projects;
-   - responsiveness: previews on a worker thread (TD-1, TD-4), split
-     `stateChanged` and list models (TD-18), cache sketch/grid geometry
-     (TD-19); measure before and after on `bench_session`'s enclosure;
-   - iPhone + iPad: a universal iOS app with a compact layout that adapts
-     live (phone portrait/landscape, the iPhone Duo folded and open, Split
-     View), safe areas, Files open/save, touch-aware hints (TD-35);
-   - first-run guidance, help card and shortcut reference, README with
-     screenshots and `docs/USER_GUIDE.md`; the `v0.1.0` tag → GitHub
-     pre-release.
-4. If not done yet: switch the owner's `dist/OpenShape` (their desktop
-   shortcut's target) to the release build (BUILDING.md section 6, step 3)
-   and update CLAUDE.md's "Package" line to match.
-5. Sketch: separate sketches on one plane should interact (TD-27; profiles
-   from several sketches' curves); center-point arc, editable pattern
-   spacing (TD-28); a tangent arc started from inside the line tool.
-6. Hole tool follow-ups (TD-47): change positions after applying ("Edit
-   holes"), grid snapping, per-hole sizes; draft for Revolve and push/pull
-   (TD-48); an FDM allowance in the screw tables if the owner wants one.
-7. Reliability follow-ups: report the OCCT crash upstream (TD-41), check
+1. The owner's second test pass (docs/MANUAL_TESTS.md 14-17, docs/IPAD.md
+   items 10-12 and the iPhone section): act on what they report.
+2. With the owner's OK: tag **v0.2.0** (bump `project(VERSION)` in
+   CMakeLists.txt, date the CHANGELOG section, tag, push the tag; release.yml
+   publishes the notes).
+3. When SignPath approves: the owner follows docs/CODE_SIGNING.md, then a
+   test signing through release.yml.
+4. Follow-ups from the reviews: keep the value box off a fillet's whole new
+   surface (TD-58); orbiting should not carry the eye inside a surface;
+   clear a refusal message once its cause is fixed ("Type the text first."
+   lingers); the enclosure demo's hole-wall click picks a face at 402x874.
+5. Sketch: separate sketches on one plane should interact (TD-27);
+   center-point arc, editable pattern spacing (TD-28); splines.
+6. Hole tool follow-ups (TD-47): edit positions after applying, per-hole
+   sizes; draft for Revolve and push/pull (TD-48).
+7. Construction geometry: points, more methods, re-picking references
+   (TD-64, TD-67); text kerning via HarfBuzz and text on curved faces (TD-60).
+8. Reliability follow-ups: report the OCCT crash upstream (TD-41), check
    unions against their inputs (TD-42), suggest sizes for failed history
-   rows (TD-43).
-8. Align follow-ups: snap alignment while moving (Shapr3D-style).
+   rows (TD-43); recompute off the GUI thread.
 
 ## Tests currently passing
 
-393/393 headless (`ctest -LE gui`): GTest suites for core, geometry,
-profiles, sketch model and solver, sketch edits (slot, fillet, trim), document,
-commands, project files, recovery copies and recent files, UI state
-(preferences, window placement, lock files), sketch features, face
-attachment, camera, picking (hierarchies checked against the linear scan),
-bodies (duplicate, split, copies, rotate about, delete), holes and draft,
-robustness (seeded stress sessions, project-file fuzzing, failure messages,
-the kernel-crash part), interaction (headless M0 script, sketch workflows and
-tools, history editing, highlight, booleans, right-click, align, rotate,
-mirror, pattern, sketch constraints, arcs, offsets, face edits, extrude
-options, push/pull thickness and kept edges, touch gestures, pen mode, axis
-marker). The release build (own OCCT): 362/362, including a check that every
-OCCT toolkit loads from the own build.
+582/582 headless (`ctest -LE gui`): GTest suites for core,
+geometry (including text and construction geometry), profiles, sketch model
+and solver, document, commands, project files, recovery copies and recent
+files, UI state, camera, picking, bodies and copies, holes and draft,
+robustness (stress sessions, file fuzzing, failure messages, kernel faults
+on worker threads), async previews, value-box placement, contact shadows,
+touch wording, and the interaction scripts. The release build (own
+OpenCASCADE): 583/583.
 
-`acceptance_gui`: 641/641 checks through the real UI in 19 scenarios:
-`core`, `views`, `bodies`, `recovery`, `recent`, `preferences`,
-`robustness`, `sketch3_centerrect`, `sketch3_polygon`, `sketch3_tangentarc`,
-`sketch3_constrainticons`, `sketch3_mirror`, `sketch3_pattern`,
-`sketch3_angle`, `holes`, `hole_tool`, `extrude_draft`, `hole_tool_face` and
-`release`. Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (as CI does): 0
-warnings.
+`acceptance_gui`: 1879/1879 checks through the real UI in 33 scenarios
+(`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
+under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
+(as CI does): 0 warnings.
 
 ## Platforms verified
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 393/393 | ✅ 641/641 real-UI checks |
-| Windows 11 x64, release build (own OCCT) | ✅ | ✅ 362/362 | ✅ packaged app with only System32 on `PATH`; installer tests |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 582/582 | ✅ 1879/1879 real-UI checks |
+| Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |
 | macOS 15 (CI, Xcode 26.3, Metal) | ✅ | ✅ | ✅ screenshot; the full acceptance run passes in a 1024x653 window (CI #32) |
-| iPadOS (CI archive, arm64, 17+) | ✅ 47 MB | — | ⬜ waits for TestFlight |
+| iOS / iPadOS (universal CI archive, arm64) | ✅ | — | ✅ TestFlight on the owner's iPhone 16 Pro and iPad (by hand) |

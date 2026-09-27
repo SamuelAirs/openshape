@@ -26,6 +26,7 @@ mkdir -p "$out" "$work"
 shots=(
     "hero|enclosure|"
     "tablet|enclosure|--touch --size 1180x820"
+    "phone|fillet|--touch --size 402x874"
     "pushpull|pushpull|"
     "fillet|fillet|"
     "sketch|constraints|"

@@ -551,3 +551,75 @@ copies deleted by a system-initiated exit). The worktree sandbox refuses
 complex shell lines (heredocs with escapes, globs): write scripts with the
 Write tool and run them. The scratchpad is shared between agents: use a
 subfolder.
+
+## 2026-09-26/27 — Owner feedback from iPhone and iPad: value box, copies, look, axes; print helpers
+
+The owner ran the TestFlight build on an iPhone 16 Pro and an iPad and
+reported: the value box covers what was tapped; mirrored copies stay
+linked; "the geometry becomes confusing and not realistic at different
+angles" and "the grid cuts off abruptly"; "can you align to an axis, and
+create axes?". Four tracks answered them, plus the print helpers they had
+approved (a +0.2 mm FDM allowance, Noto Sans for text). Each ran in its own
+worktree with its own TD range (58, 60, 62, 64), two reviews and a fix pass.
+
+**Keeping the value box clear.** Placement is a pure function
+(`interaction/OverlayPlacement`) fed with one keep-clear rectangle: the
+selection, where the operation has carried it (a pushed face, a moved
+body), the arrows and rings, and the last press. On phones the box docks
+below the top bar or above the hint, on the side away from the selection,
+and moves to the top while the on-screen keyboard is up. What an operation
+carries was first shifted on screen by the arrow's screen travel; with
+perspective the default that is wrong (far points move less), so the
+selection's points are now shifted in the world and projected. Presses
+that do nothing (a resting palm in pen mode, right clicks) are not kept
+clear. A Move on two axes needed its own "how the selection is carried"
+(the arrows' bases already include the other axes' travel).
+
+**A world-anchored light that still separates sides.** Lighting was in view
+space with a 0.60 ambient, so a face's shade followed the view, and
+orthographic boxes flipped in the mind (Necker cube). A light fixed fully
+in the world has views where two visible sides get the same shade, the very
+complaint. The key light's height is fixed (50° up, sky/ground hemisphere
+ambient), its direction around the vertical follows the camera, 50° to the
+viewer's left, like a photographer's turntable light. Measured with
+`--face-contrast` over 7 views x 4 demos: the smallest shade difference
+between faces meeting at an edge went from 1 to 20 (median 30 → 47), no
+face washed out. Perspective is the default (35° field of view, the choice
+remembered); the grid moved to a shader and fades with distance from its
+center and, in perspective, from the eye; a soft contact shadow sits under
+faces that rest on the ground. Zoom toward the cursor could take the eye
+past the near plane and clip the face zoomed to: the distance now stops at
+the minimum.
+
+**Construction geometry.** Axes and planes are document objects (`Datum`)
+that name the step whose output held their face or edge, like a sketch's
+attachment, so they follow edits of that step. Picking: a plane outline or
+axis at the same pixel distance as a body edge lost to the edge where they
+crossed; the line wins when it is in front and within 2 px. Main's
+independent copies duplicated a sketch but kept its link to the source's
+construction plane, so editing the source moved every copy: copies now take
+their own plane when it was made from the copied body. A typed plane
+distance above the file format's 1e6 mm limit was accepted and made the
+saved project unopenable: the tool checks the same limit as the file.
+The origin's X/Y/Z lines are Align targets; the renderer and the picker
+share one function for where they are drawn (`originAxisSegment`).
+
+**Text.** `Font_BRepTextBuilder` with the bundled Noto Sans. OpenCASCADE's
+font reader asks FreeType for kerning from the legacy `kern` table, and
+Noto Sans keeps its kerning in GPOS, so pairs such as "AV" sit a little
+apart (TD-60). FreeType is not thread-safe per face: it runs under the
+kernel lock, taken before the font registry's mutex. A remembered text was
+applied by a stray click before the user typed anything: a click only
+applies once something changed in this use of the tool. Angles are stored
+as directions in [0, 360°), so files with many turns still open.
+
+**Integration pitfalls.** A test kept a pointer into the temporary vector
+`historyRows()` returns; libstdc++ left the freed memory intact, libc++ on
+the CI Mac did not (a deleted rvalue overload now prevents it). Branches
+merged against an older main changed shared vocabulary (a selection kind
+renamed, a grid function replaced, the default projection) without text
+conflicts: the lead's merge build and full UI run caught each one. This
+PC's second monitor is at 150 %: the acceptance driver now sends native
+pixels. While the owner was gaming, an agent closed the offscreen process
+that held the automation lock and UI runs took over their screen: when the
+owner uses the PC, stop the agents, don't rely on the lock.

@@ -36,7 +36,8 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
   `(10+2)*3`.
 
 **Sketching**
-- Sketch on the ground, an origin plane or any flat face.
+- Sketch on the ground, an origin plane, a construction plane or any flat
+  face.
 - Line, rectangle, center rectangle, polygon, circle, arc, tangent arc and
   slot; trim, round a corner, offset, mirror and pattern curves.
 - Type sizes while drawing; click a dimension later to change it.
@@ -45,16 +46,25 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
   small glyphs, and a "Fully defined" status.
 
 **Bodies**
-- Move, rotate (also about an edge or a hole), align one body to another or
-  lay a face on the build plate.
-- Mirror and pattern (in a row or around an axis), joined or as separate
-  bodies; duplicate; split a body that fell apart into pieces.
+- Move, rotate (also about an edge or a hole), align one body to another,
+  onto the X, Y or Z axis or an origin plane, or lay a face on the build
+  plate.
+- Mirror and pattern (in a row or around an axis), joined or as separate,
+  independent bodies; duplicate; split a body that fell apart into pieces.
+- Construction axes (through a hole, along an edge, through two points) and
+  planes (offset, at an angle, midway) to rotate about, pattern around,
+  mirror across, align onto or sketch on; they follow the faces they were
+  made from.
 - Union, subtract and intersect.
 - The Model panel lists every step: change its values later, suppress,
   delete or hide it. Everything can be undone.
 
 **Print helpers**
+- A Hole tool with ISO clearance and tap sizes, counterbores and
+  countersinks (M2 to M6), with a 3D-printing allowance (+0.2 mm to start
+  with, adjustable) so screws fit.
 - Heat-set insert holes (M2 to M5 presets, depth adjustable).
+- Text raised or cut into a face, for labels and version marks.
 - Hole diameters typed directly, e.g. for a tolerance.
 - Measure: a clicked face shows its size to the opposite face; two faces or
   edges show their distance, gap or angle.
@@ -64,8 +74,9 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 **Files**
 - `.openshape` project files keep the full history: sketches and steps stay
   editable after reopening.
-- STEP export for other CAD programs; recent files; preferences (units,
-  sketch grid snapping, recovery copies).
+- STEP import and export for other CAD programs; a Home screen with your
+  recent projects and their previews; preferences (units, sketch grid
+  snapping, recovery copies, the print allowance).
 
 **Reliability**
 - Unsaved work is copied in the background and offered again after a crash.
@@ -79,14 +90,15 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 | Platform | Status |
 |---|---|
 | Windows (64-bit; tested on Windows 11) | Installer and portable zip on the [Releases page](https://github.com/SamuelAirs/openshape/releases) |
-| iPad and iPhone | In development: the app builds in CI; TestFlight testing is pending |
+| iPhone and iPad | In testing through TestFlight (one app for both; phone, tablet and Split View layouts) |
 | macOS | Builds and passes the tests in CI; no download yet |
 | Linux | Not tried yet (see [BUILDING.md](BUILDING.md)) |
 
 OpenShape has a touch layout (larger controls, one finger orbits, two
 fingers pan and zoom, two- and three-finger taps undo and redo) and a pen
-mode; on Windows the touch layout appears once you touch the screen. So far
-it has been tested with simulated touch input, not yet on a real tablet.
+mode; on Windows the touch layout appears once you touch the screen. On a
+phone the tools sit in a strip along the bottom and the value box docks
+where it covers nothing you selected.
 
 ## Download and install (Windows)
 

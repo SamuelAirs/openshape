@@ -3,6 +3,52 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
+## 0.2.0 (unreleased)
+
+**On iPhone and iPad.** OpenShape runs on iPhone and iPad (TestFlight).
+The layout adapts to phones, tablets, Split View and foldables, and the
+value box no longer covers what you tapped: on phones it docks at the top
+or bottom, away from the selection (and above the on-screen keyboard while
+you type); on larger screens it sits beside the arrow, never over the
+edge, face or body you are working on. While you draw a sketch with a
+finger, the live sizes show beside the finger, not under it.
+
+**Easier to read at every angle.** The view opens in perspective (the
+Perspective / Orthographic button remembers your choice), the light stays
+fixed to the world (tops are lightest, undersides darkest, and two sides
+seen at once are never the same shade), the grid fades out softly instead
+of ending at an edge, and bodies cast a soft shadow where they stand on
+the ground.
+
+**Construction axes and planes.** Construct → Axis (through a hole or a
+shaft, along an edge, through two points, parallel to X, Y or Z) and
+Construct → Plane (offset from a face or an origin plane, at an angle
+through an edge, midway between two faces). Rotate about them, pattern
+around or along them, mirror across them, align onto them and sketch on
+them; they follow the faces they were made from. Align can also put a
+hole's axis on the Z axis, a face on the XY, XZ or YZ plane, or a corner
+on the origin.
+
+**Text.** Raise or cut words into a flat face (Noto Sans, regular or
+bold): size, depth and angle can be typed and changed later.
+
+**Holes that fit printed parts.** Clearance holes and counterbore or
+countersink seats get a 3D-printing allowance (+0.2 mm to start with,
+File → Preferences); tap and heat-set insert sizes stay as they are.
+
+**Copies you can change on their own.** Mirror and Pattern copies made as
+separate bodies, and pieces split into bodies, are independent: editing
+the original no longer changes them (projects from 0.1.0 keep their
+linked copies).
+
+**Smoother on large parts.** Previews are computed in the background and
+shown as soon as they are ready, so dragging stays smooth.
+
+Known limitations: the Windows installer is not code-signed yet
+(SmartScreen warns); text is one line on a flat face, without kerning;
+construction axes and planes follow the step they were made from, not
+steps added later; no splines yet.
+
 ## 0.1.0 (2026-09-26)
 
 The first public pre-release: direct, precise solid modeling for makers
@@ -14,9 +60,7 @@ bevel edges, shell a body, offset faces (a hole takes its new diameter),
 delete holes, fillets and bosses, move, rotate (also about an edge or a
 hole), align one body onto another, mirror and pattern (joined or as
 separate bodies), duplicate, split separate pieces into bodies, and
-combine bodies (union, subtract, intersect). Dragging stays smooth on
-large parts: previews are computed in the background and shown as soon
-as they are ready.
+combine bodies (union, subtract, intersect).
 
 **Sketch precisely.** Lines, rectangles (also from the center), circles,
 3-point and tangent arcs, polygons (sized across flats), slots; trim,

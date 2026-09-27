@@ -3,8 +3,9 @@
 OpenShape is a direct-modeling CAD program for makers and 3D printing: you
 shape a part by pushing and pulling its faces, rounding its edges and
 sketching profiles to extrude, and you type exact sizes whenever you want
-them. This guide describes OpenShape 0.1 on Windows. The same summary is in
-the app: press `F1` or the **?** button.
+them. This guide describes OpenShape on Windows, iPhone and iPad (the iPhone
+and iPad app is being tested through TestFlight). The same summary is in the
+app: press `F1` or the **?** button.
 
 The guide lives with the source code. The copy on GitHub's `main` branch
 (the one the in-app card links to) follows the newest development version;
@@ -152,11 +153,21 @@ and draws and your fingers only move the view, so a hand resting on the
 screen does nothing; OpenShape turns this on when it first sees a pen, and
 **Pen** switches it on or off. Nothing needs hovering, a right-click or a
 modifier key: taps add to the selection (tap empty space to start over), a
-double-tap selects a body, and every tool has a button. (So far the touch
-layout has been tested with simulated touch input; tablets and phones are
-next.)
+double-tap selects a body, and every tool has a button. On an iPad the
+touch layout is on from the start.
+
+**On a phone** (or any window smaller than about 600 x 500, such as an iPad
+in Split View), the tools move to a strip along the bottom that scrolls
+sideways, the Model panel and the view buttons open from the **Model** and
+**View** buttons, and nothing sits under the camera cutout or the home
+indicator. The value box docks at the top or the bottom of the screen, on
+the side away from what you selected, and moves to the top while you type
+with the on-screen keyboard. While you draw a sketch, the live sizes show
+beside your finger, not under it.
 
 ![The touch layout on a tablet-sized window](images/tablet.png)
+
+![On a phone: rounding an edge, the value box docked away from it](images/phone.png)
 
 ---
 
@@ -638,6 +649,15 @@ CAD programs.
 
 ### Projects
 
+- **Home** shows your recent projects as cards with a preview of each (saved
+  inside the project), with **New project**, **Open…** and **Import STEP…**.
+  It appears when OpenShape starts without a file and from **File → Home**;
+  `Esc` or **Back** returns to the open document. Each card's **⋯** button
+  (or a right-click or a long touch) offers **Remove from list**.
+- **File → Import STEP…** (`Ctrl+I`) brings in parts from other CAD programs:
+  each solid becomes a body you can push, pull, round and combine; inches
+  and meters come in at the right size. The exact geometry is stored in your
+  project, so it opens without the STEP file.
 - **File → Save** (`Ctrl+S`) and **Save As…** (`Ctrl+Shift+S`) write an
   `.openshape` project: the full history, so sketches and steps stay
   editable when you open it again. A `•` before the name in the window
@@ -669,6 +689,9 @@ remembered:
   any unit, and the **mm**/**in** button switches the open document).
 - **Sketches:** snap to the grid, or free.
 - **Recovery copies:** off, 30 s, 1 min (default) or 5 min.
+- **Hole allowance for 3D printing:** added to clearance holes and to
+  counterbore and countersink seats (0.2 mm to start with; see
+  [Holes that fit](#holes-that-fit)).
 
 **File → About OpenShape** shows the version, the license and where the
 source code is.
@@ -701,6 +724,7 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
 | `Ctrl+Y` or `Ctrl+Shift+Z` | Redo |
 | `Ctrl+N` / `Ctrl+O` | New / Open |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save / Save As |
+| `Ctrl+I` | Import STEP |
 | `Ctrl+,` | Preferences |
 | `F1` | Help card (again, or `Esc`, closes it) |
 

@@ -107,8 +107,19 @@ Bodies and copies (2026-09-26):
 - ✅ Deleting a body that others are built from hides it instead
 - ✅ Extrude with draft (typed angle; see Milestone 5)
 
+Since 2026-09-26 (owner feedback): ✅ Mirror / Pattern copies made as
+separate bodies and split pieces are **independent** (editing the source no
+longer changes them; older files keep their linked copies); ✅ **Align onto
+the origin** (X/Y/Z axis, XY/XZ/YZ plane, the origin point; also by clicking
+the drawn axis lines); ✅ **construction axes and planes** (Construct → Axis:
+through a hole or shaft, along an edge, through two points, parallel to
+X/Y/Z; Construct → Plane: offset from a face or origin plane, at an angle
+through an edge, midway between two faces), used by Rotate, Pattern, Mirror,
+Align and Sketch, following the faces they were made from (TD-64..67).
+
 Follow-ups: patterns and mirrors of individual features, draft for Revolve
-and push/pull (TD-48).
+and push/pull (TD-48), construction points and more construction methods
+(TD-67).
 
 ## Milestone 3 — interaction quality 🟡
 
@@ -133,11 +144,18 @@ previewing, a reason for operations that would change nothing) · ✅ tools
 waiting for a face pick faces only · ✅ File → Open Recent, Preferences
 (Ctrl+,), remembered window, unsaved-changes overlay.
 
-Still to do: asynchronous previews and tessellation (TD-1; a push/pull drag
-step on the 249-face enclosure takes 171-195 ms), finer-grained UI updates
-(TD-18, TD-19), box/lasso selection, cycling through stacked faces,
-snapping while moving bodies, an icon set (TD-9), project thumbnails
-(TD-11), a start screen with recent projects, first-run guidance.
+2026-09-26/27: ✅ previews computed on a worker thread (TD-1, TD-4) and
+finer-grained UI updates (TD-18) · ✅ project thumbnails and a Home screen
+with recent projects · ✅ first-run hints, the help card with touch wording,
+README and docs/USER_GUIDE.md · ✅ the value box keeps clear of what was
+tapped (docks on phones, above the on-screen keyboard while typing; TD-58)
+· ✅ a clearer look: perspective by default, lighting anchored to the world,
+a grid that fades, contact shadows (measured: the smallest shade difference
+between adjacent faces 1 → 20 of 255; TD-62).
+
+Still to do: box/lasso selection, cycling through stacked faces, snapping
+while moving bodies, an icon set (TD-9), sketch and grid geometry cached
+(TD-19's remainder).
 
 ## Milestone 4 — editable parametric history 🟡
 
@@ -179,8 +197,12 @@ snapping while moving bodies, an icon set (TD-9), project thumbnails
   TD-47)
 - ✅ Draft: extrude with a typed draft angle (tapered walls, sharp corners;
   refused when the walls would close before the full height, TD-48)
-- ⬜ Magnet pockets, clearance helper, emboss/deboss, text, snap-fit
-  helpers, threads, section view
+- ✅ Print allowance: clearance holes and counterbore/countersink seats get
+  +0.2 mm by default (Preferences; tap and insert sizes unchanged)
+- ✅ Text: raised or cut words on a flat face (Noto Sans regular/bold; size,
+  depth, angle editable; one line, no kerning: TD-60)
+- ⬜ Magnet pockets, snap-fit helpers, threads, section view, text on
+  curved faces
 
 ## Touch & pen (iPad groundwork) 🟡
 
@@ -189,11 +211,12 @@ snapping while moving bodies, an icon set (TD-9), project thumbnails
 - ✅ Pen mode: pen selects and draws, fingers only navigate
 - ✅ Touch layout: 44 pt controls and a Pen switch once touch is used (from
   the start on tablets; `--touch` on Windows)
-- 🟡 iPad build: built on GitHub's Macs (`ipad.yml`; archive 47 MB since
-  only the Basic Controls style is linked, TD-36); the TestFlight upload
-  waits for the owner's Apple Developer enrollment (docs/IPAD.md)
-- ⬜ iPhone: a universal iOS app with a compact layout that adapts to phone
-  sizes, the iPhone Duo and Split View
+- ✅ iPhone + iPad: one universal app built on GitHub's Macs (`ipad.yml`)
+  and delivered with TestFlight (running on the owner's iPhone 16 Pro and
+  iPad since 2026-09-26); a compact layout below 600x500 that adapts live
+  (phone portrait/landscape, foldables, Split View), safe areas, touch-worded
+  hints, the value box docked on phones
+- ⬜ Tried on the iPhone Duo (ships 2026-10-23)
 
 ## Reliability and app shell
 
@@ -231,7 +254,9 @@ snapping while moving bodies, an icon set (TD-9), project thumbnails
   license gate over every packaged file, per-user NSIS installer, portable
   zip and checksums, icon and version resource; 269 files / 160 MB
   (installer 40 MB, zip 59 MB); `release.yml` (tag → GitHub Release) ran
-  green once. ⬜ Code signing (TD-44); ⬜ the first tagged release
+  green. ✅ v0.1.0 published as a pre-release (2026-09-26). 🟡 Code
+  signing (TD-44): the SignPath Foundation steps are in `release.yml`
+  (docs/CODE_SIGNING.md); the owner applied, approval pending
 - ⬜ MSVC + vcpkg build
 - ⬜ macOS, Linux runtime verification
 - ⬜ OCCT 8.x migration
