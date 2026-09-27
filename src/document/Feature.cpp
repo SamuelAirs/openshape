@@ -1838,14 +1838,24 @@ Status TextFeature::setParameter(std::string_view key, double value)
     if (key == "angle") {
         if (!std::isfinite(value) || std::abs(value) > 1000)
             return Status::failure(ErrorCode::InvalidArgument, "Type an angle in degrees.", "text angle");
-        angle = std::remainder(value, 2 * kPi);
-        if (angle < -1e-12)
-            angle += 2 * kPi;
-        if (std::abs(angle) < 1e-12 || std::abs(angle - 2 * kPi) < 1e-12)
-            angle = 0;
+        angle = normalizedAngle(value);
         return okStatus();
     }
     return unknownParameter(key);
+}
+
+double TextFeature::normalizedAngle(double radians)
+{
+    if (!std::isfinite(radians))
+        return 0;
+    if (radians >= 0 && radians < 2 * kPi)
+        return radians; // exactly as it is (a file reads back what it wrote)
+    double a = std::remainder(radians, 2 * kPi); // [-pi, pi]
+    if (a < 0)
+        a += 2 * kPi;
+    if (std::abs(a) < 1e-12 || std::abs(a - 2 * kPi) < 1e-12)
+        a = 0;
+    return a;
 }
 
 std::vector<TextParameterInfo> TextFeature::textParameters() const
@@ -1908,8 +1918,10 @@ Status TextFeature::readParams(const json& in)
     const auto d = numberFrom(in, "depth");
     if (!d || !checkDepth(*d))
         return bad("depth");
+    // Any finite angle is a direction (files written before the tool kept
+    // its angle in range may hold one of many turns).
     const auto a = numberFrom(in, "angle");
-    if (!a || !std::isfinite(*a) || std::abs(*a) > 1000)
+    if (!a || !std::isfinite(*a))
         return bad("angle");
     face = *ref;
     position = p;
@@ -1917,7 +1929,7 @@ Status TextFeature::readParams(const json& in)
     font = std::move(f);
     size = *s;
     depth = *d;
-    angle = *a;
+    angle = normalizedAngle(*a);
     return okStatus();
 }
 

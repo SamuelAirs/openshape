@@ -1261,11 +1261,23 @@ std::unique_ptr<TextOperation> TextOperation::create(const doc::Document& docume
     op->text_ = settings.text;
     op->size_ = std::clamp(settings.size, geom::kMinCapHeight, geom::kMaxCapHeight);
     op->depth_ = std::abs(settings.depth) < 1e-3 ? 1.0 : settings.depth;
-    op->angleDegrees_ = settings.angleDegrees;
+    // A remembered angle that was refused (typed out of range) starts over.
+    op->angleDegrees_ = std::abs(settings.angleDegrees) <= 360.0 ? settings.angleDegrees : 0.0;
     op->bold_ = settings.bold;
     op->setStoredValue(op->depth_);
     op->setValue(op->depth_, document); // a remembered text previews at once
+    op->initial_ = op->settings();
     return op;
+}
+
+bool TextOperation::edited() const
+{
+    if (edited_)
+        return true;
+    const TextSettings now = settings();
+    // A drag of the arrow, or a value typed, changes a field.
+    return now.text != initial_.text || now.bold != initial_.bold || std::abs(now.size - initial_.size) > 1e-12
+        || std::abs(now.depth - initial_.depth) > 1e-12 || std::abs(now.angleDegrees - initial_.angleDegrees) > 1e-12;
 }
 
 std::string TextOperation::valueLabel() const
@@ -1335,12 +1347,15 @@ std::string TextOperation::checkValue(double value) const
         return "The depth must not be zero: positive raises the text, negative cuts it in.";
     if (field_ == Field::Size && (!(value >= geom::kMinCapHeight) || !(value <= geom::kMaxCapHeight)))
         return "The size (the height of capital letters) must be between 0.5 and 1000 mm.";
+    if (field_ == Field::Angle && !(std::abs(value) <= 360.0 + 1e-9))
+        return "The angle must be between -360\xC2\xB0 and 360\xC2\xB0.";
     return {};
 }
 
 void TextOperation::setText(const std::string& text, const doc::Document& document)
 {
     text_ = text;
+    edited_ = true;
     setValue(value(), document);
 }
 
@@ -1361,6 +1376,7 @@ void TextOperation::setAngleDegrees(double degrees, const doc::Document& documen
 {
     storeValue();
     angleDegrees_ = degrees;
+    edited_ = true;
     setStoredValue(fieldValue(field_));
     setValue(value(), document);
 }
@@ -1369,6 +1385,7 @@ void TextOperation::setRaised(bool raised, const doc::Document& document)
 {
     storeValue();
     depth_ = raised ? std::abs(depth_) : -std::abs(depth_);
+    edited_ = true;
     setStoredValue(fieldValue(field_));
     setValue(value(), document);
 }
@@ -1376,6 +1393,7 @@ void TextOperation::setRaised(bool raised, const doc::Document& document)
 void TextOperation::setBold(bool bold, const doc::Document& document)
 {
     bold_ = bold;
+    edited_ = true;
     setValue(value(), document);
 }
 
@@ -1431,6 +1449,7 @@ std::string TextOperation::placeAt(const Vec3& world, double snapDistance, const
     if (!onFace(point))
         return {};
     position_ = point;
+    edited_ = true;
     setValue(value(), document);
     return what;
 }
@@ -1477,7 +1496,8 @@ std::unique_ptr<doc::Feature> TextOperation::makeFeature(double value) const
     feature->text = text_;
     feature->size = field_ == Field::Size ? value : size_;
     feature->depth = field_ == Field::Depth ? value : depth_;
-    feature->angle = (field_ == Field::Angle ? value : angleDegrees_) * kPi / 180.0;
+    // Stored in [0, 2 pi) whatever was typed (-90 degrees is 270).
+    feature->angle = doc::TextFeature::normalizedAngle((field_ == Field::Angle ? value : angleDegrees_) * kPi / 180.0);
     feature->font = bold_ ? doc::kTextFontBold : doc::kTextFontRegular;
     return feature;
 }

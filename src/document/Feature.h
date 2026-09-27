@@ -598,6 +598,10 @@ public:
     double angle = 0;          // radians, counter-clockwise seen from outside the face
     std::string font = kTextFontRegular;
 
+    // A finite angle (radians) as the same direction in [0, 2 pi): what
+    // `angle` holds, whatever was typed or read (-90 degrees is 270).
+    static double normalizedAngle(double radians);
+
     FeatureKind kind() const override { return FeatureKind::Text; }
     std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new TextFeature(*this)); }
     Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;

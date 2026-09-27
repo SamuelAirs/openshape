@@ -103,17 +103,17 @@ ApplicationWindow {
                     event.accepted = true
                 return
             }
-            // The Text tool: letters (and Backspace) go to its text field,
-            // never to shortcuts or Delete (which would remove the face);
-            // a number goes to the value (depth, size or angle) as elsewhere.
+            // The Text tool: every character typed (digits too: "3D", "2026")
+            // and Backspace go to its words, never to shortcuts or Delete
+            // (which would remove the face). The depth, size and angle are
+            // typed in their own field (Tab from the words, or tap it).
             if (window.app.operationTakesText && !(event.modifiers & Qt.ControlModifier)) {
                 if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) {
                     valueChip.eraseText()
                     event.accepted = true
                     return
                 }
-                if (event.text.length > 0 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127
-                        && "0123456789.-+(".indexOf(event.text) < 0) {
+                if (event.text.length > 0 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
                     valueChip.typeText(event.text)
                     event.accepted = true
                     return
@@ -877,7 +877,7 @@ ApplicationWindow {
                  + "X / Y (Tab) type the current hole's position · click a hole to pick it (Remove hole drops it) · Enter applies"
         if (app.operationActive && app.operationTitle === "Text")
             return "Click the face to move the text (it snaps to the center and edge middles) · drag the arrow out to raise it, "
-                 + "in to cut it · Size is the capital letters' height · Enter applies"
+                 + "in to cut it · type the depth, size or angle in its field (Tab) · Size is the capital letters' height · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Counterbore"))
             return "Pick the screw size, or type the diameter · click the arrow into the hole to type the depth · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Countersink"))

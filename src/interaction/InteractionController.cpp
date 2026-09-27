@@ -610,14 +610,24 @@ void InteractionController::click(const PointerEvent& event)
         notifyView();
         return;
     }
-    // Text tool: a click on its face moves the text there; elsewhere it applies.
-    if (auto* text = dynamic_cast<TextOperation*>(operation_.get());
-        text && hit.kind == sel::PickKind::Face && hit.bodyId == text->bodyId() && hit.index == text->faceIndex()) {
-        (void)text->placeAt(hit.point, holeSnapDistance(hit.point, profile), *document_);
-        textSettings_ = text->settings();
-        notifyState();
-        notifyView();
-        return;
+    // Text tool: a click on its face moves the text there; elsewhere it
+    // applies what was typed or changed in this use of the tool. Remembered
+    // text nobody touched is not applied by a stray click (Enter or Apply
+    // still apply it): the tool closes and the click selects as usual.
+    if (auto* text = dynamic_cast<TextOperation*>(operation_.get())) {
+        if (hit.kind == sel::PickKind::Face && hit.bodyId == text->bodyId() && hit.index == text->faceIndex()) {
+            (void)text->placeAt(hit.point, holeSnapDistance(hit.point, profile), *document_);
+            textSettings_ = text->settings();
+            notifyState();
+            notifyView();
+            return;
+        }
+        if (!text->edited()) {
+            selection_.clear();
+            rebuildOperation(); // back to the usual tools
+            hit = pickAt(event.position, profile); // edges too, as without the tool
+            additive = false;
+        }
     }
     // Extrude "Up to face": the next face click sets the distance.
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && extrude->pickingTarget()) {
@@ -855,6 +865,8 @@ std::string InteractionController::setValueText(const std::string& text)
         return "The angle must be between 0° and 360°.";
     if (!operation_->allowsNegative() && value <= 0)
         return operation_->valueLabel() + " must be greater than zero.";
+    if (auto* words = dynamic_cast<TextOperation*>(operation_.get()))
+        words->markEdited(); // a value typed, even the one it had
     operation_->setValue(value, *document_);
     notifyState();
     notifyView();

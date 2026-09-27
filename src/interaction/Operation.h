@@ -751,6 +751,12 @@ public:
     bool bold() const { return bold_; }
     // The settings to remember (with the fields' current values).
     TextSettings settings() const;
+    // Whether the user did anything in this use of the tool (typed, placed,
+    // changed a value or option). A stray click elsewhere applies only then:
+    // remembered text alone is applied by Enter or Apply, not by a tap that
+    // was meant to leave the tool.
+    bool edited() const;
+    void markEdited() { edited_ = true; }
 
     void setText(const std::string& text, const doc::Document& document);
     void setField(Field field, const doc::Document& document);
@@ -794,6 +800,8 @@ private:
     Field field_ = Field::Depth;
     double depth_ = 1, size_ = 10, angleDegrees_ = 0; // the fields that are not active
     bool bold_ = false;
+    bool edited_ = false;
+    TextSettings initial_; // as the tool opened (edited() compares)
     std::optional<Vec2> hover_;
     // The letters' extent for textCorners (in the text's own frame), made
     // again only when the words, size or font change.

@@ -13,8 +13,10 @@
 #include "geometry/Holes.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "io/ProjectFile.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 using namespace os;
 using namespace os::interact;
@@ -211,6 +213,125 @@ TEST(TextInteraction, DebossTurnedAndRemembered)
     h.controller.keyPress(Key::Escape);
     EXPECT_EQ(h.controller.operation(), nullptr);
     EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
+}
+
+// A typed angle is a direction: out of range it is refused with a message
+// (not saved into a file it could no longer open); in range it is stored in
+// [0, 2 pi), and the project saves and reopens with it.
+TEST(TextInteraction, TypedAnglesAreCheckedAndStoredAsDirections)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextHarness h;
+    h.plateWithTopSelected();
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_EQ(h.controller.setOperationText("R"), "");
+    ASSERT_TRUE(h.controller.triggerAction("field:angle").ok());
+    EXPECT_EQ(h.controller.setValueText("-100000"), "The angle must be between -360\xC2\xB0 and 360\xC2\xB0.");
+    EXPECT_FALSE(h.tool()->canCommit());
+    EXPECT_FALSE(h.controller.commitOperation());
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 1u) << "nothing added";
+    // Remembered while refused (an option clicked meanwhile): the next use starts at 0.
+    ASSERT_TRUE(h.controller.triggerAction("deboss").ok());
+    h.controller.keyPress(Key::Escape);
+    ASSERT_EQ(h.controller.operation(), nullptr);
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_NE(h.tool(), nullptr);
+    EXPECT_DOUBLE_EQ(h.tool()->angleDegrees(), 0.0);
+    EXPECT_TRUE(h.tool()->hasPreview()) << h.tool()->error();
+
+    // -90 degrees: a quarter turn clockwise, stored as 270.
+    ASSERT_TRUE(h.controller.triggerAction("field:angle").ok());
+    EXPECT_EQ(h.controller.setValueText("-90"), "");
+    EXPECT_TRUE(h.tool()->canCommit()) << h.tool()->error();
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    const auto* step = dynamic_cast<const doc::TextFeature*>(h.document.body(h.body)->features().back().get());
+    ASSERT_NE(step, nullptr);
+    EXPECT_NEAR(step->angle, 3 * kPi / 2, 1e-12);
+    const double volume = h.volume();
+    const double area = letterArea("R", 10);
+    EXPECT_NEAR(9000 - volume, area, 1e-5 * area);
+
+    // Saved and reopened as it is; a file holding many turns (written before
+    // the tool checked its angle) opens too, at the same direction.
+    auto json = io::documentToJson(h.document);
+    auto reopened = io::documentFromJson(json);
+    ASSERT_TRUE(reopened.ok()) << reopened.developerMessage();
+    const auto& again = static_cast<const doc::TextFeature&>(*reopened.value()->body(h.body)->features().back());
+    EXPECT_DOUBLE_EQ(again.angle, step->angle);
+    EXPECT_NEAR(geom::volume(reopened.value()->body(h.body)->shape()), volume, 1e-6);
+    for (auto& feature : json["bodies"][0]["features"])
+        if (feature["type"] == "Text")
+            feature["params"]["angle"] = -100000 * kPi / 180; // -1745.3: 80 degrees after 278 turns
+    auto turned = io::documentFromJson(json);
+    ASSERT_TRUE(turned.ok()) << turned.developerMessage();
+    const auto& many = static_cast<const doc::TextFeature&>(*turned.value()->body(h.body)->features().back());
+    EXPECT_NEAR(many.angle, 80 * kPi / 180, 1e-9);
+    EXPECT_FALSE(turned.value()->body(h.body)->hasFailures());
+    EXPECT_NEAR(geom::volume(turned.value()->body(h.body)->shape()), volume, 1e-6);
+}
+
+// Words remembered from the last use preview when the tool opens, but a
+// stray click elsewhere does not apply them (the tool closes and the click
+// selects as usual); once anything is typed, placed or changed it does, and
+// Enter / Apply always do.
+TEST(TextInteraction, AStrayClickDoesNotApplyRememberedText)
+{
+    OS_REQUIRE_TEST_FONT(doc::kTextFontRegular);
+    TextHarness h;
+    h.plateWithTopSelected();
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_EQ(h.controller.setOperationText("OK"), "");
+    EXPECT_TRUE(h.tool()->edited());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.body(h.body)->features().size(), 2u);
+    const double withOne = h.volume();
+
+    // Opened again: "OK" previews, nothing is done yet.
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_NE(h.tool(), nullptr);
+    EXPECT_EQ(h.tool()->text(), "OK");
+    EXPECT_TRUE(h.tool()->canCommit());
+    EXPECT_FALSE(h.tool()->edited());
+    // A tap on empty space leaves the tool without a step.
+    h.clickAt({5, 5});
+    EXPECT_EQ(h.controller.operation(), nullptr);
+    EXPECT_TRUE(h.controller.selection().empty());
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
+    EXPECT_NEAR(h.volume(), withOne, 1e-9);
+    // A click on another face selects it (its usual tools), still without a step.
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    h.clickAt(h.screen({30, 0, 2.5})); // the plate's front face
+    EXPECT_EQ(h.tool(), nullptr);
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 2u);
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    const auto front = geom::faceInfo(h.document.body(h.body)->shape(), h.controller.selection().items()[0].index);
+    ASSERT_TRUE(front.has_value());
+    EXPECT_NEAR(front->normal.y, -1.0, 1e-9) << "the front face is selected";
+
+    // Changed (Deboss): a click elsewhere applies it.
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    ASSERT_TRUE(h.controller.triggerAction("deboss").ok());
+    EXPECT_TRUE(h.tool()->edited());
+    h.clickAt({5, 5});
+    EXPECT_EQ(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 3u);
+    // Placed by a click on the face (even at the same point): applied likewise.
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    h.clickAt(h.screen({45, 25, 5}));
+    EXPECT_TRUE(h.tool()->edited());
+    h.clickAt({5, 5});
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 4u);
+    // Untouched, but applied on purpose (Enter or the chip's Apply).
+    h.clickAt(h.screen({40, 20, 5}));
+    ASSERT_TRUE(h.controller.triggerAction("text").ok());
+    EXPECT_FALSE(h.tool()->edited());
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_EQ(h.document.body(h.body)->features().size(), 5u);
 }
 
 // With a bold font built in, Bold switches to it (stored as its font id).

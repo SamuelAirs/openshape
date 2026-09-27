@@ -40,8 +40,15 @@ Item {
 
     // The Text tool: its words are typed in the text field, which takes the
     // keys as soon as the tool opens (on a tablet the keyboard comes up).
+    // Words remembered from the last use start selected: typing replaces them.
     readonly property bool takesText: app.operationTakesText
-    onTakesTextChanged: if (takesText) Qt.callLater(chip.focusText)
+    onTakesTextChanged: if (takesText) Qt.callLater(chip.startText)
+    function startText() {
+        if (!chip.takesText)
+            return
+        focusText()
+        textField.selectAll()
+    }
     function focusText() {
         if (!chip.takesText)
             return
