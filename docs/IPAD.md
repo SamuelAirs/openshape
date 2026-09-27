@@ -318,3 +318,15 @@ margins (BUILDING.md).
    type. Swipe its row of actions sideways and tap the last one.
    Draw a rectangle with a finger, also next to the Dynamic Island in
    landscape: its width and height show above the finger, whole.
+   In landscape the box is one row, beside the top bar, when its New body /
+   Join / Cut fit there; otherwise its actions go on a second row.
+14. Cut a pocket (the owner's flow of 2026-09-27): Box → tap the top face →
+   **Sketch**: the face fills most of the width; draw a 10 x 10 rectangle
+   with one finger (corners land on whole millimeters) → **Finish sketch** →
+   tap the rectangle: the arrow starts where you tapped and the hint says
+   "drag the arrow out … into it to cut". Drag the rectangle itself (or the
+   arrow) down 5 mm: the value says **Cut depth**, **Cut** is highlighted,
+   ✓ cuts the pocket. Also: type 5, then tap **Cut** (it goes in, not a
+   dead end); tap **Join** and push in (refused, and the hint says why);
+   tap a second face by mistake, then **Sketch** (it goes on the last face).
+   Tap the pocket's floor: the floor is selected, not its edge.

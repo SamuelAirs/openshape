@@ -222,7 +222,10 @@ Rectangle {
                              "Small glyphs beside the geometry (H, V, ∥, ⊥, =, T, …): with the Select tool tap one → Delete constraint"],
                             ["Construction curves", "Select curves → Construction (never become shapes)"],
                             ["Add to a sketch", "Select one of its shapes → Sketch, or sketch on its plane"],
-                            ["Extrude / revolve", "Finish, then click inside a closed shape", "Finish, then tap inside a closed shape"],
+                            ["Extrude / revolve", "Finish, then click inside a closed shape and drag its arrow",
+                             "Finish, then tap inside a closed shape and drag it (or its arrow)"],
+                            ["Cut a pocket or hole", "Face → Sketch, draw the shape, Finish, click it, drag the arrow into the body (Cut depth); Cut always goes in, Flip turns it round",
+                             "Face → Sketch, draw the shape, Finish, tap it, drag it into the body (Cut depth); Cut always goes in, Flip turns it round"],
                             ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face", "While extruding: Symmetric, or Up to face and tap a face"],
                             ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"]
                         ]

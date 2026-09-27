@@ -842,7 +842,47 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`Operation::reconsider` revises automatic choices after a preview), and
   so does an automatic cut that would remove nothing (a profile beside the
   body pushed in: `reconsiderRefusal` on `ErrorCode::NoEffect`). A cut
-  chosen explicitly is refused with the reason instead.
+  chosen explicitly is refused with the reason instead, and so is a Join
+  (Extrude or Revolve) that adds no volume (`joinAdding` in Feature.cpp:
+  `NoEffect`, a warning in recompute for older files). For a face sketch
+  **Cut means into the body**: `ExtrudeOperation::chooseMode` turns a value
+  pointing out of it (Join / New body turn one pointing in), `typedValue`
+  makes a depth typed while Cut is chosen go in, and while Cut is chosen
+  the arrow points into the body (`arrowIntoBody`: `handle` /
+  `handleOffset` / `valueFromOffset` flip; the value stays the signed
+  distance along the sketch normal, as stored and shown in the Model
+  panel). Flip negates the value (a face sketch's mode is automatic again);
+  Esc back to 0 drops a chosen mode. The value label says what it makes
+  (`valueLabel`: Cut depth / Height / New body; Thickness, Draft). A sketch
+  on **no body** (origin or construction plane) decides from geometry
+  (`findTarget`, from the first preview pass, then `reconsider` recomputes
+  against the body): the bodies whose boxes meet the extrusion's, largest
+  overlap first; Cut against the first it removes material from; else Join
+  with one the profile lies on and is pulled away from (the extrusion
+  nudged 0.01 mm back toward its sketch overlaps the body; touching a
+  body's side only stays a new body); else a new body. Join / Cut chosen
+  with no such body is refused (`targetMissing_`). New body / Join / Cut
+  are always offered, first in the row (Through all next when cutting),
+  Extrude / Revolve / Edit sketch last. The arrow starts where the profile
+  was tapped (`profileTap_`), and on touch a finger drag that starts on the
+  selected profile (or a single selected flat face for Push/Pull) drags the
+  active arrow along its axis through the pressed point
+  (`selectedRegionAt`, `drag_.region`); a mouse drag there orbits.
+- **Sketch framing:** `startSketch` on a face (its display mesh's box) or a
+  construction plane (its drawn outline) calls `alignViewTo(plane, frame)`,
+  which fits that box and the sketch into the part of the view the sketch's
+  controls leave free (`frameInsets`, from Main.qml: below the tool bar,
+  above the hint over the phone's tool strip, right of the desktop palette)
+  with a margin of 1.15 on touch, 1.6 with a mouse, never closer than 10 mm
+  across. On a phone a 20 mm face then spans ~16 px/mm: the sketch grid and
+  the arrows snap in 1 mm (the fitted view gave 6 px/mm, 2 mm steps).
+  With several faces selected (touch taps add) Sketch uses the last flat one.
+- **Edges under a sketch on touch:** in `pickAt`, an edge lying in the plane
+  of the sketch region under the tap, or an edge of the pocket seen through
+  a used sketch's region, wins only within a mouse's reach (6 px); beyond
+  it the tap goes to the region (unused, not behind the surface) or to the
+  face seen through it (the pocket's floor). Elsewhere edges keep a
+  finger's 18 px.
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as
