@@ -19,6 +19,7 @@
 #include <QtGui/QPointingDevice>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
+#include <QtGui/private/qhighdpiscaling_p.h>
 #include <qpa/qwindowsysteminterface.h>
 
 #include <algorithm>
@@ -40,23 +41,37 @@ AcceptanceRunner::AcceptanceRunner(QQuickWindow* window, ui::AppController* app,
 
 // ---- Input injection ----------------------------------------------------------------
 
+// QWindowSystemInterface takes positions in native (device) pixels, as the
+// platform plugin delivers them; the script works in logical pixels. On a
+// display scaled to 150 % the unconverted clicks landed at two thirds of
+// their target (2026-09-26, a second monitor).
+QPointF AcceptanceRunner::nativeLocal(QPointF p) const
+{
+    return QHighDpi::toNativeLocalPosition(p, window_);
+}
+
+QPointF AcceptanceRunner::nativeGlobal(QPointF p) const
+{
+    return QHighDpi::toNativeGlobalPosition(window_->mapToGlobal(p), window_);
+}
+
 void AcceptanceRunner::mouseMove(QPointF p, Qt::MouseButtons held)
 {
-    QCursor::setPos(window_->mapToGlobal(p.toPoint()));
+    QCursor::setPos(window_->mapToGlobal(p.toPoint())); // logical: Qt converts
     QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-        window_, p, window_->mapToGlobal(p), held, Qt::NoButton, QEvent::MouseMove);
+        window_, nativeLocal(p), nativeGlobal(p), held, Qt::NoButton, QEvent::MouseMove);
 }
 
 void AcceptanceRunner::mousePress(QPointF p, Qt::MouseButton button, Qt::KeyboardModifiers mods)
 {
     QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-        window_, p, window_->mapToGlobal(p), button, button, QEvent::MouseButtonPress, mods);
+        window_, nativeLocal(p), nativeGlobal(p), button, button, QEvent::MouseButtonPress, mods);
 }
 
 void AcceptanceRunner::mouseRelease(QPointF p, Qt::MouseButton button, Qt::KeyboardModifiers mods)
 {
     QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-        window_, p, window_->mapToGlobal(p), Qt::NoButton, button, QEvent::MouseButtonRelease, mods);
+        window_, nativeLocal(p), nativeGlobal(p), Qt::NoButton, button, QEvent::MouseButtonRelease, mods);
 }
 
 void AcceptanceRunner::click(QPointF p, Qt::KeyboardModifiers mods)
@@ -114,7 +129,7 @@ void AcceptanceRunner::touchTap(const QList<QPointF>& points)
             QWindowSystemInterface::TouchPoint tp;
             tp.id = id++;
             tp.state = state;
-            tp.area = QRectF(window_->mapToGlobal(p) - QPointF(3, 3), QSizeF(6, 6));
+            tp.area = QRectF(nativeGlobal(p) - QPointF(3, 3), QSizeF(6, 6)); // native pixels, like the mouse
             tp.pressure = state == QEventPoint::State::Released ? 0 : 1;
             list.append(tp);
         }
@@ -389,6 +404,10 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
         // 9-10. Drag the arrow upward: live preview, document unchanged.
         [=, this, &in] {
             const auto* op = in.operation();
+            if (!op) {
+                check(false, "the push/pull tool is there to drag (an earlier step failed)");
+                throw AbortScenario{};
+            }
             const Vec3 anchor = op->anchor();
             const double px = in.camera().pixelSize(anchor);
             const interact::ArrowStyle style;
@@ -713,10 +732,12 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
         },
         [] {},
         [=, this] {
-            check(std::abs(geom::volume(body(1).shape()) - 3 * 8000.0) < 1e-3,
-                  "Enter: three copies of the box", num(geom::volume(body(1).shape())));
+            // 5 mm apart, the copies do not touch the box: separate bodies.
+            check(app_->bodyCount() == 4 && std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3
+                      && std::abs(geom::volume(body(3).shape()) - 8000.0) < 1e-3,
+                  "Enter: two copies of the box beside it, as bodies of their own", QString::number(app_->bodyCount()));
             key(Qt::Key_Z, Qt::ControlModifier);
-            check(std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
+            check(app_->bodyCount() == 2 && std::abs(geom::volume(body(1).shape()) - 8000.0) < 1e-3, "undo: one box again");
             check(clickItem(QStringLiteral("tool_mirror")), "Mirror tool button");
             check(app_->operationTitle() == QStringLiteral("Mirror") && !app_->operationPrompt().isEmpty(),
                   "Mirror asks for a plane", app_->operationPrompt());

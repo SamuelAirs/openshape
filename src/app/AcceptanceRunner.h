@@ -100,6 +100,9 @@ public:
 
 private:
     struct AbortScenario {};
+    // Logical window position -> the native (device) pixels Qt's platform input takes.
+    QPointF nativeLocal(QPointF p) const;
+    QPointF nativeGlobal(QPointF p) const;
     void runNext();
     void beginScenario(const QString& name, bool reset);
     void endScenario();

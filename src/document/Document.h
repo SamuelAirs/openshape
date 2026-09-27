@@ -39,7 +39,9 @@ public:
     // Finds the body owning a feature.
     Body* bodyOfFeature(const Uuid& featureId) const;
 
-    Body& addBody(std::unique_ptr<Body> body, int index = -1);
+    // Adds a body and computes its steps from `computeFrom` on (earlier ones
+    // hold results already: Body::adoptResults).
+    Body& addBody(std::unique_ptr<Body> body, int index = -1, int computeFrom = 0);
     std::unique_ptr<Body> removeBody(const Uuid& id, int* removedIndex = nullptr);
     void setBodyVisible(const Uuid& id, bool visible);
 
@@ -72,6 +74,15 @@ public:
     // True if `bodyId` (transitively) uses `otherBodyId` (or is it).
     bool dependsOn(const Uuid& bodyId, const Uuid& otherBodyId) const;
     std::string nextSketchName() const;
+
+    // Imported geometry the document holds: the BRep text of its Imported
+    // steps (ImportedFeature::brepText), what a project file stores in imports/.
+    std::uint64_t importedGeometryBytes() const;
+    // How much of it the document may hold (kMaxImportedGeometryBytes; lower
+    // only in tests): copies that would take it beyond are refused, since a
+    // project holding more cannot be saved (io::SaveOptions).
+    std::uint64_t importedGeometryLimit() const { return importedGeometryLimit_; }
+    void setImportedGeometryLimit(std::uint64_t bytes) { importedGeometryLimit_ = bytes; }
 
     EvalContext context() const { return EvalContext{this}; }
 
@@ -111,6 +122,7 @@ private:
     std::vector<std::unique_ptr<sketch::Sketch>> sketches_;
     std::vector<std::pair<Uuid, std::uint64_t>> sketchRevisions_;
     std::uint64_t revision_ = 0;
+    std::uint64_t importedGeometryLimit_ = kMaxImportedGeometryBytes;
     std::vector<std::pair<int, Listener>> listeners_;
     int nextListener_ = 1;
 };

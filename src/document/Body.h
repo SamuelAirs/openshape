@@ -62,6 +62,15 @@ public:
     // Evaluation stops at the first failure; later features become NotComputed.
     void recompute(int fromIndex, const EvalContext& context);
 
+    // Copying a body (Duplicate, Mirror / Pattern copies, split pieces): this
+    // body's first steps are clones of all of `original`'s steps (same kinds
+    // and parameters, references re-pointed at identical copies), so their
+    // results are `original`'s current ones. Takes those over (the shapes are
+    // shared, not copied): only the steps after them need computing
+    // (Document::addBody's `computeFrom`). Returns the number of steps taken
+    // over (0 when this body has fewer steps than `original`).
+    int adoptResults(const Body& original);
+
     const FeatureState& state(int index) const { return states_.at(static_cast<std::size_t>(index)); }
     // Shape before feature `index` (i.e. the output of the last good feature before it).
     geom::Shape shapeBefore(int index) const;

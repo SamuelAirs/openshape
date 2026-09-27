@@ -674,6 +674,12 @@ TEST(AsyncPreview, RefusedApplyKeepsTheBodyTool)
     ASSERT_NE(mirror, nullptr);
     h.worker().setJobDelayForTesting(300ms);
     ASSERT_TRUE(h.controller.triggerAction("plane:0").ok()); // across YZ
+    // Joined, chosen by hand (Separate bodies on, then off): Apply does not
+    // wait for the preview, since no automatic choice depends on it.
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
+    ASSERT_TRUE(h.controller.triggerAction("separate").ok());
+    ASSERT_EQ(h.controller.operation(), mirror);
+    ASSERT_FALSE(mirror->separate());
     ASSERT_TRUE(mirror->previewPending());
     ASSERT_TRUE(mirror->canCommit()) << "a pending preview counts as committable";
     ASSERT_FALSE(mirror->commitNeedsPreview());
@@ -1018,4 +1024,36 @@ TEST(AsyncPreview, RandomSessionsMatchSynchronousOnes)
             }
         }
     }
+}
+
+// Mirror and Pattern decide automatically whether copies become separate
+// bodies from the preview (copies that would not touch the body). With the
+// preview on the worker, that choice is made on a clone: it must come back
+// with the preview, and an Apply before the preview arrives must wait for it.
+TEST(AsyncPreview, PatternChoosesSeparateBodiesOnTheWorker)
+{
+    AsyncHarness h;
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.runTool("pattern").ok());
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    // Apply at once: the default spacing leaves gaps, so the copies must come
+    // out as bodies of their own even though no preview has arrived yet.
+    const int copies = pattern->count() - 1;
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_EQ(h.document.bodies().size(), std::size_t(copies + 1));
+    for (const auto& body : h.document.bodies())
+        EXPECT_NEAR(geom::volume(body->shape()), 8000.0, 1e-6);
+}
+
+TEST(AsyncPreview, PatternSeparateChoiceReachesTheShownOperation)
+{
+    AsyncHarness h;
+    ASSERT_TRUE(h.controller.selectBody(h.body().id(), false).ok());
+    ASSERT_TRUE(h.controller.runTool("pattern").ok());
+    (void)h.controller.waitForPreview();
+    const auto* pattern = dynamic_cast<const PatternOperation*>(h.controller.operation());
+    ASSERT_NE(pattern, nullptr);
+    EXPECT_TRUE(pattern->separate()) << "the worker's automatic choice is taken with its preview";
+    EXPECT_TRUE(pattern->separateIsAutomatic());
 }

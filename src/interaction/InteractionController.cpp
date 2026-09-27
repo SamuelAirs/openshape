@@ -1050,6 +1050,17 @@ Status InteractionController::commitOperation()
     std::optional<HoleSettings> appliedHoleSettings;
     if (const auto* hole = dynamic_cast<const HoleOperation*>(operation_.get()))
         appliedHoleSettings = hole->settings();
+    // Copies made as separate bodies: say so (and why, when it was not asked for).
+    std::string done;
+    if (const auto* mirror = dynamic_cast<const MirrorOperation*>(operation_.get()); mirror && mirror->separate())
+        done = mirror->separateIsAutomatic() ? "Mirrored as a separate body: the image does not touch the original."
+                                             : "Mirrored as a separate body.";
+    if (const auto* pattern = dynamic_cast<const PatternOperation*>(operation_.get()); pattern && pattern->separate()) {
+        const int copies = pattern->count() - 1;
+        const char* why = copies == 1 ? ": the copy does not touch the original." : ": the copies do not touch the original.";
+        done = "Patterned as " + std::to_string(copies) + (copies == 1 ? " separate body" : " separate bodies")
+             + (pattern->separateIsAutomatic() ? why : ".");
+    }
     const Uuid target = operation_->bodyId();
     const doc::Body* targetBefore = target.isNil() ? nullptr : document_->body(target);
     const int piecesBefore = targetBefore ? targetBefore->shape().solidCount() : 0;
@@ -1075,6 +1086,8 @@ Status InteractionController::commitOperation()
     if (appliedHoleSettings)
         holeSettings_ = *appliedHoleSettings;
     operation_.reset();
+    if (!done.empty())
+        message(done);
     suggestSplit(target, piecesBefore);
     // Edges consumed by a fillet/chamfer no longer exist; a face that was
     // pushed still does and stays selected for the next push.
@@ -2510,7 +2523,7 @@ std::string featureTitle(const doc::Feature& f)
         case doc::HoleKind::Countersink: return "Countersink";
         }
         return "Hole";
-    case doc::FeatureKind::Mirror: return "Mirror";
+    case doc::FeatureKind::Mirror: return static_cast<const doc::MirrorFeature&>(f).keepOriginal ? "Mirror" : "Mirror image";
     case doc::FeatureKind::Pattern: return "Pattern";
     case doc::FeatureKind::DeleteFaces: return "Delete faces";
     case doc::FeatureKind::OffsetFace: return "Offset face";
@@ -2947,20 +2960,21 @@ Status InteractionController::splitBody(const Uuid& bodyId)
     }
     if (Status status = applyPendingValue("splitBody"); !status)
         return status;
-    auto command = cmd::makeSplitBodyCommand(*document_, bodyId);
+    int pieces = 0;
+    auto command = cmd::makeSplitBodyCommand(*document_, bodyId, &pieces);
     if (!command) {
         message(command.userMessage());
         return Status::failureFrom(command);
     }
-    const std::size_t before = document_->bodies().size();
     Status status = undoStack_->push(std::move(command.value()), *document_);
     if (!status) {
         message(status.userMessage());
         return status;
     }
     operation_.reset();
-    const std::size_t made = document_->bodies().size() - before;
-    message(made == 1 ? std::string("Split into 2 bodies.") : "Split into " + std::to_string(made + 1) + " bodies.");
+    // (Counted from the pieces: each new body may bring hidden copies of the
+    // tools its history consumed.)
+    message("Split into " + std::to_string(pieces) + " bodies.");
     afterDocumentEdit();
     return status;
 }
