@@ -64,6 +64,8 @@ ApplicationWindow {
     Binding { target: Theme; property: "safeRight"; value: safeInsets.marginRight }
     Binding { target: Theme; property: "safeBottom"; value: safeInsets.marginBottom }
     Binding { target: Theme; property: "safeLeft"; value: safeInsets.marginLeft }
+    // The sketch's live values, moved out from under a finger, stay inside them too.
+    Binding { target: window.app; property: "safeInsets"; value: [Theme.safeTop, Theme.safeRight, Theme.safeBottom, Theme.safeLeft] }
     // Touch-sized controls once the app is used by touch (from the start on a tablet).
     Binding { target: Theme; property: "touch"; value: window.app.touchMode }
 
@@ -991,7 +993,10 @@ ApplicationWindow {
         // there while the arrow is dragged. Larger windows: beside the arrow
         // tip (right, left, above, below), else in the free corner nearest to
         // it, else docked like on a phone. It keeps its spot while that stays
-        // clear, so it moves along with the arrow instead of jumping.
+        // clear, so it moves along with the arrow instead of jumping. While
+        // the value is typed on a touch screen, a phone's chip docks below the
+        // top bar (the on-screen keyboard covers the bottom), and a larger
+        // window's keeps off the keyboard (chipObstacles).
         readonly property var placement: visible ? window.app.placeValueChip({
             area: Qt.rect(Theme.insetLeft, Theme.insetTop, window.width - Theme.insetLeft - Theme.insetRight,
                           window.height - Theme.insetTop - Theme.insetBottom),
@@ -1002,7 +1007,8 @@ ApplicationWindow {
             keepClear: window.app.keepClearRect,
             compact: Theme.compact,
             touch: Theme.touch,
-            frozen: window.app.manipulatorDragging
+            frozen: window.app.manipulatorDragging,
+            typing: Theme.touch && valueChip.typing
         }) : null
         x: placement ? placement.x : Theme.insetLeft
         y: placement ? placement.y : Theme.insetTop
@@ -1012,11 +1018,16 @@ ApplicationWindow {
         onFinished: viewport.forceActiveFocus()
     }
 
-    // The controls the value chip must not cover, as window rectangles.
+    // The controls the value chip must not cover, as window rectangles, and
+    // the on-screen keyboard while it is up (in window coordinates; empty
+    // where the platform does not say, and on a desktop).
     function chipObstacles() {
         const items = Theme.compact ? [topBar, modelButtonPanel, viewButtonPanel, axisTriad, statusColumn, createPanel]
                                     : [topBar, createPanel, historyPanel, viewPanel, axisTriad, statusColumn]
-        return items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
+        const rects = items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
+        if (Qt.inputMethod.visible)
+            rects.push(Qt.inputMethod.keyboardRectangle)
+        return rects
     }
 
     // ---------------------------------------------------------------- home

@@ -10,6 +10,7 @@
 #include "geometry/Profiles.h"
 #include "interaction/ContextAction.h"
 #include "interaction/InputEvents.h"
+#include "interaction/OverlayPlacement.h"
 #include "interaction/RenderScene.h"
 #include "sketch/Sketch.h"
 #include "sketch/SketchEdit.h"
@@ -97,6 +98,9 @@ public:
     // other, and their tap targets are larger.
     bool largeTargets() const { return largeTargets_; }
     void setLargeTargets(bool on) { largeTargets_ = on; }
+    // The window's safe-area insets: live values moved out from under a
+    // finger stay inside them (labels()).
+    void setSafeInsets(const SafeInsets& insets) { safeInsets_ = insets; }
     // Half the side of a constraint glyph's square tap target, px. Taps are
     // resolved here, not by the UI: with the Select tool a point or curve
     // within pick reach always wins, and only then a glyph under the pointer.
@@ -235,6 +239,7 @@ private:
     std::size_t focusedInput_ = 0;
     int polygonSides_ = 6;
     bool largeTargets_ = false;
+    SafeInsets safeInsets_;
 
     // The last pointer position and device: a finger or pen there hides the
     // labels beside it (labels()).

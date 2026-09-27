@@ -228,6 +228,60 @@ TEST(ChipPlacement, PhoneKeepsItsSideWhileDragging)
     EXPECT_TRUE(p.clear);
 }
 
+// Typing on a phone: the on-screen keyboard rises over the bottom half, so
+// the chip goes below the top bar, even from a dock above the hint that was
+// the farther one (the top face of a box, its arrow pointing up).
+TEST(ChipPlacement, PhoneDocksAtTheTopWhileTyping)
+{
+    for (const Layout& phone : {iphonePortrait(), iphoneLandscape()}) {
+        SCOPED_TRACE(phone.name);
+        const bool portrait = phone.area.height() > phone.area.width();
+        const ScreenRect face = portrait ? rect(110, 300, 180, 150) : rect(350, 90, 180, 110);
+        auto in = input(phone, {face.center().x, face.top - 60}, face.united(rect(face.center().x - 5, face.top - 70, 10, 70)));
+        const ChipPlacement before = placeValueChip(in);
+        ASSERT_EQ(before.spot, ChipSpot::DockBottom) << "the farther dock";
+        in.typing = true;
+        const ChipPlacement typing = placeValueChip(in, before.spot);
+        EXPECT_EQ(typing.spot, ChipSpot::DockTop);
+        const ScreenRect chip = chipRect(typing, in);
+        EXPECT_TRUE(phone.area.contains(chip)) << text(chip);
+        EXPECT_FALSE(coversControl(chip, in)) << text(chip);
+        EXPECT_LT(chip.bottom, phone.area.top + phone.area.height() / 2) << "in the upper half, above the keyboard";
+        // Also while an arrow is dragged, and when nothing is kept clear.
+        in.frozen = true;
+        EXPECT_EQ(placeValueChip(in, ChipSpot::DockBottom).spot, ChipSpot::DockTop);
+        in.keepClear.reset();
+        EXPECT_EQ(placeValueChip(in, ChipSpot::DockBottom).spot, ChipSpot::DockTop);
+        // Done typing: it stays where it is while that is clear (no jump back).
+        in.frozen = false;
+        in.typing = false;
+        in.keepClear = face;
+        const ChipPlacement after = placeValueChip(in, typing.spot);
+        EXPECT_EQ(after.spot, ChipSpot::DockTop);
+        EXPECT_TRUE(after.clear);
+    }
+}
+
+// A larger window keeps the chip off an on-screen keyboard (an obstacle like
+// the controls): it goes above the keyboard, still clear of the selection.
+TEST(ChipPlacement, OffTheOnScreenKeyboard)
+{
+    const Layout layout = ipad();
+    const ScreenRect face = rect(450, 500, 200, 150);
+    auto in = input(layout, {550, 450}, face.united(rect(545, 440, 10, 60)));
+    const ChipPlacement before = placeValueChip(in);
+    ASSERT_TRUE(before.clear);
+    const ScreenRect keyboard = rect(0, 820 - 400, 1180, 400);
+    ASSERT_TRUE(chipRect(before, in).intersects(keyboard)) << "the keyboard would hide it";
+    in.avoid.push_back(keyboard);
+    in.typing = true;
+    const ChipPlacement typing = placeValueChip(in, before.spot);
+    const ScreenRect chip = chipRect(typing, in);
+    EXPECT_FALSE(chip.intersects(keyboard)) << text(chip);
+    EXPECT_TRUE(typing.clear) << text(chip);
+    EXPECT_TRUE(layout.area.contains(chip)) << text(chip);
+}
+
 TEST(ChipPlacement, PhoneInLandscapeDocksBesideTheTopBar)
 {
     const Layout phone = iphoneLandscape();
@@ -392,7 +446,7 @@ TEST(FingerLabels, MoveAboveTheFingerOnlyWhenHidden)
 {
     const Vec2 finger{600, 500};
     const Vec2 size{88, 24};
-    const Vec2 viewport{1180, 820};
+    const ScreenRect viewport = rect(0, 0, 1180, 820);
     // Right beside the finger (a circle's diameter), below it (a width), and far away.
     std::vector<Vec2> centers{finger + Vec2{40, -18}, finger + Vec2{-10, 40}, {200, 200}};
     keepLabelsClearOfFinger(centers, size, finger, viewport);
@@ -412,6 +466,54 @@ TEST(FingerLabels, MoveAboveTheFingerOnlyWhenHidden)
     EXPECT_FALSE(ScreenRect::at(top[0] - size * 0.5, size).intersects(fingerShadow({1000, 90})));
     EXPECT_LT(top[0].x, 1000.0) << "to the left: more room there";
     EXPECT_GE(top[0].y - size.y / 2, 90.0) << "below the top bar";
+}
+
+// A finger near the window's edge, or beside a phone's Dynamic Island: the
+// moved labels are whole and inside the safe area, still clear of the finger.
+TEST(FingerLabels, StayInsideTheSafeArea)
+{
+    const Vec2 size{88, 24};
+    // iPhone in landscape: 874x402, the island on the left (62 px), 21 px below.
+    const SafeInsets landscape{0, 62, 21, 62};
+    const ScreenRect bounds = landscape.inside({874, 402});
+    EXPECT_DOUBLE_EQ(bounds.left, 62);
+    EXPECT_DOUBLE_EQ(bounds.right, 812);
+    EXPECT_DOUBLE_EQ(bounds.bottom, 381);
+    for (const Vec2 finger : {Vec2{70, 300}, Vec2{805, 300}, Vec2{70, 150}}) {
+        SCOPED_TRACE(text(ScreenRect::around(finger)));
+        // A rectangle's width and height, drawn toward the finger.
+        std::vector<Vec2> centers{finger + Vec2{-30, -20}, finger + Vec2{-60, 10}};
+        keepLabelsClearOfFinger(centers, size, finger, bounds);
+        for (const Vec2 c : centers) {
+            const ScreenRect box = ScreenRect::at(c - size * 0.5, size);
+            EXPECT_TRUE(bounds.contains(box)) << text(box);
+            EXPECT_FALSE(box.intersects(fingerShadow(finger))) << text(box);
+        }
+    }
+    // Many values under a finger high on the screen: no room above, so they
+    // stack beside it, starting high enough to end above the home indicator,
+    // one below the other.
+    {
+        const Vec2 finger{70, 130};
+        std::vector<Vec2> many;
+        for (int i = 0; i < 12; ++i)
+            many.push_back(finger + Vec2{-20.0 + 4 * i, -10.0 + 10 * i});
+        keepLabelsClearOfFinger(many, size, finger, bounds);
+        for (std::size_t i = 0; i < many.size(); ++i) {
+            const ScreenRect box = ScreenRect::at(many[i] - size * 0.5, size);
+            EXPECT_TRUE(bounds.contains(box)) << i << ": " << text(box);
+            EXPECT_FALSE(box.intersects(fingerShadow(finger))) << i << ": " << text(box);
+            if (i > 0) {
+                EXPECT_GE(many[i].y - many[i - 1].y, size.y) << i << ": stacked, not piled up";
+            }
+        }
+    }
+    // Portrait, a finger at the very left edge: the labels start at the window's edge.
+    const ScreenRect portrait = SafeInsets{62, 0, 34, 0}.inside({402, 874});
+    std::vector<Vec2> centers{Vec2{20, 500} + Vec2{30, -20}};
+    keepLabelsClearOfFinger(centers, size, {20, 500}, portrait);
+    EXPECT_DOUBLE_EQ(centers[0].x, 44) << "the whole label on screen";
+    EXPECT_LT(centers[0].y, 500 - 36) << "above the fingertip";
 }
 
 // ---- The keep-clear rectangle of a real selection ------------------------------
@@ -477,6 +579,78 @@ TEST(KeepClear, EdgeArrowAndTap)
     EXPECT_TRUE(s.inside(*turned, s.screen({-10, -10, 0})));
     EXPECT_TRUE(s.inside(*turned, s.screen({-10, -10, 20})));
     EXPECT_TRUE(s.inside(*turned, *s.controller.valueLabelPosition()));
+}
+
+namespace {
+bool sameRect(const std::optional<ScreenRect>& a, const std::optional<ScreenRect>& b)
+{
+    return a.has_value() == b.has_value()
+        && (!a
+            || (std::abs(a->left - b->left) < 1e-9 && std::abs(a->top - b->top) < 1e-9 && std::abs(a->right - b->right) < 1e-9
+                && std::abs(a->bottom - b->bottom) < 1e-9));
+}
+} // namespace
+
+// Only a press that can select or act is kept clear: not a hand resting on
+// the screen in pen mode, not a right click.
+TEST(KeepClear, PressesThatDoNothingAreNotKeptClear)
+{
+    Scene s({1180, 820});
+    const Vec2 edge = s.screen({-10, -10, 10});
+    s.tap(edge, PointerDevice::Pen);
+    ASSERT_TRUE(s.controller.penMode());
+    ASSERT_NE(s.controller.operation(), nullptr);
+    ASSERT_EQ(s.controller.operation()->title(), "Fillet");
+    const auto keep = s.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    EXPECT_TRUE(s.inside(*keep, edge)) << "the pen's tap";
+    const Vec2 corner{1100, 780};
+    ASSERT_FALSE(s.inside(*keep, corner));
+    // A palm in the corner: in pen mode a finger only moves the view.
+    s.tap(corner, PointerDevice::Touch);
+    EXPECT_EQ(s.controller.operation()->title(), "Fillet");
+    EXPECT_TRUE(sameRect(s.controller.keepClearRect(), keep)) << text(*s.controller.keepClearRect());
+    // A right click there does nothing either.
+    PointerEvent right = Scene::at(corner, PointerDevice::Mouse);
+    right.button = PointerButton::Right;
+    s.controller.pointerPress(right);
+    s.controller.pointerRelease(right);
+    EXPECT_EQ(s.controller.operation()->title(), "Fillet");
+    EXPECT_TRUE(sameRect(s.controller.keepClearRect(), keep)) << text(*s.controller.keepClearRect());
+    // The pen's tap on the edge again: still kept clear.
+    s.tap(edge, PointerDevice::Pen);
+    EXPECT_TRUE(s.inside(*s.controller.keepClearRect(), edge));
+}
+
+// A press is kept clear with the selection it made; a selection made some
+// other way (the Model panel) forgets it, even with the view unchanged.
+TEST(KeepClear, PressForgottenWhenTheSelectionChangesOtherwise)
+{
+    Scene s({1180, 820});
+    const Vec2 empty{1100, 120};
+    s.tap(empty, PointerDevice::Mouse);
+    EXPECT_TRUE(s.controller.selection().empty());
+    const auto pressOnly = s.controller.keepClearRect();
+    ASSERT_TRUE(pressOnly.has_value());
+    EXPECT_TRUE(s.inside(*pressOnly, empty)) << "nothing else: the press itself";
+    // The body picked in the Model panel: its Move chip keeps clear of the
+    // body and the arrows, not of the old click in the corner.
+    ASSERT_EQ(s.document.bodies().size(), 1u);
+    ASSERT_TRUE(s.controller.selectBody(s.document.bodies().front()->id(), false).ok());
+    ASSERT_NE(s.controller.operation(), nullptr);
+    ASSERT_EQ(s.controller.operation()->title(), "Move");
+    const auto keep = s.controller.keepClearRect();
+    ASSERT_TRUE(keep.has_value());
+    EXPECT_FALSE(s.inside(*keep, empty)) << text(*keep);
+    EXPECT_TRUE(s.inside(*keep, s.screen({0, 0, 20}), 1.0)) << "the body";
+    // A double-click selects the body too, and is kept clear with it.
+    EXPECT_TRUE(s.controller.keyPress(Key::Escape));
+    const Vec2 face = s.screen({0, -10, 10});
+    s.tap(face, PointerDevice::Mouse);
+    s.controller.pointerDoubleClick(Scene::at(face, PointerDevice::Mouse));
+    ASSERT_NE(s.controller.operation(), nullptr);
+    ASSERT_EQ(s.controller.operation()->title(), "Move");
+    EXPECT_TRUE(s.inside(*s.controller.keepClearRect(), face));
 }
 
 TEST(KeepClear, PushedFaceIsKeptClearWhereItMoved)
@@ -628,4 +802,52 @@ TEST(FingerLabels, RectangleDrawnByTouchKeepsItsValuesVisible)
         besidePointer = besidePointer
                      || ScreenRect::at(label.screen - SketchSession::kLiveLabelSize * 0.5, SketchSession::kLiveLabelSize).intersects(fingerShadow(pointer));
     EXPECT_TRUE(besidePointer) << "a mouse hides nothing: the labels stay next to the corner";
+}
+
+// On a phone held sideways, a rectangle drawn with a finger beside the
+// Dynamic Island: its width and height stay whole inside the safe area (the
+// controller hands the window's safe insets to the sketch).
+TEST(FingerLabels, RectangleBesideTheDynamicIsland)
+{
+    doc::Document document;
+    cmd::UndoStack stack;
+    InteractionController controller{document, stack};
+    controller.setViewportSize({874, 402});
+    controller.setTouchLayout(true);
+    const SafeInsets insets{0, 62, 21, 62};
+    controller.setSafeInsets(insets);
+    controller.fitAll(false);
+    ASSERT_TRUE(controller.startSketch().ok());
+    controller.skipAnimation();
+    controller.setSketchTool(SketchTool::Rectangle);
+    // Screen <-> sketch plane (a straight view of the plane: linear).
+    auto screen = [&](Vec2 local) { return controller.camera().project(controller.sketchSession()->sketch().plane().toWorld(local)); };
+    const Vec2 o = screen({0, 0}), ex = screen({1, 0}) - o, ey = screen({0, 1}) - o;
+    auto local = [&](Vec2 s) {
+        const Vec2 d = s - o;
+        const double det = ex.x * ey.y - ex.y * ey.x;
+        return Vec2{(d.x * ey.y - d.y * ey.x) / det, (ex.x * d.y - ex.y * d.x) / det};
+    };
+    const Vec2 finger{75, 300};
+    PointerEvent e;
+    e.device = PointerDevice::Touch;
+    e.position = screen(local({195, 220}));
+    controller.pointerPress(e);
+    const Vec2 start = e.position;
+    for (int i = 1; i <= 8; ++i) {
+        e.position = start + (finger - start) * (i / 8.0);
+        controller.pointerMove(e);
+    }
+    const ScreenRect bounds = insets.inside({874, 402});
+    int inputs = 0;
+    for (const auto& label : controller.sketchSession()->labels(controller.camera())) {
+        if (label.kind != SketchLabel::Kind::Input)
+            continue;
+        ++inputs;
+        const ScreenRect box = ScreenRect::at(label.screen - SketchSession::kLiveLabelSize * 0.5, SketchSession::kLiveLabelSize);
+        EXPECT_TRUE(bounds.contains(box)) << label.key << " at " << text(box);
+        EXPECT_FALSE(box.intersects(fingerShadow(finger))) << label.key << " at " << text(box);
+    }
+    EXPECT_EQ(inputs, 2) << "the width and the height";
+    controller.pointerRelease(e);
 }

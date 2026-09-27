@@ -2039,7 +2039,7 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 live.push_back(i);
                 centers.push_back(out[i].screen);
             }
-        keepLabelsClearOfFinger(centers, kLiveLabelSize, *pointerScreen_, camera.viewportSize);
+        keepLabelsClearOfFinger(centers, kLiveLabelSize, *pointerScreen_, safeInsets_.inside(camera.viewportSize));
         for (std::size_t k = 0; k < live.size(); ++k)
             out[live[k]].screen = centers[k];
     }

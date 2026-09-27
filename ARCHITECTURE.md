@@ -707,9 +707,20 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   `AppController.keepClearRect` with `viewChanged`): the screen bounds of
   the selection (face triangles and edge polylines of the display mesh, a
   body's or profile's mesh box corners), the same bounds moved by the active
-  arrow's travel (a pushed face, a moved body), the arrows (with their head
-  radius) and rings, a hole's position (Hole tool) and the last press while
-  the view has not moved since; clipped to the viewport; none in sketch mode.
+  arrow's travel (a pushed face, a moved body) and by the travel of the
+  preview on screen (`Operation::previewArrow`, the arrow as the worker's
+  copy had it: while a newer value computes, the shown preview is of an
+  earlier one, also ahead of the arrow after a drag back), the arrows (with their head
+  radius) and rings, a hole's position (Hole tool) and the last press that
+  could select or act (a left click, a tap, the pen: not a finger resting in
+  pen mode, not a right or middle button) while the view and the selection
+  it left are unchanged (what a press selects is recorded with it while its
+  release is handled: `pressHandling_`, `notePressSelection`; a selection
+  made another way, such as the Model panel, forgets it); clipped to the
+  viewport; none in sketch mode. It reads display meshes (`SceneCache`)
+  and the operation's arrows only, so neither it nor the chip's placement
+  calls the kernel on the GUI thread during a drag
+  (`AsyncPreview.ValueChipKeepsClearOfTheShownPreview`).
   `placeValueChip(input, previous)` is a pure function of rectangles (the
   area inside the safe insets, the controls to avoid with an 8 px gap, the
   chip's size, the tip, the keep-clear rectangle with a 10 px margin, 20 px
@@ -718,7 +729,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   top bar's row) or from the bottom (above the hint), on the side farther
   from the keep-clear rectangle (a clear side first, the bottom on a tie),
   and keep that side while it stays clear and always while an arrow or
-  ring is dragged (`manipulatorDragging`); **regular** windows try right,
+  ring is dragged (`manipulatorDragging`), and below the top bar while the
+  value is typed on a touch screen (`typing`: the field has the focus, so the
+  on-screen keyboard covers the bottom); **regular** windows try right,
   left, above and below the tip (next to it, else on that side just past
   the keep-clear rectangle, the field level with the tip), then the free
   spot nearest each corner of the area (a first-fit search over the edges of
@@ -732,14 +745,19 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   appear, it grows), so until the tip or the keep-clear rectangle moves (or
   a drag starts) each one chooses afresh for the chip's current size. QML
   (`Main.qml`) passes the layout to `AppController.placeValueChip` from one
-  binding and places the chip from the result; a phone held sideways shows
+  binding and places the chip from the result, with the on-screen
+  keyboard's rectangle (`Qt.inputMethod.keyboardRectangle`, while it is up)
+  among the controls to avoid; a phone held sideways shows
   the chip as one row (`ValueChip.singleRow`: the actions beside the field).
   **Live sketch values** (`SketchSession::labels`): after a touch or pen
   input (or in the touch layout) the typed-value labels and inference hints
   whose box falls under the finger or the hand below it
   (`fingerShadow`: 56 px either side, from 36 px above the contact down)
   move above the finger, stacked (`keepLabelsClearOfFinger`), or beside it
-  near the top of the window.
+  near the top of the window (a long stack starts higher, to end above the
+  bottom inset), whole and inside the safe area (the window's
+  safe insets reach the sketch through `AppController.safeInsets` ->
+  `InteractionController::setSafeInsets` -> `SketchSession::setSafeInsets`).
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).
@@ -1038,7 +1056,9 @@ them on a hidden menu separator after the Open Recent sub-menu).
   402x874 and 874x402 with the iPhone's safe areas, 1180x820 touch and
   1400x900: the chip is off the projected edge or face (with the margin),
   the arrow tip, the keep-clear rectangle and the controls, inside the safe
-  area; on the phone it keeps its place while the arrow is dragged); `appfolder`
+  area; on the phone it keeps its place while the arrow is dragged, its
+  buttons work (Chamfer, Fillet, Select body scrolled into sight, ✕, the
+  field, ✓) and it docks below the top bar while the value is typed); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
   touch layout); `copies` (Mirror and Pattern clicked on a box off the

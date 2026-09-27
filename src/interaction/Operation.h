@@ -107,6 +107,16 @@ public:
     // The body the shown preview mesh stands in for (nil: a new body). While
     // a newer preview is pending, previewBody() may already differ.
     const Uuid& previewMeshBody() const { return previewMeshBody_; }
+    // Where the shown preview has the active arrow (its base and tip, from
+    // the operation that computed it): while a newer value computes on the
+    // worker, the preview on screen is of an earlier one, and what the arrow
+    // moved (a pushed face) is there, not at anchor(). nullopt without a
+    // shown preview or an arrow.
+    struct ArrowSpan {
+        Vec3 base;
+        Vec3 tip;
+    };
+    std::optional<ArrowSpan> previewArrow() const { return previewMesh_ ? previewArrow_ : std::nullopt; }
     // The error of the latest finished preview (or of a value refused at once).
     const std::string& error() const { return error_; }
     // A pending preview counts as committable: the command computes the step
@@ -216,6 +226,7 @@ private:
     int activeHandle_ = 0;
     std::shared_ptr<const geom::Mesh> previewMesh_;
     Uuid previewMeshBody_;
+    std::optional<ArrowSpan> previewArrow_;
     std::uint64_t previewKey_ = 0;
     std::string error_;
     std::uint64_t instance_ = 0;

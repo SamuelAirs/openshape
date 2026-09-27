@@ -189,6 +189,10 @@ public:
         const Vec2 top = dockPosition(true);
         const Vec2 bottom = dockPosition(false);
         auto at = [&](ChipSpot spot) { return result(spot, spot == ChipSpot::DockTop ? top : bottom); };
+        // An on-screen keyboard is coming up over the bottom: the field must
+        // stay in sight above it.
+        if (in_.typing)
+            return at(ChipSpot::DockTop);
         if (!in_.keepClear)
             return at(previous == ChipSpot::DockTop ? ChipSpot::DockTop : ChipSpot::DockBottom);
         const double topDistance = separation(rectAt(top), *in_.keepClear);
@@ -266,7 +270,7 @@ constexpr double kShadowAbove = 36;
 constexpr double kShadowBelow = 240;
 // Clear of the shadow by this much.
 constexpr double kFingerGap = 14;
-// Moved labels stay below this (the top bar's height and the safe area).
+// Moved labels stay this far below the safe area's top (the top bar).
 constexpr double kTopRoom = 110;
 } // namespace
 
@@ -275,7 +279,7 @@ ScreenRect fingerShadow(Vec2 finger)
     return {finger.x - kShadowHalfWidth, finger.y - kShadowAbove, finger.x + kShadowHalfWidth, finger.y + kShadowBelow};
 }
 
-void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, Vec2 viewport)
+void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, const ScreenRect& bounds)
 {
     const ScreenRect shadow = fingerShadow(finger);
     auto box = [&](Vec2 c) { return ScreenRect::at({c.x - labelSize.x / 2, c.y - labelSize.y / 2}, labelSize); };
@@ -292,10 +296,17 @@ void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 fi
     // Above the finger when the stack fits below the top bar, else beside it
     // (on the side with more room), from the fingertip's height down.
     const double firstAbove = shadow.top - kFingerGap - labelSize.y / 2;
-    const bool above = firstAbove - (count - 1) * step - labelSize.y / 2 >= kTopRoom;
-    const bool toLeft = finger.x > viewport.x / 2;
+    const bool above = firstAbove - (count - 1) * step - labelSize.y / 2 >= bounds.top + kTopRoom;
+    const bool toLeft = finger.x > bounds.center().x;
     const double besideX = toLeft ? shadow.left - kFingerGap - labelSize.x / 2 : shadow.right + kFingerGap + labelSize.x / 2;
-    const double firstBeside = std::max(finger.y, kTopRoom + labelSize.y / 2);
+    // Whole labels inside the safe area (a finger near the window's edge, or
+    // beside the Dynamic Island; a stack beside the finger starts high enough
+    // to end above the home indicator).
+    const double minX = bounds.left + labelSize.x / 2;
+    const double maxX = std::max(minX, bounds.right - labelSize.x / 2);
+    const double minY = bounds.top + labelSize.y / 2;
+    const double maxY = std::max(minY, bounds.bottom - labelSize.y / 2);
+    const double firstBeside = std::max(minY, std::min(std::max(finger.y, bounds.top + kTopRoom + labelSize.y / 2), maxY - (count - 1) * step));
     std::vector<ScreenRect> taken;
     for (std::size_t i = 0; i < centers.size(); ++i)
         if (!hidden[i])
@@ -305,9 +316,11 @@ void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 fi
         if (!hidden[i])
             continue;
         Vec2 c = above ? Vec2{finger.x, firstAbove - moved * step} : Vec2{besideX, firstBeside + moved * step};
+        c.x = std::clamp(c.x, minX, maxX);
         // Not onto a label that stayed (a few steps further at most).
         for (int k = 0; k < 6 && std::any_of(taken.begin(), taken.end(), [&](const ScreenRect& t) { return t.intersects(box(c)); }); ++k)
             c.y += above ? -step : step;
+        c.y = std::clamp(c.y, minY, maxY);
         centers[i] = c;
         taken.push_back(box(c));
         ++moved;

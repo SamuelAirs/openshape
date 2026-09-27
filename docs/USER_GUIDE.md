@@ -69,7 +69,8 @@ On a desktop-sized window:
 - **Value box** (next to the arrow or ring you are dragging, never over
   what you selected, the arrow or the spot you tapped; on a phone it sits
   below the top bar or above the hint, on the side away from the
-  selection, and stays there while you drag): the name of
+  selection, and stays there while you drag; while you type a value it
+  sits below the top bar, above the keyboard): the name of
   the value (Height, Radius, Diameter …), the value itself, **✓** to apply,
   **✕** to cancel, and below it the other things you can do with the
   current selection (for example Push/Pull, Shell, Sketch, Align, Delete

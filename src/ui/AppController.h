@@ -62,6 +62,10 @@ class AppController : public QObject {
     Q_PROPERTY(QVariant keepClearRect READ keepClearRect NOTIFY viewChanged)
     // An arrow or ring is being dragged (a docked value chip keeps its side).
     Q_PROPERTY(bool manipulatorDragging READ manipulatorDragging NOTIFY viewChanged)
+    // The window's safe-area insets [top, right, bottom, left] in logical px
+    // (Main.qml binds Theme.safe*): the sketch's live values moved out from
+    // under a finger stay inside them.
+    Q_PROPERTY(QVariantList safeInsets READ safeInsets WRITE setSafeInsets NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
@@ -138,6 +142,8 @@ public:
     bool valueLabelVisible() const;
     QVariant keepClearRect() const;
     bool manipulatorDragging() const;
+    QVariantList safeInsets() const;
+    void setSafeInsets(const QVariantList& insets);
     QVariantList axisTriad() const;
     bool touchMode() const;
     void setTouchMode(bool on);
@@ -278,7 +284,7 @@ public:
     Q_INVOKABLE void cancelOperation();
     // Where the value chip goes (interact::placeValueChip). `layout`: area
     // (rect), avoid (rects), size, tip (point), fieldCenter, keepClear (rect
-    // or null), compact, touch, frozen. Returns {x, y, spot, clear}. The spot
+    // or null), compact, touch, frozen, typing. Returns {x, y, spot, clear}. The spot
     // is remembered for the selection (the chip does not jump).
     Q_INVOKABLE QVariantMap placeValueChip(const QVariantMap& layout) const;
     // Returns an error message ("" on success, or while the value's preview

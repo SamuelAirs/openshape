@@ -75,7 +75,7 @@ Rectangle {
                     font.pixelSize: 13
                     text: Theme.touch
                           ? "Select something and its value and tools appear beside it, never over it (on a phone: below "
-                            + "the top bar or above the hint). Drag the arrow, or tap the value, "
+                            + "the top bar or above the hint; below the top bar while you type). Drag the arrow, or tap the value, "
                             + "type a new one and tap ✓. Every value accepts units and arithmetic: 25, 1in, 20+5, (10+2)*3."
                           : "Select something and its value and tools appear beside it, never over it. Drag the arrow, or just type a "
                             + "value and press Enter. Every value accepts units and arithmetic: 25, 1in, 20+5, (10+2)*3."

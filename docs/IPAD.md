@@ -254,7 +254,10 @@ relinking.
 10. The value box stays out of the way: tap edges and faces on the left,
    the right, high and low on the model (and zoomed in): the box sits next
    to the arrow but never over what you tapped, the arrow or the selected
-   edge / face; drag the arrow and it moves along without jumping. Draw a
+   edge / face; drag the arrow and it moves along without jumping. Tap the
+   value and type with the on-screen keyboard (no hardware keyboard): the
+   box moves above the keyboard and stays readable. With the Pencil, rest
+   your palm on the screen while the box shows: it does not move. Draw a
    rectangle and a circle with a finger: the live width / height /
    diameter show above the finger, not under it.
 11. Note anything slow, hard to hit, or missing — with a screenshot
@@ -301,5 +304,8 @@ margins (BUILDING.md).
    faces in different places: the box docks below the top bar or above the
    hint, whichever is farther from the selection, and stays there while
    you drag the arrow. In landscape it is one row, beside the top bar.
-   Draw a rectangle with a finger: its width and height show above the
-   finger.
+   Tap the top face of a box, then the value field: the box moves below the
+   top bar while the keyboard is up, and the field stays in sight as you
+   type. Swipe its row of actions sideways and tap the last one.
+   Draw a rectangle with a finger, also next to the Dynamic Island in
+   landscape: its width and height show above the finger, whole.

@@ -247,6 +247,24 @@ QVariant AppController::keepClearRect() const
 
 bool AppController::manipulatorDragging() const { return interaction_->manipulatorDragging(); }
 
+QVariantList AppController::safeInsets() const
+{
+    const interact::SafeInsets& i = interaction_->safeInsets();
+    return {i.top, i.right, i.bottom, i.left};
+}
+
+void AppController::setSafeInsets(const QVariantList& insets)
+{
+    interact::SafeInsets i;
+    if (insets.size() == 4) {
+        i.top = insets[0].toDouble();
+        i.right = insets[1].toDouble();
+        i.bottom = insets[2].toDouble();
+        i.left = insets[3].toDouble();
+    }
+    interaction_->setSafeInsets(i); // emits viewChanged when they change
+}
+
 QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
 {
     interact::ChipPlacementInput input;
@@ -263,6 +281,7 @@ QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
     input.compact = layout.value(QStringLiteral("compact")).toBool();
     input.touch = layout.value(QStringLiteral("touch")).toBool();
     input.frozen = layout.value(QStringLiteral("frozen")).toBool();
+    input.typing = layout.value(QStringLiteral("typing")).toBool();
     const interact::ChipPlacement placement = interaction_->placeValueChip(input);
     QVariantMap result;
     result.insert(QStringLiteral("x"), placement.position.x);

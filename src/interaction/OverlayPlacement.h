@@ -6,6 +6,7 @@
 
 #include "core/Math.h"
 
+#include <algorithm>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -43,6 +44,19 @@ struct ScreenRect {
     void include(Vec2 p);
 };
 
+// A window's safe-area insets (the Dynamic Island or notch, the home
+// indicator, rounded corners), px.
+struct SafeInsets {
+    double top = 0, right = 0, bottom = 0, left = 0;
+
+    // The part of a window of `viewport` size inside them.
+    ScreenRect inside(Vec2 viewport) const
+    {
+        return {left, top, std::max(left, viewport.x - right), std::max(top, viewport.y - bottom)};
+    }
+    bool operator==(const SafeInsets&) const = default;
+};
+
 // How far apart two rectangles are: the distance between them when they do
 // not overlap, otherwise minus how deep they overlap (the smaller of the
 // horizontal and vertical overlap). Larger is farther.
@@ -67,6 +81,10 @@ struct ChipPlacementInput {
     bool compact = false; // a phone-sized window: always docked
     bool touch = false;   // a finger: larger margins
     bool frozen = false;  // a manipulator is being dragged: a docked chip keeps its side
+    // The value is being typed on an on-screen keyboard (a touch window's
+    // field has the focus): the keyboard rises over the bottom of the window,
+    // so a docked chip goes below the top bar, whatever else it would pick.
+    bool typing = false;
 };
 
 struct ChipPlacement {
@@ -85,7 +103,8 @@ inline constexpr double kChipPanelGap = 8;
 // Compact windows dock the chip below the top bar or above the hint,
 // whichever is farther from the keep-clear rectangle (the bottom when both
 // are clear by the same amount), and keep that side while it stays clear,
-// always while a manipulator is dragged. Regular windows try beside the tip
+// always while a manipulator is dragged; below the top bar while the value is
+// typed on an on-screen keyboard. Regular windows try beside the tip
 // (right, left, above, below: next to the tip, or on that side just past the
 // selection when it reaches beyond the tip), then the free spots nearest
 // each corner of the area, the one nearest the tip first (a complete search:
@@ -101,8 +120,9 @@ ChipPlacement placeValueChip(const ChipPlacementInput& input, ChipSpot previous 
 // A finger (or pen) at `finger` hides the labels next to it: the fingertip and
 // the hand below it. Labels (centers, all about `labelSize`) whose box falls
 // there move above the finger, stacked in their order, or beside it when
-// there is no room above (`viewport`: the window's size). Others stay put.
-void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, Vec2 viewport);
+// there is no room above, and stay inside `bounds` (the window inside its
+// safe area) from side to side. Others stay put.
+void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, const ScreenRect& bounds);
 // The region a finger at `finger` hides (for tests and callers that check).
 ScreenRect fingerShadow(Vec2 finger);
 

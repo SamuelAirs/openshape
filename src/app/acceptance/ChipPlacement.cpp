@@ -9,8 +9,11 @@
 // a box and then a face are tapped (clicked), and the chip must stay clear of
 // the selected edge or face as projected on screen, of the arrow and its tip,
 // and of the controls, inside the safe area. On the phone the chip is docked
-// and keeps its place while the arrow is dragged. The window goes back to
-// the run's size at the end (the runner's reset restores it too).
+// and keeps its place while the arrow is dragged; its buttons are tapped
+// (Chamfer, Fillet, the last action scrolled into sight, ✕, the field, ✓), and while
+// the value is typed it docks below the top bar (the on-screen keyboard
+// comes up from below). The window goes back to the run's size at the end
+// (the runner's reset restores it too).
 
 #include "app/AcceptanceRunner.h"
 #include "geometry/Modeling.h"
@@ -19,6 +22,7 @@
 #include "ui/AppController.h"
 
 #include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
@@ -82,7 +86,22 @@ struct Config {
 struct State {
     QRectF chipBefore; // where the docked chip was when the drag started
     bool dragged = false;
+    double volume = 0; // the box before a typed push/pull
 };
+
+// The compact layout: a phone.
+bool phone(const Config& c) { return c.width < 600 || c.height < 500; }
+
+// The chip covers none of the controls.
+void checkControls(AcceptanceRunner& r, const Config& c, const QString& what, const QRectF& rect)
+{
+    for (const char* control : {"topBar", "modelButtonPanel", "viewButtonPanel", "statusColumn", "createPanel", "historyPanel", "viewPanel"}) {
+        const QRectF other = sceneRect(r, QString::fromLatin1(control));
+        r.check(other.isEmpty() || !overlaps(rect, other),
+                c.name + QStringLiteral(": the chip does not cover the ") + QString::fromLatin1(control) + QStringLiteral(" (") + what + QStringLiteral(")"),
+                rectText(rect) + QStringLiteral(" / ") + rectText(other));
+    }
+}
 
 void select(AcceptanceRunner& r, const Config& c, QPointF p)
 {
@@ -125,12 +144,7 @@ void checkChip(AcceptanceRunner& r, const Config& c, const QString& what, const 
         r.check(holds, c.name + QStringLiteral(": the keep-clear rectangle holds the ") + what,
                 rectText(k) + QStringLiteral(" / ") + rectText(selection));
     }
-    for (const char* control : {"topBar", "modelButtonPanel", "viewButtonPanel", "statusColumn", "createPanel", "historyPanel", "viewPanel"}) {
-        const QRectF other = sceneRect(r, QString::fromLatin1(control));
-        r.check(other.isEmpty() || !overlaps(rect, other),
-                c.name + QStringLiteral(": the chip does not cover the ") + QString::fromLatin1(control) + QStringLiteral(" (") + what + QStringLiteral(")"),
-                rectText(rect) + QStringLiteral(" / ") + rectText(other));
-    }
+    checkControls(r, c, what, rect);
 }
 
 void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::shared_ptr<State>& s, bool first)
@@ -171,10 +185,44 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
         const QRectF edge = projected(r, {{-10, -10, 0}, {-10, -10, 20}});
         checkChip(r, c, QStringLiteral("left edge"), edge);
         r.screenshot(shot + QStringLiteral("_edge"));
-        r.key(Qt::Key_Escape);
+        if (phone(c))
+            r.check(r.clickItem(QStringLiteral("action_chamfer")), c.name + QStringLiteral(": tap Chamfer in the value box"));
+        else
+            r.key(Qt::Key_Escape);
     });
+    if (phone(c)) {
+        // ---- A phone: the docked chip's buttons work (its actions scroll sideways).
+        steps.push_back([&r, c] {
+            r.check(r.app().operationActive() && r.app().operationTitle() == QStringLiteral("Chamfer"),
+                    c.name + QStringLiteral(": Chamfer from the value box"), r.app().operationTitle());
+            const QRectF edge = projected(r, {{-10, -10, 0}, {-10, -10, 20}});
+            checkChip(r, c, QStringLiteral("chamfered edge"), edge);
+            // Back to Fillet (the next edge offers what was used last).
+            r.check(r.clickItem(QStringLiteral("action_fillet")), c.name + QStringLiteral(": tap Fillet in the value box"));
+        });
+        steps.push_back([&r, c] {
+            r.check(r.app().operationTitle() == QStringLiteral("Fillet"), c.name + QStringLiteral(": Fillet again"),
+                    r.app().operationTitle());
+            // The last action ("Select body"): out of sight in a sideways phone
+            // until the row scrolls to it.
+            QQuickItem* last = r.findItem(QStringLiteral("action_selectBody"));
+            const QRectF row = sceneRect(r, QStringLiteral("valueChipActions"));
+            const QRectF button = last ? last->mapRectToScene(QRectF(0, 0, last->width(), last->height())) : QRectF();
+            r.check(!row.isEmpty() && last, c.name + QStringLiteral(": the value box's actions are a row"));
+            const bool inSight = row.adjusted(-0.5, -0.5, 0.5, 0.5).contains(button);
+            r.check(r.clickItem(QStringLiteral("action_selectBody")), c.name + QStringLiteral(": tap Select body, the last action"),
+                    inSight ? QStringLiteral("in sight") : QStringLiteral("scrolled into sight"));
+        });
+        steps.push_back([&r, c] {
+            const auto& selection = r.app().interaction().selection();
+            r.check(selection.size() == 1 && selection.allOfKind(sel::SelectionKind::Body) && r.app().operationTitle() == QStringLiteral("Move"),
+                    c.name + QStringLiteral(": Select body selects the body (Move)"), r.app().operationTitle());
+            r.check(r.clickItem(QStringLiteral("valueChipCancel")), c.name + QStringLiteral(": tap ✕ in the value box"));
+        });
+    }
     steps.push_back([&r, c] {
-        r.check(r.app().interaction().selection().empty(), c.name + QStringLiteral(": Esc clears the edge"));
+        r.check(r.app().interaction().selection().empty(),
+                c.name + (phone(c) ? QStringLiteral(": ✕ clears the selection") : QStringLiteral(": Esc clears the edge")));
         // ---- A face: the box's left face (y = -10), tapped in its middle.
         select(r, c, r.screenPoint(0, -10, 10));
     });
@@ -186,7 +234,7 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
         checkChip(r, c, QStringLiteral("left face"), face);
         r.screenshot(shot + QStringLiteral("_face"));
     });
-    if (c.width < 600 || c.height < 500) { // a phone: the compact layout
+    if (phone(c)) {
         // ---- A phone: the docked chip stays put while the arrow is dragged
         // (mouse events, as the runner has no touch drag: the mouse layout
         // first, so the controls keep their size during the drag).
@@ -231,6 +279,46 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
             const QRectF face = projected(r, {{-10, -10, 0}, {10, -10, 0}, {10, -10, 20}, {-10, -10, 20}});
             checkChip(r, c, QStringLiteral("dragged face"), face);
             r.key(Qt::Key_Escape); // back to the face's own position
+        });
+        // ---- Typing the value: the on-screen keyboard comes up over the
+        // bottom of a phone, so the chip docks below the top bar.
+        steps.push_back([&r, c, s] {
+            s->volume = r.bodyVolume();
+            r.check(!r.app().operationHasValue(), c.name + QStringLiteral(": Esc took the drag back"), r.app().operationValueText());
+            r.check(r.clickItem(QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the value field"));
+        });
+        steps.push_back([&r, c] {
+            QQuickItem* chip = r.findItem(QStringLiteral("valueChip"));
+            r.check(chip && chip->property("typing").toBool(), c.name + QStringLiteral(": the value field has the focus"));
+            const QString spot = chip ? chip->property("placement").toMap().value(QStringLiteral("spot")).toString() : QString();
+            const QRectF rect = sceneRect(r, QStringLiteral("valueChip"));
+            r.check(spot == QStringLiteral("dockTop") && rect.bottom() < r.window()->height() / 2.0,
+                    c.name + QStringLiteral(": typing, the chip docks below the top bar, above where the keyboard comes"),
+                    spot + QStringLiteral(" ") + rectText(rect));
+            const double w = r.window()->width();
+            const double h = r.window()->height();
+            const QRectF safe(c.safe[3], c.safe[0], w - c.safe[3] - c.safe[1], h - c.safe[0] - c.safe[2]);
+            r.check(safe.adjusted(-0.5, -0.5, 0.5, 0.5).contains(rect), c.name + QStringLiteral(": typing, the chip is inside the safe area"),
+                    rectText(rect));
+            checkControls(r, c, QStringLiteral("typing"), rect);
+            r.screenshot(QStringLiteral("chip_") + c.name + QStringLiteral("_typing"));
+            r.type(QStringLiteral("25"));
+        });
+        steps.push_back([&r, c] {
+            r.check(r.clickItem(QStringLiteral("valueChipApply")), c.name + QStringLiteral(": tap ✓ in the value box"));
+        });
+        steps.push_back([&r, c, s] {
+            const double volume = r.bodyVolume();
+            // The typed value is the box's size across the face: 20 -> 25 mm.
+            r.check(std::abs(volume - s->volume * 25.0 / 20.0) < 1e-6, c.name + QStringLiteral(": typing 25 and ✓ makes the box 25 mm deep"),
+                    AcceptanceRunner::num(volume) + QStringLiteral(" (was ") + AcceptanceRunner::num(s->volume) + QStringLiteral(")"));
+            QQuickItem* chip = r.findItem(QStringLiteral("valueChip"));
+            r.check(!chip || !chip->property("typing").toBool(), c.name + QStringLiteral(": ✓ ends the typing"));
+            r.check(r.clickItem(QStringLiteral("undoButton")), c.name + QStringLiteral(": Undo"));
+        });
+        steps.push_back([&r, c, s] {
+            r.check(std::abs(r.bodyVolume() - s->volume) < 1e-6, c.name + QStringLiteral(": Undo takes the push back"),
+                    AcceptanceRunner::num(r.bodyVolume()));
         });
     }
     steps.push_back([&r] {

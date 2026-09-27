@@ -320,8 +320,6 @@ void InteractionController::pointerPress(const PointerEvent& event)
     drag_.press = event;
     drag_.last = event.position;
     drag_.mode = DragMode::Pending;
-    lastPress_ = event.position;
-    lastPressCamera_ = camera_;
 
     if (event.device == PointerDevice::Pen && !penMode_) {
         penMode_ = true;
@@ -331,6 +329,10 @@ void InteractionController::pointerPress(const PointerEvent& event)
     // on the screen must not select or draw).
     if (event.device == PointerDevice::Touch && penMode_)
         return;
+    // Only a left click, a tap or the pen selects or acts: the value editor
+    // keeps clear of that press (keepClearRect).
+    if (event.button == PointerButton::Left)
+        notePress(event.position);
 
     if (session_) {
         if (session_->pointerPress(event, camera_)) {
@@ -506,6 +508,8 @@ void InteractionController::pointerRelease(const PointerEvent& event)
         notifyView();
         return;
     }
+    // What this press selects is its doing: the press stays kept clear with it.
+    const PressHandling handling(pressHandling_, press.button == PointerButton::Left);
     // Only a left click or a tap selects (and applies a pending value); right
     // and middle buttons orbit/pan when dragged and do nothing on a click.
     // In Rotate, what a click on a ring crosses may be what the user wants to
@@ -536,6 +540,11 @@ void InteractionController::pointerDoubleClick(const PointerEvent& event)
 {
     if (session_ || (event.device == PointerDevice::Touch && penMode_))
         return;
+    // A double-click or double-tap selects: kept clear like a click.
+    const bool left = event.button == PointerButton::Left;
+    if (left)
+        notePress(event.position);
+    const PressHandling handling(pressHandling_, left);
     const auto hit = pickAt(event.position, InputProfile::forDevice(event.device));
     if (hit.kind == sel::PickKind::Profile) {
         (void)editSketch(hit.bodyId); // double-click a profile: edit its sketch
@@ -1080,7 +1089,15 @@ bool sameView(const Camera& a, const Camera& b)
         && a.projection == b.projection && a.viewportSize.x == b.viewportSize.x && a.viewportSize.y == b.viewportSize.y;
 }
 
+bool sameTargets(const std::vector<sel::SelectionItem>& a, const std::vector<sel::SelectionItem>& b)
+{
+    return a.size() == b.size()
+        && std::equal(a.begin(), a.end(), b.begin(), [](const sel::SelectionItem& x, const sel::SelectionItem& y) { return x.sameTarget(y); });
+}
+
 } // namespace
+
+void InteractionController::notePress(Vec2 position) { lastPress_ = PressMark{position, camera_, selection_.items()}; }
 
 std::optional<ScreenRect> InteractionController::keepClearRect() const
 {
@@ -1124,14 +1141,22 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
         const ArrowStyle arrowStyle;
         const int handles = operation_->handleCount();
         // What the arrow moves (a pushed face, a moved body) is also where the
-        // arrow has taken it: the selection moved by the arrow's travel.
-        if (const int active = operation_->activeHandle(); selected.rect && active >= 0 && active < handles) {
-            const LinearManipulator handle = operation_->handle(active);
-            const auto from = all.project(handle.base());
-            const auto to = all.project(handle.anchor(operation_->handleOffset(active)));
+        // arrow has taken it: the selection moved by the arrow's travel. And
+        // where the preview on screen has it: while the arrow's newest value
+        // computes on the worker, the shown preview is of an earlier value
+        // (behind the arrow, or ahead of it after a drag back).
+        auto movedBy = [&](const Vec3& base, const Vec3& tip) {
+            const auto from = all.project(base);
+            const auto to = all.project(tip);
             if (from && to)
                 all.include(selected.rect->translated(*to - *from));
+        };
+        if (const int active = operation_->activeHandle(); selected.rect && active >= 0 && active < handles) {
+            const LinearManipulator handle = operation_->handle(active);
+            movedBy(handle.base(), handle.anchor(operation_->handleOffset(active)));
         }
+        if (const auto shown = operation_->previewArrow(); selected.rect && shown)
+            movedBy(shown->base, shown->tip);
         for (int i = 0; i < handles; ++i) {
             const LinearManipulator handle = operation_->handle(i);
             const Vec3 anchor = handle.anchor(operation_->handleOffset(i));
@@ -1151,8 +1176,9 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
                 if (const auto at = all.project(*anchor))
                     all.include(ScreenRect::around(*at).inflated(12));
     }
-    if (lastPress_ && sameView(lastPressCamera_, camera_))
-        all.include(ScreenRect::around(*lastPress_));
+    // The last press, while the view and the selection it left are unchanged.
+    if (lastPress_ && sameView(lastPress_->camera, camera_) && sameTargets(lastPress_->selection, selection_.items()))
+        all.include(ScreenRect::around(lastPress_->position));
     if (!all.rect)
         return std::nullopt;
     return all.rect->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y});
@@ -1162,10 +1188,7 @@ ChipPlacement InteractionController::placeValueChip(const ChipPlacementInput& in
 {
     // A new selection chooses afresh; the same one keeps its spot.
     const auto& items = selection_.items();
-    const bool same = items.size() == chipSelection_.size()
-                   && std::equal(items.begin(), items.end(), chipSelection_.begin(),
-                                 [](const sel::SelectionItem& a, const sel::SelectionItem& b) { return a.sameTarget(b); });
-    if (!same) {
+    if (!sameTargets(items, chipSelection_)) {
         chipSelection_ = items;
         chipSpot_ = ChipSpot::None;
         chipSettled_ = false;
@@ -2564,6 +2587,7 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
     session_->onMessage = [this](const std::string& text) { message(forInput(text)); };
     session_->onCommitted = [this] { afterDocumentEdit(); };
     session_->setLargeTargets(touchLayout_);
+    session_->setSafeInsets(safeInsets_);
     session_->setTool(tool);
     alignViewTo(session_->sketch().plane());
     afterDocumentEdit();
@@ -2574,6 +2598,16 @@ void InteractionController::setSketchGridSnap(bool on)
     sketchGridSnap_ = on;
     if (session_)
         session_->setGridSnap(on);
+}
+
+void InteractionController::setSafeInsets(const SafeInsets& insets)
+{
+    if (insets == safeInsets_)
+        return;
+    safeInsets_ = insets;
+    if (session_)
+        session_->setSafeInsets(insets);
+    notifyView();
 }
 
 void InteractionController::setTouchLayout(bool on)
@@ -3371,14 +3405,22 @@ void InteractionController::updateSceneBounds()
     }
 }
 
+void InteractionController::notePressSelection()
+{
+    if (pressHandling_ && lastPress_)
+        lastPress_->selection = selection_.items();
+}
+
 void InteractionController::notifyView()
 {
+    notePressSelection();
     if (onViewChanged)
         onViewChanged();
 }
 
 void InteractionController::notifyState()
 {
+    notePressSelection();
     // No operation, no value editor: the next one chooses its spot afresh
     // (even on the same selection, e.g. a hole rim again after an undo).
     if (!operation_) {

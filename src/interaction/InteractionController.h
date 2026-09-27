@@ -116,6 +116,10 @@ public:
     // tap areas and sit further apart.
     bool touchLayout() const { return touchLayout_; }
     void setTouchLayout(bool on);
+    // The window's safe-area insets (the Dynamic Island, the home indicator):
+    // the sketch's live values moved out from under a finger stay inside them.
+    const SafeInsets& safeInsets() const { return safeInsets_; }
+    void setSafeInsets(const SafeInsets& insets);
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -134,10 +138,14 @@ public:
     std::optional<Vec2> valueLabelPosition() const;
     // What the value editor must not cover, on screen: the selection (its
     // faces, edges, profiles or bodies, also where the operation's arrow has
-    // moved them: a pushed face, a moved body), the arrows and rings, a
-    // hole's position (Hole tool) and the last press, while the view has not
-    // moved since. Clipped to the viewport; nullopt when there is nothing (or
-    // in sketch mode, which has no value editor).
+    // moved them: a pushed face, a moved body, and where the shown preview
+    // has them while a newer one computes), the arrows and rings, a
+    // hole's position (Hole tool) and the last press that could select (a
+    // left click, a tap, the pen), while the view and the selection it left
+    // are unchanged. Clipped to the viewport; nullopt when there is nothing (or
+    // in sketch mode, which has no value editor). Reads display meshes and
+    // the operation's arrows only: no kernel call (the UI asks on every drag
+    // step, while the preview worker may hold the kernel).
     std::optional<ScreenRect> keepClearRect() const;
     // An arrow or ring is being dragged.
     bool manipulatorDragging() const { return drag_.mode == DragMode::Manipulator; }
@@ -339,6 +347,7 @@ private:
     std::vector<sel::PickTarget> pickTargets() const;
     void notifyView();
     void notifyState();
+    void notePressSelection();
     void message(const std::string& text);
     // An instruction written for mouse and keyboard ("Click a flat face ..."),
     // worded for touch in the touch layout. Only for the app's own texts: the
@@ -366,6 +375,7 @@ private:
     bool penMode_ = false;
     bool sketchGridSnap_ = true;
     bool touchLayout_ = false;
+    SafeInsets safeInsets_;
     std::size_t insertPreset_ = 2; // M3
     // What a hole rim's Hole step makes: Plain = the heat-set insert's pilot
     // hole, or a counterbore / countersink (with the screw preset).
@@ -377,10 +387,29 @@ private:
     // Faces (of the current body shape) the highlighted step created or changed.
     Uuid highlightBody_;
     std::vector<int> highlightFaces_;
-    // The last press in the view and the view it was made in (the value
-    // editor keeps clear of it until the view moves).
-    std::optional<Vec2> lastPress_;
-    Camera lastPressCamera_;
+    // The last press in the view that could select or act (a left click, a
+    // tap, the pen; not a resting hand in pen mode, not a right or middle
+    // button), the view it was made in and the selection it left: the value
+    // editor keeps clear of it until the view moves or the selection changes
+    // some other way (the Model panel, Esc, undo).
+    struct PressMark {
+        Vec2 position;
+        Camera camera;
+        std::vector<sel::SelectionItem> selection;
+    };
+    std::optional<PressMark> lastPress_;
+    void notePress(Vec2 position);
+    // While a press is handled (its release, a double-click), what it selects
+    // is its doing: notifyState/notifyView record that selection with it
+    // before anyone asks for keepClearRect.
+    bool pressHandling_ = false;
+    struct PressHandling {
+        bool& flag;
+        PressHandling(bool& f, bool on) : flag(f) { flag = on; }
+        ~PressHandling() { flag = false; }
+        PressHandling(const PressHandling&) = delete;
+        PressHandling& operator=(const PressHandling&) = delete;
+    };
     // The value editor's spot, for this selection and operation
     // (placeValueChip): kept once something has moved since it was chosen.
     mutable ChipSpot chipSpot_ = ChipSpot::None;

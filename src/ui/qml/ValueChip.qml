@@ -25,6 +25,9 @@ Item {
     // Where the field and the actions sit when the chip is wider than they
     // are: toward the arrow tip (Qt.AlignLeft when the chip is right of it).
     property int alignment: Qt.AlignHCenter
+    // The value is being typed (the field has the focus): on a touch screen
+    // the on-screen keyboard is up, so a docked chip goes to the top.
+    readonly property bool typing: field.activeFocus
     signal finished()
 
     width: column.implicitWidth
@@ -151,6 +154,7 @@ Item {
                     }
                 }
                 ActionButton {
+                    objectName: "valueChipApply"
                     text: "✓"
                     accent: true
                     enabled: chip.app.operationCanCommit
@@ -165,6 +169,7 @@ Item {
                     ToolTip.delay: 500
                 }
                 ActionButton {
+                    objectName: "valueChipCancel"
                     text: "✕"
                     implicitWidth: Theme.controlHeight
                     onClicked: {
@@ -226,6 +231,7 @@ Item {
             }
         }
         ScrollRow {
+            objectName: "valueChipActions"
             Layout.row: chip.singleRow ? 0 : 2
             Layout.column: chip.singleRow ? 1 : 0
             Layout.alignment: chip.singleRow ? Qt.AlignVCenter : chip.alignment

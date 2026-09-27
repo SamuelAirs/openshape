@@ -119,7 +119,8 @@ struct AsyncHarness {
         clickAt(screen({0, 0, 20}));
         return dynamic_cast<const PushPullOperation*>(controller.operation());
     }
-    // What the UI reads back after a state change, and the render scene.
+    // What the UI reads back after a state change, and the render scene
+    // (with where the value chip goes).
     void uiReads() const
     {
         (void)controller.historyRows();
@@ -127,6 +128,21 @@ struct AsyncHarness {
         (void)controller.selectionSummary();
         (void)controller.operationValueText();
         (void)controller.renderScene();
+        if (const auto tip = controller.valueLabelPosition())
+            (void)controller.placeValueChip(chipInput(*tip));
+    }
+    // The value chip's layout as Main.qml passes it (a 1200x800 window).
+    ChipPlacementInput chipInput(Vec2 tip) const
+    {
+        ChipPlacementInput in;
+        in.area = ScreenRect{0, 0, 1200, 800};
+        in.avoid = {ScreenRect{0, 0, 1200, 56}, ScreenRect{0, 760, 1200, 800}};
+        in.size = {240, 96};
+        in.tip = tip;
+        in.fieldCenter = 24;
+        in.keepClear = controller.keepClearRect();
+        in.frozen = controller.manipulatorDragging();
+        return in;
     }
 };
 
@@ -278,6 +294,70 @@ TEST(AsyncPreview, DragStepsDoNotWaitForTheKernel)
     ASSERT_EQ(scene.bodies.size(), 1u);
     EXPECT_TRUE(scene.bodies[0].isPreview);
     EXPECT_GE(h.controller.previewsShown(), 1u);
+}
+
+// The value chip keeps clear of what is on screen while a preview computes:
+// the pushed face where the shown (earlier) preview has it and where the
+// arrow is now. Asking for the rectangle and the chip's spot makes no kernel
+// call on the GUI thread (the UI asks on every drag step).
+TEST(AsyncPreview, ValueChipKeepsClearOfTheShownPreview)
+{
+    AsyncHarness h;
+    const PushPullOperation* op = h.selectTop();
+    ASSERT_NE(op, nullptr);
+    ASSERT_TRUE(op->thickness().has_value());
+    h.uiReads();
+    // Heights far enough apart on screen that the arrow at the lower one
+    // does not reach the face at the higher one.
+    const double pxPerMm = (h.screen({0, 0, 20}) - h.screen({0, 0, 21})).length();
+    const double low = 22;
+    const double high = low + std::ceil((ArrowStyle{}.totalPx() + ArrowStyle{}.headRadiusPx + 60) / pxPerMm);
+    auto topFace = [&](double z) {
+        std::vector<Vec2> corners;
+        for (const Vec3 c : {Vec3{-10, -10, z}, Vec3{10, -10, z}, Vec3{10, 10, z}, Vec3{-10, 10, z}})
+            corners.push_back(h.screen(c));
+        return corners;
+    };
+    auto holds = [](const std::optional<ScreenRect>& keep, const std::vector<Vec2>& points) {
+        return keep && std::all_of(points.begin(), points.end(), [&](Vec2 p) { return keep->contains(ScreenRect::around(p), 1.0); });
+    };
+    const ScreenRect window{0, 0, 1200, 800};
+    for (const Vec2 p : topFace(high))
+        ASSERT_TRUE(window.contains(ScreenRect::around(p))) << "the face at " << high << " mm is on screen";
+
+    // The preview of the high value is shown.
+    ASSERT_EQ(h.controller.setValueText(std::to_string(int(high))), "");
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_TRUE(op->hasPreview());
+    ASSERT_NEAR(meshHeight(*op->previewMesh()), high, 1e-4);
+    EXPECT_TRUE(holds(h.controller.keepClearRect(), topFace(high)));
+
+    // Back down to the low value: its preview computes (300 ms) while the
+    // high one stays on screen.
+    h.worker().setJobDelayForTesting(300ms);
+    ASSERT_EQ(h.controller.setValueText(std::to_string(int(low))), "");
+    ASSERT_TRUE(op->previewPending());
+    ASSERT_NEAR(meshHeight(*op->previewMesh()), high, 1e-4) << "the earlier preview is what shows";
+    const std::uint64_t kernelCalls = geom::kernelCallsOnThisThread();
+    const auto keep = h.controller.keepClearRect();
+    const auto tip = h.controller.valueLabelPosition();
+    ASSERT_TRUE(tip.has_value());
+    const ChipPlacement chip = h.controller.placeValueChip(h.chipInput(*tip));
+    EXPECT_EQ(geom::kernelCallsOnThisThread(), kernelCalls) << "the chip's placement called the kernel";
+    EXPECT_TRUE(holds(keep, topFace(high))) << "the face where the shown preview has it";
+    EXPECT_TRUE(holds(keep, topFace(low))) << "the face where the arrow has it";
+    EXPECT_TRUE(holds(keep, {*tip}));
+    const ScreenRect chipRect = ScreenRect::at(chip.position, h.chipInput(*tip).size);
+    EXPECT_TRUE(chip.clear);
+    EXPECT_FALSE(chipRect.intersects(*keep)) << "the chip is off the shown face";
+
+    // The low value's preview arrives: the high face is no longer on screen,
+    // nor kept clear (the arrow at the low value does not reach it).
+    ASSERT_TRUE(h.controller.waitForPreview());
+    ASSERT_NEAR(meshHeight(*op->previewMesh()), low, 1e-4);
+    const auto after = h.controller.keepClearRect();
+    EXPECT_TRUE(holds(after, topFace(low)));
+    EXPECT_FALSE(holds(after, topFace(high)));
 }
 
 // Values typed faster than the kernel: the one computing finishes, the one

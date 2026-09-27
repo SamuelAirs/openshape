@@ -152,6 +152,14 @@ void Operation::showOutcome(const PreviewOutcome& outcome)
     previewMeshBody_ = outcome.meshBody;
     if (previewMesh_)
         previewKey_ = nextPreviewKey();
+    // The arrow as the operation that computed this preview had it (the
+    // worker's copy, done with it by now; this operation when synchronous).
+    const Operation& by = outcome.computedBy ? *outcome.computedBy : *this;
+    previewArrow_.reset();
+    if (const int active = by.activeHandle(); active >= 0 && active < by.handleCount()) {
+        const LinearManipulator handle = by.handle(active);
+        previewArrow_ = ArrowSpan{handle.base(), handle.anchor(by.handleOffset(active))};
+    }
 }
 
 bool Operation::acceptPreview(const PreviewOutcome& outcome)
