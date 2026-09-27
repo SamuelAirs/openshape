@@ -51,10 +51,11 @@ never receives them.
 
 OpenShape does not contain any code that connects to the internet. The only
 time it goes online is when **you tap or click a link** (the user guide in
-the help card, and the license, source code and third-party license links
-in **About**): the link opens in your web browser (Safari on iPhone and
-iPad), and that website's own privacy policy applies (GitHub for the guide
-and source code, mozilla.org for the license text).
+the help card, and the license, source code, third-party license and
+privacy policy links in **About**): the link opens in your web browser
+(Safari on iPhone and iPad), and that website's own privacy policy applies
+(GitHub for the guide, the source code and this policy, mozilla.org for the
+license text).
 
 The app does not check for updates. On iPhone and iPad, updates come from
 the App Store or TestFlight; on Windows, you download new versions

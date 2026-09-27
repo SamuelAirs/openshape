@@ -45,7 +45,7 @@ the App Store and the web found on 2026-09-27:
 | Who | What | Why it matters |
 |---|---|---|
 | **OpenShape3D** by Laan Labs (Laan Consulting Corp) | On the App Store since 2026-08-06 (version 1.3, 2026-09-18), **free**, "a direct-modeling CAD app built for touch" for iPhone and iPad, on OpenCASCADE, **open source** (MIT, github.com/laanlabs/openshape3d, openshape3d.com) | Almost the same name, the same kind of app, on the same devices, for free, and on sale first. People searching "OpenShape" will find both; some will buy the wrong one or ask why they should pay. Its maker could object (App Review guidelines 4.1 and 5.2.1 forbid names that copy another developer's product), and has the earlier use. |
-| **Open—Shape** by Michael Hix | On the App Store since 2026-08-25: a guitar chord app whose description calls itself "OpenShape"; bundle ID `com.openshape.app` | A different field, but it shows the plain name "OpenShape" was already unavailable to others in App Store Connect by August 2026 (App Store names are unique). Check what name your own app record has (App Store Connect → OpenShape → App Information → Name). |
+| **Open—Shape** by Michael Hix | On the App Store since 2026-08-25: a guitar chord app whose description calls itself "OpenShape"; bundle ID `com.openshape.app` | A different field, but its "Open—Shape" suggests the plain name "OpenShape" was already taken in App Store Connect by August 2026 (App Store names are unique). Check what name your own app record has (App Store Connect → OpenShape → App Information → Name). |
 | **Onshape** (PTC Inc.) | Cloud CAD; "ONSHAPE" is a US registered trademark of PTC for CAD software (registrations 4752666 and 5949177) | One letter pair apart ("Onshape" / "OpenShape"), same field. Not an App Store name clash, but a trademark owner in the same market could see a likelihood of confusion. |
 | openshape.com | "OpenShape software solutions", a company making custom software and FileMaker solutions | Different field; low risk. |
 | OpenShape (UC San Diego, 2023) | A research method for 3D shape recognition (machine learning) | Different field; it shares search results. |
@@ -62,8 +62,9 @@ ways, in order of preference:
    name that is free in the App Store search
    (`https://itunes.apple.com/search?term=<name>&entity=software`) and at the
    USPTO. Examples that returned no app of that name on 2026-09-27:
-   *Shapewright*, *MakerShape*. The lead engineer can do the renaming in the
-   code and documents in an hour once you pick one.
+   *Shapewright*, *MakerShape* (examples of the kind of name, not checked as
+   trademarks). The lead engineer does the renaming in the code and
+   documents once you pick one.
 2. **Keep OpenShape, but distinguish it in the store name**, e.g.
    `OpenShape: CAD for 3D Printing` (exactly 30 characters, the maximum) with
    a subtitle that says what it is, and keep the GitHub link and the open
