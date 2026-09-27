@@ -420,10 +420,11 @@ ApplicationWindow {
         // (no share sheet on the desktop: no gap either).
         MenuItem {
             objectName: "shareProjectMenuItem"
+            readonly property bool available: window.app.canShare && window.app.savesToAppFolder
             text: "Share Project…"
-            visible: window.app.canShare && window.app.savesToAppFolder
-            enabled: visible // the arrow keys skip it where it is hidden
-            height: visible ? implicitHeight : 0
+            visible: available
+            enabled: available // the arrow keys skip it where it is hidden
+            height: available ? implicitHeight : 0
             onTriggered: window.shareProject()
         }
         MenuSeparator {}
