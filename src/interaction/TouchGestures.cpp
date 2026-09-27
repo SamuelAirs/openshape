@@ -65,7 +65,9 @@ std::vector<TouchIntent> TouchGestureRecognizer::update(const std::vector<TouchP
                 out.push_back(intent);
                 pointerDown_ = false;
                 if (!moved_ && seconds - startTime_ <= kTapDuration) {
-                    if (seconds - lastTapTime_ <= kDoubleTapGap
+                    // The gap is from the first tap's lift to the second
+                    // tap's touch: a slow second tap still pairs up.
+                    if (startTime_ - lastTapTime_ <= kDoubleTapGap
                         && (p.position - lastTapPosition_).length() <= kDoubleTapDistance) {
                         out.push_back({TouchIntent::Kind::DoubleTap, p.position, {}, {}, 1.0});
                         lastTapTime_ = -1e9;
