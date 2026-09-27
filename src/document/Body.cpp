@@ -159,6 +159,18 @@ void Body::recompute(int fromIndex, const EvalContext& context)
     }
 }
 
+int Body::adoptResults(const Body& original)
+{
+    if (original.states_.size() > states_.size() || original.features_.size() != original.states_.size())
+        return 0;
+    for (std::size_t i = 0; i < original.features_.size(); ++i)
+        if (features_[i]->kind() != original.features_[i]->kind()
+            || features_[i]->isSuppressed() != original.features_[i]->isSuppressed())
+            return 0; // not a copy of it after all: compute everything
+    std::copy(original.states_.begin(), original.states_.end(), states_.begin());
+    return static_cast<int>(original.states_.size());
+}
+
 bool Body::hasFailures() const
 {
     return std::any_of(states_.begin(), states_.end(), [](const FeatureState& s) {

@@ -820,6 +820,12 @@ ApplicationWindow {
         return !app.sketchMode && app.operationActive && app.operationError.length > 0 && !app.valueLabelVisible
     }
 
+    // Mirror / Pattern will make separate bodies (chosen, or because the
+    // copies would not touch the body).
+    function separateCopies() {
+        return app.contextActions.some(a => a.id === "separate" && a.active)
+    }
+
     // What to do next, worded for the input in use: in the touch layout taps,
     // the on-screen ✓ / ✕ and two-finger gestures instead of clicks, Enter,
     // Esc, Shift and the scroll wheel (AppController::touchWording).
@@ -859,6 +865,22 @@ ApplicationWindow {
             return "Pick the screw size (90° heads), or drag the arrow / type the diameter at the surface · Enter applies"
         if (app.operationActive && app.operationTitle.startsWith("Heat-set insert"))
             return "Pick the insert size · drag the arrow or type the pilot hole's depth · Enter applies"
+        // Mirror and Pattern join copies that touch the body; copies apart
+        // from it and from each other become separate bodies (the toggle
+        // shows and overrides it).
+        // Before the general hint: a pattern previews with a value at once.
+        if (app.operationActive && app.operationTitle === "Mirror" && separateCopies())
+            return "Enter or Apply mirrors it as a separate body · click another flat face or choose a plane to change it · "
+                 + "turn Separate bodies off to join the image to the body"
+        if (app.operationActive && app.operationTitle === "Mirror")
+            return "Enter or Apply mirrors it into the body · click another flat face or choose a plane to change it · "
+                 + "Separate bodies keeps the image as its own body"
+        if (app.operationActive && app.operationTitle === "Pattern" && separateCopies())
+            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · "
+                 + "each copy becomes a separate body (turn Separate bodies off to join them) · Enter applies"
+        if (app.operationActive && app.operationTitle === "Pattern")
+            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · "
+                 + "Separate bodies makes each copy a body · Enter applies"
         if (app.operationActive && app.operationHasValue)
             return "Enter to apply · Esc to cancel · click elsewhere to apply and continue"
         if (app.operationActive && app.operationTitle === "Move" && app.contextActions.some(a => a.id === "split"))
@@ -874,12 +896,6 @@ ApplicationWindow {
                  + " · +5 or -5 changes it by that much · Enter applies"
         if (app.operationActive && app.operationTitle === "Offset")
             return "Drag the arrow or type the new value · Enter applies · Delete removes the face instead"
-        if (app.operationActive && app.operationTitle === "Mirror")
-            return "Enter or Apply mirrors it · click another flat face or choose a plane to change it · "
-                 + "Separate bodies keeps the image as its own body"
-        if (app.operationActive && app.operationTitle === "Pattern")
-            return "Drag the arrow or type the spacing (angle when circular) · click an edge or hole to set the direction · "
-                 + "Separate bodies makes each copy a body · Enter applies"
         if (app.operationActive && (app.operationTitle === "Fillet" || app.operationTitle === "Chamfer"))
             return "Drag the arrow, or just type a value · Shift-click to add more edges"
         if (app.operationActive && app.operationTitle === "Shell")

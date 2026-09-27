@@ -47,6 +47,9 @@
 #include <Precision.hxx>
 #include <Message_Report.hxx>
 #include <OSD.hxx>
+#include <OSD_Exception_ACCESS_VIOLATION.hxx>
+#include <OSD_Exception_ILLEGAL_INSTRUCTION.hxx>
+#include <Standard_NumericError.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs.hxx>
 #include <TopExp.hxx>
@@ -69,13 +72,20 @@
 #include <chrono>
 #include <csignal>
 #include <cmath>
+#include <condition_variable>
+#include <cstring>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <iterator>
 #include <limits>
 #include <map>
 #include <set>
 #include <sstream>
+
+#if !defined(_WIN32)
+#include <signal.h>
+#endif
 
 namespace os::geom {
 
@@ -86,17 +96,177 @@ namespace {
 #if defined(_WIN32)
 constexpr int kKernelSignals[] = {SIGSEGV, SIGILL, SIGFPE};
 using SignalHandler = void (*)(int);
-SignalHandler g_kernelHandlers[std::size(kKernelSignals)] = {};
 SignalHandler g_outsideHandlers[std::size(kKernelSignals)] = {};
+
+// Installed (per thread: the C runtime keeps these handlers per thread) while
+// a kernel call runs. It does what OpenCASCADE's own handler does - jump
+// back to the kernel call's try block, where the fault becomes a failure -
+// but without that handler's process-wide mutex: OCCT locks it and jumps
+// with it still locked (the jump skips the release). The faulting thread
+// could lock it again, but the next fault on any other thread (the GUI
+// thread after the preview worker's, or the other way round) would wait
+// for it forever: the app would freeze instead of reporting a failure.
+extern "C" void onKernelSignal(int signal)
+{
+    // Outside the kernel call's try block (its first and last statements)
+    // there is nowhere to jump to: OCCT would end the app with exit(1).
+    // Left at SIG_DFL (the C runtime resets the handler before calling it),
+    // the fault repeats as a real crash for the crash log and the system.
+    if (!Standard_ErrorHandler::IsInTryBlock())
+        return;
+    std::signal(signal, onKernelSignal);
+    switch (signal) {
+    case SIGSEGV: OSD_Exception_ACCESS_VIOLATION::NewInstance("ACCESS VIOLATION in a kernel call")->Jump(); break;
+    case SIGILL: OSD_Exception_ILLEGAL_INSTRUCTION::NewInstance("ILLEGAL INSTRUCTION in a kernel call")->Jump(); break;
+    default: Standard_NumericError::NewInstance("ARITHMETIC ERROR in a kernel call")->Jump(); break;
+    }
+}
 #else
 constexpr int kKernelSignals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE};
-struct sigaction g_kernelActions[std::size(kKernelSignals)];
-struct sigaction g_outsideActions[std::size(kKernelSignals)];
+struct sigaction g_kernelActions[std::size(kKernelSignals)];  // OpenCASCADE's
+struct sigaction g_outsideActions[std::size(kKernelSignals)]; // in place outside kernel calls (the crash log's)
+struct sigaction g_dispatchActions[std::size(kKernelSignals)]; // installed while a kernel call runs
+// sigaction handlers belong to the whole process: while the preview worker
+// is in the kernel, a crash on the GUI thread would reach OpenCASCADE's
+// handler, which ends the app with exit(1) when the faulting thread is in no
+// kernel call (no crash log, no crash report). So kernel calls install a
+// dispatcher that hands the fault to OpenCASCADE only when the faulting
+// thread is inside a kernel try block (its own: OCCT's handler jumps back to
+// the faulting thread's innermost one, which also covers OCCT's pool threads
+// running a parallel algorithm), and otherwise to the handler from before.
+
+int kernelSignalIndex(int signal)
+{
+    for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+        if (kKernelSignals[i] == signal)
+            return static_cast<int>(i);
+    return -1;
+}
+
+void forwardSignal(const struct sigaction* action, int signal, siginfo_t* info, void* context)
+{
+    if (action && (action->sa_flags & SA_SIGINFO) != 0) {
+        if (action->sa_sigaction) {
+            action->sa_sigaction(signal, info, context);
+            return;
+        }
+    } else if (action && action->sa_handler != SIG_DFL && action->sa_handler != SIG_IGN) {
+        action->sa_handler(signal);
+        return;
+    }
+    // No handler to hand it to: the default action, a crash the system
+    // reports (the raised signal is delivered when this handler returns).
+    struct sigaction fallback;
+    std::memset(&fallback, 0, sizeof fallback);
+    fallback.sa_handler = SIG_DFL;
+    sigemptyset(&fallback.sa_mask);
+    sigaction(signal, &fallback, nullptr);
+    raise(signal);
+}
+
+extern "C" void onKernelSignal(int signal, siginfo_t* info, void* context)
+{
+    const int index = kernelSignalIndex(signal);
+    const bool inKernelCall = Standard_ErrorHandler::IsInTryBlock();
+    const struct sigaction* action = index < 0 ? nullptr
+                                   : inKernelCall ? &g_kernelActions[index]
+                                                  : &g_outsideActions[index];
+    forwardSignal(action, signal, info, context);
+}
 #endif
 std::mutex g_signalMutex;
 int g_kernelCalls = 0; // kernel calls running now, on all threads
 
+// The kernel lock: recursive, and its owner's depth can be set back (a
+// kernel fault jumps over the release of locks taken after the catch point).
+struct KernelMutex {
+    std::mutex mutex;
+    std::condition_variable released;
+    std::thread::id owner;
+    int depth = 0;
+};
+
+KernelMutex& kernelMutex()
+{
+    static KernelMutex m;
+    return m;
+}
+
+thread_local std::uint64_t t_kernelCalls = 0;
+
+// The interactive (GUI) thread and how long it waited for the kernel.
+struct InteractiveWaits {
+    std::mutex mutex;
+    std::thread::id thread;
+    KernelWaits waits;
+};
+
+InteractiveWaits& interactiveWaits()
+{
+    static InteractiveWaits w;
+    return w;
+}
+
+void noteWait(double ms)
+{
+    auto& w = interactiveWaits();
+    {
+        const std::lock_guard lock(w.mutex);
+        if (w.thread != std::this_thread::get_id())
+            return;
+        ++w.waits.count;
+        w.waits.totalMs += ms;
+        w.waits.longestMs = std::max(w.waits.longestMs, ms);
+    }
+    // "took" so scripts/dev/watch_log.py counts it among the slow steps.
+    if (ms >= 1.0)
+        OS_LOG(Debug, Performance) << "gui: waiting for the kernel (preview worker) took " << ms << " ms";
+}
+
 } // namespace
+
+int kernelLockDepth()
+{
+    auto& k = kernelMutex();
+    const std::lock_guard lock(k.mutex);
+    return k.owner == std::this_thread::get_id() ? k.depth : 0;
+}
+
+void lockKernel()
+{
+    auto& k = kernelMutex();
+    const auto self = std::this_thread::get_id();
+    std::unique_lock lock(k.mutex);
+    ++t_kernelCalls;
+    if (k.owner == self) {
+        ++k.depth;
+        return;
+    }
+    double waitedMs = -1;
+    if (k.depth != 0) {
+        const auto start = std::chrono::steady_clock::now();
+        k.released.wait(lock, [&k] { return k.depth == 0; });
+        waitedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    }
+    k.owner = self;
+    k.depth = 1;
+    lock.unlock();
+    if (waitedMs >= 0)
+        noteWait(waitedMs);
+}
+
+void unlockKernelTo(int depth)
+{
+    auto& k = kernelMutex();
+    const std::lock_guard lock(k.mutex);
+    if (k.owner != std::this_thread::get_id() || depth >= k.depth)
+        return;
+    k.depth = std::max(depth, 0);
+    if (k.depth == 0) {
+        k.owner = std::thread::id();
+        k.released.notify_all();
+    }
+}
 
 void installKernelSignalHandlers()
 {
@@ -106,6 +276,8 @@ void installKernelSignalHandlers()
         // back what was there before. No floating-point traps: kernel code
         // relies on IEEE results.
 #if defined(_WIN32)
+        // OCCT's C signal handlers are replaced by onKernelSignal (their
+        // mutex); its top-level exception filter stays (CrashLog chains to it).
         SignalHandler before[std::size(kKernelSignals)];
         for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
             before[i] = std::signal(kKernelSignals[i], SIG_DFL);
@@ -113,45 +285,59 @@ void installKernelSignalHandlers()
         }
         OSD::SetSignal(OSD_SignalMode_Set, false);
         for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
-            g_kernelHandlers[i] = std::signal(kKernelSignals[i], before[i]);
+            std::signal(kKernelSignals[i], before[i]);
 #else
         struct sigaction before[std::size(kKernelSignals)];
         for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
             sigaction(kKernelSignals[i], nullptr, &before[i]);
         OSD::SetSignal(OSD_SignalMode_Set, false);
-        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i)
+        for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
             sigaction(kKernelSignals[i], &before[i], &g_kernelActions[i]);
+            // The dispatcher blocks what OpenCASCADE's handler blocks.
+            g_dispatchActions[i] = g_kernelActions[i];
+            g_dispatchActions[i].sa_sigaction = onKernelSignal;
+            g_dispatchActions[i].sa_flags = (g_kernelActions[i].sa_flags | SA_SIGINFO) & ~static_cast<int>(SA_RESETHAND);
+        }
 #endif
     });
 }
 
-KernelSignalScope::KernelSignalScope()
+KernelSignalScope::KernelSignalScope() : entryDepth_(kernelLockDepth())
 {
     installKernelSignalHandlers();
+    // One thread in the kernel at a time: then the handlers below are also
+    // installed and removed by the thread that runs the kernel code (on
+    // Windows the C runtime keeps them per thread).
+    lockKernel();
     const std::lock_guard lock(g_signalMutex);
     if (g_kernelCalls++ > 0)
         return;
     for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
 #if defined(_WIN32)
-        g_outsideHandlers[i] = std::signal(kKernelSignals[i], g_kernelHandlers[i]);
+        g_outsideHandlers[i] = std::signal(kKernelSignals[i], onKernelSignal);
 #else
-        sigaction(kKernelSignals[i], &g_kernelActions[i], &g_outsideActions[i]);
+        sigaction(kKernelSignals[i], &g_dispatchActions[i], &g_outsideActions[i]);
 #endif
     }
 }
 
 KernelSignalScope::~KernelSignalScope()
 {
-    const std::lock_guard lock(g_signalMutex);
-    if (--g_kernelCalls > 0)
-        return;
-    for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
+    {
+        const std::lock_guard lock(g_signalMutex);
+        if (--g_kernelCalls == 0) {
+            for (std::size_t i = 0; i < std::size(kKernelSignals); ++i) {
 #if defined(_WIN32)
-        std::signal(kKernelSignals[i], g_outsideHandlers[i]);
+                std::signal(kKernelSignals[i], g_outsideHandlers[i]);
 #else
-        sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
+                sigaction(kKernelSignals[i], &g_outsideActions[i], nullptr);
 #endif
+            }
+        }
     }
+    // Also releases kernel locks taken inside this scope whose release a
+    // kernel fault jumped over.
+    unlockKernelTo(entryDepth_);
 }
 
 } // namespace detail
@@ -159,6 +345,32 @@ KernelSignalScope::~KernelSignalScope()
 void installKernelSignalHandling()
 {
     detail::installKernelSignalHandlers();
+}
+
+void setInteractiveThread()
+{
+    auto& w = detail::interactiveWaits();
+    const std::lock_guard lock(w.mutex);
+    w.thread = std::this_thread::get_id();
+}
+
+KernelWaits interactiveKernelWaits()
+{
+    auto& w = detail::interactiveWaits();
+    const std::lock_guard lock(w.mutex);
+    return w.waits;
+}
+
+void resetInteractiveKernelWaits()
+{
+    auto& w = detail::interactiveWaits();
+    const std::lock_guard lock(w.mutex);
+    w.waits = {};
+}
+
+std::uint64_t kernelCallsOnThisThread()
+{
+    return detail::t_kernelCalls;
 }
 
 bool insideKernelCall()
@@ -174,6 +386,14 @@ bool simulateKernelFault()
         return okStatus();
     });
     return !status;
+}
+
+void runInsideKernelCallForTesting(const std::function<void()>& fn)
+{
+    (void)detail::guarded("test kernel call", "The modeling kernel failed.", [&fn]() -> Status {
+        fn();
+        return okStatus();
+    });
 }
 
 namespace detail {
@@ -963,6 +1183,7 @@ std::vector<Shape> solids(const Shape& shape)
     std::vector<Shape> out;
     if (shape.isNull())
         return out;
+    const KernelLock lock;
     const auto& map = shape.data()->solids;
     for (int i = 1; i <= map.Extent(); ++i)
         out.push_back(makeShape(map(i)));
@@ -974,6 +1195,7 @@ SolidSignature solidSignature(const Shape& solid)
     SolidSignature signature;
     if (solid.isNull())
         return signature;
+    const KernelLock lock;
     GProp_GProps props;
     BRepGProp::VolumeProperties(occ(solid), props);
     signature.volume = props.Mass();
@@ -1196,6 +1418,7 @@ double volume(const Shape& shape)
 {
     if (shape.isNull())
         return 0.0;
+    const KernelLock lock;
     GProp_GProps props;
     BRepGProp::VolumeProperties(occ(shape), props);
     return props.Mass();
@@ -1205,6 +1428,7 @@ double surfaceArea(const Shape& shape)
 {
     if (shape.isNull())
         return 0.0;
+    const KernelLock lock;
     GProp_GProps props;
     BRepGProp::SurfaceProperties(occ(shape), props);
     return props.Mass();
@@ -1231,12 +1455,16 @@ BoundingBox boundingBox(const Shape& shape)
         return {};
     // AddOptimal optimizes over every face and edge (~40 ms for a filleted
     // cube), so it runs once per shape; callers ask for the same shape often.
+    // The kernel lock also guards the cached box (not a std::call_once: a
+    // kernel fault jumping out of one would leave it blocked for good).
     const ShapeData& data = *shape.data();
-    std::call_once(data.tightBoxOnce, [&data] {
+    const KernelLock lock;
+    if (!data.tightBoxDone) {
         Bnd_Box box;
         BRepBndLib::AddOptimal(data.shape, box, false, false);
         data.tightBox = toBoundingBox(box);
-    });
+        data.tightBoxDone = true;
+    }
     return data.tightBox;
 }
 
@@ -1246,6 +1474,7 @@ BoundingBox approximateBoundingBox(const Shape& shape)
         return {};
     // Geometry bounds (control-point hulls for B-splines), independent of any
     // triangulation, so the result does not depend on what was meshed before.
+    const KernelLock lock;
     Bnd_Box box;
     BRepBndLib::Add(occ(shape), box, false);
     return toBoundingBox(box);
@@ -1256,6 +1485,7 @@ std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const S
     std::vector<int> out;
     if (after.isNull() || current.isNull())
         return out;
+    const KernelLock lock;
     // TopTools_MapOfShape compares with IsSame (same TShape and location), so a
     // moved face counts as changed while an untouched one does not.
     TopTools_MapOfShape old;
@@ -1277,6 +1507,7 @@ std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const S
     std::vector<int> out;
     if (after.isNull() || current.isNull())
         return out;
+    const KernelLock lock;
     // Trimmed or split faces are rebuilt on the input face's surface object;
     // genuinely new faces get new surfaces.
     std::set<const Geom_Surface*> oldSurfaces;
@@ -1305,6 +1536,7 @@ bool isValid(const Shape& shape)
 {
     if (shape.isNull())
         return false;
+    const KernelLock lock;
     BRepCheck_Analyzer analyzer(occ(shape));
     return analyzer.IsValid();
 }
@@ -1387,6 +1619,7 @@ std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex)
     std::vector<int> result;
     if (!validIndex(shape, edgeIndex, shape.edgeCount()))
         return result;
+    const KernelLock lock;
     TopTools_IndexedDataMapOfShapeListOfShape map;
     TopExp::MapShapesAndAncestors(occ(shape), TopAbs_EDGE, TopAbs_FACE, map);
     const TopoDS_Shape& edge = shape.data()->edges.FindKey(edgeIndex + 1);
@@ -1552,6 +1785,7 @@ std::string toBrepString(const Shape& shape, bool withTriangulation)
 {
     if (shape.isNull())
         return {};
+    const KernelLock lock; // also writes triangulations, which meshing changes
     std::ostringstream out;
     if (withTriangulation)
         BRepTools::Write(occ(shape), out);

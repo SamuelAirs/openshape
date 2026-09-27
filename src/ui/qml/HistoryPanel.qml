@@ -264,6 +264,7 @@ Panel {
                             }
                         }
                         ActionButton {
+                            objectName: "historyVisibility_" + row.modelData.id
                             compact: true
                             visible: row.modelData.kind !== "feature"
                             text: row.modelData.visible ? "Hide" : "Show"

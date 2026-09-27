@@ -9,6 +9,7 @@
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepBndLib.hxx>
@@ -19,6 +20,7 @@
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <ElSLib.hxx>
+#include <GCPnts_QuasiUniformDeflection.hxx>
 #include <IntCurvesFace_ShapeIntersector.hxx>
 #include <Precision.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
@@ -27,6 +29,7 @@
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Lin.hxx>
@@ -220,6 +223,7 @@ std::optional<double> materialDepth(const Shape& shape, const Vec3& point, const
     if (shape.isNull() || direction.length() < 1e-12)
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         IntCurvesFace_ShapeIntersector intersector;
         intersector.Load(occ(shape), Precision::Confusion());
         const auto hit = firstHit(intersector, point, direction);
@@ -237,6 +241,7 @@ std::optional<double> emptyDepth(const Shape& shape, const std::vector<Vec3>& po
     if (shape.isNull() || direction.length() < 1e-12)
         return std::nullopt;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         IntCurvesFace_ShapeIntersector intersector;
         intersector.Load(occ(shape), Precision::Confusion());
         std::optional<double> shortest;
@@ -261,6 +266,7 @@ FaceOutline faceOutline(const Shape& shape, int faceIndex, const Vec3& origin, c
     if (shape.isNull() || faceIndex < 0 || faceIndex >= shape.faceCount())
         return out;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Face face = TopoDS::Face(shape.data()->faces.FindKey(faceIndex + 1));
         // The face in the frame's coordinates: its box there is the outline's.
         const Vec3 n = xAxis.cross(yAxis);
@@ -275,8 +281,16 @@ FaceOutline faceOutline(const Shape& shape, int faceIndex, const Vec3& origin, c
         box.Get(out.minU, out.minV, zMin, out.maxU, out.maxV, zMax);
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(face, TopAbs_EDGE, edges);
+        // The boundary for outlineContains: fine chords (a thousandth of a
+        // millimeter on a 100 mm face), straight edges as they are.
+        out.boundaryDeflection = std::max(1e-5 * std::max(out.maxU - out.minU, out.maxV - out.minV), 1e-6);
+        auto toUV = [&](const gp_Pnt& p) {
+            const Vec3 d = fromPnt(p) - origin;
+            return Vec2{d.dot(xAxis), d.dot(yAxis)};
+        };
         for (int i = 1; i <= edges.Extent(); ++i) {
-            const int index = shape.data()->edges.FindIndex(edges(i)) - 1;
+            const TopoDS_Edge& edge = TopoDS::Edge(edges(i));
+            const int index = shape.data()->edges.FindIndex(edge) - 1;
             const auto info = edgeInfo(shape, index);
             if (!info)
                 continue;
@@ -284,6 +298,33 @@ FaceOutline faceOutline(const Shape& shape, int faceIndex, const Vec3& origin, c
                 out.edgeMidpoints.push_back(info->midpoint);
             else if (info->kind == CurveKind::Circle)
                 out.circleCenters.push_back(info->center);
+            if (BRep_Tool::Degenerated(edge))
+                continue;
+            // Chains end on the vertices' own points, so edges that meet share
+            // exactly the same end (the even-odd test counts a crossing at a
+            // shared end once only if both sides agree on where it is).
+            TopoDS_Vertex first, last; // at the curve's first and last parameter
+            TopExp::Vertices(edge, first, last);
+            if (first.IsNull() || last.IsNull())
+                continue;
+            const Vec2 start = toUV(BRep_Tool::Pnt(first)), end = toUV(BRep_Tool::Pnt(last));
+            if (info->kind == CurveKind::Line) {
+                out.boundary.push_back({start, end});
+                continue;
+            }
+            BRepAdaptor_Curve curve(edge);
+            GCPnts_QuasiUniformDeflection chords(curve, out.boundaryDeflection);
+            if (!chords.IsDone() || chords.NbPoints() < 2) {
+                out.boundary.push_back({start, end});
+                continue;
+            }
+            Vec2 from = start;
+            for (int k = 2; k < chords.NbPoints(); ++k) {
+                const Vec2 to = toUV(chords.Value(k));
+                out.boundary.push_back({from, to});
+                from = to;
+            }
+            out.boundary.push_back({from, end});
         }
         out.valid = true;
         return out;
@@ -298,6 +339,7 @@ bool faceContains(const Shape& shape, int faceIndex, const Vec3& point)
     if (shape.isNull() || faceIndex < 0 || faceIndex >= shape.faceCount())
         return false;
     try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
         const TopoDS_Face face = TopoDS::Face(shape.data()->faces.FindKey(faceIndex + 1));
         BRepAdaptor_Surface surface(face);
         if (surface.GetType() != GeomAbs_Plane)
@@ -310,6 +352,22 @@ bool faceContains(const Shape& shape, int faceIndex, const Vec3& point)
         OS_LOG(Warning, Kernel) << "faceContains(" << faceIndex << ") failed: " << describeFailure(failure);
         return false;
     }
+}
+
+bool outlineContains(const FaceOutline& outline, Vec2 point, double tolerance)
+{
+    // Even-odd crossings of a ray along +u; the segments need no order.
+    bool inside = false;
+    for (const auto& [a, b] : outline.boundary) {
+        const Vec2 ab = b - a;
+        const double length2 = ab.dot(ab);
+        const double t = length2 > 0 ? std::clamp((point - a).dot(ab) / length2, 0.0, 1.0) : 0.0;
+        if ((point - (a + ab * t)).length() <= tolerance)
+            return true;
+        if ((a.y > point.y) != (b.y > point.y) && point.x < a.x + (point.y - a.y) * ab.x / ab.y)
+            inside = !inside;
+    }
+    return inside;
 }
 
 Result<Shape> drillHoles(const Shape& shape, const std::vector<HoleCut>& holes)

@@ -9,6 +9,15 @@
 # - Manual runs and pushes to main that change the packaging upload the
 #   files as a workflow artifact instead, so the pipeline is exercised
 #   before the first tag.
+# - Code signing through SignPath Foundation (docs/CODE_SIGNING.md) switches
+#   on once the secret SIGNPATH_API_TOKEN and the variable
+#   SIGNPATH_ORGANIZATION_ID are set: OpenShape.exe is signed before the
+#   installer and the zip are made, then the installer; tags use the
+#   release-signing policy (approved by hand in SignPath), other runs
+#   test-signing. Without them every step runs as before, unsigned.
+# - Every run also checks the release notes template (both variants) and
+#   the signature check (pe-signature.py self-test), which otherwise would
+#   only run when a tag is published or a file signed.
 # Failed steps report their error lines as annotations, which anyone can
 # read (scripts/ci/run-logged.sh); results are summarized as notices.
 name: Release
@@ -27,6 +36,7 @@ on:
 
 permissions:
   contents: write # gh release create
+  actions: read # SignPath reads the run and its artifact (docs/CODE_SIGNING.md)
 
 # Queue instead of cancelling: a cancelled first run would lose the
 # OpenCASCADE build before it is cached.
@@ -44,6 +54,14 @@ jobs:
     env:
       LOGS: ${{ github.workspace }}/ci-logs
       OCCT_VERSION: 7.9.3
+      # Code signing (docs/CODE_SIGNING.md, "For the maintainer"): on once
+      # the SignPath API token (secret) and organization id (variable) exist.
+      HAS_SIGNING: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNPATH_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG || 'openshape' }}
+      # Release tags: the SignPath Foundation certificate, each request
+      # approved by hand in SignPath. Other runs: SignPath's test
+      # certificate (not trusted by Windows; never published).
+      SIGNPATH_POLICY: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || 'test-signing' }}
     steps:
       - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
@@ -85,9 +103,22 @@ jobs:
             esac
           fi
           echo "::notice title=Version::OpenShape $version (${GITHUB_REF_NAME})"
+      # The release notes template and scripts/ci/install-notes.sh, both
+      # variants, on every run: a tag reaches "Publish the GitHub Release"
+      # only after the whole build, so a broken template must fail here,
+      # within the first minutes (ctest runs the same check).
+      - name: Check the release notes (signed and unsigned)
+        run: |
+          bash scripts/ci/run-logged.sh release-notes bash scripts/ci/test-install-notes.sh
+          grep -E "^test-install-notes: " "$LOGS/release-notes.log" | sed 's/^/::notice title=Release notes::/'
 
+      # A release that SignPath signs with the SignPath Foundation
+      # certificate builds OpenCASCADE in the same run instead of restoring
+      # an earlier run's build (about 45 minutes more), so everything it
+      # links comes from this run's sources (docs/CODE_SIGNING.md).
       - name: Restore OpenCASCADE (own build)
         id: occt
+        if: env.HAS_SIGNING != 'true' || env.SIGNPATH_POLICY != 'release-signing'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.OPENSHAPE_OCCT_PREFIX }}
@@ -99,7 +130,7 @@ jobs:
           bash scripts/ci/run-logged.sh occt bash scripts/windows/build-occt.sh "$OPENSHAPE_OCCT_PREFIX" 4
           echo "::notice title=OpenCASCADE::built: $(grep '^Toolkits:' "$OPENSHAPE_OCCT_PREFIX/BUILD-INFO.txt")"
       - name: Save OpenCASCADE
-        if: steps.occt.outputs.cache-hit != 'true'
+        if: steps.occt.outputs.cache-hit != 'true' && steps.occt.outcome != 'skipped'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.OPENSHAPE_OCCT_PREFIX }}
@@ -121,11 +152,99 @@ jobs:
           bash scripts/ci/run-logged.sh package bash scripts/package-windows.sh build/msys2-ucrt64-release dist/OpenShape
           grep -E "^Packaged " "$LOGS/package.log" | sed 's/^/::notice title=Package::/'
           grep -E "^License gate: (PASS|FAIL)" "$LOGS/package.log" | sed 's/^/::notice title=License gate::/'
+      # The check that use-signed.sh applies to each file SignPath returns,
+      # tried on made-up signed copies of this OpenShape.exe, on every run
+      # (signed or not), so that a broken check shows up before anyone is
+      # asked to approve a signing request (ctest runs it on the build too).
+      - name: Check the signature check (self-test on OpenShape.exe)
+        run: |
+          bash scripts/ci/run-logged.sh pe-signature python scripts/windows/pe-signature.py self-test dist/OpenShape/OpenShape.exe
+          grep -E "^pe-signature self-test: " "$LOGS/pe-signature.log" | sed 's/^/::notice title=Signature check::/'
+
+      # Code signing (docs/CODE_SIGNING.md). SignPath signs only files of
+      # this run: each is uploaded as a workflow artifact, SignPath checks
+      # with GitHub that this workflow built it from this repository, signs
+      # it (release-signing: after the approver's OK) and hands it back;
+      # scripts/windows/use-signed.sh checks that only a signature was added
+      # before the signed file replaces the unsigned one. OpenShape.exe
+      # first, so the installer and the zip contain it signed; then the
+      # installer itself. The DLLs are other projects' code (Qt,
+      # OpenCASCADE, PlaneGCS, MSYS2) and stay unsigned, as SignPath
+      # Foundation requires. The artifact configurations "program" and
+      # "installer" are in .signpath/artifact-configurations/.
+      - name: "Code signing: off"
+        if: env.HAS_SIGNING != 'true'
+        run: echo "::notice title=Code signing::not signed - the secret SIGNPATH_API_TOKEN and the variable SIGNPATH_ORGANIZATION_ID are not set (docs/CODE_SIGNING.md)"
+      - name: "Code signing: upload OpenShape.exe"
+        id: unsigned-program
+        if: env.HAS_SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-program
+          path: dist/OpenShape/OpenShape.exe
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true # a re-run uploads it again
+      - name: "Code signing: sign OpenShape.exe (SignPath)"
+        if: env.HAS_SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: program
+          github-artifact-id: ${{ steps.unsigned-program.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+          wait-for-completion: true
+          # Release signing waits for the approver (an e-mail from SignPath).
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ runner.temp }}/signed-program
+      - name: "Code signing: check and use the signed OpenShape.exe"
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          bash scripts/ci/run-logged.sh sign-program bash scripts/windows/use-signed.sh \
+              "$(cygpath -u "$RUNNER_TEMP")/signed-program/OpenShape.exe" dist/OpenShape/OpenShape.exe "$SIGNPATH_POLICY"
+          grep -E "^Signed: " "$LOGS/sign-program.log" | sed 's/^/::notice title=Code signing::/'
+
       - name: Installer and zip
         run: |
           bash scripts/ci/run-logged.sh installer bash scripts/windows/make-installer.sh dist/OpenShape dist
           grep -E "^(Installer|Zip|Package): " "$LOGS/installer.log" | tr '\n' ';' | sed 's/^/::notice title=Release files::/'
           echo
+      - name: "Code signing: upload the installer"
+        id: unsigned-installer
+        if: env.HAS_SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: dist/OpenShape-*-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true # a re-run uploads it again
+      - name: "Code signing: sign the installer (SignPath)"
+        if: env.HAS_SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ runner.temp }}/signed-installer
+      - name: "Code signing: check and use the signed installer (checksums again)"
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          setup=$(ls dist/OpenShape-*-setup.exe)
+          bash scripts/ci/run-logged.sh sign-installer bash scripts/windows/use-signed.sh \
+              "$(cygpath -u "$RUNNER_TEMP")/signed-installer/${setup##*/}" "$setup" "$SIGNPATH_POLICY"
+          grep -E "^Signed: " "$LOGS/sign-installer.log" | sed 's/^/::notice title=Code signing::/'
       - name: Test the installer (silent install, upgrade, uninstall)
         shell: pwsh
         run: |
@@ -161,8 +280,10 @@ jobs:
           version=${tag#v}
           prerelease=()
           case "$version" in 0.*|*-*) prerelease=(--prerelease) ;; esac
-          sed -e "s/@VERSION@/$version/g" -e "s/@APP_VERSION@/$APP_VERSION/g" -e "s/@TAG@/$tag/g" \
-              packaging/windows/release-notes.md > "$RUNNER_TEMP/install.md"
+          # The install notes say whether this release is code-signed (a
+          # tag with signing on only gets here with both files signed).
+          if [ "$HAS_SIGNING" = true ]; then signing=signed; else signing=unsigned; fi
+          bash scripts/ci/install-notes.sh "$version" "$APP_VERSION" "$tag" "$signing" > "$RUNNER_TEMP/install.md"
           # What is new: this version's section of CHANGELOG.md (without its
           # heading), then the install and license notes.
           bash scripts/ci/changelog-section.sh "$version" > "$RUNNER_TEMP/notes.md"
@@ -170,4 +291,4 @@ jobs:
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
               dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt
-          echo "::notice title=GitHub Release::$tag published ${prerelease[*]}"
+          echo "::notice title=GitHub Release::$tag published ${prerelease[*]} ($signing)"

@@ -17,6 +17,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QUrl>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
 #include <cmath>
@@ -219,6 +220,21 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
         [&r] {
             r.check(r.app().operationValueLabel() == QStringLiteral("X from corner"), "hole tool: X is measured from the corner",
                     r.app().operationValueLabel());
+            // Off the face, and Tab at once, while its preview still
+            // computes on the worker: Tab waits for the verdict and stays.
+            r.type(QStringLiteral("70"));
+            const auto* tool = holeTool(r);
+            r.check(tool && tool->previewPending(), "hole tool: the typed X is still being previewed");
+            r.key(Qt::Key_Tab);
+            r.check(r.app().operationValueLabel() == QStringLiteral("X from corner"), "hole tool: Tab stays on an X off the face",
+                    r.app().operationValueLabel());
+            const QQuickItem* error = r.findItem(QStringLiteral("valueChipError"));
+            const QString errorText = error ? error->property("text").toString() : QString();
+            r.check(errorText.contains(QStringLiteral("off the face")), "hole tool: and says the hole is off the face", errorText);
+            const QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+            r.check(field && field->hasActiveFocus(), "hole tool: the X field keeps the keyboard");
+            r.key(Qt::Key_Backspace, Qt::NoModifier, QStringLiteral("\b"));
+            r.key(Qt::Key_Backspace, Qt::NoModifier, QStringLiteral("\b"));
             r.type(QStringLiteral("4"));
         },
         [&r] {

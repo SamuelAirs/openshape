@@ -10,10 +10,19 @@ OpenShape @VERSION@ for Windows (64-bit, Windows 10 or 11).
 - **Portable:** download `OpenShape-@APP_VERSION@-windows-x64.zip`, extract it anywhere
   and run `OpenShape.exe` inside.
 
+<!-- if unsigned -->
 The installer and the program are not code-signed yet, so Windows SmartScreen
 may say "Windows protected your PC": click **More info**, then **Run anyway**.
+<!-- end -->
+<!-- if signed -->
+The installer and `OpenShape.exe` are code-signed: Windows shows the
+verified publisher **SignPath Foundation**. Free code signing provided by
+SignPath.io, certificate by SignPath Foundation. To check a file, right-click
+it: *Properties > Digital Signatures*.
+<!-- end -->
 `SHA256SUMS.txt` lists the files' SHA-256 checksums
-(PowerShell: `Get-FileHash <file>`).
+(PowerShell: `Get-FileHash <file>`). Code signing policy:
+[docs/CODE_SIGNING.md](https://github.com/SamuelAirs/openshape/blob/@TAG@/docs/CODE_SIGNING.md).
 
 ## License and source code
 

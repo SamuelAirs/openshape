@@ -11,6 +11,7 @@
 #include "geometry/internal/ShapeData.h"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
@@ -47,6 +48,24 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
     Mesh mesh;
     if (shape.isNull())
         return mesh;
+    if (params.isolated) {
+        // A copy has the same sub-shapes in the same order, so the mesh's face
+        // and edge ids are the original's. Its faces start with the
+        // original's triangulations (shared, never modified: meshing replaces
+        // them), which the mesher reuses where they are fine enough.
+        Shape copy;
+        try {
+            OS_KERNEL_SIGNALS_TO_EXCEPTIONS
+            BRepBuilderAPI_Copy copier(occ(shape), false, true);
+            copy = makeShape(copier.Shape());
+        } catch (const Standard_Failure& failure) {
+            OS_LOG(Error, Kernel) << "tessellation copy failed: " << failure.DynamicType()->Name();
+            return mesh;
+        }
+        TessellationParams inPlace = params; // (the copy's box, so the deflection, is the original's)
+        inPlace.isolated = false;
+        return tessellate(copy, inPlace);
+    }
 
     ScopedTimer timer("tessellate");
     const TopoDS_Shape& occShape = occ(shape);
