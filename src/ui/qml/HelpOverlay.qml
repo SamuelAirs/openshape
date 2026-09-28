@@ -260,8 +260,8 @@ Rectangle {
                             ["Send a project", "File → Share Project… (saves it first)"]
                         ] : []).concat([
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S", "File → New / Open… / Save"],
-                            ["Recent projects", "Home (at start, or File → Home): click a project to open it; ⋯ or a right click removes it from the list · File → Open Recent",
-                             "Home (at start, or File → Home): tap a project to open it; ⋯ or touch and hold removes it from the list"],
+                            ["Recent projects", "Home (at start, or File → Home): click a project to open it; ⋯ or a right click: Rename, Duplicate, Remove from list, Delete · File → Open Recent",
+                             "Home (at start, or File → Home): tap a project to open it; ⋯ or touch and hold: Rename, Duplicate, Remove from list, Delete"],
                             ["For printing", "File → Export STL or 3MF"],
                             ["For other CAD", "File → Export STEP"],
                             ["From other CAD", "File → Import STEP… (Ctrl+I): each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size",

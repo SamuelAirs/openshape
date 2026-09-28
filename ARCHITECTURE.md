@@ -52,7 +52,7 @@ Technology choices and the alternatives considered are in
  OpenCASCADE 7.9 (only included inside geometry/)
 
  render/    ViewportRenderer (QRhi) — consumes interaction::RenderScene
- io/        .openshape project container (ZIP + JSON), recovery copies, recent-files list
+ io/        .openshape project container (ZIP + JSON), recovery copies, recent-files list, project file rename/duplicate/delete (Home)
  core/      Result, Log, Uuid, Units, Math, Camera, Lighting, Timer
 ```
 
@@ -1395,8 +1395,28 @@ makes a re-saved project show its new preview). The path in the source is
 base64url of its UTF-8 (`ui/ThumbnailSource`, Qt Core only, tested in
 `test_uistate`): Qt hands a provider its id partly percent-decoded, which
 broke percent-encoded paths outside ASCII. Cards are the tap
-targets; ⋯, a long press or a right click open "Remove from list"
-(`removeRecentFile`, `io::withoutRecentFile`). The grid takes as many
+targets; ⋯, a long press or a right click open the card's menu:
+Rename… (`renameProject`; the name is checked as it is typed,
+`projectNameProblem` / `io::projectRenameProblem`; the recent list keeps
+the entry's place, `io::withRenamedRecentFile`; the open project takes the
+new path and title), Duplicate (`duplicateProject`: `io::duplicateProjectFile`
+copies the file byte for byte as "Name copy" / "Name copy N", verified by
+size, and puts it first in the recent list), "Remove from list"
+(`removeRecentFile`, `io::withoutRecentFile`) and Delete… (`deleteProject`).
+The name rules and file operations are Qt-free in `io/ProjectFiles`
+(tests/test_project_files.cpp). Delete is offered (`deletable` in
+`homeProjects`) for projects inside the app folder (`io::isInsideFolder`)
+and, on the desktop, for recent projects; it moves the file to the system
+trash through `AppController::TrashHandler` (`QFile::moveToTrash`: the
+Recycle Bin; on iOS Qt calls NSFileManager `trashItemAtURL`, which moves a
+file in Documents to `Documents/.Trash`, the Files app's Recently Deleted).
+When the trash fails, a project in the app folder comes back as
+"permanent" and Home asks again, saying it cannot be undone, before
+`io::removeProjectFile`; any other project stays. The file must be gone
+afterwards (the invariant checked). Deleting the open project replaces it
+with a new document and keeps Home. The acceptance run's `homeprojects`
+scenario puts a stand-in trash in (a temporary folder, then one that
+fails), so no run touches the Recycle Bin. The grid takes as many
 columns as fit (two on a phone in portrait) and gets denser in short
 windows (a phone in landscape). While Home is shown the keys for the model
 (Undo, Redo, Ctrl+D, B, K, F, Delete) do nothing, and closing an overlay

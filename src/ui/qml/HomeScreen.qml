@@ -11,7 +11,9 @@ import OpenShape
 // plus New project, Open... and Import STEP.... Shown at launch without a
 // file and from File -> Home; Esc or Back returns to the open document.
 // Touch-first: whole cards are tap targets, and the ... button, a long press
-// or a right click opens a card's menu.
+// or a right click opens a card's menu: Rename..., Duplicate, Remove from
+// list and (for projects in OpenShape's folder, and recent ones on the
+// desktop) Delete..., each confirmed on a card of its own.
 Rectangle {
     id: home
 
@@ -31,6 +33,10 @@ Rectangle {
     // A phone in landscape: less header, smaller cards, more of them per row.
     readonly property bool short_: height < 520
     readonly property bool hasDocument: app.bodyCount > 0 || app.sketchCount > 0 || app.dirty
+
+    // A card's Rename... and Delete... (the cards below the page).
+    function askRename(path, name) { renameCard.open(path, name) }
+    function askDelete(path, name) { deleteCard.open(path, name) }
 
     Keys.onEscapePressed: app.homeVisible = false
     MouseArea {
@@ -224,6 +230,7 @@ Rectangle {
             anchors { left: parent.left; right: parent.right; top: preview.bottom; margins: 10; topMargin: 8 }
             spacing: 2
             Text {
+                objectName: "homeCardName_" + card.cardIndex
                 width: parent.width - menuButton.width
                 text: card.project.name || ""
                 textFormat: Text.PlainText // file names are shown as they are
@@ -260,22 +267,271 @@ Rectangle {
             text: "⋯"
             compact: true
             fontSize: 18
+            implicitHeight: Theme.touch ? 44 : 30 // a finger's target on touch
             implicitWidth: implicitHeight
             onClicked: card.openMenu(x, y + height)
         }
 
+        // Each action runs after the menu has closed: most rebuild the cards.
         Menu {
             id: cardMenu
-            MenuItem {
+            CardMenuItem {
+                objectName: "homeRename_" + card.cardIndex
+                text: "Rename…"
+                onTriggered: {
+                    const project = card.project
+                    Qt.callLater(() => home.askRename(project.path, project.name))
+                }
+            }
+            CardMenuItem {
+                objectName: "homeDuplicate_" + card.cardIndex
+                text: "Duplicate"
+                onTriggered: {
+                    const path = card.project.path
+                    const app = home.app
+                    Qt.callLater(() => app.duplicateProject(path))
+                }
+            }
+            CardMenuItem {
                 objectName: "homeRemove_" + card.cardIndex
                 text: "Remove from list"
                 enabled: card.project.removable === true
-                // After the menu has closed: removing rebuilds the cards.
                 onTriggered: {
                     const path = card.project.path
                     const app = home.app
                     Qt.callLater(() => app.removeRecentFile(path))
                 }
+            }
+            // Only for projects in OpenShape's folder and, on the desktop,
+            // recent ones (through the Recycle Bin); see deleteProject.
+            CardMenuItem {
+                objectName: "homeDelete_" + card.cardIndex
+                text: "Delete…"
+                visible: card.project.deletable === true
+                height: visible ? implicitHeight : 0
+                destructive: true
+                onTriggered: {
+                    const project = card.project
+                    Qt.callLater(() => home.askDelete(project.path, project.name))
+                }
+            }
+        }
+    }
+
+    // Touch-sized menu entries (44 px on touch); Delete... in red.
+    component CardMenuItem: MenuItem {
+        id: item
+        property bool destructive: false
+        implicitHeight: Theme.touch ? 44 : 34
+        contentItem: Text {
+            leftPadding: item.leftPadding
+            text: item.text
+            font.pixelSize: 14
+            color: item.destructive ? Theme.error : Theme.text
+            opacity: item.enabled ? 1 : 0.4
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+    }
+
+    // A dimmed page with a card in the middle (near the top on a phone, so
+    // the on-screen keyboard does not cover it), clear of the safe area.
+    component ModalCard: Rectangle {
+        id: modal
+        default property alias cardContent: column.data
+        property alias cardObjectName: panel.objectName
+        signal dismissed()
+        anchors.fill: parent
+        z: 20
+        color: "#66000000"
+        visible: false
+        Keys.onEscapePressed: dismissed()
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => wheel.accepted = true
+        }
+        Item {
+            id: safeRect
+            anchors { fill: parent; topMargin: Theme.safeTop; rightMargin: Theme.safeRight
+                      bottomMargin: Theme.safeBottom; leftMargin: Theme.safeLeft }
+        }
+        Panel {
+            id: panel
+            anchors.horizontalCenter: safeRect.horizontalCenter
+            y: Theme.compact ? safeRect.y + Theme.margin + 24 : safeRect.y + (safeRect.height - height) / 3
+            opacity: 1
+            width: Math.min(safeRect.width - (Theme.compact ? 16 : 32), 440)
+            height: column.implicitHeight + 2 * (Theme.compact ? 16 : 24)
+            ColumnLayout {
+                id: column
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: Theme.compact ? 16 : 24 }
+                spacing: 12
+            }
+        }
+    }
+
+    // Rename...: the new name is checked as it is typed (no name, a name
+    // another project there has, characters files cannot have).
+    ModalCard {
+        id: renameCard
+        objectName: "homeRenameCard"
+        cardObjectName: "homeRenamePanel"
+        property string path: ""
+        property string oldName: ""
+        readonly property string problem: visible ? home.app.projectNameProblem(path, renameField.text) : ""
+        readonly property bool unchanged: renameField.text.trim() === oldName
+
+        function open(projectPath, name) {
+            path = projectPath
+            oldName = name
+            renameField.text = name
+            visible = true
+            renameField.forceActiveFocus()
+            renameField.selectAll()
+        }
+        function close() {
+            visible = false
+            home.forceActiveFocus()
+        }
+        function accept() {
+            if (unchanged) {
+                close()
+                return
+            }
+            if (problem === "" && home.app.renameProject(path, renameField.text))
+                close()
+        }
+        onDismissed: close()
+
+        Text {
+            Layout.fillWidth: true
+            text: "Rename project"
+            font.pixelSize: 18
+            font.weight: Font.DemiBold
+            color: Theme.text
+        }
+        TextField {
+            id: renameField
+            objectName: "homeRenameField"
+            Layout.fillWidth: true
+            implicitHeight: Theme.controlHeight
+            font.pixelSize: 15
+            color: Theme.text
+            placeholderText: "Name"
+            selectByMouse: true
+            persistentSelection: true
+            background: Rectangle {
+                radius: 8
+                color: "white"
+                border.color: renameCard.problem !== "" ? Theme.error : Theme.accent
+                border.width: 1.5
+            }
+            onAccepted: renameCard.accept()
+            Keys.onEscapePressed: renameCard.close()
+        }
+        Text {
+            objectName: "homeRenameNote"
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            font.pixelSize: 12
+            color: renameCard.problem !== "" ? Theme.error : Theme.mutedText
+            text: renameCard.problem !== "" ? renameCard.problem : "The project's file gets the new name."
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 4
+            spacing: 8
+            Item { Layout.fillWidth: true }
+            ActionButton { objectName: "homeRenameCancel"; text: "Cancel"; onClicked: renameCard.close() }
+            ActionButton {
+                objectName: "homeRenameOk"
+                text: "Rename"
+                accent: true
+                enabled: renameCard.problem === "" && !renameCard.unchanged
+                onClicked: renameCard.accept()
+            }
+        }
+    }
+
+    // Delete...: names the project and where it goes. When it cannot go to
+    // the trash (a project in OpenShape's folder), the card asks again,
+    // saying that it cannot be undone.
+    ModalCard {
+        id: deleteCard
+        objectName: "homeDeleteCard"
+        cardObjectName: "homeDeletePanel"
+        property string path: ""
+        property string name: ""
+        property bool permanent: false // the trash failed: deleting is for good
+        property bool isOpen: false
+
+        function open(projectPath, projectName) {
+            path = projectPath
+            name = projectName
+            permanent = false
+            isOpen = home.app.isOpenProject(projectPath)
+            visible = true
+            forceActiveFocus()
+        }
+        function close() {
+            visible = false
+            home.forceActiveFocus()
+        }
+        function accept() {
+            const result = home.app.deleteProject(path, permanent)
+            if (result === "permanent")
+                permanent = true // ask again: it cannot be undone
+            else
+                close()
+        }
+        onDismissed: close()
+
+        Text {
+            objectName: "homeDeleteTitle"
+            Layout.fillWidth: true
+            text: (deleteCard.permanent ? "Delete “%1” for good?" : "Delete “%1”?").arg(deleteCard.name)
+            textFormat: Text.PlainText
+            font.pixelSize: 18
+            font.weight: Font.DemiBold
+            color: Theme.text
+            wrapMode: Text.Wrap
+        }
+        Text {
+            objectName: "homeDeleteNote"
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            font.pixelSize: 13
+            color: deleteCard.permanent ? Theme.error : Theme.mutedText
+            text: (deleteCard.permanent
+                   ? "It cannot be moved to " + home.app.trashName + ". Deleting it cannot be undone."
+                   : "It goes to " + home.app.trashName + ".")
+                  + (deleteCard.isOpen ? (home.app.dirty ? " It is open: it closes, and its unsaved changes are lost."
+                                                          : " It is open: it closes.")
+                                       : "")
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 4
+            spacing: 8
+            Item { Layout.fillWidth: true }
+            ActionButton { objectName: "homeDeleteCancel"; text: "Cancel"; onClicked: deleteCard.close() }
+            ActionButton {
+                id: deleteButton
+                objectName: "homeDeleteOk"
+                text: deleteCard.permanent ? "Delete for Good" : "Delete"
+                outlined: true
+                contentItem: Text {
+                    text: deleteButton.text
+                    font.pixelSize: deleteButton.fontSize
+                    font.weight: Font.DemiBold
+                    color: Theme.error
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: deleteCard.accept()
             }
         }
     }

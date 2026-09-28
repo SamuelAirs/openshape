@@ -20,6 +20,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Debug symbols (dSYM) | ✅ 2026-09-27 (ipad.yml run 39): Release is built with debug information (same optimization); the archive carries `OpenShape.app.dSYM` (62 MB; the app stays 55 MB). Xcode's archive step leaves the dSYM of a CMake project out (run 37), so `build-app.sh` copies the build's in and fails unless its UUID is the app binary's and OpenShape's functions are in it; the upload sends it (`uploadSymbols`), so TestFlight crash reports symbolicate |
 | Share sheet after exports, File → Share Project… | 2026-09-27: built on CI (`src/ui/ios/ShareSheet.mm`, run 39); the `share` acceptance scenario checks it with a stub sheet on Windows and the Mac (CI run 47); **to try on the devices** |
 | Open in OpenShape (Files app, Mail) | 2026-09-27: document types for projects and STEP files (checked by the build and `test_uistate`), `QFileOpenEvent` handling; the `openin` scenario checks it on Windows and the Mac through Qt's own entry point; **to try on the devices** |
+| Home: Rename, Duplicate, Delete on a project card | 2026-09-27: Delete moves the project to the Files app's Recently Deleted (Qt's `QFile::moveToTrash` → `trashItemAtURL` → `Documents/.Trash`; asks again and deletes for good only if that fails); the `homeprojects` scenario checks all three with a stand-in trash on Windows and the Mac; **to try on the devices** (item 17 below) |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
 | Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-103); the owner: the custom EULA and the source-offer contact (TD-102) |
@@ -488,3 +489,16 @@ margins (BUILDING.md).
    move, dark ones cannot; dragging a fully sized one says so. Tap inside
    a closed shape → **Extrude**: the sketch closes and the arrow is under
    your finger. Try the same with the Pencil on the iPad.
+17. **Managing projects on Home** (2026-09-27). Touch and hold a project's
+   card (or tap its ⋯): **Duplicate** (a "… copy" card with the same
+   picture appears first; the Files app shows the new file in OpenShape's
+   folder), **Rename…** (the keyboard does not cover the card; a taken name
+   is refused under the field; the new name shows on the card, in the Files
+   app and, for the open project, after Save), **Delete…** (the card names
+   the project and says it goes to Recently Deleted in the Files app).
+   Then Files app → Browse → **Recently Deleted**: the project should be
+   there; **Recover** puts it back (Home shows it again). Qt moves it with
+   iOS's `trashItemAtURL` into `Documents/.Trash`, which the Files app
+   shows as Recently Deleted; if OpenShape instead asks "Delete … for
+   good?", iOS refused that: please report it (it then deletes for good,
+   after saying so).

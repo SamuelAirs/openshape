@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -123,9 +124,14 @@ class AppController : public QObject {
     // Home; opening, New and importing as a project close it.
     Q_PROPERTY(bool homeVisible READ homeVisible WRITE setHomeVisible NOTIFY homeChanged)
     // What Home lists: {path, name, folder, modified, thumbnail (image source),
-    // removable}: the recent files, and on iPadOS also the projects in the
-    // app's Documents folder.
+    // removable, deletable}: the recent files, and on iPadOS also the
+    // projects in the app's Documents folder. deletable: Delete... is
+    // offered (see deleteProject).
     Q_PROPERTY(QVariantList homeProjects READ homeProjects NOTIFY recentFilesChanged)
+    // Where Home's Delete... puts a project: "the Recycle Bin" (Windows),
+    // "the Trash" (macOS), "Recently Deleted in the Files app" (iPhone /
+    // iPad: QFile::moveToTrash moves it to Documents/.Trash there), "the trash".
+    Q_PROPERTY(QString trashName READ trashName CONSTANT)
     // File → Preferences… (stored in QSettings, applied at once).
     Q_PROPERTY(QString defaultUnit READ defaultUnit WRITE setDefaultUnit NOTIFY preferencesChanged)
     Q_PROPERTY(bool sketchGridSnap READ sketchGridSnap WRITE setSketchGridSnap NOTIFY preferencesChanged)
@@ -276,6 +282,38 @@ public:
     // Rereads the list and drops files that are gone (e.g. deleted in
     // Explorer while the app runs); the File menu calls it as it opens.
     Q_INVOKABLE void refreshRecentFiles();
+
+    // ---- Home: a project card's Rename..., Duplicate and Delete... (io/ProjectFiles)
+    // Why the project at `path` cannot be renamed to `name` ("" when it can,
+    // and for its current name): io::checkProjectName's rules, or a project
+    // of that name in the same folder. Home shows it as the name is typed.
+    Q_INVOKABLE QString projectNameProblem(const QString& path, const QString& name) const;
+    // Renames the project file in its folder; the recent list keeps its
+    // place, and the open project (if it is this one) its new path and
+    // title. False, with a message, if it cannot.
+    Q_INVOKABLE bool renameProject(const QString& path, const QString& newName);
+    // "Name copy" (then "Name copy 2", ...) next to it, preview included;
+    // listed first on Home. False, with a message, if it cannot.
+    Q_INVOKABLE bool duplicateProject(const QString& path);
+    // Whether `path` is the open project's file.
+    Q_INVOKABLE bool isOpenProject(const QString& path) const;
+    // Delete... after Home's confirmation. Offered (deletable) for projects
+    // in OpenShape's own folder and, on the desktop, for recent projects
+    // anywhere. First the project goes to the system's trash (trashName);
+    // where that fails, a project in OpenShape's folder is removed only when
+    // asked again with `permanently` (Home says it cannot be undone), and
+    // one elsewhere stays. Returns "trashed", "deleted", "permanent" (the
+    // trash failed: ask before deleting for good) or "" (nothing deleted; a
+    // message says why). The list drops it; if it was the open project, a
+    // new empty document takes its place and Home stays.
+    Q_INVOKABLE QString deleteProject(const QString& path, bool permanently = false);
+    QString trashName() const;
+    // Moves a file to the trash (true), or says why not in `error`.
+    // QFile::moveToTrash by default; the acceptance run puts in one that
+    // keeps to its temporary folder, and one that fails.
+    using TrashHandler = std::function<bool(const QString& file, QString* error)>;
+    void setTrashHandler(TrashHandler handler);
+    static TrashHandler systemTrashHandler();
 
     Q_INVOKABLE void newDocument();
     Q_INVOKABLE bool openProject(const QUrl& url);
@@ -470,6 +508,8 @@ private:
     void noteEdits();
     void stopRecoveryTimers();
     void rememberRecentFile(const QString& path);
+    // Home's Delete... is offered for the project at `path` (see deleteProject).
+    bool projectDeletable(const QString& path, bool recent) const;
     // Recomputes recentFiles_ from the settings and the disk; emits on change.
     // With an app folder, entries into its old location (the app's data
     // folder moves when an iOS app is updated) are moved into the current one.
@@ -529,6 +569,7 @@ private:
     QUrl nextFileChoice_;
     QString appFolder_; // see savesToAppFolder
     ShareHandler shareHandler_;
+    TrashHandler trashHandler_;
     // A file from another app, brought in and waiting for "Save changes?".
     std::optional<StagedFile> pendingIncoming_;
     QString pendingIncomingName_; // its name as it came (the STEP step's source)

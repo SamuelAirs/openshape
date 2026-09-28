@@ -33,6 +33,13 @@ std::vector<std::string> withRecentFile(std::vector<std::string> list, const std
 std::vector<std::string> existingRecentFiles(const std::vector<std::string>& list);
 // The list without `path` (Home: "Remove from list"; the file itself stays).
 std::vector<std::string> withoutRecentFile(std::vector<std::string> list, const std::string& path);
+// The list with `from` replaced by `to` where it was (Home: Rename...; a
+// file renamed keeps its place). Unchanged if `from` is not in it.
+std::vector<std::string> withRenamedRecentFile(std::vector<std::string> list, const std::string& from, const std::string& to);
+// Whether `path` lies inside `folder` (at any depth; not the folder itself).
+// Separators and a leading "/private" as for rebasedIntoFolder; letter
+// case as sameRecentPath.
+bool isInsideFolder(const std::string& path, const std::string& folder);
 // What the start screen lists: the recent files, then the projects of a
 // folder the app owns (the iPad's Documents: projects put there with the
 // Files app) that are not among them, in the order given.

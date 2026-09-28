@@ -1171,7 +1171,8 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     if (app_->sketchMode())
         app_->finishSketch();
     app_->cancelOperation();
-    for (const char* overlay : {"helpOverlay", "aboutOverlay", "licensesOverlay", "preferencesOverlay", "unsavedDialog", "saveNamePrompt"})
+    for (const char* overlay : {"helpOverlay", "aboutOverlay", "licensesOverlay", "preferencesOverlay", "unsavedDialog", "saveNamePrompt",
+                                "homeRenameCard", "homeDeleteCard"})
         if (QQuickItem* item = findItem(QString::fromLatin1(overlay)))
             item->setVisible(false);
     if (!app_->recoveryItems().isEmpty())
@@ -1188,6 +1189,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     window_->setProperty("simulatedSafeArea", QVariant());
     app_->setAppFolder(initialAppFolder_); // a scenario may save as on an iPhone
     app_->setShareHandler(ui::platformShareHandler()); // ...and put a stub share sheet in
+    app_->setTrashHandler(ui::AppController::systemTrashHandler()); // ...or a stub trash (homeprojects)
     window_->setProperty("historyOpen", false);
     window_->setProperty("viewMenuOpen", false);
     if (window_->size() != initialSize_) {

@@ -775,7 +775,21 @@ iPad" below).
   It appears when OpenShape starts without a file and from **File → Home**;
   `Esc` or **Back to …** (**Back** in a narrow window, such as a phone held
   upright) returns to the open document. Each card's **⋯** button
-  (or a right-click or a long touch) offers **Remove from list**.
+  (or a right-click or a long touch) offers:
+  - **Rename…**: type the new name. A name another project in that folder
+    has, an empty one and characters files cannot have (`/ \ : * ? " < > |`)
+    are refused, with the reason under the name. Renaming the open project
+    renames it in the title bar too, and Save writes the new file.
+  - **Duplicate**: a copy next to it, named "*Name* copy" (then "copy 2",
+    "copy 3", …), with its preview. It becomes the first card.
+  - **Remove from list**: the card goes, the file stays where it is.
+  - **Delete…** (for projects in OpenShape's folder on iPhone and iPad, and
+    for recent projects on Windows): after a card that names the project,
+    it goes to the **Recycle Bin** (Windows) or to **Recently Deleted** in
+    the Files app (iPhone, iPad), where it can be put back. If it cannot go
+    there, OpenShape asks again and says that deleting it cannot be undone;
+    a project outside OpenShape's folder is then not deleted at all.
+    Deleting the open project closes it (an empty document takes its place).
 - **File → Import STEP…** (`Ctrl+I`) brings in parts from other CAD programs:
   each solid becomes a body you can push, pull, round and combine; inches
   and meters come in at the right size. The exact geometry is stored in your
