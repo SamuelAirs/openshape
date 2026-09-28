@@ -13,6 +13,7 @@
 
 #include <deque>
 #include <map>
+#include <set>
 
 namespace os::sketch {
 
@@ -30,8 +31,8 @@ public:
             double* y = param(p.position.y);
             points_[id] = GCS::Point(x, y);
             if (!p.fixed) {
-                unknowns_.push_back(x);
-                unknowns_.push_back(y);
+                unknown(x, id);
+                unknown(y, id);
             }
         }
         for (const auto& [id, l] : sketch_.lines()) {
@@ -44,7 +45,7 @@ public:
             GCS::Circle circle;
             circle.center = points_.at(c.center);
             circle.rad = param(c.radius);
-            unknowns_.push_back(circle.rad);
+            unknown(circle.rad, id);
             circles_[id] = circle;
         }
         for (const auto& [id, a] : sketch_.arcs()) {
@@ -64,9 +65,9 @@ public:
             arc.rad = param((s - c).length());
             arc.startAngle = param(a0);
             arc.endAngle = param(a1);
-            unknowns_.push_back(arc.rad);
-            unknowns_.push_back(arc.startAngle);
-            unknowns_.push_back(arc.endAngle);
+            unknown(arc.rad, id);
+            unknown(arc.startAngle, id);
+            unknown(arc.endAngle, id);
             arcs_[id] = arc;
             system_.addConstraintArcRules(arcs_[id], 0); // tag 0: structural, never reported as a conflict
         }
@@ -226,14 +227,49 @@ public:
         return sketch_.point(sketch_.arc(id)->center)->position;
     }
 
-    // Adds a soft constraint pulling a point to a target (interactive drag).
-    void addDragTarget(EntityId pointId, Vec2 target)
+    // Adds a soft constraint (PlaneGCS's temporary tag: solved after the real
+    // constraints, as closely as they allow) for one interactive pull.
+    void addDragTarget(const DragTarget& target)
     {
-        auto it = points_.find(pointId);
-        if (it == points_.end())
-            return;
-        dragTarget_ = GCS::Point(param(target.x), param(target.y));
-        system_.addConstraintP2PCoincident(dragTarget_, it->second, GCS::DefaultTemporaryConstraint);
+        switch (target.kind) {
+        case DragTarget::Kind::Point: {
+            // A fixed point (the origin) never moves: a pull on it would be
+            // a constraint without unknowns.
+            auto it = points_.find(target.entity);
+            if (it == points_.end() || sketch_.point(target.entity)->fixed)
+                return;
+            dragTargets_.emplace_back(param(target.position.x), param(target.position.y));
+            system_.addConstraintP2PCoincident(dragTargets_.back(), it->second, GCS::DefaultTemporaryConstraint);
+            break;
+        }
+        case DragTarget::Kind::Rim: {
+            if (!circles_.contains(target.entity) && !arcs_.contains(target.entity))
+                return;
+            GCS::Circle& circle = round(target.entity);
+            dragTargets_.emplace_back(param(target.position.x), param(target.position.y));
+            system_.addConstraintPointOnCircle(dragTargets_.back(), circle, GCS::DefaultTemporaryConstraint);
+            // An arc keeps its angles, weakly: its ends move out along their radii.
+            if (auto it = arcs_.find(target.entity); it != arcs_.end()) {
+                for (double* angle : {it->second.startAngle, it->second.endAngle}) {
+                    const int index = system_.addConstraintEqual(angle, param(*angle), GCS::DefaultTemporaryConstraint);
+                    system_.rescaleConstraint(index, 0.01);
+                }
+            }
+            // The center stays where it is, weakly: the radius gives first,
+            // and a circle whose radius is fixed moves to follow instead
+            // (FreeCAD drags a circle's edge the same way).
+            const EntityId center = circles_.contains(target.entity) ? sketch_.circle(target.entity)->center
+                                                                      : sketch_.arc(target.entity)->center;
+            if (sketch_.point(center)->fixed)
+                return;
+            dragTargets_.emplace_back(param(*circle.center.x), param(*circle.center.y));
+            const int last = system_.addConstraintP2PCoincident(dragTargets_.back(), circle.center,
+                                                                GCS::DefaultTemporaryConstraint);
+            system_.rescaleConstraint(last - 1, 0.01);
+            system_.rescaleConstraint(last, 0.01);
+            break;
+        }
+        }
     }
 
     SolveReport solve()
@@ -254,6 +290,7 @@ public:
             if (tag > 0)
                 report.redundant.push_back(static_cast<EntityId>(tag));
         report.degreesOfFreedom = system_.dofsNumber();
+        report.movable = movableEntities(report.degreesOfFreedom);
 
         const GCS::SolveStatus status = system_.solve(GCS::DogLeg);
         if (status == GCS::SolveStatus::Success || status == GCS::SolveStatus::Converged) {
@@ -288,25 +325,62 @@ private:
         storage_.push_back(value);
         return &storage_.back();
     }
+    void unknown(double* p, EntityId owner)
+    {
+        unknowns_.push_back(p);
+        owners_[p] = owner;
+    }
+
+    // What can still move: the entities owning a parameter the diagnosis
+    // found free (its dependent parameters; the temporary pulls take no
+    // part in it), then every curve with a movable point.
+    std::vector<EntityId> movableEntities(int dof)
+    {
+        std::vector<EntityId> out;
+        if (dof == 0)
+            return out;
+        GCS::VEC_pD dependent;
+        system_.getDependentParams(dependent);
+        // With no real constraint at all the diagnosis stops before looking:
+        // then every unknown is free.
+        if (dependent.empty() && dof > 0)
+            dependent = unknowns_;
+        std::set<EntityId> loose;
+        for (double* p : dependent)
+            if (auto it = owners_.find(p); it != owners_.end())
+                loose.insert(it->second);
+        for (const auto& [id, l] : sketch_.lines())
+            if (loose.contains(l.start) || loose.contains(l.end))
+                loose.insert(id);
+        for (const auto& [id, c] : sketch_.circles())
+            if (loose.contains(c.center))
+                loose.insert(id);
+        for (const auto& [id, a] : sketch_.arcs())
+            if (loose.contains(a.center) || loose.contains(a.start) || loose.contains(a.end))
+                loose.insert(id);
+        out.assign(loose.begin(), loose.end());
+        return out;
+    }
 
     const Sketch& sketch_;
     std::deque<double> storage_; // deque: stable addresses on push_back
     GCS::VEC_pD unknowns_;
+    std::map<double*, EntityId> owners_; // unknown -> the point, circle or arc it belongs to
     std::map<EntityId, GCS::Point> points_;
     std::map<EntityId, GCS::Line> lines_;
     std::map<EntityId, GCS::Circle> circles_;
     std::map<EntityId, GCS::Arc> arcs_;
-    GCS::Point dragTarget_;
+    std::deque<GCS::Point> dragTargets_; // stable: the system keeps pointers into them
     GCS::System system_;
 };
 
-SolveReport run(Sketch& sketch, std::optional<std::pair<EntityId, Vec2>> drag)
+SolveReport run(Sketch& sketch, const std::vector<DragTarget>& targets)
 {
     ScopedTimer timer("sketch solve");
     SolverRun solver(sketch);
     solver.build();
-    if (drag)
-        solver.addDragTarget(drag->first, drag->second);
+    for (const DragTarget& target : targets)
+        solver.addDragTarget(target);
     SolveReport report = solver.solve();
     if (report.ok)
         solver.writeBack(sketch);
@@ -322,12 +396,17 @@ SolveReport run(Sketch& sketch, std::optional<std::pair<EntityId, Vec2>> drag)
 
 SolveReport solve(Sketch& sketch)
 {
-    return run(sketch, std::nullopt);
+    return run(sketch, {});
+}
+
+SolveReport solveDragging(Sketch& sketch, const std::vector<DragTarget>& targets)
+{
+    return run(sketch, targets);
 }
 
 SolveReport solveDragging(Sketch& sketch, EntityId pointId, Vec2 target)
 {
-    return run(sketch, std::make_pair(pointId, target));
+    return run(sketch, {DragTarget::point(pointId, target)});
 }
 
 } // namespace os::sketch

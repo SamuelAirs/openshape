@@ -10,6 +10,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -126,6 +127,12 @@ struct SolveReport {
     std::vector<EntityId> conflicting; // constraint ids
     std::vector<EntityId> redundant;   // constraint ids
     std::string message;               // user-facing when !ok
+    // Points, lines, circles and arcs the constraints still let move (some
+    // of their parameters are free: PlaneGCS's dependent parameters), sorted.
+    // Everything else is fixed ("fully defined" item by item).
+    std::vector<EntityId> movable;
+
+    bool canMove(EntityId id) const { return std::binary_search(movable.begin(), movable.end(), id); }
 };
 
 // A 2D sketch on a plane: points, lines, circles and constraints.
@@ -246,10 +253,31 @@ std::optional<double> lineDirectionAngle(const Sketch& sketch, EntityId lineA, E
 // Where two (infinite) lines meet; nullopt when parallel.
 std::optional<Vec2> lineIntersection(const Sketch& sketch, EntityId lineA, EntityId lineB);
 
+// A temporary pull for interactive dragging. The sketch's own constraints
+// always hold; the pulls are then met as closely as they allow (least
+// squares over all pulls), and are never stored.
+struct DragTarget {
+    enum class Kind {
+        Point, // the point `entity` goes to `position`
+        Rim,   // the circle or arc `entity` passes through `position`: its
+               // radius changes, its center holds (weakly, so a circle whose
+               // size is fixed moves instead)
+    };
+    Kind kind = Kind::Point;
+    EntityId entity = kNoEntity;
+    Vec2 position;
+
+    static DragTarget point(EntityId id, Vec2 to) { return {Kind::Point, id, to}; }
+    static DragTarget rim(EntityId round, Vec2 through) { return {Kind::Rim, round, through}; }
+};
+
 // Solves in place. Returns the report (also stored on the sketch). On
 // failure the previous positions are kept.
 SolveReport solve(Sketch& sketch);
-// Solves while pulling `pointId` towards `target` (interactive dragging).
+// Solves while pulling (interactive dragging): each target is one temporary
+// constraint, weaker than every real one.
+SolveReport solveDragging(Sketch& sketch, const std::vector<DragTarget>& targets);
+// One point pulled towards `target`.
 SolveReport solveDragging(Sketch& sketch, EntityId pointId, Vec2 target);
 
 } // namespace os::sketch
