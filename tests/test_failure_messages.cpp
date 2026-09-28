@@ -647,3 +647,59 @@ TEST(FailureMessages, InsertOnAHoleThatAlreadyFitsSaysSo)
     ASSERT_TRUE(scene.stack.push(std::make_unique<cmd::AddFeatureCommand>(body, insertAt(1.5)), scene.document).ok());
     EXPECT_NEAR(before - geom::volume(b.shape()), kPi * (4 - 2.25) * 6, 1e-3);
 }
+
+// A join must add material: one pushed into the body (Join chosen, then
+// dragged in) used to commit a step that changed nothing, with no message.
+TEST(FailureMessages, AJoinThatStaysInsideTheBodyIsRefused)
+{
+    Scene scene;
+    const Uuid body = scene.addBox({0, 0, 0}, {20, 20, 10});
+    const Uuid sketchId = circleOnTop(scene, body, 10, {10, 10}, 3);
+    auto join = cutAt(scene, sketchId, {10, 10}, -5);
+    join->mode = doc::ExtrudeMode::Join;
+    const std::size_t steps = scene.stack.size();
+    const Status status = scene.stack.push(std::make_unique<cmd::AddFeatureCommand>(body, std::move(join)), scene.document);
+    ASSERT_FALSE(status.ok());
+    EXPECT_EQ(status.error(), ErrorCode::NoEffect);
+    EXPECT_EQ(status.userMessage(), "This extrusion stays inside the body, so nothing would be added. Pull it outward, or choose Cut.");
+    EXPECT_TRUE(plain(status.userMessage()));
+    EXPECT_EQ(scene.stack.size(), steps);
+    EXPECT_NEAR(geom::volume(scene.document.body(body)->shape()), 4000, 1e-6);
+
+    // Outward it adds the boss; an edit (or an older file) that moves it into
+    // the body leaves a warning that passes the body on.
+    auto boss = cutAt(scene, sketchId, {10, 10}, 5);
+    boss->mode = doc::ExtrudeMode::Join;
+    const Uuid bossId = boss->id();
+    ASSERT_TRUE(scene.stack.push(std::make_unique<cmd::AddFeatureCommand>(body, std::move(boss)), scene.document).ok());
+    const doc::Body& b = *scene.document.body(body);
+    EXPECT_NEAR(geom::volume(b.shape()), 4000 + kPi * 9 * 5, 1e-3);
+    ASSERT_TRUE(scene.stack.push(std::make_unique<cmd::SetParameterCommand>(bossId, "distance", -5.0, false), scene.document).ok());
+    EXPECT_EQ(b.state(1).status, doc::FeatureStatus::Ok);
+    EXPECT_EQ(b.state(1).error, ErrorCode::NoEffect);
+    EXPECT_EQ(b.state(1).note, status.userMessage());
+    EXPECT_FALSE(b.hasFailures());
+    EXPECT_NEAR(geom::volume(b.shape()), 4000, 1e-6);
+}
+
+// The same for a revolve whose solid lies inside the body.
+TEST(FailureMessages, ARevolveJoinThatStaysInsideTheBodyIsRefused)
+{
+    Scene scene;
+    const Uuid body = scene.addBox({0, 0, 0}, {20, 20, 10});
+    // A 2 x 2 square beside the sketch's Y axis, on a plane through the
+    // box's middle: turned about the axis it is a small cylinder inside.
+    sketch::Sketch s(Uuid::generate(), sketch::Plane::fromNormal({10, 10, 5}, {0, 1, 0}));
+    s.setHostBody(body);
+    sketch::addRectangle(s, {0, -1}, {2, 1});
+    const Uuid sketchId = scene.addSketch(s);
+    auto revolve = std::make_unique<doc::RevolveFeature>();
+    revolve->sketchId = sketchId;
+    revolve->profiles = {scene.profileAt(sketchId, {1, 0})};
+    revolve->mode = doc::ExtrudeMode::Join;
+    const Status status = scene.stack.push(std::make_unique<cmd::AddFeatureCommand>(body, std::move(revolve)), scene.document);
+    ASSERT_FALSE(status.ok());
+    EXPECT_EQ(status.error(), ErrorCode::NoEffect);
+    EXPECT_TRUE(plain(status.userMessage())) << status.userMessage();
+    EXPECT_NEAR(geom::volume(scene.document.body(body)->shape()), 4000, 1e-6);
+}

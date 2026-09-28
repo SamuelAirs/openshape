@@ -43,6 +43,67 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
+    <!-- What other apps may hand to OpenShape ("Open in OpenShape", sharing
+         to it from the Files app or Mail, a project tapped in the Files app):
+         projects (OpenShape owns the type) and STEP files (imported as a new
+         project; other CAD apps take them too, so Alternate). Qt delivers them
+         as a QFileOpenEvent (AppController::openIncomingFile). -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>OpenShape project</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>io.github.samuelairs.openshape.project</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>STEP model</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>org.iso.step</string>
+            </array>
+        </dict>
+    </array>
+    <!-- STEP (ISO 10303-21), declared by no Apple type: .step / .stp and
+         the MIME types mail programs send it as. -->
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>org.iso.step</string>
+            <key>UTTypeDescription</key>
+            <string>STEP model</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>step</string>
+                    <string>stp</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>model/step</string>
+                    <string>application/step</string>
+                    <string>application/p21</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
     <!-- The project file type, so File > Open (the system document picker,
          filtered by Qt from the name filter *.openshape) shows projects. -->
     <key>UTExportedTypeDeclarations</key>

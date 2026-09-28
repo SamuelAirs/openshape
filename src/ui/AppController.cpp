@@ -24,7 +24,10 @@
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QPointer>
+#include <QtCore/QScopeGuard>
 #include <QtCore/QVariantMap>
+#include <QtGui/QFileOpenEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
 
@@ -54,6 +57,12 @@ std::filesystem::path withExtension(std::filesystem::path path, const char* exte
 }
 
 QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows);
+
+// A URL from a file dialog, the command line or another app as a local path.
+QString localPath(const QUrl& url)
+{
+    return url.isLocalFile() ? url.toLocalFile() : url.toString();
+}
 
 // The Text tool's fonts: Noto Sans, built into the executable
 // (src/app/CMakeLists.txt), registered with the geometry layer once. A
@@ -122,9 +131,12 @@ AppController::AppController(QObject* parent)
                 writeRecoveryCopy(); // no-op when the copy is current or copies are off
         });
     // Emitted before the process ends, even when Windows ends it right after
-    // (logging off).
-    if (auto* core = QCoreApplication::instance())
+    // (logging off). Files from other apps arrive as events to the
+    // application object (eventFilter).
+    if (auto* core = QCoreApplication::instance()) {
         connect(core, &QCoreApplication::aboutToQuit, this, &AppController::endRecovery);
+        core->installEventFilter(this);
+    }
 
     updateRecentFiles();
     attach();
@@ -145,6 +157,8 @@ AppController::AppController(QObject* parent)
     // folder, which the Files app shows ("On My iPhone / iPad > OpenShape").
     setAppFolder(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
 #endif
+    // The share sheet after exports and for Share Project (iOS only).
+    shareHandler_ = platformShareHandler();
     interaction_->fitAll(false);
 }
 
@@ -264,6 +278,43 @@ QString AppController::operationPrompt() const
     return interaction_->operation() ? q(interaction_->operation()->prompt()) : QString();
 }
 
+namespace {
+QString modeName(doc::ExtrudeMode mode)
+{
+    switch (mode) {
+    case doc::ExtrudeMode::Cut: return QStringLiteral("cut");
+    case doc::ExtrudeMode::Join: return QStringLiteral("join");
+    case doc::ExtrudeMode::NewBody: break;
+    }
+    return QStringLiteral("new");
+}
+} // namespace
+
+QString AppController::operationMode() const
+{
+    if (const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(interaction_->operation()))
+        return modeName(extrude->mode());
+    if (const auto* revolve = dynamic_cast<const interact::RevolveOperation*>(interaction_->operation()))
+        return modeName(revolve->mode());
+    return {};
+}
+
+bool AppController::operationOnBody() const
+{
+    if (const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(interaction_->operation()))
+        return extrude->hasHost();
+    if (const auto* revolve = dynamic_cast<const interact::RevolveOperation*>(interaction_->operation()))
+        return revolve->hasHost();
+    return false;
+}
+
+bool AppController::operationModeChosen() const
+{
+    if (const auto* extrude = dynamic_cast<const interact::ExtrudeOperation*>(interaction_->operation()))
+        return extrude->modeOverride().has_value();
+    return false;
+}
+
 bool AppController::operationTakesText() const
 {
     return interaction_->operationTakesText();
@@ -319,6 +370,27 @@ void AppController::setSafeInsets(const QVariantList& insets)
         i.left = insets[3].toDouble();
     }
     interaction_->setSafeInsets(i); // emits viewChanged when they change
+}
+
+QVariantList AppController::frameInsets() const
+{
+    const interact::SafeInsets& i = interaction_->frameInsets();
+    return {i.top, i.right, i.bottom, i.left};
+}
+
+void AppController::setFrameInsets(const QVariantList& insets)
+{
+    interact::SafeInsets i;
+    if (insets.size() == 4) {
+        i.top = insets[0].toDouble();
+        i.right = insets[1].toDouble();
+        i.bottom = insets[2].toDouble();
+        i.left = insets[3].toDouble();
+    }
+    if (i == interaction_->frameInsets())
+        return;
+    interaction_->setFrameInsets(i); // read when a sketch starts: nothing to redraw
+    emit viewChanged();
 }
 
 QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
@@ -518,23 +590,21 @@ bool AppController::canStartSketch() const
     if (interaction_->sketchSession())
         return false;
     const auto& sel = interaction_->selection();
-    // Nothing selected: sketch on the ground plane. One flat face or
-    // construction plane: sketch on it. One profile: continue its sketch.
-    return sel.empty()
-        || (sel.size() == 1
-            && (sel.items().front().kind == sel::SelectionKind::Face
-                || sel.items().front().kind == sel::SelectionKind::SketchProfile))
+    // Nothing selected: sketch on the ground plane. A flat face (of several,
+    // the last one tapped: taps add on a touch screen) or construction
+    // plane: sketch on it. One profile: continue its sketch.
+    return sel.empty() || sel.allOfKind(sel::SelectionKind::Face)
+        || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::SketchProfile)
         || datumPlaneSelected(sel, *document_);
 }
 
 bool AppController::faceSelected() const
 {
-    // A face or construction plane (sketch on it) or a profile (continue its
+    // Faces or a construction plane (sketch on it) or a profile (continue its
     // sketch): no plane menu.
     const auto& sel = interaction_->selection();
-    return (sel.size() == 1
-            && (sel.items().front().kind == sel::SelectionKind::Face
-                || sel.items().front().kind == sel::SelectionKind::SketchProfile))
+    return sel.allOfKind(sel::SelectionKind::Face)
+        || (sel.size() == 1 && sel.items().front().kind == sel::SelectionKind::SketchProfile)
         || datumPlaneSelected(sel, *document_);
 }
 
@@ -793,7 +863,46 @@ void AppController::newDocument()
 
 bool AppController::openProject(const QUrl& url)
 {
-    const auto path = toPath(url);
+    // iPhone / iPad: a project picked outside OpenShape's folder (iCloud
+    // Drive, On My iPad) is copied in first: the project reader cannot read
+    // it there (it lies outside the app's sandbox), and Save must be able to
+    // write where the project is.
+    // A project in the Inbox (where iOS puts Mail's attachments, read-only)
+    // is moved out of it the same way; one elsewhere in the app folder
+    // opens where it is (stageIncomingFile returns it unchanged).
+    if (savesToAppFolder()) {
+        const StagedFile staged = stageIncomingFile(localPath(url), incomingPlaces(), IncomingKind::Project);
+        if (staged.path.isEmpty()) {
+            OS_LOG(Warning, File) << "open: " << localPath(url).toStdString() << ": " << staged.error.toStdString();
+            notifyMessage(staged.error);
+            return false;
+        }
+        if (staged.copied) {
+            OS_LOG(Info, File) << "open: " << localPath(url).toStdString() << " copied into the app folder as "
+                               << staged.path.toStdString();
+        }
+        if (!openProjectFile(staged.path)) {
+            // A damaged project, or one from a newer OpenShape: its copy
+            // would only sit in OpenShape's folder failing every time.
+            discardStagedFile(staged);
+            return false;
+        }
+        return true;
+    }
+    return openProjectFile(localPath(url));
+}
+
+void AppController::discardStagedFile(const StagedFile& staged) const
+{
+    if (staged.path.isEmpty() || !(staged.created || staged.temporary) || staged.path == path_)
+        return;
+    OS_LOG(Info, File) << "removing the unused copy " << staged.path.toStdString();
+    QFile::remove(staged.path);
+}
+
+bool AppController::openProjectFile(const QString& file)
+{
+    const auto path = std::filesystem::path(file.toStdWString());
     auto loaded = io::loadProject(path);
     if (!loaded) {
         OS_LOG(Warning, File) << loaded.developerMessage();
@@ -911,36 +1020,50 @@ QString importMessage(const std::vector<geom::NamedShape>& shapes, const std::ve
 
 bool AppController::importStep(const QUrl& url)
 {
-    const auto path = toPath(url);
-    auto imported = geom::importStep(path);
-    if (!imported) {
-        OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
-        notifyMessage(q(imported.userMessage()));
-        return false;
-    }
-    const std::string source = QFileInfo(QString::fromStdWString(path.wstring())).fileName().toStdString();
-    const Status status = interaction_->importBodies(imported.value(), source);
-    if (!status)
-        return false; // the controller said why
-    notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
-    return true;
+    return importStepFrom(url, false);
 }
 
 bool AppController::importStepAsProject(const QUrl& url)
 {
+    return importStepFrom(url, true);
+}
+
+bool AppController::importStepFrom(const QUrl& url, bool asProject)
+{
+    const QString original = localPath(url);
+    const QString name = QFileInfo(original).fileName();
+    if (!savesToAppFolder())
+        return importStepFile(original, name, asProject);
+    // iPhone / iPad: the picker's file may lie outside the sandbox, where
+    // OpenCASCADE cannot open it: it reads a scratch copy.
+    const StagedFile staged = stageIncomingFile(original, incomingPlaces(), IncomingKind::Step);
+    if (staged.path.isEmpty()) {
+        OS_LOG(Warning, File) << "import: " << original.toStdString() << ": " << staged.error.toStdString();
+        notifyMessage(staged.error);
+        return false;
+    }
+    const auto removeCopy = qScopeGuard([&staged] {
+        if (staged.temporary)
+            QFile::remove(staged.path);
+    });
+    return importStepFile(staged.path, name, asProject);
+}
+
+bool AppController::importStepFile(const QString& file, const QString& sourceName, bool asProject)
+{
     // Read the file first: a file that cannot be imported leaves the current
-    // document alone.
-    const auto path = toPath(url);
-    auto imported = geom::importStep(path);
+    // document alone (also when importing as a new project).
+    auto imported = geom::importStep(std::filesystem::path(file.toStdWString()));
     if (!imported) {
         OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
         notifyMessage(q(imported.userMessage()));
         return false;
     }
-    newDocument();
-    const std::string source = QFileInfo(QString::fromStdWString(path.wstring())).fileName().toStdString();
-    if (!interaction_->importBodies(imported.value(), source))
-        return false;
+    if (asProject)
+        newDocument();
+    const Status status = interaction_->importBodies(imported.value(), sourceName.toStdString());
+    if (!status)
+        return false; // the controller said why
     notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
     return true;
 }
@@ -1005,7 +1128,7 @@ bool AppController::saveInAppFolder(const QString& name)
     return saveProjectAs(QUrl::fromLocalFile(appFolder_ + QLatin1Char('/') + base + QStringLiteral(".openshape")));
 }
 
-bool AppController::exportToAppFolder(const QString& format)
+bool AppController::exportToAppFolder(const QString& format, const QRectF& shareAnchor)
 {
     if (!savesToAppFolder())
         return false;
@@ -1023,9 +1146,171 @@ bool AppController::exportToAppFolder(const QString& format)
         notifyMessage(q(status.userMessage()));
         return false;
     }
-    // Where to find it: the Files app shows the app's folder by its name.
+    OS_LOG(Info, File) << "exported " << file.toStdString() << " to " << folder.toStdString();
+    // iPhone / iPad: straight on to a slicer, AirDrop or Mail (the file
+    // stays in Exports). The share sheet is the answer: no message unless
+    // sharing fails (shareFile says so).
+    if (canShare()) {
+        (void)shareFile(folder + QLatin1Char('/') + file, shareAnchor);
+        return true;
+    }
+    // No share sheet: where to find it (the Files app shows the app's
+    // folder by its name).
     notifyMessage(QStringLiteral("Exported %1 to OpenShape \u2192 Exports (Files app)").arg(file));
     return true;
+}
+
+// ---- Sharing ------------------------------------------------------------------------------
+
+#if !defined(Q_OS_IOS)
+// The share sheet exists on iOS only (src/ui/ios/ShareSheet.mm).
+ShareHandler platformShareHandler()
+{
+    return {};
+}
+#endif
+
+void AppController::setShareHandler(ShareHandler handler)
+{
+    const bool had = canShare();
+    shareHandler_ = std::move(handler);
+    if (had != canShare())
+        emit shareChanged();
+}
+
+bool AppController::shareFile(const QString& file, const QRectF& anchor)
+{
+    if (!shareHandler_)
+        return false;
+    const QFileInfo info(file);
+    const QString name = info.fileName();
+    if (!info.isFile() || info.size() == 0) {
+        OS_LOG(Warning, File) << "share: " << file.toStdString() << " is missing or empty";
+        notifyMessage(QStringLiteral("Could not share %1: the file is not there.").arg(name));
+        return false;
+    }
+    OS_LOG(Info, File) << "share: " << info.absoluteFilePath().toStdString() << " (the share sheet opens)";
+    QPointer<AppController> self(this);
+    shareHandler_({info.absoluteFilePath(), anchor}, [self, name](ShareOutcome outcome, const QString& detail) {
+        switch (outcome) {
+        case ShareOutcome::Completed:
+            OS_LOG(Info, File) << "share: " << name.toStdString() << " sent"
+                               << (detail.isEmpty() ? std::string() : " (" + detail.toStdString() + ")");
+            return;
+        case ShareOutcome::Cancelled:
+            OS_LOG(Info, File) << "share: " << name.toStdString() << " not sent (the share sheet was closed)";
+            return;
+        case ShareOutcome::Failed:
+            OS_LOG(Warning, File) << "share: " << name.toStdString() << " failed: " << detail.toStdString();
+            if (self)
+                self->notifyMessage(detail.isEmpty() ? QStringLiteral("Could not share %1.").arg(name)
+                                                     : QStringLiteral("Could not share %1: %2").arg(name, detail));
+            return;
+        }
+    });
+    return true;
+}
+
+bool AppController::shareProject(const QRectF& anchor)
+{
+    if (path_.isEmpty() || dirty())
+        return false; // the window saves first
+    return shareFile(path_, anchor);
+}
+
+// ---- Files from other apps ----------------------------------------------------------------
+
+IncomingPlaces AppController::incomingPlaces() const
+{
+    IncomingPlaces places;
+    places.appFolder = appFolder_;
+    places.stagingFolder = QDir::tempPath() + QStringLiteral("/openshape-incoming");
+    if (!appFolder_.isEmpty())
+        places.inboxes << appFolder_ + QStringLiteral("/Inbox");
+    return places;
+}
+
+bool AppController::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::FileOpen && watched == QCoreApplication::instance()) {
+        const auto* open = static_cast<QFileOpenEvent*>(event);
+        const QUrl url = open->url().isEmpty() ? QUrl::fromLocalFile(open->file()) : open->url();
+        OS_LOG(Info, File) << "a file from another app: " << url.toString().toStdString();
+        // Later, from the event loop: iOS delivers it from inside a UIKit
+        // callback (at a cold start, before the first frame).
+        QMetaObject::invokeMethod(this, [this, url] { (void)openIncomingFile(url); }, Qt::QueuedConnection);
+        return true;
+    }
+    return QObject::eventFilter(watched, event);
+}
+
+bool AppController::openIncomingFile(const QUrl& url)
+{
+    const QString source = localPath(url);
+    if (!url.isLocalFile() && !url.isRelative()) {
+        OS_LOG(Warning, File) << "not a file: " << url.toString().toStdString();
+        notifyMessage(QStringLiteral("OpenShape can only open files."));
+        return false;
+    }
+    // Brought in at once (a project into the app folder, a STEP file into a
+    // scratch copy), while iOS's access to it is fresh; opened below, or
+    // after "Save changes?".
+    StagedFile staged = stageIncomingFile(source, incomingPlaces());
+    if (staged.path.isEmpty()) {
+        OS_LOG(Warning, File) << "cannot use " << source.toStdString() << ": " << staged.error.toStdString();
+        notifyMessage(staged.error);
+        return false;
+    }
+    OS_LOG(Info, File) << "from another app: " << source.toStdString() << " -> " << staged.path.toStdString()
+                       << (staged.copied ? " (in the app folder)" : staged.temporary ? " (a scratch copy)" : "");
+    // A file still waiting (the question was cancelled) gives way.
+    if (pendingIncoming_) {
+        if (pendingIncoming_->path != staged.path)
+            discardStagedFile(*pendingIncoming_);
+        else
+            staged.created = staged.created || pendingIncoming_->created; // the same copy, still unused
+    }
+    pendingIncoming_ = staged;
+    pendingIncomingName_ = QFileInfo(source).fileName();
+    if (dirty()) {
+        emit incomingFileWaiting();
+        return true;
+    }
+    return openPendingIncomingFile();
+}
+
+bool AppController::openPendingIncomingFile()
+{
+    if (!pendingIncoming_)
+        return false;
+    const StagedFile staged = *pendingIncoming_;
+    const QString name = pendingIncomingName_;
+    pendingIncoming_.reset();
+    pendingIncomingName_.clear();
+    if (staged.kind == IncomingKind::Step) {
+        const auto removeCopy = qScopeGuard([&staged] {
+            if (staged.temporary)
+                QFile::remove(staged.path);
+        });
+        return importStepFile(staged.path, name, true);
+    }
+    if (!openProjectFile(staged.path)) {
+        discardStagedFile(staged);
+        return false;
+    }
+    if (staged.copied)
+        notifyMessage(QStringLiteral("Opened \u201c%1\u201d, a copy in OpenShape\u2019s folder").arg(QFileInfo(staged.path).completeBaseName()));
+    return true;
+}
+
+void AppController::dropPendingIncomingFile()
+{
+    if (!pendingIncoming_)
+        return;
+    OS_LOG(Info, File) << "not opened (cancelled): " << pendingIncomingName_.toStdString();
+    discardStagedFile(*pendingIncoming_);
+    pendingIncoming_.reset();
+    pendingIncomingName_.clear();
 }
 
 // ---- Actions ----------------------------------------------------------------------------

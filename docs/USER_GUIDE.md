@@ -262,17 +262,32 @@ surrounding faces close the gap.
 ### Extrude and revolve (3D from a sketch)
 
 Click inside a closed shape of a finished sketch (`Shift`+click adds more
-shapes of the same sketch). An arrow appears:
+shapes of the same sketch; on a touch screen every tap adds one). An arrow
+appears where you clicked:
 
-- Drag or type a distance and press `Enter`. A sketch on the ground makes a
-  new body.
-- A sketch on a body's face joins the body when you pull out and cuts into
-  it when you push in (type a negative value, e.g. `-5`). **New body**,
-  **Join** and **Cut** choose explicitly. Once the extrude is a cut (a
-  negative value, or **Cut** clicked), a **Through all** button appears; it
-  cuts through the whole body whatever its thickness. (A join that would
-  not touch the body makes a new body, and a cut that would remove nothing
-  does too.)
+- Drag or type a distance and press `Enter`. On a touch screen you can also
+  drag the selected shape itself: the arrow follows your finger (a drag
+  anywhere else still turns the view).
+- The value box says what the extrusion makes: **Height** (added to a
+  body), **Cut depth** (cut out of a body) or **New body**. Its first
+  buttons are **New body**, **Join** and **Cut**; the program picks one for
+  you, and a click overrides it.
+- **Cutting a pocket or a hole** (select a face, sketch the shape to cut
+  out, select it, push it into the body): a sketch on a body's face joins
+  the body when you pull out and cuts into it when you push in (or type a
+  negative value, e.g. `-5`). **Cut** always goes into the body: with a
+  positive value, clicking **Cut** turns it round, and a depth typed while
+  **Cut** is chosen goes into the body; **Join** and **New body** turn an
+  inward value outward. **Flip** turns the extrusion round. Once the
+  extrude is a cut, a **Through all** button appears; it cuts through the
+  whole body whatever its thickness. (A join that would not touch the body
+  makes a new body, and a cut that would remove nothing does too. **Join**
+  chosen and pushed into the body is refused: it would add nothing.)
+- A sketch on the ground or on a construction plane makes a new body, or,
+  pushed into a body, cuts it. One drawn on a body's face (say a
+  construction plane on its top) and pulled away from it joins it; one that
+  only touches a body's side stays a new body. **New body**, **Join** and
+  **Cut** override that too.
 - **Symmetric**: the value is the total thickness, half on each side of the
   sketch.
 - **Up to face**: click a flat face parallel to the sketch; the extrusion
@@ -476,7 +491,8 @@ A sketch is a flat drawing on a plane; its closed shapes (profiles) become
   **Front (XZ)** and **Right (YZ)** are the upright origin planes.
 - **On a face:** select a flat face, then press `K` or click **Sketch** (or
   **Sketch** below the value box). The sketch stays on that face when the
-  part changes.
+  part changes. With several faces selected (a stray tap adds one on a
+  touch screen), the sketch goes on the flat face selected last.
 - **On a construction plane:** select it (click it in the view or its
   Model-panel row), then press `K` or click **Sketch**. The sketch moves
   with the plane.
@@ -485,7 +501,9 @@ A sketch is a flat drawing on a plane; its closed shapes (profiles) become
 - **Editing a sketch later:** double-click one of its shapes, double-click
   its row in the Model panel, or use **Edit sketch**.
 
-The view turns to face the sketch. At the top are the sketch's name,
+The view turns to face the sketch; a sketch on a face or a construction
+plane also zooms to that face or plane, so on a phone the grid and the
+arrows snap in whole millimeters. At the top are the sketch's name,
 **Finish sketch** and its status; the drawing tools are on the left.
 
 ![A sketch with dimensions and constraint glyphs](images/sketch.png)
@@ -724,6 +742,15 @@ edited as a model.
 **File → Export STEP…** writes the exact geometry (millimeters) for other
 CAD programs.
 
+On an **iPhone or iPad**, **File → Export STL**, **Export 3MF** and
+**Export STEP** save the file into OpenShape's *Exports* folder and then
+open the share sheet: pick the app of your printer or slicer (if it takes
+STL or 3MF files), **AirDrop** it to
+the computer next to the printer, **Save to Files** or send it by **Mail**.
+On an iPad the share sheet opens next to the **File** button. Closing the
+share sheet is fine: the file stays in *Exports* (see "Files on iPhone and
+iPad" below).
+
 ---
 
 ## Files, recovery and preferences
@@ -749,14 +776,35 @@ CAD programs.
   installing, double-clicking an `.openshape` file opens it too.
 - Before New, Open or closing with unsaved changes, OpenShape asks: **Save**,
   **Don't Save** or **Cancel**.
-- **On iPhone and iPad** there are no save dialogs: **Save** asks only for a
-  name and puts the project into OpenShape's folder (in the Files app: *On
-  My iPhone / iPad → OpenShape*); **File → Export STL**, **Export 3MF** and
-  **Export STEP** write straight into its *Exports* folder, and a message
-  names the file. **Open…** picks any project there, and Home lists the
-  projects in that folder too.
 - A project from a newer OpenShape version is refused with a message rather
   than opened wrongly.
+
+### Files on iPhone and iPad
+
+- There are no save dialogs: **Save** asks only for a name and puts the
+  project into OpenShape's folder (in the Files app: *On My iPhone / iPad →
+  OpenShape*). Home lists the projects in that folder.
+- **File → Export STL**, **Export 3MF** and **Export STEP** write straight
+  into its *Exports* folder, then open the share sheet: a slicer app,
+  AirDrop, Save to Files or Mail (closing it is fine: the file stays in
+  *Exports*).
+- **File → Share Project…** sends the project itself (the `.openshape`
+  file, with its full history) by AirDrop, Mail or to the Files app. It
+  saves first; a new project is asked for its name.
+- **From other apps:** in the Files app, tap a project to open it in
+  OpenShape, or use **Share → OpenShape** on a project or a STEP file (`.step`,
+  `.stp`); in Mail, touch and hold an attachment and choose OpenShape. A
+  project from elsewhere (iCloud Drive, another app, Mail) is **copied into
+  OpenShape's folder** and opened; the original stays as it was, and your
+  changes go into the copy (the same file opened again uses that copy; a
+  different project with the same name becomes "Name 2"). A STEP file
+  becomes a **new project**, as Home's **Import STEP…** does. If the open
+  project has unsaved changes, OpenShape asks first (Cancel keeps your work
+  and makes no copy). A project that cannot be opened (damaged, or from a
+  newer OpenShape) is not kept in OpenShape's folder.
+- **Open…** picks any project; one outside OpenShape's folder is copied in
+  the same way. **Import STEP…** reads STEP files from anywhere (iCloud
+  Drive, On My iPhone / iPad).
 
 ### Recovery after a crash
 

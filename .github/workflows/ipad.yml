@@ -75,6 +75,7 @@ jobs:
           bash scripts/ci/run-logged.sh app bash scripts/ios/build-app.sh ~/Qt/$QT_VERSION/ios ~/openshape-ios-deps build/ios
           app=build/ios/OpenShape.xcarchive/Products/Applications/OpenShape.app
           echo "::notice title=iOS app (iPhone + iPad)::$(du -sh $app | cut -f1), build $OPENSHAPE_BUILD_NUMBER, iOS $(plutil -extract MinimumOSVersion raw $app/Info.plist)+, device families $(plutil -extract UIDeviceFamily json -o - $app/Info.plist), $(lipo -archs $app/OpenShape)"
+          echo "::notice title=dSYM (crash reports)::$(du -sh build/ios/OpenShape.xcarchive/dSYMs/OpenShape.app.dSYM | cut -f1), UUID $(dwarfdump --uuid build/ios/OpenShape.xcarchive/dSYMs/OpenShape.app.dSYM | awk '{print $2}' | head -1)"
           echo "::notice title=QML modules linked::$(tr '\n' ' ' < build/ios/qml-modules.txt) ."
           echo "::notice title=Controls styles not linked (TD-36)::$(cat build/ios/src/app/.qt/qml_imports/openshape_dropped_styles.txt) ."
           echo "::notice title=QML import scan (start)::$(head -c 1500 build/ios/src/app/.qt/qml_imports/openshape_conf.cmake | tr '\n%' ' _')"

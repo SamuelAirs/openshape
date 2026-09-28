@@ -14,6 +14,8 @@ Rectangle {
     id: overlay
     // Saving as on an iPhone or iPad (Main.qml: app.savesToAppFolder).
     property bool appFolder: false
+    // The share sheet follows exports, and File → Share Project… is there.
+    property bool share: false
 
     color: "#66000000"
     visible: false
@@ -222,7 +224,10 @@ Rectangle {
                              "Small glyphs beside the geometry (H, V, ∥, ⊥, =, T, …): with the Select tool tap one → Delete constraint"],
                             ["Construction curves", "Select curves → Construction (never become shapes)"],
                             ["Add to a sketch", "Select one of its shapes → Sketch, or sketch on its plane"],
-                            ["Extrude / revolve", "Finish, then click inside a closed shape", "Finish, then tap inside a closed shape"],
+                            ["Extrude / revolve", "Finish, then click inside a closed shape and drag its arrow",
+                             "Finish, then tap inside a closed shape and drag it (or its arrow)"],
+                            ["Cut a pocket or hole", "Face → Sketch, draw the shape, Finish, click it, drag the arrow into the body (Cut depth); Cut always goes in, Flip turns it round",
+                             "Face → Sketch, draw the shape, Finish, tap it, drag it into the body (Cut depth); Cut always goes in, Flip turns it round"],
                             ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face", "While extruding: Symmetric, or Up to face and tap a face"],
                             ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"],
                             ["Loft", "Click a profile, Shift-click profiles on other planes in the order to join them, then Loft (also in the tools) · Smooth or Straight · change it later in the Model panel",
@@ -243,7 +248,12 @@ Rectangle {
                         title: "Files"
                         rows: (overlay.appFolder ? [
                             ["Where files go", "Projects into OpenShape's folder (the Files app: On My iPhone / iPad → OpenShape), "
-                             + "by name; exports into its Exports folder. Open picks any project there"]
+                             + "by name; exports into its Exports folder. Open picks any project (one from elsewhere is copied in)"],
+                            ["From other apps", "In the Files app or Mail, share a project or a STEP file to OpenShape: "
+                             + "a project is copied into OpenShape's folder and opened, a STEP file becomes a new project"]
+                        ] : []).concat(overlay.share ? [
+                            ["To a slicer", "File → Export STL or 3MF, then pick your printer’s or slicer’s app (or AirDrop, Save to Files, Mail) in the share sheet"],
+                            ["Send a project", "File → Share Project… (saves it first)"]
                         ] : []).concat([
                             ["New / open / save", "Ctrl+N / Ctrl+O / Ctrl+S", "File → New / Open… / Save"],
                             ["Recent projects", "Home (at start, or File → Home): click a project to open it; ⋯ or a right click removes it from the list · File → Open Recent",

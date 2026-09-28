@@ -455,6 +455,7 @@ void InteractionController::pointerPress(const PointerEvent& event)
     if (event.button == PointerButton::Left && operation_) {
         const int index = handleAt(event.position, event.device);
         if (index >= 0) {
+            noteValueBeforeDrag();
             operation_->setActiveHandle(index);
             drag_.mode = DragMode::Manipulator;
             drag_.handle = operation_->handle(index);
@@ -469,12 +470,49 @@ void InteractionController::pointerPress(const PointerEvent& event)
         // picks that (Rotate about it: the rings often cross the body).
         if (const int ring = ringAt(event.position, event.device); ring >= 0)
             drag_.ring = ring;
+        // A finger (or pen) on the selected profile or face drags its arrow
+        // once it moves ("pull it out, push it in"); a tap there still
+        // selects, and a drag anywhere else orbits. A mouse drags to orbit.
+        else if (event.device != PointerDevice::Mouse)
+            drag_.region = selectedRegionAt(event.position);
     }
+}
+
+std::optional<Vec3> InteractionController::selectedRegionAt(Vec2 screen) const
+{
+    if (!operation_)
+        return std::nullopt;
+    if (const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get())) {
+        if (extrude->pickingTarget())
+            return std::nullopt; // waiting for a face tap
+        const sel::PickResult region = pickProfile(screen);
+        if (!region.hit())
+            return std::nullopt;
+        const bool selected = std::any_of(selection_.items().begin(), selection_.items().end(), [&](const sel::SelectionItem& item) {
+            return item.kind == sel::SelectionKind::SketchProfile && item.bodyId == region.bodyId && item.index == region.index;
+        });
+        if (!selected)
+            return std::nullopt;
+        // Not where a body hides it.
+        const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
+        if (face.hit() && face.depth + camera_.pixelSize(region.point) * 2 < region.depth)
+            return std::nullopt;
+        return region.point;
+    }
+    if (dynamic_cast<const PushPullOperation*>(operation_.get()) && selection_.size() == 1
+        && selection_.items().front().kind == sel::SelectionKind::Face) {
+        const sel::SelectionItem& item = selection_.items().front();
+        const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
+        if (face.kind == sel::PickKind::Face && face.bodyId == item.bodyId && face.index == item.index)
+            return face.point;
+    }
+    return std::nullopt;
 }
 
 void InteractionController::grabPendingRing()
 {
     const int ring = drag_.ring;
+    noteValueBeforeDrag();
     operation_->setActiveHandle(ring); // a different ring starts from zero
     drag_.mode = DragMode::Manipulator;
     drag_.ringHandle = operation_->ring(ring);
@@ -544,6 +582,22 @@ void InteractionController::pointerMove(const PointerEvent& event)
         if ((event.position - drag_.press.position).length() < profile.dragThreshold)
             return;
         grabPendingRing(); // then this move turns it (below)
+    }
+    if (drag_.mode == DragMode::Pending && drag_.region && operation_) {
+        if ((event.position - drag_.press.position).length() < profile.dragThreshold)
+            return;
+        // The arrow's value follows the finger along the arrow's axis through
+        // the point pressed (then this move drags it, below).
+        noteValueBeforeDrag();
+        operation_->setActiveHandle(0); // Extrude: back from the draft to the distance
+        const LinearManipulator arrow = operation_->handle(0);
+        drag_.mode = DragMode::Manipulator;
+        drag_.handle = LinearManipulator(*drag_.region, arrow.direction());
+        drag_.handle.beginDrag(camera_, drag_.press.position, operation_->handleOffset(0));
+        hover_ = {};
+        hoveredHandle_ = -1;
+        hoveredRing_ = -1;
+        notifyState();
     }
     if (drag_.mode == DragMode::Pending) {
         if ((event.position - drag_.press.position).length() < profile.dragThreshold)
@@ -718,10 +772,35 @@ void InteractionController::pointerLeave()
 
 void InteractionController::cancelPointer()
 {
-    if (drag_.mode == DragMode::Manipulator)
+    // In a sketch the press may already have placed a shape's first corner
+    // or moved a point: without this, the next tap finished a rectangle from
+    // where a pinch or a two-finger pan began.
+    if (session_ && drag_.mode == DragMode::Sketch) {
+        session_->cancelPress();
         notifyState();
+    }
+    // A pinch or a two-finger pan that began with one finger on the arrow,
+    // the selected profile or face (it moved the value before the second
+    // finger landed) leaves the value as it was.
+    if (drag_.mode == DragMode::Manipulator) {
+        if (operation_ && drag_.valueBefore) {
+            if (operation_->activeHandle() != drag_.handleBefore)
+                operation_->setActiveHandle(drag_.handleBefore);
+            if (operation_->value() != *drag_.valueBefore)
+                operation_->setValue(*drag_.valueBefore, *document_); // only this preview may show
+        }
+        notifyState();
+    }
     drag_ = {};
     notifyView();
+}
+
+void InteractionController::noteValueBeforeDrag()
+{
+    if (!operation_)
+        return;
+    drag_.valueBefore = operation_->value();
+    drag_.handleBefore = operation_->activeHandle();
 }
 
 void InteractionController::wheel(Vec2 position, double steps)
@@ -1090,6 +1169,9 @@ void InteractionController::click(const PointerEvent& event)
                 selection_.toggle(item);
             else
                 selection_.set(item);
+            // The first profile's arrow starts where it was tapped.
+            if (selection_.size() == 1 && selection_.contains(item))
+                profileTap_ = ProfileTap{hit.bodyId, hit.index, hit.point};
         }
     } else {
         const auto kind = hit.kind == sel::PickKind::Edge ? sel::SelectionKind::Edge : sel::SelectionKind::Face;
@@ -1227,10 +1309,17 @@ void InteractionController::rebuildOperation()
         const int first = selection_.items().front().index;
         if (entry && first >= 0 && first < static_cast<int>(entry->regions.size())) {
             const Vec3 anchor = entry->regions[std::size_t(first)].interiorPoint;
-            if (profileOperationKind_ == doc::FeatureKind::Revolve)
+            if (profileOperationKind_ == doc::FeatureKind::Revolve) {
                 operation_ = RevolveOperation::create(*document_, sketchId, std::move(refs), anchor, revolveAxis_);
-            else
-                operation_ = ExtrudeOperation::create(*document_, sketchId, std::move(refs), anchor);
+            } else {
+                // The arrow starts where the profile was tapped (under the
+                // finger that will drag it), else at the region's inner point.
+                const sketch::Sketch* sk = document_->sketch(sketchId);
+                const bool tapped = profileTap_ && profileTap_->sketch == sketchId && profileTap_->region == first && sk
+                                 && std::size_t(first) < entry->meshes.size() && entry->meshes[std::size_t(first)]
+                                 && meshContains(*entry->meshes[std::size_t(first)], sk->plane(), profileTap_->point);
+                operation_ = ExtrudeOperation::create(*document_, sketchId, std::move(refs), tapped ? profileTap_->point : anchor);
+            }
         }
     }
 }
@@ -1248,6 +1337,7 @@ std::string InteractionController::setValueText(const std::string& text)
     const auto first = text.find_first_not_of(" \t");
     if (const auto base = operation_->relativeBase(); base && first != std::string::npos && (text[first] == '+' || text[first] == '-'))
         value += *base;
+    value = operation_->typedValue(value);
     // (The Text tool's angle may be negative: it checks its own range.)
     if (operation_->isAngle() && value > 360.0 + 1e-9 && !dynamic_cast<const TextOperation*>(operation_.get()))
         return "The angle must be between 0° and 360°.";
@@ -1749,6 +1839,9 @@ void InteractionController::cancelOperation()
         return;
     }
     if (operation_ && operation_->value() != operation_->neutralValue()) {
+        // Back to the start: an Extrude's mode is automatic again too.
+        if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()))
+            extrude->setModeOverride(std::nullopt);
         operation_->setValue(operation_->neutralValue(), *document_);
     } else {
         selection_.clear();
@@ -2133,53 +2226,58 @@ std::vector<ContextAction> InteractionController::contextActions() const
             actions.push_back({id, label, origin == target});
         return actions;
     }
+    // What the profiles make comes first (a phone's row scrolls sideways:
+    // Cut must be in sight), switching to the other tool and editing the
+    // sketch last.
     if (const auto* loft = dynamic_cast<const LoftOperation*>(operation_.get())) {
-        // Profiles of one sketch (Loft from the palette) could extrude instead.
-        if (selection_.singleBody())
-            actions.push_back({"extrude", "Extrude", false});
-        actions.push_back({"loft", "Loft", true});
-        actions.push_back({"loft:smooth", "Smooth", !loft->ruled()});
-        actions.push_back({"loft:straight", "Straight", loft->ruled()});
         if (loft->hasHost()) {
             const auto mode = loft->mode();
             actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
             actions.push_back({"mode:join", "Join", mode == doc::ExtrudeMode::Join});
             actions.push_back({"mode:cut", "Cut", mode == doc::ExtrudeMode::Cut});
         }
+        actions.push_back({"loft:smooth", "Smooth", !loft->ruled()});
+        actions.push_back({"loft:straight", "Straight", loft->ruled()});
         if (loft->canCommit())
             actions.push_back({"apply", "Apply", false});
+        // Profiles of one sketch (Loft from the palette) could extrude instead.
+        if (selection_.singleBody())
+            actions.push_back({"extrude", "Extrude", false});
+        actions.push_back({"loft", "Loft", true});
         return actions;
     }
     if (const auto* revolve = dynamic_cast<const RevolveOperation*>(operation_.get())) {
-        actions.push_back({"extrude", "Extrude", false});
-        actions.push_back({"revolve", "Revolve", true});
-        actions.push_back({"axis:y", "Axis: vertical", revolve->axis() == doc::SketchAxis::Y});
-        actions.push_back({"axis:x", "Axis: horizontal", revolve->axis() == doc::SketchAxis::X});
         if (revolve->hasHost()) {
             actions.push_back({"mode:new", "New body", revolve->mode() == doc::ExtrudeMode::NewBody});
             actions.push_back({"mode:join", "Join", revolve->mode() == doc::ExtrudeMode::Join});
             actions.push_back({"mode:cut", "Cut", revolve->mode() == doc::ExtrudeMode::Cut});
         }
+        actions.push_back({"axis:y", "Axis: vertical", revolve->axis() == doc::SketchAxis::Y});
+        actions.push_back({"axis:x", "Axis: horizontal", revolve->axis() == doc::SketchAxis::X});
+        actions.push_back({"extrude", "Extrude", false});
+        actions.push_back({"revolve", "Revolve", true});
         actions.push_back({"editSketch", "Edit sketch", false});
         return actions;
     }
     if (const auto* extrude = dynamic_cast<const ExtrudeOperation*>(operation_.get())) {
-        actions.push_back({"extrude", "Extrude", true});
-        actions.push_back({"revolve", "Revolve", false});
-        if (extrude->hasHost()) {
-            const auto mode = extrude->mode();
-            actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
-            actions.push_back({"mode:join", "Join", mode == doc::ExtrudeMode::Join});
-            actions.push_back({"mode:cut", "Cut", mode == doc::ExtrudeMode::Cut});
-            if (mode == doc::ExtrudeMode::Cut)
-                actions.push_back({"throughAll", "Through all", extrude->throughAll()});
-        }
+        // Always offered: a sketch on no body cuts or joins the body it
+        // goes into (ExtrudeOperation::findTarget).
+        const auto mode = extrude->mode();
+        actions.push_back({"mode:new", "New body", mode == doc::ExtrudeMode::NewBody});
+        actions.push_back({"mode:join", "Join", mode == doc::ExtrudeMode::Join});
+        actions.push_back({"mode:cut", "Cut", mode == doc::ExtrudeMode::Cut});
+        if (mode == doc::ExtrudeMode::Cut)
+            actions.push_back({"throughAll", "Through all", extrude->throughAll()});
+        if (!extrude->symmetric() && extrude->distance() != 0.0)
+            actions.push_back({"flip", "Flip", false});
         actions.push_back({"symmetric", "Symmetric", extrude->symmetric()});
         // The draft angle is typed in the chip; the button shows it when set.
         const double draft = extrude->draftDegrees();
         actions.push_back({"draft", draft == 0 ? std::string("Draft") : "Draft " + formatAngle(draft * kPi / 180.0),
                            extrude->editingDraft()});
         actions.push_back({"upToFace", "Up to face", extrude->pickingTarget()});
+        actions.push_back({"extrude", "Extrude", true});
+        actions.push_back({"revolve", "Revolve", false});
         actions.push_back({"editSketch", "Edit sketch", false});
         return actions;
     }
@@ -2213,7 +2311,9 @@ std::vector<ContextAction> InteractionController::contextActions() const
         if (single && planar)
             actions.push_back({"pushpull", "Push/Pull", operation_->featureKind() == doc::FeatureKind::PushPull});
         actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
-        if (single && planar)
+        // Several faces (a stray tap adds one on a touch screen): Sketch goes
+        // on the last flat face tapped (startSketch).
+        if ((single && planar) || !single)
             actions.push_back({"sketch", "Sketch", false});
         if (single && planar)
             actions.push_back({"hole", "Hole", false});
@@ -2469,8 +2569,13 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id.rfind("mode:", 0) == 0) {
         const auto mode = id == "mode:join" ? doc::ExtrudeMode::Join : id == "mode:cut" ? doc::ExtrudeMode::Cut : doc::ExtrudeMode::NewBody;
-        extrude->setModeOverride(mode);
-        extrude->setValue(extrude->value(), *document_);
+        extrude->chooseMode(mode, *document_); // on a body: Cut goes into it, Join / New body out of it
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
+    if (auto* extrude = dynamic_cast<ExtrudeOperation*>(operation_.get()); extrude && id == "flip") {
+        extrude->flip(*document_);
         notifyState();
         notifyView();
         return okStatus();
@@ -3136,10 +3241,31 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     // pixels inside that edge is nearer the eye than the edge, and a body's
     // bottom edge lies in a sketch on the ground in front of it.
     if (body.kind == sel::PickKind::Edge) {
+        const sketch::Sketch* sk = region.hit() ? document_->sketch(region.bodyId) : nullptr;
+        const bool edgeInPlane = sk && std::abs((body.point - sk->plane().origin).dot(sk->plane().normal().normalized())) <= slack;
+        // A tap inside a sketch region near an edge of the body the sketch
+        // was drawn on, in the sketch's plane (the edge of the face it lies
+        // on, the rim of the pocket it cut), or inside the opening a used
+        // sketch cut near an edge of that pocket: at a finger's reach (18 px)
+        // the edge took most of a small region's or pocket's taps. There it
+        // is taken only within a mouse's reach (6 px; elsewhere a finger's
+        // reach still holds); otherwise the tap is for the region (not used
+        // yet, and not behind the surface hit) or for the surface seen
+        // through it (the pocket's floor). A sketch on no body (the ground,
+        // a construction plane) leaves the bodies' edges a finger's reach: a
+        // base plate outline around a box must not hide its bottom edges.
+        const bool onHostFace = edgeInPlane && sk->hostBody() && *sk->hostBody() == body.bodyId;
+        if (region.hit() && body.screenDistance > InputProfile::forDevice(PointerDevice::Mouse).pickTolerance) {
+            const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
+            const bool throughIt = face.hit() && face.depth > region.depth + slack;
+            if (onHostFace && !consumed && (!face.hit() || region.depth <= face.depth + slack))
+                return region;
+            if ((onHostFace || consumed) && throughIt)
+                return face;
+        }
         if (!region.hit() || consumed || region.depth + slack >= body.depth)
             return body;
-        const sketch::Sketch* sk = document_->sketch(region.bodyId);
-        if (!sk || std::abs((body.point - sk->plane().origin).dot(sk->plane().normal().normalized())) <= slack)
+        if (!sk || edgeInPlane)
             return body;
         // And the sketch is in front of the surface under the cursor.
         const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
@@ -3425,6 +3551,17 @@ Status InteractionController::startSketch(SketchPlane originPlane)
     std::optional<Uuid> host;
     std::optional<sketch::Attachment> attachment;
     std::optional<Uuid> datumPlane;
+    // What the view frames: the face or construction plane sketched on.
+    std::optional<geom::BoundingBox> frame;
+    auto include = [&frame](const Vec3& p) {
+        if (!frame) {
+            frame = geom::BoundingBox{};
+            frame->min = frame->max = p;
+            frame->valid = true;
+        }
+        frame->min = {std::min(frame->min.x, p.x), std::min(frame->min.y, p.y), std::min(frame->min.z, p.z)};
+        frame->max = {std::max(frame->max.x, p.x), std::max(frame->max.y, p.y), std::max(frame->max.z, p.z)};
+    };
     if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Datum) {
         const doc::Datum* datum = document_->datum(selection_.items().front().bodyId);
         if (!datum || datum->kind() != doc::DatumKind::Plane) {
@@ -3435,15 +3572,42 @@ Status InteractionController::startSketch(SketchPlane originPlane)
         // On the plane, following it.
         plane = doc::sketchPlaneOn(datum->geometry());
         datumPlane = datum->id();
+        for (const Vec3& corner : datumShape(datum->geometry(), datum->kind()).corners)
+            include(corner);
     }
-    if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face) {
-        const auto& item = selection_.items().front();
+    // One face selected, or several (taps add on a touch screen, so a stray
+    // tap is easily made): the sketch goes on the last flat face tapped.
+    std::optional<sel::SelectionItem> onFace;
+    if (selection_.size() == 1 && selection_.items().front().kind == sel::SelectionKind::Face)
+        onFace = selection_.items().front();
+    if (selection_.size() > 1 && selection_.allOfKind(sel::SelectionKind::Face)) {
+        for (auto it = selection_.items().rbegin(); it != selection_.items().rend() && !onFace; ++it) {
+            const doc::Body* body = document_->body(it->bodyId);
+            if (const auto info = body ? geom::faceInfo(body->shape(), it->index) : std::nullopt; info && info->isPlanar())
+                onFace = *it;
+        }
+        if (!onFace) {
+            const std::string text = forInput("Sketch on one flat face: click empty space, then the face.");
+            message(text);
+            return Status::failure(ErrorCode::NotPlanar, text, "startSketch: none of the selected faces is flat");
+        }
+    }
+    if (onFace) {
+        const auto& item = *onFace;
         const doc::Body* body = document_->body(item.bodyId);
         const auto info = body ? geom::faceInfo(body->shape(), item.index) : std::nullopt;
         if (!info || !info->isPlanar()) {
             const std::string text = "Sketches can only be placed on flat faces.";
             message(text);
             return Status::failure(ErrorCode::NotPlanar, text, "startSketch on non-planar face");
+        }
+        // The face as it is drawn (its display mesh: no kernel call).
+        if (const auto mesh = scene_.mesh(item.bodyId);
+            mesh && item.index >= 0 && item.index < mesh->faceCount()) {
+            for (std::uint32_t t = mesh->faceTriangleOffset[std::size_t(item.index)];
+                 t < mesh->faceTriangleOffset[std::size_t(item.index) + 1]; ++t)
+                for (int k = 0; k < 3; ++k)
+                    include(mesh->vertex(mesh->indices[3 * t + std::uint32_t(k)]));
         }
         // Origin: the world origin projected onto the face plane, so sketch
         // coordinates line up with the model's coordinates.
@@ -3467,6 +3631,8 @@ Status InteractionController::startSketch(SketchPlane originPlane)
         if (existing.isVisible() && std::abs(m.dot(n)) > 0.9999 && std::abs((existing.plane().origin - plane.origin).dot(n)) < 1e-4) {
             message("Continuing " + existing.name() + " on this plane.");
             enterSketch(existing.id(), SketchTool::Rectangle);
+            if (frame && session_)
+                alignViewTo(session_->sketch().plane(), frame); // the face and what is drawn on it
             return okStatus();
         }
     }
@@ -3485,6 +3651,10 @@ Status InteractionController::startSketch(SketchPlane originPlane)
         return status;
     }
     enterSketch(id, SketchTool::Rectangle);
+    // Framed, not only faced: on a phone the model is small in the view, and
+    // the grid and the arrows snap by the zoom (2 mm steps at the fitted view).
+    if (frame && session_)
+        alignViewTo(session_->sketch().plane(), frame);
     return status;
 }
 
@@ -3596,7 +3766,7 @@ void InteractionController::setSketchTool(SketchTool tool)
     notifyView();
 }
 
-void InteractionController::alignViewTo(const sketch::Plane& plane)
+void InteractionController::alignViewTo(const sketch::Plane& plane, const std::optional<geom::BoundingBox>& frame)
 {
     Camera to = camera_;
     const Vec3 n = plane.normal().normalized();
@@ -3605,15 +3775,60 @@ void InteractionController::alignViewTo(const sketch::Plane& plane)
     // pointing right on screen. Otherwise face the plane head-on.
     to.yaw = std::abs(n.z) > 0.999 ? std::atan2(-plane.xAxis.x, plane.xAxis.y) : std::atan2(n.y, n.x);
     to.target = plane.origin;
-    if (session_ && session_->sketch().hasGeometry()) {
-        Vec3 lo{1e300, 1e300, 1e300}, hi{-1e300, -1e300, -1e300};
-        for (const auto& [id, p] : session_->sketch().points()) {
-            const Vec3 w = plane.toWorld(p.position);
-            lo = {std::min(lo.x, w.x), std::min(lo.y, w.y), std::min(lo.z, w.z)};
-            hi = {std::max(hi.x, w.x), std::max(hi.y, w.y), std::max(hi.z, w.z)};
-        }
-        to.fit(lo, hi);
+    Vec3 lo{1e300, 1e300, 1e300}, hi{-1e300, -1e300, -1e300};
+    bool any = false;
+    auto include = [&](const Vec3& w) {
+        lo = {std::min(lo.x, w.x), std::min(lo.y, w.y), std::min(lo.z, w.z)};
+        hi = {std::max(hi.x, w.x), std::max(hi.y, w.y), std::max(hi.z, w.z)};
+        any = true;
+    };
+    if (session_ && session_->sketch().hasGeometry())
+        for (const auto& [id, p] : session_->sketch().points())
+            include(plane.toWorld(p.position));
+    if (!frame || !frame->valid) {
+        if (any)
+            to.fit(lo, hi);
+        startAnimation(to);
+        return;
     }
+    // Frame the face (or construction plane) and the sketch on it in the
+    // part of the view the controls leave free (a phone: between the top
+    // bar and the tool strip), tightly on a touch screen: a 20 mm face then
+    // spans most of a phone's width, where 1 mm is some 14 px and the grid
+    // and the arrows snap in 1 mm steps (2 mm at the fitted view).
+    include(frame->min);
+    include(frame->max);
+    const Vec3 center = (lo + hi) * 0.5;
+    const Vec3 right = to.right(), up = to.up();
+    double halfWidth = 0.5, halfHeight = 0.5; // at least a millimeter across
+    for (int corner = 0; corner < 8; ++corner) {
+        const Vec3 p{corner & 1 ? hi.x : lo.x, corner & 2 ? hi.y : lo.y, corner & 4 ? hi.z : lo.z};
+        halfWidth = std::max(halfWidth, std::abs((p - center).dot(right)));
+        halfHeight = std::max(halfHeight, std::abs((p - center).dot(up)));
+    }
+    const Vec2 view = to.viewportSize;
+    const double insetTop = std::max(safeInsets_.top, frameInsets_.top);
+    const double insetBottom = std::max(safeInsets_.bottom, frameInsets_.bottom);
+    const double insetLeft = std::max(safeInsets_.left, frameInsets_.left);
+    const double insetRight = std::max(safeInsets_.right, frameInsets_.right);
+    double freeWidth = view.x - insetLeft - insetRight, freeHeight = view.y - insetTop - insetBottom;
+    double freeLeft = insetLeft, freeTop = insetTop;
+    if (freeWidth < 80 || freeHeight < 80) { // controls cover it all: the whole view
+        freeWidth = view.x;
+        freeHeight = view.y;
+        freeLeft = freeTop = 0;
+    }
+    const double margin = touchLayout_ ? 1.15 : 1.6;
+    // Millimeters per pixel on the plane; never closer than 10 mm across.
+    const double mmPerPixel = std::max({2 * halfWidth * margin / freeWidth, 2 * halfHeight * margin / freeHeight,
+                                        10.0 / std::min(freeWidth, freeHeight)});
+    // The box's middle in the middle of the free part.
+    const double dx = freeLeft + freeWidth / 2 - view.x / 2, dy = freeTop + freeHeight / 2 - view.y / 2;
+    to.target = center - right * (dx * mmPerPixel) + up * (dy * mmPerPixel);
+    if (to.projection == Camera::Projection::Orthographic)
+        to.orthoHeight = mmPerPixel * view.y;
+    else
+        to.distance = std::max(mmPerPixel * view.y / (2 * std::tan(to.fovY / 2)), Camera::kMinDistance);
     startAnimation(to);
 }
 
@@ -3651,7 +3866,6 @@ sel::PickResult InteractionController::pickProfile(Vec2 screen) const
     }
     return best;
 }
-
 
 // ---- History ---------------------------------------------------------------------------
 

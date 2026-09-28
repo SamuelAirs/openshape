@@ -1212,6 +1212,23 @@ Result<geom::Shape> ExtrudeFeature::toolSolid(const geom::Shape& input, const Ev
     return geom::translated(solid.value(), plane.normal() * (-length / 2));
 }
 
+// A join must add material. One that stays inside the body (a profile on a
+// face pushed into it with Join chosen) would silently change nothing: the
+// same NoEffect as a cut that misses (a warning in recompute, a refusal for
+// a new step and in the preview).
+namespace {
+Result<geom::Shape> joinAdding(const geom::Shape& input, const geom::Shape& tool, const char* userMessage)
+{
+    auto joined = geom::booleanOp(input, tool, geom::BooleanKind::Union);
+    if (!joined || input.isNull())
+        return joined;
+    const double before = geom::volume(input), after = geom::volume(joined.value());
+    if (after <= before + 1e-7 * std::max(before, 1.0))
+        return Result<geom::Shape>::failure(ErrorCode::NoEffect, userMessage, "join: the union added no volume");
+    return joined;
+}
+} // namespace
+
 Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     auto tool = toolSolid(input, context);
@@ -1219,7 +1236,9 @@ Result<geom::Shape> ExtrudeFeature::compute(const geom::Shape& input, const Eval
         return tool;
     switch (mode) {
     case ExtrudeMode::NewBody: return tool;
-    case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
+    case ExtrudeMode::Join:
+        return joinAdding(input, tool.value(),
+                          "This extrusion stays inside the body, so nothing would be added. Pull it outward, or choose Cut.");
     case ExtrudeMode::Cut:
         return reworded(geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
                         "This cut does not reach the body, so nothing would be removed. Extrude toward the body, or further.");
@@ -1762,7 +1781,8 @@ Result<geom::Shape> RevolveFeature::compute(const geom::Shape& input, const Eval
         return tool;
     switch (mode) {
     case ExtrudeMode::NewBody: return tool;
-    case ExtrudeMode::Join: return geom::booleanOp(input, tool.value(), geom::BooleanKind::Union);
+    case ExtrudeMode::Join:
+        return joinAdding(input, tool.value(), "This revolve stays inside the body, so nothing would be added. Choose Cut, or a new body.");
     case ExtrudeMode::Cut:
         return reworded(geom::booleanOp(input, tool.value(), geom::BooleanKind::Subtract), ErrorCode::NoEffect,
                         "This cut does not reach the body, so nothing would be removed.");

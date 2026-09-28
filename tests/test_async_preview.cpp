@@ -1005,7 +1005,9 @@ TEST(AsyncPreview, ExtrudeDraftPreviewsOnTheWorker)
     h.worker().setJobDelayForTesting(200ms);
     EXPECT_EQ(h.controller.setValueText("8"), "");
     ASSERT_TRUE(extrude->previewPending());
-    EXPECT_FALSE(extrude->commitNeedsPreview()) << "no body under the sketch: no automatic choice";
+    // A sketch on no body: whether it cuts or joins a body depends on where
+    // the extrusion goes (the preview finds out), so Enter waits for it.
+    EXPECT_TRUE(extrude->commitNeedsPreview()) << "no body under the sketch: the preview finds the body it goes into";
     EXPECT_TRUE(extrude->canCommit()) << "a pending preview counts as committable";
     EXPECT_TRUE(h.controller.keyPress(Key::Enter));
     ASSERT_EQ(h.document.bodies().size(), 2u);

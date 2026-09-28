@@ -13,6 +13,7 @@
 #include "geometry/Modeling.h"
 #include "interaction/Manipulator.h"
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -179,6 +180,9 @@ public:
     // (push/pull showing the thickness: "+5" = 5 mm thicker); nullopt: typed
     // values are taken as they are.
     virtual std::optional<double> relativeBase() const { return std::nullopt; }
+    // The value a typed number stands for (Extrude with Cut chosen: a depth
+    // typed without a sign goes into the body).
+    virtual double typedValue(double value) const { return value; }
     // Where the value editor goes when there is no arrow or ring (e.g. a
     // circular pattern's angle); nullopt = no value editor.
     virtual std::optional<Vec3> labelAnchor() const { return std::nullopt; }
@@ -1124,7 +1128,10 @@ private:
 
 // Extrudes selected sketch profiles along the sketch normal. Without an
 // explicit mode it creates a new body, or - for sketches placed on a body -
-// joins when pulled outward and cuts when pushed inward.
+// joins when pulled outward and cuts when pushed inward. A sketch on no
+// body (an origin or construction plane) cuts the body its extrusion goes
+// into and joins one it only touches (found with the preview: the bodies'
+// boxes first, then the kernel), and is a new body otherwise.
 class ExtrudeOperation final : public Operation {
 public:
     static std::unique_ptr<ExtrudeOperation> create(const doc::Document& document, const Uuid& sketchId,
@@ -1132,13 +1139,13 @@ public:
 
     std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new ExtrudeOperation(*this)); }
     std::string title() const override { return "Extrude"; }
-    // Symmetric: the value is the total thickness, centered on the sketch.
-    std::string valueLabel() const override
-    {
-        return editingDraft() ? "Draft" : symmetric_ ? "Thickness" : "Distance";
-    }
+    // What the value makes, as the mode changes (the sign is kept: a cut
+    // into the body is negative, as typed and as the Model panel shows it).
+    // Symmetric: the total thickness, centered on the sketch.
+    std::string valueLabel() const override;
     bool allowsNegative() const override { return editingDraft() || !symmetric_; }
     bool isAngle() const override { return editingDraft(); }
+    double typedValue(double value) const override { return arrowIntoBody() && !editingDraft() ? -std::abs(value) : value; }
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::Extrude; }
     // The draft is a second field of the value chip (Draft action; no arrow
     // of its own): value() is then the angle in degrees, positive narrowing
@@ -1147,13 +1154,21 @@ public:
     void setActiveHandle(int index) override;
     double distance() const { return editingDraft() ? distance_ : value(); }
     double draftDegrees() const { return editingDraft() ? value() : draftDegrees_; }
-    LinearManipulator handle(int) const override { return manipulator(); }
-    double handleOffset(int) const override { return displayOffset(distance()); }
+    // Cut chosen for a sketch on a body: the arrow points into the body, so
+    // dragging it the way it points deepens the cut (the value stays the
+    // signed distance along the sketch normal).
+    bool arrowIntoBody() const { return host_.has_value() && modeOverride_ == doc::ExtrudeMode::Cut && !symmetric_; }
+    LinearManipulator handle(int) const override;
+    double handleOffset(int) const override { return arrowIntoBody() ? -displayOffset(distance()) : displayOffset(distance()); }
     bool canCommit() const override { return distance() != 0.0 && previewUsable(); }
     Uuid previewBody() const override;
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
     double displayOffset(double value) const override { return symmetric_ ? value / 2 : value; }
-    double valueFromOffset(double offset) const override { return symmetric_ ? 2 * offset : offset; }
+    double valueFromOffset(double offset) const override
+    {
+        const double along = symmetric_ ? 2 * offset : offset;
+        return arrowIntoBody() ? -along : along;
+    }
     std::string prompt() const override;
 
     bool symmetric() const { return symmetric_; }
@@ -1172,21 +1187,48 @@ public:
     doc::ExtrudeMode mode() const;
     void setModeOverride(std::optional<doc::ExtrudeMode> mode) { modeOverride_ = mode; }
     const std::optional<doc::ExtrudeMode>& modeOverride() const { return modeOverride_; }
+    // New body / Join / Cut chosen (the value chip's buttons). For a sketch
+    // on a body, Cut means into it: a distance pointing out of the body
+    // turns around (Join and New body turn one pointing into it). Recomputes.
+    void chooseMode(doc::ExtrudeMode mode, const doc::Document& document);
+    // Flip: the other way along the sketch normal. For a sketch on a body
+    // the mode is automatic again (out joins, in cuts). Recomputes.
+    void flip(const doc::Document& document);
+    // The sketch lies on a body (a face sketch): out of it joins, into it cuts.
     bool hasHost() const { return host_.has_value(); }
+    // The body the step goes to: the sketch's host, or - for a sketch on no
+    // body - the one the preview found it cutting or joining (none: a new body).
+    std::optional<Uuid> targetBody() const;
     bool throughAll() const { return throughAll_; }
     void setThroughAll(bool throughAll) { throughAll_ = throughAll; }
     const Uuid& sketchId() const { return sketchId_; }
-    bool commitNeedsPreview() const override { return host_.has_value() && !modeOverride_; }
+    // Automatic choices depend on the preview: a join that misses its body,
+    // and for a sketch on no body the body it cuts or joins.
+    bool commitNeedsPreview() const override
+    {
+        return host_ ? !modeOverride_.has_value() : modeOverride_ != doc::ExtrudeMode::NewBody;
+    }
 
 protected:
     std::unique_ptr<doc::Feature> makeFeature(double value) const override;
-    void resetAutomaticChoices() override { autoNewBody_ = false; }
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
+    void resetAutomaticChoices() override
+    {
+        autoNewBody_ = false;
+        target_.reset();
+        autoMode_ = doc::ExtrudeMode::NewBody;
+        targetMissing_ = false;
+    }
     bool reconsider(const geom::Shape& result, const doc::Document& document) override;
     bool reconsiderRefusal(ErrorCode code) override;
     void adoptAutomaticChoices(const Operation& from) override
     {
-        if (const auto* other = dynamic_cast<const ExtrudeOperation*>(&from))
+        if (const auto* other = dynamic_cast<const ExtrudeOperation*>(&from)) {
             autoNewBody_ = other->autoNewBody_;
+            target_ = other->target_;
+            autoMode_ = other->autoMode_;
+            targetMissing_ = other->targetMissing_;
+        }
     }
     // A draft of 0 still previews the extrusion.
     bool neutralIsIdentity() const override { return !editingDraft(); }
@@ -1194,11 +1236,21 @@ protected:
 private:
     ExtrudeOperation(Uuid sketchId, std::optional<Uuid> host, LinearManipulator m, std::vector<doc::ProfileRef> profiles)
         : Operation(host.value_or(Uuid()), std::move(m)), sketchId_(sketchId), host_(host), profiles_(std::move(profiles)) {}
+    // A sketch on no body: the body the extrusion (`tool`, as a new body)
+    // cuts - the first whose box overlaps it that it takes material from -
+    // or else one it touches (joins). Decides the automatic mode, or finds
+    // the body for Join / Cut chosen.
+    void findTarget(const geom::Shape& tool, const doc::Document& document);
     Uuid sketchId_;
     std::optional<Uuid> host_;
     std::vector<doc::ProfileRef> profiles_;
     std::optional<doc::ExtrudeMode> modeOverride_;
     bool autoNewBody_ = false; // an automatic join that would not touch the body becomes a new body
+    // A sketch on no body (from the preview): the body cut or joined, the
+    // automatic mode, and whether Join / Cut chosen found no body to act on.
+    std::optional<Uuid> target_;
+    doc::ExtrudeMode autoMode_ = doc::ExtrudeMode::NewBody;
+    bool targetMissing_ = false;
     bool throughAll_ = false;
     bool symmetric_ = false;
     bool pickingTarget_ = false;
