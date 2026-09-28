@@ -755,9 +755,16 @@ bool InteractionController::keyPress(Key key)
 {
     if (session_) {
         // Enter takes the value typed just now; Esc drops it with the shape.
-        if (key == Key::Enter)
+        // A refused value (typed just now, or refused when typing paused)
+        // keeps the shape: Enter never finishes it at a size not confirmed.
+        if (key == Key::Enter) {
             (void)flushTyping();
-        else if (key == Key::Escape)
+            if (typingTarget_ == TypingTarget::SketchInput && !typedValueError_.empty() && session_->hasInputs()) {
+                notifyState();
+                notifyView();
+                return true;
+            }
+        } else if (key == Key::Escape)
             dropTyping();
         const bool handled = session_->keyPress(key);
         notifyState();
@@ -3642,10 +3649,13 @@ Status InteractionController::commitSketchTool()
 {
     if (!session_)
         return Status::failure(ErrorCode::InvalidArgument, "Nothing is being drawn.", "commitSketchTool outside a sketch");
-    if (const std::string refused = flushTyping(); !refused.empty()) {
+    // A value refused - typed just now, or refused when typing paused -
+    // keeps the shape, whenever Enter or the check mark comes.
+    (void)flushTyping();
+    if (typingTarget_ == TypingTarget::SketchInput && !typedValueError_.empty() && session_->hasInputs()) {
         notifyState();
         notifyView();
-        return Status::failure(ErrorCode::InvalidArgument, refused, "commitSketchTool: the typed value is refused");
+        return Status::failure(ErrorCode::InvalidArgument, typedValueError_, "commitSketchTool: the typed value is refused");
     }
     Status status = session_->commitTool();
     notifyState();

@@ -1889,7 +1889,8 @@ TEST(SketchInteraction, LinearAndCircularPatternOfAHole)
         EXPECT_EQ(keypadModeForSketchInput(label.key), expected) << label.key;
     }
     EXPECT_EQ(inputs, (std::set<std::string>{"angle", "count"}));
-    h.type("180");
+    EXPECT_EQ(h.session().typeIntoInput("x"), "Unexpected 'x'") << "not the range: the text is not an angle";
+    h.type("90+90"); // the keypad's arithmetic: half a turn
     h.session().focusNextInput();
     h.type("3");
     ASSERT_TRUE(h.session().triggerAction("apply").ok());
@@ -1935,7 +1936,7 @@ TEST(SketchInteraction, AngleDimensionBetweenTwoLines)
             text = label.text;
     EXPECT_EQ(text, "36.87\xC2\xB0");
     EXPECT_NE(h.session().setDimension(angle, "180"), "") << "not a corner";
-    EXPECT_EQ(h.session().setDimension(angle, "45"), "");
+    EXPECT_EQ(h.session().setDimension(angle, "90/2"), "") << "the keypad's arithmetic: 45";
     EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6) << "20 x 20 / 2";
     EXPECT_EQ(h.session().setDimension(angle, "60\xC2\xB0"), "");
     EXPECT_NEAR(largestRegion(h.session().sketch()), 20 * 20 * std::sqrt(3.0) / 2, 1e-6);

@@ -1176,13 +1176,15 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
             return {};
         }
         if (key == "angle") {
-            // Degrees; a whole turn spaces the copies evenly.
-            char* rest = nullptr;
-            const double degrees = std::strtod(text.c_str(), &rest);
-            while (rest && *rest == ' ')
-                ++rest;
-            if (rest == text.c_str() || (*rest != '\0' && std::string(rest) != "\xC2\xB0" && std::string(rest) != "deg")
-                || !(degrees > 0) || degrees > 360) {
+            // Degrees (with the arithmetic the value box takes: 90+90); a
+            // whole turn spaces the copies evenly.
+            const auto parsed = parseAngle(text);
+            if (!parsed.millimeters) {
+                in.locked = false;
+                return parsed.error;
+            }
+            const double degrees = *parsed.millimeters * 180.0 / kPi;
+            if (!(degrees > 0) || degrees > 360 + 1e-9) {
                 in.locked = false;
                 return "The angle must be more than 0 and at most 360 degrees.";
             }
@@ -1268,16 +1270,12 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
     if (!c || !c->isDimension())
         return "That dimension no longer exists.";
     if (c->kind == sketch::ConstraintKind::Angle) {
-        // Degrees, as shown.
-        std::string digits = text;
-        for (const std::string_view unit : {std::string_view("\xC2\xB0"), std::string_view("deg")})
-            if (const auto at = digits.find(unit); at != std::string::npos)
-                digits.erase(at, unit.size());
-        char* rest = nullptr;
-        const double degrees = std::strtod(digits.c_str(), &rest);
-        while (rest && *rest == ' ')
-            ++rest;
-        if (rest == digits.c_str() || *rest != '\0' || !(degrees > 0) || !(degrees < 180))
+        // Degrees, as shown (with the arithmetic the value box takes: 45*2).
+        const auto parsed = parseAngle(text);
+        if (!parsed.millimeters)
+            return parsed.error;
+        const double degrees = *parsed.millimeters * 180.0 / kPi;
+        if (!(degrees > 0) || !(degrees < 180))
             return "Angles must be more than 0 and less than 180 degrees.";
         const auto value = sketch::directionAngleFor(working_, c->a, c->b, degrees * kPi / 180.0);
         if (!value)

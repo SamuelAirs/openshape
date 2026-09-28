@@ -394,6 +394,51 @@ TEST(TypingPause, SketchTapTakesTheValueTypedJustNow)
     EXPECT_FALSE(h.controller.typingPending());
 }
 
+// Enter on a refused sketch value keeps the shape whether it comes right
+// after typing or after the pause (when the refusal is already shown): the
+// shape is never finished at a size the user did not confirm.
+TEST(TypingPause, EnterOnARefusedSketchValueKeepsTheShapeAfterThePauseToo)
+{
+    for (const bool paused : {false, true}) {
+        for (const bool viewEnter : {false, true}) {
+            SCOPED_TRACE(std::string(paused ? "after the pause" : "right after typing") + (viewEnter ? ", Enter in the view" : ", the check mark"));
+            TypingHarness h(false);
+            ASSERT_TRUE(h.controller.startSketch().ok());
+            h.controller.skipAnimation();
+            SketchSession& session = *h.controller.sketchSession();
+            auto sketchScreen = [&](Vec2 local) { return h.controller.camera().project(session.sketch().plane().toWorld(local)); };
+            h.click(sketchScreen({0, 0}));
+            ASSERT_TRUE(session.isDrawing());
+            PointerEvent move = TypingHarness::at(sketchScreen({12, 7}));
+            move.button = PointerButton::None;
+            h.controller.pointerMove(move);
+            h.now += 100ms;
+            h.controller.typeValue(InteractionController::TypingTarget::SketchInput, "40x");
+            if (paused) {
+                EXPECT_TRUE(h.pauseOver());
+                EXPECT_FALSE(h.controller.typedValueError().empty()) << "40x is not a length";
+            }
+            if (viewEnter)
+                EXPECT_TRUE(h.controller.keyPress(Key::Enter));
+            else
+                EXPECT_FALSE(h.controller.commitSketchTool().ok());
+            EXPECT_TRUE(session.isDrawing()) << "the rectangle is not finished";
+            EXPECT_TRUE(session.sketch().lines().empty());
+            EXPECT_FALSE(h.controller.typedValueError().empty()) << "the refusal still shows";
+            // A good value then: Enter finishes it at that width.
+            h.now += 100ms;
+            h.controller.typeValue(InteractionController::TypingTarget::SketchInput, "40");
+            ASSERT_TRUE(h.controller.commitSketchTool().ok());
+            EXPECT_FALSE(session.isDrawing());
+            EXPECT_EQ(session.sketch().lines().size(), 4u);
+            bool corner = false;
+            for (const auto& [id, p] : session.sketch().points())
+                corner = corner || std::abs(p.position.x - 40) < 1e-9;
+            EXPECT_TRUE(corner) << "the width typed: 40";
+        }
+    }
+}
+
 // A sketch value refused once typing paused keeps its message while the
 // shape is drawn, and loses it when the user moves on: Tab to the next
 // value, or a tap that finishes the shape; the next shape starts without it.
