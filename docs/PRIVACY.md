@@ -61,8 +61,9 @@ your device. Closing the share sheet sends nothing.
 
 ## Network access
 
-OpenShape does not contain any code that connects to the internet. The only
-time it goes online is when **you tap or click a link** (the user guide in
+OpenShape's own code never connects to the internet (the libraries it is
+built with include networking functions, which OpenShape does not use). The
+only time anything goes online is when **you tap or click a link** (the user guide in
 the help card, and the license, source code, third-party license and
 privacy policy links in **About**): the link opens in your web browser
 (Safari on iPhone and iPad), and that website's own privacy policy applies

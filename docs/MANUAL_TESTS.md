@@ -203,7 +203,8 @@ iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
    "Privacy policy: OpenShape collects no data about you": Safari opens the
    policy on GitHub (after this branch is on `main`). On Home, the cards of
    projects saved in OpenShape's folder say *OpenShape (Files app)*, not a
-   long `/var/mobile/…` path.
+   long `/var/mobile/…` path, and the *OpenShape* title and **New project**
+   sit below the clock and the Dynamic Island (they used to sit under them).
 8. **Before the App Store:** look through the listing texts and the twelve
    screenshots in [APP_STORE.md](APP_STORE.md), section 3, and compare them
    with the app on your devices (the screenshots are made on Windows, so

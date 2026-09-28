@@ -124,7 +124,10 @@ this first: Apple checks the details, and it can take days.
 6. **DONE: export compliance.** `src/app/ios/Info.plist.in` sets
    `ITSAppUsesNonExemptEncryption` to `false`, so App Store Connect does not
    ask the encryption questions for each build. This is true for OpenShape:
-   it has no network code at all, and the ZIP library in project files is
+   its own code makes no network connections and encrypts nothing (Qt's
+   networking library is in the bundle only because Qt's QML engine depends
+   on it; OpenShape never calls it and its QML loads only files inside the
+   app), and the ZIP library in project files is
    built without any encryption (`scripts/ios/build-deps.sh`:
    `-DENABLE_COMMONCRYPTO=OFF -DENABLE_GNUTLS=OFF -DENABLE_MBEDTLS=OFF
    -DENABLE_OPENSSL=OFF`).
@@ -188,8 +191,12 @@ Then **Privacy Policy → Edit** and paste the privacy policy URL.
 
 - Apple defines "collect" as sending data off the device so that the
   developer or a partner can keep it beyond the request. OpenShape has **no
-  network code**: no `QNetworkAccessManager`, sockets or `URLSession`; the
-  app links only Qt Core, Gui, Qml, Quick and QuickControls2, not Qt Network;
+  network code of its own**: no `QNetworkAccessManager`, sockets or
+  `URLSession` anywhere in `src/`; the app asks CMake only for Qt Core, Gui,
+  Qml, Quick and QuickControls2 (Qt Network comes along as a dependency of
+  Qt Qml, which could fetch `http` URLs named in QML, but OpenShape's QML
+  names only files compiled into the app, and the only web addresses in it
+  are the links handed to Safari);
   no analytics, crash-reporting or advertising SDK. The only way out is a
   link the user taps (Help: the user guide; About: license, source code,
   THIRD_PARTY.md, the privacy policy), which opens Safari.
