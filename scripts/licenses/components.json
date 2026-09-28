@@ -172,9 +172,13 @@
       ["^plugins/imageformats/(libq(gif|ico|jpeg)[._]|objects-[^/]+/Q(Gif|Ico|Jpeg))", "qtbase"],
       ["^plugins/(platforms|generic|networkinformation|tls|platforminputcontexts|permissions)/", "qtbase"],
       ["^lib/(lib)?Qt6(Qml|Quick|Labs|PacketProtocol)", "qtdeclarative"],
+      ["^lib/Qt(Qml|Quick|Labs|PacketProtocol)[A-Za-z0-9]*\\.framework/", "qtdeclarative"],
       ["^lib/(lib)?Qt6Svg", "qtsvg"],
+      ["^lib/QtSvg[A-Za-z0-9]*\\.framework/", "qtsvg"],
       ["^lib/(lib)?Qt6ShaderTools", "qtshadertools"],
+      ["^lib/QtShaderTools\\.framework/", "qtshadertools"],
       ["^lib/(lib)?Qt6(Core|Gui|Network|OpenGL|OpenGLWidgets|Widgets|Concurrent|Xml|Sql|PrintSupport|DBus|Test|Bundled[A-Za-z0-9]+|ExampleIcons|DeviceDiscoverySupport|FbSupport)[._]", "qtbase"],
+      ["^lib/Qt(Core|Gui|Network|OpenGL|OpenGLWidgets|Widgets|Concurrent|Xml|Sql|PrintSupport|DBus|Test|Bundled[A-Za-z0-9]+|ExampleIcons|DeviceDiscoverySupport|FbSupport)\\.framework/", "qtbase"],
       ["^lib/objects-[^/]+/(Qml|Quick|Labs|PacketProtocol)", "qtdeclarative"],
       ["^lib/objects-[^/]+/(Svg|QSvg)", "qtsvg"],
       ["^lib/objects-[^/]+/(Core|Gui|Network|OpenGL|Widgets|Q[A-Za-z0-9]*Plugin)", "qtbase"]

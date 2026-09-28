@@ -571,8 +571,10 @@ def link_map_inputs(path):
             item = match.group(1).strip()
             if item.startswith("linker synthesized") or not item:
                 continue
-            # ld64: /x/libfoo.a(bar.o); ld-prime: /x/libfoo.a[12](bar.o)
-            archive = re.match(r"^(.*?\.a)(\[\d+\])?\(.*\)$", item)
+            # ld64: /x/libfoo.a(bar.o); ld-prime: /x/libfoo.a[12](bar.o); the
+            # binary of a static framework has no extension (Qt for iOS):
+            # /x/QtCore.framework/QtCore(bar.o)
+            archive = re.match(r"^(.+?)(\[\d+\])?\(([^()/]+)\)$", item)
             inputs.append(archive.group(1) if archive else item)
     return inputs
 
@@ -648,7 +650,7 @@ def gate(args):
             unknown.append(f"{path}: {name}")
             continue
         per.setdefault((kind, name), set()).add(os.path.basename(path))
-        match = re.search(r"Qt6Bundled([A-Za-z0-9]+)\.a$", path)
+        match = re.search(r"Qt6?Bundled([A-Za-z0-9]+)(\.a$|\.framework/)", path)
         if match:
             bundled.add(match.group(1))
 
@@ -748,7 +750,8 @@ def self_test(_args):
             "qtThirdParty": {"archives": ["qtbase"], "include": ["kept", "spdxonly"], "exclude": {"dropped": "not linked"},
                              "excludePaths": {"src/3rdparty/wayland/": "Linux"}},
             "linkRules": {
-                "qt": [["^lib/(lib)?Qt6(Core|Gui|Bundled[A-Za-z0-9]+)[._]", "qtbase"], ["^qml/", "qtdeclarative"]],
+                "qt": [["^lib/(lib)?Qt6(Core|Gui|Bundled[A-Za-z0-9]+)[._]", "qtbase"], ["^lib/Qt(Core|Gui)\\.framework/", "qtbase"],
+                       ["^qml/", "qtdeclarative"]],
                 "qtBundled": {"Kept": ["kept"]},
                 "deps": [["^lib/liblib\\.a$", "lib"]],
                 "build": [["(^|/)libopenshape[A-Za-z0-9_]*\\.a$", "openshape"], ["\\.o$", "openshape"]],
@@ -855,13 +858,16 @@ def self_test(_args):
             f"[  3] {qt_dir}/lib/libQt6Core.a(qstring.cpp.o)",
             f"[  4] {qt_dir}/lib/libQt6BundledKept.a[7](x.c.o)",
             f"[  5] {deps}/lib/liblib.a[2](a.o)",
+            f"[  6] {qt_dir}/lib/QtCore.framework/QtCore(bignum-dtoa.cc.o)",
+            f"[  7] {qt_dir}/lib/QtGui.framework/QtGui[3](qimage.cpp.o)",
             "[  6] /Applications/Xcode_26.3.0.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.2.sdk/usr/lib/libz.tbd",
             "# Sections:", "# Address Size Segment Section", "[  9] not an input",
         ]
         map_path = os.path.join(tmp, "good.map")
         with open(map_path, "w", encoding="utf-8", newline="") as f:
             f.write("\n".join(good) + "\n")
-        checks(len(link_map_inputs(map_path)) == 6, "self-test: the link map's inputs are read (both archive formats, not the sections)",
+        checks(len(link_map_inputs(map_path)) == 8 and f"{qt_dir}/lib/QtGui.framework/QtGui" in link_map_inputs(map_path),
+               "self-test: the link map's inputs are read (both archive formats, static frameworks, not the sections)",
                str(link_map_inputs(map_path)))
         gns = argparse.Namespace(components=components_path, out=out, link_map=map_path, qt_dir=qt_dir, deps_dir=deps,
                                  build_dir=build, report=os.path.join(tmp, "gate.txt"))
@@ -870,8 +876,9 @@ def self_test(_args):
             sys.stdout = devnull
             try:
                 good_failures = gate(gns)
-                bad = good[:6] + [f"[  7] {qt_dir}/lib/libQt6Multimedia.a(x.o)", f"[  8] {qt_dir}/qml/QtQuick/libqtquick2plugin.a(p.o)",
-                                  "[  9] /opt/homebrew/lib/libavcodec.a(y.o)", f"[ 10] {qt_dir}/lib/libQt6BundledOther.a(z.o)"] + good[6:]
+                bad = good[:8] + [f"[  7] {qt_dir}/lib/libQt6Multimedia.a(x.o)", f"[  8] {qt_dir}/qml/QtQuick/libqtquick2plugin.a(p.o)",
+                                  "[  9] /opt/homebrew/lib/libavcodec.a(y.o)", f"[ 10] {qt_dir}/lib/libQt6BundledOther.a(z.o)",
+                                  f"[ 11] {qt_dir}/lib/QtMultimedia.framework/QtMultimedia(m.o)"] + good[8:]
                 with open(map_path, "w", encoding="utf-8", newline="") as f:
                     f.write("\n".join(bad) + "\n")
                 bad_failures = gate(gns)
@@ -891,6 +898,13 @@ def self_test(_args):
             f"{qt_dir}/lib/libQt6BundledHarfbuzz.a(hb.cc.o)", f"{qt_dir}/lib/libQt6BundledPcre2.a(x.o)",
             f"{qt_dir}/lib/libQt6BundledLibpng.a(x.o)", f"{qt_dir}/lib/libQt6BundledLibjpeg.a(x.o)",
             f"{qt_dir}/lib/libQt6BundledFreetype.a(x.o)",
+            f"{qt_dir}/lib/QtCore.framework/QtCore(bignum-dtoa.cc.o)", f"{qt_dir}/lib/QtGui.framework/QtGui[3](qimage.cpp.o)",
+            f"{qt_dir}/lib/QtNetwork.framework/QtNetwork(x.o)", f"{qt_dir}/lib/QtQml.framework/QtQml(x.o)",
+            f"{qt_dir}/lib/QtQmlModels.framework/QtQmlModels(x.o)", f"{qt_dir}/lib/QtQuick.framework/QtQuick(x.o)",
+            f"{qt_dir}/lib/QtQuickControls2Basic.framework/QtQuickControls2Basic(x.o)",
+            f"{qt_dir}/lib/QtQuickTemplates2.framework/QtQuickTemplates2(x.o)",
+            f"{qt_dir}/lib/QtLabsFolderListModel.framework/QtLabsFolderListModel(x.o)",
+            f"{qt_dir}/lib/QtSvg.framework/QtSvg(x.o)", f"{qt_dir}/lib/QtOpenGL.framework/QtOpenGL(x.o)",
             f"{qt_dir}/lib/objects-Release/Gui_resources_1/.rcc/qrc_qpdf.cpp.o",
             f"{qt_dir}/lib/objects-Release/QuickControls2Basic_resources_2/.rcc/qrc_x.cpp.o",
             f"{qt_dir}/plugins/platforms/libqios.a(qiosintegration.mm.o)",
@@ -930,7 +944,7 @@ def self_test(_args):
                "libzip, PlaneGCS, OpenShape, Apple's SDK)", real_report)
 
         checks(good_failures == 0, "self-test: the gate passes a link map of known origins")
-        checks(bad_failures == 3 and "libQt6Multimedia.a" in report and "libavcodec.a" in report
+        checks(bad_failures == 3 and "libQt6Multimedia.a" in report and "libavcodec.a" in report and "QtMultimedia.framework" in report
                and "'qtdeclarative' is pinned" in report and "bundled Other" in report,
                "self-test: the gate fails on an unknown Qt library, a file from elsewhere, an unpinned Qt module and an unlisted bundled library",
                f"{bad_failures} failures")
