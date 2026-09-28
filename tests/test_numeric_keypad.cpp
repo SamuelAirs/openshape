@@ -133,6 +133,17 @@ TEST(NumericKeypad, SketchInputsGetTheirKindOfKeys)
     EXPECT_EQ(keypadModeForSketchInput("angle"), KeypadMode::Angle);
     for (const char* key : {"width", "height", "diameter", "length", "size", "radius", "slot", "offset", "spacing"})
         EXPECT_EQ(keypadModeForSketchInput(key), KeypadMode::Length) << key;
+    // Each live value has a name in words for the keypad's display line
+    // (the values on the sketch show only numbers; the hints say "the width").
+    std::set<std::string> names;
+    for (const char* key : {"width", "height", "diameter", "length", "size", "radius", "slot", "offset", "spacing", "sides", "count", "angle"}) {
+        const std::string name = sketchInputName(key);
+        EXPECT_NE(name, "Value") << key;
+        EXPECT_FALSE(name.empty()) << key;
+        names.insert(name);
+    }
+    EXPECT_EQ(names.size(), 12u) << "no two share a name";
+    EXPECT_EQ(sketchInputName("width"), "Width");
     for (KeypadMode mode : {KeypadMode::Length, KeypadMode::Angle, KeypadMode::Count})
         EXPECT_EQ(keypadModeFromString(keypadModeName(mode)), mode);
     // A count's keys: digits, backspace, clear, done; no point, units or operators.
@@ -168,8 +179,13 @@ TEST(NumericKeypad, LayoutHasEveryKeyOnceAndFullRows)
 {
     for (const KeypadMode mode : {KeypadMode::Length, KeypadMode::Angle, KeypadMode::Count}) {
         for (const bool hasNext : {false, true}) {
+          for (const bool wide : {false, true}) {
+            SCOPED_TRACE(std::string(keypadModeName(mode)) + (hasNext ? ", Next" : "") + (wide ? ", wide" : ""));
             std::set<std::string> ids;
-            for (const auto& row : keypadLayout(mode, hasNext)) {
+            const auto rows = keypadLayout(mode, hasNext, wide);
+            // A phone held sideways: four rows, so the keypad fits below the top row of controls.
+            EXPECT_EQ(rows.size(), wide || mode == KeypadMode::Count ? 4u : 5u);
+            for (const auto& row : rows) {
                 int columns = 0;
                 for (const KeypadKey& key : row) {
                     EXPECT_TRUE(ids.insert(key.id).second) << "twice: " << key.id;
@@ -180,7 +196,7 @@ TEST(NumericKeypad, LayoutHasEveryKeyOnceAndFullRows)
                     EXPECT_NE(result.action, KeypadAction::None) << key.id;
                     columns += key.span;
                 }
-                EXPECT_EQ(columns, kKeypadColumns);
+                EXPECT_EQ(columns, keypadColumns(mode, wide));
             }
             for (int digit = 0; digit <= 9; ++digit)
                 EXPECT_TRUE(ids.count(std::to_string(digit))) << digit;
@@ -193,8 +209,11 @@ TEST(NumericKeypad, LayoutHasEveryKeyOnceAndFullRows)
                 for (const char* key : {".", "+", "-", "*", "/", "(", ")"})
                     EXPECT_TRUE(ids.count(key)) << key;
             }
+          }
         }
     }
+    EXPECT_EQ(keypadColumns(KeypadMode::Length, true), kKeypadWideColumns);
+    EXPECT_EQ(keypadColumns(KeypadMode::Count, true), kKeypadColumns) << "a count's keys are four rows already";
     EXPECT_EQ(keypadModeFromString("angle"), KeypadMode::Angle);
     EXPECT_FALSE(keypadModeFromString("text").has_value());
 }
@@ -248,6 +267,54 @@ TEST(KeypadPlacement, SidewaysPhoneUsesABottomCornerAwayFromTheValueBox)
     const KeypadPlacement q = placeKeypad(in);
     EXPECT_TRUE(q.clear);
     EXPECT_DOUBLE_EQ(q.position.x + in.size.x, 808);
+}
+
+// A phone held sideways (the owner's iPhone, 874x402): the keypad keeps off
+// the Model and View buttons down the right side when a corner reaches
+// them, sliding in along the bottom; covering controls only when nothing
+// else is off the value box, and then as few as can be.
+TEST(KeypadPlacement, SidewaysPhoneKeepsOffTheControls)
+{
+    KeypadPlacementInput in;
+    in.area = {66, 4, 808, 377};
+    in.size = {416, 274}; // seven columns of 52, four rows and the display line
+    in.compact = true;
+    const ScreenRect topBar{72, 10, 320, 66}, modelButton{730, 10, 800, 66}, viewButton{730, 74, 800, 130};
+    in.avoid = {topBar, modelButton, viewButton};
+    // A live value on the left: the right corner first, which reaches the
+    // View button; slid in along the bottom, it is clear of all.
+    in.target = {100, 180, 220, 212};
+    KeypadPlacement p = placeKeypad(in);
+    ScreenRect r = placed(in, p);
+    EXPECT_TRUE(p.clear);
+    EXPECT_FALSE(r.intersects(viewButton) || r.intersects(modelButton) || r.intersects(topBar)) << r.left << ", " << r.top;
+    EXPECT_DOUBLE_EQ(r.right, 730 - kKeypadGap) << "just left of the View button";
+    EXPECT_DOUBLE_EQ(r.bottom, 377) << "along the bottom";
+    // With the value box at the top, the left corner (away from it) is clear of all.
+    in.target = {330, 10, 720, 66};
+    p = placeKeypad(in);
+    r = placed(in, p);
+    EXPECT_TRUE(p.clear);
+    EXPECT_DOUBLE_EQ(r.left, 66);
+    // The live value on the left and the hint along the bottom: nothing is
+    // clear; off the value, the spot covering the fewest controls (the hint only).
+    in.target = {100, 180, 220, 212};
+    const ScreenRect hint{66, 290, 600, 310};
+    in.avoid.push_back(hint);
+    p = placeKeypad(in);
+    r = placed(in, p);
+    EXPECT_FALSE(p.clear);
+    EXPECT_FALSE(r.intersects(in.target.inflated(kKeypadGap - 1)));
+    EXPECT_FALSE(r.intersects(viewButton)) << r.left;
+    // A live value in the middle, the View button reached from the right
+    // corner: that corner (off the value) rather than over the value.
+    in.avoid.pop_back();
+    in.target = {250, 180, 370, 212};
+    p = placeKeypad(in);
+    r = placed(in, p);
+    EXPECT_FALSE(p.clear);
+    EXPECT_FALSE(r.intersects(in.target.inflated(kKeypadGap - 1)));
+    EXPECT_DOUBLE_EQ(r.right, 808);
 }
 
 TEST(KeypadPlacement, BesideTheValueBoxClearOfTheSelectionAndTheControls)

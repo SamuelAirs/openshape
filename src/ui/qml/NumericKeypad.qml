@@ -27,6 +27,7 @@ import OpenShape
 //   keepClear   what stays in sight: "selection" (the selection and its arrow:
 //               the value chip), "sketch" (a sketch's values) or ""
 //   display()   (optional) the text to show above the keys (a live value the keypad may cover)
+//   displayName() (optional) what that value is, in words, shown at the display's left ("Width")
 //   avoidKeypad(rect) (optional) where the keypad went: a value box it covers moves off it
 //   takesFocus  the keypad takes the keys itself (a sketch's live values have no
 //               field): a hardware keyboard's keys go to key(event), and the
@@ -41,21 +42,28 @@ FocusScope {
     readonly property bool open: client !== null
     // Main.qml: docked along the bottom (a phone) rather than beside the value box.
     property bool docked: false
+    // Main.qml: a phone held sideways: seven columns, four rows (fits below
+    // the top row of controls; interact::keypadLayout).
+    property bool wide: false
     readonly property string mode: client ? client.mode() : "length"
     readonly property bool hasNext: client ? client.hasNext() : false
-    readonly property var rows: open ? app.keypadRows(mode, hasNext) : []
+    readonly property var rows: open ? app.keypadRows(mode, hasNext, wide) : []
     readonly property string displayText: client && client.display ? client.display() : ""
+    readonly property string displayName: client && client.displayName ? client.displayName() : ""
     readonly property int displayHeight: displayText.length > 0 ? 34 + spacing : 0
 
-    readonly property int columns: 5
+    // The first row's spans (every row is full).
+    readonly property int columns: rows.length > 0 ? rows[0].reduce((sum, key) => sum + key.span, 0) : 5
     readonly property int spacing: 6
     readonly property int padding: 8
     // Apple's minimum touch target is 44 pt: a little more, for a thumb.
     readonly property int keyHeight: 50
-    readonly property real keyWidth: docked ? Math.floor((width - 2 * padding - (columns - 1) * spacing) / columns) : 60
+    // (Sideways a little narrower, so the model keeps more than half the width.)
+    readonly property int looseKeyWidth: wide ? 52 : 60
+    readonly property real keyWidth: docked ? Math.floor((width - 2 * padding - (columns - 1) * spacing) / columns) : looseKeyWidth
 
     visible: open
-    implicitWidth: columns * 60 + (columns - 1) * spacing + 2 * padding
+    implicitWidth: columns * looseKeyWidth + (columns - 1) * spacing + 2 * padding
     implicitHeight: displayHeight + rows.length * keyHeight + Math.max(0, rows.length - 1) * spacing + 2 * padding
     height: implicitHeight
 
@@ -132,6 +140,14 @@ FocusScope {
             color: "white"
             border.color: Theme.accent
             border.width: 1.5
+            Text {
+                objectName: "keypadDisplayName"
+                anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
+                text: keypad.displayName
+                textFormat: Text.PlainText
+                font.pixelSize: 15
+                color: Theme.mutedText
+            }
             Text {
                 anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
                 text: keypad.displayText

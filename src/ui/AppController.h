@@ -336,7 +336,7 @@ public:
     // "count"), and what a key tapped does to the text shown: {text,
     // replacing, action: "none" | "edited" | "next" | "done"}. keypadType is a
     // hardware keyboard's characters while the keypad edits.
-    Q_INVOKABLE QVariantList keypadRows(const QString& mode, bool hasNext) const;
+    Q_INVOKABLE QVariantList keypadRows(const QString& mode, bool hasNext, bool wide = false) const;
     Q_INVOKABLE QVariantMap keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const;
     Q_INVOKABLE QVariantMap keypadType(const QString& text, bool replacing, const QString& characters) const;
     // Where the keypad goes (interact::placeKeypad): `layout` has area,

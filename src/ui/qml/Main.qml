@@ -1097,6 +1097,7 @@ ApplicationWindow {
         // Along the whole bottom of a phone held upright (sideways it goes
         // to a bottom corner, at its own size: interact::placeKeypad).
         docked: Theme.compact && window.height >= window.width
+        wide: Theme.compact && window.width > window.height
         width: docked ? window.width - Theme.safeLeft - Theme.safeRight - 8 : implicitWidth
         onClientChanged: if (client) Qt.callLater(window.placeKeypad)
         onHeightChanged: if (open) Qt.callLater(window.placeKeypad)
@@ -1108,7 +1109,11 @@ ApplicationWindow {
         const client = keypad.client
         if (!client)
             return
-        const avoid = [topBar, createPanel, viewPanel, axisTriad, statusColumn, modelButtonPanel, viewButtonPanel]
+        // (A phone held sideways: any bottom corner reaches the tool strip and
+        // the hint above it, which are not needed while typing; the keypad
+        // keeps off the buttons of the top row and down the right side.)
+        const avoid = keypad.wide ? [topBar, viewPanel, axisTriad, modelButtonPanel, viewButtonPanel]
+                                  : [topBar, createPanel, viewPanel, axisTriad, statusColumn, modelButtonPanel, viewButtonPanel]
         if (client.name !== "parameter")
             avoid.push(historyPanel)
         if (client.name !== "valueChip")

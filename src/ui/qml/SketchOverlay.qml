@@ -138,6 +138,11 @@ Item {
         display: () => {
             const input = overlay.focusedInput()
             return overlay.typing.length > 0 ? overlay.typing : input ? input.text : ""
+        },
+        // The live values show only numbers: the display line names the one typed.
+        displayName: () => {
+            const input = overlay.focusedInput()
+            return input && input.name ? input.name : ""
         }
     })
     // A live value tapped: the keypad types into it.
@@ -576,10 +581,14 @@ Item {
                 x += Math.max(Theme.insetLeft, pad.x - width - 8) - e.x
         }
         function close() {
+            // The keypad handed on to a live value tapped while this was open
+            // (typeIntoInput): the keys stay with the keypad, not the view.
+            const handedOn = overlay.keypad && overlay.keypad.open && !overlay.keypad.serves("dimension")
             if (overlay.keypad)
                 overlay.keypad.detach(keypadClient)
             visible = false
-            overlay.finished()
+            if (!handedOn)
+                overlay.finished()
         }
         Keys.onReturnPressed: apply()
         Keys.onEnterPressed: apply()

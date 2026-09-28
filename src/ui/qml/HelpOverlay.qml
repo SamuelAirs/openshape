@@ -216,7 +216,7 @@ Rectangle {
                             ["Tangent arc", "Click the free end of a line or arc, then where the arc ends (or type a radius); it keeps going from there until Esc",
                              "Tap the free end of a line or arc, then where the arc ends; it keeps going until you tap Tangent arc again"],
                             ["Exact size while drawing", "Type, Tab to the next value, Enter",
-                             "Tap the first corner, then a live value (W, H, L, Ø): type it on the keypad, Next for the next one, ✓ draws it"],
+                             "Tap the first corner, then a live size (the width, height, length or diameter): the keypad names it; type it, Next for the next one, ✓ draws it"],
                             ["Stop drawing lines", "Right-click or Esc (again: leave the tool)", "Tap the Line tool again"],
                             ["Change a dimension", "Click its label", "Tap its label and type it on the keypad"],
                             ["Angle", "Select two lines → Angle; click the ° label to type a new one", "Select two lines → Angle; tap the ° label to type a new one"],

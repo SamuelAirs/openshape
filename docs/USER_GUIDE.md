@@ -149,10 +149,13 @@ parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
 - On an **iPhone** the keypad sits along the bottom and the value box moves
   to the top; the view shifts so that what you selected stays in sight
   between them.
+  Held sideways, the keypad is wider and lower, in a bottom corner below
+  the buttons along the top.
 - On an **iPad** the keypad opens beside the value box, away from what you
   selected and from the other controls.
-- The keypad also types a sketch's values: while drawing, tap the live
-  value (**W**, **H**, **L**, **Ø**) to type it; tap a dimension's label to
+- The keypad also types a sketch's values: while drawing, tap a live
+  size (the width, height, length or diameter) to type it: the keypad's
+  display line says which one it types; tap a dimension's label to
   change it. And it types the numbers of a step in the Model panel.
 - A **hardware keyboard** (an iPad keyboard case) still types into the
   value while the keypad is open. The Text tool's words use the system

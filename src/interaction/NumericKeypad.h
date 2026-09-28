@@ -34,6 +34,10 @@ const char* keypadModeName(KeypadMode mode); // the inverse
 // for a polygon's sides and a pattern's count, degrees for a circular
 // pattern's angle, a length for everything else.
 KeypadMode keypadModeForSketchInput(std::string_view inputKey);
+// What a sketch's live value is, in words ("Width", "Diameter"): the
+// keypad's display line names the value it types, since the live values
+// on the sketch show only numbers.
+std::string sketchInputName(std::string_view inputKey);
 
 struct KeypadKey {
     std::string id;    // what pressKeypadKey takes: "0".."9", ".", "+", "-", "*", "/", "(", ")",
@@ -42,11 +46,15 @@ struct KeypadKey {
     int span = 1;      // columns it takes
     bool accent = false;
 };
-// The keys, row by row, kKeypadColumns wide. `hasNext`: the value has a
-// next one (a rectangle's height after its width, a hole's depth after its
-// diameter): a Next key.
+// The keys, row by row, keypadColumns(mode, wide) wide. `hasNext`: the
+// value has a next one (a rectangle's height after its width, a hole's
+// depth after its diameter): a Next key. `wide`: a phone held sideways,
+// where a keypad five rows tall would reach over the top row of controls:
+// the units, C and backspace go into two more columns, four rows in all.
 constexpr int kKeypadColumns = 5;
-std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext);
+constexpr int kKeypadWideColumns = 7;
+int keypadColumns(KeypadMode mode, bool wide);
+std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext, bool wide = false);
 
 struct KeypadState {
     std::string text;
@@ -109,8 +117,10 @@ inline constexpr double kKeypadKeepClearMargin = 20;
 
 // A phone (compact): docked along the bottom, the value chip is at the top
 // while a value is typed there; held sideways (the area wider than high), in
-// the bottom corner away from the value box instead (the other one when
-// that one reaches over it). Larger windows (an iPad): beside the value
+// the bottom corner away from the value box instead, else the other, else
+// along the bottom just beside a control - the first that covers neither the
+// value box nor a control; else the first off the value box that covers the
+// fewest controls (TD-91). Larger windows (an iPad): beside the value
 // box, below it, above it, right of it or left of it (centered on that side,
 // else flush with either end), else in a corner of the
 // area, the first that covers neither the value box, nor a control, nor the

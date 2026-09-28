@@ -10,6 +10,7 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Tessellation.h"
 #include "interaction/Manipulator.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/OverlayPlacement.h"
 #include "sketch/SketchEdit.h"
 
@@ -1198,7 +1199,7 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
         if (!parsed.millimeters)
             return parsed.error;
         if (*parsed.millimeters <= 0)
-            return in.label + " must be greater than zero.";
+            return sketchInputName(key) + " must be greater than zero."; // "Width", not "W"
         in.locked = true;
         in.value = *parsed.millimeters;
         if (isOffsetting())

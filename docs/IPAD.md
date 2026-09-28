@@ -287,7 +287,7 @@ relinking.
    rectangle and a circle with a finger: the live width / height /
    diameter show above the finger, not under it.
 13. The keypad elsewhere: in a sketch, tap the first corner of a rectangle,
-   then its live **W**: the keypad shows what you type; `40`, **Next**,
+   then its live width: the keypad shows "Width" and what you type; `40`, **Next**,
    `25`, ✓ draws a 40 × 25 rectangle. Tap its width label: the keypad
    again; `50` ✓. In the Model panel, tap the Box step, then Height:
    `30` ✓. The Hole tool: tap the diameter, **Next** goes to depth, X, Y.
@@ -321,10 +321,12 @@ margins (BUILDING.md).
 7. Sketch: the Draw / Edit tools are in the bottom strip; draw a rectangle
    and a circle, tap a dimension to change it (the keypad; the dimension's
    field moves above it), **Finish sketch**, extrude. Tap a rectangle's
-   first corner, then its live **W**: type `12`, **Next**, `8`, ✓.
+   first corner, then its live width (the keypad says "Width"): type `12`, **Next**, `8`, ✓.
 8. Turn the phone to landscape and back, in the middle of an operation: the
    layout follows at once, nothing overlaps (in landscape the Dynamic Island
-   is on the left or right: no button sits under it).
+   is on the left or right: no button sits under it). In landscape, tap a
+   value: the keypad is four rows high in a bottom corner, below File,
+   Model and **Finish sketch**.
 9. The hint line under the model is one short line: tap it to read all of it.
 10. **?** opens the help card: it talks about taps and two-finger gestures
    (no mouse or keyboard terms); File → Preferences and About fit the

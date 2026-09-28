@@ -202,7 +202,7 @@ TEST(TouchWording, KnownSentencesGetTouchVersions)
               "Tap a face to push/pull, an edge to round it \xC2\xB7 double-tap selects the body \xC2\xB7 "
               "drag to orbit \xC2\xB7 two fingers pan, pinch zooms");
     EXPECT_EQ(touchWording("Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line"),
-              "Tap the next point, or tap L to type a length \xC2\xB7 tap Line again to end the line");
+              "Tap the next point, or tap the length to type it \xC2\xB7 tap Line again to end the line");
     EXPECT_EQ(touchWording("Enter to apply \xC2\xB7 Esc to cancel \xC2\xB7 click elsewhere to apply and continue"),
               "\xE2\x9C\x93 applies \xC2\xB7 \xE2\x9C\x95 cancels \xC2\xB7 tap elsewhere to apply and continue");
     // Texts written for both say it once.

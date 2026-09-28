@@ -506,9 +506,12 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("x"), label.screen.x);
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
-        // A live value's keypad keys (NumericKeypad.qml mode()).
-        if (label.kind == interact::SketchLabel::Kind::Input)
+        // A live value's keypad keys (NumericKeypad.qml mode()) and its name
+        // in words for the keypad's display line.
+        if (label.kind == interact::SketchLabel::Kind::Input) {
             map.insert(QStringLiteral("keypadMode"), QString::fromLatin1(interact::keypadModeName(interact::keypadModeForSketchInput(label.key))));
+            map.insert(QStringLiteral("name"), q(interact::sketchInputName(label.key)));
+        }
         map.insert(QStringLiteral("locked"), label.locked);
         map.insert(QStringLiteral("selected"), label.selected);
         map.insert(QStringLiteral("hot"), label.hot);
@@ -1119,11 +1122,11 @@ QVariantMap keypadResultMap(const interact::KeypadResult& result)
 }
 } // namespace
 
-QVariantList AppController::keypadRows(const QString& mode, bool hasNext) const
+QVariantList AppController::keypadRows(const QString& mode, bool hasNext, bool wide) const
 {
     QVariantList rows;
     const auto keypadMode = interact::keypadModeFromString(mode.toStdString()).value_or(interact::KeypadMode::Length);
-    for (const auto& row : interact::keypadLayout(keypadMode, hasNext)) {
+    for (const auto& row : interact::keypadLayout(keypadMode, hasNext, wide)) {
         QVariantList keys;
         for (const auto& key : row) {
             QVariantMap k;

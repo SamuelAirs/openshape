@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <utility>
 
 namespace os::interact {
 namespace {
@@ -108,16 +109,35 @@ KeypadMode keypadModeForSketchInput(std::string_view inputKey)
     return KeypadMode::Length;
 }
 
-std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext)
+std::string sketchInputName(std::string_view inputKey)
+{
+    static constexpr std::pair<std::string_view, std::string_view> kNames[] = {
+        {"width", "Width"},     {"height", "Height"},    {"diameter", "Diameter"}, {"length", "Length"},
+        {"radius", "Radius"},   {"slot", "Slot width"},  {"size", "Size"},         {"sides", "Sides"},
+        {"offset", "Distance"}, {"spacing", "Spacing"},  {"angle", "Angle"},       {"count", "Count"},
+    };
+    for (const auto& [key, name] : kNames)
+        if (key == inputKey)
+            return std::string(name);
+    return "Value";
+}
+
+int keypadColumns(KeypadMode mode, bool wide)
+{
+    return wide && mode != KeypadMode::Count ? kKeypadWideColumns : kKeypadColumns;
+}
+
+std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext, bool wide)
 {
     const KeypadKey back{"back", "\xE2\x8C\xAB", 1, false};
     const KeypadKey clear{"clear", "C", 1, false};
-    auto finish = [hasNext](std::vector<KeypadKey> row) {
+    const int columns = keypadColumns(mode, wide);
+    auto finish = [hasNext, columns](std::vector<KeypadKey> row) {
         // The rest of the last row: Next (when there is a next value) and the check mark.
         int used = 0;
         for (const KeypadKey& key : row)
             used += key.span;
-        const int left = kKeypadColumns - used;
+        const int left = columns - used;
         if (hasNext) {
             row.push_back({"next", "Next", left / 2, false});
             row.push_back({"done", "\xE2\x9C\x93", left - left / 2, true});
@@ -133,6 +153,26 @@ std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext)
             {k("1", "1"), k("2", "2"), k("3", "3"), k("0", "0", 2)},
             finish({}),
         };
+    }
+    if (columns == kKeypadWideColumns) {
+        // Sideways: the digits and the arithmetic as upright, backspace and
+        // C beside them, then the units (a column of them for a length).
+        std::vector<std::vector<KeypadKey>> rows{
+            {k("7", "7"), k("8", "8"), k("9", "9"), k("(", "("), k(")", ")"), back, clear},
+            {k("4", "4"), k("5", "5"), k("6", "6"), k("*", "\xC3\x97"), k("/", "\xC3\xB7")},
+            {k("1", "1"), k("2", "2"), k("3", "3"), k("+", "+"), k("-", "\xE2\x88\x92")},
+        };
+        if (mode == KeypadMode::Angle) {
+            rows[1].push_back(k("deg", std::string(kDegree), 2));
+            rows[2].push_back(k(".", ".", 2));
+        } else {
+            rows[1].push_back(k("mm", "mm"));
+            rows[1].push_back(k("cm", "cm"));
+            rows[2].push_back(k(".", "."));
+            rows[2].push_back(k("in", "in"));
+        }
+        rows.push_back(finish({k("0", "0", 2)}));
+        return rows;
     }
     std::vector<std::vector<KeypadKey>> rows{
         {k("7", "7"), k("8", "8"), k("9", "9"), k("(", "("), k(")", ")")},
@@ -239,10 +279,44 @@ KeypadPlacement placeKeypad(const KeypadPlacementInput& in)
         // side away from the value box (the Model panel is on the right).
         const Vec2 leftCorner{area.left, area.bottom - h}, rightCorner{area.right - w, area.bottom - h};
         const bool leftFirst = t.center().x > area.center().x;
-        for (const Vec2 corner : {leftFirst ? leftCorner : rightCorner, leftFirst ? rightCorner : leftCorner})
-            if (!ScreenRect::at(corner, in.size).intersects(t.inflated(kKeypadGap - 1)))
-                return {corner, true, true};
-        return {leftFirst ? leftCorner : rightCorner, true, false};
+        const ScreenRect targetZone = t.inflated(kKeypadGap - 1);
+        const auto covered = [&](const ScreenRect& r) {
+            int count = 0;
+            for (const ScreenRect& control : in.avoid)
+                if (control.width() > 0 && control.height() > 0 && r.intersects(control))
+                    ++count;
+            return count;
+        };
+        // Each corner, then along the bottom just beside each control (off
+        // the Model and View buttons down the right side, say).
+        std::vector<Vec2> candidates{leftFirst ? leftCorner : rightCorner, leftFirst ? rightCorner : leftCorner};
+        for (const ScreenRect& control : in.avoid) {
+            if (control.width() <= 0 || control.height() <= 0)
+                continue;
+            for (const double x : {control.left - kKeypadGap - w, control.right + kKeypadGap})
+                if (x >= area.left && x + w <= area.right)
+                    candidates.push_back({x, area.bottom - h});
+        }
+        for (const Vec2& p : candidates) {
+            const ScreenRect r = ScreenRect::at(p, in.size);
+            if (!r.intersects(targetZone) && covered(r) == 0)
+                return {p, true, true};
+        }
+        // Off the value box, covering as few controls as can be.
+        std::optional<Vec2> best;
+        int fewest = 0;
+        for (const Vec2& p : candidates) {
+            const ScreenRect r = ScreenRect::at(p, in.size);
+            if (r.intersects(targetZone))
+                continue;
+            if (const int n = covered(r); !best || n < fewest) {
+                best = p;
+                fewest = n;
+            }
+        }
+        if (best)
+            return {*best, true, false};
+        return {candidates.front(), true, false};
     }
     if (in.compact)
         return docked;

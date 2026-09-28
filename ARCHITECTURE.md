@@ -977,9 +977,10 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   dimensions are applied only on Enter / ✓, so they never previewed per
   key. Tests: `test_typing_pause.cpp` (a test clock; worker jobs counted).
 - **The numeric keypad** (touch; `interaction/NumericKeypad`, Qt-free, and
-  `ui/qml/NumericKeypad.qml`): `keypadLayout(mode, hasNext)` gives the keys
+  `ui/qml/NumericKeypad.qml`): `keypadLayout(mode, hasNext, wide)` gives the keys
   (5 columns: digits, `.`, `+ − × ÷`, parentheses, mm / cm / in or °, ⌫,
-  C, Next, ✓; digits only for a count), `pressKeypadKey(state, key, mode)`
+  C, Next, ✓; digits only for a count; `wide`, a phone held sideways: 7
+  columns and 4 rows, so it fits below the top row of controls), `pressKeypadKey(state, key, mode)`
   edits the text (a unit replaces the unit the text ends with; ⌫ takes a
   whole unit, never leaving `25m`; the value shown selected is replaced by
   the first key) and `typeIntoKeypad` adds a hardware keyboard's
@@ -996,13 +997,22 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   a tap on one (`AppController.focusSketchInput`) attaches a client that
   gives the keypad itself the focus (keys go to `SketchOverlay.handleKey`;
   it closes when the focus goes, e.g. a tap in the view) and shows the
-  typed text in a display line; its keys follow the live value
+  typed text in a display line, named (`sketchLabels[].name` from
+  `sketchInputName`: "Width"; the live values show only numbers, and the
+  touch hints say "tap the width or height"); its keys follow the live value
   (`sketchLabels[].keypadMode` from `keypadModeForSketchInput`: a count
-  for sides and a pattern's count, degrees for a pattern's angle).
+  for sides and a pattern's count, degrees for a pattern's angle, which
+  takes the value box's arithmetic, as do angle dimensions: `parseAngle`).
+  A dimension's field closing because a live value took the keypad
+  (`typeIntoInput`) leaves the focus with the keypad.
   On iOS a read-only field gets Qt's `QIOSTextResponder`, a plain
   `UIResponder` without `UIKeyInput`, so no keyboard shows (Qt 6.11
   `qiosinputcontext.mm`). `placeKeypad` (pure): docked along the
-  bottom in a compact window (the chip docks at the top while typing, and
+  bottom in a compact window held upright; held sideways, in a bottom
+  corner (away from the value box, else the other, else along the bottom
+  beside a control), off the value box and the top row's buttons (the tool
+  strip and the hint are not avoided there), else off the value box
+  covering the fewest controls (the chip docks at the top while typing, and
   `InteractionController::revealKeepClear(region)` pans, zooming out if
   needed, so the keep-clear rectangle lies between them); otherwise beside
   the value box (below, above, right, left; centered on that side, then
@@ -1413,8 +1423,14 @@ them on a hidden menu separator after the Open Recent sub-menu).
   and the controls; 1, 0, 0 tapped quickly previews nothing until ✓, which
   makes the box 100 mm high; a hardware keyboard types 25 + Enter into the
   open keypad's field; the Model panel's Box Height 30 from the keypad; a
-  rectangle's live W 12, Next, H 8, ✓, then its width dimension 15, the
-  keypad clear of the rectangle on the iPad); `appfolder`
+  rectangle's live width 12 (the keypad's display names it), Next, height 8, ✓, then its width dimension 15, the
+  keypad clear of the rectangle on the iPad; a second rectangle's width
+  dimension tapped while it is drawn, then its live width: the keypad
+  stays, 5 Next 5 ✓; a polygon's sides on the count keypad (no point,
+  units or arithmetic), 8 Next 20 ✓: eight sides; `(12.5*8)/2+5-5` with
+  the decimal point; on the iPad Rotate 45 with the ° key turns the block
+  (20√2 across); at 874x402 the four-row keypad below the top row of
+  controls); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
   touch layout); `copies` (Mirror and Pattern clicked on a box off the
