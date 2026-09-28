@@ -529,7 +529,9 @@ docs/LICENSING.md, "The iOS app and the App Store"). The pieces:
   `licenses_check`, 69 checks; also the first step of `ipad.yml`),
   `python scripts/licenses/licenses.py self-test` (ctest
   `licenses_selftest`, 20 checks) and `bash scripts/ios/test-sources.sh`
-  (ctest `ios_sources_scripts`, 13 checks, no downloads).
+  (ctest `ios_sources_scripts`, 16 checks, no downloads; it also covers
+  `scripts/ios/released-pins.sh`, which `ipad.yml` uses to warn while no
+  release tag has the current pins).
 
 After changing a version in `sources.txt` (or `components.json`, or one of
 the repository's license files the app shows: `LICENSE`,
@@ -577,6 +579,12 @@ Apple Developer Program for a year).
    tar -xf OpenShape-0.3.0-ios-sources.tar     # -> ios-sources/
    export OPENSHAPE_SOURCES_DIR=$PWD/ios-sources   # build from these instead of downloading
    ```
+
+   A TestFlight build between releases names a commit instead: `git clone
+   https://github.com/SamuelAirs/openshape && git -C openshape checkout
+   <commit>`, then `scripts/ios/mirror-sources.sh ios-sources` downloads
+   and checks the archives that commit's `scripts/ios/sources.txt` pins
+   (the release whose `sources.txt` is the same has copies of them).
 
 2. **Open CASCADE, FreeType, libzip** (and the header-only json, Eigen):
 

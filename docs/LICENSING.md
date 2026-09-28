@@ -358,7 +358,7 @@ copyright © 2026 The FreeType Project").
   (the owner's public TestFlight beta, docs/IPAD.md 1b), so "only tag
   builds go to review" is a rule of the release steps below, not enforced
   by Apple; each `main` run warns when no release tag has its library pins
-  yet (`scripts/ios/sources.txt` compared with every tag's).
+  yet (`scripts/ios/released-pins.sh`).
 - **Custom EULA** proposal: [EULA.md](EULA.md).
 
 ### Releasing an App Store (or public beta) version

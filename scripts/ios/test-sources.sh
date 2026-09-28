@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-# Checks fetch-source.sh and mirror-sources.sh without downloading
+# Checks fetch-source.sh, mirror-sources.sh and released-pins.sh without downloading
 # (ctest: ios_sources_scripts): made-up archives, pinned in a made-up
 # sources.txt, are taken from OPENSHAPE_SOURCES_DIR:
 #   - an archive with the pinned SHA-256 is copied as <name>-<version>.<ext>,
@@ -13,10 +13,12 @@
 #   - mirror-sources.sh copies every pinned archive, writes README.txt,
 #     sources.txt and SOURCES-SHA256SUMS.txt (which sha256sum -c accepts),
 #     and names the tag it was given;
+#   - released-pins.sh finds the release tag with the checkout's pins (in a
+#     made-up git repository), and none once they change;
 #   - the real sources.txt pins every library build-deps.sh fetches.
 # Prints [PASS]/[FAIL] lines; exits with the number of failures.
 #
-# Usage (needs bash, tar, gzip, awk, sha256sum or shasum): scripts/ios/test-sources.sh
+# Usage (needs bash, git, tar, gzip, awk, sha256sum or shasum): scripts/ios/test-sources.sh
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -90,8 +92,29 @@ OPENSHAPE_IOS_SOURCES="$work/sources.txt" bash "$here/mirror-sources.sh" "$work/
 [ $? -ne 0 ] && [ ! -e "$work/mirror2/SOURCES-SHA256SUMS.txt" ]
 result $? "mirror-sources: a bad pin fails the mirror before its checksums are written"
 
-# The real pins cover what build-deps.sh fetches.
+# released-pins.sh: which release tag has this checkout's pins.
 unset OPENSHAPE_IOS_SOURCES OPENSHAPE_SOURCES_DIR
+repo="$work/repo"
+mkdir -p "$repo/scripts/ios"
+git_q() { git -C "$repo" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false -c tag.gpgsign=false "$@" >/dev/null 2>&1; }
+git_q init -q
+echo "old readme" > "$repo/README"
+git_q add README && git_q commit -q -m "before the pins" && git_q tag v0.1.0
+cp "$work/good.txt" "$repo/scripts/ios/sources.txt"
+git_q add scripts && git_q commit -q -m pins && git_q tag -a v0.2.0-beta1 -m beta
+out=$(bash "$here/released-pins.sh" "$repo")
+[ $? -eq 0 ] && [ "$out" = "v0.2.0-beta1" ]
+result $? "released-pins: names the release tag with the same pins ($out)"
+echo "gamma 1.0 $alpha_sha https://example.invalid/gamma-1.0.tar.gz" >> "$repo/scripts/ios/sources.txt"
+out=$(bash "$here/released-pins.sh" "$repo")
+[ $? -eq 1 ] && [ -z "$out" ]
+result $? "released-pins: changed pins are on no release (a tag without sources.txt never matches)"
+git_q commit -q -a -m "new pins" && git_q tag v0.2.0
+out=$(bash "$here/released-pins.sh" "$repo")
+[ $? -eq 0 ] && [ "$out" = "v0.2.0" ]
+result $? "released-pins: a new tag carries them ($out)"
+
+# The real pins cover what build-deps.sh fetches.
 missing=""
 for name in $(sed -n 's/^fetch \([a-z0-9]*\) .*/\1/p' "$here/build-deps.sh"); do
     awk -v n="$name" '$1 == n { found = 1 } END { exit !found }' "$here/sources.txt" || missing="$missing $name"

@@ -64,10 +64,7 @@ jobs:
           # (release.yml attaches the pinned archives). Warn when no release
           # tag has these pins yet, so the next beta gets one (docs/LICENSING.md).
           git fetch --quiet --depth=1 origin '+refs/tags/v*:refs/tags/v*' || true
-          same=""
-          for tag in $(git tag --list 'v*' --sort=-creatordate); do
-            if git show "$tag:scripts/ios/sources.txt" 2>/dev/null | cmp -s - scripts/ios/sources.txt; then same=$tag; break; fi
-          done
+          same=$(bash scripts/ios/released-pins.sh || true)
           if [ -n "$same" ]; then
             echo "::notice title=iOS sources::the pinned library sources are those of release $same"
           else
