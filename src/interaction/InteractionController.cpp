@@ -420,8 +420,13 @@ void InteractionController::pointerPress(const PointerEvent& event)
         return;
     // Only a left click, a tap or the pen selects or acts: the value editor
     // keeps clear of that press (keepClearRect).
-    if (event.button == PointerButton::Left)
+    if (event.button == PointerButton::Left) {
         notePress(event.position);
+        // What was selected before this press, for a double-click / double-tap.
+        pressMemos_[0] = std::move(pressMemos_[1]);
+        pressMemos_[1] = selectionMemo(event.position);
+        latestPressReleased_ = false;
+    }
 
     if (session_) {
         if (session_->pointerPress(event, camera_)) {
@@ -497,6 +502,7 @@ void InteractionController::grabPendingRing()
     drag_.mode = DragMode::Manipulator;
     drag_.ringHandle = operation_->ring(ring);
     drag_.ringHandle.beginDrag(camera_, drag_.press.position, operation_->value() * kPi / 180.0);
+    drag_.handleMoved = true; // grabbed past the drag threshold: a drag, not a tap
     hover_ = {};
     hoveredHandle_ = -1;
     hoveredRing_ = -1;
@@ -523,9 +529,13 @@ int InteractionController::ringAt(Vec2 screen, PointerDevice device) const
 
 int InteractionController::handleAt(Vec2 screen, PointerDevice device) const
 {
+    return handleAt(screen, InputProfile::forDevice(device).handleTolerance);
+}
+
+int InteractionController::handleAt(Vec2 screen, double tolerance) const
+{
     if (!operation_)
         return -1;
-    const double tolerance = InputProfile::forDevice(device).handleTolerance;
     int best = -1;
     double bestDistance = 1e300;
     for (int i = 0; i < operation_->handleCount(); ++i) {
@@ -612,6 +622,15 @@ void InteractionController::pointerMove(const PointerEvent& event)
                 notifyState();
             }
         } else if (operation_) {
+            // A finger or pen wobbles a few pixels on a tap: an arrow under
+            // a tap (e.g. the first tap of a double-tap on the body behind
+            // it) must not nudge the value. The drag counts from the press
+            // once it goes past the threshold, so nothing is lost.
+            if (drag_.press.device != PointerDevice::Mouse && !drag_.handleMoved) {
+                if ((event.position - drag_.press.position).length() < profile.dragThreshold)
+                    break;
+                drag_.handleMoved = true;
+            }
             const double offset = drag_.handle.dragTo(camera_, event.position);
             double value = operation_->valueFromOffset(offset);
             if (!event.modifiers.alt)
@@ -634,8 +653,10 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
     const int pendingRing = mode == DragMode::Pending ? drag_.ring : -1;
+    const bool doubleClicked = drag_.doubleClicked;
     drag_.mode = DragMode::None;
     drag_.ring = -1;
+    latestPressReleased_ = true;
     if (press.device == PointerDevice::Touch && penMode_) {
         notifyView(); // a finger only navigated (or merely tapped)
         return;
@@ -669,16 +690,41 @@ void InteractionController::pointerRelease(const PointerEvent& event)
                             return face && face->hasAxis();
                         }());
     }
-    if (pendingRing >= 0 && operation_ && !axisUnderRing) {
+    if (doubleClicked && mode == DragMode::Pending) {
+        // The double-click this press was part of has selected: no click.
+    } else if (pendingRing >= 0 && operation_ && !axisUnderRing) {
         operation_->setActiveHandle(pendingRing); // clicking a ring makes it the active one
         notifyState();
-    } else if (mode == DragMode::Pending && press.button == PointerButton::Left)
+    } else if ((mode == DragMode::Pending && press.button == PointerButton::Left)
+               || (mode == DragMode::Manipulator && tapBesideHandle(press))) {
         click(press);
-    else if (mode == DragMode::Manipulator)
+        pressMemos_[1].toolPick = clickPickedForTool_;
+    } else if (mode == DragMode::Manipulator)
         notifyState();
     if (event.device == PointerDevice::Mouse)
         updateHover(event);
     notifyView();
+}
+
+bool InteractionController::tapBesideHandle(const PointerEvent& press) const
+{
+    // A finger's grab zone around an arrow is wide (28 px past the head's
+    // radius, so a drag starts easily): on a phone the Move arrows of one
+    // body reach over the next. A tap (no drag) in the outer part of that
+    // zone, on a body that is not selected, is a tap on that body (it adds
+    // it, as a tap there does); only a tap within 8 px chooses the arrow.
+    constexpr double kOnArrowPx = 8;
+    if (press.device == PointerDevice::Mouse || press.button != PointerButton::Left || drag_.handleMoved || !operation_
+        || !selection_.allOfKind(sel::SelectionKind::Body))
+        return false;
+    const InputProfile profile = InputProfile::forDevice(press.device);
+    if (handleAt(press.position, std::min(kOnArrowPx, profile.handleTolerance)) >= 0)
+        return false; // on the arrow itself
+    const sel::PickResult hit = pickAt(press.position, profile);
+    if (hit.kind != sel::PickKind::Face && hit.kind != sel::PickKind::Edge)
+        return false;
+    return std::none_of(selection_.items().begin(), selection_.items().end(),
+                        [&](const sel::SelectionItem& item) { return item.bodyId == hit.bodyId; });
 }
 
 void InteractionController::pointerDoubleClick(const PointerEvent& event)
@@ -698,27 +744,108 @@ void InteractionController::pointerDoubleClick(const PointerEvent& event)
     if (left)
         notePress(event.position);
     const PressHandling handling(pressHandling_, left);
-    const auto hit = pickAt(event.position, InputProfile::forDevice(event.device));
+    const InputProfile profile = InputProfile::forDevice(event.device);
+    const PressMemo memo = doubleClickMemo(event);
+    auto hit = pickAt(event.position, profile);
+    // Two quick taps on two different bodies (e.g. adding one, then its
+    // neighbour, while bodies are selected) are two taps: each one's click stands.
+    const auto onBody = [](const sel::PickResult& pick) {
+        return pick.kind == sel::PickKind::Face || pick.kind == sel::PickKind::Edge;
+    };
+    if (onBody(hit) && (memo.position - event.position).length() > 1e-9)
+        if (const sel::PickResult first = pickAt(memo.position, profile); onBody(first) && first.bodyId != hit.bodyId)
+            return;
+    // A finger's second tap may land just off the body (and have cleared the
+    // selection): the double-tap still means the body under the first tap.
+    if (!hit.hit() && memo.valid && event.device != PointerDevice::Mouse)
+        hit = pickAt(memo.position, profile);
     if (hit.kind == sel::PickKind::Profile) {
         (void)editSketch(hit.bodyId); // double-click a profile: edit its sketch
         return;
     }
-    if (!hit.hit())
+    if (!hit.hit() || hit.kind == sel::PickKind::Datum || hit.kind == sel::PickKind::OriginAxis)
         return;
-    if (operation_ && operation_->canCommit())
-        return; // never discard a pending value on a double-click
-    if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, hit.bodyId, -1)) {
-        // Shift (or a touch/pen double-tap) adds a second body, e.g. to combine them.
-        const bool additive = event.modifiers.shift || event.modifiers.control
-                           || InputProfile::forDevice(event.device).additiveSelection;
-        if (additive && selection_.allOfKind(sel::SelectionKind::Body))
-            selection_.add(*item);
-        else
-            selection_.set(*item);
-        rebuildOperation();
-        notifyState();
-        notifyView();
+    // A value still pending (typed, or dragged on an arrow the first tap
+    // landed on) is applied, as a tap elsewhere applies it - unless a click
+    // of this double-click was a pick for the tool (Mirror's plane, Align's
+    // target, Rotate's axis, a hole's spot): a single click there never
+    // applies, and neither does a double-click.
+    if (operation_ && operation_->canCommit()) {
+        const bool toolPicked = memo.toolPick || (event.device == PointerDevice::Touch && pressMemos_[1].toolPick);
+        if (toolPicked)
+            return;
+        if (applyBeforeSelecting() == ApplyResult::Refused)
+            return;
+        hit = pickAt(event.position, profile);
+        if (!hit.hit() && memo.valid && event.device != PointerDevice::Mouse)
+            hit = pickAt(memo.position, profile);
+        if (!hit.hit() || hit.kind == sel::PickKind::Profile || hit.kind == sel::PickKind::Datum
+            || hit.kind == sel::PickKind::OriginAxis)
+            return;
     }
+    auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, hit.bodyId, -1);
+    if (!item)
+        return;
+    // The selection from before this double-click's first press: its clicks
+    // (a face picked and toggled, a body a tap added or took out) are undone.
+    // Shift (or a touch/pen double-tap) adds a body to a body selection, e.g.
+    // to combine them, or takes a selected one out again; otherwise the body
+    // replaces whatever was selected (one kind at a time).
+    const bool additive = event.modifiers.shift || event.modifiers.control || profile.additiveSelection;
+    // Qt may deliver the second press before the double-click: its release
+    // must not click again (a plain click on a face would replace the body),
+    // but a drag from it still orbits or pans (an arrow it grabbed belonged
+    // to the operation this selection replaces).
+    drag_.doubleClicked = true;
+    if (drag_.mode == DragMode::Manipulator) {
+        drag_.mode = DragMode::Pending;
+        drag_.ring = -1;
+    }
+    std::vector<sel::SelectionItem> base;
+    if (additive && memo.valid && memo.bodies)
+        for (const Uuid& id : memo.bodyIds)
+            if (const doc::Body* body = document_->body(id); body && body->isVisible())
+                if (auto kept = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, id, -1))
+                    base.push_back(*kept);
+    selection_.clear();
+    for (const auto& kept : base)
+        selection_.add(kept);
+    if (additive)
+        selection_.toggle(*item);
+    else
+        selection_.set(*item);
+    OS_LOG(Debug, Selection) << "double-click: " << selection_.size() << " bod(ies) selected";
+    rebuildOperation();
+    notifyState();
+    notifyView();
+}
+
+InteractionController::PressMemo InteractionController::selectionMemo(Vec2 position) const
+{
+    PressMemo memo;
+    memo.valid = true;
+    memo.position = position;
+    memo.toolPick = false;
+    memo.bodies = selection_.allOfKind(sel::SelectionKind::Body);
+    if (memo.bodies)
+        for (const auto& item : selection_.items())
+            memo.bodyIds.push_back(item.bodyId);
+    return memo;
+}
+
+InteractionController::PressMemo InteractionController::doubleClickMemo(const PointerEvent& event) const
+{
+    // Touch: both taps' presses and releases arrive before the double-tap.
+    // Qt's mouse (and a pen, as mouse events): the double-click either comes
+    // after the second press (still down) or replaces it (the first press
+    // already released).
+    const PressMemo& memo = event.device == PointerDevice::Touch || !latestPressReleased_ ? pressMemos_[0] : pressMemos_[1];
+    // No press of this double-click on record (a double-click delivered on
+    // its own): the selection as it is now.
+    constexpr double kSameSpotPx = 48;
+    if (!memo.valid || (memo.position - event.position).length() > kSameSpotPx)
+        return selectionMemo(event.position);
+    return memo;
 }
 
 void InteractionController::pointerLeave()
@@ -917,6 +1044,8 @@ void InteractionController::click(const PointerEvent& event)
     // still waits for its target gives up, as a tap there does elsewhere
     // (clears the selection). A mouse keeps waiting (a near miss is common).
     const bool tapGivesUp = event.device != PointerDevice::Mouse && !hit.hit();
+    // Until the click reaches the usual path below, the tool takes it.
+    clickPickedForTool_ = true;
     // Axis / Plane tool: faces and edges are its picks; clicking empty space
     // applies it (or, with a finger, gives up while it is incomplete).
     if (auto* construct = dynamic_cast<DatumOperation*>(operation_.get())) {
@@ -1093,6 +1222,7 @@ void InteractionController::click(const PointerEvent& event)
         }
     }
 
+    clickPickedForTool_ = false;
     if (operation_ && operation_->canCommit()) {
         // Clicking anywhere else accepts the pending operation (direct-manipulation
         // convention); then the click selects against the updated geometry.
@@ -1105,7 +1235,15 @@ void InteractionController::click(const PointerEvent& event)
         }
     }
 
-    if (!hit.hit()) {
+    // A finger or pen with bodies selected (Shapr3D): a tap on another body
+    // adds that body, not one of its faces, and a tap on a selected body
+    // takes it out. Tap empty space first to pick a face again.
+    const bool bodyTap = profile.additiveSelection && additive && selection_.allOfKind(sel::SelectionKind::Body)
+                      && (hit.kind == sel::PickKind::Face || hit.kind == sel::PickKind::Edge);
+    if (bodyTap) {
+        if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, hit.bodyId, -1))
+            selection_.toggle(*item);
+    } else if (!hit.hit()) {
         selection_.clear();
     } else if (hit.kind == sel::PickKind::Datum) {
         sel::SelectionItem item;

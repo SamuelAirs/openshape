@@ -50,8 +50,11 @@ public:
     // Thresholds (logical pixels / seconds).
     static constexpr double kTapMovement = 12;     // a tap moves less than this
     static constexpr double kTapDuration = 0.35;   // and lifts within this
+    // A double-tap: the second tap touches down within this long after the
+    // first lifted, this close to it (a finger lands a little elsewhere the
+    // second time, often on another face of the same body).
     static constexpr double kDoubleTapGap = 0.35;
-    static constexpr double kDoubleTapDistance = 24;
+    static constexpr double kDoubleTapDistance = 32;
     static constexpr double kNavigateStart = 10;   // two fingers move this far before navigating
 
 private:

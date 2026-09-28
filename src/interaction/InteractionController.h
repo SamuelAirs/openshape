@@ -526,12 +526,40 @@ private:
         // already moved the arrow) puts them back.
         std::optional<double> valueBefore;
         int handleBefore = 0;
+        bool handleMoved = false;   // a finger's handle or ring drag went past its drag threshold
+        bool doubleClicked = false; // a double-click came during this press: its release does not click
     } drag_;
     // Notes the operation's value and active handle before a manipulator drag.
     void noteValueBeforeDrag();
 
+    // What was selected when each of the last two left presses began, and
+    // where they were: a double-click / double-tap works on the selection
+    // from before its first press (whatever that press's click did - a tap
+    // on a face or a body toggles it - is undone), and falls back to the
+    // first press's spot when the second lands just off the body.
+    struct PressMemo {
+        bool bodies = false;       // the selection was bodies only (and not empty)
+        std::vector<Uuid> bodyIds; // those bodies, in selection order
+        Vec2 position;
+        bool valid = false;
+        bool toolPick = false; // its click was a pick for the tool (Mirror's plane, Rotate's axis, ...)
+    };
+    PressMemo pressMemos_[2];     // [1] the latest press, [0] the one before
+    bool clickPickedForTool_ = false; // the last click() was taken by the tool (not the usual select/apply)
+    bool latestPressReleased_ = true;
+    PressMemo selectionMemo(Vec2 position) const; // the selection now
+    // The memo for a double-click arriving now: touch sends both taps'
+    // presses and releases first; Qt's mouse either replaces the second
+    // press with the double-click or delivers it before the double-click.
+    // Without a press of its own on record, the selection as it is now.
+    PressMemo doubleClickMemo(const PointerEvent& event) const;
+
     // Index of the operation handle under the pointer (tolerance per device), or -1.
     int handleAt(Vec2 screen, PointerDevice device) const;
+    int handleAt(Vec2 screen, double tolerancePx) const;
+    // A finger's or pen's tap on a handle's grab zone that means the body
+    // under it instead (see pointerRelease).
+    bool tapBesideHandle(const PointerEvent& press) const;
     // Index of the rotation ring under the pointer, or -1.
     int ringAt(Vec2 screen, PointerDevice device) const;
     // Starts turning the ring pressed on (drag_.ring) once the pointer moves.

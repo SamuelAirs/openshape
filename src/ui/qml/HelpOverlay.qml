@@ -128,7 +128,7 @@ Rectangle {
                             ["Face or edge", "Click · tap", "Tap"],
                             ["Add to selection", "Shift+click · taps add on touch", "Tap more: taps add"],
                             ["Whole body", "Double-click · double-tap", "Double-tap"],
-                            ["Second body", "Shift+double-click", "Double-tap it too"],
+                            ["Second body", "Shift+double-click", "Double-tap it too (or tap it); double-tap a selected one to take it out"],
                             ["From the Model panel", "Click a body (Shift adds) · hover a step to see it",
                              "Tap a body (taps add) · tap a step to see it and change it (the Model button on a phone)"],
                             ["Clear", "Esc · tap empty space", "Tap empty space"]

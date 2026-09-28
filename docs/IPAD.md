@@ -334,7 +334,13 @@ relinking.
    your palm on the screen while the box shows: it does not move. Draw a
    rectangle and a circle with a finger: the live width / height /
    diameter show above the finger, not under it.
-13. Note anything slow, hard to hit, or missing — with a screenshot
+13. Two or more bodies (your report of 2026-09-27): add two boxes apart
+   from each other, double-tap one, then double-tap the other, at your
+   normal speed and a little sloppily (the second tap on another face):
+   both stay selected and Union / Subtract / Intersect appear. Double-tap
+   one of them again: only it leaves the selection. With a body selected,
+   a single tap on another body adds it too. Also with the Pencil.
+14. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 14. Share to a slicer: File → Export STL: the share sheet opens as a
    popover pointing at **File**; pick the slicer app (the file arrives
@@ -373,8 +379,11 @@ margins (BUILDING.md).
    the projection and the unit; each works and closes the menu.
 5. Box → tap the top face → drag the arrow, or tap the value field: the
    on-screen keyboard must not hide the field; ✓ applies.
-6. Select two bodies (double-tap one, double-tap the other): the actions
-   (Union, Subtract, …) scroll sideways above the tool strip.
+6. Select two bodies (double-tap one, double-tap the other, or tap the
+   other once): the actions (Union, Subtract, …) scroll sideways above the
+   tool strip. Next to each other on the small screen the first body's
+   Move arrows reach over the second: a tap on the second body beside an
+   arrow still adds it. Double-tap a selected body to take it out.
 7. Sketch: the Draw / Edit tools are in the bottom strip; draw a rectangle
    and a circle, tap a dimension to change it, **Finish sketch**, extrude.
 8. Turn the phone to landscape and back, in the middle of an operation: the
