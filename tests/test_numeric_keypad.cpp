@@ -125,6 +125,34 @@ TEST(NumericKeypad, AnglesTakeDegreesAndCountsWholeNumbers)
     EXPECT_FALSE(keypadValue("2.5", KeypadMode::Count, LengthUnit::Millimeter).millimeters.has_value());
 }
 
+// A sketch's live values: which keys the keypad has for each.
+TEST(NumericKeypad, SketchInputsGetTheirKindOfKeys)
+{
+    EXPECT_EQ(keypadModeForSketchInput("sides"), KeypadMode::Count);
+    EXPECT_EQ(keypadModeForSketchInput("count"), KeypadMode::Count);
+    EXPECT_EQ(keypadModeForSketchInput("angle"), KeypadMode::Angle);
+    for (const char* key : {"width", "height", "diameter", "length", "size", "radius", "slot", "offset", "spacing"})
+        EXPECT_EQ(keypadModeForSketchInput(key), KeypadMode::Length) << key;
+    for (KeypadMode mode : {KeypadMode::Length, KeypadMode::Angle, KeypadMode::Count})
+        EXPECT_EQ(keypadModeFromString(keypadModeName(mode)), mode);
+    // A count's keys: digits, backspace, clear, done; no point, units or operators.
+    std::set<std::string> ids;
+    for (const auto& row : keypadLayout(KeypadMode::Count, true))
+        for (const auto& key : row)
+            ids.insert(key.id);
+    for (const char* absent : {".", "+", "mm", "deg", "("})
+        EXPECT_EQ(ids.count(absent), 0u) << absent;
+    const std::set<std::string> angleIds = [] {
+        std::set<std::string> out;
+        for (const auto& row : keypadLayout(KeypadMode::Angle, true))
+            for (const auto& key : row)
+                out.insert(key.id);
+        return out;
+    }();
+    EXPECT_EQ(angleIds.count("deg"), 1u);
+    EXPECT_EQ(angleIds.count("mm"), 0u);
+}
+
 TEST(NumericKeypad, HardwareKeysTypeAsTheyAre)
 {
     // A hardware keyboard while the keypad edits: over the value shown, then after it.

@@ -393,3 +393,50 @@ TEST(TypingPause, SketchTapTakesTheValueTypedJustNow)
     EXPECT_TRUE(h.controller.keyPress(Key::Escape));
     EXPECT_FALSE(h.controller.typingPending());
 }
+
+// A sketch value refused once typing paused keeps its message while the
+// shape is drawn, and loses it when the user moves on: Tab to the next
+// value, or a tap that finishes the shape; the next shape starts without it.
+TEST(TypingPause, SketchRefusalGoesWithTheShape)
+{
+    TypingHarness h(false);
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    SketchSession& session = *h.controller.sketchSession();
+    auto sketchScreen = [&](Vec2 local) { return h.controller.camera().project(session.sketch().plane().toWorld(local)); };
+    auto hover = [&](Vec2 local) {
+        PointerEvent move = TypingHarness::at(sketchScreen(local));
+        move.button = PointerButton::None;
+        h.controller.pointerMove(move);
+    };
+    auto typeRefused = [&] {
+        h.now += 100ms;
+        h.controller.typeValue(InteractionController::TypingTarget::SketchInput, "abc");
+        EXPECT_TRUE(h.pauseOver());
+        EXPECT_FALSE(h.controller.typedValueError().empty()) << "abc is not a length";
+    };
+
+    // Tab: on to the height, the width's refusal goes.
+    h.click(sketchScreen({0, 0}));
+    ASSERT_TRUE(session.isDrawing());
+    hover({12, 7});
+    typeRefused();
+    h.controller.focusNextSketchInput();
+    EXPECT_TRUE(h.controller.typedValueError().empty());
+
+    // A tap that finishes the rectangle: the refusal goes with it.
+    typeRefused();
+    h.click(sketchScreen({12, 7}));
+    EXPECT_FALSE(session.isDrawing());
+    EXPECT_EQ(session.sketch().lines().size(), 4u);
+    EXPECT_TRUE(h.controller.typedValueError().empty());
+    h.click(sketchScreen({30, 30}));
+    ASSERT_TRUE(session.isDrawing());
+    EXPECT_TRUE(h.controller.typedValueError().empty()) << "the next shape starts without the old message";
+
+    // Esc drops the shape and the message.
+    hover({40, 40});
+    typeRefused();
+    EXPECT_TRUE(h.controller.keyPress(Key::Escape));
+    EXPECT_TRUE(h.controller.typedValueError().empty());
+}

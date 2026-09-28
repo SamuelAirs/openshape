@@ -209,13 +209,17 @@ picked file — copy them into OpenShape's folder in the Files app first.
 - No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
 - Typing values: tap the value field for OpenShape's numeric keypad
   (typing without tapping needs a hardware keyboard).
-- Apple Pencil Scribble (handwriting into a field) does not work: Qt's iOS
-  text input (Qt 6.11) does not take part in Scribble (no
-  `UIScribbleInteraction` / `UIIndirectScribbleInteraction` for Qt Quick
-  fields; upstream QTBUG-90932, open), and making it work would mean
-  patching Qt's iOS platform plugin. The value fields are read-only on
+- Apple Pencil Scribble (handwriting into a field) is not expected to work,
+  but has not been tried on a device: Qt 6.11's iOS platform plugin
+  (`qiosinputcontext.mm`, `qiostextresponder.mm`, `quiview.mm`, read on
+  2026-09-27) has no `UIScribbleInteraction` /
+  `UIIndirectScribbleInteraction` code, and a field only gets a text
+  responder once it has the focus; forum threads (Esri Survey123,
+  MerginMaps) report it not working and cite QTBUG-90932 (not read: the
+  Qt bug tracker did not load). Making it work would mean patching Qt's
+  iOS platform plugin. The value fields are read-only on
   touch anyway (the keypad types into them, so the system keyboard stays
-  down); the keypad's keys take Pencil taps. See TD-76.
+  down); the keypad's keys take Pencil taps. See TD-90.
 - Not measured yet: speed and memory with bigger parts.
 
 The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → Logs →
@@ -288,7 +292,7 @@ relinking.
    again; `50` ✓. In the Model panel, tap the Box step, then Height:
    `30` ✓. The Hole tool: tap the diameter, **Next** goes to depth, X, Y.
    Try Apple Pencil handwriting in a value field (Scribble): it is not
-   expected to work (TD-76); tell us if you miss it.
+   expected to work (TD-90); tell us if you miss it.
 14. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 

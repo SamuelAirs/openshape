@@ -967,9 +967,12 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   single-shot `QTimer` calls `advanceTyping()` at `typingDeadline()`), or
   at once when it is confirmed: `flushTyping()` (leaving the field, Tab /
   Next, a press in the view, an action, a commit, `setValueText` /
-  `confirmValueText` for Enter). Esc, cancelling, undo/redo, a new
-  document, a new sketch tool drop it (`dropTyping()`). A refused text's
-  message is `typedValueError()`. The acceptance runner waits for a
+  `confirmValueText` for Enter; Esc in the value box, which leaves the
+  field and keeps the value as before the pause). Cancelling the step,
+  Esc while drawing (the shape goes), undo/redo, a new document, a new
+  sketch tool drop it (`dropTyping()`). A refused text's message is
+  `typedValueError()`; a sketch value's goes with its shape (Tab to the
+  next value, a tap in the view, the shape finished or dropped). The acceptance runner waits for a
   pending pause like for a preview. Model panel values and sketch
   dimensions are applied only on Enter / ✓, so they never previewed per
   key. Tests: `test_typing_pause.cpp` (a test clock; worker jobs counted).
@@ -993,7 +996,12 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   a tap on one (`AppController.focusSketchInput`) attaches a client that
   gives the keypad itself the focus (keys go to `SketchOverlay.handleKey`;
   it closes when the focus goes, e.g. a tap in the view) and shows the
-  typed text in a display line. `placeKeypad` (pure): docked along the
+  typed text in a display line; its keys follow the live value
+  (`sketchLabels[].keypadMode` from `keypadModeForSketchInput`: a count
+  for sides and a pattern's count, degrees for a pattern's angle).
+  On iOS a read-only field gets Qt's `QIOSTextResponder`, a plain
+  `UIResponder` without `UIKeyInput`, so no keyboard shows (Qt 6.11
+  `qiosinputcontext.mm`). `placeKeypad` (pure): docked along the
   bottom in a compact window (the chip docks at the top while typing, and
   `InteractionController::revealKeepClear(region)` pans, zooming out if
   needed, so the keep-clear rectangle lies between them); otherwise beside

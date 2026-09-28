@@ -29,6 +29,11 @@ enum class KeypadMode {
     Count,  // whole numbers only (a pattern's count, a polygon's sides)
 };
 std::optional<KeypadMode> keypadModeFromString(std::string_view name); // "length", "angle", "count"
+const char* keypadModeName(KeypadMode mode); // the inverse
+// The keys for a sketch's live value (SketchSession input keys): a count
+// for a polygon's sides and a pattern's count, degrees for a circular
+// pattern's angle, a length for everything else.
+KeypadMode keypadModeForSketchInput(std::string_view inputKey);
 
 struct KeypadKey {
     std::string id;    // what pressKeypadKey takes: "0".."9", ".", "+", "-", "*", "/", "(", ")",

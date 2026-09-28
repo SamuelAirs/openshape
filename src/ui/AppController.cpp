@@ -506,6 +506,9 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("x"), label.screen.x);
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
+        // A live value's keypad keys (NumericKeypad.qml mode()).
+        if (label.kind == interact::SketchLabel::Kind::Input)
+            map.insert(QStringLiteral("keypadMode"), QString::fromLatin1(interact::keypadModeName(interact::keypadModeForSketchInput(label.key))));
         map.insert(QStringLiteral("locked"), label.locked);
         map.insert(QStringLiteral("selected"), label.selected);
         map.insert(QStringLiteral("hot"), label.hot);
@@ -1100,15 +1103,6 @@ QString AppController::flushTyping()
 {
     typingPause_.stop();
     return q(interaction_->flushTyping());
-}
-
-void AppController::dropTyping()
-{
-    typingPause_.stop();
-    if (!interaction_->typingPending() && interaction_->typedValueError().empty())
-        return;
-    interaction_->dropTyping();
-    emit stateChanged();
 }
 
 namespace {

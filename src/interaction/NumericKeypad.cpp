@@ -89,6 +89,25 @@ std::optional<KeypadMode> keypadModeFromString(std::string_view name)
     return std::nullopt;
 }
 
+const char* keypadModeName(KeypadMode mode)
+{
+    switch (mode) {
+    case KeypadMode::Angle: return "angle";
+    case KeypadMode::Count: return "count";
+    case KeypadMode::Length: break;
+    }
+    return "length";
+}
+
+KeypadMode keypadModeForSketchInput(std::string_view inputKey)
+{
+    if (inputKey == "sides" || inputKey == "count")
+        return KeypadMode::Count;
+    if (inputKey == "angle")
+        return KeypadMode::Angle;
+    return KeypadMode::Length;
+}
+
 std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext)
 {
     const KeypadKey back{"back", "\xE2\x8C\xAB", 1, false};

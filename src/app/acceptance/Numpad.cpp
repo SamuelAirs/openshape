@@ -14,7 +14,9 @@
 // held sideways, 874x402: in a bottom corner, the face beside it). 1, 0, 0
 // tapped quickly previews nothing until the check mark, which makes the box
 // 100 mm high. A hardware keyboard still types into the field (25, Enter).
-// The Model panel's Box step takes a height from the keypad; a rectangle's
+// Clear, parentheses, units, backspace and arithmetic keys make it 50; the
+// Model panel's Box step takes a height from the keypad; on the iPad the
+// Hole tool's Next goes from the diameter to the hole's X; a rectangle's
 // live width and height (Next between them) and then its width dimension
 // are typed on it in a sketch.
 
@@ -296,10 +298,50 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
                 field ? field->property("text").toString() : QString());
         r.key(Qt::Key_Return);
     });
-    steps.push_back([&r, c, s] {
+    steps.push_back([&r, c] {
         const double h = bodyHeight(r);
         r.check(std::abs(h - 25) < 1e-6, c.name + QStringLiteral(": 25 and Enter from the keyboard make it 25 mm high"), AcceptanceRunner::num(h));
         r.check(!keypadShown(r), c.name + QStringLiteral(": Enter puts the keypad away"));
+        r.app().fitAll();
+    });
+    wait(steps, 4);
+    // ---- The other keys: clear, parentheses, units (each replacing the
+    // last), backspace (a whole unit), x, /, + and -: (25*4)/2+5-5 = 50.
+    steps.push_back([&r] { r.touchTap({r.screenPoint(0, 0, 25)}); });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face once more"),
+                r.app().operationTitle());
+        r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the value once more"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(keypadShown(r), c.name + QStringLiteral(": the keypad is up again"));
+        QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+        auto text = [field] { return field ? field->property("text").toString() : QString(); };
+        auto expect = [&r, &c, &text](const QString& want, const QString& what) {
+            r.check(text() == want, c.name + QStringLiteral(": ") + what, text());
+        };
+        tapKeys(r, QStringLiteral("9"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_clear")), c.name + QStringLiteral(": tap C"));
+        expect(QString(), QStringLiteral("C clears the value"));
+        tapKeys(r, QStringLiteral("(25"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_in")), c.name + QStringLiteral(": tap in"));
+        expect(QStringLiteral("(25in"), QStringLiteral("in follows the number"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_mm")), c.name + QStringLiteral(": tap mm"));
+        expect(QStringLiteral("(25mm"), QStringLiteral("mm replaces in"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_cm")), c.name + QStringLiteral(": tap cm"));
+        expect(QStringLiteral("(25cm"), QStringLiteral("cm replaces mm"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_back")), c.name + QStringLiteral(": tap the backspace key"));
+        expect(QStringLiteral("(25"), QStringLiteral("backspace takes the whole unit"));
+        r.check(tapKeys(r, QStringLiteral("*4)/2+5-5")), c.name + QStringLiteral(": tap x 4 ) / 2 + 5 - 5"));
+        expect(QStringLiteral("(25*4)/2+5-5"), QStringLiteral("the whole sum"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the check mark"));
+    });
+    steps.push_back([&r, c, s] {
+        const double h = bodyHeight(r);
+        r.check(std::abs(h - 50) < 1e-6, c.name + QStringLiteral(": (25x4)/2+5-5 makes it 50 mm high"), AcceptanceRunner::num(h));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
         s->height = h;
         if (c.phone())
             r.check(r.clickItem(QStringLiteral("modelPanelButton")), c.name + QStringLiteral(": the Model button"));
@@ -353,6 +395,53 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
             r.check(r.clickItem(QStringLiteral("historyPanelHide")), c.name + QStringLiteral(": close the Model panel"));
     });
     wait(steps, 2);
+    // ---- Next in the value box: the Hole tool's diameter, then the hole's X (iPad).
+    if (!c.phone()) {
+        steps.push_back([&r, s] {
+            r.app().fitAll();
+            s->volume = r.bodyVolume();
+        });
+        wait(steps, 4);
+        steps.push_back([&r, s] { r.touchTap({r.screenPoint(3, -3, s->height + 10)}); });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face for a hole"),
+                    r.app().operationTitle());
+            r.check(tapItem(r, QStringLiteral("tool_hole")), c.name + QStringLiteral(": tap Hole"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, s] { r.touchTap({r.screenPoint(0, 0, s->height + 10)}); });
+        wait(steps, 3);
+        steps.push_back([&r, c] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("Diameter"), c.name + QStringLiteral(": a hole; the value box has its diameter"),
+                    r.app().operationValueLabel());
+            r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the diameter"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            checkKeypad(r, c, QStringLiteral("the Hole tool"));
+            r.check(tapKeys(r, QStringLiteral("6")) && tapItem(r, QStringLiteral("keypadKey_next")),
+                    c.name + QStringLiteral(": tap 6 and the keypad's Next"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            // Through all (the default): no depth; Next goes on to where the hole is.
+            r.check(r.app().operationValueLabel() == QStringLiteral("X from corner"), c.name + QStringLiteral(": Next goes on to the hole's X"),
+                    r.app().operationValueLabel());
+            QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+            r.check(keypadShown(r) && field && field->hasActiveFocus(), c.name + QStringLiteral(": the keypad stays for X"));
+            r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the check mark (X as it is)"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c, s] {
+            // A 6 mm hole through the whole block: pi * 3^2 * its height taken out.
+            const double taken = s->volume - r.bodyVolume();
+            r.check(std::abs(taken - kPi * 9 * (s->height + 10)) < 1e-3, c.name + QStringLiteral(": a hole 6 across, through all"),
+                    AcceptanceRunner::num(taken));
+            r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        });
+        wait(steps, 1);
+    }
     // ---- A sketch: a rectangle's live values, then its width dimension.
     steps.push_back([&r] {
         r.app().newDocument();

@@ -331,8 +331,6 @@ public:
     Q_INVOKABLE void typeSketchValue(const QString& text);
     // Takes the value typed now (leaving the field); returns why it was refused, or "".
     Q_INVOKABLE QString flushTyping();
-    // Forgets the value typed (Esc).
-    Q_INVOKABLE void dropTyping();
     // The numeric keypad (touch; interact::NumericKeypad): its keys, row by
     // row ({id, label, span, accent}) for a mode ("length", "angle",
     // "count"), and what a key tapped does to the text shown: {text,

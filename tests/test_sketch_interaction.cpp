@@ -10,10 +10,14 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/TouchGestures.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+
+#include <set>
+#include <string>
 
 using namespace os;
 using namespace os::interact;
@@ -1874,6 +1878,17 @@ TEST(SketchInteraction, LinearAndCircularPatternOfAHole)
     EXPECT_TRUE(h.session().patternLayout().circular);
     EXPECT_EQ(h.session().counter()->value, 6);
     h.click(h.sketchScreen({0, 0})); // the center: the origin
+    // On touch the live Angle and Count open the keypad with degrees and
+    // with whole numbers only (keypadModeForSketchInput).
+    std::set<std::string> inputs;
+    for (const auto& label : h.session().labels(h.controller.camera())) {
+        if (label.kind != SketchLabel::Kind::Input)
+            continue;
+        inputs.insert(label.key);
+        const KeypadMode expected = label.key == "count" ? KeypadMode::Count : KeypadMode::Angle;
+        EXPECT_EQ(keypadModeForSketchInput(label.key), expected) << label.key;
+    }
+    EXPECT_EQ(inputs, (std::set<std::string>{"angle", "count"}));
     h.type("180");
     h.session().focusNextInput();
     h.type("3");

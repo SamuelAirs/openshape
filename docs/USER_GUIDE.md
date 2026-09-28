@@ -132,7 +132,9 @@ display unit (**mm** or **in**, bottom right). Angles are in degrees.
 not show the model at 1 mm, then 10 mm, then 100 mm: the preview follows
 once you pause (about 0.7 s), or at once when you confirm the value with
 `Enter` or **✓**, `Tab` or **Next**, or by clicking or tapping somewhere
-else. `Esc` forgets what you typed. (Sketch values while drawing wait the
+else. In the value box, `Esc` leaves the box and keeps what you typed (the
+preview shows it); `Esc` again, or **✕**, cancels the step. While drawing
+in a sketch, `Esc` drops the shape with the value typed for it. (Sketch values while drawing wait the
 same way. Model panel values and sketch dimensions change only when you
 confirm them.)
 
@@ -155,8 +157,9 @@ parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
 - A **hardware keyboard** (an iPad keyboard case) still types into the
   value while the keypad is open. The Text tool's words use the system
   keyboard.
-- Apple Pencil handwriting (Scribble) does not work in OpenShape's fields
-  yet; tap the keypad's keys with the Pencil instead.
+- Apple Pencil handwriting (Scribble) is not expected to work in
+  OpenShape's fields (not yet tried on a device); tap the keypad's keys
+  with the Pencil instead.
 
 ---
 

@@ -428,6 +428,10 @@ void InteractionController::pointerPress(const PointerEvent& event)
         notePress(event.position);
 
     if (session_) {
+        // The tap places the point itself: a refusal of what was typed
+        // before is no longer about the shape being drawn.
+        if (typingTarget_ == TypingTarget::SketchInput)
+            typedValueError_.clear();
         if (session_->pointerPress(event, camera_)) {
             drag_.mode = DragMode::Sketch;
             notifyState();
@@ -3654,6 +3658,7 @@ void InteractionController::focusNextSketchInput()
     if (!session_)
         return;
     (void)flushTyping(); // the value typed stays with the input it was typed into
+    typedValueError_.clear(); // a refusal was about the value left behind
     session_->focusNextInput();
     notifyState();
     notifyView();
@@ -3664,6 +3669,7 @@ bool InteractionController::focusSketchInput(const std::string& key)
     if (!session_)
         return false;
     (void)flushTyping(); // the value typed stays with the input it was typed into
+    typedValueError_.clear(); // a refusal was about the value left behind
     const bool focused = session_->focusInput(key);
     notifyState();
     notifyView();
@@ -4646,6 +4652,10 @@ void InteractionController::notifyState()
     notePressSelection();
     // No operation, no value editor: the next one chooses its spot afresh
     // (even on the same selection, e.g. a hole rim again after an undo).
+    // A sketch value's refusal goes with the shape it was typed for (finished,
+    // cancelled or the sketch left): the next shape starts without it.
+    if (typingTarget_ == TypingTarget::SketchInput && !typing_.pending() && (!session_ || !session_->hasInputs()))
+        typedValueError_.clear();
     if (!operation_) {
         chipSpot_ = ChipSpot::None;
         chipSelection_.clear();

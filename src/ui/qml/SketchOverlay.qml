@@ -112,7 +112,7 @@ Item {
         name: "sketchInput",
         mode: () => {
             const input = overlay.focusedInput()
-            return input && input.key === "sides" ? "count" : "length"
+            return input && input.keypadMode ? input.keypadMode : "length"
         },
         hasNext: () => overlay.app.sketchLabels.filter(l => l.kind === "input").length > 1,
         text: () => overlay.typing,
