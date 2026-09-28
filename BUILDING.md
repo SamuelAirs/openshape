@@ -158,14 +158,20 @@ same tools a user taps) for the iPhone 6.9" (`--size 440x956 --dpr 3
 1376x1032 --dpr 2 --safe-area 24,0,20,0`, 2752 x 2064) into
 `docs/appstore/screenshots/`, then checks them with
 `scripts/dev/check_appstore_screenshots.py` (exact size, no alpha channel,
-not blank); about three minutes. `--dpr <factor>` draws at that device pixel
+not blank); about three minutes. The pictures are rendered into
+`build/appstore-screenshots/` and copied into `docs/` only when the whole
+set passes the check; interrupting the script (Ctrl+C, closing the terminal,
+killing it) closes the window in progress and starts no further one, and
+only one copy runs at a time. `--dpr <factor>` draws at that device pixel
 ratio whatever the monitor's scaling (it turns off Qt's use of the screen's
 scale). `--store-screenshot` (with `--screenshot` and `--size`) makes the
 window frameless and exactly `--size`, also taller than the desktop (Windows
 keeps framed windows within its height), stops the view reacting to the mouse
 pointer and moves the pointer off the window, keeps the `--safe-area` insets
 free without shading them, hides a message left by building the scene, and
-saves the picture without an alpha channel (App Store Connect refuses those).
+saves the picture without an alpha channel (App Store Connect refuses those);
+a scene that has not produced its picture 3 minutes after it started exits
+with status 4.
 `python scripts/dev/check_appstore_texts.py` checks the listing texts in
 docs/APP_STORE.md against Apple's length limits.
 

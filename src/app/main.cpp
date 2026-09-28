@@ -998,6 +998,13 @@ int main(int argc, char* argv[])
                         QTimer::singleShot(200, window, [again = self.lock()] { (*again)(); });
                 };
                 QTimer::singleShot(1600, window, [whenBuilt] { (*whenBuilt)(); });
+                // A scene that never finishes must not leave a window open
+                // (appstore_screenshots.sh may have been stopped meanwhile):
+                // give up after 3 minutes (Home takes about 20 s).
+                QTimer::singleShot(180 * 1000, window, [] {
+                    OS_LOG(Error, App) << "store scene: no screenshot after 3 minutes; giving up";
+                    QCoreApplication::exit(4);
+                });
             } else {
                 QTimer::singleShot(1600, window, [next] { (*next)(0); });
             }

@@ -24,6 +24,17 @@
 # OpenShape's automation lock, so shots wait for other automated runs and
 # run one after another (about 10 s each, Home about 20 s). The mouse
 # pointer is moved off the window. Look at every image afterwards.
+#
+# Interrupting it is safe. The pictures are rendered into
+# build/appstore-screenshots/ and copied into docs/appstore/screenshots/
+# only after all of them were made and pass the check, so the folder never
+# holds a half-written or half-updated set. Ctrl+C, closing the terminal or
+# killing the script (SIGINT, SIGTERM, SIGHUP) closes the window of the
+# shot in progress and starts no further one. Only one copy of the script
+# runs at a time. Should the script itself be killed without a chance to
+# clean up (TerminateProcess, `kill -9`), the shot in progress still ends
+# by itself: it saves its one picture into build/ and exits (at the latest
+# after 3 minutes once it has the lock, --store-screenshot's watchdog).
 set -euo pipefail
 
 exe=${OPENSHAPE_EXE:-build/msys2-ucrt64/bin/OpenShape.exe}
@@ -34,7 +45,42 @@ fi
 python=${PYTHON:-python}
 out=${OUT:-docs/appstore/screenshots}
 work=build/appstore-screenshots
+rendered="$work/rendered"
 mkdir -p "$out" "$work"
+
+# One copy at a time: a second one would launch windows alongside the first.
+guard="$work/.running"
+if ! mkdir "$guard" 2> /dev/null; then
+    other=$(cat "$guard/pid" 2> /dev/null || true)
+    if [ -n "$other" ] && kill -0 "$other" 2> /dev/null; then
+        echo "appstore_screenshots.sh is already running (pid $other); wait for it or stop it first." >&2
+        exit 1
+    fi
+    rm -rf "$guard" # left by a copy that was killed
+    mkdir "$guard"
+fi
+echo $$ > "$guard/pid"
+
+child=""
+stop_child() {
+    if [ -n "$child" ] && kill -0 "$child" 2> /dev/null; then
+        kill "$child" 2> /dev/null || true
+        wait "$child" 2> /dev/null || true
+    fi
+    child=""
+}
+cleanup() {
+    stop_child
+    rm -rf "$guard"
+}
+interrupted() {
+    trap - INT TERM HUP
+    echo "interrupted: no further shots; $out is unchanged" >&2
+    cleanup
+    exit 130
+}
+trap cleanup EXIT
+trap interrupted INT TERM HUP
 
 # device | window size (points) | pixels per point | safe area top,right,bottom,left
 devices=(
@@ -51,6 +97,9 @@ shots=(
     "6-home|store-home"
 )
 
+rm -rf "$rendered"
+mkdir -p "$rendered"
+made=()
 for device_entry in "${devices[@]}"; do
     IFS='|' read -r device size dpr safe <<< "$device_entry"
     for shot_entry in "${shots[@]}"; do
@@ -63,16 +112,45 @@ for device_entry in "${devices[@]}"; do
         rm -rf "$run"
         mkdir -p "$run"
         echo "== $file ($scene, $size at ${dpr}x)"
-        "$exe" --demo "$scene" --touch --size "$size" --dpr "$dpr" --safe-area "$safe" --store-screenshot \
-            --app-folder "$run/OpenShape" --data-dir "$run/data" --screenshot "$out/$file.png" \
-            > "$run/log.txt" 2>&1 || { tail -20 "$run/log.txt"; echo "FAILED: $file"; exit 1; }
+        # In the background, so a signal reaches the trap at once (bash runs
+        # traps only between commands) and the trap can close the window.
+        # timeout: the app waits up to 15 minutes for the automation lock.
+        timeout --kill-after=10 1200 "$exe" --demo "$scene" --touch --size "$size" --dpr "$dpr" --safe-area "$safe" \
+            --store-screenshot --app-folder "$run/OpenShape" --data-dir "$run/data" --screenshot "$rendered/$file.png" \
+            > "$run/log.txt" 2>&1 &
+        child=$!
+        status=0
+        wait "$child" || status=$?
+        child=""
+        if [ "$status" -ne 0 ] || [ ! -s "$rendered/$file.png" ]; then
+            tail -20 "$run/log.txt"
+            echo "FAILED: $file (exit status $status)"
+            exit 1
+        fi
         # A scene that could not do what it shows says so in the log.
         if grep -q "store scene:" "$run/log.txt"; then
             grep "store scene:" "$run/log.txt"
             echo "FAILED: $file (the scene went wrong; see $run/log.txt)"
             exit 1
         fi
+        made+=("$file")
     done
 done
+if [ ${#made[@]} -eq 0 ]; then
+    echo "no screenshot names matched: $*" >&2
+    exit 1
+fi
 
-"$python" scripts/dev/check_appstore_screenshots.py "$out"
+# Check the set as it will be (the new pictures with the ones kept), then
+# put the new ones in place.
+staged="$work/staged"
+rm -rf "$staged"
+mkdir -p "$staged"
+cp "$out"/*.png "$staged"/ 2> /dev/null || true
+cp "$rendered"/*.png "$staged"/
+"$python" scripts/dev/check_appstore_screenshots.py "$staged"
+for file in "${made[@]}"; do
+    cp "$rendered/$file.png" "$out/$file.png.tmp"
+    mv -f "$out/$file.png.tmp" "$out/$file.png"
+done
+echo "${#made[@]} screenshot(s) updated in $out"

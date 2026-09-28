@@ -1512,8 +1512,12 @@ document pickers' files take the same staging when there is an app folder
   `--store-screenshot` makes the window frameless at exactly `--size` (a
   framed Windows window is clamped to the desktop's height, 2142 of 2868
   pixels here); `QQuickWindow::grabWindow` reads the whole back buffer even
-  where the window is off-screen. `scripts/dev/appstore_screenshots.sh` runs
-  them; docs/APP_STORE.md, section 3.
+  where the window is off-screen; a store scene gives up (exit 4) if it has
+  no picture after 3 minutes. `scripts/dev/appstore_screenshots.sh` runs
+  them one at a time (a single copy of the script; a signal closes the
+  window in progress), renders into `build/` and replaces the pictures in
+  `docs/` only once the whole set passes the check; docs/APP_STORE.md,
+  section 3.
 
 ## Builds and releases
 
