@@ -403,9 +403,6 @@ margins (BUILDING.md).
    faces in different places: the box docks below the top bar or above the
    hint, whichever is farther from the selection, and stays there while
    you drag the arrow.
-14. Loft on the phone: the same as the iPad's step 17; the Loft options
-   (New body / Join / Cut, Smooth, Straight, Apply) scroll sideways above
-   the tool strip.
    Tap the top face of a box, then the value field: the box moves below the
    top bar while the keyboard is up, and the field stays in sight as you
    type. Swipe its row of actions sideways and tap the last one.
@@ -442,3 +439,6 @@ margins (BUILDING.md).
    move, dark ones cannot; dragging a fully sized one says so. Tap inside
    a closed shape → **Extrude**: the sketch closes and the arrow is under
    your finger. Try the same with the Pencil on the iPad.
+17. Loft on the phone: the same as the iPad's step 17; the Loft options
+   (New body / Join / Cut, Smooth, Straight, Apply) scroll sideways above
+   the tool strip.

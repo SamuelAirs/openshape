@@ -8,10 +8,15 @@
 // rectangle's extrusion arrow where it runs over the circle), Loft, Straight,
 // Apply; the plane's distance changed in the Model panel (the loft follows),
 // Smooth chosen in the Model panel, and undo. Then the same with a finger:
-// taps, Loft, Apply, in the touch layout's words.
+// taps, Loft, Apply, in the touch layout's words. Then New body / Join / Cut:
+// a square on a block's top face lofted to one under the block (joins by
+// itself; Cut, New body and Cut clicked; a chosen square Shift-clicked out
+// and back in; Apply; Join in the Model panel; undo).
 
 #include "app/AcceptanceRunner.h"
+#include "commands/DocumentCommands.h"
 #include "document/Body.h"
+#include "document/Datum.h"
 #include "document/Document.h"
 #include "document/SketchProfiles.h"
 #include "geometry/Loft.h"
@@ -23,6 +28,7 @@
 #include <QtQuick/QQuickWindow>
 
 #include <cmath>
+#include <iterator>
 #include <memory>
 #include <optional>
 
@@ -378,7 +384,193 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     };
 }
 
-const bool registered = registerAcceptanceScenario({QStringLiteral("loft"), 74, steps});
+// ---- Part two: New body / Join / Cut ------------------------------------------
+// A 40 x 40 x 20 block, a 10 x 10 square sketched on its top face and the
+// same square on a plane 10 mm under the block: the loft is a straight
+// 10 x 10 prism through the block (3000 mm³, 2000 of it inside).
+
+// Set up (not what is tested; the first part clicks sketching and planes).
+bool addBlockAndSquares(AcceptanceRunner& r)
+{
+    r.app().newDocument();
+    auto& stack = r.app().interaction().undoStack();
+    auto& document = r.app().document();
+    auto block = std::make_unique<doc::BoxFeature>();
+    block->origin = {0, 0, 0};
+    block->size = {40, 40, 20};
+    auto create = std::make_unique<cmd::CreateBodyCommand>("Block", std::move(block));
+    const Uuid body = create->bodyId();
+    bool ok = stack.push(std::move(create), document).ok();
+    sketch::Sketch onTop(Uuid::generate(), sketch::Plane::fromNormal({0, 0, 20}, {0, 0, 1}));
+    onTop.setHostBody(body);
+    sketch::addRectangle(onTop, onTop.plane().toLocal({15, 15, 20}), onTop.plane().toLocal({25, 25, 20}));
+    ok = ok && stack.push(std::make_unique<cmd::CreateSketchCommand>(std::move(onTop)), document).ok();
+    doc::Datum datum;
+    datum.method = doc::DatumMethod::PlaneOffset;
+    datum.originIndex = 2;
+    datum.distance = -10;
+    const Uuid plane = datum.id();
+    ok = ok && stack.push(std::make_unique<cmd::AddDatumCommand>(std::move(datum)), document).ok();
+    const doc::Datum* added = document.datum(plane);
+    if (!ok || !added)
+        return false;
+    sketch::Sketch under(Uuid::generate(), doc::sketchPlaneOn(added->geometry()));
+    under.setDatumPlane(plane);
+    sketch::addRectangle(under, under.plane().toLocal({15, 15, -10}), under.plane().toLocal({25, 25, -10}));
+    ok = stack.push(std::make_unique<cmd::CreateSketchCommand>(std::move(under)), document).ok();
+    r.app().interaction().documentChanged();
+    r.app().interaction().setStandardView(StandardView::Isometric, false);
+    r.app().interaction().fitAll(false);
+    return ok;
+}
+
+const doc::LoftFeature* modesLoftStep(AcceptanceRunner& r)
+{
+    const auto& bodies = r.app().document().bodies();
+    if (bodies.empty() || bodies.front()->features().size() < 2)
+        return nullptr;
+    return dynamic_cast<const doc::LoftFeature*>(bodies.front()->features()[1].get());
+}
+
+// The loft's preview, as shown (the block joined or cut, or the prism alone).
+double shownVolume(AcceptanceRunner& r)
+{
+    const auto* op = dynamic_cast<const interact::LoftOperation*>(r.app().interaction().operation());
+    return op && op->previewMesh() ? meshVolume(*op->previewMesh()) : 0.0;
+}
+
+std::optional<doc::ExtrudeMode> loftMode(AcceptanceRunner& r)
+{
+    const auto* op = dynamic_cast<const interact::LoftOperation*>(r.app().interaction().operation());
+    return op ? std::optional(op->mode()) : std::nullopt;
+}
+
+// The square under the block, seen from below.
+QPointF underPoint(AcceptanceRunner& r)
+{
+    return profilePoint(r, 1, {{23, 23, -10}, {20, 20, -10}, {17, 23, -10}, {23, 17, -10}});
+}
+
+std::vector<AcceptanceRunner::Step> modeSteps(AcceptanceRunner& r)
+{
+    auto num = [](double v) { return AcceptanceRunner::num(v); };
+    return {
+        [&r] {
+            r.check(addBlockAndSquares(r), "loft modes: a block, a square on its top face, one under it");
+            r.check(r.app().bodyCount() == 1 && r.app().sketchCount() == 2, "loft modes: set up");
+        },
+        [&r] {
+            // The top square from above; the arrow starts off the middle, so it
+            // does not stand on the lower square's middle seen from below.
+            r.click(profilePoint(r, 0, {{17, 17, 20}, {18, 22, 20}, {22, 18, 20}}));
+            r.check(r.app().operationTitle() == QStringLiteral("Extrude"), "loft modes: the top square is selected",
+                    r.app().operationTitle());
+            r.app().interaction().setStandardView(StandardView::Bottom, false);
+            r.app().interaction().fitAll(false);
+        },
+        [&r] {
+            r.click(underPoint(r), Qt::ShiftModifier);
+            const auto& sel = r.app().interaction().selection();
+            r.check(sel.size() == 2 && sel.allOfKind(sel::SelectionKind::SketchProfile),
+                    "loft modes: Shift-click the square under the block", QString::number(sel.size()));
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("barAction_loft")), "loft modes: Loft"); },
+        [] {}, [] {},
+        [&r, num] {
+            r.check(loftMode(r) == doc::ExtrudeMode::Join, "loft modes: from the block's face it joins the block");
+            r.check(closeTo(shownVolume(r), 32000 + 1000, 0.01), "loft modes: the block grows by the prism under it",
+                    num(shownVolume(r)));
+            r.screenshot(QStringLiteral("loft_05_join"));
+            r.check(r.clickItem(QStringLiteral("barAction_mode:cut")), "loft modes: Cut");
+        },
+        [] {}, [] {},
+        [&r, num] {
+            r.check(loftMode(r) == doc::ExtrudeMode::Cut, "loft modes: cutting");
+            r.check(r.app().operationCanCommit(), "loft modes: the cut can be applied", r.app().operationError());
+            r.check(closeTo(shownVolume(r), 32000 - 2000, 0.01), "loft modes: the prism is cut out of the block",
+                    num(shownVolume(r)));
+            r.screenshot(QStringLiteral("loft_06_cut"));
+            r.check(r.clickItem(QStringLiteral("barAction_mode:new")), "loft modes: New body");
+        },
+        [] {}, [] {},
+        [&r, num] {
+            r.check(loftMode(r) == doc::ExtrudeMode::NewBody, "loft modes: a new body");
+            r.check(closeTo(shownVolume(r), 3000, 0.01), "loft modes: the prism alone", num(shownVolume(r)));
+            r.check(r.clickItem(QStringLiteral("barAction_mode:cut")), "loft modes: Cut again");
+        },
+        [] {}, [] {},
+        // Shift-click a chosen profile: it comes out of the loft.
+        [&r] {
+            r.check(loftMode(r) == doc::ExtrudeMode::Cut, "loft modes: cutting again");
+            r.click(underPoint(r), Qt::ShiftModifier);
+        },
+        [] {},
+        [&r] {
+            r.check(r.app().interaction().selection().size() == 1, "loft modes: Shift-click takes the square out",
+                    QString::number(r.app().interaction().selection().size()));
+            r.check(r.app().operationTitle() != QStringLiteral("Loft"), "loft modes: one profile is no loft",
+                    r.app().operationTitle());
+        },
+        // (Later than a double-click's time: the same place clicked again.)
+        [] {}, [] {}, [] {},
+        [&r] { r.click(underPoint(r), Qt::ShiftModifier); },
+        [] {},
+        [&r] {
+            r.check(r.app().interaction().selection().size() == 2, "loft modes: and back in",
+                    QString::number(r.app().interaction().selection().size()) + QStringLiteral(" selected, ")
+                        + r.app().operationTitle());
+            r.check(r.clickItem(QStringLiteral("barAction_loft")), "loft modes: Loft again");
+        },
+        [] {}, [] {},
+        [&r] {
+            r.check(loftMode(r) == doc::ExtrudeMode::Cut, "loft modes: Cut is kept while the squares stay selected");
+            r.check(r.clickItem(QStringLiteral("barAction_apply")), "loft modes: Apply");
+        },
+        [] {},
+        [&r, num] {
+            r.check(r.app().bodyCount() == 1 && closeTo(r.bodyVolume(), 30000, 1e-9), "loft modes: the prism is cut out",
+                    num(r.bodyVolume()));
+            const auto* step = modesLoftStep(r);
+            r.check(step && step->mode == doc::ExtrudeMode::Cut, "loft modes: a Cut loft step");
+            r.app().interaction().setStandardView(StandardView::Isometric, false);
+            r.app().interaction().fitAll(false);
+            if (step)
+                r.check(r.clickItem(QStringLiteral("historyRow_") + idText(step->id())), "loft modes: the loft's Model panel row");
+        },
+        [&r] {
+            const auto* step = modesLoftStep(r);
+            if (step)
+                r.check(r.clickItem(QStringLiteral("historyChoice_") + idText(step->id()) + QStringLiteral("_mode_Join")),
+                        "loft modes: Join in the Model panel");
+        },
+        [] {},
+        [&r, num] {
+            const auto* step = modesLoftStep(r);
+            r.check(step && step->mode == doc::ExtrudeMode::Join, "loft modes: the step joins now");
+            r.check(closeTo(r.bodyVolume(), 33000, 1e-9), "loft modes: the prism joins the block", num(r.bodyVolume()));
+            r.screenshot(QStringLiteral("loft_07_joined"));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        [&r, num] {
+            r.check(closeTo(r.bodyVolume(), 30000, 1e-9), "loft modes: undo, cut again", num(r.bodyVolume()));
+            r.key(Qt::Key_Z, Qt::ControlModifier);
+        },
+        [&r, num] {
+            r.check(r.app().bodyCount() == 1 && closeTo(r.bodyVolume(), 32000, 1e-9), "loft modes: undo, the block alone",
+                    num(r.bodyVolume()));
+        },
+    };
+}
+
+std::vector<AcceptanceRunner::Step> allSteps(AcceptanceRunner& r)
+{
+    auto out = steps(r);
+    auto more = modeSteps(r);
+    out.insert(out.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
+    return out;
+}
+
+const bool registered = registerAcceptanceScenario({QStringLiteral("loft"), 74, allSteps});
 
 } // namespace
 } // namespace os::app

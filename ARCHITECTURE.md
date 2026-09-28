@@ -983,8 +983,9 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`loftRuled_`, `loftMode_`) while the selection lasts, so a tap that adds
   or removes a section (not an Apply: `click` skips the apply-before-select
   for a loft and a profile under an additive press) rebuilds the loft with
-  them. The host is the first section's sketch's (shown) host body: an
-  automatic join, or a new body when the preview's join would not touch it
+  them. The host is the (shown) host body of the first section, in
+  selection order, whose sketch lies on a body's face (not necessarily the
+  first section): an automatic join, or a new body when the preview's join would not touch it
   (`reconsider`, `commitNeedsPreview`); without a host always a new body.
   A profile's extrusion arrow (armed by the first click) often points up
   through the next profile on screen: a press on an untouched extrusion's
@@ -1589,7 +1590,11 @@ document pickers' files take the same staging when there is an app folder
   and the circle Shift-clicked through the rectangle's extrusion arrow,
   Loft and Straight previewed with the loft's volume, Apply, the plane's
   distance edited in the Model panel with the loft following, Smooth
-  chosen in the Model panel, undo) and
+  chosen in the Model panel, undo; then a square on a block's top face
+  lofted to one under the block: joined by itself, Cut / New body / Cut
+  clicked with the preview's volume each time, the lower square
+  Shift-clicked out and back in with Cut kept, Apply, Join in the Model
+  panel, undo) and
   `userguide` (the help card's link to
   docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
   it, so no browser opens), `shading` and `perspective` (the viewport's

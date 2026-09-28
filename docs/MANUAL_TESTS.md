@@ -190,7 +190,7 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 ## On the iPad and iPhone
 
 See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the
-iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
+iPhone". New in the build after 2026-09-27 (iPad 14-17, iPhone 14 and 17):
 
 1. **Share an STL to the slicer:** File → Export STL: the share sheet opens
    (on the iPad pointing at File); choose the slicer app, then AirDrop a

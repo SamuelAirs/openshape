@@ -324,9 +324,12 @@ transition piece (a funnel, a hose adapter, a vase).
 - **Smooth** (the default) makes one smooth surface through all the
   shapes; **Straight** goes straight from each shape to the next, with a
   crease at each shape in between. With only two shapes both are the same.
-- A loft starting on a body's face joins that body (**Join**); **New
-  body** keeps it separate and **Cut** removes it from the body. A loft
-  that would not touch the body becomes a new body by itself.
+- When one of the shapes is sketched on a body's face, the loft joins that
+  body (**Join**); **New body** keeps it separate and **Cut** removes it
+  from the body (a shape on a plane under the body's face makes a hole
+  through it). If it would not touch the body, it becomes a new body by
+  itself. With every shape on the ground or on planes, the loft is always
+  a new body (no Join / Cut): use **Union** or **Subtract** afterwards.
 - While the loft is shown, `Shift`+click (or tap) another shape to add it
   as the next one, or a chosen one to take it out again.
 - Shapes may differ: a square can loft to a circle. Holes go through when

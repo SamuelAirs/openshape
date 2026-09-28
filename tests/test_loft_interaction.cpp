@@ -452,3 +452,90 @@ TEST(LoftInteraction, AJoinThatMissesItsBodyBecomesANewBodyOnTheWorker)
     EXPECT_NEAR(h.volume(0), 4000.0, 1e-6);
     EXPECT_NEAR(h.volume(1), frustum(100, 36, 20), 1e-6);
 }
+
+// Cut through a block: a square on the block's top face lofted to the same
+// square on a plane under the block (a straight 10 x 10 prism through it).
+// The automatic choice joins (the prism grows below the block), Cut takes
+// the prism out, New body keeps it apart; a chosen profile tapped again comes
+// out of the loft and, added back, lofts with the choices kept; the Model
+// panel switches the step between Cut and Join.
+TEST(LoftInteraction, CutThroughABlockAndSwitchToJoinInTheModelPanel)
+{
+    Harness h;
+    auto block = std::make_unique<doc::BoxFeature>();
+    block->origin = {0, 0, 0};
+    block->size = {40, 40, 20};
+    auto create = std::make_unique<cmd::CreateBodyCommand>("Block", std::move(block));
+    const Uuid body = create->bodyId();
+    ASSERT_TRUE(h.stack.push(std::move(create), h.document).ok());
+    sketch::Sketch onTop(Uuid::generate(), sketch::Plane::fromNormal({0, 0, 20}, {0, 0, 1}));
+    onTop.setHostBody(body);
+    sketch::addRectangle(onTop, onTop.plane().toLocal({15, 15, 20}), onTop.plane().toLocal({25, 25, 20}));
+    h.add(std::move(onTop));
+    const Uuid low = h.plane(-10);
+    sketch::Sketch under = h.blank(low);
+    sketch::addRectangle(under, under.plane().toLocal({15, 15, -10}), under.plane().toLocal({25, 25, -10}));
+    h.add(std::move(under));
+
+    // The top square from above, the one under the block from below.
+    h.view();
+    h.click({17, 17, 20});
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    h.controller.setStandardView(StandardView::Bottom, false);
+    h.controller.fitAll(false);
+    h.click({23, 23, -10}, true);
+    ASSERT_EQ(h.controller.selection().size(), 2u);
+    ASSERT_TRUE(h.controller.triggerAction("loft").ok());
+    ASSERT_NE(h.loft(), nullptr);
+    EXPECT_EQ(h.loft()->mode(), doc::ExtrudeMode::Join);
+    EXPECT_TRUE(h.active("mode:join"));
+
+    ASSERT_TRUE(h.controller.triggerAction("mode:cut").ok());
+    EXPECT_TRUE(h.active("mode:cut"));
+    EXPECT_EQ(h.loft()->mode(), doc::ExtrudeMode::Cut);
+    EXPECT_TRUE(h.loft()->hasPreview());
+    EXPECT_TRUE(h.loft()->canCommit()) << h.loft()->error();
+
+    // Shift-click the lower square: it comes out (one profile extrudes);
+    // again: two profiles, Loft offered; Loft keeps Cut.
+    h.click({23, 23, -10}, true);
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    EXPECT_EQ(h.loft(), nullptr);
+    h.click({23, 23, -10}, true);
+    ASSERT_EQ(h.controller.selection().size(), 2u);
+    ASSERT_TRUE(h.controller.triggerAction("loft").ok());
+    ASSERT_NE(h.loft(), nullptr);
+    EXPECT_EQ(h.loft()->mode(), doc::ExtrudeMode::Cut) << "the choice stays while the profiles stay selected";
+
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 1u);
+    EXPECT_NEAR(h.volume(0), 32000.0 - 2000.0, 1e-6);
+    const auto box = geom::boundingBox(h.document.bodies()[0]->shape());
+    EXPECT_NEAR(box.min.z, 0, 1e-6) << "nothing added under the block";
+
+    // The Model panel: Cut → Join.
+    const Uuid step = h.document.bodies()[0]->features()[1]->id();
+    ASSERT_TRUE(h.controller.setFeatureParameter(step, "mode", "Join").ok());
+    EXPECT_NEAR(h.volume(0), 32000.0 + 1000.0, 1e-6);
+    EXPECT_NEAR(geom::boundingBox(h.document.bodies()[0]->shape()).min.z, -10, 1e-6);
+    EXPECT_FALSE(h.controller.setFeatureParameter(step, "mode", "New body").ok());
+    ASSERT_TRUE(h.controller.undo());
+    EXPECT_NEAR(h.volume(0), 30000.0, 1e-6);
+    ASSERT_TRUE(h.controller.undo());
+    EXPECT_NEAR(h.volume(0), 32000.0, 1e-6);
+
+    // New body, chosen: the prism alone.
+    h.controller.setStandardView(StandardView::Isometric, false);
+    h.controller.fitAll(false);
+    h.click({17, 17, 20});
+    h.controller.setStandardView(StandardView::Bottom, false);
+    h.controller.fitAll(false);
+    h.click({23, 23, -10}, true);
+    ASSERT_TRUE(h.controller.triggerAction("loft").ok());
+    ASSERT_TRUE(h.controller.triggerAction("mode:new").ok());
+    EXPECT_TRUE(h.active("mode:new"));
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    ASSERT_EQ(h.document.bodies().size(), 2u);
+    EXPECT_NEAR(h.volume(0), 32000.0, 1e-6);
+    EXPECT_NEAR(h.volume(1), 3000.0, 1e-6);
+}
