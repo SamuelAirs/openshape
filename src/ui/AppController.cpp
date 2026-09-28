@@ -8,6 +8,7 @@
 #include "core/Version.h"
 #include "geometry/Exchange.h"
 #include "geometry/Text.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/TouchWording.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
@@ -33,6 +34,7 @@
 #include <QtGui/QImage>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace os::ui {
@@ -120,6 +122,13 @@ AppController::AppController(QObject* parent)
     recoveryDeadline_.setSingleShot(true);
     connect(&recoveryDebounce_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
     connect(&recoveryDeadline_, &QTimer::timeout, this, &AppController::writeRecoveryCopy);
+    // A value typed key by key is previewed when typing pauses.
+    typingPause_.setSingleShot(true);
+    typingPause_.setTimerType(Qt::PreciseTimer);
+    connect(&typingPause_, &QTimer::timeout, this, [this] {
+        if (!interaction_->advanceTyping())
+            armTypingPause(); // (a timer may fire a little early)
+    });
     // Every path that changes the document ends in stateChanged. The lists
     // are refreshed first (connected before QML), then QML re-reads.
     connect(this, &AppController::stateChanged, this, &AppController::refreshLists);
@@ -264,6 +273,9 @@ QString AppController::operationError() const
 {
     return interaction_->operation() ? q(interaction_->operation()->error()) : QString();
 }
+QString AppController::typedValueError() const { return q(interaction_->typedValueError()); }
+bool AppController::typingPending() const { return interaction_->typingPending(); }
+bool AppController::operationIsAngle() const { return interaction_->operation() && interaction_->operation()->isAngle(); }
 bool AppController::operationCanCommit() const
 {
     return interaction_->operation() && interaction_->operation()->canCommit();
@@ -569,6 +581,12 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("x"), label.screen.x);
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
+        // A live value's keypad keys (NumericKeypad.qml mode()) and its name
+        // in words for the keypad's display line.
+        if (label.kind == interact::SketchLabel::Kind::Input) {
+            map.insert(QStringLiteral("keypadMode"), QString::fromLatin1(interact::keypadModeName(interact::keypadModeForSketchInput(label.key))));
+            map.insert(QStringLiteral("name"), q(interact::sketchInputName(label.key)));
+        }
         map.insert(QStringLiteral("locked"), label.locked);
         map.insert(QStringLiteral("selected"), label.selected);
         map.insert(QStringLiteral("hot"), label.hot);
@@ -662,21 +680,18 @@ QString AppController::sketchType(const QString& text)
 
 void AppController::focusNextSketchInput()
 {
-    if (auto* s = interaction_->sketchSession()) {
-        s->focusNextInput();
-        emit viewChanged();
-    }
+    typingPause_.stop();
+    interaction_->focusNextSketchInput();
 }
 
 void AppController::commitSketchTool()
 {
-    if (auto* s = interaction_->sketchSession()) {
-        const Status status = s->commitTool();
-        if (!status && status.error() != ErrorCode::InvalidArgument)
-            notifyMessage(q(status.userMessage()));
-        emit stateChanged();
-        emit viewChanged();
-    }
+    typingPause_.stop();
+    if (!interaction_->sketchSession())
+        return;
+    const Status status = interaction_->commitSketchTool();
+    if (!status && status.error() != ErrorCode::InvalidArgument)
+        notifyMessage(q(status.userMessage()));
 }
 
 QString AppController::setSketchDimension(int constraintId, const QString& text)
@@ -725,6 +740,11 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
             pm.insert(QStringLiteral("label"), q(p.label));
             pm.insert(QStringLiteral("value"), q(p.valueText));
             pm.insert(QStringLiteral("isText"), p.isText);
+            // What the keypad offers for it (touch): "length", "angle", "count" or "text".
+            pm.insert(QStringLiteral("mode"), p.isText    ? QStringLiteral("text")
+                                            : p.isAngle ? QStringLiteral("angle")
+                                            : p.isCount ? QStringLiteral("count")
+                                                        : QStringLiteral("length"));
             params.append(pm);
         }
         map.insert(QStringLiteral("parameters"), params);
@@ -1410,6 +1430,116 @@ QString AppController::setValueText(const QString& text)
 QString AppController::confirmValueText(const QString& text)
 {
     return q(interaction_->confirmValueText(text.toStdString()));
+}
+
+void AppController::typeValueText(const QString& text)
+{
+    interaction_->typeValue(interact::InteractionController::TypingTarget::OperationValue, text.toStdString());
+    armTypingPause();
+    emit stateChanged(); // a refusal shown for the text before goes
+}
+
+void AppController::typeSketchValue(const QString& text)
+{
+    interaction_->typeValue(interact::InteractionController::TypingTarget::SketchInput, text.toStdString());
+    armTypingPause();
+    emit stateChanged();
+}
+
+QString AppController::flushTyping()
+{
+    typingPause_.stop();
+    return q(interaction_->flushTyping());
+}
+
+namespace {
+QVariantMap keypadResultMap(const interact::KeypadResult& result)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("text"), QString::fromStdString(result.state.text));
+    map.insert(QStringLiteral("replacing"), result.state.replacing);
+    map.insert(QStringLiteral("action"), result.action == interact::KeypadAction::Edited ? QStringLiteral("edited")
+                                         : result.action == interact::KeypadAction::Next ? QStringLiteral("next")
+                                         : result.action == interact::KeypadAction::Done ? QStringLiteral("done")
+                                                                                          : QStringLiteral("none"));
+    return map;
+}
+} // namespace
+
+QVariantList AppController::keypadRows(const QString& mode, bool hasNext, bool wide) const
+{
+    QVariantList rows;
+    const auto keypadMode = interact::keypadModeFromString(mode.toStdString()).value_or(interact::KeypadMode::Length);
+    for (const auto& row : interact::keypadLayout(keypadMode, hasNext, wide)) {
+        QVariantList keys;
+        for (const auto& key : row) {
+            QVariantMap k;
+            k.insert(QStringLiteral("id"), QString::fromStdString(key.id));
+            k.insert(QStringLiteral("label"), QString::fromStdString(key.label));
+            k.insert(QStringLiteral("span"), key.span);
+            k.insert(QStringLiteral("accent"), key.accent);
+            keys.append(k);
+        }
+        rows.append(QVariant(keys));
+    }
+    return rows;
+}
+
+QVariantMap AppController::keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const
+{
+    const auto keypadMode = interact::keypadModeFromString(mode.toStdString()).value_or(interact::KeypadMode::Length);
+    return keypadResultMap(interact::pressKeypadKey({text.toStdString(), replacing}, key.toStdString(), keypadMode));
+}
+
+QVariantMap AppController::keypadType(const QString& text, bool replacing, const QString& characters) const
+{
+    return keypadResultMap(interact::typeIntoKeypad({text.toStdString(), replacing}, characters.toStdString()));
+}
+
+QVariantMap AppController::placeKeypad(const QVariantMap& layout) const
+{
+    interact::KeypadPlacementInput input;
+    input.area = toScreenRect(layout.value(QStringLiteral("area")).toRectF());
+    const QSizeF size = layout.value(QStringLiteral("size")).toSizeF();
+    input.size = {size.width(), size.height()};
+    input.target = toScreenRect(layout.value(QStringLiteral("target")).toRectF());
+    for (const QVariant& rect : layout.value(QStringLiteral("avoid")).toList())
+        input.avoid.push_back(toScreenRect(rect.toRectF()));
+    if (const QVariant keepClear = layout.value(QStringLiteral("keepClear")); keepClear.typeId() == QMetaType::QRectF)
+        input.keepClear = toScreenRect(keepClear.toRectF());
+    input.compact = layout.value(QStringLiteral("compact")).toBool();
+    const interact::KeypadPlacement placement = interact::placeKeypad(input);
+    QVariantMap result;
+    result.insert(QStringLiteral("x"), placement.position.x);
+    result.insert(QStringLiteral("y"), placement.position.y);
+    result.insert(QStringLiteral("docked"), placement.docked);
+    result.insert(QStringLiteral("clear"), placement.clear);
+    return result;
+}
+
+bool AppController::revealKeepClear(const QRectF& region) { return interaction_->revealKeepClear(toScreenRect(region)); }
+
+QVariant AppController::sketchScreenRect() const
+{
+    const auto rect = interaction_->sketchScreenRect();
+    return rect ? QVariant::fromValue(toQRect(*rect)) : QVariant();
+}
+
+bool AppController::focusSketchInput(const QString& key)
+{
+    typingPause_.stop();
+    return interaction_->focusSketchInput(key.toStdString());
+}
+
+void AppController::armTypingPause()
+{
+    if (!interaction_->typingPending()) {
+        typingPause_.stop();
+        return;
+    }
+    const auto left = std::chrono::ceil<std::chrono::milliseconds>(interaction_->typingDeadline()
+                                                                   - interact::TypingPause::Clock::now());
+    typingPause_.start(int(std::max<std::chrono::milliseconds::rep>(0, left.count())));
 }
 
 QString AppController::setOperationText(const QString& text)

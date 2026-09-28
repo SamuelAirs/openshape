@@ -10,10 +10,14 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/TouchGestures.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+
+#include <set>
+#include <string>
 
 using namespace os;
 using namespace os::interact;
@@ -1882,7 +1886,19 @@ TEST(SketchInteraction, LinearAndCircularPatternOfAHole)
     EXPECT_TRUE(h.session().patternLayout().circular);
     EXPECT_EQ(h.session().counter()->value, 6);
     h.click(h.sketchScreen({0, 0})); // the center: the origin
-    h.type("180");
+    // On touch the live Angle and Count open the keypad with degrees and
+    // with whole numbers only (keypadModeForSketchInput).
+    std::set<std::string> inputs;
+    for (const auto& label : h.session().labels(h.controller.camera())) {
+        if (label.kind != SketchLabel::Kind::Input)
+            continue;
+        inputs.insert(label.key);
+        const KeypadMode expected = label.key == "count" ? KeypadMode::Count : KeypadMode::Angle;
+        EXPECT_EQ(keypadModeForSketchInput(label.key), expected) << label.key;
+    }
+    EXPECT_EQ(inputs, (std::set<std::string>{"angle", "count"}));
+    EXPECT_EQ(h.session().typeIntoInput("x"), "Unexpected 'x'") << "not the range: the text is not an angle";
+    h.type("90+90"); // the keypad's arithmetic: half a turn
     h.session().focusNextInput();
     h.type("3");
     ASSERT_TRUE(h.session().triggerAction("apply").ok());
@@ -1928,7 +1944,7 @@ TEST(SketchInteraction, AngleDimensionBetweenTwoLines)
             text = label.text;
     EXPECT_EQ(text, "36.87\xC2\xB0");
     EXPECT_NE(h.session().setDimension(angle, "180"), "") << "not a corner";
-    EXPECT_EQ(h.session().setDimension(angle, "45"), "");
+    EXPECT_EQ(h.session().setDimension(angle, "90/2"), "") << "the keypad's arithmetic: 45";
     EXPECT_NEAR(largestRegion(h.session().sketch()), 200.0, 1e-6) << "20 x 20 / 2";
     EXPECT_EQ(h.session().setDimension(angle, "60\xC2\xB0"), "");
     EXPECT_NEAR(largestRegion(h.session().sketch()), 20 * 20 * std::sqrt(3.0) / 2, 1e-6);

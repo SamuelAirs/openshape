@@ -19,6 +19,7 @@
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
 #include <cstdint>
@@ -52,10 +53,17 @@ class AppController : public QObject {
     // only when their content changes (TD-18: a drag step used to rebuild both).
     Q_PROPERTY(QVariantList contextActions READ contextActions NOTIFY contextActionsChanged)
     Q_PROPERTY(bool operationActive READ operationActive NOTIFY stateChanged)
+    // The operation's value is an angle (degrees): the keypad offers the degree sign.
+    Q_PROPERTY(bool operationIsAngle READ operationIsAngle NOTIFY stateChanged)
     Q_PROPERTY(QString operationTitle READ operationTitle NOTIFY stateChanged)
     Q_PROPERTY(QString operationValueLabel READ operationValueLabel NOTIFY stateChanged)
     Q_PROPERTY(QString operationValueText READ operationValueText NOTIFY stateChanged)
     Q_PROPERTY(QString operationError READ operationError NOTIFY stateChanged)
+    // Why the value typed was refused when it was taken (not a length, out of
+    // range; InteractionController::typedValueError), "" otherwise.
+    Q_PROPERTY(QString typedValueError READ typedValueError NOTIFY stateChanged)
+    // A value typed key by key waits for its pause (typeValueText).
+    Q_PROPERTY(bool typingPending READ typingPending NOTIFY stateChanged)
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
@@ -164,10 +172,13 @@ public:
     QString selectionSummary() const;
     QVariantList contextActions() const { return contextActionsList_; }
     bool operationActive() const;
+    bool operationIsAngle() const;
     QString operationTitle() const;
     QString operationValueLabel() const;
     QString operationValueText() const;
     QString operationError() const;
+    QString typedValueError() const;
+    bool typingPending() const;
     bool operationCanCommit() const;
     bool operationHasValue() const;
     QString operationPrompt() const;
@@ -391,6 +402,35 @@ public:
     // The same, waiting for the verdict of a preview still computing: Tab to
     // the next field moves on only with a usable value.
     Q_INVOKABLE QString confirmValueText(const QString& text);
+    // A key typed into the value chip's field (the whole text so far): it is
+    // previewed once typing pauses (0.7 s) or when it is confirmed (Enter,
+    // Tab, leaving the field, a tap elsewhere), so the model does not jump
+    // through 1, 10, 100 while "100" is typed. Its verdict comes with a
+    // state change (typedValueError, operationError).
+    Q_INVOKABLE void typeValueText(const QString& text);
+    // The same for the sketch's focused live value (a shape being drawn).
+    Q_INVOKABLE void typeSketchValue(const QString& text);
+    // Takes the value typed now (leaving the field); returns why it was refused, or "".
+    Q_INVOKABLE QString flushTyping();
+    // The numeric keypad (touch; interact::NumericKeypad): its keys, row by
+    // row ({id, label, span, accent}) for a mode ("length", "angle",
+    // "count"), and what a key tapped does to the text shown: {text,
+    // replacing, action: "none" | "edited" | "next" | "done"}. keypadType is a
+    // hardware keyboard's characters while the keypad edits.
+    Q_INVOKABLE QVariantList keypadRows(const QString& mode, bool hasNext, bool wide = false) const;
+    Q_INVOKABLE QVariantMap keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const;
+    Q_INVOKABLE QVariantMap keypadType(const QString& text, bool replacing, const QString& characters) const;
+    // Where the keypad goes (interact::placeKeypad): `layout` has area,
+    // size, target (the value box), avoid (controls), keepClear and compact;
+    // returns {x, y, docked, clear}.
+    Q_INVOKABLE QVariantMap placeKeypad(const QVariantMap& layout) const;
+    // A phone's keypad came up: the view moves so the selection and its
+    // arrow lie in `region`, the part of the window left free
+    // (InteractionController::revealKeepClear). True when it moved.
+    Q_INVOKABLE bool revealKeepClear(const QRectF& region);
+    // While sketching: the sketch on screen (a keypad beside a value keeps
+    // clear of it; InteractionController::sketchScreenRect), or undefined.
+    Q_INVOKABLE QVariant sketchScreenRect() const;
     // The Text tool's words (previewed at once); returns the error, or "".
     Q_INVOKABLE QString setOperationText(const QString& text);
     Q_INVOKABLE void triggerAction(const QString& id);
@@ -409,9 +449,12 @@ public:
     Q_INVOKABLE bool faceSelected() const;
     Q_INVOKABLE void finishSketch();
     Q_INVOKABLE void setSketchTool(const QString& name);
-    // Replaces the focused input's text while drawing; returns an error or "".
+    // Replaces the focused input's text while drawing, at once; returns an
+    // error or "". (Keys use typeSketchValue.)
     Q_INVOKABLE QString sketchType(const QString& text);
     Q_INVOKABLE void focusNextSketchInput();
+    // A tap on a live value while drawing: it takes the keys (the keypad's) next.
+    Q_INVOKABLE bool focusSketchInput(const QString& key);
     Q_INVOKABLE void commitSketchTool();
     // -/+ on the sketch counter (a polygon's sides, a pattern's copies).
     Q_INVOKABLE void stepSketchCounter(int delta);
@@ -508,6 +551,9 @@ private:
     std::optional<LicenseCatalog> licenses_; // read at the first use (About -> Licenses)
     QTimer recoveryDebounce_; // edits settled
     QTimer recoveryDeadline_; // at least this often while editing
+    QTimer typingPause_;      // a value typed key by key: its pause is over
+    // (Re)starts typingPause_ for the value typed (InteractionController::typingDeadline).
+    void armTypingPause();
     std::uint64_t seenRevision_ = 0;  // undo-stack revision at the last noteEdits()
     std::uint64_t copyRevision_ = ~std::uint64_t(0); // revision in this run's copy (~0: none)
     std::uint64_t discardedRevision_ = ~std::uint64_t(0); // revision the user chose Don't Save at

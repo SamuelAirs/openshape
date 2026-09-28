@@ -141,8 +141,14 @@ public:
     std::string typeIntoInput(const std::string& text);
     std::string setInput(const std::string& key, const std::string& text);
     void focusNextInput();
+    // The live value `key` takes the keys typed next (a tap on it); false
+    // when the shape has no such value.
+    bool focusInput(const std::string& key);
     // Completes the shape being drawn using typed values (Enter).
     Status commitTool();
+    // The sketch on screen: its points, circles and the shape being drawn
+    // (what a numeric keypad beside a value keeps clear of); nullopt when empty.
+    std::optional<ScreenRect> screenBounds(const Camera& camera) const;
     // Changes a dimension's value; for a line, circle or arc (its Size
     // label) adds the dimension that sets its length, diameter or radius to
     // the value. Returns an error message or "".

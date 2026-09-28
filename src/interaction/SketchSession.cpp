@@ -10,6 +10,7 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Tessellation.h"
 #include "interaction/Manipulator.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/OverlayPlacement.h"
 #include "sketch/SketchEdit.h"
 
@@ -1730,13 +1731,15 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
             return {};
         }
         if (key == "angle") {
-            // Degrees; a whole turn spaces the copies evenly.
-            char* rest = nullptr;
-            const double degrees = std::strtod(text.c_str(), &rest);
-            while (rest && *rest == ' ')
-                ++rest;
-            if (rest == text.c_str() || (*rest != '\0' && std::string(rest) != "\xC2\xB0" && std::string(rest) != "deg")
-                || !(degrees > 0) || degrees > 360) {
+            // Degrees (with the arithmetic the value box takes: 90+90); a
+            // whole turn spaces the copies evenly.
+            const auto parsed = parseAngle(text);
+            if (!parsed.millimeters) {
+                in.locked = false;
+                return parsed.error;
+            }
+            const double degrees = *parsed.millimeters * 180.0 / kPi;
+            if (!(degrees > 0) || degrees > 360 + 1e-9) {
                 in.locked = false;
                 return "The angle must be more than 0 and at most 360 degrees.";
             }
@@ -1750,7 +1753,7 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
         if (!parsed.millimeters)
             return parsed.error;
         if (*parsed.millimeters <= 0)
-            return in.label + " must be greater than zero.";
+            return sketchInputName(key) + " must be greater than zero."; // "Width", not "W"
         in.locked = true;
         in.value = *parsed.millimeters;
         if (isOffsetting())
@@ -1768,6 +1771,37 @@ void SketchSession::focusNextInput()
 {
     if (!inputs_.empty())
         focusedInput_ = (focusedInput_ + 1) % inputs_.size();
+}
+
+bool SketchSession::focusInput(const std::string& key)
+{
+    for (std::size_t i = 0; i < inputs_.size(); ++i) {
+        if (inputs_[i].key == key) {
+            focusedInput_ = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<ScreenRect> SketchSession::screenBounds(const Camera& camera) const
+{
+    std::optional<ScreenRect> bounds;
+    auto include = [&](const ScreenRect& r) { bounds = bounds ? bounds->united(r) : r; };
+    for (const auto& [id, p] : working_.points())
+        include(ScreenRect::around(toScreen(p.position, camera)));
+    for (const auto& [id, circle] : working_.circles()) {
+        if (const auto* center = working_.point(circle.center)) {
+            const Vec2 c = center->position;
+            for (const Vec2 d : {Vec2{circle.radius, 0}, Vec2{-circle.radius, 0}, Vec2{0, circle.radius}, Vec2{0, -circle.radius}})
+                include(ScreenRect::around(toScreen(c + d, camera)));
+        }
+    }
+    if (anchor_) {
+        include(ScreenRect::around(toScreen(anchor_->position, camera)));
+        include(ScreenRect::around(toScreen(cursor_.position, camera)));
+    }
+    return bounds;
 }
 
 Status SketchSession::commitTool()
@@ -1857,16 +1891,12 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
     if (!c || !c->isDimension())
         return "That dimension no longer exists.";
     if (c->kind == sketch::ConstraintKind::Angle) {
-        // Degrees, as shown.
-        std::string digits = text;
-        for (const std::string_view unit : {std::string_view("\xC2\xB0"), std::string_view("deg")})
-            if (const auto at = digits.find(unit); at != std::string::npos)
-                digits.erase(at, unit.size());
-        char* rest = nullptr;
-        const double degrees = std::strtod(digits.c_str(), &rest);
-        while (rest && *rest == ' ')
-            ++rest;
-        if (rest == digits.c_str() || *rest != '\0' || !(degrees > 0) || !(degrees < 180))
+        // Degrees, as shown (with the arithmetic the value box takes: 45*2).
+        const auto parsed = parseAngle(text);
+        if (!parsed.millimeters)
+            return parsed.error;
+        const double degrees = *parsed.millimeters * 180.0 / kPi;
+        if (!(degrees > 0) || !(degrees < 180))
             return "Angles must be more than 0 and less than 180 degrees.";
         const auto value = sketch::directionAngleFor(working_, c->a, c->b, degrees * kPi / 180.0);
         if (!value)

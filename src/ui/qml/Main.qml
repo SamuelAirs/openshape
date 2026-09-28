@@ -716,7 +716,10 @@ ApplicationWindow {
         x: Theme.compact && !window.historyOpen ? window.width + 8 : window.width - Theme.insetRight - width
         y: Theme.compact ? modelButtonPanel.y + modelButtonPanel.height + 8 : Theme.insetTop
         visible: window.app.history.length > 0 && (!Theme.compact || window.historyOpen || x < window.width)
-        maximumHeight: Theme.compact ? window.bottomStackTop - 8 - y : window.height - Theme.insetTop - Theme.insetBottom - 80
+        // (Above a phone's keypad while a step's number is typed there.)
+        maximumHeight: Math.min(Theme.compact ? window.bottomStackTop - 8 - y : window.height - Theme.insetTop - Theme.insetBottom - 80,
+                                keypad.visible && keypad.docked ? keypad.y - 8 - y : Infinity)
+        keypad: keypad
         onFinished: viewport.forceActiveFocus()
         onCloseRequested: window.historyOpen = false
         Behavior on x {
@@ -1110,6 +1113,7 @@ ApplicationWindow {
                                    : window.width - Theme.insetRight
         topRowBottom: Math.max(topBar.y + topBar.height, Theme.compact && window.rightColumnY > Theme.insetTop
                                                          ? viewButtonPanel.y + viewButtonPanel.height : 0)
+        keypad: keypad
         onFinished: viewport.forceActiveFocus()
     }
 
@@ -1168,7 +1172,76 @@ ApplicationWindow {
         // The field toward the tip; a docked bar left-aligned, like the top bar.
         alignment: !placement || placement.spot === "above" || placement.spot === "below" ? Qt.AlignHCenter
                  : placement.spot === "left" ? Qt.AlignRight : Qt.AlignLeft
+        keypad: keypad
         onFinished: viewport.forceActiveFocus()
+    }
+
+    // ---------------------------------------------------------------- numeric keypad
+    // On a touch screen values are typed on the app's own keypad (the value
+    // box, a sketch's live values and dimensions, the Model panel's numbers;
+    // NumericKeypad.qml). A phone: docked along the bottom, the value chip at
+    // the top, and the view moves so the selection stays in sight between
+    // them. Larger windows: beside the value box, off the selection and the
+    // controls (interact::placeKeypad); the value chip keeps off it (chipObstacles).
+    NumericKeypad {
+        id: keypad
+        objectName: "numericKeypad"
+        app: window.app
+        z: 8 // over the value chip and the Model panel it types for
+        // Along the whole bottom of a phone held upright (sideways it goes
+        // to a bottom corner, at its own size: interact::placeKeypad).
+        docked: Theme.compact && window.height >= window.width
+        wide: Theme.compact && window.width > window.height
+        width: docked ? window.width - Theme.safeLeft - Theme.safeRight - 8 : implicitWidth
+        onClientChanged: if (client) Qt.callLater(window.placeKeypad)
+        onHeightChanged: if (open) Qt.callLater(window.placeKeypad)
+    }
+    onWidthChanged: if (keypad.open) Qt.callLater(window.placeKeypad)
+    onHeightChanged: if (keypad.open) Qt.callLater(window.placeKeypad)
+
+    function placeKeypad() {
+        const client = keypad.client
+        if (!client)
+            return
+        // (A phone held sideways: any bottom corner reaches the tool strip and
+        // the hint above it, which are not needed while typing; the keypad
+        // keeps off the buttons of the top row and down the right side.)
+        const avoid = keypad.wide ? [topBar, viewPanel, axisTriad, modelButtonPanel, viewButtonPanel]
+                                  : [topBar, createPanel, viewPanel, axisTriad, statusColumn, modelButtonPanel, viewButtonPanel]
+        if (client.name !== "parameter")
+            avoid.push(historyPanel)
+        if (client.name !== "valueChip")
+            avoid.push(valueChip)
+        const placement = app.placeKeypad({
+            area: Qt.rect(Theme.safeLeft + 4, Theme.safeTop + 4, window.width - Theme.safeLeft - Theme.safeRight - 8,
+                          window.height - Theme.safeTop - Theme.safeBottom - 8),
+            size: Qt.size(keypad.width, keypad.height),
+            target: client.target(),
+            avoid: avoid.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height)),
+            keepClear: client.keepClear === "selection" ? app.keepClearRect
+                     : client.keepClear === "sketch" ? app.sketchScreenRect() : undefined,
+            compact: Theme.compact
+        })
+        keypad.x = placement.x
+        keypad.y = placement.y
+        if (client.avoidKeypad)
+            client.avoidKeypad(Qt.rect(keypad.x, keypad.y, keypad.width, keypad.height))
+        // A phone: the selection and its arrow move into sight in the room
+        // the value chip (docked below the top bar while typing) and the
+        // keypad leave: above the keypad, or beside it when the phone is
+        // held sideways.
+        if (Theme.compact && client.keepClear === "selection" && valueChip.visible) {
+            const top = valueChip.y + valueChip.height + 8
+            const bottom = keypad.docked ? keypad.y - 8 : window.height - Theme.insetBottom
+            const leftRoom = keypad.x - 8 - Theme.insetLeft
+            const rightRoom = window.width - Theme.insetRight - (keypad.x + keypad.width + 8)
+            const room = keypad.docked ? Qt.rect(Theme.insetLeft, top, window.width - Theme.insetLeft - Theme.insetRight, bottom - top)
+                       : leftRoom >= rightRoom ? Qt.rect(Theme.insetLeft, top, leftRoom, bottom - top)
+                       : Qt.rect(keypad.x + keypad.width + 8, top, rightRoom, bottom - top)
+            // (Too little room: the view stays as it is.)
+            if (room.width >= 120 && room.height >= 120)
+                app.revealKeepClear(room)
+        }
     }
 
     // The controls the value chip must not cover, as window rectangles, and
@@ -1178,6 +1251,10 @@ ApplicationWindow {
         const items = Theme.compact ? [topBar, modelButtonPanel, viewButtonPanel, axisTriad, statusColumn, createPanel]
                                     : [topBar, createPanel, historyPanel, viewPanel, axisTriad, statusColumn]
         const rects = items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
+        // The numeric keypad beside it (a larger window; a phone's is docked
+        // along the bottom while the chip is at the top).
+        if (keypad.visible && !Theme.compact)
+            rects.push(Qt.rect(keypad.x, keypad.y, keypad.width, keypad.height))
         if (Qt.inputMethod.visible)
             rects.push(Qt.inputMethod.keyboardRectangle)
         return rects

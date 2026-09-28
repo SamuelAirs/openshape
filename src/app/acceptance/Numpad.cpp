@@ -1,0 +1,700 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+// Values typed with a finger or the Apple Pencil (the owner, iPhone and iPad,
+// 2026-09-27: "there is no easy way for me to type on iPad"; "as I type in
+// 100, the model snaps to 1mm, then 10mm, and finally 100"). On an iPhone in
+// portrait (402x874, Dynamic Island) and an iPad (1180x820), by touch: a
+// box's top face is tapped, then its value; the app's numeric keypad comes
+// up instead of the system keyboard (the field takes no input method), with
+// keys of 44 pt and more, docked along the bottom of the phone (the value
+// box at the top, the face in sight between them) and beside the value box
+// on the iPad, clear of the face, the value box and the controls (a phone
+// held sideways, 874x402: in a bottom corner, the face beside it). 1, 0, 0
+// tapped quickly previews nothing until the check mark, which makes the box
+// 100 mm high. A hardware keyboard still types into the field (25, Enter).
+// Clear, parentheses, the decimal point, units, backspace and arithmetic
+// keys make it 50; the
+// Model panel's Box step takes a height from the keypad; on the iPad the
+// Hole tool's Next goes from the diameter to the hole's X; a rectangle's
+// live width and height (Next between them) and then its width dimension
+// are typed on it in a sketch.
+
+#include "app/AcceptanceRunner.h"
+#include "document/Document.h"
+#include "geometry/Modeling.h"
+#include "interaction/InteractionController.h"
+#include "interaction/NumericKeypad.h"
+#include "ui/AppController.h"
+
+#include <QtCore/QCoreApplication>
+#include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QInputMethodQueryEvent>
+#include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
+
+#include <cmath>
+#include <memory>
+#include <set>
+#include <string_view>
+
+namespace os::app {
+namespace {
+
+using Steps = std::vector<AcceptanceRunner::Step>;
+
+void wait(Steps& steps, int count)
+{
+    for (int i = 0; i < count; ++i)
+        steps.push_back([] {});
+}
+
+QRectF sceneRect(AcceptanceRunner& r, const QString& name)
+{
+    QQuickItem* item = r.findItem(name);
+    if (!item || !item->isVisible())
+        return {};
+    return item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+}
+
+QString rectText(const QRectF& rect)
+{
+    return QStringLiteral("%1,%2 %3x%4").arg(rect.x(), 0, 'f', 0).arg(rect.y(), 0, 'f', 0).arg(rect.width(), 0, 'f', 0).arg(rect.height(), 0, 'f', 0);
+}
+
+bool overlaps(const QRectF& a, const QRectF& b)
+{
+    return a.left() < b.right() && b.left() < a.right() && a.top() < b.bottom() && b.top() < a.bottom();
+}
+
+QRectF projected(AcceptanceRunner& r, const std::vector<Vec3>& points)
+{
+    double left = 1e9, top = 1e9, right = -1e9, bottom = -1e9;
+    for (const Vec3& p : points) {
+        const QPointF s = r.screenPoint(p.x, p.y, p.z);
+        left = std::min(left, s.x());
+        top = std::min(top, s.y());
+        right = std::max(right, s.x());
+        bottom = std::max(bottom, s.y());
+    }
+    return QRectF(QPointF(left, top), QPointF(right, bottom));
+}
+
+// A finger's tap on the middle of a QML item.
+bool tapItem(AcceptanceRunner& r, const QString& name)
+{
+    QQuickItem* item = r.findItem(name);
+    if (!item || !item->isVisible())
+        return false;
+    r.touchTap({item->mapToScene(QPointF(item->width() / 2, item->height() / 2))});
+    return true;
+}
+
+// Taps keypad keys, one per character ("-" is minus, "." the decimal point).
+bool tapKeys(AcceptanceRunner& r, const QString& keys)
+{
+    bool all = true;
+    for (const QChar c : keys)
+        all = tapItem(r, QStringLiteral("keypadKey_") + c) && all;
+    return all;
+}
+
+bool keypadShown(AcceptanceRunner& r)
+{
+    QQuickItem* keypad = r.findItem(QStringLiteral("numericKeypad"));
+    return keypad && keypad->isVisible();
+}
+
+// The focused item would open the system keyboard (it takes input-method text).
+bool systemKeyboardWanted()
+{
+    QObject* focus = QGuiApplication::focusObject();
+    if (!focus)
+        return false;
+    QInputMethodQueryEvent query(Qt::ImEnabled);
+    QCoreApplication::sendEvent(focus, &query);
+    return query.value(Qt::ImEnabled).toBool();
+}
+
+QString focusName()
+{
+    QObject* focus = QGuiApplication::focusObject();
+    return focus ? focus->objectName() + QStringLiteral(" (") + QString::fromLatin1(focus->metaObject()->className()) + QStringLiteral(")")
+                 : QStringLiteral("none");
+}
+
+struct Config {
+    QString name;
+    int width = 0;
+    int height = 0;
+    QVariant safeArea;
+    double safe[4] = {0, 0, 0, 0};
+    bool phone() const { return width < 600 || height < 500; }
+    bool sideways() const { return phone() && width > height; }
+};
+
+struct State {
+    double volume = 0;
+    double height = 0;
+    QString valueBefore;
+    QString boxStep; // the Box step's id in the Model panel
+    int widthDimension = 0;
+    std::size_t lines = 0;
+    std::set<int> points;
+};
+
+double bodyHeight(AcceptanceRunner& r)
+{
+    return r.app().bodyCount() == 0 ? -1.0 : geom::boundingBox(r.body(0).shape()).size().z;
+}
+
+std::size_t sketchLines(AcceptanceRunner& r)
+{
+    const auto* session = r.app().interaction().sketchSession();
+    return session ? session->sketch().lines().size() : 0;
+}
+
+// The sketch's points' extent (x and y).
+QSizeF sketchExtent(AcceptanceRunner& r)
+{
+    const auto* session = r.app().interaction().sketchSession();
+    if (!session || session->sketch().points().empty())
+        return {};
+    double left = 1e9, right = -1e9, bottom = 1e9, top = -1e9;
+    for (const auto& [id, p] : session->sketch().points()) {
+        left = std::min(left, p.position.x);
+        right = std::max(right, p.position.x);
+        bottom = std::min(bottom, p.position.y);
+        top = std::max(top, p.position.y);
+    }
+    return QSizeF(right - left, top - bottom);
+}
+
+// The keypad is on screen inside the safe area, with keys of 44 pt and more.
+// `sketchInSight`: a sketch's live value: a sideways phone's keypad may
+// reach the View button and the axes rather than cover the shape being drawn
+// (its display line shows the value; TD-91).
+void checkKeypad(AcceptanceRunner& r, const Config& c, const QString& what, bool sketchInSight = false)
+{
+    const QRectF pad = sceneRect(r, QStringLiteral("numericKeypad"));
+    r.check(keypadShown(r), c.name + QStringLiteral(": the keypad comes up for ") + what);
+    const double w = r.window()->width();
+    const double h = r.window()->height();
+    const QRectF safe(c.safe[3], c.safe[0], w - c.safe[3] - c.safe[1], h - c.safe[0] - c.safe[2]);
+    r.check(safe.adjusted(-0.5, -0.5, 0.5, 0.5).contains(pad), c.name + QStringLiteral(": the keypad is inside the safe area (") + what + QStringLiteral(")"),
+            rectText(pad));
+    double smallest = 1e9;
+    int keys = 0;
+    for (const char* id : {"0", "1", "5", "9", "back", "clear", "done", ".", "+", "mm", "in"}) {
+        const QRectF key = sceneRect(r, QStringLiteral("keypadKey_") + QString::fromLatin1(id));
+        if (key.isEmpty())
+            continue;
+        ++keys;
+        smallest = std::min({smallest, key.width(), key.height()});
+    }
+    r.check(keys >= 4 && smallest >= 44, c.name + QStringLiteral(": the keys are 44 pt or more (") + what + QStringLiteral(")"),
+            QStringLiteral("%1 keys, smallest %2").arg(keys).arg(smallest));
+    r.check(!systemKeyboardWanted(), c.name + QStringLiteral(": the system keyboard stays down (") + what + QStringLiteral(")"), focusName());
+    if (c.sideways()) {
+        r.check(std::abs(pad.bottom() - (h - c.safe[2])) <= 8 && pad.width() < w / 2,
+                c.name + QStringLiteral(": the keypad is along the bottom, the model keeps the rest (") + what + QStringLiteral(")"), rectText(pad));
+        // Four rows: below the top row of controls (File, Model, View; Finish sketch).
+        for (const char* control : {"topBar", "modelButtonPanel", "viewButtonPanel", "axisTriad", "sketchToolbar"}) {
+            if (sketchInSight && (control == std::string_view("viewButtonPanel") || control == std::string_view("axisTriad")))
+                continue;
+            const QRectF other = sceneRect(r, QString::fromLatin1(control));
+            r.check(other.isEmpty() || !overlaps(pad, other),
+                    c.name + QStringLiteral(": the keypad covers no control (") + QString::fromLatin1(control) + QStringLiteral(", ") + what + QStringLiteral(")"),
+                    rectText(pad) + QStringLiteral(" / ") + rectText(other));
+        }
+    }
+    else if (c.phone())
+        r.check(std::abs(pad.bottom() - (h - c.safe[2])) <= 8 && pad.width() >= w - c.safe[1] - c.safe[3] - 10,
+                c.name + QStringLiteral(": the keypad is docked along the bottom (") + what + QStringLiteral(")"), rectText(pad));
+}
+
+void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::shared_ptr<State>& s)
+{
+    steps.push_back([&r, c] {
+        r.app().newDocument();
+        r.app().setTouchMode(true);
+        r.resizeWindow(c.width, c.height);
+        r.window()->setProperty("simulatedSafeArea", c.safeArea);
+    });
+    wait(steps, 3);
+    steps.push_back([&r, c] {
+        r.check(r.window()->width() == c.width && r.window()->height() == c.height, c.name + QStringLiteral(": the window size"),
+                QStringLiteral("%1x%2").arg(r.window()->width()).arg(r.window()->height()));
+        r.check(tapItem(r, QStringLiteral("emptyAddBox")), c.name + QStringLiteral(": tap Add a box"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(r.app().bodyCount() == 1, c.name + QStringLiteral(": a box"));
+        r.app().setTouchMode(true);
+        r.app().fitAll();
+    });
+    wait(steps, 4);
+    // ---- The value box: 1, 0, 0 and the check mark.
+    steps.push_back([&r] { r.touchTap({r.screenPoint(0, 0, 20)}); });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face offers push/pull"),
+                r.app().operationTitle());
+        s->volume = r.bodyVolume();
+        s->valueBefore = r.app().operationValueText();
+        r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the value"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        checkKeypad(r, c, QStringLiteral("the value box"));
+        QQuickItem* chip = r.findItem(QStringLiteral("valueChip"));
+        QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+        r.check(chip && chip->property("typing").toBool() && field && field->hasActiveFocus(),
+                c.name + QStringLiteral(": the value field has the focus (the keypad types into it)"));
+        r.check(field && field->property("readOnly").toBool(), c.name + QStringLiteral(": the field itself takes no keyboard text on touch"));
+        const QRectF pad = sceneRect(r, QStringLiteral("numericKeypad"));
+        const QRectF chipRect = sceneRect(r, QStringLiteral("valueChip"));
+        r.check(!overlaps(pad, chipRect), c.name + QStringLiteral(": the keypad leaves the value box clear"),
+                rectText(pad) + QStringLiteral(" / ") + rectText(chipRect));
+        const QRectF face = projected(r, {{-10, -10, 20}, {10, -10, 20}, {10, 10, 20}, {-10, 10, 20}});
+        r.check(!overlaps(pad, face), c.name + QStringLiteral(": the keypad keeps clear of the selected face"),
+                rectText(pad) + QStringLiteral(" / ") + rectText(face));
+        r.check(!overlaps(chipRect, face), c.name + QStringLiteral(": so does the value box"),
+                rectText(chipRect) + QStringLiteral(" / ") + rectText(face));
+        if (const auto keep = r.app().interaction().keepClearRect()) {
+            const QRectF k(QPointF(keep->left, keep->top), QPointF(keep->right, keep->bottom));
+            r.check(!overlaps(pad, k), c.name + QStringLiteral(": the keypad is off the face and its arrow"),
+                    rectText(pad) + QStringLiteral(" / ") + rectText(k));
+        }
+        if (c.phone()) {
+            const QString spot = chip ? chip->property("placement").toMap().value(QStringLiteral("spot")).toString() : QString();
+            r.check(spot == QStringLiteral("dockTop") && chipRect.bottom() < pad.top(),
+                    c.name + QStringLiteral(": the value box is at the top, above the keypad"), spot + QStringLiteral(" ") + rectText(chipRect));
+        } else {
+            // Beside the value box (and the value box keeps off it).
+            const double gap = std::max({pad.left() - chipRect.right(), chipRect.left() - pad.right(), pad.top() - chipRect.bottom(),
+                                         chipRect.top() - pad.bottom()});
+            r.check(gap >= 0 && gap <= interact::kKeypadGap + 40, c.name + QStringLiteral(": the keypad is next to the value box"),
+                    QString::number(gap, 'f', 1));
+            for (const char* control : {"topBar", "createPanel", "historyPanel", "viewPanel", "axisTriad", "statusColumn"}) {
+                const QRectF other = sceneRect(r, QString::fromLatin1(control));
+                r.check(other.isEmpty() || !overlaps(pad, other),
+                        c.name + QStringLiteral(": the keypad covers no control (") + QString::fromLatin1(control) + QStringLiteral(")"),
+                        rectText(pad) + QStringLiteral(" / ") + rectText(other));
+            }
+        }
+        r.screenshot(QStringLiteral("numpad_") + c.name + QStringLiteral("_value"));
+        // 1, 0, 0 in quick succession: nothing is previewed yet ...
+        r.check(tapKeys(r, QStringLiteral("100")), c.name + QStringLiteral(": tap 1, 0, 0"));
+        r.check(field && field->property("text").toString() == QStringLiteral("100"), c.name + QStringLiteral(": the field shows 100"),
+                field ? field->property("text").toString() : QString());
+        r.check(r.app().typingPending() && r.app().operationValueText() == s->valueBefore,
+                c.name + QStringLiteral(": typed quickly, the model keeps its value until typing pauses"), r.app().operationValueText());
+        // ... and the check mark applies exactly what was typed.
+        r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the keypad's check mark"));
+    });
+    steps.push_back([&r, c, s] {
+        const double h = bodyHeight(r);
+        r.check(std::abs(h - 100) < 1e-6 && std::abs(r.bodyVolume() - s->volume * 5) < 1e-3,
+                c.name + QStringLiteral(": 1, 0, 0 and the check mark make the box 100 mm high"),
+                AcceptanceRunner::num(h) + QStringLiteral(" / volume ") + AcceptanceRunner::num(r.bodyVolume()));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes with the check mark"));
+        r.app().fitAll();
+    });
+    wait(steps, 4);
+    // ---- A hardware keyboard still types into the value (an iPad's keyboard case).
+    steps.push_back([&r] { r.touchTap({r.screenPoint(0, 0, 100)}); });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face again"),
+                r.app().operationTitle());
+        r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the value again"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(keypadShown(r), c.name + QStringLiteral(": the keypad is up"));
+        r.type(QStringLiteral("25"));
+        QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+        r.check(field && field->property("text").toString() == QStringLiteral("25"), c.name + QStringLiteral(": hardware keys type into the field"),
+                field ? field->property("text").toString() : QString());
+        r.key(Qt::Key_Return);
+    });
+    steps.push_back([&r, c] {
+        const double h = bodyHeight(r);
+        r.check(std::abs(h - 25) < 1e-6, c.name + QStringLiteral(": 25 and Enter from the keyboard make it 25 mm high"), AcceptanceRunner::num(h));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": Enter puts the keypad away"));
+        r.app().fitAll();
+    });
+    wait(steps, 4);
+    // ---- The other keys: clear, parentheses, the decimal point, units (each
+    // replacing the last), backspace (a whole unit), x, /, + and -:
+    // (12.5*8)/2+5-5 = 50.
+    steps.push_back([&r] { r.touchTap({r.screenPoint(0, 0, 25)}); });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face once more"),
+                r.app().operationTitle());
+        r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the value once more"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(keypadShown(r), c.name + QStringLiteral(": the keypad is up again"));
+        QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+        auto text = [field] { return field ? field->property("text").toString() : QString(); };
+        auto expect = [&r, &c, &text](const QString& want, const QString& what) {
+            r.check(text() == want, c.name + QStringLiteral(": ") + what, text());
+        };
+        tapKeys(r, QStringLiteral("9"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_clear")), c.name + QStringLiteral(": tap C"));
+        expect(QString(), QStringLiteral("C clears the value"));
+        r.check(tapKeys(r, QStringLiteral("(12.5")), c.name + QStringLiteral(": tap ( 1 2 . 5 (the decimal point)"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_in")), c.name + QStringLiteral(": tap in"));
+        expect(QStringLiteral("(12.5in"), QStringLiteral("in follows the number"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_mm")), c.name + QStringLiteral(": tap mm"));
+        expect(QStringLiteral("(12.5mm"), QStringLiteral("mm replaces in"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_cm")), c.name + QStringLiteral(": tap cm"));
+        expect(QStringLiteral("(12.5cm"), QStringLiteral("cm replaces mm"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_back")), c.name + QStringLiteral(": tap the backspace key"));
+        expect(QStringLiteral("(12.5"), QStringLiteral("backspace takes the whole unit"));
+        r.check(tapKeys(r, QStringLiteral("*8)/2+5-5")), c.name + QStringLiteral(": tap x 8 ) / 2 + 5 - 5"));
+        expect(QStringLiteral("(12.5*8)/2+5-5"), QStringLiteral("the whole sum"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the check mark"));
+    });
+    steps.push_back([&r, c, s] {
+        const double h = bodyHeight(r);
+        r.check(std::abs(h - 50) < 1e-6, c.name + QStringLiteral(": (12.5x8)/2+5-5 makes it 50 mm high"), AcceptanceRunner::num(h));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        s->height = h;
+        if (c.phone())
+            r.check(r.clickItem(QStringLiteral("modelPanelButton")), c.name + QStringLiteral(": the Model button"));
+    });
+    wait(steps, 3);
+    // ---- The Model panel: the Box step's height.
+    steps.push_back([&r, c, s] {
+        s->boxStep.clear();
+        for (const QVariant& row : r.app().history()) {
+            const QVariantMap map = row.toMap();
+            if (map.value(QStringLiteral("kind")).toString() != QStringLiteral("feature"))
+                continue;
+            for (const QVariant& p : map.value(QStringLiteral("parameters")).toList())
+                if (p.toMap().value(QStringLiteral("key")).toString() == QStringLiteral("height"))
+                    s->boxStep = map.value(QStringLiteral("id")).toString();
+        }
+        r.check(!s->boxStep.isEmpty() && tapItem(r, QStringLiteral("historyRow_") + s->boxStep),
+                c.name + QStringLiteral(": tap the Box step in the Model panel"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        r.check(tapItem(r, QStringLiteral("historyParam_") + s->boxStep + QStringLiteral("_height")),
+                c.name + QStringLiteral(": tap its Height"));
+    });
+    wait(steps, 3);
+    steps.push_back([&r, c, s] {
+        checkKeypad(r, c, QStringLiteral("a Model panel number"));
+        const QString name = QStringLiteral("historyParam_") + s->boxStep + QStringLiteral("_height");
+        QQuickItem* field = r.findItem(name);
+        const QRectF fieldRect = sceneRect(r, name);
+        const QRectF pad = sceneRect(r, QStringLiteral("numericKeypad"));
+        r.check(field && field->hasActiveFocus() && field->property("readOnly").toBool(),
+                c.name + QStringLiteral(": the Height field has the focus, the keypad types"));
+        r.check(!fieldRect.isEmpty() && !overlaps(pad, fieldRect), c.name + QStringLiteral(": the keypad leaves the Height field in sight"),
+                rectText(pad) + QStringLiteral(" / ") + rectText(fieldRect));
+        if (!c.phone()) {
+            const QRectF panel = sceneRect(r, QStringLiteral("historyPanel"));
+            r.check(!overlaps(pad, panel), c.name + QStringLiteral(": beside the Model panel"), rectText(pad) + QStringLiteral(" / ") + rectText(panel));
+        }
+        r.screenshot(QStringLiteral("numpad_") + c.name + QStringLiteral("_model"));
+        r.check(tapKeys(r, QStringLiteral("30")) && tapItem(r, QStringLiteral("keypadKey_done")),
+                c.name + QStringLiteral(": tap 3, 0 and the check mark"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, c, s] {
+        const double h = bodyHeight(r);
+        r.check(std::abs(h - (s->height + 10)) < 1e-6, c.name + QStringLiteral(": the box step is 30 high: 10 mm more"),
+                AcceptanceRunner::num(h) + QStringLiteral(" (was ") + AcceptanceRunner::num(s->height) + QStringLiteral(")"));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        if (c.phone())
+            r.check(r.clickItem(QStringLiteral("historyPanelHide")), c.name + QStringLiteral(": close the Model panel"));
+    });
+    wait(steps, 2);
+    // ---- Next in the value box: the Hole tool's diameter, then the hole's X (iPad).
+    if (!c.phone()) {
+        steps.push_back([&r, s] {
+            r.app().fitAll();
+            s->volume = r.bodyVolume();
+        });
+        wait(steps, 4);
+        steps.push_back([&r, s] { r.touchTap({r.screenPoint(3, -3, s->height + 10)}); });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face for a hole"),
+                    r.app().operationTitle());
+            r.check(tapItem(r, QStringLiteral("tool_hole")), c.name + QStringLiteral(": tap Hole"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, s] { r.touchTap({r.screenPoint(0, 0, s->height + 10)}); });
+        wait(steps, 3);
+        steps.push_back([&r, c] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("Diameter"), c.name + QStringLiteral(": a hole; the value box has its diameter"),
+                    r.app().operationValueLabel());
+            r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the diameter"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            checkKeypad(r, c, QStringLiteral("the Hole tool"));
+            r.check(tapKeys(r, QStringLiteral("6")) && tapItem(r, QStringLiteral("keypadKey_next")),
+                    c.name + QStringLiteral(": tap 6 and the keypad's Next"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            // Through all (the default): no depth; Next goes on to where the hole is.
+            r.check(r.app().operationValueLabel() == QStringLiteral("X from corner"), c.name + QStringLiteral(": Next goes on to the hole's X"),
+                    r.app().operationValueLabel());
+            QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+            r.check(keypadShown(r) && field && field->hasActiveFocus(), c.name + QStringLiteral(": the keypad stays for X"));
+            r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the check mark (X as it is)"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c, s] {
+            // A 6 mm hole through the whole block: pi * 3^2 * its height taken out.
+            const double taken = s->volume - r.bodyVolume();
+            r.check(std::abs(taken - kPi * 9 * (s->height + 10)) < 1e-3, c.name + QStringLiteral(": a hole 6 across, through all"),
+                    AcceptanceRunner::num(taken));
+            r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        });
+        wait(steps, 1);
+        // ---- An angle: Rotate turns the block 45 degrees (the degree key).
+        steps.push_back([&r, c] {
+            r.check(tapItem(r, QStringLiteral("historyRow_") + QString::fromStdString(r.body(0).id().toString())),
+                    c.name + QStringLiteral(": tap the block in the Model panel"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] { r.check(tapItem(r, QStringLiteral("tool_rotate")), c.name + QStringLiteral(": tap Rotate")); });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            r.check(r.app().operationValueLabel() == QStringLiteral("Angle Z"), c.name + QStringLiteral(": turning it on the table"),
+                    r.app().operationValueLabel());
+            r.check(tapItem(r, QStringLiteral("valueChipField")), c.name + QStringLiteral(": tap the angle"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            checkKeypad(r, c, QStringLiteral("an angle"));
+            r.check(sceneRect(r, QStringLiteral("keypadKey_mm")).isEmpty() && !sceneRect(r, QStringLiteral("keypadKey_deg")).isEmpty(),
+                    c.name + QStringLiteral(": an angle's keys: degrees, no lengths"));
+            r.check(tapKeys(r, QStringLiteral("45")) && tapItem(r, QStringLiteral("keypadKey_deg")), c.name + QStringLiteral(": tap 4, 5, the degree key"));
+            QQuickItem* field = r.findItem(QStringLiteral("valueChipField"));
+            r.check(field && field->property("text").toString() == QString::fromUtf8("45\xC2\xB0"), c.name + QStringLiteral(": the field shows 45 degrees"),
+                    field ? field->property("text").toString() : QString());
+            r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the check mark"));
+        });
+        wait(steps, 2);
+        steps.push_back([&r, c] {
+            // The 20 x 20 block turned 45 degrees about its upright axis: 20 * sqrt(2) across.
+            const auto bb = geom::boundingBox(r.body(0).shape());
+            const double across = std::sqrt(2.0) * 20;
+            r.check(std::abs(bb.size().x - across) < 1e-6 && std::abs(bb.size().y - across) < 1e-6,
+                    c.name + QStringLiteral(": 4, 5, degrees and the check mark turn it 45 degrees"),
+                    AcceptanceRunner::num(bb.size().x) + QStringLiteral(" x ") + AcceptanceRunner::num(bb.size().y));
+            r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        });
+        wait(steps, 1);
+    }
+    // ---- A sketch: a rectangle's live values, then its width dimension.
+    steps.push_back([&r] {
+        r.app().newDocument();
+        r.app().setTouchMode(true);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] { r.check(tapItem(r, QStringLiteral("emptyStartSketch")), c.name + QStringLiteral(": tap Start a sketch")); });
+    wait(steps, 5);
+    steps.push_back([&r, c] {
+        r.check(r.app().sketchMode(), c.name + QStringLiteral(": sketching"));
+        r.check(tapItem(r, QStringLiteral("tool_rectangle")), c.name + QStringLiteral(": the Rectangle tool"));
+    });
+    steps.push_back([&r] { r.touchTap({r.screenPoint(3, 4, 0)}); });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(r.app().sketchDrawing(), c.name + QStringLiteral(": a tap starts the rectangle"));
+        r.check(tapItem(r, QStringLiteral("sketchInput_width")), c.name + QStringLiteral(": tap its live width"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        checkKeypad(r, c, QStringLiteral("a live value"), true);
+        QQuickItem* keypad = r.findItem(QStringLiteral("numericKeypad"));
+        r.check(keypad && keypad->hasActiveFocus(), c.name + QStringLiteral(": the keypad takes the keys (no field)"), focusName());
+        const QRectF display = sceneRect(r, QStringLiteral("keypadDisplay"));
+        r.check(!display.isEmpty(), c.name + QStringLiteral(": the keypad shows the value typed"));
+        // The live values show only numbers: the hint says "the width", the keypad names it.
+        const QString hint = r.app().touchWording(r.app().sketchHint());
+        r.check(hint.contains(QStringLiteral("tap the width or height")), c.name + QStringLiteral(": the hint names the live values in words"), hint);
+        QQuickItem* name = r.findItem(QStringLiteral("keypadDisplayName"));
+        r.check(name && name->isVisible() && name->property("text").toString() == QStringLiteral("Width"),
+                c.name + QStringLiteral(": the keypad says it types the width"), name ? name->property("text").toString() : QString());
+        r.screenshot(QStringLiteral("numpad_") + c.name + QStringLiteral("_live"));
+        r.check(tapKeys(r, QStringLiteral("12")), c.name + QStringLiteral(": tap 1, 2 (width)"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_next")), c.name + QStringLiteral(": tap Next"));
+        r.check(name && name->property("text").toString() == QStringLiteral("Height"), c.name + QStringLiteral(": then the height"),
+                name ? name->property("text").toString() : QString());
+        r.check(tapKeys(r, QStringLiteral("8")), c.name + QStringLiteral(": tap 8 (height)"));
+        r.check(tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap the check mark"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        const QSizeF extent = sketchExtent(r);
+        r.check(std::abs(extent.width() - 12) < 1e-6 && std::abs(extent.height() - 8) < 1e-6,
+                c.name + QStringLiteral(": a 12 x 8 rectangle from the keypad"),
+                AcceptanceRunner::num(extent.width()) + QStringLiteral(" x ") + AcceptanceRunner::num(extent.height()));
+        r.check(!r.app().sketchDrawing() && !keypadShown(r), c.name + QStringLiteral(": the rectangle is done, the keypad goes"));
+        s->widthDimension = 0;
+        if (const auto* session = r.app().interaction().sketchSession())
+            for (const auto& [id, constraint] : session->sketch().constraints())
+                if (constraint.kind == sketch::ConstraintKind::HorizontalDistance)
+                    s->widthDimension = int(id);
+        r.check(s->widthDimension != 0 && tapItem(r, QStringLiteral("dimensionLabel_%1").arg(s->widthDimension)),
+                c.name + QStringLiteral(": tap the width dimension"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        checkKeypad(r, c, QStringLiteral("a dimension"));
+        const QRectF editor = sceneRect(r, QStringLiteral("dimensionEditor"));
+        const QRectF pad = sceneRect(r, QStringLiteral("numericKeypad"));
+        r.check(!editor.isEmpty() && !overlaps(pad, editor), c.name + QStringLiteral(": the keypad leaves the dimension's field in sight"),
+                rectText(pad) + QStringLiteral(" / ") + rectText(editor));
+        if (!c.phone()) {
+            // Beside the value, off the rectangle it sizes.
+            const auto sketch = r.app().interaction().sketchScreenRect();
+            const QRectF drawn = sketch ? QRectF(QPointF(sketch->left, sketch->top), QPointF(sketch->right, sketch->bottom)) : QRectF();
+            r.check(sketch && !overlaps(pad, drawn), c.name + QStringLiteral(": the keypad keeps clear of the rectangle"),
+                    rectText(pad) + QStringLiteral(" / ") + rectText(drawn));
+        }
+        r.screenshot(QStringLiteral("numpad_") + c.name + QStringLiteral("_dimension"));
+        r.check(tapKeys(r, QStringLiteral("15")) && tapItem(r, QStringLiteral("keypadKey_done")),
+                c.name + QStringLiteral(": tap 1, 5 and the check mark"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        const QSizeF extent = sketchExtent(r);
+        r.check(std::abs(extent.width() - 15) < 1e-6 && std::abs(extent.height() - 8) < 1e-6,
+                c.name + QStringLiteral(": the width dimension is 15 now"),
+                AcceptanceRunner::num(extent.width()) + QStringLiteral(" x ") + AcceptanceRunner::num(extent.height()));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        // Another rectangle: its first corner, then (while it is drawn) the
+        // width dimension's label, then its live width: the keypad goes on
+        // from the dimension to the live value at once.
+        s->lines = sketchLines(r);
+        s->points.clear();
+        if (const auto* session = r.app().interaction().sketchSession())
+            for (const auto& [id, p] : session->sketch().points())
+                s->points.insert(int(id));
+        r.app().setSketchTool(QStringLiteral("rectangle"));
+        // (Where the keypad for the dimension leaves its live width in sight:
+        // a sideways phone's is in the bottom left corner.)
+        r.touchTap({c.sideways() ? r.screenPoint(120, 10, 0) : r.screenPoint(60, 30, 0)});
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        r.check(r.app().sketchDrawing(), c.name + QStringLiteral(": another rectangle"));
+        r.check(tapItem(r, QStringLiteral("dimensionLabel_%1").arg(s->widthDimension)), c.name + QStringLiteral(": tap the width dimension meanwhile"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        QQuickItem* editor = r.findItem(QStringLiteral("dimensionEditor"));
+        r.check(editor && editor->isVisible() && keypadShown(r), c.name + QStringLiteral(": its field and the keypad"));
+        r.screenshot(QStringLiteral("numpad_") + c.name + QStringLiteral("_handoff"));
+        r.check(!overlaps(sceneRect(r, QStringLiteral("sketchInput_width")), sceneRect(r, QStringLiteral("numericKeypad"))),
+                c.name + QStringLiteral(": the new live width is in sight"),
+                rectText(sceneRect(r, QStringLiteral("sketchInput_width"))) + QStringLiteral(" / ") + rectText(sceneRect(r, QStringLiteral("numericKeypad"))));
+        r.check(tapItem(r, QStringLiteral("sketchInput_width")), c.name + QStringLiteral(": then tap the new rectangle's live width"));
+    });
+    wait(steps, 3);
+    steps.push_back([&r, c] {
+        QQuickItem* editor = r.findItem(QStringLiteral("dimensionEditor"));
+        QQuickItem* name = r.findItem(QStringLiteral("keypadDisplayName"));
+        r.check(keypadShown(r) && name && name->property("text").toString() == QStringLiteral("Width"),
+                c.name + QStringLiteral(": the keypad stays, for the live width"), name ? name->property("text").toString() : QString());
+        r.check(editor && !editor->isVisible(), c.name + QStringLiteral(": the dimension's field goes"));
+        r.check(tapKeys(r, QStringLiteral("5")) && tapItem(r, QStringLiteral("keypadKey_next")) && tapKeys(r, QStringLiteral("5"))
+                    && tapItem(r, QStringLiteral("keypadKey_done")),
+                c.name + QStringLiteral(": tap 5, Next, 5 and the check mark"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        double left = 1e9, right = -1e9, bottom = 1e9, top = -1e9;
+        if (const auto* session = r.app().interaction().sketchSession())
+            for (const auto& [id, p] : session->sketch().points())
+                if (!s->points.count(int(id))) {
+                    left = std::min(left, p.position.x);
+                    right = std::max(right, p.position.x);
+                    bottom = std::min(bottom, p.position.y);
+                    top = std::max(top, p.position.y);
+                }
+        r.check(sketchLines(r) == s->lines + 4 && std::abs(right - left - 5) < 1e-6 && std::abs(top - bottom - 5) < 1e-6,
+                c.name + QStringLiteral(": a 5 x 5 rectangle"),
+                QStringLiteral("%1 lines, ").arg(sketchLines(r) - s->lines) + AcceptanceRunner::num(right - left) + QStringLiteral(" x ")
+                    + AcceptanceRunner::num(top - bottom));
+        r.check(!r.app().sketchDrawing() && !keypadShown(r), c.name + QStringLiteral(": done, the keypad goes"));
+        // ---- A count: a polygon's sides (whole numbers only).
+        s->lines = sketchLines(r);
+        r.app().setSketchTool(QStringLiteral("polygon"));
+        r.touchTap({r.screenPoint(40, -25, 0)});
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        r.check(r.app().sketchDrawing(), c.name + QStringLiteral(": a polygon's center"));
+        r.check(tapItem(r, QStringLiteral("sketchInput_sides")), c.name + QStringLiteral(": tap its sides"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c] {
+        checkKeypad(r, c, QStringLiteral("a polygon's sides"), true);
+        QQuickItem* name = r.findItem(QStringLiteral("keypadDisplayName"));
+        r.check(name && name->property("text").toString() == QStringLiteral("Sides"), c.name + QStringLiteral(": the keypad types the sides"),
+                name ? name->property("text").toString() : QString());
+        bool none = true;
+        for (const char* id : {".", "mm", "in", "deg", "+", "("})
+            none = none && sceneRect(r, QStringLiteral("keypadKey_") + QString::fromLatin1(id)).isEmpty();
+        r.check(none && !sceneRect(r, QStringLiteral("keypadKey_0")).isEmpty(),
+                c.name + QStringLiteral(": a count's keys: digits only (no point, units or arithmetic)"));
+        r.screenshot(QStringLiteral("numpad_") + c.name + QStringLiteral("_count"));
+        r.check(tapKeys(r, QStringLiteral("8")) && tapItem(r, QStringLiteral("keypadKey_next")), c.name + QStringLiteral(": tap 8, Next"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, c] {
+        QQuickItem* name = r.findItem(QStringLiteral("keypadDisplayName"));
+        r.check(name && name->property("text").toString() == QStringLiteral("Size") && !sceneRect(r, QStringLiteral("keypadKey_mm")).isEmpty(),
+                c.name + QStringLiteral(": Next: the size, with a length's keys"), name ? name->property("text").toString() : QString());
+        r.check(tapKeys(r, QStringLiteral("20")) && tapItem(r, QStringLiteral("keypadKey_done")), c.name + QStringLiteral(": tap 2, 0 and the check mark"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, c, s] {
+        r.check(sketchLines(r) == s->lines + 8, c.name + QStringLiteral(": an eight-sided polygon"), QString::number(sketchLines(r) - s->lines));
+        r.check(!keypadShown(r), c.name + QStringLiteral(": the keypad goes"));
+        r.check(r.clickItem(QStringLiteral("finishSketchButton")), c.name + QStringLiteral(": Finish sketch"));
+    });
+    wait(steps, 2);
+}
+
+Steps steps(AcceptanceRunner& r)
+{
+    Steps out;
+    auto state = std::make_shared<State>();
+    Config phone{QStringLiteral("iphone"), 402, 874, QVariantList{62, 0, 34, 0}, {62, 0, 34, 0}};
+    Config sideways{QStringLiteral("iphone_landscape"), 874, 402, QVariantList{0, 62, 21, 62}, {0, 62, 21, 62}};
+    Config tablet{QStringLiteral("ipad"), 1180, 820, QVariant(), {0, 0, 0, 0}};
+    addConfig(out, r, phone, state);
+    addConfig(out, r, sideways, state);
+    addConfig(out, r, tablet, state);
+    out.push_back([&r] {
+        r.window()->setProperty("simulatedSafeArea", QVariant());
+        r.resizeWindow(r.initialWindowSize().width(), r.initialWindowSize().height());
+        r.app().setTouchMode(false);
+    });
+    return out;
+}
+
+const bool registered = registerAcceptanceScenario({QStringLiteral("numpad"), 97, steps});
+
+} // namespace
+} // namespace os::app

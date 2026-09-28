@@ -282,8 +282,19 @@ downloaded yet.
 - Files: see above; sharing and "Open in OpenShape" need trying on the
   devices (the tests below).
 - No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
-- Typing values: tap the value field for the on-screen keyboard (typing
-  without tapping needs a hardware keyboard).
+- Typing values: tap the value field for OpenShape's numeric keypad
+  (typing without tapping needs a hardware keyboard).
+- Apple Pencil Scribble (handwriting into a field) is not expected to work,
+  but has not been tried on a device: Qt 6.11's iOS platform plugin
+  (`qiosinputcontext.mm`, `qiostextresponder.mm`, `quiview.mm`, read on
+  2026-09-27) has no `UIScribbleInteraction` /
+  `UIIndirectScribbleInteraction` code, and a field only gets a text
+  responder once it has the focus; forum threads (Esri Survey123,
+  MerginMaps) report it not working and cite QTBUG-90932 (not read: the
+  Qt bug tracker did not load). Making it work would mean patching Qt's
+  iOS platform plugin. The value fields are read-only on
+  touch anyway (the keypad types into them, so the system keyboard stays
+  down); the keypad's keys take Pencil taps. See TD-90.
 - Not measured yet: speed and memory with bigger parts.
 
 The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → Logs →
@@ -337,8 +348,14 @@ text (About → **Licenses**). What that means in practice:
    space (orbits), double-tap a body (selects it).
 3. Two fingers: pan and pinch-zoom; a quick two-finger tap undoes, three
    fingers redo.
-4. Box → tap the top face → drag the arrow; tap the value field and type a
-   height → Enter.
+4. Box → tap the top face → drag the arrow; tap the value field: the
+   numeric keypad opens beside the value box (never the system keyboard),
+   away from the face and its arrow; tap `1`, `0`, `0` quickly: the model
+   does not jump to 1 mm and 10 mm; ✓ makes it 100 mm. Again with the
+   Pencil, and with `2`, `5`, `mm`, then `in` (it becomes 25 in), ⌫ (the
+   whole unit goes), `×` `2`, pause: the preview follows after a moment.
+   With a keyboard case: tap the value and type on the keyboard (the
+   keypad stays open, the keys still type).
 5. Sketch: draw a rectangle with a finger, then with the Pencil; turn on
    **Pen** and check that a resting hand does not draw or select.
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
@@ -381,18 +398,23 @@ text (About → **Licenses**). What that means in practice:
    both stay selected and Union / Subtract / Intersect appear. Double-tap
    one of them again: only it leaves the selection. With a body selected,
    a single tap on another body adds it too. Also with the Pencil.
-14. Note anything slow, hard to hit, or missing — with a screenshot
-   (TestFlight: take a screenshot and share it as feedback, or send it).
-14. Share to a slicer: File → Export STL: the share sheet opens as a
+14. The keypad elsewhere: in a sketch, tap the first corner of a rectangle,
+   then its live width: the keypad shows "Width" and what you type; `40`, **Next**,
+   `25`, ✓ draws a 40 × 25 rectangle. Tap its width label: the keypad
+   again; `50` ✓. In the Model panel, tap the Box step, then Height:
+   `30` ✓. The Hole tool: tap the diameter, **Next** goes to depth, X, Y.
+   Try Apple Pencil handwriting in a value field (Scribble): it is not
+   expected to work (TD-90); tell us if you miss it.
+15. Share to a slicer: File → Export STL: the share sheet opens as a
    popover pointing at **File**; pick the slicer app (the file arrives
    there), then Export 3MF and **AirDrop** it to a Mac or iPhone; Export
    STEP and **Save to Files**; close the sheet once without choosing (no
    message; the file is in OpenShape → Exports). Then with the iPad in
    Split View at half width: the sheet still appears.
-15. File → Share Project… on a new project: it asks for a name, saves, then
+16. File → Share Project… on a new project: it asks for a name, saves, then
    the sheet offers AirDrop / Mail / Save to Files; send it to yourself by
    Mail.
-16. Open in OpenShape: in the Files app, on a `.openshape` project in
+17. Open in OpenShape: in the Files app, on a `.openshape` project in
    iCloud Drive: Share → OpenShape (or tap it): OpenShape opens it and says
    "a copy in OpenShape's folder"; the copy is in On My iPad → OpenShape.
    Tap a project in On My iPad → OpenShape: it opens directly (no copy).
@@ -402,6 +424,8 @@ text (About → **Licenses**). What that means in practice:
    asks "Save changes?". Afterwards On My iPad → OpenShape has no "Inbox"
    folder left.
 
+18. Note anything slow, hard to hit, or missing — with a screenshot
+   (TestFlight: take a screenshot and share it as feedback, or send it).
 ## What to test on the iPhone
 
 The same app; the compact layout is on from the start. On Windows the
@@ -419,17 +443,23 @@ margins (BUILDING.md).
 4. **View** (beside the X/Y/Z marker) opens Fit, Iso, Top, Front, Right,
    the projection and the unit; each works and closes the menu.
 5. Box → tap the top face → drag the arrow, or tap the value field: the
-   on-screen keyboard must not hide the field; ✓ applies.
+   numeric keypad comes up along the bottom (not the system keyboard), the
+   value box moves to the top and the face stays in sight between them;
+   `1`, `0`, `0` typed quickly previews only 100; ✓ applies.
 6. Select two bodies (double-tap one, double-tap the other, or tap the
    other once): the actions (Union, Subtract, …) scroll sideways above the
    tool strip. Next to each other on the small screen the first body's
    Move arrows reach over the second: a tap on the second body beside an
    arrow still adds it. Double-tap a selected body to take it out.
 7. Sketch: the Draw / Edit tools are in the bottom strip; draw a rectangle
-   and a circle, tap a dimension to change it, **Finish sketch**, extrude.
+   and a circle, tap a dimension to change it (the keypad; the dimension's
+   field moves above it), **Finish sketch**, extrude. Tap a rectangle's
+   first corner, then its live width (the keypad says "Width"): type `12`, **Next**, `8`, ✓.
 8. Turn the phone to landscape and back, in the middle of an operation: the
    layout follows at once, nothing overlaps (in landscape the Dynamic Island
-   is on the left or right: no button sits under it).
+   is on the left or right: no button sits under it). In landscape, tap a
+   value: the keypad is four rows high in a bottom corner, below File,
+   Model and **Finish sketch**.
 9. The hint line under the model is one short line: tap it to read all of it.
 10. **?** opens the help card: it talks about taps and two-finger gestures
    (no mouse or keyboard terms); File → Preferences and About fit the

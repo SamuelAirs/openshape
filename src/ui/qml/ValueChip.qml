@@ -25,9 +25,12 @@ Item {
     // Where the field and the actions sit when the chip is wider than they
     // are: toward the arrow tip (Qt.AlignLeft when the chip is right of it).
     property int alignment: Qt.AlignHCenter
+    // The numeric keypad (Main.qml): on a touch screen the value is typed
+    // there instead of on the system keyboard.
+    property NumericKeypad keypad: null
     // The value is being typed (the field has the focus): on a touch screen
-    // the on-screen keyboard is up, so a docked chip goes to the top.
-    // Typing into the value or the Text tool's words (the on-screen keyboard is up).
+    // the numeric keypad (or, for the Text tool's words, the on-screen
+    // keyboard) is up, so a docked chip goes to the top.
     readonly property bool typing: field.activeFocus || textField.activeFocus
     signal finished()
     // For Main.qml's choice of a single row: the field's width, and the width
@@ -48,31 +51,75 @@ Item {
     width: column.implicitWidth
     height: column.implicitHeight
 
-    // The typed text itself is refused (not a length, out of range): its
-    // message stays while typing. Otherwise the preview's verdict shows, which
-    // may arrive after the keystroke (previews compute off the GUI thread).
-    property bool typedTextRefused: false
-
+    // The value typed, confirmed (Enter): taken at once. Keys typed wait for
+    // a pause in typing (keyTyped): the model does not jump through 1, 10,
+    // 100 while "100" is typed. The typed text itself refused (not a length,
+    // out of range) shows its message until the next key; otherwise the
+    // preview's verdict shows, which may arrive later (previews compute off
+    // the GUI thread).
     function typeValue(text) {
         const error = app.setValueText(text)
-        typedTextRefused = error.length > 0 && error !== app.operationError
         errorText.text = error
         return error
+    }
+    function keyTyped(text) {
+        app.typeValueText(text)
+    }
+
+    // The value field on a touch screen: read-only (so the system keyboard
+    // stays down) and typed into with the numeric keypad; a hardware
+    // keyboard still types (NumericKeypad.hardwareKey).
+    readonly property bool usesKeypad: Theme.touch && keypad !== null
+    readonly property var keypadClient: ({
+        name: "valueChip",
+        mode: () => chip.app.operationIsAngle ? "angle" : "length",
+        hasNext: () => chip.hasNextField(),
+        text: () => field.text,
+        replacing: () => field.text.length > 0 && field.selectedText === field.text,
+        setText: (text, replacing) => {
+            field.text = text
+            if (replacing)
+                field.selectAll()
+            else
+                field.cursorPosition = text.length
+            chip.keyTyped(text)
+        },
+        next: () => chip.nextField(),
+        done: () => field.apply(),
+        target: () => chip.mapToItem(null, 0, 0, chip.width, chip.height),
+        keepClear: "selection",
+        takesFocus: false
+    })
+
+    // Operations with several fields (the Hole tool's diameter, depth, X,
+    // Y): Tab or Next goes to the next one, only with a usable value (it
+    // waits for the verdict of a preview still computing, e.g. a hole off
+    // the face).
+    function hasNextField() {
+        return app.contextActions.some(a => a.id.startsWith("field:"))
+    }
+    function nextField() {
+        errorText.text = app.confirmValueText(field.text)
+        if (errorText.text.length === 0) {
+            app.triggerAction("nextField")
+            field.text = app.operationValueText
+            field.selectAll()
+        }
     }
 
     function beginTyping(firstChar) {
         field.text = firstChar
         field.forceActiveFocus()
         field.cursorPosition = field.text.length
-        typeValue(field.text)
+        keyTyped(field.text)
     }
 
     function syncFromModel() {
         if (!field.activeFocus) {
             field.text = app.operationValueText
             errorText.text = app.operationError
-        } else if (!typedTextRefused) {
-            errorText.text = app.operationError
+        } else {
+            errorText.text = app.typedValueError.length > 0 ? app.typedValueError : app.operationError
         }
         if (!textField.activeFocus && textField.text !== app.operationText)
             textField.text = app.operationText
@@ -248,7 +295,10 @@ Item {
                     implicitHeight: Theme.controlHeight
                     font.pixelSize: 15
                     horizontalAlignment: TextInput.AlignRight
-                    selectByMouse: true
+                    selectByMouse: !chip.usesKeypad
+                    // Touch: the numeric keypad types (read-only: no system keyboard).
+                    readOnly: chip.usesKeypad
+                    inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
                     color: Theme.text
                     background: Rectangle {
                         radius: 8
@@ -256,27 +306,38 @@ Item {
                         border.color: field.activeFocus ? Theme.accent : "transparent"
                         border.width: 1.5
                     }
-                    onTextEdited: chip.typeValue(text)
-                    onActiveFocusChanged: if (activeFocus) selectAll()
+                    onTextEdited: chip.keyTyped(text)
+                    // Leaving the field (Esc too) takes what was typed.
+                    onActiveFocusChanged: {
+                        if (activeFocus) {
+                            selectAll()
+                            if (chip.usesKeypad)
+                                chip.keypad.attach(chip.keypadClient)
+                        } else {
+                            if (chip.keypad)
+                                chip.keypad.detach(chip.keypadClient)
+                            chip.app.flushTyping()
+                        }
+                    }
+                    // A hardware keyboard on a touch screen (the field is read-only there).
+                    Keys.onPressed: (event) => {
+                        if (chip.usesKeypad && chip.keypad.serves("valueChip") && chip.keypad.hardwareKey(event))
+                            event.accepted = true
+                    }
                     Keys.onReturnPressed: apply()
                     Keys.onEnterPressed: apply()
-                    // Operations with several fields (the Hole tool's
-                    // diameter, depth, X, Y): Tab goes to the next one, only
-                    // with a usable value (it waits for the verdict of a
-                    // preview still computing, e.g. a hole off the face).
+                    // Several fields (the Hole tool): Tab goes to the next one.
                     Keys.onTabPressed: (event) => {
-                        if (!chip.app.contextActions.some(a => a.id.startsWith("field:"))) {
+                        if (!chip.hasNextField()) {
                             event.accepted = false
                             return
                         }
-                        errorText.text = chip.app.confirmValueText(text)
-                        if (errorText.text.length === 0) {
-                            chip.app.triggerAction("nextField")
-                            field.text = chip.app.operationValueText
-                            field.selectAll()
-                        }
+                        chip.nextField()
                     }
+                    // Esc leaves the field; the value typed stays (it is
+                    // previewed, as it was while each key previewed at once).
                     Keys.onEscapePressed: {
+                        chip.app.flushTyping()
                         field.focus = false
                         chip.finished()
                         chip.syncFromModel()
@@ -291,7 +352,6 @@ Item {
                         // field with the message, as for a refused preview.
                         if (!chip.app.commitOperation() && chip.app.operationActive) {
                             field.forceActiveFocus()
-                            chip.typedTextRefused = false
                             chip.syncFromModel()
                             return
                         }
@@ -303,10 +363,15 @@ Item {
                     objectName: "valueChipApply"
                     text: "✓"
                     accent: true
-                    enabled: chip.app.operationCanCommit
+                    // A value typed and not yet previewed counts too.
+                    enabled: chip.app.operationCanCommit || (field.activeFocus && chip.app.typingPending)
                     implicitWidth: Theme.controlHeight
                     onClicked: {
-                        field.focus = false
+                        // While typing: as Enter (the text typed is applied, or its error shown).
+                        if (field.activeFocus) {
+                            field.apply()
+                            return
+                        }
                         chip.app.commitOperation()
                         chip.finished()
                     }

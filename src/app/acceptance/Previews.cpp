@@ -189,6 +189,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.click(r.screenPoint(0, kRimY, kRimZ + state->dragged));
             r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), "the pushed rim", r.app().operationTitle());
             r.type(QStringLiteral("5"));
+            r.app().flushTyping(); // (typing paused: its preview starts)
             r.check(r.app().interaction().previewBusy(), "a typed value's preview computes off the GUI thread");
             r.key(Qt::Key_Escape);
             r.key(Qt::Key_Z, Qt::ControlModifier);
@@ -238,6 +239,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     r.app().operationTitle());
             const std::string lastStep = r.app().interaction().undoStack().undoLabel();
             r.type(QStringLiteral("5"));
+            r.app().flushTyping(); // (typing paused: its preview starts)
             const auto* op = r.app().interaction().operation();
             r.check(op && op->previewPending(), "the 5 mm fillet is still being previewed");
             r.key(Qt::Key_Return);

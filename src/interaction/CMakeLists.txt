@@ -17,6 +17,8 @@ add_library(openshape_interaction STATIC
     Thumbnail.cpp Thumbnail.h
     TouchGestures.cpp TouchGestures.h
     TouchWording.cpp TouchWording.h
+    NumericKeypad.cpp NumericKeypad.h
+    TypingPause.h
     ContextAction.h
 )
 # The preview worker thread (PreviewWorker).

@@ -496,8 +496,15 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             screenshot(QStringLiteral("04_drag_preview"));
         },
         // 11. Type the exact new height (typing goes straight to the value field).
+        // The model waits until typing pauses (0.7 s: not 3 mm, then 35 mm).
         [=, this, &in] {
+            const double before = in.operation() ? in.operation()->value() : 0.0;
             type(QStringLiteral("35"));
+            check(in.typingPending() && in.operation() && in.operation()->value() == before,
+                  "typed quickly, 35 waits for a pause in typing", in.operation() ? num(in.operation()->value()) : QString());
+        },
+        // (The runner waited for the pause, as a user pausing would.)
+        [=, this, &in] {
             check(in.operation() && std::abs(in.operation()->value() - 35.0) < 1e-12, "typing 35 sets the height to 35 mm",
                   in.operation() ? num(in.operation()->value()) : QString());
             screenshot(QStringLiteral("05_typed_35"));
@@ -1219,10 +1226,12 @@ void AcceptanceRunner::runNext()
     // the animation to end (up to 3 s) before the next step (TD-31, TD-35).
     // Previews compute on a worker thread: wait until the last one is shown
     // (up to 30 s), so a step sees the preview (or the error) of what the
-    // step before it typed or dragged. The event loop runs meanwhile: the
-    // result arrives as the app would get it.
+    // step before it typed or dragged. A value typed key by key is previewed
+    // once typing pauses (0.7 s): that is waited for too, as a user pausing
+    // would. The event loop runs meanwhile: the result arrives as the app
+    // would get it.
     const bool animating = app_->interaction().isAnimating() && animationWaitMs_ < 3000;
-    const bool previewing = app_->interaction().previewBusy() && previewWaitMs_ < 30000;
+    const bool previewing = (app_->interaction().previewBusy() || app_->interaction().typingPending()) && previewWaitMs_ < 30000;
     if (animating || previewing) {
         (animating ? animationWaitMs_ : previewWaitMs_) += 10;
         QTimer::singleShot(10, this, &AcceptanceRunner::runNext);

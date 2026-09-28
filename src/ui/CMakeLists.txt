@@ -57,6 +57,7 @@ qt_add_qml_module(openshape_ui
         qml/HomeScreen.qml
         qml/ScrollRow.qml
         qml/SaveNameOverlay.qml
+        qml/NumericKeypad.qml
     SOURCES
         AppController.cpp AppController.h
         ThumbnailProvider.cpp ThumbnailProvider.h
