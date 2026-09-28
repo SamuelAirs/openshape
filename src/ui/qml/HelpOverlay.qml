@@ -268,7 +268,8 @@ Rectangle {
                              "File → Import STEP…: each solid becomes a body you can push, pull, round and combine; inches and meters come in at the right size"],
                             ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
                             ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies, hole allowance for 3D printing",
-                             "File → Preferences…: units, grid snapping, recovery copies, hole allowance for 3D printing"]
+                             "File → Preferences…: units, grid snapping, recovery copies, hole allowance for 3D printing"],
+                            ["Licenses", "File → About OpenShape → Licenses: the licenses of OpenShape and its libraries, where their source code is, and how to rebuild the app with modified libraries"]
                         ])
                     }
                 }

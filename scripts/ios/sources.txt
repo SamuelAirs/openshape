@@ -1,0 +1,32 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# The exact source code of every library in the iOS app (iPhone and iPad),
+# pinned by SHA-256 (docs/LICENSING.md, "The iOS app and the App Store").
+#   - build-deps.sh builds FreeType, OpenCASCADE, libzip, nlohmann/json and
+#     Eigen from these archives and refuses one whose SHA-256 differs;
+#   - Qt for iOS is The Qt Company's build of this Qt version
+#     (install-qt.sh); the qt* lines are its source (the Qt modules whose
+#     libraries or tools the app build uses; ipad.yml's QT_VERSION must be
+#     their version);
+#   - mirror-sources.sh downloads all of them for a release (attached to
+#     the GitHub release, as the LGPL asks);
+#   - scripts/licenses/licenses.py generates the app's license texts
+#     (resources/licenses/) from these archives and checks that the
+#     committed texts belong to exactly these pins (ctest: licenses_check).
+# PlaneGCS is vendored in third_party/planegcs (the repository is its source).
+#
+# Changing a version: edit its line (version, SHA-256 of the archive, URL),
+# then regenerate the license texts (BUILDING.md, "The iOS app's licenses").
+#
+# name         version  sha256                                                            url
+qtbase         6.11.2   5b2e00eccaf5a4d8c14134ffa0ea8dfd0a35ae1ffc7f8d87fa4305a1ed23cf22  https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtbase-everywhere-src-6.11.2.tar.xz
+qtdeclarative  6.11.2   215b7b70517e380123eabc6b92243f3c47b6f016a91d126057dbe53551c6b430  https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtdeclarative-everywhere-src-6.11.2.tar.xz
+qtsvg          6.11.2   d594337feca84c26fb67fe87b85e6a5c12fda404b611d905f9d138210c311876  https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtsvg-everywhere-src-6.11.2.tar.xz
+qtshadertools  6.11.2   805046b8b7757665586890b375940047e874ae3ab00adb6d3f2b38fc6b200b1c  https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtshadertools-everywhere-src-6.11.2.tar.xz
+occt           7.9.3    5ecf094ec6b12d5413dfb851d8c3590c354058aee556e32e408bdfbf8c357d57  https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V7_9_3.tar.gz
+freetype       2.14.3   dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261  https://github.com/freetype/freetype/archive/refs/tags/VER-2-14-3.tar.gz
+libzip         1.11.4   82e9f2f2421f9d7c2466bbc3173cd09595a88ea37db0d559a9d0a2dc60dc722e  https://github.com/nih-at/libzip/releases/download/v1.11.4/libzip-1.11.4.tar.gz
+json           3.12.0   4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187  https://github.com/nlohmann/json/archive/refs/tags/v3.12.0.tar.gz
+eigen          5.0.1    e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec  https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz

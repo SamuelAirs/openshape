@@ -200,3 +200,13 @@ OpenShape is licensed under the Mozilla Public License 2.0 (`LICENSE`), and
 contributions are accepted under the same license. Every source file starts
 with the MPL notice; add it to new files (copy it from any existing file).
 Code in `third_party/` keeps its upstream license. See `docs/LICENSING.md`.
+
+**A new or updated library** (anything the app links or embeds): no GPL
+code in what we distribute. For the iOS app, pin its source archive in
+`scripts/ios/sources.txt` (URL and SHA-256; `build-deps.sh` builds only
+pinned archives), add it to `scripts/licenses/components.json` with its
+license texts, and regenerate the texts the app shows (BUILDING.md, "The
+iOS app's licenses"); `licenses_check` fails until they match, and the iOS
+build's license gate reports any linked file whose origin is unknown. For
+Windows, the package script and its license gate
+(`scripts/windows/license-gate.sh`) cover MSYS2 packages.

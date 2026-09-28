@@ -3,7 +3,16 @@
 # iOS (cached), then an unsigned archive of the app. Pushes to main - or a
 # commit whose message contains [testflight] - then sign it and upload it to
 # TestFlight, once the signing secrets are set (APPLE_TEAM_ID,
-# APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY).
+# APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY),
+# for internal and external testers (the public beta, docs/IPAD.md 1b).
+# A release tag v<version>... (the version in CMakeLists.txt, optionally with
+# a suffix such as -beta1) makes the App Store build (docs/LICENSING.md, "The
+# iOS app and the App Store"): the tag goes into the app (About -> Licenses
+# names its source code) and the license gate must pass
+# (scripts/ios/build-app.sh). Only such builds are submitted for App Store
+# review, so every App Store version is a tag whose GitHub release carries
+# the iOS libraries' source (release.yml). Builds of main name their commit
+# instead; a warning says when their library pins are on no release yet.
 # Failed steps report their error lines as annotations (scripts/ci/run-logged.sh).
 name: iPad
 
@@ -31,8 +40,36 @@ jobs:
       OPENSHAPE_BUILD_NUMBER: ${{ github.run_number }}
       HAS_SIGNING: ${{ secrets.APP_STORE_CONNECT_KEY != '' && secrets.APPLE_TEAM_ID != '' }}
       HOMEBREW_NO_INSTALL_CLEANUP: 1
+      # Release tags: the App Store build (see the top).
+      OPENSHAPE_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+      OPENSHAPE_LICENSE_GATE: ${{ startsWith(github.ref, 'refs/tags/v') && 'required' || 'warn' }}
     steps:
       - uses: actions/checkout@v5
+      - name: Check the release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' CMakeLists.txt | head -n 1)
+          case "${OPENSHAPE_RELEASE_TAG#v}" in
+            "$version"|"$version"-*) ;;
+            *) echo "::error title=Version::tag $OPENSHAPE_RELEASE_TAG does not match the version in CMakeLists.txt ($version)"; exit 1 ;;
+          esac
+          echo "::notice title=Release build::$OPENSHAPE_RELEASE_TAG (OpenShape $version): the build to submit for App Store review, once the GitHub release $OPENSHAPE_RELEASE_TAG lists OpenShape-${OPENSHAPE_RELEASE_TAG#v}-ios-sources.tar (docs/LICENSING.md)"
+      - name: Check the license texts (pins, Licenses view)
+        run: bash scripts/ci/run-logged.sh licenses python3 scripts/licenses/licenses.py check --quiet
+      - name: Are the iOS library sources on a release?
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: |
+          # TestFlight testers get this build too: the written offer in About ->
+          # Licenses covers its library sources, and a release keeps them
+          # (release.yml attaches the pinned archives). Warn when no release
+          # tag has these pins yet, so the next beta gets one (docs/LICENSING.md).
+          git fetch --quiet --depth=1 origin '+refs/tags/v*:refs/tags/v*' || true
+          same=$(bash scripts/ios/released-pins.sh || true)
+          if [ -n "$same" ]; then
+            echo "::notice title=iOS sources::the pinned library sources are those of release $same"
+          else
+            echo "::warning title=iOS sources::no release tag has these library pins (scripts/ios/sources.txt) yet: tag a release (or beta) so their sources are attached to it (docs/LICENSING.md)"
+          fi
       - name: Select Xcode 26
         run: bash scripts/ci/select-xcode.sh
       - name: Install build tools
@@ -43,7 +80,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/openshape-ios-deps
-          key: ios-deps-${{ hashFiles('scripts/ios/build-deps.sh') }}
+          key: ios-deps-${{ hashFiles('scripts/ios/build-deps.sh', 'scripts/ios/fetch-source.sh', 'scripts/ios/sources.txt') }}
       - name: Build the iOS libraries (OpenCASCADE, FreeType, libzip, json, Eigen)
         if: steps.deps.outputs.cache-hit != 'true'
         run: bash scripts/ci/run-logged.sh deps bash scripts/ios/build-deps.sh ~/openshape-ios-deps "$RUNNER_TEMP/ios-deps-work"
@@ -79,9 +116,16 @@ jobs:
           echo "::notice title=QML modules linked::$(tr '\n' ' ' < build/ios/qml-modules.txt) ."
           echo "::notice title=Controls styles not linked (TD-36)::$(cat build/ios/src/app/.qt/qml_imports/openshape_dropped_styles.txt) ."
           echo "::notice title=QML import scan (start)::$(head -c 1500 build/ios/src/app/.qt/qml_imports/openshape_conf.cmake | tr '\n%' ' _')"
+          # What the app links, by origin, and the license gate's result (docs/LICENSING.md).
+          echo "::notice title=Linked into the app (license gate)::$(grep -E '^  (qt|component|system) ' build/ios/license-gate.txt | cut -c1-300 | tr '\n%' '; ' || true)"
+          if grep -q '^License gate: PASS' build/ios/license-gate.txt; then
+            echo "::notice title=License gate::$(tail -n 1 build/ios/license-gate.txt)"
+          else
+            echo "::warning title=License gate::$(grep -E 'FAIL|UNKNOWN|^    ' build/ios/license-gate.txt | head -n 20 | cut -c1-300 | tr '\n%' '; ') (required for release tags)"
+          fi
 
       - name: Upload to TestFlight
-        if: env.HAS_SIGNING == 'true' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[testflight]'))
+        if: env.HAS_SIGNING == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[testflight]'))
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -91,7 +135,21 @@ jobs:
           export ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
           printf '%s\n' "$ASC_KEY" > "$ASC_KEY_PATH"
           bash scripts/ci/run-logged.sh testflight bash scripts/ios/testflight.sh build/ios/OpenShape.xcarchive "$RUNNER_TEMP/testflight"
-          echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER uploaded; it appears in TestFlight after Apple's processing (usually 5-30 minutes)"
+          if [ -n "$OPENSHAPE_RELEASE_TAG" ]; then
+            echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER from $OPENSHAPE_RELEASE_TAG uploaded: the build to submit for App Store review as $OPENSHAPE_RELEASE_TAG - but only once the GitHub release $OPENSHAPE_RELEASE_TAG is published and lists OpenShape-${OPENSHAPE_RELEASE_TAG#v}-ios-sources.tar, which this build's Licenses view names (the Release workflow; if it failed, re-run it or run Attach sources for the tag; docs/LICENSING.md)"
+          else
+            echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER uploaded for internal and external testing (not for App Store review: only release tag builds); it appears in TestFlight after Apple's processing (usually 5-30 minutes)"
+          fi
+      # App Store Connect refuses a version whose App Store release is
+      # approved (its "train" is closed): main's version must be raised
+      # right after tagging (BUILDING.md, "Before tagging a release").
+      - name: Why the TestFlight upload failed
+        if: failure() && env.HAS_SIGNING == 'true'
+        run: |
+          if grep -qiE 'train.*closed|closed for new build|must contain a higher version|previously approved' "$LOGS/testflight.log" 2>/dev/null; then
+            version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' CMakeLists.txt | head -n 1)
+            echo "::error title=TestFlight::App Store Connect no longer takes builds of version $version (it was released or is in review): raise project(VERSION) in CMakeLists.txt to the next version and add its '(unreleased)' section to CHANGELOG.md (BUILDING.md, 'Before tagging a release', step 6)"
+          fi
       - name: No TestFlight upload
         if: env.HAS_SIGNING != 'true'
         run: echo "::notice title=TestFlight::not uploaded - the signing secrets are not set (docs/IPAD.md)"

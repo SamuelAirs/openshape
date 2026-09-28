@@ -23,4 +23,7 @@ reproduced with `target_precompile_headers`.
 
 The library is built as a shared library (`libplanegcs.dll`) and linked
 dynamically, satisfying the LGPL's replaceability requirement regardless of
-OpenShape's own license. Only `src/sketch/` may include its headers.
+OpenShape's own license. The iOS app cannot ship dynamic libraries, so
+there it is linked statically; recipients relink it by rebuilding the app
+from its public source code (docs/LICENSING.md, "The iOS app and the App
+Store"). Only `src/sketch/` may include its headers.

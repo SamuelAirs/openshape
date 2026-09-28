@@ -82,6 +82,8 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 874x402 --safe-area 0,62,21,62 --demo sketch --screenshot phone-landscape.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo fillet --screenshot phone-fillet.png   # the value chip docked away from the edge
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario chipplacement   # the chip vs. the tapped edge / face at phone, iPad and desktop sizes; on the phone its buttons and the dock while typing
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario licenses,release   # About → Licenses (every library's text, the LGPL notice, at iPhone size too) and the About card
+./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo licenses --screenshot licenses.png   # the Licenses list on an iPhone
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario extrudetouch   # a pocket cut on the phone layout with one finger (framed face sketch, arrow and profile drags, Cut / Join / Flip), then with the mouse
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchdrag   # sketch editing by dragging: mouse on the desktop, then one finger at 402x874 (touchPress/Move/Release)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
@@ -114,7 +116,7 @@ projects and their previews; try `--touch --size 402x874`, `874x402` and
 project box built from a box: sizes typed, corners rounded, shelled, a
 cable hole cut, and the hole's diameter being set to 10.4 mm; the
 README's picture). Panels to look at (layout checks at phone
-sizes): `help`, `about`, `preferences`, `savename` (the overlay open),
+sizes): `help`, `about`, `licenses` (About → Licenses), `preferences`, `savename` (the overlay open),
 `modelpanel` (the compact layout's Model panel open on the `history` scene)
 and `viewmenu` (the compact View menu open on `combine`). Without
 `--screenshot` the window stays open. A normal start without a file opens on Home; automated runs
@@ -369,14 +371,46 @@ Before tagging a release:
    (`scripts/dev/doc_screenshots.sh`), walk through the README's Quick
    start, grep the guide for renamed buttons, and update the README's
    "Early pre-release" line.
-3. Push `main`, wait for CI, and run Release once by hand (GitHub →
+3. If an iOS library or Qt version changed: its pin in
+   `scripts/ios/sources.txt` and the Licenses view's texts are current
+   (`python scripts/licenses/licenses.py check`, also run by ctest as
+   `licenses_check`; see "The iOS app's licenses" below).
+4. Push `main`, wait for CI (the iPad workflow's last run on `main` should
+   say `License gate: PASS`), and run Release once by hand (GitHub →
    Actions → Release → Run workflow; a version bump alone does not start
    it). Push the tag `v<version>` only when both are green.
+5. The tag also builds the iOS app for the App Store (`ipad.yml`, docs/
+   LICENSING.md "Releasing an App Store (or public beta) version"): submit
+   only the build that run uploads (its notice names the build number)
+   for App Store review, and only once the tag's GitHub release lists
+   `OpenShape-<version>-ios-sources.tar` (the file its Licenses view
+   names). If the Release run failed, re-run it or run Actions → Attach
+   sources → Run workflow for the tag (it makes a pre-release with the
+   source files). Builds of `main` go to TestFlight testers (the public
+   beta) but not to review.
+6. Right after pushing the tag, raise the version in `CMakeLists.txt` on
+   `main` and add a `## <next version> (unreleased)` section to
+   `CHANGELOG.md`. App Store Connect takes no more builds of a version that
+   is in review or released, so otherwise every TestFlight upload from
+   `main` fails (docs/IPAD.md, "Reading CI results").
 
 Every Release run also downloads the source code of the LGPL libraries the
 package ships (`scripts/ci/mirror-sources.sh`: the MSYS2 source archives
 `THIRD_PARTY_LICENSES.txt` names, and OpenCASCADE's source with the
-patches `build-occt.sh` applies); a release attaches it (TD-46). The Windows icon is made from the SVG with
+patches `build-occt.sh` applies); a release attaches it (TD-46). It also
+downloads the source of every library in the iOS app
+(`scripts/ios/mirror-sources.sh <dir> [tag]`: the archives pinned in
+`scripts/ios/sources.txt`, SHA-256 checked, with `SOURCES-SHA256SUMS.txt`
+and a README), early in the run; a release attaches it as one file,
+`OpenShape-<tag without v>-ios-sources.tar`, which the app's Licenses view
+names. By hand (Git Bash with curl works; 9 archives, 151 MB, verified
+2026-09-27):
+
+```bash
+bash scripts/ios/mirror-sources.sh build/ios-sources v0.3.0
+```
+
+The Windows icon is made from the SVG with
 `python scripts/windows/make-icon.py` (needs MSYS2's `rsvg-convert`,
 `pacman -S mingw-w64-ucrt-x86_64-librsvg`).
 
@@ -487,6 +521,118 @@ and runs the headless tests and the real-UI acceptance run on a GitHub Mac
 (`.github/workflows/ci.yml`). The universal iPhone/iPad app is built on
 GitHub's Macs and delivered through TestFlight (`.github/workflows/ipad.yml`,
 [docs/IPAD.md](docs/IPAD.md)). A build on a local Mac has not been tried.
+
+### The iOS app's licenses
+
+The iOS app links Qt, OpenCASCADE, PlaneGCS, FreeType and libzip
+statically, so it shows every license text itself (About → Licenses;
+docs/LICENSING.md, "The iOS app and the App Store"). The pieces:
+
+- `scripts/ios/sources.txt`: the exact source archive of each library
+  (name, version, SHA-256, URL). `scripts/ios/fetch-source.sh` downloads
+  one and checks it; `build-deps.sh` builds only those.
+- `resources/licenses/` (built into the app on every platform): generated
+  by `scripts/licenses/licenses.py` from those archives,
+  `scripts/licenses/components.json` and Qt's `qt_attribution.json` files;
+  `source-offer.txt` there is the hand-written LGPL notice and written
+  offer (placeholders filled in by the app).
+- The checks: `python scripts/licenses/licenses.py check` (ctest
+  `licenses_check`, 69 checks; also the first step of `ipad.yml`),
+  `python scripts/licenses/licenses.py self-test` (ctest
+  `licenses_selftest`, 20 checks) and `bash scripts/ios/test-sources.sh`
+  (ctest `ios_sources_scripts`, 16 checks, no downloads; it also covers
+  `scripts/ios/released-pins.sh`, which `ipad.yml` uses to warn while no
+  release tag has the current pins).
+
+After changing a version in `sources.txt` (or `components.json`, or one of
+the repository's license files the app shows: `LICENSE`,
+`third_party/planegcs/COPYING.LIB`, `resources/fonts/OFL.txt`), regenerate
+and commit the texts (verified 2026-09-27 on Windows, Git Bash: 50
+entries, 51 texts, 277 KiB; the generation takes about 45 s):
+
+```bash
+bash scripts/ios/mirror-sources.sh build/ios-sources      # the pinned archives (151 MB)
+python scripts/licenses/licenses.py generate --archives build/ios-sources
+python scripts/licenses/licenses.py check
+```
+
+A Qt update whose sources contain a new third-party part makes `generate`
+fail until `components.json` includes or excludes it (with the reason). Re-run
+CMake's configure step when texts were added or removed.
+
+Every iOS build ends with the **license gate** (`scripts/ios/build-app.sh`,
+`licenses.py gate`): the linker writes a map of every file linked into the
+app (`build/ios/OpenShape-LinkMap.txt`), and each must come from Qt (its
+module's source pinned), the iOS libraries, the build itself or Apple's
+SDK, and be in the Licenses view. Report: `build/ios/license-gate.txt`
+(also a CI notice). It warns on ordinary builds and fails release tags
+(`OPENSHAPE_LICENSE_GATE=required`).
+
+### Rebuilding the iOS app with modified libraries
+
+For anyone who got OpenShape for iPhone or iPad and wants to use it with a
+modified Qt, Open CASCADE or PlaneGCS, as the LGPL allows (docs/LICENSING.md).
+These are the scripts CI runs for every build (`.github/workflows/ipad.yml`);
+the variations for modified libraries and your own signing (marked below)
+have not been run on a Mac yet. You need a Mac with Xcode 26 or newer,
+CMake, Ninja and Python 3 (`brew install cmake ninja`), and an Apple
+Account (a free one installs on your own devices for 7 days at a time; the
+Apple Developer Program for a year).
+
+1. **The source of your version.** About → Licenses → "Your rights to the
+   LGPL libraries" names the release tag (or commit) of your copy:
+
+   ```bash
+   git clone --branch v0.3.0 https://github.com/SamuelAirs/openshape
+   cd openshape
+   # the libraries' exact sources, from the same release page:
+   curl -LO https://github.com/SamuelAirs/openshape/releases/download/v0.3.0/OpenShape-0.3.0-ios-sources.tar
+   tar -xf OpenShape-0.3.0-ios-sources.tar     # -> ios-sources/
+   export OPENSHAPE_SOURCES_DIR=$PWD/ios-sources   # build from these instead of downloading
+   ```
+
+   A TestFlight build between releases names a commit instead: `git clone
+   https://github.com/SamuelAirs/openshape && git -C openshape checkout
+   <commit>`, then `scripts/ios/mirror-sources.sh ios-sources` downloads
+   and checks the archives that commit's `scripts/ios/sources.txt` pins
+   (the release whose `sources.txt` is the same has copies of them).
+
+2. **Open CASCADE, FreeType, libzip** (and the header-only json, Eigen):
+
+   ```bash
+   scripts/ios/build-deps.sh ~/openshape-ios-deps ~/openshape-ios-work
+   ```
+
+   Each library is unpacked once into `~/openshape-ios-work/<name>`
+   (`occt`, `freetype`, `libzip`, `json`, `eigen`) and built into
+   `~/openshape-ios-deps`. *To modify one* (not run yet): change its
+   source in that folder and run the same command again; a folder that is
+   already there is built as it is.
+
+3. **Qt.** The Qt Company's build, as CI uses it:
+   `scripts/ios/install-qt.sh 6.11.2 ~/Qt`. *A modified Qt* (not run
+   yet): unpack `qtbase-6.11.2.tar.xz` (and `qtdeclarative`, `qtsvg`,
+   `qtshadertools`) from `ios-sources/`, change it, build Qt for macOS
+   (the host tools) and then Qt for iOS from it, as Qt documents
+   (<https://doc.qt.io/qt-6/ios-building-from-source.html>:
+   `configure -platform macx-ios-clang -release -qt-host-path <host Qt>`),
+   and install both.
+
+4. **PlaneGCS** is in the source: change `third_party/planegcs`.
+
+5. **The app**, with your own bundle identifier (Apple ties OpenShape's to
+   its developer's team; *not run yet*):
+
+   ```bash
+   OPENSHAPE_BUNDLE_ID=com.example.openshape \
+       scripts/ios/build-app.sh ~/Qt/6.11.2/ios ~/openshape-ios-deps
+   # a self-built Qt: QT_HOST_PATH=<your Qt for macOS> scripts/ios/build-app.sh <your Qt for iOS> ~/openshape-ios-deps
+   open build/ios/OpenShape.xcodeproj
+   ```
+
+   In Xcode: the `openshape` scheme, your iPhone or iPad as the
+   destination, Signing & Capabilities → your team → Run. On the device,
+   the first time: Settings → Privacy & Security → Developer Mode.
 
 ## Other platforms — not yet verified
 

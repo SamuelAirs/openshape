@@ -1,11 +1,22 @@
-# Attaches the source code of the LGPL libraries a published Windows release
-# ships to that release (TD-46): the MSYS2 source archives its package's
-# THIRD_PARTY_LICENSES.txt names, and OpenCASCADE's source and patches as
-# that tag's scripts/windows/build-occt.sh pins them (scripts/ci/mirror-sources.sh).
-# release.yml does this for every new release; this workflow catches up
-# releases published before it did (v0.1.0). It runs once when this file
-# changes on main (for v0.1.0) and by hand for any tag (Actions → Attach
-# sources → Run workflow). Files already attached are replaced.
+# Attaches the source code of the LGPL libraries a release ships to that
+# release (TD-46), by hand for any tag (Actions -> Attach sources -> Run
+# workflow); release.yml does this itself for every release it publishes.
+# - Windows: the MSYS2 source archives its package's
+#   THIRD_PARTY_LICENSES.txt names, and OpenCASCADE's source and patches as
+#   that tag's scripts/windows/build-occt.sh pins them
+#   (scripts/ci/mirror-sources.sh). Only when the release has a Windows zip.
+# - iOS: every library in the iOS app as that tag's scripts/ios/sources.txt
+#   pins it, as OpenShape-<tag without v>-ios-sources.tar, the file the
+#   app's Licenses view names (scripts/ios/mirror-sources.sh; docs/
+#   LICENSING.md, "Releasing an App Store (or public beta) version"). Only
+#   for tags that have the pins (not v0.1.0).
+# A tag without a release gets one first, marked pre-release, holding only
+# the source files: that is the route when release.yml cannot finish (a
+# failed Windows build, a SignPath approval that does not come) but the
+# tag's iOS build is to be submitted to the App Store; a later successful
+# Release run adds the Windows files and its notes to the same release.
+# It also runs once when this file changes on main (for v0.1.0's Windows
+# sources). Files already attached are replaced.
 name: Attach sources
 
 on:
@@ -20,7 +31,7 @@ on:
     paths: ['.github/workflows/attach-sources.yml']
 
 permissions:
-  contents: write # gh release upload
+  contents: write # gh release create/upload
 
 concurrency:
   group: attach-sources
@@ -36,18 +47,45 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # the tag's build-occt.sh
-      - name: The release's license list
+          fetch-depth: 0 # the tag's build-occt.sh and sources.txt
+      - name: The release (made if missing)
+        run: |
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "::error title=Tag::$TAG does not exist"; exit 1; }
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf '%s\n' "Source code of the libraries in OpenShape ${TAG#v} (LGPL: Qt, Open CASCADE Technology, PlaneGCS; docs/LICENSING.md). The Windows files follow when the Release workflow publishes them." > "$RUNNER_TEMP/notes.md"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+                --title "OpenShape ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
+            echo "::notice title=Release::$TAG had no release: made one (pre-release) for the source files"
+          fi
+      - name: The release's license list (Windows)
+        id: windows
         run: |
           mkdir -p pkg
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-windows-x64.zip' --dir pkg
+          if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-windows-x64.zip' --dir pkg; then
+            echo "::notice title=Sources::$TAG has no Windows zip: no Windows sources to attach"
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
           # The zip holds the package as OpenShape-<version>/...
           unzip -j -o pkg/*-windows-x64.zip '*/THIRD_PARTY_LICENSES.txt' -d pkg
           git show "$TAG:scripts/windows/build-occt.sh" > pkg/build-occt.sh
           echo "::notice title=Sources::$(grep -c '^Source code: https://repo.msys2.org' pkg/THIRD_PARTY_LICENSES.txt) MSYS2 source links in $TAG's package"
-      - name: Download the sources
+      - name: Download the Windows sources
+        if: steps.windows.outputs.present == 'true'
         run: bash scripts/ci/mirror-sources.sh pkg/THIRD_PARTY_LICENSES.txt sources pkg/build-occt.sh
+      - name: Download the iOS sources
+        run: |
+          if ! git show "$TAG:scripts/ios/sources.txt" > "$RUNNER_TEMP/ios-sources.txt" 2>/dev/null; then
+            echo "::notice title=iOS sources::$TAG has no scripts/ios/sources.txt (before the iOS app's pins): none to attach"
+            exit 0
+          fi
+          mkdir -p sources
+          # The tag's pins with this checkout's (checked) download script.
+          OPENSHAPE_IOS_SOURCES="$RUNNER_TEMP/ios-sources.txt" bash scripts/ios/mirror-sources.sh ios/ios-sources "$TAG"
+          tar -cf "sources/OpenShape-${TAG#v}-ios-sources.tar" -C ios ios-sources
+          echo "::notice title=iOS sources::OpenShape-${TAG#v}-ios-sources.tar: $(grep -c . ios/ios-sources/SOURCES-SHA256SUMS.txt) archives, $(du -h "sources/OpenShape-${TAG#v}-ios-sources.tar" | cut -f1)"
       - name: Attach them to the release
         run: |
+          if [ -z "$(ls -A sources 2>/dev/null)" ]; then echo "::notice title=Sources::nothing to attach to $TAG"; exit 0; fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber sources/*
           echo "::notice title=Sources::$(ls sources | wc -l) files ($(du -sh sources | cut -f1)) attached to $TAG"

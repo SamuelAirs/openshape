@@ -78,9 +78,12 @@ if(WIN32)
     if(OPENSHAPE_BASH)
         add_test(NAME release_notes_template
                  COMMAND "${OPENSHAPE_BASH}" "${PROJECT_SOURCE_DIR}/scripts/ci/test-install-notes.sh")
+        # The iOS source pins' download and mirror scripts, without downloading.
+        add_test(NAME ios_sources_scripts
+                 COMMAND "${OPENSHAPE_BASH}" "${PROJECT_SOURCE_DIR}/scripts/ios/test-sources.sh")
         # awk, grep and tr from beside that bash, whichever shell ctest runs in.
         get_filename_component(openshape_bash_dir "${OPENSHAPE_BASH}" DIRECTORY)
-        set_tests_properties(release_notes_template PROPERTIES
+        set_tests_properties(release_notes_template ios_sources_scripts PROPERTIES
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${openshape_bash_dir}")
     else()
         message(STATUS "No bash found: the release notes test (release_notes_template) is left out")
@@ -97,4 +100,35 @@ if(WIN32)
             message(STATUS "No Python 3 found: the signature check test (release_pe_signature_selftest) is left out")
         endif()
     endif()
+endif()
+
+# The license texts of About -> Licenses (scripts/licenses/licenses.py,
+# docs/LICENSING.md), on every platform with Python 3: resources/licenses/
+# belongs to exactly the iOS source pins (scripts/ios/sources.txt) and the
+# current components.json, every text is there and ipad.yml installs the
+# pinned Qt (licenses_check; no downloads); the generator, the check and
+# the iOS license gate work on made-up archives and link maps
+# (licenses_selftest).
+set(Python3_FIND_REGISTRY LAST) # prefer the MSYS2 Python on PATH
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME licenses_check
+             COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/licenses/licenses.py" check --quiet)
+    add_test(NAME licenses_selftest
+             COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/licenses/licenses.py" self-test)
+else()
+    message(STATUS "No Python 3 found: the license tests (licenses_check, licenses_selftest) are left out")
+endif()
+
+# The commit About -> Licenses names (src/core/SourceCommit.cmake, run on
+# every build) in a made-up git repository.
+find_package(Git QUIET)
+if(GIT_FOUND)
+    add_test(NAME source_commit_script
+             COMMAND "${CMAKE_COMMAND}" -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+                     -DSCRIPT=${PROJECT_SOURCE_DIR}/src/core/SourceCommit.cmake
+                     -DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_commit_test
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/test_source_commit.cmake")
+else()
+    message(STATUS "No git found: the source commit test (source_commit_script) is left out")
 endif()

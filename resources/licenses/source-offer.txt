@@ -1,0 +1,12 @@
+This is OpenShape @VERSION@ (@BUILD@).
+
+Qt, Open CASCADE Technology and PlaneGCS are free software under the GNU Lesser General Public License (LGPL: version 3 for Qt, version 2.1 for the others). On iPhone and iPad they are built into the app (on Windows they are separate files beside OpenShape.exe that can be replaced directly). You may modify these libraries and use OpenShape with your modified versions, and you may reverse-engineer OpenShape to debug such modifications. The license agreement under which you got the app does not restrict these rights.
+
+What you need, free of charge:
+- OpenShape's complete source code and build scripts (Mozilla Public License 2.0), for this version: @SOURCE_URL@
+- the exact source code of Qt, Open CASCADE Technology and the other libraries built into this version: @LIBRARY_SOURCES@
+- the steps: "Rebuilding the iOS app with modified libraries" in BUILDING.md, in the source code.
+
+You build the app with your modified libraries on a Mac with Xcode, and Xcode installs it on your own iPhone or iPad, signed with your own Apple Account (a free account is enough for your own devices; the app then has to be installed again every 7 days).
+
+Written offer: for at least three years, and for as long as we distribute this version, anyone who received it can get this source code from us, for no more than our cost of providing it. Ask at @CONTACT@.

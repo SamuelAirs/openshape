@@ -39,6 +39,9 @@ on:
       - 'packaging/**'
       - 'scripts/package-windows.sh'
       - 'scripts/ci/**'
+      - 'scripts/ios/sources.txt'
+      - 'scripts/ios/fetch-source.sh'
+      - 'scripts/ios/mirror-sources.sh'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -126,6 +129,24 @@ jobs:
         run: |
           bash scripts/ci/run-logged.sh release-notes bash scripts/ci/test-install-notes.sh
           grep -E "^test-install-notes: " "$LOGS/release-notes.log" | sed 's/^/::notice title=Release notes::/'
+
+      # The source code of every library in the iOS app, as scripts/ios/
+      # sources.txt pins it (scripts/ios/mirror-sources.sh, SHA-256 checked;
+      # docs/LICENSING.md, "The iOS app and the App Store"): App Store
+      # builds are made from release tags (ipad.yml), and the
+      # tag's release carries this as one file,
+      # OpenShape-<tag without v>-ios-sources.tar, which the app's
+      # Licenses view names. Early and on every run, so a broken download
+      # shows up before the long build; attached to releases only.
+      - name: Mirror the iOS app's library sources
+        run: |
+          tag=""
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then tag=$GITHUB_REF_NAME; fi
+          bash scripts/ci/run-logged.sh ios-sources bash scripts/ios/mirror-sources.sh dist/ios-sources "$tag"
+          name="${tag#v}"
+          if [ -z "$name" ]; then name="${{ steps.version.outputs.version }}"; fi
+          tar -cf "dist/OpenShape-$name-ios-sources.tar" -C dist ios-sources
+          echo "::notice title=iOS sources::OpenShape-$name-ios-sources.tar: $(grep -c . dist/ios-sources/SOURCES-SHA256SUMS.txt) archives, $(du -h "dist/OpenShape-$name-ios-sources.tar" | cut -f1)"
 
       # A release that SignPath signs with the SignPath Foundation
       # certificate builds OpenCASCADE in the same run instead of restoring
@@ -312,7 +333,17 @@ jobs:
           # heading), then the install and license notes.
           bash scripts/ci/changelog-section.sh "$APP_VERSION" > "$RUNNER_TEMP/notes.md"
           cat "$RUNNER_TEMP/install.md" >> "$RUNNER_TEMP/notes.md"
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
-              dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt dist/sources/*
+          files=(dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt dist/sources/*
+                 dist/OpenShape-*-ios-sources.tar)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Made earlier by Attach sources (the iOS sources of a tag whose
+            # first Release run failed): complete it.
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "OpenShape $version" \
+                --notes-file "$RUNNER_TEMP/notes.md" --prerelease="$([ ${#prerelease[@]} -gt 0 ] && echo true || echo false)"
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+                --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
+                "${files[@]}"
+          fi
           echo "::notice title=GitHub Release::$tag published ${prerelease[*]} ($signing)"

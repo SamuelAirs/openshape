@@ -57,12 +57,15 @@ set_target_properties(openshape PROPERTIES
     QT_QML_IMPORT_SCANNER_EXTRA_ROOT_PATHS "${PROJECT_SOURCE_DIR}/src/ui/qml")
 
 # macOS / iOS app bundle. The identifier is the App ID registered with
-# Apple for TestFlight (docs/IPAD.md). Every TestFlight upload needs a new
-# build number: CI passes its run number.
-set(OPENSHAPE_BUILD_NUMBER "${PROJECT_VERSION}" CACHE STRING "Bundle build number (CFBundleVersion)")
+# Apple for TestFlight (docs/IPAD.md); someone rebuilding the app for their
+# own devices (the LGPL's relinking, BUILDING.md) sets their own with
+# -DOPENSHAPE_BUNDLE_ID=... (Apple ties an identifier to one team). Every
+# TestFlight upload needs a new build number (OPENSHAPE_BUILD_NUMBER, top
+# level): CI passes its run number.
+set(OPENSHAPE_BUNDLE_ID "io.github.samuelairs.openshape" CACHE STRING "Bundle identifier of the macOS / iOS app")
 if(APPLE)
     set_target_properties(openshape PROPERTIES
-        MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.samuelairs.openshape"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${OPENSHAPE_BUNDLE_ID}"
         MACOSX_BUNDLE_BUNDLE_NAME "OpenShape"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${OPENSHAPE_BUILD_NUMBER}")
@@ -76,12 +79,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     set_target_properties(openshape PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "io.github.samuelairs.openshape"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${OPENSHAPE_BUNDLE_ID}"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2" # universal: iPhone and iPad
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
         # Only the app goes into an archive (the libraries set SKIP_INSTALL).
         XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
-        XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)")
+        XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+        # The linker's map of every file linked into the app: the license
+        # gate (scripts/ios/build-app.sh, scripts/licenses/licenses.py gate)
+        # checks each one's origin against the Licenses view and the pinned
+        # sources (docs/LICENSING.md).
+        XCODE_ATTRIBUTE_LD_GENERATE_MAP_FILE "YES"
+        XCODE_ATTRIBUTE_LD_MAP_FILE_PATH "${CMAKE_BINARY_DIR}/OpenShape-LinkMap.txt")
 
     # TD-36: Qt's QML import scan links every Qt Quick Controls style, because
     # QtQuick.Controls imports them optionally and QtQuick.Dialogs has

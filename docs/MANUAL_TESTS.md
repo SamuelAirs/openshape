@@ -158,6 +158,18 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     on the ground. The Perspective / Orthographic button switches back;
     close and start again: your choice is kept. Is anything harder to
     read than before (edges, sketches, selected faces)?
+18. **Licenses (for the App Store release).** File → About OpenShape →
+    **Licenses**: the list starts with "Your rights to the LGPL libraries",
+    then OpenShape, the libraries (Open CASCADE, Qt, PlaneGCS, FreeType,
+    libzip, nlohmann/json, Eigen, Noto Sans) and "Inside Qt". Open a few:
+    each shows the license text and where its source is; Back and Esc
+    return to the list. Then read docs/LICENSING.md, "The iOS app and the
+    App Store" (what selling on the App Store needs; the settled points,
+    judgement calls and risk) and [EULA.md](EULA.md): the proposed
+    license agreement for App Store Connect, with your name, address and
+    contact to fill in. Two decisions for you: whether to use that custom
+    EULA (recommended) and which contact to publish for the source offer
+    (now the GitHub issue tracker).
 
 ## The Windows installer (optional)
 

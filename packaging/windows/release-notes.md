@@ -40,3 +40,10 @@ included. The source code of these libraries is attached to this release
 `SOURCES-SHA256SUMS.txt`). The Text tool's font, Noto Sans (SIL Open Font
 License 1.1), is built into `OpenShape.exe`; its license is in
 `NotoSans-OFL.txt`.
+
+The iPhone and iPad app of this version links the same libraries
+statically. `OpenShape-@VERSION@-ios-sources.tar` holds the exact source
+code of every library in it (with `SOURCES-SHA256SUMS.txt`); how to rebuild
+the app with modified versions of them is in
+[BUILDING.md](https://github.com/SamuelAirs/openshape/blob/@TAG@/BUILDING.md#rebuilding-the-ios-app-with-modified-libraries),
+and the app shows every license under *About > Licenses*.

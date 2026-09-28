@@ -9,31 +9,38 @@
 # The versions match the Windows and Homebrew builds. OpenCASCADE is the
 # long step (half an hour or more).
 #
+# The source archives are the ones pinned in sources.txt (URL and SHA-256;
+# fetch-source.sh refuses any other). Each is unpacked into the work dir
+# once: a source folder that is already there is built as it is, so a
+# modified library (the LGPL's relinking; BUILDING.md, "Rebuilding the iOS
+# app with modified libraries") is built by editing it there and running
+# this script again with the same work dir.
+#
 # Usage (macOS with Xcode, CMake and Ninja):
 #   scripts/ios/build-deps.sh <install-prefix> [work-dir]
 # The work dir (sources and build trees) defaults to build/ios-deps.
+# OPENSHAPE_SOURCES_DIR=<dir> takes the archives from there (e.g. the
+# unpacked iOS source archive of a GitHub release) instead of downloading.
 set -euo pipefail
 
 PREFIX=${1:?usage: build-deps.sh <install-prefix> [work-dir]}
 WORK=${2:-build/ios-deps}
 IOS_MIN=${IOS_DEPLOYMENT_TARGET:-16.0}
-
-OCCT_TAG=V7_9_3
-FREETYPE_TAG=VER-2-14-3
-LIBZIP_VERSION=1.11.4
-JSON_VERSION=3.12.0
-EIGEN_VERSION=5.0.1
+HERE=$(cd "$(dirname "$0")" && pwd)
 
 mkdir -p "$PREFIX" "$WORK"
 PREFIX=$(cd "$PREFIX" && pwd)
 WORK=$(cd "$WORK" && pwd)
 
-# fetch <url> <dir>: download and unpack a source archive once.
+# fetch <name> <dir>: the archive pinned in sources.txt (SHA-256 checked),
+# unpacked once.
 fetch() {
     if [ ! -d "$WORK/$2" ]; then
-        echo "== downloading $1"
+        local archive
+        archive=$(bash "$HERE/fetch-source.sh" "$1" "$WORK/archives")
+        rm -rf "$WORK/$2.tmp"
         mkdir -p "$WORK/$2.tmp"
-        curl -fsSL --retry 3 "$1" | tar -xz -C "$WORK/$2.tmp" --strip-components=1
+        tar -xf "$archive" -C "$WORK/$2.tmp" --strip-components=1
         mv "$WORK/$2.tmp" "$WORK/$2"
     fi
 }
@@ -42,11 +49,11 @@ IOS=(-G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64
      -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_MIN" -DCMAKE_BUILD_TYPE=Release
      -DCMAKE_INSTALL_PREFIX="$PREFIX")
 
-fetch "https://github.com/freetype/freetype/archive/refs/tags/$FREETYPE_TAG.tar.gz" freetype
-fetch "https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/$OCCT_TAG.tar.gz" occt
-fetch "https://github.com/nih-at/libzip/releases/download/v$LIBZIP_VERSION/libzip-$LIBZIP_VERSION.tar.gz" libzip
-fetch "https://github.com/nlohmann/json/archive/refs/tags/v$JSON_VERSION.tar.gz" json
-fetch "https://gitlab.com/libeigen/eigen/-/archive/$EIGEN_VERSION/eigen-$EIGEN_VERSION.tar.gz" eigen
+fetch freetype freetype
+fetch occt occt
+fetch libzip libzip
+fetch json json
+fetch eigen eigen
 
 echo "== FreeType"
 cmake -S "$WORK/freetype" -B "$WORK/build-freetype" "${IOS[@]}" -DBUILD_SHARED_LIBS=OFF \

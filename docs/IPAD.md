@@ -16,12 +16,13 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
 | iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ✅ built on CI |
-| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); since 2026-09-27 builds may also go to external testers (`testFlightInternalTestingOnly` false: the public beta, section 1b) |
+| Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); since 2026-09-27 builds may also go to external testers (`testFlightInternalTestingOnly` false: the public beta, section 1b). Only builds of release tags `v<version>...` are submitted for App Store review (they name the tag in About → Licenses and require the license gate; docs/LICENSING.md) |
 | Debug symbols (dSYM) | ✅ 2026-09-27 (ipad.yml run 39): Release is built with debug information (same optimization); the archive carries `OpenShape.app.dSYM` (62 MB; the app stays 55 MB). Xcode's archive step leaves the dSYM of a CMake project out (run 37), so `build-app.sh` copies the build's in and fails unless its UUID is the app binary's and OpenShape's functions are in it; the upload sends it (`uploadSymbols`), so TestFlight crash reports symbolicate |
 | Share sheet after exports, File → Share Project… | 2026-09-27: built on CI (`src/ui/ios/ShareSheet.mm`, run 39); the `share` acceptance scenario checks it with a stub sheet on Windows and the Mac (CI run 47); **to try on the devices** |
 | Open in OpenShape (Files app, Mail) | 2026-09-27: document types for projects and STEP files (checked by the build and `test_uistate`), `QFileOpenEvent` handling; the `openin` scenario checks it on Windows and the Mac through Qt's own entry point; **to try on the devices** |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
+| Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-103); the owner: the custom EULA and the source-offer contact (TD-102) |
 
 What is ready:
 
@@ -162,6 +163,12 @@ curl -s https://api.github.com/repos/SamuelAirs/openshape/actions/runs/<run id>/
 curl -s https://api.github.com/repos/SamuelAirs/openshape/check-runs/<job id>/annotations
 ```
 
+If the TestFlight upload fails on every push after an App Store release
+("train closed", "must contain a higher version"), main still has the
+released version: raise it in `CMakeLists.txt` (BUILDING.md, "Before
+tagging a release", step 6); `ipad.yml` puts this into an error
+annotation when it recognises the message.
+
 Anonymous API calls are limited to 60 per hour per IP address. A push to
 `main` cancels the CI run still in progress (not `ipad.yml`, which queues):
 wait for the macOS job (about 3 minutes) before pushing again.
@@ -281,12 +288,31 @@ The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → L
 TestFlight also collects crash reports and screenshot feedback in App Store
 Connect.
 
-## Licenses
+## Licenses and the App Store
 
-For your own iPhone and iPad there is nothing to do. For the App Store see
-docs/LICENSING.md: MPL-2.0 allows it; the LGPL parts (Qt, OCCT, PlaneGCS)
-are linked statically on iOS, so their object files must be offered for
-relinking.
+Checked on 2026-09-27 for the paid App Store release (docs/LICENSING.md,
+"The iOS app and the App Store"; not legal advice): selling is allowed; Qt,
+OCCT and PlaneGCS are LGPL and linked statically, which is fine because the
+app's complete source, build scripts and the libraries' exact sources are
+public at every release tag, and the app says so and shows every license
+text (About → **Licenses**). What that means in practice:
+
+- **Only builds of release tags go to App Store review.** A tag
+  `v<version>` (or `v<version>-beta1`) builds the app with the tag inside
+  it, requires the license gate to pass and uploads the TestFlight build to
+  submit (the run's notice names the build number). Builds of `main` go to
+  internal and external testers (the public beta, 1b) and name their
+  commit in About → Licenses; each run warns when their library pins are on
+  no release yet, so a beta tag keeps those sources. The tag's GitHub
+  release carries `OpenShape-<version>-ios-sources.tar`.
+- **The owner, once, before the first public release:** set the custom
+  EULA ([EULA.md](EULA.md): fill in name, address, telephone, e-mail; App
+  Store Connect → App Information → License Agreement), decide the contact
+  for the written source offer (TD-102), and add the license sentence to
+  the App Store description (docs/LICENSING.md, "Releasing an App Store
+  (or public beta) version").
+- Every build's notices on CI list what the app links, by origin, and the
+  license gate's result (`scripts/ios/build-app.sh`).
 
 ## What to test on the iPad
 
@@ -392,7 +418,9 @@ margins (BUILDING.md).
 9. The hint line under the model is one short line: tap it to read all of it.
 10. **?** opens the help card: it talks about taps and two-finger gestures
    (no mouse or keyboard terms); File → Preferences and About fit the
-   screen and scroll.
+   screen and scroll. About → **Licenses**: the list scrolls; tap Qt, then
+   Back; tap "Your rights to the LGPL libraries": it names this version and
+   build; the text pages scroll and fit the screen.
 11. File → Save: the first time it asks for a name and saves into OpenShape's
    folder (Files app → On My iPhone → OpenShape); File → Open shows the
    system file picker (a project from iCloud Drive opens as a copy in

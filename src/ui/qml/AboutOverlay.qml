@@ -15,6 +15,14 @@ Rectangle {
     visible: false
     focus: visible
 
+    // The source of exactly this build and what identifies it
+    // (AppController.sourceCodeUrl / buildDescription).
+    property string sourceUrl: "https://github.com/SamuelAirs/openshape"
+    property string buildText: ""
+
+    // Licenses: the license texts and the LGPL notice (LicensesOverlay).
+    signal licensesRequested()
+
     function open() { visible = true }
 
     Keys.onEscapePressed: visible = false
@@ -79,7 +87,18 @@ Rectangle {
                     linkColor: Theme.accent
                     onLinkActivated: (link) => Qt.openUrlExternally(link)
                     text: "Free software under the <a href=\"https://mozilla.org/MPL/2.0/\">Mozilla Public License 2.0</a>. "
-                        + "Source code: <a href=\"https://github.com/SamuelAirs/openshape\">github.com/SamuelAirs/openshape</a>."
+                        + "Source code: <a href=\"https://github.com/SamuelAirs/openshape\">github.com/SamuelAirs/openshape</a>"
+                        + (overlay.sourceUrl !== "https://github.com/SamuelAirs/openshape"
+                           ? " (<a href=\"" + overlay.sourceUrl + "\">this version</a>)" : "") + "."
+                }
+                Text {
+                    objectName: "aboutBuild"
+                    visible: overlay.buildText !== ""
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Theme.mutedText
+                    font.pixelSize: 12
+                    text: "This copy: " + overlay.buildText
                 }
                 SectionLabel { text: "Built with"; Layout.leftMargin: 0 }
                 Repeater {
@@ -87,6 +106,7 @@ Rectangle {
                         ["Open CASCADE Technology", "LGPL-2.1 with the OCCT exception", "exact solid geometry"],
                         ["Qt 6", "LGPL-3.0", "user interface and drawing"],
                         ["PlaneGCS (from FreeCAD)", "LGPL-2.1", "sketch constraints"],
+                        ["FreeType", "FreeType License", "letter shapes for raised and cut-in text"],
                         ["Eigen", "MPL-2.0", "linear algebra"],
                         ["libzip", "BSD-3-Clause", "project files"],
                         ["nlohmann/json", "MIT", "project files"],
@@ -121,15 +141,21 @@ Rectangle {
                     textFormat: Text.StyledText
                     linkColor: Theme.accent
                     onLinkActivated: (link) => Qt.openUrlExternally(link)
-                    // Only the Windows package (scripts/package-windows.sh) carries
-                    // the license files; other builds point to the repository.
-                    text: "These libraries and the ones they use (such as FreeType, HarfBuzz, ICU and zlib) keep their own licenses. "
+                    // Licenses (every platform) shows the texts built into the
+                    // app; the Windows package also carries them as files, with
+                    // the libraries only it bundles (scripts/package-windows.sh).
+                    text: "These libraries and the ones they use keep their own licenses: Licenses shows each license text, "
+                        + "where each library's source code is and how to rebuild OpenShape with modified versions of the LGPL libraries."
                         + (Qt.platform.os === "windows"
-                           ? "The full license texts and where to get each library's source code come with OpenShape "
-                             + "(LICENSE.txt, THIRD_PARTY_LICENSES.txt, PlaneGCS-COPYING.LIB.txt and NotoSans-OFL.txt next to OpenShape.exe)."
-                           : "Each library's license and source are listed in "
-                             + "<a href=\"https://github.com/SamuelAirs/openshape/blob/main/THIRD_PARTY.md\">THIRD_PARTY.md</a> "
-                             + "in the source code repository.")
+                           ? " The Windows package also has them as files next to OpenShape.exe (LICENSE.txt, "
+                             + "THIRD_PARTY_LICENSES.txt with every bundled library, PlaneGCS-COPYING.LIB.txt and NotoSans-OFL.txt)."
+                           : "")
+                }
+                ActionButton {
+                    objectName: "aboutLicenses"
+                    text: "Licenses"
+                    outlined: true
+                    onClicked: overlay.licensesRequested()
                 }
             }
         }
