@@ -9,18 +9,26 @@
 // is taken or unusable; then the card shows the new name and the old file
 // is gone), deleted after the confirmation (into a stand-in trash that is
 // another temporary folder: the Recycle Bin is never touched), and deleted
-// for good where the trash fails, after a second confirmation. Renaming the
-// open project renames the window; deleting it leaves an empty document. A
-// project outside OpenShape's folder is never deleted for good. Then the
-// same on a phone-sized window by touch (a long press opens the menu).
+// for good where the trash fails, after a second confirmation, and reported
+// as deleted for good (never "moved") where the system removes it without a
+// place in the trash. Cancel keeps the name; a card open when Home goes does
+// not come back. Renaming the open project renames the window and its
+// recovery copy's original file; deleting it leaves an empty document (the
+// card warns about unsaved changes). A project outside OpenShape's folder is
+// never deleted for good. Then the same on a phone-sized window by touch (a
+// long press opens the menu).
 // Every file this scenario makes or changes lies in its temporary folders.
 
 #include "app/AcceptanceRunner.h"
+#include "io/Recovery.h"
 #include "ui/AppController.h"
+#include "ui/AppSettings.h"
+#include "ui/RecoverySession.h"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QMetaObject>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QUrl>
 #include <QtQuick/QQuickItem>
@@ -31,6 +39,9 @@
 namespace os::app {
 namespace {
 
+// Steps (about 160 ms each) until the recovery copy of an edit is written.
+constexpr int kRecoverySteps = ui::kRecoveryDebounceMs / 160 + 4;
+
 struct HomeProjectsState {
     std::unique_ptr<QTemporaryDir> folder;  // the app folder
     std::unique_ptr<QTemporaryDir> trash;   // where the stand-in trash puts files
@@ -38,7 +49,42 @@ struct HomeProjectsState {
     qint64 originalSize = 0;
     QPointF pressAt;
     int card = -1; // the card whose menu is open
+    QString lastMessage; // the app's last message (the toast)
+    QMetaObject::Connection messages;
 };
+
+// The stand-in trash: files go into the scenario's own temporary folder,
+// never to the Recycle Bin.
+ui::AppController::TrashHandler standInTrash(const QString& trashDir)
+{
+    return [trashDir](const QString& path, QString* trashedAt, QString* error) {
+        const QString target = trashDir + QLatin1Char('/') + QFileInfo(path).fileName();
+        QFile::remove(target);
+        if (QFile::rename(path, target)) {
+            *trashedAt = target;
+            return true;
+        }
+        *error = QStringLiteral("stand-in trash failed");
+        return false;
+    };
+}
+
+// The original file named by this run's recovery copy ("" without one).
+QString recoveryOriginal(AcceptanceRunner& r, QString* title = nullptr)
+{
+    const ui::RecoverySession* recovery = r.app().recoverySession();
+    if (!recovery || r.app().recoveryCopyFile().isEmpty())
+        return {};
+    QFile sidecar(QString::fromStdWString(recovery->store().sidecarFile(recovery->session()).wstring()));
+    if (!sidecar.open(QIODevice::ReadOnly))
+        return {};
+    const auto info = io::parseRecoverySidecar(sidecar.readAll().toStdString());
+    if (!info)
+        return {};
+    if (title)
+        *title = QString::fromStdString(info.value().title);
+    return QString::fromStdString(info.value().originalPath);
+}
 
 // The index of the card showing project `name` (-1: none).
 int cardOf(AcceptanceRunner& r, const QString& name)
@@ -93,17 +139,7 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
 
     // ---- A project in the app folder, open, and Home ----------------------------
     steps.push_back([&r, s] {
-        // A stand-in trash in its own temporary folder: files go there, never
-        // to the Recycle Bin.
-        const QString trashDir = s->trash->path();
-        r.app().setTrashHandler([trashDir](const QString& path, QString* error) {
-            const QString target = trashDir + QLatin1Char('/') + QFileInfo(path).fileName();
-            QFile::remove(target);
-            if (QFile::rename(path, target))
-                return true;
-            *error = QStringLiteral("stand-in trash failed");
-            return false;
-        });
+        r.app().setTrashHandler(standInTrash(s->trash->path()));
         r.app().setAppFolder(s->folder->path());
         r.app().clearRecentFiles();
         r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
@@ -226,6 +262,57 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
         r.screenshot(QStringLiteral("homeprojects_renamed_") + where);
     });
 
+    if (!touch) {
+        // ---- Cancel keeps the name ----------------------------------------------------
+        const QString never = QStringLiteral("Never ") + where;
+        steps.push_back([&r, say, menuOf, spare] { r.check(menuOf(spare), say(QStringLiteral("the menu (rename, then cancel)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, say, press, entryOf] { r.check(press(entryOf("homeRename_")), say(QStringLiteral("Rename… (to cancel)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, never] { r.type(never); });
+        steps.push_back([&r, say, press] { r.check(press(QStringLiteral("homeRenameCancel")), say(QStringLiteral("Cancel (rename)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, say, file, spare, never] {
+            r.check(!shown(r, QStringLiteral("homeRenameCard")), say(QStringLiteral("Cancel closes the rename card")));
+            r.check(QFileInfo::exists(file(spare)) && !QFileInfo::exists(file(never)), say(QStringLiteral("Cancel keeps the file's name")));
+            r.check(itemText(r, QStringLiteral("homeCardName_0")) == spare, say(QStringLiteral("and the card's")), cardNames(r));
+        });
+
+        // ---- A card left open when Home goes does not come back --------------------------
+        steps.push_back([&r, say, menuOf, spare] { r.check(menuOf(spare), say(QStringLiteral("the menu (delete, then Home goes)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, say, press, entryOf] { r.check(press(entryOf("homeDelete_")), say(QStringLiteral("Delete… (then Home goes)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, say] {
+            r.check(shown(r, QStringLiteral("homeDeleteCard")), say(QStringLiteral("the delete card is open")));
+            r.app().setHomeVisible(false); // as File → New from the keyboard does
+        });
+        steps.push_back([] {});
+        steps.push_back([&r] { r.app().setHomeVisible(true); });
+        steps.push_back([] {});
+        steps.push_back([&r, say, file, spare] {
+            r.check(r.app().homeVisible() && !shown(r, QStringLiteral("homeDeleteCard")),
+                    say(QStringLiteral("Home comes back without the old delete card")));
+            r.check(QFileInfo::exists(file(spare)), say(QStringLiteral("and nothing was deleted")));
+        });
+
+        // ---- Unsaved work: the recovery copy follows the rename ------------------------
+        steps.push_back([&r] {
+            r.app().setHomeVisible(false);
+            r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b")); // unsaved work in the open project
+        });
+        for (int i = 0; i < kRecoverySteps; ++i)
+            steps.push_back([] {});
+        steps.push_back([&r, say, file, part] {
+            r.check(r.app().dirty() && r.app().bodyCount() == 2, say(QStringLiteral("an unsaved edit")));
+            const QString original = recoveryOriginal(r);
+            r.check(!original.isEmpty() && QFileInfo(original) == QFileInfo(file(part)),
+                    say(QStringLiteral("its recovery copy names the open project's file")), original);
+            r.app().setHomeVisible(true);
+        });
+        steps.push_back([] {});
+    }
+
     // ---- Rename the open project: the window's title follows --------------------------
     steps.push_back([&r, say, menuOf, part] { r.check(menuOf(part), say(QStringLiteral("the open project's menu"))); });
     steps.push_back([] {});
@@ -234,8 +321,15 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
     steps.push_back([&r, wall] { r.type(wall); });
     steps.push_back([&r, say, press] { r.check(press(QStringLiteral("homeRenameOk")), say(QStringLiteral("Rename (open project)"))); });
     steps.push_back([] {});
-    steps.push_back([&r, say, file, part, wall] {
+    steps.push_back([&r, say, file, part, wall, touch] {
         r.check(r.app().documentTitle() == wall, say(QStringLiteral("the document has the new name")), r.app().documentTitle());
+        if (!touch) {
+            // A crash now restores the unsaved work to the new name.
+            QString title;
+            const QString original = recoveryOriginal(r, &title);
+            r.check(QFileInfo(original) == QFileInfo(file(wall)) && title == wall,
+                    say(QStringLiteral("the recovery copy names the renamed file")), original + QStringLiteral(" / ") + title);
+        }
         r.check(r.window()->title().contains(wall), say(QStringLiteral("so has the window")), r.window()->title());
         r.check(QFileInfo::exists(file(wall)) && !QFileInfo::exists(file(part)), say(QStringLiteral("the open project's file is renamed")));
         bool listed = false, stale = false;
@@ -247,7 +341,8 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
         r.check(listed && !stale, say(QStringLiteral("Open Recent lists the new name, not the old one")));
         r.check(itemText(r, QStringLiteral("homeCardName_1")) == wall, say(QStringLiteral("its card keeps its place")), cardNames(r));
         // Saving goes to the new name.
-        r.check(r.app().saveProject() && !QFileInfo::exists(file(part)), say(QStringLiteral("Save writes the renamed file")));
+        r.check(r.app().saveProject() && !QFileInfo::exists(file(part)) && !r.app().dirty(), say(QStringLiteral("Save writes the renamed file")));
+        r.check(r.app().recoveryCopyFile().isEmpty(), say(QStringLiteral("saved: no recovery copy left")));
     });
 
     // ---- Delete the copy: into the (stand-in) trash -------------------------------------
@@ -301,7 +396,7 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
 
     // ---- The trash fails: deleted for good only after a second answer --------------------
     steps.push_back([&r, say, menuOf, wall] {
-        r.app().setTrashHandler([](const QString&, QString* error) {
+        r.app().setTrashHandler([](const QString&, QString*, QString* error) {
             *error = QStringLiteral("no trash here (stand-in)");
             return false;
         });
@@ -339,6 +434,47 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
                 say(QStringLiteral("the file is gone for good")));
         r.check(r.app().homeProjects().size() == 1, say(QStringLiteral("one card left")), cardNames(r));
     });
+
+    // ---- The system removes it without a trash: it never says "restore" -------------------
+    if (!touch) {
+        steps.push_back([&r, s, say, menuOf, wall] {
+            // What a trash that deletes instead would do: the file goes, and
+            // no place in the trash is reported.
+            r.app().setTrashHandler([](const QString& path, QString*, QString* error) {
+                if (QFile::remove(path))
+                    return true;
+                *error = QStringLiteral("stand-in removal failed");
+                return false;
+            });
+            s->lastMessage.clear();
+            s->messages = QObject::connect(&r.app(), &ui::AppController::message, &r.app(),
+                                           [s](const QString& text) { s->lastMessage = text; });
+            r.check(menuOf(wall), say(QStringLiteral("the open project's menu (duplicate a third time)")));
+        });
+        steps.push_back([] {});
+        steps.push_back([&r, say, press, entryOf] { r.check(press(entryOf("homeDuplicate_")), say(QStringLiteral("Duplicate (no trash place)"))); });
+        steps.push_back([] {});
+        steps.push_back([] {});
+        steps.push_back([&r, say, menuOf, wall] { r.check(menuOf(wall + QStringLiteral(" copy")), say(QStringLiteral("its menu (no trash place)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, say, press, entryOf] { r.check(press(entryOf("homeDelete_")), say(QStringLiteral("Delete… (no trash place)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, say, press] { r.check(press(QStringLiteral("homeDeleteOk")), say(QStringLiteral("Delete (no trash place)"))); });
+        steps.push_back([] {});
+        steps.push_back([&r, s, say, file, wall] {
+            const QString gone = wall + QStringLiteral(" copy");
+            QObject::disconnect(s->messages);
+            r.check(!shown(r, QStringLiteral("homeDeleteCard")), say(QStringLiteral("the card closes (no trash place)")));
+            r.check(!QFileInfo::exists(file(gone)), say(QStringLiteral("the file is gone (no trash place)")));
+            r.check(r.app().homeProjects().size() == 1, say(QStringLiteral("its card is gone (no trash place)")), cardNames(r));
+            r.check(s->lastMessage == QStringLiteral("Deleted “%1” for good: it could not go to %2.").arg(gone, r.app().trashName()),
+                    say(QStringLiteral("the message says it was deleted for good, not moved")), s->lastMessage);
+            r.app().setTrashHandler([](const QString&, QString*, QString* error) {
+                *error = QStringLiteral("no trash here (stand-in)");
+                return false;
+            });
+        });
+    }
 
     // ---- A project outside OpenShape's folder: the trash only ----------------------------
     // Once (the platform decides, not the layout). On the desktop without an
@@ -378,6 +514,19 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
     }
 
     // ---- Delete the open project: an empty document, Home stays --------------------------
+    // On the phone with unsaved work in it: the card says it is lost.
+    if (touch) {
+        steps.push_back([&r] {
+            r.app().setHomeVisible(false);
+            r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
+        });
+        steps.push_back([] {});
+        steps.push_back([&r, say] {
+            r.check(r.app().dirty(), say(QStringLiteral("unsaved work in the open project")));
+            r.app().setHomeVisible(true);
+        });
+        steps.push_back([] {});
+    }
     steps.push_back([&r, say, menuOf, wall] {
         r.check(r.app().documentTitle() == wall, say(QStringLiteral("the open project")), r.app().documentTitle());
         r.check(r.app().homeProjects().size() == 1, say(QStringLiteral("one card")), cardNames(r));
@@ -386,9 +535,13 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
     steps.push_back([] {});
     steps.push_back([&r, say, press, entryOf] { r.check(press(entryOf("homeDelete_")), say(QStringLiteral("Delete… (open project)"))); });
     steps.push_back([] {});
-    steps.push_back([&r, say, press] {
+    steps.push_back([&r, say, press, touch] {
         const QString note = itemText(r, QStringLiteral("homeDeleteNote"));
-        r.check(note.contains(QStringLiteral("It is open: it closes.")), say(QStringLiteral("the card says it is open")), note);
+        if (touch)
+            r.check(note.endsWith(QStringLiteral(" It is open: it closes, and its unsaved changes are lost.")),
+                    say(QStringLiteral("the card says the unsaved changes are lost")), note);
+        else
+            r.check(note.endsWith(QStringLiteral(" It is open: it closes.")), say(QStringLiteral("the card says it is open")), note);
         r.check(press(QStringLiteral("homeDeleteOk")), say(QStringLiteral("Delete (open project, no trash)")));
     });
     steps.push_back([] {});

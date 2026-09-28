@@ -1413,10 +1413,17 @@ file in Documents to `Documents/.Trash`, the Files app's Recently Deleted).
 When the trash fails, a project in the app folder comes back as
 "permanent" and Home asks again, saying it cannot be undone, before
 `io::removeProjectFile`; any other project stays. The file must be gone
-afterwards (the invariant checked). Deleting the open project replaces it
-with a new document and keeps Home. The acceptance run's `homeprojects`
-scenario puts a stand-in trash in (a temporary folder, then one that
-fails), so no run touches the Recycle Bin. The grid takes as many
+afterwards (the invariant checked). On Windows Qt stops the shell when an
+item would be deleted instead of recycled (a drive without a Recycle Bin:
+seen failing, file kept, on a subst drive), so the trash never deletes for
+good there; and a handler that reports success without a place in the
+trash (`trashedAt` empty) is reported as "deleted for good", never as
+"moved". Renaming the open project with unsaved changes rewrites its
+recovery copy at once, so the copy names the new file. Deleting the open
+project replaces it with a new document and keeps Home; both cards close
+when Home hides. The acceptance run's `homeprojects` scenario puts a
+stand-in trash in (a temporary folder, then one that fails, then one that
+removes without a trash place), so no run touches the Recycle Bin. The grid takes as many
 columns as fit (two on a phone in portrait) and gets denser in short
 windows (a phone in landscape). While Home is shown the keys for the model
 (Undo, Redo, Ctrl+D, B, K, F, Delete) do nothing, and closing an overlay

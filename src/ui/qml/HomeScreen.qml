@@ -38,6 +38,15 @@ Rectangle {
     function askRename(path, name) { renameCard.open(path, name) }
     function askDelete(path, name) { deleteCard.open(path, name) }
 
+    // A card left open when Home goes (File → New from the keyboard, say)
+    // would come back later about a project that is no longer open.
+    onVisibleChanged: {
+        if (!visible) {
+            renameCard.visible = false
+            deleteCard.visible = false
+        }
+    }
+
     Keys.onEscapePressed: app.homeVisible = false
     MouseArea {
         anchors.fill: parent

@@ -308,10 +308,15 @@ public:
     // new empty document takes its place and Home stays.
     Q_INVOKABLE QString deleteProject(const QString& path, bool permanently = false);
     QString trashName() const;
-    // Moves a file to the trash (true), or says why not in `error`.
-    // QFile::moveToTrash by default; the acceptance run puts in one that
-    // keeps to its temporary folder, and one that fails.
-    using TrashHandler = std::function<bool(const QString& file, QString* error)>;
+    // Moves a file to the trash (true, with where it went in `trashedAt`),
+    // or says why not in `error`. A success with an empty `trashedAt` means
+    // the system removed the file without reporting a place in the trash:
+    // deleteProject then says it was deleted for good, never that it can be
+    // restored. QFile::moveToTrash by default (Qt refuses on a drive without
+    // a Recycle Bin rather than deleting); the acceptance run puts in one
+    // that keeps to its temporary folder, one that fails and one that
+    // removes without a trash.
+    using TrashHandler = std::function<bool(const QString& file, QString* trashedAt, QString* error)>;
     void setTrashHandler(TrashHandler handler);
     static TrashHandler systemTrashHandler();
 

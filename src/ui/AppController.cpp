@@ -1851,6 +1851,12 @@ bool AppController::renameProject(const QString& path, const QString& newName)
         // Saving goes to the new name; the title says it.
         path_ = to;
         emit documentChanged();
+        // A recovery copy of unsaved work names its original file: rewrite
+        // it now, or a crash would restore to the old name (a second file).
+        if (dirty()) {
+            copyRevision_ = ~std::uint64_t(0);
+            writeRecoveryCopy();
+        }
     }
     updateRecentFiles();
     notifyMessage(QStringLiteral("Renamed to “%1”").arg(QFileInfo(to).completeBaseName()));
@@ -1891,11 +1897,18 @@ AppController::TrashHandler AppController::systemTrashHandler()
     // The Recycle Bin, the macOS Trash; on iOS NSFileManager's trashItemAtURL
     // (Qt 6 compiles its Darwin trash for iOS too), which moves a file in
     // the app's Documents to Documents/.Trash: the Files app's Recently
-    // Deleted.
-    return [](const QString& file, QString* error) {
+    // Deleted. On Windows Qt stops the shell's operation when the item
+    // would be deleted rather than recycled (a USB stick, a network share,
+    // a subst drive): moveToTrash then fails and the file stays (seen on
+    // a subst drive, 2026-09-27). Qt reports where the file went; an empty
+    // place means it is gone without a trash (see deleteProject).
+    return [](const QString& file, QString* trashedAt, QString* error) {
         QFile target(file);
-        if (target.moveToTrash())
+        if (target.moveToTrash()) {
+            if (trashedAt)
+                *trashedAt = target.fileName();
             return true;
+        }
         if (error)
             *error = target.errorString();
         return false;
@@ -1929,9 +1942,11 @@ QString AppController::deleteProject(const QString& path, bool permanently)
     }
     const QString cannotTrash = QStringLiteral("“%1” could not be moved to %2, so it was not deleted.").arg(name, trashName());
     QString result;
+    bool noTrash = false; // gone, but the system reported no place in the trash
     if (!permanently) {
         QString error;
-        if (!trashHandler_ || !trashHandler_(file, &error)) {
+        QString trashedAt;
+        if (!trashHandler_ || !trashHandler_(file, &trashedAt, &error)) {
             OS_LOG(Warning, File) << "cannot move " << file.toStdString() << " to the trash: " << error.toStdString();
             if (inAppFolder)
                 return QStringLiteral("permanent"); // Home asks before deleting it for good
@@ -1943,8 +1958,15 @@ QString AppController::deleteProject(const QString& path, bool permanently)
             notifyMessage(QStringLiteral("“%1” could not be deleted.").arg(name));
             return {};
         }
-        OS_LOG(Info, File) << "moved " << file.toStdString() << " to the trash";
-        result = QStringLiteral("trashed");
+        if (trashedAt.isEmpty()) {
+            // Never say it can be restored when no trash took it.
+            OS_LOG(Warning, File) << "removed without a place in the trash: " << file.toStdString();
+            noTrash = true;
+            result = QStringLiteral("deleted");
+        } else {
+            OS_LOG(Info, File) << "moved " << file.toStdString() << " to the trash: " << trashedAt.toStdString();
+            result = QStringLiteral("trashed");
+        }
     } else {
         if (!inAppFolder) {
             // Never removed for good outside OpenShape's folder: the trash only.
@@ -1972,8 +1994,11 @@ QString AppController::deleteProject(const QString& path, bool permanently)
         setHomeVisible(true);
     }
     updateRecentFiles();
-    notifyMessage(result == QStringLiteral("trashed") ? QStringLiteral("Moved “%1” to %2").arg(name, trashName())
-                                                      : QStringLiteral("Deleted “%1”").arg(name));
+    if (noTrash)
+        notifyMessage(QStringLiteral("Deleted “%1” for good: it could not go to %2.").arg(name, trashName()));
+    else
+        notifyMessage(result == QStringLiteral("trashed") ? QStringLiteral("Moved “%1” to %2").arg(name, trashName())
+                                                          : QStringLiteral("Deleted “%1”").arg(name));
     return result;
 }
 

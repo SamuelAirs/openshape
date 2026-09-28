@@ -788,8 +788,10 @@ iPad" below).
     it goes to the **Recycle Bin** (Windows) or to **Recently Deleted** in
     the Files app (iPhone, iPad), where it can be put back. If it cannot go
     there, OpenShape asks again and says that deleting it cannot be undone;
-    a project outside OpenShape's folder is then not deleted at all.
-    Deleting the open project closes it (an empty document takes its place).
+    a project outside OpenShape's folder is then not deleted at all (on a
+    USB stick or a network drive, which have no Recycle Bin, Delete… says
+    so and leaves the file). Deleting the open project closes it (an empty
+    document takes its place).
 - **File → Import STEP…** (`Ctrl+I`) brings in parts from other CAD programs:
   each solid becomes a body you can push, pull, round and combine; inches
   and meters come in at the right size. The exact geometry is stored in your
