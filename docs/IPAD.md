@@ -414,12 +414,14 @@ margins (BUILDING.md).
    2026-09-26): tap an edge on the left of a body low on the screen, then
    faces in different places: the box docks below the top bar or above the
    hint, whichever is farther from the selection, and stays there while
-   you drag the arrow. In landscape it is one row, beside the top bar.
+   you drag the arrow.
    Tap the top face of a box, then the value field: the box moves below the
    top bar while the keyboard is up, and the field stays in sight as you
    type. Swipe its row of actions sideways and tap the last one.
    Draw a rectangle with a finger, also next to the Dynamic Island in
    landscape: its width and height show above the finger, whole.
+   In landscape the box is one row, beside the top bar, when its New body /
+   Join / Cut fit there; otherwise its actions go on a second row.
 14. Share: File → Export STL: the share sheet slides up from the bottom;
    send it to the slicer app, AirDrop it to the iPad or a Mac; File → Share
    Project… (asks a name for a new project) → Mail. Open the mailed project
@@ -427,3 +429,13 @@ margins (BUILDING.md).
    OpenShape), and a STEP file from the Files app (Share → OpenShape): the
    project opens as a copy in OpenShape's folder, the STEP file as a new
    project.
+15. Cut a pocket (the owner's flow of 2026-09-27): Box → tap the top face →
+   **Sketch**: the face fills most of the width; draw a 10 x 10 rectangle
+   with one finger (corners land on whole millimeters) → **Finish sketch** →
+   tap the rectangle: the arrow starts where you tapped and the hint says
+   "drag the arrow out … into it to cut". Drag the rectangle itself (or the
+   arrow) down 5 mm: the value says **Cut depth**, **Cut** is highlighted,
+   ✓ cuts the pocket. Also: type 5, then tap **Cut** (it goes in, not a
+   dead end); tap **Join** and push in (refused, and the hint says why);
+   tap a second face by mistake, then **Sketch** (it goes on the last face).
+   Tap the pocket's floor: the floor is selected, not its edge.

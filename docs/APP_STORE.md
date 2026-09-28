@@ -346,7 +346,7 @@ not blank):
   1398 x 2034, inner 2007 x 2853) but says uploading them "will be
   available later this year", so they are not required for this
   submission. Nothing to do now; when App Store Connect accepts them, the lead adds the
-  two sizes to the script (TD-71).
+  two sizes to the script (TD-95).
 - **iPad** `ipad-*.png`: 2752 x 2064 pixels, landscape, the **13" display**
   size (iPad Pro 13-inch M4 class; 1376 x 1032 points at 2x). Required for
   an app that runs on iPad; scaled down for smaller iPads.
@@ -360,7 +360,7 @@ re-runs `bash scripts/dev/appstore_screenshots.sh` (about three minutes).
 They are rendered on Windows at the devices' exact point sizes, pixel
 ratios and safe areas, so the only visible difference from a device is the
 UI font (Windows' Segoe UI instead of San Francisco) and the missing status
-bar (docs/TECHNICAL_DEBT.md, TD-71). If you prefer, replace any of them with
+bar (docs/TECHNICAL_DEBT.md, TD-95). If you prefer, replace any of them with
 a screenshot from your own iPhone 16 Pro Max or 13-inch iPad (same sizes);
 an iPhone 16 Pro (1206 x 2622) or 11-inch iPad screenshot is a different
 size class and cannot stand in for the required ones.
