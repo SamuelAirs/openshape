@@ -66,6 +66,15 @@ the tools moved to a palette on the left. Not yet: separate sketches on one
 plane interacting (TD-27), center-point arc and arc length constraints,
 editable pattern spacing (TD-28), splines, text.
 
+Editing by touch (2026-09-27, the owner's iPhone reports): ✅ a pinch or
+two-finger pan never draws, each stroke is a line of its own · ✅ drag
+lines, circle rims and centers, arcs, whole shapes and selections; dropped
+points connect (merge, or On line / On circle / Midpoint) · ✅ tap a
+selected curve's size to type its dimension · ✅ movable items blue, fully
+sized ones dark · ✅ tap inside a closed shape → Extrude · 🟡 lock-on points
+from the face sketched on, snap hints, a loupe and one-finger panning in a
+sketch (in progress).
+
 ## Milestone 2 — common modeling tools ✅
 
 - ✅ Fillet (edges, manipulator + typed radius)
@@ -83,6 +92,11 @@ editable pattern spacing (TD-28), splines, text.
 - ✅ Revolve sketch profiles around the sketch's vertical/horizontal axis
   (typed degrees, arrow rides the arc, new body/join/cut; profiles crossing
   the axis are refused with an explanation)
+- ✅ **Loft** (owner request, 2026-09-27): closed profiles on different
+  planes joined in the order selected, Smooth or Straight, new body / join /
+  cut; follows its sketches and planes when they change. Join and cut only
+  with a profile sketched on a body's face (TD-106); no guide rails or
+  corner matching (TD-107)
 - ✅ Rotate body: X/Y/Z rings (15° snaps, typed angles), editable step
 - ✅ Mirror (across a flat face or an origin plane, joined), linear and
   circular patterns (X/Y/Z, a picked edge, or a hole/shaft axis; editable
@@ -216,7 +230,32 @@ while moving bodies, an icon set (TD-9), sketch and grid geometry cached
   iPad since 2026-09-26); a compact layout below 600x500 that adapts live
   (phone portrait/landscape, foldables, Split View), safe areas, touch-worded
   hints, the value box docked on phones
+- ✅ The owner's second test pass (2026-09-27): Shapr3D's cut flow on a
+  phone (framing the face, taps pick the region, Cut / Flip / Through all,
+  drag the shape itself), touch multi-select (double-tap adds bodies),
+  typing without the model jumping (0.7 s pause) and OpenShape's own
+  numeric keypad on touch (finger or Pencil; Scribble is not supported by
+  Qt, TD-90)
+- ✅ iOS integration: exports open the share sheet, Share Project…, open
+  STEP files and projects from Files and Mail, symbolicated crash reports
+  (dSYMs)
 - ⬜ Tried on the iPhone Duo (ships 2026-10-23)
+
+## App Store release (paid, after a public TestFlight beta; target before 2026-10-23) 🟡
+
+- ✅ Licensing route for selling the statically linked app (LGPL-3.0 Qt,
+  LGPL-2.1 OCCT and PlaneGCS, MPL-2.0): About → Licenses with every notice
+  and a written source offer, pinned iOS library sources mirrored to each
+  release, a license gate in `ipad.yml`, a custom EULA (docs/LICENSING.md,
+  docs/EULA.md)
+- ✅ Privacy policy (no data collected), support page, the listing texts,
+  twelve store screenshots and the owner's checklist (docs/APP_STORE.md;
+  screenshots rendered on Windows, TD-95)
+- ✅ TestFlight builds can go to external testers (the public beta)
+- ⬜ The owner's decisions: the app's name (OpenShape3D is already on the
+  App Store), price, EU trader status, contact addresses, EULA
+- ⬜ A release tag that carries the iOS library pins (the beta's source
+  offer), then the public beta, then App Review (by 2026-10-16)
 
 ## Reliability and app shell
 

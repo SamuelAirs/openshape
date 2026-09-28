@@ -3,6 +3,80 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
+## 0.3.0 (unreleased)
+
+The answers to the second round of testing on iPhone and iPad (sketching
+and editing sketches with a finger, cutting pockets, typing sizes,
+selecting several bodies), Loft, and the groundwork for the App Store.
+
+**Sketching with a finger.** A pinch or a two-finger pan in a sketch moves
+the view and never draws a rectangle, and each stroke with the Line tool
+is a line of its own instead of starting from the last point touched.
+
+**Edit a sketch by dragging.** With Select, drag a line to move it (pull a
+rectangle's side out and the rectangle grows, its corners staying
+square), a circle's rim to resize it or its center to move it, and a
+point to move it on its own: dropped on another point, a line, a circle or
+a line's middle, it stays joined to it. Tap inside a closed shape, then
+drag it to move the whole shape; a double-tap on a curve selects the
+whole shape. Select a line or a circle and tap its size to type an exact
+length or diameter. Items that can still move are blue, fully sized ones
+dark, and each drag is one step to undo.
+
+**Cut a pocket the way you would in Shapr3D.** Select a face, sketch the
+shape to cut out, tap inside it and choose Extrude (on a touch screen you
+can also drag the shape itself): pulled out of the face it joins the
+body, pushed in it cuts. The value box says what you are making
+(Height, Cut depth or New body); Cut always goes into the body, Flip turns
+the extrusion round, and Through all cuts through the whole body. A
+sketch on the ground or on a construction plane pushed into a body cuts
+it too. Starting a sketch on a face zooms to that face, so on a phone the
+grid and the arrows move in whole millimeters.
+
+**Typing a size.** The model waits until you have typed the whole value:
+typing 100 no longer shows it at 1 mm and 10 mm on the way (the preview
+follows after a short pause, or at once with Enter, ✓ or Next). On an
+iPhone or iPad a value opens OpenShape's own keypad instead of the system
+keyboard: digits, `+ − × ÷` and parentheses, mm, cm, in or °, Next and ✓,
+with keys large enough for a finger or the Apple Pencil. It also types a
+sketch's sizes and the numbers in the Model panel.
+
+**Several bodies on touch.** Double-tap a body, then double-tap the next:
+both stay selected, and Union, Subtract and Intersect appear. While bodies
+are selected, a single tap on another body adds it and a tap on a selected
+one takes it out.
+
+**Loft.** Select closed shapes sketched on different planes, in order (a
+rectangle on the ground and a circle on a construction plane above it,
+say), then Loft: a solid that passes through them, Smooth or Straight, as
+a new body, or joined to or cut from the body one of the shapes was
+sketched on. It follows its sketches and planes when they change later,
+for example when you type a plane's new distance in the Model panel.
+
+**Share and open on iPhone and iPad.** Export STL, 3MF and STEP open the
+share sheet: your slicer app, AirDrop, Save to Files or Mail (the file
+also stays in OpenShape's Exports folder). File → Share Project… sends
+the project itself. STEP files and projects open in OpenShape from the
+Files app and from Mail.
+
+**Licenses and privacy.** File → About OpenShape → Licenses lists every
+library in the app with its license and says where to get its source
+code, and About links to the privacy policy: OpenShape collects no data
+about you. On an iPhone, Home no longer sits under the clock and the
+Dynamic Island, and its project cards say *OpenShape (Files app)* instead
+of a long path.
+
+Fixed: a finger's small wobble on an arrow no longer moves the body;
+Esc or ✕ on an extrusion forgets a New body / Join / Cut chosen for it, so
+it does not carry over to the next one.
+
+Known limitations: Apple Pencil handwriting (Scribble) does not work in
+value fields (tap the keypad's keys with the Pencil instead); Loft has no
+guide curves and matches the shapes' corners itself (a turned square
+lofts with a slight twist), and a loft whose shapes are all on the ground
+or on construction planes is always a new body (use Union or Subtract
+afterwards); the iPhone and iPad app is still in TestFlight testing.
+
 ## 0.2.0 (2026-09-27)
 
 The answers to the first round of testing on iPhone and iPad, a clearer

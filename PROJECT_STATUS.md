@@ -1,25 +1,182 @@
 # Project status
 
-_Last updated: 2026-09-27, after the owner's iPhone/iPad feedback was
-answered (lead engineer + parallel agents). New here? Read "Handoff" first;
-the latest report is at its top._
+_Last updated: 2026-09-27 (evening), after the owner's second iPhone/iPad
+test pass was answered and Loft was added (lead engineer + parallel
+agents). New here? Read "Handoff" first; the latest report is at its top._
 
 ## Current milestone
 
 **Milestones 0, 1 and 2 complete; Milestone 4 core (editable history) done;
-Milestones 3 and 5 mostly done; v0.1.0 published; the universal iPhone/iPad
-app runs on the owner's devices through TestFlight.** Since v0.1.0
-(2026-09-26): previews on a worker thread, independent copies, construction
-axes and planes with Align onto the origin, a clearer look (perspective,
-world-anchored light, fading grid, contact shadows), a value box that keeps
-clear of what was tapped, a 3D-printing hole allowance and text. Everything
-from the owner's first iPhone/iPad test pass is answered; the next step is
-their second test pass (docs/MANUAL_TESTS.md 14-17, docs/IPAD.md) and, if
-they agree, v0.2.0.
+Milestones 3 and 5 mostly done; v0.2.0 published (2026-09-27). The universal
+iPhone/iPad app runs on the owner's devices through TestFlight and is being
+prepared for a paid App Store release, after a public TestFlight beta, before
+the iPhone Duo launch (2026-10-23).** Since v0.2.0 the owner's second test
+pass has been answered: sketching and editing sketches by touch, Shapr3D's
+cut flow, typing without the model jumping, an in-app keypad, and touch
+multi-select. Loft is in, along with the iOS share sheet and Open in, and
+the licensing, privacy and listing work for the App Store. Next come the
+owner's third test pass, the product decisions under "Waiting for you"
+below, and the tracks still running.
 
 ## Handoff: where we left off
 
-### Session report (2026-09-27) — the owner's iPhone/iPad feedback
+### Session report (2026-09-27, evening): second test pass, Loft, the App Store
+
+**In one paragraph:** everything you reported from your iPhone and iPad this
+afternoon is answered and merged except the lock-on points on a face, which
+are still being built:
+- pinching or panning in a sketch no longer draws;
+- each line stroke starts where your finger goes down;
+- you can edit a sketch by dragging (lines, circles, whole shapes) and tap a
+  size to type it;
+- you cut a pocket as in Shapr3D, by sketching on a face and pushing the
+  shape in;
+- typing 100 no longer makes the model jump through 1 and 10 mm;
+- touch devices get OpenShape's own number keypad, for a finger or the
+  Pencil;
+- double-tapping two bodies selects both.
+
+**Loft** is in, as you asked. For the App Store:
+- a share sheet for exports, and Open in OpenShape from Files and Mail;
+- a Licenses view and a source-offer route that make selling the app sound
+  under the LGPL;
+- a privacy policy and a support page;
+- the listing texts and twelve screenshots;
+- TestFlight builds can now go to a public beta.
+
+Each feature was built in its own worktree, reviewed twice, fixed and merged
+by the lead. Before every push the lead built it with warnings as errors and
+ran all headless tests and the full real-UI run.
+
+**What changed (and how it was verified):**
+
+- **Sketching with a finger** (your reports: "when I try to zoom or navigate
+  in a sketch, I just make a rectangle"; lines "from the second I touch the
+  screen to … the last place my finger touched").
+  - A press that the recognizer turns into a pinch or a pan is taken back.
+  - A Line stroke starts where it starts.
+  - Two new interaction tests feed real recognizer frames.
+- **Edit a sketch by dragging** (your report: "really difficult to edit a
+  sketch… I have no idea how to resize rectangles").
+  - Drag lines (a rectangle's side resizes it), circle rims and centers,
+    arcs, whole shapes and selections.
+  - Dropped points connect.
+  - Tap a selected curve's size to type it.
+  - Items that can still move are blue; fully sized ones are dark.
+  - Scenario `sketchdrag` (114 checks).
+- **Cut a pocket the Shapr3D way** (your description of the flow).
+  - Sketching on a face frames that face.
+  - A tap inside the shape picks the region, not an edge.
+  - Push the shape into the body to cut, or drag the shape itself.
+  - The value box shows Cut depth, Height or New body.
+  - Cut, Flip and Through all.
+  - Scenario `extrudetouch` (106 checks).
+- **Typing sizes** (your report: the model snapped to 1 mm, then 10 mm; no
+  easy way to type on the iPad).
+  - The preview waits for a 0.7 s pause, or for ✓ / Next.
+  - On touch, OpenShape's own keypad opens instead of the system keyboard:
+    digits, `+ − × ÷`, parentheses, mm/cm/in/°, Next and ✓, large enough
+    for the Pencil. It also types sketch sizes and Model panel values.
+  - Scenario `numpad` (404 checks).
+  - Pencil handwriting (Scribble) is not supported by Qt (TD-90): tap the
+    keys with the Pencil.
+- **Two or more bodies on touch** (your report: "really difficult or
+  impossible to select two or more objects by double tapping").
+  - Double-tap adds a body; a double-tap on a selected body takes it out.
+  - While bodies are selected, a single tap adds or removes one.
+  - A finger's wobble on an arrow no longer moves the body.
+  - Scenario `multiselect`.
+- **Loft** (your request).
+  - Select closed shapes on different planes in order, then Loft.
+  - Smooth or Straight; New body, Join or Cut.
+  - Parametric: it follows its sketches and planes, and can be suppressed
+    and deleted.
+  - Exact-volume tests: a frustum is 7000 mm³; circles r=10 to r=5, 30 mm
+    apart, give 5497.79 mm³.
+  - Scenario `loft`, which clicks the whole flow, including Cut through a
+    block and switching it to Join in the Model panel.
+  - Limits: TD-106 and TD-107.
+- **iOS integration.**
+  - Export STL/3MF/STEP opens the share sheet (slicer apps, AirDrop, Mail).
+  - File → Share Project….
+  - STEP files and projects open from the Files app and Mail.
+  - Crash reports are symbolicated (dSYMs).
+- **App Store groundwork.**
+  - Licensing: About → Licenses lists every library, its license and the
+    written source offer. The iOS library sources are pinned and mirrored,
+    and a license gate runs in `ipad.yml`. A custom EULA is in
+    docs/EULA.md. The analysis is in docs/LICENSING.md; it is not legal
+    advice.
+  - Listing: docs/PRIVACY.md (no data collected), docs/SUPPORT.md, and
+    docs/APP_STORE.md (texts, twelve screenshots, your checklist and a
+    timeline).
+  - Home no longer sits under the Dynamic Island.
+- **CI:** the new iOS sources test needed git and cmp in GitHub's MSYS2
+  shells. They are installed now: the runs on 1760178 had failed on it.
+  The license gate's first real run, on iPad build 47, reported every Qt
+  file as of unknown origin. Qt for iOS ships static frameworks, which the
+  gate's rules did not cover. That is fixed and self-tested; the next iPad
+  run will confirm it (TD-103). A release tag needs the gate to pass.
+
+**Tests:** 725 headless tests; 2869 real-UI checks in 44 scenarios
+(both all passing on the merged main, built with warnings as errors). CI
+is green on Windows, macOS, the iPad build and the Release dry run.
+
+**Waiting for you (product decisions; details in docs/APP_STORE.md):**
+1. **The name.** OpenShape3D (Laan Labs, open source under MIT) has been a
+   free touch CAD app on the App Store since 2026-08-06. A paid "OpenShape"
+   next to it invites confusion and possibly a rejection. Recommendation:
+   rename before launch, or at least use a distinct store name such as
+   "OpenShape: CAD for 3D Printing".
+2. **Price.** Recommendation: USD 4.99 one-time, universal, no in-app
+   purchases. About 24 sales a year cover the USD 99 developer fee.
+3. **EU trader status.** A paid app makes you a trader. The EU shows your
+   address, phone and email publicly: use a P.O. box, or leave the EU out.
+4. **Contact details.** The email placeholders in docs/PRIVACY.md and
+   docs/SUPPORT.md, and the name, address and email in docs/EULA.md.
+5. **A beta release tag** (e.g. v0.3.0-beta1). It carries the iOS library
+   sources that the TestFlight builds' source offer promises. `ipad.yml`
+   warns until a release has them.
+6. **App Store Connect** (by hand, docs/APP_STORE.md sections 1-6): the
+   public beta group, then App Review, submitted by 2026-10-13 (2026-10-16
+   at the latest).
+
+**OpenShape3D, and what we take from it.** Its source is on GitHub under
+the MIT license: Swift, SwiftUI and Metal over the same OpenCASCADE kernel.
+Tracks now running port its useful parts (credited in THIRD_PARTY.md as they merge):
+- kernel robustness: time limits, a repair attempt, fuzzy booleans, better
+  refusals and exact volumes;
+- a view cube;
+- project Rename, Duplicate and Delete;
+- a check of our keypad against its tests.
+
+Queued: a section view and snap refinements. Where OpenShape is ahead:
+- a Windows version;
+- exact B-rep checks after every operation;
+- STEP files;
+- printing tools such as hole allowances and text;
+- suggested sizes when an operation fails;
+- the licensing route for a paid app.
+
+**Still running:**
+- lock-on points from the face you sketch on, snap hints, a loupe and
+  one-finger panning in a sketch (your iPhone reports);
+- kernel robustness from OpenShape3D;
+- the view cube;
+- project management on Home;
+- the keypad check.
+
+**Try first:** docs/IPAD.md, iPad steps 12-18 and iPhone steps 13-17 (the
+value box, two bodies, the keypad, sharing, Open in, cutting a pocket,
+editing by dragging, Loft), and docs/MANUAL_TESTS.md 18-19 on Windows.
+
+**Known limits worth knowing** (details in docs/TECHNICAL_DEBT.md):
+- Scribble does not work in value fields (TD-90).
+- A loft between shapes on planes only is always a new body (TD-106).
+- The store screenshots are rendered on Windows (TD-95).
+- The Windows installer stays unsigned until SignPath approves.
+
+### Session report (2026-09-27, morning) — the owner's iPhone/iPad feedback
 
 **In one paragraph:** everything you reported after trying the app on your
 iPhone and iPad is fixed and merged: the value box no longer covers what
@@ -678,39 +835,47 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 ## Next concrete tasks (owner priorities)
 
-1. The owner's second test pass (docs/MANUAL_TESTS.md 14-17, docs/IPAD.md
-   items 10-12 and the iPhone section): act on what they report.
-2. Attach the 0.1.0 package's LGPL sources to the v0.1.0 release (TD-46;
-   v0.2.0 has them). The next release follows BUILDING.md's "Before tagging
-   a release" steps.
-3. When SignPath approves: the owner follows docs/CODE_SIGNING.md, then a
+1. The owner's third test pass (docs/IPAD.md iPad 12-18, iPhone 13-17;
+   docs/MANUAL_TESTS.md 18-19): act on what they report.
+2. Merge the running tracks: sketching on a phone (lock-on points from the
+   face, snap hints, loupe, one-finger pan, compact sketch toolbar),
+   OpenShape3D's kernel robustness, the view cube, project Rename/Duplicate/
+   Delete, the keypad check. Then a section view and the snap refinements
+   (ranking, grid along an edge, parallel/perpendicular guides).
+3. The App Store (docs/APP_STORE.md): the owner's decisions (name, price, EU
+   trader status, contact addresses, EULA); a beta release tag that carries
+   the iOS library pins; the public TestFlight beta; App Review submitted by
+   2026-10-13 (2026-10-16 at the latest) for a release before 2026-10-23.
+4. When SignPath approves: the owner follows docs/CODE_SIGNING.md, then a
    test signing through release.yml.
-4. Follow-ups from the reviews: keep the value box off a fillet's whole new
-   surface (TD-58); orbiting should not carry the eye inside a surface;
-   clear a refusal message once its cause is fixed ("Type the text first."
-   lingers); the enclosure demo's hole-wall click picks a face at 402x874.
-5. Sketch: separate sketches on one plane should interact (TD-27);
+5. Follow-ups: Loft joins or cuts a body it runs into from planes only
+   (TD-106) and guide rails (TD-107); Scribble in value fields (TD-90);
+   keep the value box off a fillet's whole new surface (TD-58); orbiting
+   should not carry the eye inside a surface.
+6. Sketch: separate sketches on one plane should interact (TD-27);
    center-point arc, editable pattern spacing (TD-28); splines.
-6. Hole tool follow-ups (TD-47): edit positions after applying, per-hole
-   sizes; draft for Revolve and push/pull (TD-48).
-7. Construction geometry: points, more methods, re-picking references
-   (TD-64, TD-67); text kerning via HarfBuzz and text on curved faces (TD-60).
+7. Hole tool follow-ups (TD-47): edit positions after applying, per-hole
+   sizes; draft for Revolve and push/pull (TD-48). Construction points and
+   more methods (TD-64, TD-67); text kerning and text on curved faces
+   (TD-60).
 8. Reliability follow-ups: report the OCCT crash upstream (TD-41), check
    unions against their inputs (TD-42), suggest sizes for failed history
    rows (TD-43); recompute off the GUI thread.
 
 ## Tests currently passing
 
-582/582 headless (`ctest -LE gui`): GTest suites for core,
-geometry (including text and construction geometry), profiles, sketch model
-and solver, document, commands, project files, recovery copies and recent
-files, UI state, camera, picking, bodies and copies, holes and draft,
-robustness (stress sessions, file fuzzing, failure messages, kernel faults
-on worker threads), async previews, value-box placement, contact shadows,
-touch wording, and the interaction scripts. The release build (own
-OpenCASCADE): 583/583.
+725/725 headless (`ctest -LE gui`): GTest suites for core, geometry
+(including text, construction geometry and loft), profiles, sketch model and
+solver (dragging, snapping and connecting), document, commands, project
+files, recovery copies and recent files, UI state, camera, picking, bodies
+and copies, holes and draft, robustness (stress sessions, file fuzzing,
+failure messages, kernel faults on worker threads), async previews,
+value-box placement, contact shadows, touch wording, touch selection and
+the cut flow, the typing pause and the numeric keypad, and the interaction
+scripts; the license texts, the license gate's self-test and the iOS
+sources scripts.
 
-`acceptance_gui`: 1879/1879 checks through the real UI in 33 scenarios
+`acceptance_gui`: 2869/2869 checks through the real UI in 44 scenarios
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
 under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 (as CI does): 0 warnings.
@@ -719,9 +884,9 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 582/582 | ✅ 1879/1879 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 725/725 | ✅ 2869/2869 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |
 | macOS 15 (CI, Xcode 26.3, Metal) | ✅ | ✅ | ✅ screenshot; the full acceptance run passes in a 1024x653 window (CI #32) |
-| iOS / iPadOS (universal CI archive, arm64) | ✅ | — | ✅ TestFlight on the owner's iPhone 16 Pro and iPad (by hand) |
+| iOS / iPadOS (universal CI archive, arm64) | ✅ | — | ✅ TestFlight on the owner's iPhone 16 Pro and iPad (by hand); build 47 (keypad) uploaded 2026-09-27 |

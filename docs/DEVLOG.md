@@ -625,3 +625,93 @@ PC's second monitor is at 150 %: the acceptance driver now sends native
 pixels. While the owner was gaming, an agent closed the offscreen process
 that held the automation lock and UI runs took over their screen: when the
 owner uses the PC, stop the agents, don't rely on the lock.
+
+## 2026-09-27 — Second iPhone/iPad test pass, Loft, App Store groundwork
+
+**Touch in a sketch.** The gesture recognizer sends a finger's press before
+it knows whether a second finger follows, so a pinch began as a one-finger
+drag and the Rectangle tool started a shape. When the recognizer turns the
+press into a pinch or pan, `SketchSession::cancelPress` now puts back
+whatever that press started. A Line stroke used to start at the previous
+press's anchor. A stroke that starts away from the anchor now restarts the
+shape where the finger went down.
+
+**Editing by dragging.**
+- Dragged points snap to the grid like drawn ones.
+- When a length is added to a line, the solver splits the change between
+  both ends, so corners can leave the grid. Acceptance checks therefore read
+  positions at runtime.
+- Qt Quick holds a finger's moves until the next frame. Synthetic drags need
+  several steps, or `QML_NO_TOUCH_COMPRESSION=1`.
+- Two taps in the same step become a double-tap.
+- Point, curve and constraint ids share one counter per sketch, so a size
+  label can name a curve.
+
+**Cutting on a phone.** The report "a tap on the pocket floor picks an edge"
+was partly a real edge: in an isometric view, the wall's vertical corner edge
+was 4 px from the tap. A finger now takes the region unless an edge is within
+6 px. Joining every body an extrusion merely touches broke existing flows.
+For a sketch that is not on a body, an automatic Join now needs the profile
+to lie on the body and be pulled away from it.
+
+**Selecting several bodies.**
+- The recognizer delivers both taps' press and release before the DoubleTap
+  intent. The first tap had therefore already selected a face of the second
+  body, and the double-tap then replaced the selection instead of adding to
+  it. The selection is now remembered at each press, and the toggle is
+  replayed on it.
+- A pending value made a double-tap do nothing.
+- Qt's mouse double-click arrives in two different orders.
+- On a phone, an arrow's finger zone (36.5 px) can cover a whole small body.
+
+**Typing.** On iOS, a read-only Qt Quick field gets a responder without
+UIKeyInput, so no system keyboard shows. That is how OpenShape's keypad
+takes the keyboard's place. Qt 6.11 has no Scribble support (TD-90).
+Acceptance steps that type a value and check it at once must wait for the
+0.7 s pause.
+
+**Loft.**
+- `BRepOffsetAPI_ThruSections` puts every side on a B-spline surface, even
+  flat ones. Planar sides are rebuilt as planes, and the solid is sewn again
+  only if it stays valid with the same volume.
+- Inputs are marked `SetMutableInput(false)`, because region faces are shared
+  with cached step inputs and previews.
+- Seen from afar, a small profile on a construction plane is within a
+  finger's reach of the plane's outline all round. `pickAt` now gives such a
+  tap to the profile unless the outline is within 6 px.
+
+**iOS files.**
+- Xcode's archive leaves out the dSYM of a CMake-generated project, so
+  `build-app.sh` copies it in and checks its UUID.
+- Qt turns `openURLContexts` into a `QFileOpenEvent`.
+- Security-scoped files work only through QFile. Outside files are therefore
+  staged into the sandbox before OpenCASCADE or the project reader opens
+  them.
+- A hidden QML MenuItem kept arrow-key focus until it was also disabled.
+
+**The App Store.** Selling the statically linked app is compatible with the
+LGPL and the MPL without a commercial Qt license, provided that:
+- the source and build scripts are public at each tag;
+- the notices and a written source offer are in the app;
+- the pinned library sources are attached to releases;
+- every App Store version is a tag.
+
+This is not legal advice (docs/LICENSING.md). Other findings:
+- Qt Network is linked through Qt Qml although OpenShape never uses it. The
+  privacy texts therefore say the app "makes no connections", not that the
+  library is "not linked".
+- Home ignored the safe area on a real iPhone.
+- A framed Windows window cannot be taller than the desktop, so the
+  2868-pixel store screenshot uses a frameless window.
+
+**Integration.**
+- GitHub's MSYS2 shells have no git or cmp unless they are installed. The
+  iOS sources test failed in CI and in the Release dry run until `git` and
+  `diffutils` were installed there.
+- Branches added the same helpers independently (touch helpers in the
+  acceptance runner, a remembered profile tap in the controller), and their
+  technical-debt numbers collided. Each track now gets its own TD range.
+- QML's `top` is a FINAL property of Item.
+- Eight agent tracks at once used up the owner's usage limit, and they all
+  died together. Now at most five run at a time, at high effort for code and
+  medium for reviews.
