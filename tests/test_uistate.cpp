@@ -506,7 +506,8 @@ TEST(Licenses, TheSourceOfferNamesExactlyThisBuildsSource)
 
     // An App Store build: made from a release tag, with a CI build number.
     const BuildInfo release{QStringLiteral("1.2.3"), QStringLiteral("57"),
-                            QStringLiteral("0123456789abcdef0123456789abcdef01234567"), QStringLiteral("v1.2.3-beta1")};
+                            QStringLiteral("0123456789abcdef0123456789abcdef01234567"), QStringLiteral("v1.2.3-beta1"),
+                            true};
     const QString offer = catalog.sourceOffer(release);
     EXPECT_TRUE(offer.contains(QStringLiteral("This is OpenShape 1.2.3 (build 57, release v1.2.3-beta1, commit 0123456789ab).")))
         << offer.toStdString();
@@ -519,7 +520,7 @@ TEST(Licenses, TheSourceOfferNamesExactlyThisBuildsSource)
 
     // A build between releases: the commit's tree and the pins in it.
     const BuildInfo commit{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"),
-                           QStringLiteral("abcdef0123456789abcdef0123456789abcdef01"), {}};
+                           QStringLiteral("abcdef0123456789abcdef0123456789abcdef01"), {}, true};
     const QString between = catalog.sourceOffer(commit);
     EXPECT_TRUE(between.contains(QStringLiteral("(commit abcdef012345)"))) << between.toStdString();
     EXPECT_TRUE(between.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/tree/abcdef0123456789abcdef0123456789abcdef01")));
@@ -528,12 +529,40 @@ TEST(Licenses, TheSourceOfferNamesExactlyThisBuildsSource)
     EXPECT_TRUE(between.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/releases keeps copies")));
 
     // Nothing known (a build from a source archive without git).
-    const BuildInfo unknown{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"), {}, {}};
+    const BuildInfo unknown{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"), {}, {}, false};
     EXPECT_EQ(sourceCodeUrl(unknown), QStringLiteral("https://github.com/SamuelAirs/openshape"));
     EXPECT_EQ(buildDescription(unknown), QStringLiteral("a local build"));
 
     // This build: CMake's version.
     EXPECT_EQ(BuildInfo::current().version, QString::fromLatin1(kAppVersion));
+}
+
+TEST(Licenses, TheDesktopOfferNamesTheDesktopPackagesSourcesNotTheIosApps)
+{
+    const LicenseCatalog catalog = LicenseCatalog::load();
+    ASSERT_TRUE(catalog.isValid()) << catalog.error().toStdString();
+    // The Windows package ships MSYS2's builds: their source is listed in
+    // THIRD_PARTY_LICENSES.txt and attached to the release, not the iOS
+    // app's pins or tar.
+    const BuildInfo windows{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"),
+                            QStringLiteral("abcdef0123456789abcdef0123456789abcdef01"), {}, false};
+    const QString offer = catalog.sourceOffer(windows);
+    EXPECT_TRUE(offer.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt beside the program lists each library in this package")))
+        << offer.toStdString();
+    EXPECT_TRUE(offer.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/releases carries copies")));
+    EXPECT_TRUE(offer.contains(QStringLiteral("the libraries and versions listed in this Licenses view are the iPhone and iPad app's")));
+    EXPECT_FALSE(offer.contains(QStringLiteral("scripts/ios/sources.txt")));
+    EXPECT_FALSE(offer.contains(QStringLiteral("/releases/tag/")));
+    EXPECT_FALSE(offer.contains(QLatin1Char('@'))) << offer.toStdString();
+    // Even with a release tag (never set on the desktop today), the iOS
+    // tar is not named as this package's source.
+    const BuildInfo tagged{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"), {}, QStringLiteral("v1.2.3"), false};
+    EXPECT_FALSE(catalog.sourceOffer(tagged).contains(QStringLiteral("(the file OpenShape-1.2.3-ios-sources.tar)")));
+#ifdef Q_OS_IOS
+    EXPECT_TRUE(BuildInfo::current().iosApp);
+#else
+    EXPECT_FALSE(BuildInfo::current().iosApp);
+#endif
 }
 
 TEST(Licenses, ABrokenListIsReportedNotShownHalf)

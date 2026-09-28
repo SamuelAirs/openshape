@@ -333,8 +333,17 @@ jobs:
           # heading), then the install and license notes.
           bash scripts/ci/changelog-section.sh "$APP_VERSION" > "$RUNNER_TEMP/notes.md"
           cat "$RUNNER_TEMP/install.md" >> "$RUNNER_TEMP/notes.md"
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
-              dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt dist/sources/* \
-              dist/OpenShape-*-ios-sources.tar
+          files=(dist/OpenShape-*-setup.exe dist/OpenShape-*.zip dist/SHA256SUMS.txt dist/sources/*
+                 dist/OpenShape-*-ios-sources.tar)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Made earlier by Attach sources (the iOS sources of a tag whose
+            # first Release run failed): complete it.
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "OpenShape $version" \
+                --notes-file "$RUNNER_TEMP/notes.md" --prerelease="$([ ${#prerelease[@]} -gt 0 ] && echo true || echo false)"
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+                --title "OpenShape $version" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" \
+                "${files[@]}"
+          fi
           echo "::notice title=GitHub Release::$tag published ${prerelease[*]} ($signing)"

@@ -138,6 +138,15 @@ Steps steps(AcceptanceRunner& r)
                   QStringLiteral("the LGPL notice"));
         const QString text = textOf(r, QStringLiteral("licenseText"));
         r.check(!text.contains(QLatin1Char('@')), "licenses: the notice has every placeholder filled in", text.left(300));
+        // The libraries' source: the iOS app's pins or source tar there, the
+        // package's own THIRD_PARTY_LICENSES.txt and release files here.
+#ifdef Q_OS_IOS
+        r.check(text.contains(QStringLiteral("ios-sources.tar")), "licenses: the notice names the iOS library sources");
+#else
+        r.check(text.contains(QStringLiteral("THIRD_PARTY_LICENSES.txt beside the program"))
+                    && !text.contains(QStringLiteral("scripts/ios/sources.txt of that source code")),
+                "licenses: the notice names this package's library sources, not the iOS app's", text.right(600));
+#endif
         r.check(r.clickItem(QStringLiteral("licensesBack")), "licenses: Back");
     });
     wait(steps, 2);

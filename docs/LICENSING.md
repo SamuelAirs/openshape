@@ -377,10 +377,23 @@ copyright © 2026 The FreeType Project").
    a beta can be `v<version>-beta1`). The tag's `release.yml` run
    publishes the GitHub release with the iOS sources; its `ipad.yml` run
    uploads the build that may be submitted (the notice names its build
-   number).
-3. In App Store Connect submit **only** that build for App Store review.
-   Keep the release and its files published for at least three years after
-   that version was last offered.
+   number). The two runs are independent.
+3. **Check the release first:** the GitHub release for the tag must be
+   published and list `OpenShape-<version>-ios-sources.tar`, the file that
+   build's Licenses view names. If the Release run failed (a Windows build,
+   a SignPath approval that does not come, a changed forge archive,
+   TD-104), fix and re-run it, or run **Actions → Attach sources → Run
+   workflow** for the tag: it makes a pre-release holding only the source
+   files (Windows ones too if a Windows zip is there), which a later
+   successful Release run completes. Only then, in App Store Connect,
+   submit **only** that tag's build for App Store review. Keep the release
+   and its files published for at least three years after that version was
+   last offered.
+4. Right after tagging, raise `project(VERSION)` in `CMakeLists.txt` on
+   `main` to the next version and add its `(unreleased)` section to
+   `CHANGELOG.md`: once a version is in review or released, App Store
+   Connect refuses further builds of it, so every TestFlight upload from
+   `main` would fail (`ipad.yml` then says so in an error annotation).
 
 **Public beta builds of `main`** (TestFlight, internal and external
 testers; docs/IPAD.md 1b) are distributed too. Their Licenses notice

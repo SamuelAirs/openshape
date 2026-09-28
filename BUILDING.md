@@ -380,8 +380,17 @@ Before tagging a release:
 5. The tag also builds the iOS app for the App Store (`ipad.yml`, docs/
    LICENSING.md "Releasing an App Store (or public beta) version"): submit
    only the build that run uploads (its notice names the build number)
-   for App Store review. Builds of `main` go to TestFlight testers
-   (the public beta) but not to review.
+   for App Store review, and only once the tag's GitHub release lists
+   `OpenShape-<version>-ios-sources.tar` (the file its Licenses view
+   names). If the Release run failed, re-run it or run Actions → Attach
+   sources → Run workflow for the tag (it makes a pre-release with the
+   source files). Builds of `main` go to TestFlight testers (the public
+   beta) but not to review.
+6. Right after pushing the tag, raise the version in `CMakeLists.txt` on
+   `main` and add a `## <next version> (unreleased)` section to
+   `CHANGELOG.md`. App Store Connect takes no more builds of a version that
+   is in review or released, so otherwise every TestFlight upload from
+   `main` fails (docs/IPAD.md, "Reading CI results").
 
 Every Release run also downloads the source code of the LGPL libraries the
 package ships (`scripts/ci/mirror-sources.sh`: the MSYS2 source archives

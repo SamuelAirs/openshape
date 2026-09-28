@@ -163,6 +163,12 @@ curl -s https://api.github.com/repos/SamuelAirs/openshape/actions/runs/<run id>/
 curl -s https://api.github.com/repos/SamuelAirs/openshape/check-runs/<job id>/annotations
 ```
 
+If the TestFlight upload fails on every push after an App Store release
+("train closed", "must contain a higher version"), main still has the
+released version: raise it in `CMakeLists.txt` (BUILDING.md, "Before
+tagging a release", step 6); `ipad.yml` puts this into an error
+annotation when it recognises the message.
+
 Anonymous API calls are limited to 60 per hour per IP address. A push to
 `main` cancels the CI run still in progress (not `ipad.yml`, which queues):
 wait for the macOS job (about 3 minutes) before pushing again.

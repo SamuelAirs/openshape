@@ -119,3 +119,16 @@ if(Python3_Interpreter_FOUND)
 else()
     message(STATUS "No Python 3 found: the license tests (licenses_check, licenses_selftest) are left out")
 endif()
+
+# The commit About -> Licenses names (src/core/SourceCommit.cmake, run on
+# every build) in a made-up git repository.
+find_package(Git QUIET)
+if(GIT_FOUND)
+    add_test(NAME source_commit_script
+             COMMAND "${CMAKE_COMMAND}" -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+                     -DSCRIPT=${PROJECT_SOURCE_DIR}/src/core/SourceCommit.cmake
+                     -DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_commit_test
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/test_source_commit.cmake")
+else()
+    message(STATUS "No git found: the source commit test (source_commit_script) is left out")
+endif()

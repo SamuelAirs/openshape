@@ -4,6 +4,7 @@
 
 #include "ui/Licenses.h"
 
+#include "core/SourceCommit.h"
 #include "core/Version.h"
 
 #include <QtCore/QFile>
@@ -40,6 +41,9 @@ BuildInfo BuildInfo::current()
     build.buildNumber = QString::fromLatin1(kBuildNumber);
     build.commit = QString::fromLatin1(kSourceCommit);
     build.releaseTag = QString::fromLatin1(kReleaseTag);
+#ifdef Q_OS_IOS
+    build.iosApp = true;
+#endif
     return build;
 }
 
@@ -155,6 +159,17 @@ QString sourceCodeUrl(const BuildInfo& build)
 
 QString librarySourcesText(const BuildInfo& build)
 {
+    if (!build.iosApp) {
+        // The Windows (or macOS) package ships its own builds of these
+        // libraries (MSYS2's on Windows, with their patches), not the iOS
+        // app's pinned archives: its release carries their source
+        // (scripts/ci/mirror-sources.sh).
+        return QStringLiteral("THIRD_PARTY_LICENSES.txt beside the program lists each library in this package with the "
+                              "address of its exact source code, and the package's release on ")
+               + QString::fromLatin1(kRepositoryUrl)
+               + QStringLiteral("/releases carries copies of that source code (the libraries and versions listed in this "
+                                "Licenses view are the iPhone and iPad app's; OpenShape-<version>-ios-sources.tar has their source)");
+    }
     if (!build.releaseTag.isEmpty()) {
         return QString::fromLatin1(kRepositoryUrl) + QStringLiteral("/releases/tag/") + build.releaseTag
                + QStringLiteral(" (the file OpenShape-") + build.releaseTag.mid(1) + QStringLiteral("-ios-sources.tar)");

@@ -40,6 +40,10 @@ struct BuildInfo {
     QString buildNumber; // CFBundleVersion; the version itself on the desktop
     QString commit;      // git commit id, or empty
     QString releaseTag;  // "v0.3.0" for a release build, or empty
+    // The iOS app, whose libraries are the ones scripts/ios/sources.txt pins
+    // (this view's list). The desktop packages ship their own builds (MSYS2
+    // on Windows), listed in THIRD_PARTY_LICENSES.txt beside the program.
+    bool iosApp = false;
 
     static BuildInfo current();
 };
@@ -79,8 +83,10 @@ private:
 // The source code of exactly this build: the release tag's tree, else the
 // commit's, else the repository.
 QString sourceCodeUrl(const BuildInfo& build);
-// Where the exact source of the libraries in this build is: the release's
-// page with its iOS source archive, else the pins in the source code.
+// Where the exact source of the libraries in this build is. The iOS app:
+// the release's page with its iOS source archive, else the pins in the
+// source code. The desktop: THIRD_PARTY_LICENSES.txt and the source files
+// attached to the release (the list in this view is the iOS app's).
 QString librarySourcesText(const BuildInfo& build);
 // "build 57, commit 0123456789ab" (what identifies this build), or "a local build".
 QString buildDescription(const BuildInfo& build);

@@ -53,7 +53,7 @@ jobs:
             "$version"|"$version"-*) ;;
             *) echo "::error title=Version::tag $OPENSHAPE_RELEASE_TAG does not match the version in CMakeLists.txt ($version)"; exit 1 ;;
           esac
-          echo "::notice title=Release build::$OPENSHAPE_RELEASE_TAG (OpenShape $version): the build to submit for App Store review"
+          echo "::notice title=Release build::$OPENSHAPE_RELEASE_TAG (OpenShape $version): the build to submit for App Store review, once the GitHub release $OPENSHAPE_RELEASE_TAG lists OpenShape-${OPENSHAPE_RELEASE_TAG#v}-ios-sources.tar (docs/LICENSING.md)"
       - name: Check the license texts (pins, Licenses view)
         run: bash scripts/ci/run-logged.sh licenses python3 scripts/licenses/licenses.py check --quiet
       - name: Are the iOS library sources on a release?
@@ -136,9 +136,19 @@ jobs:
           printf '%s\n' "$ASC_KEY" > "$ASC_KEY_PATH"
           bash scripts/ci/run-logged.sh testflight bash scripts/ios/testflight.sh build/ios/OpenShape.xcarchive "$RUNNER_TEMP/testflight"
           if [ -n "$OPENSHAPE_RELEASE_TAG" ]; then
-            echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER from $OPENSHAPE_RELEASE_TAG uploaded: the build to submit for App Store review as $OPENSHAPE_RELEASE_TAG (docs/LICENSING.md)"
+            echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER from $OPENSHAPE_RELEASE_TAG uploaded: the build to submit for App Store review as $OPENSHAPE_RELEASE_TAG - but only once the GitHub release $OPENSHAPE_RELEASE_TAG is published and lists OpenShape-${OPENSHAPE_RELEASE_TAG#v}-ios-sources.tar, which this build's Licenses view names (the Release workflow; if it failed, re-run it or run Attach sources for the tag; docs/LICENSING.md)"
           else
             echo "::notice title=TestFlight::build $OPENSHAPE_BUILD_NUMBER uploaded for internal and external testing (not for App Store review: only release tag builds); it appears in TestFlight after Apple's processing (usually 5-30 minutes)"
+          fi
+      # App Store Connect refuses a version whose App Store release is
+      # approved (its "train" is closed): main's version must be raised
+      # right after tagging (BUILDING.md, "Before tagging a release").
+      - name: Why the TestFlight upload failed
+        if: failure() && env.HAS_SIGNING == 'true'
+        run: |
+          if grep -qiE 'train.*closed|closed for new build|must contain a higher version|previously approved' "$LOGS/testflight.log" 2>/dev/null; then
+            version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' CMakeLists.txt | head -n 1)
+            echo "::error title=TestFlight::App Store Connect no longer takes builds of version $version (it was released or is in review): raise project(VERSION) in CMakeLists.txt to the next version and add its '(unreleased)' section to CHANGELOG.md (BUILDING.md, 'Before tagging a release', step 6)"
           fi
       - name: No TestFlight upload
         if: env.HAS_SIGNING != 'true'
