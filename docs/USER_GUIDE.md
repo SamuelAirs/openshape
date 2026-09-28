@@ -479,7 +479,7 @@ arrows snap in whole millimeters. At the top are the sketch's name,
 | Arc | `A` | Click the start, the end, then where it bends (or type the radius). |
 | Tangent arc | `G` | Click the free end of a line or arc, then where the arc ends (or type the radius); it continues from there until `Esc`. |
 | Slot | `O` | Click both end centers, then move or type the width. |
-| Select | `S` | Select points, lines and circles; drag points to move them. |
+| Select | `S` | Select points, lines and circles; drag them to move or resize them (see [Editing a sketch](#editing-a-sketch)). |
 | Trim | `T` | Click the piece of a curve to cut away (it turns red first). |
 
 - **Exact sizes while drawing:** just type; `Tab` moves to the next value
@@ -495,8 +495,50 @@ arrows snap in whole millimeters. At the top are the sketch's name,
 
 ### Editing a sketch
 
-With the **Select** tool, select curves or points (`Shift` or taps add);
-the actions for them appear at the bottom:
+**Drag to change it.** With the **Select** tool (mouse, pen or finger; no
+need to select first):
+
+- **A line** moves with both its ends: pull a rectangle's side out and the
+  rectangle grows (its corners stay square).
+- **A circle's rim** changes its size; **its center** moves it. **An arc's
+  rim** changes its radius; its center moves the whole arc.
+- **Inside a closed shape** you clicked or tapped first (it is
+  highlighted): the whole shape moves. Inside a shape that is not selected,
+  a drag turns the view as anywhere else, so you can orbit even when a
+  sketch fills the screen.
+- **One of several selected items**: they all move together.
+- **A point** moves on its own. Dropped on another point, a line, a circle
+  or the middle of a line, it stays joined to it (the hint next to it says
+  *Endpoint*, *On line*, *On circle* or *Midpoint* while you drag). A point
+  already on a line or circle slides along it. It never snaps where one
+  line would end up lying on another (the far end of the line next to it).
+
+Dimensions and constraints always hold, so a drag moves only what they
+leave free: a line with a length turns instead of stretching, a line from
+a fixed point swings about it. Items that can still move are **blue**;
+fully sized ones are **dark**. Dragging something that cannot move says
+*Fully sized: change or remove a dimension to move it.* Each drag is one
+step to undo (*Move line*, *Resize circle*, *Move shape*, …), and what was
+selected stays selected.
+
+**Type an exact size.** Select one line, circle or arc: its length,
+diameter (Ø) or radius (R) shows in a dimmed label beside it, outside the
+shape. Click or tap the label and type a value: that becomes its
+dimension. On a rectangle's side this resizes the rectangle. A size that
+other dimensions already set (the side opposite a typed width) shows no
+label: change that dimension instead.
+
+**A whole shape.** Double-click (double-tap) a curve to select everything
+joined to it — a rectangle's four sides, a chain of lines — then drag it,
+delete it, offset or mirror it.
+
+**Extrude straight away.** Click or tap inside a closed shape: it is
+highlighted and **Extrude** appears at the bottom (it stays selected when
+you drag it). Extrude finishes the sketch and starts extruding that shape,
+with the arrow where you tapped.
+
+**Actions.** With curves or points selected (`Shift` or taps add), the
+actions for them appear at the bottom:
 
 - **Delete** (or the `Delete` key) removes them.
 - **Construction** turns curves into construction geometry: shown, used for
@@ -536,13 +578,15 @@ Select one or two items; the constraints that fit appear at the bottom:
   (or **Delete constraint**) to remove it.
 - **Status** (under the sketch name, and in the Model panel): "Fully
   defined" (green) when nothing can move any more, otherwise how many
-  degrees of freedom are left. A change that would conflict with the
+  degrees of freedom are left. Item by item, blue curves and points can
+  still move and dark ones cannot. A change that would conflict with the
   existing constraints is refused with a message; nothing changes.
 
 ### Finishing
 
 Click **Finish sketch**. Then click inside a closed shape to
-[extrude or revolve](#extrude-and-revolve-3d-from-a-sketch) it. Every
+[extrude or revolve](#extrude-and-revolve-3d-from-a-sketch) it (or, still
+in the sketch, click inside the shape with Select and choose **Extrude**). Every
 sketch step can be undone, also after finishing.
 
 ---

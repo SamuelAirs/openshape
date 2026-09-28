@@ -122,7 +122,7 @@ void AcceptanceRunner::type(const QString& text)
 }
 
 namespace {
-QPointingDevice* acceptanceTouchScreen()
+QPointingDevice* touchScreen()
 {
     static QPointingDevice* device = [] {
         auto* d = new QPointingDevice(QStringLiteral("OpenShape acceptance touch"), 4242, QInputDevice::DeviceType::TouchScreen,
@@ -135,40 +135,40 @@ QPointingDevice* acceptanceTouchScreen()
 }
 } // namespace
 
-void AcceptanceRunner::touchPoint(QPointF p, int state)
+void AcceptanceRunner::touchFrame(const QList<QPointF>& points, QEventPoint::State state)
 {
-    QWindowSystemInterface::TouchPoint tp;
-    tp.id = 1;
-    tp.state = QEventPoint::State(state);
-    tp.area = QRectF(nativeGlobal(p) - QPointF(3, 3), QSizeF(6, 6)); // native pixels, like the mouse
-    tp.pressure = tp.state == QEventPoint::State::Released ? 0 : 1;
-    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, acceptanceTouchScreen(), {tp});
+    QList<QWindowSystemInterface::TouchPoint> list;
+    int id = 1;
+    for (const QPointF& p : points) {
+        QWindowSystemInterface::TouchPoint tp;
+        tp.id = id++;
+        tp.state = state;
+        tp.area = QRectF(nativeGlobal(p) - QPointF(3, 3), QSizeF(6, 6)); // native pixels, like the mouse
+        tp.pressure = state == QEventPoint::State::Released ? 0 : 1;
+        list.append(tp);
+    }
+    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, touchScreen(), list);
 }
-
-void AcceptanceRunner::touchPress(QPointF p) { touchPoint(p, int(QEventPoint::State::Pressed)); }
-void AcceptanceRunner::touchMove(QPointF p) { touchPoint(p, int(QEventPoint::State::Updated)); }
-void AcceptanceRunner::touchRelease(QPointF p) { touchPoint(p, int(QEventPoint::State::Released)); }
 
 void AcceptanceRunner::touchTap(const QList<QPointF>& points)
 {
-    QPointingDevice* device = acceptanceTouchScreen();
-    auto frame = [&](QEventPoint::State state) {
-        QList<QWindowSystemInterface::TouchPoint> list;
-        int id = 1;
-        for (const QPointF& p : points) {
-            QWindowSystemInterface::TouchPoint tp;
-            tp.id = id++;
-            tp.state = state;
-            tp.area = QRectF(nativeGlobal(p) - QPointF(3, 3), QSizeF(6, 6)); // native pixels, like the mouse
-            tp.pressure = state == QEventPoint::State::Released ? 0 : 1;
-            list.append(tp);
-        }
-        return list;
-    };
-    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, device,
-                                                                                         frame(QEventPoint::State::Pressed));
-    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, device,
-                                                                                         frame(QEventPoint::State::Released));
+    touchFrame(points, QEventPoint::State::Pressed);
+    touchFrame(points, QEventPoint::State::Released);
+}
+
+void AcceptanceRunner::touchPress(QPointF p)
+{
+    touchFrame({p}, QEventPoint::State::Pressed);
+}
+
+void AcceptanceRunner::touchMove(QPointF p)
+{
+    touchFrame({p}, QEventPoint::State::Updated);
+}
+
+void AcceptanceRunner::touchRelease(QPointF p)
+{
+    touchFrame({p}, QEventPoint::State::Released);
 }
 
 namespace {

@@ -11,6 +11,7 @@
 #include <QtCore/QSize>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
+#include <QtGui/QEventPoint>
 
 #include <cstddef>
 #include <functional>
@@ -70,9 +71,9 @@ public:
     void type(const QString& text);
     // A quick multi-finger tap through Qt's touch path (fingers at `points`).
     void touchTap(const QList<QPointF>& points);
-    // One finger down, moved and lifted through Qt's touch path (moves in
-    // one step may be merged into the last one: Qt compresses touch moves
-    // per frame).
+    // One finger: down, moved, lifted (through Qt's touch path). Qt Quick
+    // holds a finger's moves until its next frame, so a drag spreads its
+    // moves over steps (the release flushes the last one).
     void touchPress(QPointF p);
     void touchMove(QPointF p);
     void touchRelease(QPointF p);
@@ -119,12 +120,13 @@ private:
     QPointF nativeLocal(QPointF p) const;
     QPointF nativeGlobal(QPointF p) const;
     void runNext();
-    void touchPoint(QPointF p, int state); // a QEventPoint::State
     // clickItem's search, layout and scrolling: the item's center, if it can be reached.
     std::optional<QPointF> reachItem(const QString& objectName);
     void beginScenario(const QString& name, bool reset);
     void endScenario();
     std::vector<Step> coreScenario();
+    // One touch frame: every finger of `points` in `state`.
+    void touchFrame(const QList<QPointF>& points, QEventPoint::State state);
     QString describeClick() const;
 
     QQuickWindow* window_;

@@ -258,6 +258,11 @@ TEST(TouchWording, EverySketchHintIsTouchReady)
     h.controller.setSketchTool(SketchTool::Select);
     h.tap(h.sketchScreen({15, 0})); // the bottom line
     hints.insert(session->hintText());
+    h.tap(h.sketchScreen({30, 10})); // the right side too: two selected
+    hints.insert(session->hintText());
+    h.tap(h.sketchScreen({15, 10})); // inside the rectangle: the shape (Extrude)
+    hints.insert(session->hintText());
+    h.tap(h.sketchScreen({15, 0})); // the bottom line again (for the actions below)
     for (const char* mode : {"mirror", "pattern", "offset"}) {
         (void)h.controller.triggerAction(mode);
         hints.insert(session->hintText());
