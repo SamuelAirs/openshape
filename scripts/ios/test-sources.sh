@@ -21,6 +21,10 @@
 # Usage (needs bash, git, tar, gzip, awk, sha256sum or shasum): scripts/ios/test-sources.sh
 set -uo pipefail
 
+for tool in git tar gzip awk; do
+    # Said plainly (the CI's MSYS2 shells install git for this test).
+    command -v "$tool" >/dev/null 2>&1 || { echo "test-sources.sh: $tool not found (needs bash, git, tar, gzip, awk)" >&2; exit 1; }
+done
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

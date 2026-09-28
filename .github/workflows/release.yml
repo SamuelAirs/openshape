@@ -81,6 +81,7 @@ jobs:
           update: true
           install: >-
             curl
+            git
             patch
             diffutils
             mingw-w64-ucrt-x86_64-gcc
