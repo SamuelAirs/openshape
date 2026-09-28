@@ -3,8 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // What the app remembers (ui/AppSettings), recovery sessions with real
-// lock files (ui/RecoverySession) and Home's preview sources
-// (ui/ThumbnailSource). Qt Core only; no window.
+// lock files (ui/RecoverySession), Home's preview sources
+// (ui/ThumbnailSource) and where files from other apps go
+// (ui/IncomingFiles). Qt Core only; no window.
 
 #include "document/Feature.h"
 #include "core/Uuid.h"
@@ -14,6 +15,7 @@
 #include "core/Version.h"
 #include "ui/AppSettings.h"
 #include "ui/Licenses.h"
+#include "ui/IncomingFiles.h"
 #include "ui/RecoverySession.h"
 #include "ui/ThumbnailSource.h"
 
@@ -25,6 +27,7 @@
 #include <QtCore/QSysInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QUrl>
+#include <QtCore/QXmlStreamReader>
 
 #include <gtest/gtest.h>
 
@@ -522,6 +525,7 @@ TEST(Licenses, TheSourceOfferNamesExactlyThisBuildsSource)
     EXPECT_TRUE(between.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/tree/abcdef0123456789abcdef0123456789abcdef01")));
     EXPECT_TRUE(between.contains(QStringLiteral("scripts/ios/sources.txt")));
     EXPECT_FALSE(between.contains(QStringLiteral("/releases/tag/")));
+    EXPECT_TRUE(between.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/releases keeps copies")));
 
     // Nothing known (a build from a source archive without git).
     const BuildInfo unknown{QStringLiteral("1.2.3"), QStringLiteral("1.2.3"), {}, {}};
@@ -555,4 +559,352 @@ TEST(Licenses, ABrokenListIsReportedNotShownHalf)
     ASSERT_TRUE(catalog.isValid()) << catalog.error().toStdString();
     EXPECT_TRUE(catalog.text(QStringLiteral("x")).isEmpty());
     EXPECT_TRUE(catalog.sourceOffer(BuildInfo::current()).isEmpty()); // no source-offer.txt there
+}
+
+// ---- Files from other apps (ui/IncomingFiles) -----------------------------------------
+
+namespace {
+
+// A folder tree as on an iPhone: OpenShape's folder (Documents) with the
+// system's Inbox, a scratch folder, and "elsewhere" (iCloud Drive, another
+// app's folder).
+struct IncomingFixture {
+    QTemporaryDir root;
+    IncomingPlaces places;
+    QString elsewhere;
+
+    IncomingFixture()
+    {
+        places.appFolder = root.path() + QStringLiteral("/Documents");
+        places.stagingFolder = root.path() + QStringLiteral("/tmp/openshape-incoming");
+        places.inboxes << places.appFolder + QStringLiteral("/Inbox");
+        elsewhere = root.path() + QStringLiteral("/iCloud Drive");
+        QDir().mkpath(places.appFolder);
+        QDir().mkpath(elsewhere);
+    }
+    QString inbox() const { return places.inboxes.front(); }
+};
+
+// A real project file: a cube of the given size.
+void writeProject(const QString& path, double size)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    ASSERT_TRUE(io::saveProject(*cube(size), std::filesystem::path(path.toStdWString())).ok()) << path.toStdString();
+}
+
+void writeBytes(const QString& path, const QByteArray& bytes)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile f(path);
+    ASSERT_TRUE(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write(bytes);
+}
+
+QByteArray bytesOf(const QString& path)
+{
+    QFile f(path);
+    return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+}
+
+qsizetype projectsIn(const QString& folder)
+{
+    return QDir(folder).entryList({QStringLiteral("*.openshape")}, QDir::Files).size();
+}
+
+const QByteArray kStepText = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n";
+
+} // namespace
+
+TEST(IncomingFiles, KindsByExtension)
+{
+    EXPECT_EQ(incomingKind(QStringLiteral("Bracket.openshape")), IncomingKind::Project);
+    EXPECT_EQ(incomingKind(QStringLiteral("/x/y/LID.OPENSHAPE")), IncomingKind::Project);
+    EXPECT_EQ(incomingKind(QStringLiteral("part.step")), IncomingKind::Step);
+    EXPECT_EQ(incomingKind(QStringLiteral("part.STP")), IncomingKind::Step);
+    EXPECT_EQ(incomingKind(QStringLiteral("part.stl")), IncomingKind::Unsupported);
+    EXPECT_EQ(incomingKind(QStringLiteral("notes")), IncomingKind::Unsupported);
+    EXPECT_EQ(incomingKind(QStringLiteral("step")), IncomingKind::Unsupported);
+}
+
+TEST(IncomingFiles, FoldersAndContents)
+{
+    IncomingFixture f;
+    const QString docs = f.places.appFolder;
+    EXPECT_TRUE(isInsideFolder(docs, docs));
+    EXPECT_TRUE(isInsideFolder(docs + QStringLiteral("/a.openshape"), docs));
+    EXPECT_TRUE(isInsideFolder(docs + QStringLiteral("/Exports/a.stl"), docs + QStringLiteral("/")));
+    EXPECT_TRUE(isInsideFolder(docs + QStringLiteral("/Exports/../a.openshape"), docs));
+    EXPECT_FALSE(isInsideFolder(docs + QStringLiteral("2/a.openshape"), docs)); // a sibling with a longer name
+    EXPECT_FALSE(isInsideFolder(f.elsewhere + QStringLiteral("/a.openshape"), docs));
+    EXPECT_FALSE(isInsideFolder(QString(), docs));
+    EXPECT_FALSE(isInsideFolder(docs, QString()));
+#if defined(Q_OS_WIN)
+    EXPECT_TRUE(isInsideFolder(docs.toUpper() + QStringLiteral("/a.openshape"), docs));
+#endif
+
+    writeBytes(f.elsewhere + QStringLiteral("/a"), "same bytes");
+    writeBytes(f.elsewhere + QStringLiteral("/b"), "same bytes");
+    writeBytes(f.elsewhere + QStringLiteral("/c"), "other byte");
+    writeBytes(f.elsewhere + QStringLiteral("/d"), "longer bytes here");
+    EXPECT_TRUE(sameFileContents(f.elsewhere + QStringLiteral("/a"), f.elsewhere + QStringLiteral("/b")));
+    EXPECT_FALSE(sameFileContents(f.elsewhere + QStringLiteral("/a"), f.elsewhere + QStringLiteral("/c")));
+    EXPECT_FALSE(sameFileContents(f.elsewhere + QStringLiteral("/a"), f.elsewhere + QStringLiteral("/d")));
+    EXPECT_FALSE(sameFileContents(f.elsewhere + QStringLiteral("/a"), f.elsewhere + QStringLiteral("/missing")));
+}
+
+TEST(IncomingFiles, OnTheDesktopFilesAreUsedWhereTheyAre)
+{
+    IncomingFixture f;
+    IncomingPlaces desktop = f.places;
+    desktop.appFolder.clear();
+    const QString project = f.elsewhere + QStringLiteral("/Bracket.openshape");
+    writeProject(project, 10);
+    const StagedFile staged = stageIncomingFile(project, desktop);
+    EXPECT_EQ(staged.kind, IncomingKind::Project);
+    EXPECT_EQ(staged.path, QFileInfo(project).absoluteFilePath());
+    EXPECT_FALSE(staged.copied);
+    EXPECT_FALSE(staged.temporary);
+    EXPECT_EQ(projectsIn(f.places.appFolder), 0);
+}
+
+TEST(IncomingFiles, ProjectFromElsewhereIsCopiedInOnce)
+{
+    IncomingFixture f;
+    const QString project = f.elsewhere + QStringLiteral("/Bracket.openshape");
+    writeProject(project, 10);
+    const StagedFile first = stageIncomingFile(project, f.places);
+    ASSERT_FALSE(first.path.isEmpty()) << first.error.toStdString();
+    EXPECT_EQ(first.path, f.places.appFolder + QStringLiteral("/Bracket.openshape"));
+    EXPECT_TRUE(first.copied);
+    EXPECT_TRUE(first.created) << "a new file: removed again if it cannot be opened";
+    EXPECT_FALSE(first.temporary);
+    EXPECT_EQ(bytesOf(first.path), bytesOf(project));
+    EXPECT_TRUE(QFileInfo::exists(project)) << "the original stays where it was";
+    EXPECT_NEAR(copyVolume(std::filesystem::path(first.path.toStdWString())), 1000.0, 1e-6);
+
+    // The same file again: the copy there is used, no second one.
+    const StagedFile again = stageIncomingFile(project, f.places);
+    EXPECT_EQ(again.path, first.path);
+    EXPECT_TRUE(again.copied);
+    EXPECT_FALSE(again.created) << "the copy that was there already is never removed";
+    EXPECT_EQ(projectsIn(f.places.appFolder), 1);
+
+    // A different project of the same name: "Bracket 2", then "Bracket 3".
+    const QString other = f.elsewhere + QStringLiteral("/other/Bracket.openshape");
+    writeProject(other, 20);
+    const StagedFile second = stageIncomingFile(other, f.places);
+    EXPECT_EQ(second.path, f.places.appFolder + QStringLiteral("/Bracket 2.openshape"));
+    EXPECT_TRUE(second.created);
+    EXPECT_NEAR(copyVolume(std::filesystem::path(second.path.toStdWString())), 8000.0, 1e-6);
+    const QString third = f.elsewhere + QStringLiteral("/third/Bracket.openshape");
+    writeProject(third, 30);
+    EXPECT_EQ(stageIncomingFile(third, f.places).path, f.places.appFolder + QStringLiteral("/Bracket 3.openshape"));
+    // ...and the second one again finds its copy.
+    EXPECT_EQ(stageIncomingFile(other, f.places).path, second.path);
+    EXPECT_EQ(projectsIn(f.places.appFolder), 3);
+}
+
+TEST(IncomingFiles, ProjectInTheAppFolderIsOpenedInPlace)
+{
+    IncomingFixture f;
+    for (const QString& path : {f.places.appFolder + QStringLiteral("/Lid.openshape"),
+                                f.places.appFolder + QStringLiteral("/Designs/Lid.openshape")}) {
+        writeProject(path, 10);
+        const StagedFile staged = stageIncomingFile(path, f.places);
+        EXPECT_EQ(staged.path, QFileInfo(path).absoluteFilePath());
+        EXPECT_FALSE(staged.copied);
+        EXPECT_FALSE(staged.created) << "the user's own project is never removed";
+    }
+    EXPECT_EQ(projectsIn(f.places.appFolder), 1);
+}
+
+TEST(IncomingFiles, InboxCopiesAreMovedOut)
+{
+    IncomingFixture f;
+    // Mail's attachment: iOS put a copy into the app's Inbox.
+    const QString mailed = f.inbox() + QStringLiteral("/Hinge.openshape");
+    writeProject(mailed, 10);
+    const QByteArray bytes = bytesOf(mailed);
+    const StagedFile staged = stageIncomingFile(mailed, f.places);
+    EXPECT_EQ(staged.path, f.places.appFolder + QStringLiteral("/Hinge.openshape"));
+    EXPECT_TRUE(staged.copied);
+    EXPECT_TRUE(staged.created);
+    EXPECT_EQ(bytesOf(staged.path), bytes);
+    EXPECT_FALSE(QFileInfo::exists(mailed)) << "moved, not copied";
+    EXPECT_FALSE(QFileInfo::exists(f.inbox())) << "an empty Inbox is removed";
+    EXPECT_TRUE(QFileInfo(staged.path).isWritable());
+
+    // The same project mailed again: the one there is used, the Inbox copy removed.
+    writeBytes(f.inbox() + QStringLiteral("/other.txt"), "stays");
+    ASSERT_TRUE(QFile::copy(staged.path, mailed));
+    const StagedFile mailedAgain = stageIncomingFile(mailed, f.places);
+    EXPECT_EQ(mailedAgain.path, staged.path);
+    EXPECT_FALSE(mailedAgain.created);
+    EXPECT_FALSE(QFileInfo::exists(mailed));
+    EXPECT_TRUE(QFileInfo::exists(f.inbox())) << "an Inbox with other files stays";
+    EXPECT_EQ(projectsIn(f.places.appFolder), 1);
+
+    // A STEP file from the Inbox: moved to the scratch folder.
+    const QString step = f.inbox() + QStringLiteral("/Bracket.step");
+    writeBytes(step, kStepText);
+    const StagedFile stepStaged = stageIncomingFile(step, f.places);
+    EXPECT_EQ(stepStaged.kind, IncomingKind::Step);
+    EXPECT_EQ(stepStaged.path, f.places.stagingFolder + QStringLiteral("/Bracket.step"));
+    EXPECT_TRUE(stepStaged.temporary);
+    EXPECT_EQ(bytesOf(stepStaged.path), kStepText);
+    EXPECT_FALSE(QFileInfo::exists(step));
+}
+
+TEST(IncomingFiles, StepFilesAreReadFromAScratchCopy)
+{
+    IncomingFixture f;
+    const QString step = f.elsewhere + QStringLiteral("/Motor mount.STP");
+    writeBytes(step, kStepText);
+    const StagedFile staged = stageIncomingFile(step, f.places);
+    ASSERT_FALSE(staged.path.isEmpty()) << staged.error.toStdString();
+    EXPECT_EQ(staged.kind, IncomingKind::Step);
+    EXPECT_EQ(staged.path, f.places.stagingFolder + QStringLiteral("/Motor mount.STP"));
+    EXPECT_TRUE(staged.temporary);
+    EXPECT_FALSE(staged.copied);
+    EXPECT_FALSE(staged.created);
+    EXPECT_EQ(bytesOf(staged.path), kStepText);
+    EXPECT_TRUE(QFileInfo::exists(step));
+    EXPECT_EQ(QDir(f.places.appFolder).entryList(QDir::Files | QDir::NoDotAndDotDot).size(), 0) << "nothing in OpenShape's folder";
+
+    // A changed file with the same name replaces the old scratch copy.
+    writeBytes(step, kStepText + "/* changed */\n");
+    EXPECT_EQ(bytesOf(stageIncomingFile(step, f.places).path), kStepText + "/* changed */\n");
+    // The scratch copy itself is used as it is.
+    const StagedFile again = stageIncomingFile(staged.path, f.places);
+    EXPECT_EQ(again.path, staged.path);
+    EXPECT_TRUE(QFileInfo::exists(staged.path));
+
+    // A STEP file in OpenShape's folder is read where it is (and kept).
+    const QString inFolder = f.places.appFolder + QStringLiteral("/Exports/Lid.step");
+    writeBytes(inFolder, kStepText);
+    const StagedFile local = stageIncomingFile(inFolder, f.places);
+    EXPECT_EQ(local.path, QFileInfo(inFolder).absoluteFilePath());
+    EXPECT_FALSE(local.temporary);
+}
+
+TEST(IncomingFiles, WhatCannotBeUsedIsSaidPlainly)
+{
+    IncomingFixture f;
+    const QString text = f.elsewhere + QStringLiteral("/notes.txt");
+    writeBytes(text, "hello");
+    const StagedFile unsupported = stageIncomingFile(text, f.places);
+    EXPECT_TRUE(unsupported.path.isEmpty());
+    EXPECT_EQ(unsupported.kind, IncomingKind::Unsupported);
+    EXPECT_EQ(unsupported.error.toStdString(),
+              "OpenShape opens projects (.openshape) and STEP files (.step, .stp); \xE2\x80\x9Cnotes.txt\xE2\x80\x9D is neither.");
+
+    const StagedFile missing = stageIncomingFile(f.elsewhere + QStringLiteral("/gone.openshape"), f.places);
+    EXPECT_TRUE(missing.path.isEmpty());
+    EXPECT_EQ(missing.error.toStdString(), "\xE2\x80\x9Cgone.openshape\xE2\x80\x9D could not be read.");
+    EXPECT_EQ(projectsIn(f.places.appFolder), 0);
+
+    // The kind can be given (the Open picker only offers projects).
+    const QString odd = f.elsewhere + QStringLiteral("/backup.bin");
+    writeProject(odd, 10);
+    const StagedFile forced = stageIncomingFile(odd, f.places, IncomingKind::Project);
+    EXPECT_EQ(forced.path, f.places.appFolder + QStringLiteral("/backup.openshape"));
+}
+
+namespace {
+
+// The iOS Info.plist template as nested QVariants (dict, array, string, bool).
+QVariant readPlistValue(QXmlStreamReader& xml)
+{
+    const QString tag = xml.name().toString();
+    if (tag == QLatin1String("dict")) {
+        QVariantMap map;
+        QString key;
+        while (xml.readNextStartElement()) {
+            if (xml.name() == QLatin1String("key"))
+                key = xml.readElementText();
+            else
+                map.insert(key, readPlistValue(xml));
+        }
+        return map;
+    }
+    if (tag == QLatin1String("array")) {
+        QVariantList list;
+        while (xml.readNextStartElement())
+            list.append(readPlistValue(xml));
+        return list;
+    }
+    if (tag == QLatin1String("true") || tag == QLatin1String("false")) {
+        xml.skipCurrentElement();
+        return tag == QLatin1String("true");
+    }
+    return xml.readElementText();
+}
+
+QVariantMap iosInfoPlist()
+{
+    QFile file(QStringLiteral(OPENSHAPE_SOURCE_DIR "/src/app/ios/Info.plist.in"));
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QXmlStreamReader xml(&file);
+    while (xml.readNextStartElement())
+        if (xml.name() == QLatin1String("dict"))
+            return readPlistValue(xml).toMap();
+    return {};
+}
+
+} // namespace
+
+// What iOS offers to hand to OpenShape (Info.plist) is what AppController
+// takes (incomingKind): each document type names a declared type whose
+// extensions are the ones that kind has.
+TEST(IncomingFiles, InfoPlistDocumentTypesMatchWhatOpenShapeTakes)
+{
+    const QVariantMap plist = iosInfoPlist();
+    ASSERT_FALSE(plist.isEmpty()) << "src/app/ios/Info.plist.in could not be read";
+    EXPECT_TRUE(plist.value(QStringLiteral("LSSupportsOpeningDocumentsInPlace")).toBool());
+    // Declared types: identifier -> (extensions, conforms to).
+    QMap<QString, QPair<QStringList, QStringList>> declared;
+    for (const char* key : {"UTExportedTypeDeclarations", "UTImportedTypeDeclarations"})
+        for (const QVariant& type : plist.value(QString::fromLatin1(key)).toList()) {
+            const QVariantMap t = type.toMap();
+            declared.insert(t.value(QStringLiteral("UTTypeIdentifier")).toString(),
+                            {t.value(QStringLiteral("UTTypeTagSpecification")).toMap().value(QStringLiteral("public.filename-extension")).toStringList(),
+                             t.value(QStringLiteral("UTTypeConformsTo")).toStringList()});
+        }
+    const QVariantList documentTypes = plist.value(QStringLiteral("CFBundleDocumentTypes")).toList();
+    ASSERT_EQ(documentTypes.size(), 2);
+    const std::pair<const char*, IncomingKind> expected[] = {{"Owner", IncomingKind::Project}, {"Alternate", IncomingKind::Step}};
+    for (int i = 0; i < 2; ++i) {
+        const QVariantMap type = documentTypes[i].toMap();
+        EXPECT_EQ(type.value(QStringLiteral("LSHandlerRank")).toString().toStdString(), expected[i].first);
+        EXPECT_FALSE(type.value(QStringLiteral("CFBundleTypeName")).toString().isEmpty());
+        const QStringList utis = type.value(QStringLiteral("LSItemContentTypes")).toStringList();
+        ASSERT_EQ(utis.size(), 1);
+        ASSERT_TRUE(declared.contains(utis.front())) << utis.front().toStdString() << " is not declared";
+        const auto& [extensions, conforms] = declared.value(utis.front());
+        EXPECT_TRUE(conforms.contains(QStringLiteral("public.data")));
+        ASSERT_FALSE(extensions.isEmpty());
+        for (const QString& extension : extensions)
+            EXPECT_EQ(incomingKind(QStringLiteral("file.") + extension), expected[i].second) << extension.toStdString();
+    }
+    EXPECT_EQ(declared.value(QStringLiteral("io.github.samuelairs.openshape.project")).first, QStringList{QStringLiteral("openshape")});
+    EXPECT_EQ(declared.value(QStringLiteral("org.iso.step")).first, (QStringList{QStringLiteral("step"), QStringLiteral("stp")}));
+}
+
+TEST(IncomingFiles, CopiesGetSafeNames)
+{
+    IncomingFixture f;
+    // A leading dot would hide the copy in the Files app.
+    const QString hidden = f.elsewhere + QStringLiteral("/.hidden.openshape");
+    writeProject(hidden, 10);
+    EXPECT_EQ(stageIncomingFile(hidden, f.places).path, f.places.appFolder + QStringLiteral("/hidden.openshape"));
+    // Nothing usable left: "Untitled".
+    const QString dots = f.elsewhere + QStringLiteral("/...openshape");
+    writeProject(dots, 20);
+    EXPECT_EQ(stageIncomingFile(dots, f.places).path, f.places.appFolder + QStringLiteral("/Untitled.openshape"));
+    // Names outside ASCII stay as they are.
+    const QString name = f.elsewhere + QString::fromUtf8("/Halterung f\xC3\xBCr Rad \xD0\x96.openshape");
+    writeProject(name, 30);
+    EXPECT_EQ(stageIncomingFile(name, f.places).path,
+              f.places.appFolder + QString::fromUtf8("/Halterung f\xC3\xBCr Rad \xD0\x96.openshape"));
 }

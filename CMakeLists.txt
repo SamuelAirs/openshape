@@ -36,9 +36,17 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 include(cmake/CompilerWarnings.cmake)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # The share sheet (src/ui/ios/ShareSheet.mm) is Objective-C++.
+    enable_language(OBJCXX)
     # An Xcode archive (TestFlight/App Store) must contain only the app, not
     # the static libraries it is built from; the app target overrides this.
     set(CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL "YES")
+    # Crash reports from testers symbolicate: every target (the static
+    # libraries too) is compiled with debug information in Release as well,
+    # at the same optimization, and the archive gets a dSYM for the app
+    # (checked by scripts/ios/build-app.sh; uploaded by testflight.sh).
+    set(CMAKE_XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS "YES")
+    set(CMAKE_XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym")
 endif()
 
 # ---- Third-party dependencies --------------------------------------------

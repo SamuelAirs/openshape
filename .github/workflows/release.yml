@@ -132,8 +132,8 @@ jobs:
 
       # The source code of every library in the iOS app, as scripts/ios/
       # sources.txt pins it (scripts/ios/mirror-sources.sh, SHA-256 checked;
-      # docs/LICENSING.md, "The iOS app and the App Store"): App Store and
-      # public beta builds are made from release tags (ipad.yml), and the
+      # docs/LICENSING.md, "The iOS app and the App Store"): App Store
+      # builds are made from release tags (ipad.yml), and the
       # tag's release carries this as one file,
       # OpenShape-<tag without v>-ios-sources.tar, which the app's
       # Licenses view names. Early and on every run, so a broken download

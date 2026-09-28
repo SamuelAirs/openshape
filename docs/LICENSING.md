@@ -152,8 +152,11 @@ certainty is said at the end.
   including the GPL-3.0 text the LGPL-3.0 asks for, the Open CASCADE
   notice, the FreeType credit and the third-party code inside Qt.
 - **Every App Store version is a git tag** whose GitHub release carries
-  the iOS libraries' source (`OpenShape-<version>-ios-sources.tar`); only
-  builds of such tags can reach external testers or App Store review.
+  the iOS libraries' source (`OpenShape-<version>-ios-sources.tar`): only
+  builds of such tags are submitted for App Store review. Public beta
+  builds of `main` name their commit, whose source and library pins are
+  public; the written offer covers their library sources, and CI warns
+  until a release keeps copies of new pins.
 - **Apple's standard EULA** is very likely compatible (it excepts what the
   open-source licenses permit), but a **custom EULA** that says so
   explicitly costs nothing and removes the doubt: proposed in
@@ -349,9 +352,13 @@ copyright © 2026 The FreeType Project").
   `OpenShape-<version>-ios-sources.tar` to each release (OpenShape's own
   source is GitHub's "Source code" archive of the tag).
 - **App Store versions are tags** (`ipad.yml`): a tag `v<version>[-suffix]`
-  must match CMakeLists.txt, passes the tag into the app, requires the
-  license gate and uploads with `testFlightInternalTestingOnly` off; builds
-  of `main` stay internal-only, so they cannot be submitted.
+  must match CMakeLists.txt, passes the tag into the app and requires the
+  license gate; its run's notice names the build to submit for review.
+  Builds of `main` also upload with `testFlightInternalTestingOnly` off
+  (the owner's public TestFlight beta, docs/IPAD.md 1b), so "only tag
+  builds go to review" is a rule of the release steps below, not enforced
+  by Apple; each `main` run warns when no release tag has its library pins
+  yet (`scripts/ios/sources.txt` compared with every tag's).
 - **Custom EULA** proposal: [EULA.md](EULA.md).
 
 ### Releasing an App Store (or public beta) version
@@ -363,19 +370,23 @@ copyright © 2026 The FreeType Project").
    GNU LGPL; source code and license texts: https://github.com/SamuelAirs/openshape
    (see Licenses in the app)."
 2. Tag the version as for Windows (BUILDING.md, "Before tagging a release";
-   a public beta can be `v<version>-beta1`). The tag's `release.yml` run
+   a beta can be `v<version>-beta1`). The tag's `release.yml` run
    publishes the GitHub release with the iOS sources; its `ipad.yml` run
    uploads the build that may be submitted (the notice names its build
    number).
-3. In App Store Connect submit **only** that build (for external TestFlight
-   testing or App Store review). Keep the release and its files published
-   for at least three years after that version was last offered.
+3. In App Store Connect submit **only** that build for App Store review.
+   Keep the release and its files published for at least three years after
+   that version was last offered.
 
-Internal TestFlight builds of `main` go to the owner's own team. Anyone
-else added as an internal tester receives a copy too: such a build's
-Licenses notice names its commit, whose source (with the pins of its
-libraries) is public, so it is covered the same way, without a release
-page for its library sources.
+**Public beta builds of `main`** (TestFlight, internal and external
+testers; docs/IPAD.md 1b) are distributed too. Their Licenses notice
+names their commit, whose source is public and whose
+`scripts/ios/sources.txt` pins the exact library archives; the written
+offer covers those for three years. So that the offer never depends on
+upstream keeping an archive (TD-86), a release (a `-beta` tag is enough)
+must carry every pinned set that went to testers: `ipad.yml` warns
+("iOS sources: no release tag has these library pins") until one does.
+A build that changes the pins should get a beta tag within days.
 
 ### Settled, judgement calls, residual risk
 

@@ -842,7 +842,51 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   (`Operation::reconsider` revises automatic choices after a preview), and
   so does an automatic cut that would remove nothing (a profile beside the
   body pushed in: `reconsiderRefusal` on `ErrorCode::NoEffect`). A cut
-  chosen explicitly is refused with the reason instead.
+  chosen explicitly is refused with the reason instead, and so is a Join
+  (Extrude or Revolve) that adds no volume (`joinAdding` in Feature.cpp:
+  `NoEffect`, a warning in recompute for older files). For a face sketch
+  **Cut means into the body**: `ExtrudeOperation::chooseMode` turns a value
+  pointing out of it (Join / New body turn one pointing in), `typedValue`
+  makes a depth typed while Cut is chosen go in, and while Cut is chosen
+  the arrow points into the body (`arrowIntoBody`: `handle` /
+  `handleOffset` / `valueFromOffset` flip; the value stays the signed
+  distance along the sketch normal, as stored and shown in the Model
+  panel). Flip negates the value (a face sketch's mode is automatic again);
+  Esc back to 0 drops a chosen mode. The value label says what it makes
+  (`valueLabel`: Cut depth / Height / New body; Thickness, Draft). A sketch
+  on **no body** (origin or construction plane) decides from geometry
+  (`findTarget`, from the first preview pass, then `reconsider` recomputes
+  against the body): the bodies whose boxes meet the extrusion's, largest
+  overlap first; Cut against the first it removes material from; else Join
+  with one the profile lies on and is pulled away from (the extrusion
+  nudged 0.01 mm back toward its sketch overlaps the body; touching a
+  body's side only stays a new body); else a new body. Join / Cut chosen
+  with no such body is refused (`targetMissing_`). New body / Join / Cut
+  are always offered, first in the row (Through all next when cutting),
+  Extrude / Revolve / Edit sketch last. The arrow starts where the profile
+  was tapped (`profileTap_`), and on touch a finger drag that starts on the
+  selected profile (or a single selected flat face for Push/Pull) drags the
+  active arrow along its axis through the pressed point
+  (`selectedRegionAt`, `drag_.region`); a mouse drag there orbits.
+- **Sketch framing:** `startSketch` on a face (its display mesh's box) or a
+  construction plane (its drawn outline) calls `alignViewTo(plane, frame)`,
+  which fits that box and the sketch into the part of the view the sketch's
+  controls leave free (`frameInsets`, from Main.qml: below the tool bar,
+  above the hint over the phone's tool strip, right of the desktop palette)
+  with a margin of 1.15 on touch, 1.6 with a mouse, never closer than 10 mm
+  across. On a phone a 20 mm face then spans ~16 px/mm: the sketch grid and
+  the arrows snap in 1 mm (the fitted view gave 6 px/mm, 2 mm steps).
+  With several faces selected (touch taps add) Sketch uses the last flat one.
+- **Edges under a sketch on touch:** in `pickAt`, an edge of the sketch's
+  host body lying in the plane of the sketch region under the tap, or an
+  edge of the pocket seen through a used sketch's region, wins only within
+  a mouse's reach (6 px); beyond it the tap goes to the region (unused, not
+  behind the surface) or to the face seen through it (the pocket's floor).
+  Elsewhere, and under a sketch on no body (a base plate outline on the
+  ground around a box), edges keep a finger's 18 px (TD-83).
+- **A cancelled manipulator drag** (a pinch or two-finger pan whose first
+  finger had already moved the arrow, the profile or the face) puts the
+  value and the active handle back (`drag_.valueBefore`, `cancelPointer`).
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as
@@ -1309,13 +1353,56 @@ stays Qt's `FileDialog` (the system document picker there). After a menu or over
 closes, `focusViewUnlessPanel()` gives the keys back to the view (Qt left
 them on a hidden menu separator after the Open Recent sub-menu).
 
+**Share sheet** (iOS; `ui/Share.h`): `AppController` holds a
+`ShareHandler` (`setShareHandler`; `canShare`), at start
+`platformShareHandler()`: on iOS `src/ui/ios/ShareSheet.mm` (Objective-C++,
+ARC, compiled for iOS only; `enable_language(OBJCXX)` there) presents a
+`UIActivityViewController` for the file from the window's view controller
+(the `QWindow`'s `winId()` is its `UIView`), on the main thread, as a
+popover at the anchor on an iPad; elsewhere it is empty. After an export
+into the app folder `exportToAppFolder(format, anchor)` shares the file;
+File → Share Project… (`window.shareProject()`: Save first, the name prompt
+for a new project, then `shareProject(anchor)`) shares the project file.
+The anchor is the File button's rectangle in window coordinates (= UIKit
+points). The sheet's end comes back once (`ShareOutcome`): sent and closed
+are logged, a failure becomes a message. The acceptance run puts a stub in;
+`AcceptanceRunner` restores the platform's for each scenario.
+
+**Files from other apps** (`ui/IncomingFiles`, Qt Core, tested in
+`test_uistate`): `Info.plist` declares projects (Owner) and STEP files
+(Alternate, imported type `org.iso.step`) in `CFBundleDocumentTypes`. Qt
+6.11's iOS scene delegate turns `openURLContexts` into
+`QWindowSystemInterface::handleFileOpenEvent` — after registering the URL
+with its security-scoped file engine, which starts and stops the access
+iOS granted around every `QFile` use — so a `QFileOpenEvent` reaches the
+application object; `AppController::eventFilter` queues
+`openIncomingFile(url)`. The file is staged at once through `QFile` only
+(OpenCASCADE and the project reader open paths themselves, outside Qt's
+engine): a project outside the app folder is copied into it (an identical
+copy there is reused; another of the same name gets "Name 2"), a STEP file
+into a scratch folder (`<temp>/openshape-incoming`, removed after the
+import), and the system's copy in `Documents/Inbox` (Mail) is moved rather
+than copied, an empty Inbox removed; a file inside the app folder is used
+in place, and without an app folder (a Mac's Finder) every file is. Then,
+with no unsaved changes, it opens (`openProjectFile`) or imports as a new
+project (`importStepFile`); otherwise `incomingFileWaiting` makes Main.qml
+ask "Save changes?" and continue with `openPendingIncomingFile()` (Cancel:
+`dropPendingIncomingFile()`). A copy the staging made anew
+(`StagedFile::created`, never one that was there already) is removed when
+it is not used: the project cannot be opened (damaged, newer), the question
+is cancelled, or another incoming file replaces the waiting one. The
+document pickers' files take the same staging when there is an app folder
+(`openProject`, `importStepFrom`): on iOS they lie outside the sandbox too.
+
 ## Testing
 
 - GTest suites (`tests/`): core (units, UUID, math), geometry (measurable
   invariants: volumes, bounding boxes, face counts), document/commands/files,
   camera/picking/interaction including a **headless Milestone 0 script**;
   `test_uistate` (Qt Core, no window): settings, window placement,
-  recovery sessions with real lock files and the built-in license texts.
+  recovery sessions with real lock files, where files from other apps
+  go (`ui/IncomingFiles`: copies, reuse, "Name 2", the Inbox, scratch
+  copies, refusals) and the built-in license texts (`ui/Licenses`).
 - Robustness suite (`test_robustness`): seeded random modeling sessions
   (`tests/StressHarness.h`: boxes, push/pull, fillets, chamfers, shells,
   sketches, extrusions, moves, rotations, mirrors, patterns, booleans,
@@ -1350,7 +1437,19 @@ them on a hidden menu separator after the Open Recent sub-menu).
   docks below the top bar while the value is typed); `appfolder`
   (saving by name and exporting as on an iPhone or iPad, into a temporary
   app folder; the export message keeps a name with "Click" in it in the
-  touch layout); `copies` (Mirror and Pattern clicked on a box off the
+  touch layout); `share` (with a stub share sheet in the app-folder mode:
+  Export STL / 3MF / STEP and File → Share Project… on a new, a changed
+  and a saved project hand the sheet an existing, non-empty file with the
+  right name and the File button's rectangle, also at iPhone size; closed
+  says nothing, a failure is said; no Share Project and no gap on the
+  desktop); `openin` (real project and STEP files handed over through
+  `QWindowSystemInterface::handleFileOpenEvent`, as Qt's iOS delegate does:
+  "Save changes?" first, the project copied byte for byte into the app
+  folder and opened, no second copy the next time, Mail's STEP file moved
+  out of the Inbox and imported as a new project with its volumes, Cancel
+  and Save with the name prompt, an unsupported file refused; the Open and
+  Import STEP pickers with files from elsewhere; on the desktop a file
+  opens where it is); `copies` (Mirror and Pattern clicked on a box off the
   origin: separate bodies without asking, the hint line and the toggle,
   then the original's top face pushed twice while the copies stay as they
   were); `alignorigin` (a hole's axis onto Z by the action and by clicking
@@ -1430,6 +1529,20 @@ them on a hidden menu separator after the Open Recent sub-menu).
   is not available; `OPENSHAPE_TEXT_FONT` lets such a development build use
   another font file in its place. `scripts/package-windows.sh` ships `OFL.txt` as
   `NotoSans-OFL.txt` and the license gate compares it with the repository.
+- **iOS archive** (`scripts/ios/build-app.sh`, `ipad.yml`): Release with
+  debug information at the same optimization and `dwarf-with-dsym`
+  (`CMAKE_XCODE_ATTRIBUTE_*` in the top-level `CMakeLists.txt` and on the
+  `xcodebuild` line). Xcode's archive step left the dSYM of this
+  CMake-generated project out (ipad.yml run 37; likely because CMake gives
+  each target its own `CONFIGURATION_BUILD_DIR`), so the script copies the
+  `OpenShape.app.dSYM` the build wrote into the archive; it fails when there is none, when its UUID is not the app binary's or
+  when OpenShape's functions are not in it, and when `Info.plist` lacks the
+  document types. `scripts/ios/testflight.sh` exports with
+  `uploadSymbols` (and refuses an archive without dSYMs) and
+  `testFlightInternalTestingOnly` false (the public beta). OpenCASCADE's
+  static libraries (`build-deps.sh`, Release) have no debug information,
+  nor may Qt's prebuilt ones: frames in them symbolicate to function names
+  only (TD-70).
 - **Windows resources:** `src/app/openshape.rc.in` (icon
   `resources/icons/openshape.ico`, made from the SVG by
   `scripts/windows/make-icon.py`, and VERSIONINFO) is configured and compiled

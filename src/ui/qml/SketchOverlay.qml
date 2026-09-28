@@ -24,6 +24,12 @@ Item {
     // Where this overlay's things along the bottom edge start (compact
     // layout: the tool strip and the constraint actions above it).
     readonly property real bottomStackTop: actionPanel.visible && Theme.compact ? actionPanel.y : toolPanel.y
+    // Where the view is free of this overlay's controls (Main.qml: a sketch
+    // started on a face frames the face there): below the tool bar, above
+    // the tool strip (compact) or right of the tool palette (regular).
+    readonly property real toolbarBottom: toolbarSlot.y + toolbar.height
+    readonly property real toolStripTop: toolPanel.y
+    readonly property real paletteRight: Theme.compact ? 0 : toolPanel.x + toolPanel.width
 
     // Characters typed while drawing go to the focused value (e.g. width).
     property string typing: ""

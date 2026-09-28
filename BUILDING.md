@@ -84,9 +84,11 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario chipplacement   # the chip vs. the tapped edge / face at phone, iPad and desktop sizes; on the phone its buttons and the dock while typing
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario licenses,release   # About → Licenses (every library's text, the LGPL notice, at iPhone size too) and the About card
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo licenses --screenshot licenses.png   # the Licenses list on an iPhone
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario extrudetouch   # a pocket cut on the phone layout with one finger (framed face sketch, arrow and profile drags, Cut / Join / Flip), then with the mouse
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario appfolder,share,openin   # iPhone / iPad files: saving by name, the share sheet (stub), Open in OpenShape
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
@@ -145,7 +147,9 @@ Dynamic Island and the home indicator drawn in: iPhone 16 Pro portrait
 `--app-folder <dir>` saves and exports as on an iPhone or iPad: Save asks for
 a name only and writes `<dir>/<name>.openshape`, exports go to
 `<dir>/Exports` (docs/IPAD.md, "Files on iPhone and iPad"); the `savename`
-demo scene shows that prompt.
+demo scene shows that prompt. The share sheet exists only on iOS (on the
+desktop there is no File → Share Project…); the `share` scenario puts a
+stub in, and `openin` hands files over the way Qt's iOS delegate does.
 `OPENSHAPE_LOG=debug` adds per-operation timings (PERFORMANCE category:
 tessellation, recompute, kernel operations) to the log; those computed on
 the preview worker thread start with `[worker]`, and GUI-thread blocks
@@ -375,8 +379,9 @@ Before tagging a release:
    it). Push the tag `v<version>` only when both are green.
 5. The tag also builds the iOS app for the App Store (`ipad.yml`, docs/
    LICENSING.md "Releasing an App Store (or public beta) version"): submit
-   only the build that run uploads (its notice names the build number),
-   for external TestFlight testing or App Store review.
+   only the build that run uploads (its notice names the build number)
+   for App Store review. Builds of `main` go to TestFlight testers
+   (the public beta) but not to review.
 
 Every Release run also downloads the source code of the LGPL libraries the
 package ships (`scripts/ci/mirror-sources.sh`: the MSYS2 source archives

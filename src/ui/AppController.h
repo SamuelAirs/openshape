@@ -10,6 +10,8 @@
 #include "io/Recovery.h"
 #include "ui/AppSettings.h"
 #include "ui/Licenses.h"
+#include "ui/IncomingFiles.h"
+#include "ui/Share.h"
 
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
@@ -57,6 +59,14 @@ class AppController : public QObject {
     Q_PROPERTY(bool operationCanCommit READ operationCanCommit NOTIFY stateChanged)
     Q_PROPERTY(bool operationHasValue READ operationHasValue NOTIFY stateChanged)
     Q_PROPERTY(QString operationPrompt READ operationPrompt NOTIFY stateChanged)
+    // Extrude / Revolve: what the profiles make ("new", "join", "cut"; "" for
+    // other operations), and whether the sketch lies on a body's face (out
+    // of it adds material, into it cuts: the hints say so).
+    Q_PROPERTY(QString operationMode READ operationMode NOTIFY stateChanged)
+    Q_PROPERTY(bool operationOnBody READ operationOnBody NOTIFY stateChanged)
+    // Extrude: New body / Join / Cut was chosen (otherwise the direction and
+    // the preview decide it). The hints only promise what the choice does.
+    Q_PROPERTY(bool operationModeChosen READ operationModeChosen NOTIFY stateChanged)
     // The Text tool: the chip shows a text field for the words (setOperationText).
     Q_PROPERTY(bool operationTakesText READ operationTakesText NOTIFY stateChanged)
     Q_PROPERTY(QString operationText READ operationText NOTIFY stateChanged)
@@ -74,6 +84,11 @@ class AppController : public QObject {
     // (Main.qml binds Theme.safe*): the sketch's live values moved out from
     // under a finger stay inside them.
     Q_PROPERTY(QVariantList safeInsets READ safeInsets WRITE setSafeInsets NOTIFY viewChanged)
+    // How far the sketch's controls reach into the view [top, right, bottom,
+    // left] (Main.qml: in a compact window the top bar and the Finish bar,
+    // the hint and the tool strip): a sketch started on a face frames it
+    // between them (InteractionController::setFrameInsets).
+    Q_PROPERTY(QVariantList frameInsets READ frameInsets WRITE setFrameInsets NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
@@ -129,6 +144,10 @@ class AppController : public QObject {
     // commit's tree; ui/Licenses) and what identifies it ("build 57, commit ...").
     Q_PROPERTY(QString sourceCodeUrl READ sourceCodeUrl CONSTANT)
     Q_PROPERTY(QString buildDescription READ buildDescription CONSTANT)
+    // The system share sheet is there (iPhone / iPad; a stub in the
+    // acceptance run): exports into the app folder open it, and File ->
+    // Share Project... shares the project file.
+    Q_PROPERTY(bool canShare READ canShare NOTIFY shareChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -152,6 +171,9 @@ public:
     bool operationCanCommit() const;
     bool operationHasValue() const;
     QString operationPrompt() const;
+    QString operationMode() const;
+    bool operationOnBody() const;
+    bool operationModeChosen() const;
     bool operationTakesText() const;
     QString operationText() const;
     bool operationTextTyped() const;
@@ -161,6 +183,8 @@ public:
     bool manipulatorDragging() const;
     QVariantList safeInsets() const;
     void setSafeInsets(const QVariantList& insets);
+    QVariantList frameInsets() const;
+    void setFrameInsets(const QVariantList& insets);
     QVariantList axisTriad() const;
     bool touchMode() const;
     void setTouchMode(bool on);
@@ -284,8 +308,10 @@ public:
     // Whether a project of that name is there already (Save then replaces it).
     Q_INVOKABLE bool appFolderHasProject(const QString& name) const;
     // Exports the visible bodies to <app folder>/Exports/<document title>.<format>
-    // ("stl", "3mf" or "step"), replacing an earlier export of that name.
-    Q_INVOKABLE bool exportToAppFolder(const QString& format);
+    // ("stl", "3mf" or "step"), replacing an earlier export of that name,
+    // then opens the share sheet with the file (when there is one), its
+    // popover pointing at `shareAnchor` (window coordinates: the File button).
+    Q_INVOKABLE bool exportToAppFolder(const QString& format, const QRectF& shareAnchor = QRectF());
     // Where to save without dialogs: the Documents folder on iOS and Android
     // (set at start), "" for file dialogs; tests and --app-folder set it.
     void setAppFolder(const QString& folder);
@@ -302,6 +328,42 @@ public:
     // The page for one of them: the full license texts with copyright,
     // notices and where the source is; "" for an unknown id.
     Q_INVOKABLE QString licenseText(const QString& id);
+    // ---- Sharing (iPhone / iPad; see ui/Share.h)
+    bool canShare() const { return bool(shareHandler_); }
+    // The share sheet to use: platformShareHandler() on iOS (set at start),
+    // none elsewhere; the acceptance run puts a stub in (nullptr: none).
+    void setShareHandler(ShareHandler handler);
+    // Opens the share sheet with `file` (an existing file), pointing at
+    // `anchor`. Its end is logged (sent / closed); only a failure is said
+    // in a message. False, with a message, when the file is not there;
+    // false when there is no share sheet.
+    Q_INVOKABLE bool shareFile(const QString& file, const QRectF& anchor = QRectF());
+    // File -> Share Project...: shares the project's file. The window saves
+    // first (asking for a name for a new project), so this refuses (false)
+    // a project without a file or with unsaved changes.
+    Q_INVOKABLE bool shareProject(const QRectF& anchor = QRectF());
+
+    // ---- Files from other apps ("Open in OpenShape"; ui/IncomingFiles.h)
+    // A file another app handed to OpenShape: on iOS, "Open in OpenShape" or
+    // sharing to OpenShape from the Files app or Mail, or a project tapped
+    // in the Files app (Qt turns UIKit's openURLContexts into a
+    // QFileOpenEvent, which eventFilter() passes here); on a Mac, Finder's
+    // Open With. A project is brought into the app folder (unless it is
+    // there) and opened; a STEP file is imported as a new project, as
+    // Home's Open and Import STEP do. With unsaved changes the file waits
+    // (incomingFileWaiting: the window asks "Save changes?" and then calls
+    // openPendingIncomingFile). False, with a message, when the file cannot
+    // be used.
+    Q_INVOKABLE bool openIncomingFile(const QUrl& url);
+    // Opens or imports the file openIncomingFile() kept (false if none).
+    Q_INVOKABLE bool openPendingIncomingFile();
+    // "Save changes?" was cancelled: the waiting file is dropped, and the
+    // copy made for it in OpenShape's folder (or its scratch copy) removed.
+    Q_INVOKABLE void dropPendingIncomingFile();
+    // Whether a file from another app waits for "Save changes?".
+    bool hasPendingIncomingFile() const { return pendingIncoming_.has_value(); }
+    // Qt delivers files from other apps to the application object.
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
     Q_INVOKABLE void createBox(double size = 20.0);
     Q_INVOKABLE void undo();
@@ -390,6 +452,9 @@ signals:
     void homeChanged();
     void preferencesChanged();
     void appFolderChanged();
+    void shareChanged();
+    // A file from another app waits for "Save changes?" (openIncomingFile).
+    void incomingFileWaiting();
 
 private:
     void attach();
@@ -415,6 +480,21 @@ private:
     std::vector<unsigned char> thumbnailPng() const;
     // The visible bodies written as STL, 3MF or STEP (by `format`).
     Status writeExport(const QString& format, const std::filesystem::path& path);
+    // Where files from outside go (ui/IncomingFiles.h): the app folder, a
+    // scratch folder for STEP copies and the system's Inbox.
+    IncomingPlaces incomingPlaces() const;
+    // Import STEP (File menu, Home): with an app folder the file is read
+    // through a scratch copy when it is outside the folder (the picker's
+    // files lie outside the sandbox on iOS).
+    bool importStepFrom(const QUrl& url, bool asProject);
+    // Reads `path` (named `sourceName` in the step) into this document or a new one.
+    bool importStepFile(const QString& path, const QString& sourceName, bool asProject);
+    // Opens a project file as it is (no staging).
+    bool openProjectFile(const QString& path);
+    // Removes what stageIncomingFile made for a file that is not used after
+    // all: a new copy in the app folder, or a scratch copy (never the open
+    // project's file).
+    void discardStagedFile(const StagedFile& staged) const;
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
@@ -446,6 +526,10 @@ private:
     bool homeVisible_ = false;
     QUrl nextFileChoice_;
     QString appFolder_; // see savesToAppFolder
+    ShareHandler shareHandler_;
+    // A file from another app, brought in and waiting for "Save changes?".
+    std::optional<StagedFile> pendingIncoming_;
+    QString pendingIncomingName_; // its name as it came (the STEP step's source)
 };
 
 } // namespace os::ui

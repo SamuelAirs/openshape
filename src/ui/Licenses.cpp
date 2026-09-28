@@ -159,7 +159,11 @@ QString librarySourcesText(const BuildInfo& build)
         return QString::fromLatin1(kRepositoryUrl) + QStringLiteral("/releases/tag/") + build.releaseTag
                + QStringLiteral(" (the file OpenShape-") + build.releaseTag.mid(1) + QStringLiteral("-ios-sources.tar)");
     }
-    return QStringLiteral("the download addresses and SHA-256 checksums in scripts/ios/sources.txt of that source code");
+    // A build between releases (TestFlight builds of main): the pins in its
+    // commit; the releases keep checked copies of each pinned set.
+    return QStringLiteral("the download addresses and SHA-256 checksums in scripts/ios/sources.txt of that source code; ")
+           + QString::fromLatin1(kRepositoryUrl)
+           + QStringLiteral("/releases keeps copies of them (the files OpenShape-<version>-ios-sources.tar)");
 }
 
 QString buildDescription(const BuildInfo& build)

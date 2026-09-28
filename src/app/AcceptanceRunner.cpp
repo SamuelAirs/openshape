@@ -121,7 +121,8 @@ void AcceptanceRunner::type(const QString& text)
     }
 }
 
-void AcceptanceRunner::touchTap(const QList<QPointF>& points)
+namespace {
+QPointingDevice* acceptanceTouchScreen()
 {
     static QPointingDevice* device = [] {
         auto* d = new QPointingDevice(QStringLiteral("OpenShape acceptance touch"), 4242, QInputDevice::DeviceType::TouchScreen,
@@ -130,6 +131,27 @@ void AcceptanceRunner::touchTap(const QList<QPointF>& points)
         QWindowSystemInterface::registerInputDevice(d);
         return d;
     }();
+    return device;
+}
+} // namespace
+
+void AcceptanceRunner::touchPoint(QPointF p, int state)
+{
+    QWindowSystemInterface::TouchPoint tp;
+    tp.id = 1;
+    tp.state = QEventPoint::State(state);
+    tp.area = QRectF(nativeGlobal(p) - QPointF(3, 3), QSizeF(6, 6)); // native pixels, like the mouse
+    tp.pressure = tp.state == QEventPoint::State::Released ? 0 : 1;
+    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(window_, acceptanceTouchScreen(), {tp});
+}
+
+void AcceptanceRunner::touchPress(QPointF p) { touchPoint(p, int(QEventPoint::State::Pressed)); }
+void AcceptanceRunner::touchMove(QPointF p) { touchPoint(p, int(QEventPoint::State::Updated)); }
+void AcceptanceRunner::touchRelease(QPointF p) { touchPoint(p, int(QEventPoint::State::Released)); }
+
+void AcceptanceRunner::touchTap(const QList<QPointF>& points)
+{
+    QPointingDevice* device = acceptanceTouchScreen();
     auto frame = [&](QEventPoint::State state) {
         QList<QWindowSystemInterface::TouchPoint> list;
         int id = 1;
@@ -191,13 +213,33 @@ void polishTree(QQuickItem* root)
 
 bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifiers mods)
 {
+    const std::optional<QPointF> center = reachItem(objectName);
+    if (!center)
+        return false;
+    OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center->x() << "," << center->y();
+    click(*center, mods);
+    return true;
+}
+
+bool AcceptanceRunner::tapItem(const QString& objectName)
+{
+    const std::optional<QPointF> center = reachItem(objectName);
+    if (!center)
+        return false;
+    OS_LOG(Info, App) << "tapItem: '" << objectName.toStdString() << "' at " << center->x() << "," << center->y();
+    touchTap({*center});
+    return true;
+}
+
+std::optional<QPointF> AcceptanceRunner::reachItem(const QString& objectName)
+{
     // Declared items are QObject children of the window; generated delegates
     // are only reachable through the visual tree.
     auto* item = findItem(objectName);
     if (!item || !item->isVisible() || !item->isEnabled()) {
         OS_LOG(Warning, App) << "clickItem: '" << objectName.toStdString() << "' "
                              << (!item ? "not found" : !item->isVisible() ? "not visible" : "disabled");
-        return false;
+        return std::nullopt;
     }
     // Buttons created by the last input (e.g. the actions of a new selection)
     // are not laid out until the next frame: lay out their rows now, from the
@@ -236,10 +278,7 @@ bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifier
             contentX = topLeft.x() + item->width() - p->width();
         p->setProperty("contentX", contentX);
     }
-    const QPointF center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
-    OS_LOG(Info, App) << "clickItem: '" << objectName.toStdString() << "' at " << center.x() << "," << center.y();
-    click(center, mods);
-    return true;
+    return item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
 }
 
 // ---- Measurements -----------------------------------------------------------------
@@ -1148,6 +1187,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     // without a simulated safe area or an open compact panel.
     window_->setProperty("simulatedSafeArea", QVariant());
     app_->setAppFolder(initialAppFolder_); // a scenario may save as on an iPhone
+    app_->setShareHandler(ui::platformShareHandler()); // ...and put a stub share sheet in
     window_->setProperty("historyOpen", false);
     window_->setProperty("viewMenuOpen", false);
     if (window_->size() != initialSize_) {

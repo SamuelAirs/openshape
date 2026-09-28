@@ -1,0 +1,53 @@
+# Attaches the source code of the LGPL libraries a published Windows release
+# ships to that release (TD-46): the MSYS2 source archives its package's
+# THIRD_PARTY_LICENSES.txt names, and OpenCASCADE's source and patches as
+# that tag's scripts/windows/build-occt.sh pins them (scripts/ci/mirror-sources.sh).
+# release.yml does this for every new release; this workflow catches up
+# releases published before it did (v0.1.0). It runs once when this file
+# changes on main (for v0.1.0) and by hand for any tag (Actions → Attach
+# sources → Run workflow). Files already attached are replaced.
+name: Attach sources
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. v0.1.0)
+        required: true
+        default: v0.1.0
+  push:
+    branches: [main]
+    paths: ['.github/workflows/attach-sources.yml']
+
+permissions:
+  contents: write # gh release upload
+
+concurrency:
+  group: attach-sources
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag || 'v0.1.0' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the tag's build-occt.sh
+      - name: The release's license list
+        run: |
+          mkdir -p pkg
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-windows-x64.zip' --dir pkg
+          # The zip holds the package as OpenShape-<version>/...
+          unzip -j -o pkg/*-windows-x64.zip '*/THIRD_PARTY_LICENSES.txt' -d pkg
+          git show "$TAG:scripts/windows/build-occt.sh" > pkg/build-occt.sh
+          echo "::notice title=Sources::$(grep -c '^Source code: https://repo.msys2.org' pkg/THIRD_PARTY_LICENSES.txt) MSYS2 source links in $TAG's package"
+      - name: Download the sources
+        run: bash scripts/ci/mirror-sources.sh pkg/THIRD_PARTY_LICENSES.txt sources pkg/build-occt.sh
+      - name: Attach them to the release
+        run: |
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber sources/*
+          echo "::notice title=Sources::$(ls sources | wc -l) files ($(du -sh sources | cut -f1)) attached to $TAG"

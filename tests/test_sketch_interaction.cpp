@@ -10,6 +10,7 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "interaction/TouchGestures.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -79,6 +80,158 @@ struct Harness {
 };
 
 } // namespace
+
+// Touch frames through the gesture recognizer, routed as ViewportItem routes
+// them (owner report from an iPhone, 2026-09-27: "when I try to zoom or
+// navigate in a sketch, I just make a rectangle").
+namespace {
+struct TouchFeed {
+    InteractionController& controller;
+    TouchGestureRecognizer recognizer;
+    double time = 0;
+    void frame(const std::vector<TouchPoint>& points)
+    {
+        time += 0.02;
+        using Kind = TouchIntent::Kind;
+        for (const auto& intent : recognizer.update(points, time)) {
+            PointerEvent e;
+            e.device = PointerDevice::Touch;
+            e.button = PointerButton::Left;
+            e.position = intent.position;
+            switch (intent.kind) {
+            case Kind::PointerPress: controller.pointerPress(e); break;
+            case Kind::PointerMove: controller.pointerMove(e); break;
+            case Kind::PointerRelease: controller.pointerRelease(e); break;
+            case Kind::PointerCancel: controller.cancelPointer(); break;
+            case Kind::DoubleTap: controller.pointerDoubleClick(e); break;
+            case Kind::Pan: controller.twoFingerPan(intent.from, intent.to); break;
+            case Kind::Pinch: controller.pinch(intent.position, intent.scale); break;
+            case Kind::Undo:
+            case Kind::Redo: break;
+            }
+        }
+    }
+    void tap(Vec2 p)
+    {
+        frame({{1, p, TouchPoint::State::Pressed}});
+        frame({{1, p, TouchPoint::State::Released}});
+        time += 1.0; // not a double tap with the next one
+    }
+    // One finger: down, a stroke, up.
+    void stroke(Vec2 from, Vec2 to)
+    {
+        using S = TouchPoint::State;
+        frame({{1, from, S::Pressed}});
+        for (int i = 1; i <= 8; ++i)
+            frame({{1, from + (to - from) * (i / 8.0), S::Moved}});
+        frame({{1, to, S::Released}});
+        time += 1.0;
+    }
+    // Two fingers land (the first a moment earlier), spread and move, lift.
+    void pinch(Vec2 a, Vec2 b, double spread, Vec2 shift)
+    {
+        using S = TouchPoint::State;
+        frame({{1, a, S::Pressed}});
+        frame({{1, a, S::Stationary}, {2, b, S::Pressed}});
+        const Vec2 mid = (a + b) * 0.5;
+        for (int i = 1; i <= 8; ++i) {
+            const double f = 1 + (spread - 1) * i / 8.0;
+            const Vec2 s = shift * (i / 8.0);
+            frame({{1, mid + (a - mid) * f + s, S::Moved}, {2, mid + (b - mid) * f + s, S::Moved}});
+        }
+        const Vec2 ea = mid + (a - mid) * spread + shift, eb = mid + (b - mid) * spread + shift;
+        frame({{1, ea, S::Released}, {2, eb, S::Stationary}});
+        frame({{2, eb, S::Released}});
+        time += 1.0;
+    }
+};
+} // namespace
+
+TEST(SketchInteraction, TwoFingerZoomAndPanNeverDraw)
+{
+    Harness h;
+    h.controller.setTouchLayout(true);
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    ASSERT_EQ(h.session().tool(), SketchTool::Rectangle);
+    TouchFeed touch{h.controller, {}};
+    const double heightBefore = h.controller.camera().orthoHeight + h.controller.camera().distance;
+
+    // Pinch to zoom, then pan with two fingers: nothing is drawn, no corner
+    // is left waiting, and the view did change.
+    touch.pinch({500, 400}, {700, 420}, 1.8, {0, 0});
+    EXPECT_FALSE(h.session().isDrawing()) << "the pinch's first finger left a corner placed";
+    touch.pinch({500, 400}, {640, 400}, 1.0, {120, 60});
+    EXPECT_FALSE(h.session().isDrawing());
+    EXPECT_NE(h.controller.camera().orthoHeight + h.controller.camera().distance, heightBefore);
+
+    // The next taps draw exactly one rectangle, from where they were.
+    touch.tap({400, 300});
+    EXPECT_TRUE(h.session().isDrawing());
+    touch.tap({600, 450});
+    EXPECT_FALSE(h.session().isDrawing());
+    EXPECT_EQ(h.session().sketch().lines().size(), 4u);
+
+    // A rectangle under way (first corner tapped) survives a pinch in between.
+    touch.tap({300, 300});
+    ASSERT_TRUE(h.session().isDrawing());
+    touch.pinch({500, 500}, {700, 520}, 0.7, {0, 0});
+    EXPECT_TRUE(h.session().isDrawing()) << "a corner placed before the pinch stays";
+    touch.tap({350, 360});
+    EXPECT_FALSE(h.session().isDrawing());
+    EXPECT_EQ(h.session().sketch().lines().size(), 8u);
+}
+
+// Owner report from an iPhone (2026-09-27): "when I touch and drag to draw a
+// line, [it] draws a line from [where] I touch the screen to ... the last
+// place my finger touched". Each stroke is a line of its own; taps from point
+// to point still chain.
+TEST(SketchInteraction, EachStrokeIsALineOfItsOwn)
+{
+    Harness h;
+    h.controller.setTouchLayout(true);
+    ASSERT_TRUE(h.controller.startSketch().ok());
+    h.controller.skipAnimation();
+    h.controller.setSketchTool(SketchTool::Line);
+    TouchFeed touch{h.controller, {}};
+    const auto& s = [&]() -> const sketch::Sketch& { return h.session().sketch(); };
+    const std::size_t base = s().points().size(); // the sketch's origin point
+
+    touch.stroke({300, 300}, {500, 300});
+    EXPECT_EQ(s().lines().size(), 1u);
+    EXPECT_FALSE(h.session().isDrawing()) << "a stroke leaves no chain waiting";
+    touch.stroke({300, 450}, {500, 450});
+    EXPECT_EQ(s().lines().size(), 2u);
+    EXPECT_EQ(s().points().size(), base + 4) << "the second stroke is not joined to the first";
+    // A stroke that starts on an existing end joins it (it snaps there).
+    touch.stroke({500, 450}, {500, 600});
+    EXPECT_EQ(s().lines().size(), 3u);
+    EXPECT_EQ(s().points().size(), base + 5);
+
+    // Taps from point to point chain as before.
+    touch.tap({700, 200});
+    touch.tap({800, 200});
+    touch.tap({800, 300});
+    EXPECT_EQ(s().lines().size(), 5u);
+    EXPECT_EQ(s().points().size(), base + 8);
+    EXPECT_TRUE(h.session().isDrawing()) << "the chain waits for the next tap";
+    // A stroke somewhere else starts a new line: the chain ends there.
+    touch.stroke({200, 650}, {400, 700});
+    EXPECT_EQ(s().lines().size(), 6u);
+    EXPECT_EQ(s().points().size(), base + 10) << "not joined to the chain's last point";
+    EXPECT_FALSE(h.session().isDrawing());
+
+    // Rectangle: a corner tapped, then a stroke elsewhere draws the stroke's
+    // rectangle (the tapped corner is dropped).
+    h.controller.setSketchTool(SketchTool::Rectangle);
+    touch.tap({150, 150});
+    ASSERT_TRUE(h.session().isDrawing());
+    touch.stroke({600, 500}, {700, 600});
+    EXPECT_FALSE(h.session().isDrawing());
+    EXPECT_EQ(s().lines().size(), 10u);
+    const Vec2 a = h.sketchScreen(s().point(s().lines().rbegin()->second.start)->position);
+    EXPECT_GT(a.x, 550) << "the rectangle is where the stroke was, not at the tapped corner";
+}
 
 // Milestone 1 workflow: sketch on XY, rectangle with typed 60 x 40, finish,
 // select the profile, extrude 20 mm, fillet the four vertical edges 3 mm.
@@ -1810,7 +1963,11 @@ TEST(SketchInteraction, ProfileBesideABoxWinsOverAnEdgeBehindIt)
 // point a few pixels inside that edge is nearer the eye than the edge), or a
 // body's bottom edge beside a sketch on the ground. A click over the sketch
 // within the pick tolerance of such an edge picks the edge, in both
-// projections, with the mouse and with touch.
+// projections, with the mouse and with touch. Over a sketch drawn on the
+// body's face a finger gets only a mouse's reach (6 px) to that body's edges
+// (at 18 px the edge took most taps meant for a small sketch region on a
+// phone, 2026-09-27); a sketch on no body (the ground) leaves them a
+// finger's reach, and so does the face beside the sketch.
 TEST(SketchInteraction, EdgesInAnUnusedSketchPlaneStayReachable)
 {
     for (const auto projection : {Camera::Projection::Orthographic, Camera::Projection::Perspective}) {
@@ -1850,17 +2007,23 @@ TEST(SketchInteraction, EdgesInAnUnusedSketchPlaneStayReachable)
         for (const auto device : {PointerDevice::Mouse, PointerDevice::Touch}) {
             const auto profile = InputProfile::forDevice(device);
             for (const double pixels : {2.0, 0.6 * profile.pickTolerance}) {
+                const bool edge = pixels <= InputProfile::forDevice(PointerDevice::Mouse).pickTolerance;
                 // Inside the top face, off its far edge.
                 const Vec3 farEdge{0, 10, 20};
                 const Vec3 inside{0, 10 - pixels * camera.pixelSize(farEdge), 20};
                 const auto far = h.controller.pickAt(camera.project(inside), profile);
-                ASSERT_EQ(far.kind, sel::PickKind::Edge) << "far edge, " << pixels << " px";
-                EXPECT_NEAR(far.point.y, 10.0, 1e-6);
-                EXPECT_NEAR(far.point.z, 20.0, 1e-6);
+                if (!edge) {
+                    EXPECT_EQ(far.kind, sel::PickKind::Profile) << "a finger " << pixels << " px inside the far edge";
+                } else {
+                    ASSERT_EQ(far.kind, sel::PickKind::Edge) << "far edge, " << pixels << " px";
+                    EXPECT_NEAR(far.point.y, 10.0, 1e-6);
+                    EXPECT_NEAR(far.point.z, 20.0, 1e-6);
+                }
                 // On the ground sketch, in front of the bottom front edge.
                 const Vec3 bottomEdge{0, -10, 0};
                 const Vec3 inFront{0, -10 - pixels * camera.pixelSize(bottomEdge), 0};
                 const auto bottom = h.controller.pickAt(camera.project(inFront), profile);
+                // The ground sketch is on no body: the box's edges keep a finger's reach.
                 ASSERT_EQ(bottom.kind, sel::PickKind::Edge) << "bottom edge, " << pixels << " px";
                 EXPECT_NEAR(bottom.point.y, -10.0, 1e-6);
                 EXPECT_NEAR(bottom.point.z, 0.0, 1e-6);

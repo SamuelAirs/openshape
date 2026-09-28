@@ -15,32 +15,42 @@ Rectangle {
 
     required property AppController app
     // Save: the window saves (asking for a file if there is none), then
-    // continues with the action; Don't Save: the action runs now.
-    signal saveRequested(var action)
+    // continues with the action; Don't Save: the action runs now. Cancel
+    // runs `cancelled` if the question came with one (also passed on with
+    // Save, for a save that does not happen).
+    signal saveRequested(var action, var cancelled)
 
     property var pendingAction: null
+    property var pendingCancelled: null
 
-    function ask(action) {
+    function ask(action, cancelled) {
         if (visible)
             return // one question at a time: the pending action is the one asked about
         pendingAction = action
+        pendingCancelled = cancelled || null
         visible = true
         forceActiveFocus()
     }
     function finish(save) {
         const action = pendingAction
+        const cancelled = pendingCancelled
         pendingAction = null
+        pendingCancelled = null
         visible = false
         if (!action)
             return
         if (save)
-            saveRequested(action)
+            saveRequested(action, cancelled)
         else
             action()
     }
     function cancel() {
+        const cancelled = pendingCancelled
         pendingAction = null
+        pendingCancelled = null
         visible = false
+        if (cancelled)
+            cancelled()
     }
 
     color: "#66000000"
