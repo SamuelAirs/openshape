@@ -12,6 +12,7 @@
 #include "geometry/Modeling.h"
 #include "geometry/Text.h"
 #include "interaction/TouchWording.h"
+#include "interaction/ViewCube.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -398,6 +399,37 @@ void InteractionController::skipAnimation()
         return;
     animation_->start -= std::chrono::seconds(10);
     advanceAnimation();
+}
+
+void InteractionController::setViewDirection(const Vec3& direction, bool animate)
+{
+    Camera to = camera_;
+    to.lookFrom(direction);
+    if (animate) {
+        startAnimation(to);
+    } else {
+        animation_.reset();
+        camera_ = to;
+        notifyView();
+    }
+}
+
+void InteractionController::orbitBy(double dxPixels, double dyPixels)
+{
+    animation_.reset();
+    camera_.orbit(dxPixels, dyPixels, camera_.target);
+    notifyView();
+}
+
+bool InteractionController::tapViewCube(Vec2 box)
+{
+    const ViewCubeTarget target = ViewCube::hit(camera_, box);
+    switch (target.kind) {
+    case ViewCubeTarget::Kind::None: return false;
+    case ViewCubeTarget::Kind::Face: setStandardView(target.face); return true;
+    case ViewCubeTarget::Kind::Corner: setViewDirection(target.direction); return true;
+    }
+    return false;
 }
 
 // ---- Input -----------------------------------------------------------------------

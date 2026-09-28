@@ -90,6 +90,9 @@ class AppController : public QObject {
     // between them (InteractionController::setFrameInsets).
     Q_PROPERTY(QVariantList frameInsets READ frameInsets WRITE setFrameInsets NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
+    // The view cube (AxisTriad.qml): its six faces and twelve edges as
+    // interact::ViewCube::layout gives them, in its box coordinates.
+    Q_PROPERTY(QVariantMap viewCube READ viewCube NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
     Q_PROPERTY(bool touchMode READ touchMode NOTIFY touchModeChanged)
@@ -186,6 +189,14 @@ public:
     QVariantList frameInsets() const;
     void setFrameInsets(const QVariantList& insets);
     QVariantList axisTriad() const;
+    QVariantMap viewCube() const;
+    // The view cube, at box coordinates (u, v) in [-1, 1] (u right, v down):
+    // what is there (interact::ViewCubeTarget::id, -1 off the cube), a tap
+    // there (a face's standard view or a corner's isometric view; false off
+    // the cube) and a drag's orbit, whatever tool is armed.
+    Q_INVOKABLE int viewCubeTarget(double u, double v) const;
+    Q_INVOKABLE bool tapViewCube(double u, double v);
+    Q_INVOKABLE void orbitView(double dxPixels, double dyPixels);
     bool touchMode() const;
     void setTouchMode(bool on);
     bool penMode() const;

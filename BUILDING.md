@@ -89,6 +89,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario viewcube   # the view cube: Top face and a corner clicked, a drag orbits with the Line tool armed; then by finger at 402x874 and 874x402
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario appfolder,share,openin   # iPhone / iPad files: saving by name, the share sheet (stub), Open in OpenShape
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size

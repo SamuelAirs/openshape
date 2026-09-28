@@ -7,7 +7,11 @@ chosen by the owner on 2026-09-25.
 
 - Everything outside `third_party/` is OpenShape's own code under MPL-2.0.
   Every source file starts with the MPL notice (Exhibit A of the license);
-  new files get it too — copy it from any existing file.
+  new files get it too — copy it from any existing file. A few files adapt
+  code from OpenShape3D (MIT): after the MPL notice their header says which
+  portions and names `third_party/openshape3d/LICENSE`, and
+  `third_party/openshape3d/README.md` lists them (MIT code may be
+  relicensed as part of an MPL file as long as its notice stays).
 - MPL-2.0 is a file-level copyleft: whoever distributes OpenShape, changed or
   not, must keep OpenShape's files available under the MPL. OpenShape may be
   combined with code under other licenses (including closed code) in a

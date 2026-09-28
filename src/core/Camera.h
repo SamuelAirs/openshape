@@ -71,6 +71,11 @@ public:
     void zoomAt(Vec2 screen, double factor);
     void fit(const Vec3& boxMin, const Vec3& boxMax);
     void setStandardView(StandardView view);
+    // Looks from `direction` (from the target towards the eye, any length),
+    // keeping the target and zoom: the view cube's corners. Straight up or
+    // down keeps the current yaw (the turntable's right stays level); a zero
+    // direction changes nothing.
+    void lookFrom(const Vec3& direction);
 
     // Switches the projection, keeping the model about the same size on
     // screen (the perspective distance matches the orthographic height).

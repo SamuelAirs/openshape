@@ -91,6 +91,17 @@ public:
     bool isAnimating() const { return animation_.has_value(); }
     // Jumps to the end of a running camera animation (tests, reduced motion).
     void skipAnimation();
+    // Looks from any direction (from the target towards the eye), keeping
+    // the target and zoom: the view cube's corners.
+    void setViewDirection(const Vec3& direction, bool animate = true);
+    // Orbits around the view's center by a drag of (dx, dy) pixels, whatever
+    // is armed (a sketch tool, a manipulator): the view cube's drag, which
+    // never reaches the tool.
+    void orbitBy(double dxPixels, double dyPixels);
+    // A tap on the view cube at `box` (ViewCube's box coordinates): a face
+    // turns to its standard view, a corner to the isometric view down its
+    // diagonal (animated). False, and nothing changes, off the cube.
+    bool tapViewCube(Vec2 box);
 
     // ---- Input ----
     void pointerPress(const PointerEvent& event);

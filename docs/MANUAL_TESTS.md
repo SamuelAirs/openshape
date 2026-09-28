@@ -45,8 +45,11 @@ odd: a screenshot and a sentence is plenty. Starting the app with
      dark one says "Fully sized …". Each drag is one Undo.
 4. **Extrude options.** Click a sketch profile, then "Symmetric" and type
    `10` (5 mm each side); or "Up to face" and click the top of another body.
-5. **Axes.** Blue Z axis through the origin and the X/Y/Z marker above the
-   view buttons; orbit and watch the marker turn.
+5. **Axes and the view cube.** Blue Z axis through the origin and the view
+   cube above the view buttons; orbit and watch the cube turn (edges: X
+   red, Y green, Z blue). Click its Top face, then a corner (an isometric
+   view down that corner), then drag the cube: the view orbits. Press `K`,
+   arm Line and drag the cube again: it orbits and draws nothing.
 6. **About.** File → About OpenShape.
 7. **Touch layout (optional).** Add ` --touch` after `OpenShape.exe` in the
    shortcut's Properties → Target: bigger buttons and a Pen switch.
@@ -226,7 +229,14 @@ iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
    projects saved in OpenShape's folder say *OpenShape (Files app)*, not a
    long `/var/mobile/…` path, and the *OpenShape* title and **New project**
    sit below the clock and the Dynamic Island (they used to sit under them).
-8. **Before the App Store:** look through the listing texts and the twelve
+8. **The view cube (iPhone and iPad).** The cube under the **View**
+   button (iPhone) or above the view buttons (iPad) turns with the model.
+   Tap its **Top** face, a **Front** face, a corner: the view turns there.
+   Start a sketch, arm **Line**, then drag the cube with one finger: the
+   view orbits and no line is drawn; lift the finger and draw a line as
+   usual. Does the cube feel big enough to hit its corners on the iPhone,
+   in portrait and in landscape? Is the drag's speed right?
+9. **Before the App Store:** look through the listing texts and the twelve
    screenshots in [APP_STORE.md](APP_STORE.md), section 3, and compare them
    with the app on your devices (the screenshots are made on Windows, so
    the font differs slightly).
