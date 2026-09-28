@@ -172,7 +172,7 @@ pointer and moves the pointer off the window, keeps the `--safe-area` insets
 free without shading them, hides a message left by building the scene, and
 saves the picture without an alpha channel (App Store Connect refuses those);
 a scene that has not produced its picture 3 minutes after it started exits
-with status 4.
+with status 4 (a watchdog thread: also when the scene hangs).
 `python scripts/dev/check_appstore_texts.py` checks the listing texts in
 docs/APP_STORE.md against Apple's length limits.
 

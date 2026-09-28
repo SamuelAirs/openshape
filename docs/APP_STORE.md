@@ -485,8 +485,8 @@ This beta is what will go on the App Store. Please model a real part you want to
 ```text
 Thank you for testing! Try these, then anything you like:
 1. New project, Box: tap the top face, drag the arrow or tap the value and type 35, then tap the check mark.
-2. Tap an edge and type a radius to round it. Shell the box (tap the top face, Shell, type 2).
-3. Sketch on a face: draw a rectangle and a circle with your finger or Apple Pencil, type their sizes, Finish sketch, then tap inside the circle and type -10 to cut a hole.
+2. Tap an edge, tap the value box and type a radius to round it. Shell the box (tap the top face, Shell, tap the value box, type 2).
+3. Sketch on a face: draw a rectangle and a circle with your finger or Apple Pencil, tap a size to type it, Finish sketch, then tap inside the circle, tap the value box and type -10 to cut a hole.
 4. Hole (M3, with the print allowance) and Text on a flat face.
 5. File, Save: give it a name. File, Export STL or 3MF: the share sheet opens; pick your slicer app, or AirDrop it to your computer. File, Share Project sends the project itself.
 6. In the Files app or Mail, tap a project (or a STEP file, then Share, OpenShape): it opens in OpenShape.
@@ -504,7 +504,7 @@ A 2-minute test path (iPhone or iPad):
 1. Launch: the Home screen appears. Tap New project.
 2. Tap Box (tool strip at the bottom on iPhone, tool palette on the left on iPad): a 20 mm cube appears.
 3. Tap the cube's top face. Drag the blue arrow up, or tap the value box, type 35 and tap the check mark: the cube is now 35 mm tall.
-4. Tap a vertical edge of the cube, type 4, tap the check mark: the edge is rounded (fillet).
+4. Tap a vertical edge of the cube, tap the value box, type 4 and tap the check mark: the edge is rounded (fillet).
 5. Tap the top face, then Sketch. Tap Circle and draw a circle with a finger. Tap Finish sketch. Tap inside the circle, tap the value box, type -10 and tap the check mark: a 10 mm deep hole is cut.
 6. File, Save: type a name and tap Save. The project is in the Files app: On My iPhone (or iPad), OpenShape. File, Export STL writes Exports/<name>.stl there and opens the share sheet (close it, or pick Save to Files).
 7. The question mark button opens the help card with all gestures. File, About OpenShape shows the version, the license, the source code link and the privacy policy link.

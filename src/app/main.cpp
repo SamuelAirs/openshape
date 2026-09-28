@@ -38,15 +38,23 @@
 #include <QtQuickControls2/QQuickStyle>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 Q_IMPORT_QML_PLUGIN(OpenShapePlugin)
 
 namespace {
+
+// Set once a --store-screenshot run has saved its picture (the watchdog
+// thread then leaves the process alone).
+std::atomic<bool> storeShotDone{false};
 
 // The log folder: in the user's app-data folder (on iPadOS in Documents,
 // which the Files app shows, so testers can send it), or <data-dir>/logs.
@@ -978,6 +986,7 @@ int main(int argc, char* argv[])
                 if (faceContrast)
                     OS_LOG(Info, App) << os::app::faceContrastReport(image, window, controller.interaction()).toStdString();
                 if (!ok || i + 1 >= views.size()) {
+                    storeShotDone = true;
                     QCoreApplication::exit(ok ? 0 : 2);
                     return;
                 }
@@ -1000,11 +1009,17 @@ int main(int argc, char* argv[])
                 QTimer::singleShot(1600, window, [whenBuilt] { (*whenBuilt)(); });
                 // A scene that never finishes must not leave a window open
                 // (appstore_screenshots.sh may have been stopped meanwhile):
-                // give up after 3 minutes (Home takes about 20 s).
-                QTimer::singleShot(180 * 1000, window, [] {
+                // give up after 3 minutes (Home takes about 20 s). The scene
+                // is built on the GUI thread, so a QTimer could not fire while
+                // it hangs; this thread ends the process whatever the GUI does.
+                std::thread([] {
+                    std::this_thread::sleep_for(std::chrono::minutes(3));
+                    if (storeShotDone.load())
+                        return;
                     OS_LOG(Error, App) << "store scene: no screenshot after 3 minutes; giving up";
-                    QCoreApplication::exit(4);
-                });
+                    std::fflush(nullptr);
+                    std::_Exit(4);
+                }).detach();
             } else {
                 QTimer::singleShot(1600, window, [next] { (*next)(0); });
             }

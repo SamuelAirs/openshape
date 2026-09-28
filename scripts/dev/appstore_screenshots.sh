@@ -34,7 +34,8 @@
 # runs at a time. Should the script itself be killed without a chance to
 # clean up (TerminateProcess, `kill -9`), the shot in progress still ends
 # by itself: it saves its one picture into build/ and exits (at the latest
-# after 3 minutes once it has the lock, --store-screenshot's watchdog).
+# after 3 minutes once it has the lock, --store-screenshot's watchdog
+# thread, which also ends a scene that hangs).
 set -euo pipefail
 
 exe=${OPENSHAPE_EXE:-build/msys2-ucrt64/bin/OpenShape.exe}
