@@ -6,6 +6,7 @@
 
 #include "core/Timer.h"
 #include "geometry/Tessellation.h"
+#include "geometry/internal/Deadline.h"
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
@@ -109,16 +110,11 @@ TopoDS_Shape fuseAll(const TopTools_ListOfShape& solids, std::string& error)
         }
         tools.Append(s);
     }
-    BRepAlgoAPI_Fuse fuse;
-    fuse.SetArguments(arguments);
-    fuse.SetTools(tools);
-    fuse.SetNonDestructive(Standard_True); // inputs stay as they are (see runBoolean in Modeling.cpp)
-    fuse.Build();
-    if (fuse.HasErrors()) {
-        error = describeAlgoErrors(fuse);
-        return {};
-    }
-    return fuse.Shape();
+    // Inputs stay as they are; fuzzy and timed (runBoolean, KernelUtil.h).
+    const BooleanRun fuse = runBoolean(BOPAlgo_FUSE, arguments, tools);
+    if (fuse.shape.IsNull())
+        error = fuse.timedOut ? std::string("stopped by its time limit") : fuse.errors;
+    return fuse.shape;
 }
 
 // A point guaranteed to be inside the face: centroid of its largest triangle.
@@ -270,7 +266,8 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
         TopoDS_Shape result;
         TopTools_ListOfShape solids;
         for (const Shape& face : faces) {
-            BRepPrimAPI_MakePrism prism(occ(face), toVec(vector));
+            // From a copy: the sweep adds curves to the profile's edges (the sketch's cached region).
+            BRepPrimAPI_MakePrism prism(independentCopy(occ(face)), toVec(vector));
             prism.Build();
             if (!prism.IsDone())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "BRepPrimAPI_MakePrism not done");
@@ -287,11 +284,8 @@ Result<Shape> extrudeFaces(const std::vector<Shape>& faces, const Vec3& vector)
         result = fuseAll(solids, fuseError);
         if (result.IsNull())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + fuseError);
-        if (faces.size() > 1) {
-            ShapeUpgrade_UnifySameDomain unify(result, true, true, true);
-            unify.Build();
-            result = unify.Shape();
-        }
+        if (faces.size() > 1)
+            return finishMerged(result, "extrudeFaces", userMessage);
         return finishSolid(result, "extrudeFaces", userMessage);
     });
 }
@@ -334,7 +328,7 @@ Result<Shape> revolveFaces(const std::vector<Shape>& faces, const Vec3& axisOrig
         TopoDS_Shape result;
         TopTools_ListOfShape solids;
         for (const Shape& face : faces) {
-            BRepPrimAPI_MakeRevol revol(occ(face), ax, std::min(angle, 2 * kPi));
+            BRepPrimAPI_MakeRevol revol(independentCopy(occ(face)), ax, std::min(angle, 2 * kPi));
             revol.Build();
             if (!revol.IsDone())
                 return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "BRepPrimAPI_MakeRevol not done");

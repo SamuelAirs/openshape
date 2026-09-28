@@ -86,7 +86,7 @@ Steps steps(AcceptanceRunner& r)
         // Everything built into the app, and the third-party code inside Qt.
         QStringList missing;
         for (const char* id : {"source-offer", "openshape", "occt", "qt", "planegcs", "freetype", "libzip", "json", "eigen",
-                               "notosans", "qt:harfbuzz-ng", "qt:pcre2", "qt:libpng", "qt:unicode-cldr"})
+                               "notosans", "openshape3d", "qt:harfbuzz-ng", "qt:pcre2", "qt:libpng", "qt:unicode-cldr"})
             if (!r.findItem(QStringLiteral("license_") + QString::fromLatin1(id)))
                 missing << QString::fromLatin1(id);
         r.check(missing.isEmpty(), "licenses: the list has OpenShape, every library and Qt's third-party parts",

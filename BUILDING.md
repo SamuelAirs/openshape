@@ -573,9 +573,10 @@ docs/LICENSING.md, "The iOS app and the App Store"). The pieces:
 
 After changing a version in `sources.txt` (or `components.json`, or one of
 the repository's license files the app shows: `LICENSE`,
-`third_party/planegcs/COPYING.LIB`, `resources/fonts/OFL.txt`), regenerate
-and commit the texts (verified 2026-09-27 on Windows, Git Bash: 50
-entries, 51 texts, 277 KiB; the generation takes about 45 s):
+`third_party/planegcs/COPYING.LIB`, `resources/fonts/OFL.txt`,
+`third_party/openshape3d/LICENSE`), regenerate and commit the texts
+(verified 2026-09-27 on Windows, Git Bash: 51 entries, 52 texts, 278 KiB;
+the generation takes about 45 s):
 
 ```bash
 bash scripts/ios/mirror-sources.sh build/ios-sources      # the pinned archives (151 MB)

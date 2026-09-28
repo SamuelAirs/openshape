@@ -23,6 +23,8 @@ target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJE
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_build.cpp test_draft.cpp test_step.cpp
     test_text_geometry.cpp test_kernel_threads.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
+# Kernel robustness (partly adapted from OpenShape3D, third_party/openshape3d).
+target_sources(test_geometry PRIVATE test_ops_inputs_untouched.cpp test_brep_fuzz.cpp)
 # Text tests read the bundled font from the source tree (tests/TestFonts.h).
 target_compile_definitions(test_geometry PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 if(OPENSHAPE_OWN_OCCT)
@@ -42,6 +44,9 @@ target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_i
 # project saved by an older build (tests/data).
 target_compile_definitions(test_interaction PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     OPENSHAPE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# Time limits (also the preview worker's), fuzzy booleans, repairs, blends.
+target_sources(test_interaction PRIVATE test_kernel_hardening.cpp)
 
 openshape_add_test(test_sketch test_sketch.cpp test_sketch_drag.cpp)
 target_link_libraries(test_sketch PRIVATE openshape_sketch)

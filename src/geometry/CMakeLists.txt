@@ -17,6 +17,8 @@ add_library(openshape_geometry STATIC
     internal/KernelUtil.h
     internal/ShapeData.h
 )
+# Kernel robustness (partly adapted from OpenShape3D, third_party/openshape3d).
+target_sources(openshape_geometry PRIVATE internal/BrepScreen.cpp internal/BrepScreen.h internal/Deadline.h)
 target_link_libraries(openshape_geometry
     PUBLIC openshape_core
     PRIVATE

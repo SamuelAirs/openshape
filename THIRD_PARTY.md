@@ -16,6 +16,7 @@ for the verified Windows build (MSYS2 UCRT64, 2026-09-25).
 | GCC / MinGW-w64 runtime | 16.2.0 | GPL-3.0 with GCC Runtime Library Exception | Compiler and runtime | dynamic |
 | FreeType | 2.14.3 | FTL (or GPL-2.0; used under FTL) | Fonts (OCCT's TKService: the Text tool's glyph outlines; Qt) | dynamic |
 | Noto Sans (Regular, Bold) | 2.013 (see below) | SIL Open Font License 1.1 | Letters of the Text tool (emboss / deboss) | built into OpenShape.exe as a Qt resource; `OFL.txt` shipped as `NotoSans-OFL.txt` |
+| OpenShape3D (Laan Labs) | commit be3f2fc | MIT | kernel robustness code adapted into src/geometry (see third_party/openshape3d/README.md) | compiled into OpenShape |
 | NSIS | 3.12 | zlib/libpng; its LZMA module CPL-1.0 with a linking exception | Windows installer (`packaging/windows/openshape.nsi`) | build tool; its installer stub is part of the setup .exe |
 
 **Windows releases** (`msys2-ucrt64-release`) link OpenShape's own
@@ -47,6 +48,16 @@ in use:
 | `NotoSans-Regular.ttf` | `b092b091c904c12a96c9189e3d66a9eabe0818fdf0572fcc5f23f1d37efbc76f` |
 | `NotoSans-Bold.ttf` | `01a869026d170ee232c7ed2f5254e482de1dcc7de91ad1310e6c6ca6b008a947` |
 | `OFL.txt` | `cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a` |
+
+**OpenShape3D**: Copyright (c) 2026 Laan Labs and the openshape3d
+contributors, MIT License (`third_party/openshape3d/LICENSE`, a verbatim
+copy of theirs). Parts of `src/geometry` (deadlines, the BRep text screen,
+the repair policy, fuzzy booleans, blend and shell retries) and two tests
+are adapted from <https://github.com/laanlabs/openshape3d> at commit
+be3f2fc; `third_party/openshape3d/README.md` lists their functions and our
+files. Each such file keeps OpenShape's MPL notice first, followed by the
+OpenShape3D copyright line; the app shows the MIT text under About →
+Licenses (iOS and Windows alike).
 
 Vendored code: `third_party/planegcs` (unmodified upstream files plus
 OpenShape shims; see its README). It is built as a separate shared library

@@ -1,12 +1,19 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Portions of this file are adapted from OpenShape3D
+// (https://github.com/laanlabs/openshape3d, commit be3f2fc),
+// Copyright (c) 2026 Laan Labs and the openshape3d contributors,
+// licensed under the MIT License (third_party/openshape3d/LICENSE).
 
 #include "geometry/Tessellation.h"
 
 #include "core/Log.h"
 #include "core/Timer.h"
 #include "geometry/Modeling.h"
+#include "geometry/internal/BrepScreen.h"
+#include "geometry/internal/Deadline.h"
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
@@ -84,9 +91,26 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
 
     try {
         OS_KERNEL_SIGNALS_TO_EXCEPTIONS
-        // Faces are meshed in parallel inside this one call (OCCT synchronizes it).
-        BRepMesh_IncrementalMesh mesher(occShape, deflection, params.relative, params.angularDeflection, true);
-        (void)mesher;
+        // A shape with an infinite or NaN coordinate can make the mesher
+        // loop forever (a check adapted from OS3DFiniteBounds).
+        if (!detail::finiteBounds(occShape)) {
+            OS_LOG(Warning, Geometry) << "tessellate: the shape has no finite bounds; not meshed";
+            return mesh;
+        }
+        // Faces are meshed in parallel inside this one call (OCCT
+        // synchronizes it), under the thread's time limit.
+        IMeshTools_Parameters meshing;
+        meshing.Deflection = deflection;
+        meshing.Angle = params.angularDeflection;
+        meshing.Relative = params.relative;
+        meshing.InParallel = true;
+        Handle(detail::KernelDeadline) deadline = new detail::KernelDeadline();
+        BRepMesh_IncrementalMesh mesher(occShape, meshing, deadline->Start());
+        if (deadline->fired()) {
+            OS_LOG(Warning, Kernel) << "tessellate: stopped by its time limit (" << kernelTimeLimit().count()
+                                    << " ms); not meshed";
+            return mesh;
+        }
 
         const auto& faces = shape.data()->faces;
         mesh.faceTriangleOffset.assign(static_cast<std::size_t>(faces.Extent()) + 1, 0);

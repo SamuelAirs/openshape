@@ -58,6 +58,13 @@ public:
         return r;
     }
 
+    // A technical note on a success, for the log (e.g. what a repair did).
+    Result&& withDeveloperMessage(std::string developerMessage) &&
+    {
+        developerMessage_ = std::move(developerMessage);
+        return std::move(*this);
+    }
+
     template <typename U>
     static Result failureFrom(const Result<U>& other)
     {

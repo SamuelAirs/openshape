@@ -6,6 +6,7 @@
 
 #include "core/Timer.h"
 #include "geometry/Modeling.h"
+#include "geometry/internal/Deadline.h"
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
@@ -537,38 +538,21 @@ Result<Shape> embossText(const Shape& body, const TextSpec& spec, const TextFram
         double toolVolume = 0;
         for (TopExp_Explorer it(prism.Shape(), TopAbs_SOLID); it.More(); it.Next()) {
             TopoDS_Shape solid = it.Current();
-            GProp_GProps props;
-            BRepGProp::VolumeProperties(solid, props);
-            if (props.Mass() < 0)
+            const double letterVolume = exactVolume(solid);
+            if (letterVolume < 0)
                 solid.Reverse();
-            toolVolume += std::abs(props.Mass());
+            toolVolume += std::abs(letterVolume);
             tools.Append(solid);
         }
         if (tools.IsEmpty())
             return R::failure(ErrorCode::KernelFailure, userMessage, "embossText: no letter solids");
-        TopoDS_Shape out;
-        if (raise) {
-            BRepAlgoAPI_Fuse op;
-            op.SetArguments(arguments);
-            op.SetTools(tools);
-            op.SetNonDestructive(Standard_True);
-            op.Build();
-            if (op.HasErrors() || !op.IsDone())
-                return R::failure(ErrorCode::KernelFailure, userMessage, "embossText: fuse failed: " + describeAlgoErrors(op));
-            out = op.Shape();
-        } else {
-            BRepAlgoAPI_Cut op;
-            op.SetArguments(arguments);
-            op.SetTools(tools);
-            op.SetNonDestructive(Standard_True);
-            op.Build();
-            if (op.HasErrors() || !op.IsDone())
-                return R::failure(ErrorCode::KernelFailure, userMessage, "embossText: cut failed: " + describeAlgoErrors(op));
-            out = op.Shape();
-        }
-        ShapeUpgrade_UnifySameDomain unify(out, true, true, true);
-        unify.Build();
-        auto result = finishSolid(unify.Shape(), "embossText", userMessage);
+        const BooleanRun op = runBoolean(raise ? BOPAlgo_FUSE : BOPAlgo_CUT, arguments, tools);
+        if (op.timedOut)
+            return tookTooLong<R>("embossText");
+        if (op.shape.IsNull())
+            return R::failure(ErrorCode::KernelFailure, userMessage,
+                              std::string("embossText: ") + (raise ? "fuse" : "cut") + " failed: " + op.errors);
+        auto result = finishMerged(op.shape, "embossText", userMessage, {occ(body)});
         if (!result)
             return result;
         // What it must have done: change the volume the right way, by no more
