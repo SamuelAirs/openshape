@@ -102,8 +102,6 @@ std::optional<QPointF> arrowPointOver(AcceptanceRunner& r, std::size_t index)
         const Vec2 s = camera.project(base + arrow.direction() * (length * t));
         const QPointF p(s.x, s.y);
         const auto hit = r.app().interaction().pickAt(s, interact::InputProfile::forDevice(device));
-        std::fprintf(stderr, "arrow t %.2f kind %d sketch %d item %s\n", t, int(hit.kind), int(hit.bodyId == sketches[index]->id()),
-                     r.itemAt(p) ? qPrintable(r.itemAt(p)->objectName()) : "-");
         if (hit.kind == sel::PickKind::Profile && hit.bodyId == sketches[index]->id() && r.itemAt(p)
             && r.itemAt(p)->objectName() == QLatin1String("viewport"))
             return p;
@@ -221,19 +219,20 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.key(Qt::Key_Escape);
             r.check(r.app().sketchCount() == 2, "loft: two sketches", QString::number(r.app().sketchCount()));
             zoomOutUnderArrow(r);
-            r.click(profilePoint(r, 0, {{4, 4, 0}, {26, 4, 0}, {4, 16, 0}, {26, 16, 0}, {15, 3, 0}}));
+            r.click(profilePoint(r, 0, {{15, 10, 0}, {15, 8, 0}, {13, 10, 0}, {4, 4, 0}, {26, 4, 0}}));
             r.check(r.app().operationTitle() == QStringLiteral("Extrude"), "loft: the rectangle is selected (extrude armed)",
                     r.app().operationTitle());
         },
         [&r] {
-            // The rectangle's arrow points up, over the circle on screen:
-            // Shift-clicked on the arrow (where it runs over the circle, when
-            // it does at this window size), the circle is picked.
+            // The rectangle was clicked under the circle, so its arrow (which
+            // starts where a profile is clicked) points up over the circle on
+            // screen: Shift-clicked on the arrow there, the circle is picked.
             const auto onArrow = arrowPointOver(r, 1);
             r.click(onArrow.value_or(profilePoint(r, 1, {{15, 10, 30}, {17, 11, 30}, {13, 9, 30}})), Qt::ShiftModifier);
             const auto& sel = r.app().interaction().selection();
             r.check(sel.size() == 2 && sel.allOfKind(sel::SelectionKind::SketchProfile), "loft: both profiles selected",
                     onArrow ? QStringLiteral("clicked on the rectangle's arrow") : QStringLiteral("the arrow is not over the circle"));
+            r.check(onArrow.has_value(), "loft: the click went through the rectangle's arrow");
             r.check(!r.app().operationActive(), "loft: no extrusion for two sketches' profiles");
             r.check(hint(r).startsWith(QStringLiteral("Loft joins these profiles")), "loft: the hint says what Loft does", hint(r));
             r.app().interaction().fitAll(false);
@@ -341,7 +340,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         [&r] {
             r.key(Qt::Key_Escape);
             zoomOutUnderArrow(r);
-            r.touchTap({profilePoint(r, 0, {{4, 4, 0}, {26, 4, 0}, {4, 16, 0}, {26, 16, 0}, {15, 3, 0}})});
+            r.touchTap({profilePoint(r, 0, {{15, 10, 0}, {15, 8, 0}, {13, 10, 0}, {4, 4, 0}, {26, 4, 0}})});
             r.check(r.app().touchMode(), "loft (touch): the tap turns the touch layout on");
             r.check(r.app().operationTitle() == QStringLiteral("Extrude"), "loft (touch): the rectangle tapped",
                     r.app().operationTitle());
@@ -352,7 +351,9 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             const auto& sel = r.app().interaction().selection();
             r.check(sel.size() == 2 && sel.allOfKind(sel::SelectionKind::SketchProfile),
                     "loft (touch): tapping the circle adds it",
-                    onArrow ? QStringLiteral("tapped on the rectangle's arrow") : QStringLiteral("the arrow is not over the circle"));
+                    (onArrow ? QStringLiteral("tapped on the rectangle's arrow") : QStringLiteral("the arrow is not over the circle"))
+                        + QStringLiteral(", selected ") + QString::number(sel.size()));
+            r.check(onArrow.has_value(), "loft (touch): the tap went through the rectangle's arrow");
             r.check(hint(r).contains(QStringLiteral("tap another profile to add it")) && !hint(r).contains(QStringLiteral("Shift"))
                         && !hint(r).contains(QStringLiteral("Esc")),
                     "loft (touch): the hint speaks of taps", hint(r));

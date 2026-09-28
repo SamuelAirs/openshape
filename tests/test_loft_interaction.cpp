@@ -260,6 +260,49 @@ TEST(LoftInteraction, TapsAddSectionsInOrder)
     EXPECT_NEAR(box.size().z, 30, 1e-6);
 }
 
+// A small circle on a construction plane, seen from afar: the plane's
+// outline is within a finger's reach (18 px) of the whole circle. A tap
+// inside the circle still takes the circle (the outline only within a
+// mouse's reach), so it can be a loft's next section on a phone.
+TEST(LoftInteraction, TapInsideASmallProfileOnAPlaneTakesTheProfile)
+{
+    Harness h;
+    const Uuid top = h.plane(30);
+    h.square(20);
+    const Uuid circle = h.circle(5, top);
+    h.view();
+    // Zoomed out until the plane's outline (20 mm from its middle: the
+    // model is small) is closer than 15 px to the circle's middle.
+    auto& camera = h.controller.camera();
+    auto far = [&] {
+        const Vec2 m = camera.project({0, 0, 30});
+        return std::max((camera.project({20, 0, 30}) - m).length(), (camera.project({0, 20, 30}) - m).length()) > 14;
+    };
+    for (int i = 0; i < 200 && far(); ++i)
+        h.controller.wheel(camera.project({0, 0, 30}), -1);
+    ASSERT_FALSE(far());
+    const Vec2 middle = camera.project({0, 0, 30});
+    const sel::PickResult hit = h.controller.pickAt(middle, InputProfile::forDevice(PointerDevice::Touch));
+    EXPECT_EQ(hit.kind, sel::PickKind::Profile);
+    EXPECT_EQ(hit.bodyId, circle);
+    // A mouse never reached the outline from there, and still does not.
+    EXPECT_EQ(h.controller.pickAt(middle, InputProfile::forDevice(PointerDevice::Mouse)).kind, sel::PickKind::Profile);
+    // Beside the circle the plane is still a finger's target.
+    const double radius = (camera.project({5, 0, 30}) - middle).length();
+    const sel::PickResult beside = h.controller.pickAt(middle + Vec2{radius + 4, 0}, InputProfile::forDevice(PointerDevice::Touch));
+    EXPECT_EQ(beside.kind, sel::PickKind::Datum);
+    EXPECT_EQ(beside.bodyId, top);
+    // And the tap adds the circle to the ground square: a loft.
+    h.view();
+    h.tap({3, 3, 0});
+    ASSERT_EQ(h.controller.selection().size(), 1u);
+    for (int i = 0; i < 200 && far(); ++i)
+        h.controller.wheel(camera.project({0, 0, 30}), -1);
+    h.tap({0, 0, 30});
+    EXPECT_EQ(h.controller.selection().size(), 2u);
+    EXPECT_TRUE(h.offers("loft"));
+}
+
 TEST(LoftInteraction, ProfilesInOnePlaneAreNoLoft)
 {
     Harness h;

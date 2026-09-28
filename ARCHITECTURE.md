@@ -939,6 +939,11 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   through the next profile on screen: a press on an untouched extrusion's
   arrow (value 0) released without moving, over a profile on another
   plane, is a click on that profile (`pointerRelease`, `Drag::travel`).
+  The arrow starts where the profile was clicked, so a click under the next
+  profile puts it there. A small profile sketched on a construction plane
+  seen from afar has the plane's outline within a finger's reach all
+  round: in `pickAt` a tap inside a profile of a sketch on that plane takes
+  the profile unless the outline is within a mouse's reach (6 px).
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as

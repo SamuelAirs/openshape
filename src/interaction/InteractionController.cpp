@@ -3228,10 +3228,20 @@ sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& p
     const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
     // Construction axes and plane outlines are thin, like edges: they win
     // over a face behind them (not over an edge nearer the pointer).
-    if (const sel::PickResult line = pickDatumLine(screen, profile, body, std::nullopt); line.hit())
-        return line;
     const sel::PickResult region = pickProfile(screen);
     const double slack = camera_.pixelSize(region.point) * 2;
+    if (const sel::PickResult line = pickDatumLine(screen, profile, body, std::nullopt); line.hit()) {
+        // A tap inside a profile sketched on that plane, near its outline: at
+        // a finger's reach (18 px) the outline took every tap on a small
+        // circle drawn on the plane (a loft's upper profile). There the
+        // outline is taken only within a mouse's reach (6 px).
+        const sketch::Sketch* sk = region.hit() ? document_->sketch(region.bodyId) : nullptr;
+        if (sk && sk->datumPlane() && *sk->datumPlane() == line.bodyId
+            && line.screenDistance > InputProfile::forDevice(PointerDevice::Mouse).pickTolerance
+            && (!body.hit() || region.depth <= body.depth + slack))
+            return region;
+        return line;
+    }
     const bool consumed = region.hit() && !document_->dependentFeatures(region.bodyId).empty();
     // Edges are the smallest targets: keep them reachable, unless a sketch
     // not used yet floats clearly in front of the edge (a circle drawn beside
