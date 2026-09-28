@@ -745,6 +745,10 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
                                             : p.isAngle ? QStringLiteral("angle")
                                             : p.isCount ? QStringLiteral("count")
                                                         : QStringLiteral("length"));
+            QStringList choices;
+            for (const auto& choice : p.choices)
+                choices.append(q(choice));
+            pm.insert(QStringLiteral("choices"), choices);
             params.append(pm);
         }
         map.insert(QStringLiteral("parameters"), params);

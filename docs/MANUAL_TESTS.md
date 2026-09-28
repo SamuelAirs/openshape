@@ -209,7 +209,7 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 ## On the iPad and iPhone
 
 See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the
-iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
+iPhone". New in the build after 2026-09-27 (iPad 12-18, iPhone 13-17):
 
 1. **Share an STL to the slicer:** File → Export STL: the share sheet opens
    (on the iPad pointing at File); choose the slicer app, then AirDrop a
@@ -233,7 +233,14 @@ iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
    projects saved in OpenShape's folder say *OpenShape (Files app)*, not a
    long `/var/mobile/…` path, and the *OpenShape* title and **New project**
    sit below the clock and the Dynamic Island (they used to sit under them).
-8. **Before the App Store:** look through the listing texts and the twelve
+8. **Loft:** sketch a rectangle on the ground; Plane → From XY, type 30;
+   Sketch on the plane, a circle over the rectangle; Finish. Tap the
+   rectangle, then the circle (also where the rectangle's arrow runs over
+   it), then Loft: a transition piece appears. Try Straight, Apply, then
+   in the Model panel change the plane's distance: the loft follows. Also
+   loft from a box's top face to a plane above it (it joins the box). Is
+   the Loft button easy to find, and does the order of taps feel right?
+9. **Before the App Store:** look through the listing texts and the twelve
    screenshots in [APP_STORE.md](APP_STORE.md), section 3, and compare them
    with the app on your devices (the screenshots are made on Windows, so
    the font differs slightly).

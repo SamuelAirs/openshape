@@ -201,8 +201,36 @@ Panel {
                                 color: Theme.mutedText
                                 Layout.preferredWidth: 60
                             }
+                            // One of a few choices (a loft's Smooth / Straight): buttons.
+                            Flow {
+                                visible: paramRow.modelData.choices.length > 0
+                                Layout.fillWidth: true
+                                spacing: 4
+                                Repeater {
+                                    model: paramRow.modelData.choices
+                                    delegate: ActionButton {
+                                        required property string modelData
+                                        objectName: "historyChoice_" + row.modelData.id + "_" + paramRow.modelData.key + "_" + modelData
+                                        compact: true
+                                        text: modelData
+                                        checked: paramRow.modelData.value === modelData
+                                        onClicked: {
+                                            // A successful edit rebuilds the history and
+                                            // destroys this delegate: capture first.
+                                            const owner = panel
+                                            const error = owner.app.setFeatureParameter(row.modelData.id, paramRow.modelData.key, modelData)
+                                            if (error.length === 0) {
+                                                owner.finished()
+                                                return
+                                            }
+                                            paramError.text = error
+                                        }
+                                    }
+                                }
+                            }
                             TextField {
                                 id: valueField
+                                visible: paramRow.modelData.choices.length === 0
                                 objectName: "historyParam_" + row.modelData.id + "_" + paramRow.modelData.key
                                 // A number on a touch screen: typed with the numeric keypad
                                 // (read-only: no system keyboard). A Text step's words keep it.

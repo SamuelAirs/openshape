@@ -238,7 +238,9 @@ Rectangle {
                             ["Cut a pocket or hole", "Face → Sketch, draw the shape, Finish, click it, drag the arrow into the body (Cut depth); Cut always goes in, Flip turns it round",
                              "Face → Sketch, draw the shape, Finish, tap it, drag it into the body (Cut depth); Cut always goes in, Flip turns it round"],
                             ["Both sides / up to a face", "While extruding: Symmetric, or Up to face and click a face", "While extruding: Symmetric, or Up to face and tap a face"],
-                            ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"]
+                            ["Tapered walls (draft)", "While extruding: Draft, type the angle (positive narrows away from the sketch); change it later in the Model panel"],
+                            ["Loft", "Click a profile, Shift-click profiles on other planes in the order to join them, then Loft (also in the tools) · Smooth or Straight · change it later in the Model panel",
+                             "Tap a profile, then profiles on other planes in the order to join them, then Loft (also in the tools) · Smooth or Straight · change it later in the Model panel"]
                         ]
                     }
                     HelpSection {

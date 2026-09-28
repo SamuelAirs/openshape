@@ -423,9 +423,14 @@ text (About → **Licenses**). What that means in practice:
    and hold the attachment → OpenShape. With unsaved changes, each first
    asks "Save changes?". Afterwards On My iPad → OpenShape has no "Inbox"
    folder left.
-
-18. Note anything slow, hard to hit, or missing — with a screenshot
+18. Loft: sketch a rectangle on the ground, Construct → Plane → From XY,
+   type `30`, ✓, **Sketch** on the plane, a circle over the rectangle,
+   **Finish sketch**. Tap the rectangle, then the circle, then **Loft**:
+   a transition piece appears at once. **Straight**, ✓; in the Model panel
+   tap the plane and change its distance: the loft follows.
+19. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
+
 ## What to test on the iPhone
 
 The same app; the compact layout is on from the start. On Windows the
@@ -518,3 +523,6 @@ margins (BUILDING.md).
    move, dark ones cannot; dragging a fully sized one says so. Tap inside
    a closed shape → **Extrude**: the sketch closes and the arrow is under
    your finger. Try the same with the Pencil on the iPad.
+17. Loft on the phone: the same as the iPad's step 18; the Loft options
+   (New body / Join / Cut, Smooth, Straight, Apply) scroll sideways above
+   the tool strip.

@@ -43,6 +43,9 @@ struct HistoryRow {
         bool isText = false;   // a string (a Text step's text), not a number
         bool isAngle = false;  // degrees (the keypad offers the degree sign)
         bool isCount = false;  // a whole number (the keypad offers digits only)
+        // A string that is one of these (a loft's Smooth / Straight): the
+        // panel offers them as buttons instead of a text field.
+        std::vector<std::string> choices = {};
         bool operator==(const Parameter&) const = default;
     };
 
@@ -329,7 +332,7 @@ public:
     }
     // A tool chosen from the palette: runs it if the selection fits, otherwise
     // explains what to select. Ids: pushpull, fillet, chamfer, shell, move,
-    // union, subtract, intersect, measure.
+    // union, subtract, intersect, measure, loft, ...
     Status runTool(const std::string& id);
 
     // ---- State ----
@@ -524,6 +527,10 @@ private:
     HoleSettings holeSettings_; // what the Hole tool used last
     TextSettings textSettings_; // what the Text tool used last
     doc::SketchAxis revolveAxis_ = doc::SketchAxis::Y;
+    // The loft's options while its profiles are chosen (adding one rebuilds
+    // it); they start over with a new selection.
+    bool loftRuled_ = false;
+    std::optional<doc::ExtrudeMode> loftMode_;
     std::optional<Uuid> historyHighlight_;
     // Faces (of the current body shape) the highlighted step created or changed.
     Uuid highlightBody_;
@@ -566,6 +573,7 @@ private:
         LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
         int ring = -1;            // rotation ring pressed on (grabbed once it moves), or -1
         RingManipulator ringHandle;
+        double travel = 0; // the farthest the pointer got from the press (px)
         // A finger pressed on the selected profile or face: once it moves,
         // it drags the arrow along its axis through this point.
         std::optional<Vec3> region;

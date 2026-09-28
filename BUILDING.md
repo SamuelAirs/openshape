@@ -85,6 +85,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario licenses,release   # About → Licenses (every library's text, the LGPL notice, at iPhone size too) and the About card
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo licenses --screenshot licenses.png   # the Licenses list on an iPhone
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario extrudetouch   # a pocket cut on the phone layout with one finger (framed face sketch, arrow and profile drags, Cut / Join / Flip), then with the mouse
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario loft   # a rectangle on the ground lofted to a circle on a plane 30 mm up (Smooth / Straight, Apply, the plane moved in the Model panel), then with taps; then New body / Join / Cut through a block and Join in the Model panel
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchdrag   # sketch editing by dragging: mouse on the desktop, then one finger at 402x874 (touchPress/Move/Release)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario numpad   # the numeric keypad by touch at iPhone and iPad sizes: value box, Model panel, sketch values
