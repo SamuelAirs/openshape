@@ -155,18 +155,34 @@ void SketchSession::syncFromDocument()
     if (!current)
         return;
     const std::uint64_t revision = document_.sketchRevision(sketchId_);
-    if (revision == syncedRevision_)
+    if (revision != syncedRevision_) {
+        working_ = *current;
+        syncedRevision_ = revision;
+        cancelModes(); // the curves they work on may be gone
+        if (working_.solveReport().degreesOfFreedom < 0)
+            (void)sketch::solve(working_); // loaded from file: compute DOF for display
+        std::erase_if(selected_, [&](sketch::EntityId id) {
+            return !working_.point(id) && !working_.line(id) && !working_.circle(id) && !working_.arc(id)
+                && !working_.constraint(id);
+        });
+        regionsChanged();
+    }
+    refreshReferences();
+}
+
+void SketchSession::refreshReferences()
+{
+    // The bodies (a sketch edit recomputes the steps that use it) or the
+    // plane (the face it is on moved) changed: the face's outline again.
+    const sketch::Plane& plane = working_.plane();
+    const bool samePlane = (plane.origin - referencesPlane_.origin).length() < 1e-9
+                        && (plane.xAxis - referencesPlane_.xAxis).length() < 1e-12
+                        && (plane.yAxis - referencesPlane_.yAxis).length() < 1e-12;
+    if (samePlane && referencesRevision_ == document_.revision())
         return;
-    working_ = *current;
-    syncedRevision_ = revision;
-    cancelModes(); // the curves they work on may be gone
-    if (working_.solveReport().degreesOfFreedom < 0)
-        (void)sketch::solve(working_); // loaded from file: compute DOF for display
-    std::erase_if(selected_, [&](sketch::EntityId id) {
-        return !working_.point(id) && !working_.line(id) && !working_.circle(id) && !working_.arc(id)
-            && !working_.constraint(id);
-    });
-    regionsChanged();
+    references_ = sketchReferences(document_, plane);
+    referencesRevision_ = document_.revision();
+    referencesPlane_ = plane;
 }
 
 void SketchSession::setTool(SketchTool tool)
@@ -204,11 +220,12 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
     const auto local = toLocal(screen, camera);
     if (!local)
         return snap;
-    const double tolerance = InputProfile::forDevice(device).pickTolerance + 4;
     snap.position = *local;
+    double best = snapReach(device);
 
-    // 1. Existing points (the origin included).
-    double best = tolerance;
+    // 1. Points: the sketch's own (the origin included), then the model's
+    // corners and centers in the plane; a sketch point on a corner wins (so
+    // a new curve connects to it).
     for (const auto& [id, p] : working_.points()) {
         const double d = (toScreen(p.position, camera) - screen).length();
         if (d < best) {
@@ -218,10 +235,18 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
             snap.kind = id == sketch::kOriginId ? SnapKind::Origin : SnapKind::Point;
         }
     }
-    if (snap.point != sketch::kNoEntity)
+    if (snap.point != sketch::kNoEntity) {
+        double nearer = best - 0.5;
+        Snap corner;
+        if (snapToReferencePoint(corner, nearer, screen, camera, false))
+            return corner;
+        return snap;
+    }
+    if (snapToReferencePoint(snap, best, screen, camera, false))
         return snap;
 
-    // 2. Line midpoints (position only; no constraint is added).
+    // 2. Midpoints of the sketch's lines (a drawn point there is held at the
+    // middle) and of the model's edges.
     for (const auto& [id, l] : working_.lines()) {
         const Vec2 mid = (working_.point(l.start)->position + working_.point(l.end)->position) * 0.5;
         const double d = (toScreen(mid, camera) - screen).length();
@@ -229,12 +254,53 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
             best = d;
             snap.position = mid;
             snap.kind = SnapKind::Midpoint;
+            snap.curve = id;
         }
     }
-    if (snap.kind == SnapKind::Midpoint)
+    if (snapToReferencePoint(snap, best, screen, camera, true))
+        snap.curve = sketch::kNoEntity;
+    if (snap.kind == SnapKind::Midpoint || snap.kind == SnapKind::RefMidpoint)
         return snap;
 
-    // 3. Horizontal / vertical inference relative to the shape's first point.
+    // 3. Onto curves: the sketch's (a drawn point is held on it: On line,
+    // On circle) and the model's edges (the position only).
+    for (const auto& [id, l] : working_.lines()) {
+        const Vec2 on = nearestOnSegment(*local, working_.point(l.start)->position, working_.point(l.end)->position);
+        const double d = (toScreen(on, camera) - screen).length();
+        if (d < best) {
+            best = d;
+            snap.position = on;
+            snap.kind = SnapKind::OnLine;
+            snap.curve = id;
+        }
+    }
+    auto onRound = [&](sketch::EntityId id, Vec2 center, double radius, std::optional<std::pair<double, double>> sweep) {
+        const Vec2 d = *local - center;
+        if (d.length() < 1e-9 || radius < 1e-9)
+            return;
+        if (sweep && ccw(sweep->first, angleOf(center, *local)) > sweep->second)
+            return; // beside the arc
+        const Vec2 on = center + d * (radius / d.length());
+        if (const double pixels = (toScreen(on, camera) - screen).length(); pixels < best) {
+            best = pixels;
+            snap.position = on;
+            snap.kind = SnapKind::OnCircle;
+            snap.curve = id;
+        }
+    };
+    for (const auto& [id, c] : working_.circles())
+        onRound(id, working_.point(c.center)->position, c.radius, std::nullopt);
+    for (const auto& [id, a] : working_.arcs()) {
+        const Vec2 center = working_.point(a.center)->position;
+        const double a0 = angleOf(center, working_.point(a.start)->position);
+        onRound(id, center, working_.arcRadius(id), std::make_pair(a0, ccw(a0, angleOf(center, working_.point(a.end)->position))));
+    }
+    if (snapToReferenceCurve(snap, best, screen, *local, camera))
+        snap.curve = sketch::kNoEntity;
+    if (snap.kind != SnapKind::None)
+        return snap;
+
+    // 4. Horizontal / vertical inference relative to the shape's first point.
     const double pixel = camera.pixelSize(working_.plane().toWorld(*local));
     const double step = snapIncrement(pixel, 10.0);
     Vec2 p = *local;
@@ -251,20 +317,144 @@ SketchSession::Snap SketchSession::snapAt(Vec2 screen, const Camera& camera, Poi
             }
         }
     }
-    // 4. Round free coordinates to a zoom-dependent grid (unless turned off).
+    // 5. Guides: level with or straight above another point, sketch or
+    // model (Shapr3D's guidelines; the position only). Not the shape's own
+    // first point: a rectangle's second corner there would make it flat.
+    const std::optional<Vec2> anchorAt = anchor_ ? std::optional<Vec2>(anchor_->position) : std::nullopt;
+    Snap aligned = snap;
+    aligned.position = p;
+    alignToPoints(aligned, camera, alignReach(device), [](sketch::EntityId) { return false; }, anchorAt);
+    // 6. Round the coordinates still free to a zoom-dependent grid (unless
+    // turned off).
     if (gridSnap_) {
-        if (!snap.horizontal)
+        if (!snap.horizontal && !aligned.alignedWith[0])
             p.y = snapValue(p.y, step);
-        if (!snap.vertical)
+        if (!snap.vertical && !aligned.alignedWith[1])
             p.x = snapValue(p.x, step);
-        if (snap.horizontal)
+        if (snap.horizontal && !aligned.alignedWith[1])
             p.x = snapValue(p.x, step);
-        if (snap.vertical)
+        if (snap.vertical && !aligned.alignedWith[0])
             p.y = snapValue(p.y, step);
     }
+    if (aligned.alignedWith[0])
+        p.y = aligned.position.y;
+    if (aligned.alignedWith[1])
+        p.x = aligned.position.x;
+    snap.alignedWith[0] = aligned.alignedWith[0];
+    snap.alignedWith[1] = aligned.alignedWith[1];
     snap.position = p;
     snap.kind = gridSnap_ ? SnapKind::Grid : SnapKind::None;
     return snap;
+}
+
+bool SketchSession::snapToReferencePoint(Snap& snap, double& best, Vec2 screen, const Camera& camera, bool midpoints) const
+{
+    bool found = false;
+    for (const auto& r : references_.points) {
+        if ((r.kind == SketchReferences::PointKind::Midpoint) != midpoints)
+            continue;
+        const double d = (toScreen(r.position, camera) - screen).length();
+        if (d < best) {
+            best = d;
+            snap.position = r.position;
+            snap.point = sketch::kNoEntity;
+            snap.kind = r.kind == SketchReferences::PointKind::Corner ? SnapKind::RefCorner
+                      : r.kind == SketchReferences::PointKind::Center ? SnapKind::RefCenter
+                                                                       : SnapKind::RefMidpoint;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool SketchSession::snapToReferenceCurve(Snap& snap, double& best, Vec2 screen, Vec2 local, const Camera& camera) const
+{
+    Vec2 on;
+    std::size_t curve = 0;
+    if (!references_.nearestOnCurve(local, on, curve))
+        return false;
+    const double d = (toScreen(on, camera) - screen).length();
+    if (d >= best)
+        return false;
+    best = d;
+    snap.position = on;
+    snap.point = sketch::kNoEntity;
+    snap.kind = SnapKind::RefEdge;
+    return true;
+}
+
+void SketchSession::alignToPoints(Snap& snap, const Camera& camera, double reach,
+                                  const std::function<bool(sketch::EntityId)>& skip, std::optional<Vec2> anchor) const
+{
+    const double pixel = camera.pixelSize(working_.plane().toWorld(snap.position));
+    if (!(pixel > 0))
+        return;
+    // Level with (the same y: a horizontal guide) unless the anchor's
+    // inference already set y; straight above or below (the same x).
+    double bestY = snap.horizontal ? 0 : reach * pixel, bestX = snap.vertical ? 0 : reach * pixel; // mm
+    std::optional<Vec2> withY, withX;
+    const Vec2 at = snap.position;
+    auto consider = [&](Vec2 q) {
+        if ((q - at).length() < 1e-9)
+            return; // on it: that is a point snap, not a guide
+        // Never level with the shape's first point, nor straight above it
+        // (a rectangle or a circle there would be flat).
+        if (const double dy = std::abs(q.y - at.y); dy < bestY && !(anchor && std::abs(q.y - anchor->y) < 1e-9)) {
+            bestY = dy;
+            withY = q;
+        }
+        if (const double dx = std::abs(q.x - at.x); dx < bestX && !(anchor && std::abs(q.x - anchor->x) < 1e-9)) {
+            bestX = dx;
+            withX = q;
+        }
+    };
+    for (const auto& [id, p] : working_.points())
+        if (!skip(id))
+            consider(p.position);
+    for (const auto& r : references_.points)
+        consider(r.position);
+    if (withY) {
+        snap.position.y = withY->y;
+        snap.alignedWith[0] = withY;
+    }
+    if (withX) {
+        snap.position.x = withX->x;
+        snap.alignedWith[1] = withX;
+    }
+}
+
+std::string SketchSession::snapHint(const Snap& snap) const
+{
+    switch (snap.kind) {
+    case SnapKind::Origin: return "Origin";
+    case SnapKind::Point:
+        // A circle's or an arc's center reads as one.
+        for (const auto& [id, c] : working_.circles())
+            if (c.center == snap.point)
+                return "Center";
+        for (const auto& [id, a] : working_.arcs())
+            if (a.center == snap.point)
+                return "Center";
+        return "Endpoint";
+    case SnapKind::Midpoint:
+    case SnapKind::RefMidpoint: return "Midpoint";
+    case SnapKind::OnLine: return "On line";
+    case SnapKind::OnCircle: return "On circle";
+    case SnapKind::RefCorner: return "Corner";
+    case SnapKind::RefCenter: return "Center";
+    case SnapKind::RefEdge: return "On edge";
+    case SnapKind::None:
+    case SnapKind::Grid: break;
+    }
+    const bool levelled = snap.horizontal || snap.alignedWith[0].has_value();
+    const bool plumb = snap.vertical || snap.alignedWith[1].has_value();
+    if (levelled && plumb)
+        return "Aligned";
+    if (levelled)
+        return "Horizontal";
+    if (plumb)
+        return "Vertical";
+    return {};
 }
 
 sketch::EntityId SketchSession::pickCurve(Vec2 screen, const Camera& camera, PointerDevice device) const
@@ -274,7 +464,7 @@ sketch::EntityId SketchSession::pickCurve(Vec2 screen, const Camera& camera, Poi
 
 sketch::EntityId SketchSession::pickEntity(Vec2 screen, const Camera& camera, PointerDevice device, bool curvesOnly) const
 {
-    const double tolerance = InputProfile::forDevice(device).pickTolerance + 2;
+    const double tolerance = pickReach(device);
     sketch::EntityId best = sketch::kNoEntity;
     double bestDistance = tolerance;
     // Points win over curves so endpoints stay grabbable.
@@ -336,7 +526,7 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
     if (!local)
         return snap;
     snap.position = *local;
-    const double tolerance = InputProfile::forDevice(device).pickTolerance + 4;
+    const double tolerance = snapReach(device);
 
     // What moves with the point never counts: its own curves, their points,
     // and points held on it by a Coincident constraint.
@@ -387,7 +577,11 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
 
     // 1. Points (the origin included), nearest first; not one the point
     // cannot join (it would lay a curve on top of another: mergePoints).
+    // A model corner or center nearer than any of them wins (the position only).
     double best = tolerance;
+    Snap corner;
+    double cornerDistance = tolerance;
+    const bool nearCorner = snapToReferencePoint(corner, cornerDistance, screen, camera, false);
     std::vector<std::pair<double, sketch::EntityId>> near;
     for (const auto& [id, p] : working_.points()) {
         if (own(ownPoints, id))
@@ -397,6 +591,8 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
     }
     std::sort(near.begin(), near.end());
     for (const auto& candidate : near) {
+        if (nearCorner && candidate.first > cornerDistance + 0.5)
+            break;
         const sketch::EntityId id = candidate.second;
         sketch::Sketch trial = working_;
         if (!sketch::mergePoints(trial, dragged, id).ok())
@@ -406,7 +602,9 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
         snap.kind = id == sketch::kOriginId ? SnapKind::Origin : SnapKind::Point;
         return snap;
     }
-    // 2. Line midpoints.
+    if (nearCorner)
+        return corner;
+    // 2. Line midpoints (the model's edges' too).
     for (const auto& [id, l] : working_.lines()) {
         if (own(ownCurves, id))
             continue;
@@ -419,9 +617,11 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
             snap.curve = id;
         }
     }
-    if (snap.kind == SnapKind::Midpoint)
+    if (snapToReferencePoint(snap, best, screen, camera, true))
+        snap.curve = sketch::kNoEntity;
+    if (snap.kind == SnapKind::Midpoint || snap.kind == SnapKind::RefMidpoint)
         return snap;
-    // 3. Curves: the nearest point on a line, circle or arc.
+    // 3. Curves: the nearest point on a line, circle or arc (or a model edge).
     for (const auto& [id, l] : working_.lines()) {
         if (own(ownCurves, id))
             continue;
@@ -460,14 +660,27 @@ SketchSession::Snap SketchSession::dragSnapAt(Vec2 screen, const Camera& camera,
         onRound(id, center, working_.arcRadius(id),
                 std::make_pair(a0, ccw(a0, angleOf(center, working_.point(a.end)->position))));
     }
+    if (snapToReferenceCurve(snap, best, screen, *local, camera))
+        snap.curve = sketch::kNoEntity;
     if (snap.kind != SnapKind::None)
         return snap;
-    // 4. The grid.
+    // 4. Guides through other points (its own line's other end too: that
+    // makes the line horizontal or vertical), then the grid.
+    Snap aligned = snap;
+    aligned.position = *local;
+    alignToPoints(aligned, camera, alignReach(device), [&](sketch::EntityId id) { return own(joined, id); }, std::nullopt);
+    snap.position = *local;
     if (gridSnap_) {
         const double step = snapIncrement(camera.pixelSize(working_.plane().toWorld(*local)), 10.0);
         snap.position = {snapValue(local->x, step), snapValue(local->y, step)};
         snap.kind = SnapKind::Grid;
     }
+    if (aligned.alignedWith[0])
+        snap.position.y = aligned.position.y;
+    if (aligned.alignedWith[1])
+        snap.position.x = aligned.position.x;
+    snap.alignedWith[0] = aligned.alignedWith[0];
+    snap.alignedWith[1] = aligned.alignedWith[1];
     return snap;
 }
 
@@ -719,9 +932,64 @@ bool SketchSession::connectDropped(sketch::Sketch& next, sketch::EntityId point,
         return false;
     }
     case SnapKind::None:
-    case SnapKind::Grid: break;
+    case SnapKind::Grid:
+    case SnapKind::RefCorner: // the model's geometry: the position only (no constraint to a body)
+    case SnapKind::RefMidpoint:
+    case SnapKind::RefCenter:
+    case SnapKind::RefEdge: break;
     }
     return false;
+}
+
+void SketchSession::holdOnCurve(sketch::Sketch& next, sketch::EntityId point, const Snap& snap)
+{
+    using K = sketch::ConstraintKind;
+    if (point == sketch::kNoEntity || snap.curve == sketch::kNoEntity || !next.point(point))
+        return;
+    K kind = K::PointOnLine;
+    switch (snap.kind) {
+    case SnapKind::Midpoint: kind = K::Midpoint; break;
+    case SnapKind::OnLine: kind = K::PointOnLine; break;
+    case SnapKind::OnCircle: kind = K::PointOnCircle; break;
+    case SnapKind::None:
+    case SnapKind::Grid:
+    case SnapKind::Point:
+    case SnapKind::Origin:
+    case SnapKind::RefCorner:
+    case SnapKind::RefMidpoint:
+    case SnapKind::RefCenter:
+    case SnapKind::RefEdge: return;
+    }
+    const sketch::SketchConstraint c{kind, point, snap.curve};
+    if (!next.isValid(c))
+        return;
+    // Only when it holds nothing twice (the shape's own sizes may already
+    // put the point there).
+    sketch::Sketch before = next;
+    const std::size_t redundant = sketch::solve(before).redundant.size();
+    sketch::Sketch held = next;
+    if (held.addConstraint(c) == sketch::kNoEntity)
+        return;
+    const sketch::SolveReport report = sketch::solve(held);
+    if (report.ok && report.conflicting.empty() && report.redundant.size() <= redundant)
+        next = std::move(held);
+}
+
+SketchSession::SnapInfo SketchSession::snapInfo(const Camera& camera) const
+{
+    SnapInfo info;
+    if (!pressed_ || !pointerScreen_ || isOffsetting() || isMirroring() || isPatterning())
+        return info;
+    const bool placing = tool_ != SketchTool::Select && tool_ != SketchTool::Trim && cursorValid_;
+    const bool draggingPoint = tool_ == SketchTool::Select && dragging_ && grab_.kind == Grab::Kind::Point && !grab_.refused;
+    if (!placing && !draggingPoint)
+        return info;
+    info.active = true;
+    info.pointer = *pointerScreen_;
+    info.device = pointerDevice_;
+    info.screen = toScreen(cursor_.position, camera);
+    info.hint = snapHint(cursor_);
+    return info;
 }
 
 bool SketchSession::showsCursor() const
@@ -977,6 +1245,8 @@ bool SketchSession::finishShape(const Snap& endSnap)
     if (typed) {
         end.position = constrainedCursor();
         end.point = sketch::kNoEntity; // typed values win over snapping
+        end.curve = sketch::kNoEntity;
+        end.kind = SnapKind::None;
     }
     const Snap start = *anchor_;
     sketch::Sketch next = working_;
@@ -996,6 +1266,8 @@ bool SketchSession::finishShape(const Snap& endSnap)
             next.addConstraint({sketch::ConstraintKind::HorizontalDistance, ids.corners[0], ids.corners[1], b.x - a.x});
         if (input("height"))
             next.addConstraint({sketch::ConstraintKind::VerticalDistance, ids.corners[1], ids.corners[2], b.y - a.y});
+        holdOnCurve(next, ids.corners[0], start);
+        holdOnCurve(next, ids.corners[2], end);
         if (!commit(std::move(next), "Rectangle"))
             return false;
         resetShape();
@@ -1018,6 +1290,9 @@ bool SketchSession::finishShape(const Snap& endSnap)
             next.addConstraint({sketch::ConstraintKind::HorizontalDistance, corners[0], corners[1], corner.x - low.x});
         if (input("height"))
             next.addConstraint({sketch::ConstraintKind::VerticalDistance, corners[1], corners[2], corner.y - low.y});
+        if (start.point == sketch::kNoEntity)
+            holdOnCurve(next, ids.center, start);
+        holdOnCurve(next, corners[2], end);
         if (!commit(std::move(next), "Center rectangle"))
             return false;
         resetShape();
@@ -1039,6 +1314,8 @@ bool SketchSession::finishShape(const Snap& endSnap)
             next.addConstraint({sketch::ConstraintKind::Horizontal, ids.sides[0]});
         if (const auto size = input("size"))
             next.addConstraint({sketch::ConstraintKind::Diameter, ids.inner, sketch::kNoEntity, *size});
+        if (start.point == sketch::kNoEntity)
+            holdOnCurve(next, ids.center, start);
         if (!commit(std::move(next), "Polygon"))
             return false;
         resetShape();
@@ -1054,6 +1331,8 @@ bool SketchSession::finishShape(const Snap& endSnap)
         const sketch::EntityId circle = next.addCircle(center, radius);
         if (const auto d = input("diameter"))
             next.addConstraint({sketch::ConstraintKind::Diameter, circle, sketch::kNoEntity, *d});
+        if (start.point == sketch::kNoEntity)
+            holdOnCurve(next, center, start);
         if (!commit(std::move(next), "Circle"))
             return false;
         resetShape();
@@ -1072,6 +1351,10 @@ bool SketchSession::finishShape(const Snap& endSnap)
             next.addConstraint({sketch::ConstraintKind::Vertical, line});
         if (const auto len = input("length"))
             next.addConstraint({sketch::ConstraintKind::Distance, a, b, *len});
+        if (start.point == sketch::kNoEntity)
+            holdOnCurve(next, a, start);
+        if (end.point == sketch::kNoEntity)
+            holdOnCurve(next, b, end);
         if (!commit(std::move(next), "Line"))
             return false;
         // Continue the chain from the new end point, unless it closed a loop.
@@ -1118,6 +1401,10 @@ bool SketchSession::finishShape(const Snap& endSnap)
             return false;
         if (const auto r = input("radius"))
             next.addConstraint({sketch::ConstraintKind::Radius, id, sketch::kNoEntity, *r});
+        if (first.point == sketch::kNoEntity)
+            holdOnCurve(next, s, first);
+        if (last.point == sketch::kNoEntity)
+            holdOnCurve(next, e, last);
         if (!commit(std::move(next), "Arc"))
             return false;
         resetShape();
@@ -1141,6 +1428,8 @@ bool SketchSession::finishShape(const Snap& endSnap)
         next.addConstraint({sketch::ConstraintKind::Tangent, tangentStart_.curve, id});
         if (const auto r = input("radius"))
             next.addConstraint({sketch::ConstraintKind::Radius, id, sketch::kNoEntity, *r});
+        if (!reuseEnd && !typed)
+            holdOnCurve(next, e, end);
         if (!commit(std::move(next), "Tangent arc"))
             return false;
         // Continue from the far end, tangent to the new arc (Esc ends the chain).
@@ -1180,6 +1469,10 @@ bool SketchSession::finishShape(const Snap& endSnap)
             return false;
         if (const auto width = input("slot"))
             next.addConstraint({sketch::ConstraintKind::Radius, ids.arcs[0], sketch::kNoEntity, *width / 2});
+        if (start.point == sketch::kNoEntity)
+            holdOnCurve(next, ids.centers[0], start);
+        if (arcEnd_->point == sketch::kNoEntity)
+            holdOnCurve(next, ids.centers[1], *arcEnd_);
         if (!commit(std::move(next), "Slot"))
             return false;
         resetShape();
@@ -2729,19 +3022,7 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
     // Inference hint next to the cursor (also for a dragged point: what it
     // would join on release).
     if (showsCursor()) {
-        std::string hint;
-        switch (cursor_.kind) {
-        case SnapKind::Origin: hint = "Origin"; break;
-        case SnapKind::Point: hint = "Endpoint"; break;
-        case SnapKind::Midpoint: hint = "Midpoint"; break;
-        case SnapKind::OnLine: hint = "On line"; break;
-        case SnapKind::OnCircle: hint = "On circle"; break;
-        default:
-            if (cursor_.horizontal)
-                hint = "Horizontal";
-            else if (cursor_.vertical)
-                hint = "Vertical";
-        }
+        const std::string hint = snapHint(cursor_);
         if (!hint.empty()) {
             SketchLabel label;
             label.kind = SketchLabel::Kind::Hint;
@@ -3058,12 +3339,6 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                                  plane.toWorld(center + Vec2{std::cos(a1), std::sin(a1)} * radius), style});
         }
     };
-
-    for (const auto& [id, l] : working_.lines())
-        out.lines.push_back({plane.toWorld(working_.point(l.start)->position), plane.toWorld(working_.point(l.end)->position),
-                             styleOf(id, l.construction)});
-    for (const auto& [id, c] : working_.circles())
-        addCircle(working_.point(c.center)->position, c.radius, styleOf(id, c.construction));
     auto addArc = [&](Vec2 center, double radius, Vec2 from, Vec2 to, SketchStyle style) {
         const double a0 = angleOf(center, from), sweep = ccw(a0, angleOf(center, to));
         const int n = std::max(2, int(std::ceil(sweep / (2 * kPi) * kCircleSegments)));
@@ -3073,6 +3348,29 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
                                  plane.toWorld(center + Vec2{std::cos(t1), std::sin(t1)} * radius), style});
         }
     };
+
+    // The model's geometry in the plane (the face's outline): faint marks.
+    for (const auto& c : references_.curves) {
+        switch (c.kind) {
+        case SketchReferences::Curve::Kind::Line:
+            out.lines.push_back({plane.toWorld(c.start), plane.toWorld(c.end), SketchStyle::FaceReference});
+            break;
+        case SketchReferences::Curve::Kind::Circle: addCircle(c.center, c.radius, SketchStyle::FaceReference); break;
+        case SketchReferences::Curve::Kind::Arc: addArc(c.center, c.radius, c.start, c.end, SketchStyle::FaceReference); break;
+        case SketchReferences::Curve::Kind::Polyline:
+            for (std::size_t k = 1; k < c.points.size(); ++k)
+                out.lines.push_back({plane.toWorld(c.points[k - 1]), plane.toWorld(c.points[k]), SketchStyle::FaceReference});
+            break;
+        }
+    }
+    for (const auto& r : references_.points)
+        out.points.push_back({plane.toWorld(r.position), SketchStyle::FaceReference});
+
+    for (const auto& [id, l] : working_.lines())
+        out.lines.push_back({plane.toWorld(working_.point(l.start)->position), plane.toWorld(working_.point(l.end)->position),
+                             styleOf(id, l.construction)});
+    for (const auto& [id, c] : working_.circles())
+        addCircle(working_.point(c.center)->position, c.radius, styleOf(id, c.construction));
     for (const auto& [id, arc] : working_.arcs())
         addArc(working_.point(arc.center)->position, working_.arcRadius(id), working_.point(arc.start)->position,
                working_.point(arc.end)->position, styleOf(id, arc.construction));
@@ -3201,6 +3499,17 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
             out.lines.push_back({plane.toWorld(anchor_->position - Vec2{reach, 0}), plane.toWorld(p + Vec2{reach, 0}), SketchStyle::Guide});
         if (cursor_.vertical && anchor_)
             out.lines.push_back({plane.toWorld(anchor_->position - Vec2{0, reach}), plane.toWorld(p + Vec2{0, reach}), SketchStyle::Guide});
+        // Lined up with another point: a guide from it, a little past the cursor.
+        const double past = 24 * camera.pixelSize(plane.toWorld(p));
+        for (int axis = 0; axis < 2; ++axis) {
+            if (!cursor_.alignedWith[axis])
+                continue;
+            const Vec2 from = *cursor_.alignedWith[axis];
+            const Vec2 d = p - from;
+            if (d.length() < 1e-9)
+                continue;
+            out.lines.push_back({plane.toWorld(from), plane.toWorld(p + d * (past / d.length())), SketchStyle::Alignment});
+        }
         out.points.push_back({plane.toWorld(p), cursor_.point != sketch::kNoEntity ? SketchStyle::Hovered : SketchStyle::Preview});
     }
 

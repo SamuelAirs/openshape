@@ -64,6 +64,8 @@ constexpr Color kSketchDefined{0.12f, 0.14f, 0.18f, 1.0f};
 constexpr Color kSketchConstruction{0.55f, 0.58f, 0.62f, 1.0f};
 constexpr Color kSketchDimension{0.36f, 0.39f, 0.44f, 0.9f};
 constexpr Color kReference{0.80f, 0.50f, 0.12f, 1.0f}; // construction axes and planes
+constexpr Color kFaceReference{0.48f, 0.40f, 0.78f, 0.55f}; // a sketch's face outline: faint violet
+constexpr Color kAlignment{0.58f, 0.30f, 0.86f, 0.85f};     // guidelines (purple, as in Shapr3D)
 
 
 constexpr quint32 kLineVertexFloats = 8; // p0(3) p1(3) corner(2)
@@ -101,6 +103,8 @@ SketchLook lookOf(interact::SketchStyle style)
     case S::Measure: return {withAlpha(kAccent, 0.9f), 1.75f, 7.0f};
     case S::Conflict: return {kError, 2.0f, 7.0f};
     case S::Reference: return {withAlpha(kReference, 0.9f), 1.5f, 6.0f};
+    case S::FaceReference: return {kFaceReference, 1.5f, 5.0f};
+    case S::Alignment: return {kAlignment, 1.25f, 5.0f};
     }
     return {kAccent, 2.0f, 7.0f};
 }
@@ -602,9 +606,13 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
                 meshDraw(sketch.editing ? overlayPipeline_.get() : tintPipeline_.get(), &it->second, 0, it->second.indexCount,
                          withAlpha(region.reference ? kReference : kAccent, alpha), 1, kEdgeBiasPx);
             }
-            // Group segments by style so each style is one draw call.
-            for (int s = 0; s <= int(interact::SketchStyle::Reference); ++s) {
-                const auto style = interact::SketchStyle(s);
+            // Group segments by style so each style is one draw call; the
+            // face's outline first (under the sketch), guides last.
+            using S = interact::SketchStyle;
+            static constexpr S kOrder[] = {S::FaceReference, S::Normal, S::Defined, S::Construction, S::Hovered,
+                                           S::Selected, S::Preview, S::Guide, S::Dimension, S::Measure,
+                                           S::Conflict, S::Reference, S::Alignment};
+            for (const S style : kOrder) {
                 const quint32 first = quint32(lines.size() / kLineVertexFloats);
                 for (const auto& l : sketch.lines)
                     if (l.style == style)

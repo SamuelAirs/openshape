@@ -12,6 +12,7 @@
 #include "interaction/InputEvents.h"
 #include "interaction/OverlayPlacement.h"
 #include "interaction/RenderScene.h"
+#include "interaction/SketchReferences.h"
 #include "sketch/Sketch.h"
 #include "sketch/SketchEdit.h"
 
@@ -62,8 +63,33 @@ public:
     const Uuid& sketchId() const { return sketchId_; }
     const sketch::Sketch& sketch() const { return working_; }
     bool isValid() const;
-    // Reloads the working copy if the document's sketch changed (undo/redo).
+    // Reloads the working copy if the document's sketch changed (undo/redo),
+    // and the reference geometry if the bodies changed.
     void syncFromDocument();
+    // The visible bodies' geometry in the sketch's plane (the outline of the
+    // face it is drawn on): snap targets and faint marks, recomputed when the
+    // document or the plane changes (SketchReferences).
+    const SketchReferences& references() const { return references_; }
+
+    // How far from a finger, pen or mouse a point or curve is picked (px):
+    // 22 px for a finger (a 44 px target), 8 px for a mouse.
+    static double pickReach(PointerDevice device) { return InputProfile::forDevice(device).pickTolerance + 2; }
+    // How far a drawn or dragged point snaps to points, midpoints and curves (px).
+    static double snapReach(PointerDevice device) { return InputProfile::forDevice(device).pickTolerance + 4; }
+    // How far it lines up with another point horizontally or vertically (px).
+    static double alignReach(PointerDevice device) { return InputProfile::forDevice(device).pickTolerance * 0.6; }
+
+    // What the pointer snapped to while placing or dragging a point (the
+    // loupe's subject): where (screen px) and the hint ("Corner", "Midpoint",
+    // "On edge", "Center", "Horizontal", ...; empty when it snapped to nothing).
+    struct SnapInfo {
+        bool active = false; // a point is being placed or dragged by a pressed pointer
+        Vec2 screen;         // the snapped point
+        Vec2 pointer;        // the pointer itself
+        PointerDevice device = PointerDevice::Mouse;
+        std::string hint;
+    };
+    SnapInfo snapInfo(const Camera& camera) const;
 
     SketchTool tool() const { return tool_; }
     void setTool(SketchTool tool);
@@ -183,16 +209,37 @@ public:
     std::function<void()> onCommitted;
 
 private:
-    // OnLine, OnCircle: only for a dragged point (dragSnapAt).
-    enum class SnapKind { None, Grid, Point, Origin, Midpoint, OnLine, OnCircle };
+    // OnLine, OnCircle: on a sketch curve (a drawn point is held there by
+    // a constraint, a dragged one joined to it on release). Ref*: on the
+    // model geometry in the plane (references_): the position only.
+    enum class SnapKind { None, Grid, Point, Origin, Midpoint, OnLine, OnCircle, RefCorner, RefMidpoint, RefCenter, RefEdge };
     struct Snap {
         Vec2 position;
         SnapKind kind = SnapKind::None;
         sketch::EntityId point = sketch::kNoEntity;
-        sketch::EntityId curve = sketch::kNoEntity; // Midpoint (of a dragged point), OnLine, OnCircle: the curve
-        bool horizontal = false; // inferred relative to the anchor
+        sketch::EntityId curve = sketch::kNoEntity; // Midpoint, OnLine, OnCircle: the sketch curve
+        bool horizontal = false; // inferred relative to the anchor (a Horizontal / Vertical constraint)
         bool vertical = false;
+        // Lined up with another point (a guide through it; position only).
+        std::optional<Vec2> alignedWith[2]; // [0] the same y (a horizontal guide), [1] the same x
     };
+    // The short text shown beside a snapped point ("Corner", "On edge", ...).
+    std::string snapHint(const Snap& snap) const;
+    // The nearest reference corner or center (or, with `midpoints`, edge
+    // middle) nearer than `best` px to `screen`: sets `snap`, lowers `best`.
+    bool snapToReferencePoint(Snap& snap, double& best, Vec2 screen, const Camera& camera, bool midpoints) const;
+    // The nearest point on a reference edge nearer than `best` px.
+    bool snapToReferenceCurve(Snap& snap, double& best, Vec2 screen, Vec2 local, const Camera& camera) const;
+    // Lines `snap.position` up with other points (sketch and reference;
+    // not those `skip` names) within `reach` px, horizontally and
+    // vertically, where it is still free (not inferred against the anchor),
+    // and never level with or plumb to `anchor` (the shape's first point).
+    void alignToPoints(Snap& snap, const Camera& camera, double reach, const std::function<bool(sketch::EntityId)>& skip,
+                       std::optional<Vec2> anchor) const;
+    // Holds a new point of a drawn shape on the sketch curve it was placed
+    // on (On line / On circle / Midpoint), unless that would over-size it.
+    static void holdOnCurve(sketch::Sketch& next, sketch::EntityId point, const Snap& snap);
+    void refreshReferences();
     // Select tool: what a press took hold of, and how a drag moves it.
     struct Grab {
         enum class Kind {
@@ -371,6 +418,10 @@ private:
     Vec2 patternOrigin_;                             // the selection's middle: a linear step is measured from it
     sketch::Sketch preview_;                         // working copy with the copies added
     std::vector<sketch::EntityId> previewCurves_;    // the copies in preview_
+
+    SketchReferences references_;
+    std::uint64_t referencesRevision_ = ~std::uint64_t(0);
+    sketch::Plane referencesPlane_;
 
     // Cached closed regions of the working copy.
     std::vector<geom::Region> regions_;

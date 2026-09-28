@@ -1683,6 +1683,14 @@ TEST(SketchInteraction, ConstraintGlyphTapsNeverHideGeometry)
     foot = footOnBottom(glyph.screen);
     away = (glyph.screen - foot) * (1.0 / (glyph.screen - foot).length());
     EXPECT_GE((glyph.screen - foot).length(), 20.0);
+    {
+        // Beyond a finger's reach (22 px) of the corners, which win nearer to them.
+        const Vec2 a = h.sketchScreen(s.point(s.line(bottom)->start)->position);
+        const Vec2 b = h.sketchScreen(s.point(s.line(bottom)->end)->position);
+        const Vec2 u = (b - a) * (1.0 / (b - a).length());
+        const double along = std::clamp((foot - a).dot(u), 24.0, (b - a).length() - 24.0);
+        foot = a + u * along;
+    }
     tap(h, foot + away * 15);
     ASSERT_EQ(h.session().selection().size(), 1u);
     EXPECT_EQ(h.session().selection().front(), bottom);

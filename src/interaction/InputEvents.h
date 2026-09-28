@@ -39,7 +39,7 @@ struct InputProfile {
     static InputProfile forDevice(PointerDevice device)
     {
         switch (device) {
-        case PointerDevice::Touch: return {18, 28, 10, true};
+        case PointerDevice::Touch: return {20, 28, 10, true}; // picks within 22 px in a sketch: a 44 px target
         case PointerDevice::Pen: return {9, 16, 6, true};
         case PointerDevice::Mouse: break;
         }

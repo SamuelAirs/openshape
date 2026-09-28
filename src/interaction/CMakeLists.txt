@@ -13,6 +13,7 @@ add_library(openshape_interaction STATIC
     PreviewWorker.cpp PreviewWorker.h
     RenderScene.h
     SceneCache.cpp SceneCache.h
+    SketchReferences.cpp SketchReferences.h
     SketchSession.cpp SketchSession.h
     Thumbnail.cpp Thumbnail.h
     TouchGestures.cpp TouchGestures.h

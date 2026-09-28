@@ -9,6 +9,7 @@ add_library(openshape_geometry STATIC
     Holes.cpp Holes.h
     Mesh.h
     Modeling.cpp Modeling.h KernelSignals.h
+    PlaneReferences.cpp PlaneReferences.h
     Profiles.cpp Profiles.h
     Shape.cpp Shape.h
     Tessellation.cpp Tessellation.h
