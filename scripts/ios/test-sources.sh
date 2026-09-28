@@ -18,12 +18,12 @@
 #   - the real sources.txt pins every library build-deps.sh fetches.
 # Prints [PASS]/[FAIL] lines; exits with the number of failures.
 #
-# Usage (needs bash, git, tar, gzip, awk, sha256sum or shasum): scripts/ios/test-sources.sh
+# Usage (needs bash, git, cmp, tar, gzip, awk, sha256sum or shasum): scripts/ios/test-sources.sh
 set -uo pipefail
 
-for tool in git tar gzip awk; do
-    # Said plainly (the CI's MSYS2 shells install git for this test).
-    command -v "$tool" >/dev/null 2>&1 || { echo "test-sources.sh: $tool not found (needs bash, git, tar, gzip, awk)" >&2; exit 1; }
+for tool in git cmp tar gzip awk; do
+    # Said plainly (the CI's MSYS2 shells install git and diffutils for this test).
+    command -v "$tool" >/dev/null 2>&1 || { echo "test-sources.sh: $tool not found (needs bash, git, cmp, tar, gzip, awk)" >&2; exit 1; }
 done
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
