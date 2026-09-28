@@ -118,6 +118,8 @@ Rectangle {
                         font.pixelSize: 14
                         placeholderText: "Other (mm)"
                         selectByMouse: true
+                        // A number: the system keyboard opens on its numbers.
+                        inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
                         color: Theme.text
                         background: Rectangle {
                             radius: 8
