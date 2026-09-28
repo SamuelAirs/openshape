@@ -371,6 +371,9 @@ private:
     // Duplicate, Split, a Model panel row): fails only when Refused.
     Status applyPendingValue(const char* action);
     sel::PickResult pickProfile(Vec2 screen) const;
+    // The sketch's tapped closed shape (Select tool) straight to Extrude:
+    // finishes the sketch, selects that profile, the arrow where it was tapped.
+    Status extrudeSketchRegion();
     void enterSketch(const Uuid& sketchId, SketchTool tool);
     // Faces the plane head-on; fits the sketch drawn so far, or - `frame`,
     // a face's or construction plane's box - frames that (and the sketch)
@@ -459,8 +462,9 @@ private:
     bool touchLayout_ = false;
     SafeInsets safeInsets_;
     SafeInsets frameInsets_;
-    // Where the profile selected last was tapped: its Extrude arrow starts
-    // there (under the finger), not at the region's inner point.
+    // Where the profile selected last was tapped (in the view, or inside the
+    // open sketch before extrudeSketchRegion): its Extrude arrow starts there
+    // (under the finger), not at the region's inner point.
     struct ProfileTap {
         Uuid sketch;
         int region = -1;

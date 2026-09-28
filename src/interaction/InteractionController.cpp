@@ -668,7 +668,7 @@ void InteractionController::pointerRelease(const PointerEvent& event)
         else if (mode == DragMode::Pending && press.button == PointerButton::Right)
             (void)session_->keyPress(Key::Escape); // right-click finishes the line chain / shape, like Esc
         else if (mode == DragMode::Pending && press.button == PointerButton::Left)
-            session_->select(sketch::kNoEntity, false); // click on empty space
+            session_->tapBackground(press, camera_); // empty space, or a closed shape not selected yet
         notifyState();
         notifyView();
         return;
@@ -717,8 +717,16 @@ void InteractionController::pointerRelease(const PointerEvent& event)
 
 void InteractionController::pointerDoubleClick(const PointerEvent& event)
 {
-    if (session_ || (event.device == PointerDevice::Touch && penMode_))
+    if (event.device == PointerDevice::Touch && penMode_)
         return;
+    if (session_) {
+        // Select tool: a whole shape (the curves joined to the one tapped).
+        if (session_->doubleClick(event, camera_)) {
+            notifyState();
+            notifyView();
+        }
+        return;
+    }
     // A double-click or double-tap selects: kept clear like a click.
     const bool left = event.button == PointerButton::Left;
     if (left)
@@ -2389,6 +2397,8 @@ std::vector<ContextAction> InteractionController::contextActions() const
 
 Status InteractionController::triggerAction(const std::string& id)
 {
+    if (session_ && id == "extrude" && session_->selectedRegion())
+        return extrudeSketchRegion();
     if (session_) {
         Status status = session_->triggerAction(id);
         notifyState();
@@ -3876,6 +3886,43 @@ sel::PickResult InteractionController::pickProfile(Vec2 screen) const
     }
     return best;
 }
+
+Status InteractionController::extrudeSketchRegion()
+{
+    if (!session_ || !session_->selectedRegion()) {
+        const std::string text = "Click inside a closed shape of the sketch first.";
+        message(forInput(text));
+        return Status::failure(ErrorCode::InvalidArgument, forInput(text), "extrudeSketchRegion: no region");
+    }
+    const Uuid sketchId = session_->sketchId();
+    const Vec3 at = session_->sketch().plane().toWorld(session_->selectedRegionPoint());
+    finishSketch(); // the scene now has the sketch's profiles
+    const auto* entry = scene_.sketch(sketchId);
+    const sketch::Sketch* sk = document_->sketch(sketchId);
+    int index = -1;
+    for (std::size_t i = 0; entry && sk && i < entry->regions.size() && i < entry->meshes.size() && index < 0; ++i)
+        if (entry->meshes[i] && meshContains(*entry->meshes[i], sk->plane(), at))
+            index = int(i);
+    if (index < 0) {
+        const std::string text = "That shape is not closed any more.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "extrudeSketchRegion: no profile at the tapped point");
+    }
+    sel::SelectionItem item;
+    item.kind = sel::SelectionKind::SketchProfile;
+    item.bodyId = sketchId;
+    item.index = index;
+    item.shapeRevision = document_->sketchRevision(sketchId);
+    item.profile = doc::makeProfileRef(entry->regions[std::size_t(index)], *sk);
+    profileOperationKind_ = doc::FeatureKind::Extrude;
+    selection_.set(item);
+    profileTap_ = ProfileTap{sketchId, index, at}; // the arrow where the shape was tapped
+    rebuildOperation();
+    notifyState();
+    notifyView();
+    return okStatus();
+}
+
 
 // ---- History ---------------------------------------------------------------------------
 

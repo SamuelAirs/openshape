@@ -84,6 +84,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario chipplacement   # the chip vs. the tapped edge / face at phone, iPad and desktop sizes; on the phone its buttons and the dock while typing
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario extrudetouch   # a pocket cut on the phone layout with one finger (framed face sketch, arrow and profile drags, Cut / Join / Flip), then with the mouse
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario loft   # a rectangle on the ground lofted to a circle on a plane 30 mm up (Smooth / Straight, Apply, the plane moved in the Model panel), then with taps
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchdrag   # sketch editing by dragging: mouse on the desktop, then one finger at 402x874 (touchPress/Move/Release)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
