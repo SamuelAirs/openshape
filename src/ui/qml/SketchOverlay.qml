@@ -14,7 +14,16 @@ Item {
     id: overlay
 
     required property AppController app
+    // The 3D view, magnified by the loupe.
+    property Item viewportItem: null
     signal finished()
+
+    // The controls this overlay puts over the view (Main.qml passes them on
+    // as obstacles for the live values and the loupe).
+    readonly property var controlRects: {
+        const items = [toolbar, statusPill, toolPanel, finishPanel, actionPanel, counterPanel]
+        return items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
+    }
 
     // The top row's free room (Main.qml): the tool bar sits there, centered,
     // or below the top bar in a compact window when it does not fit.
@@ -23,7 +32,7 @@ Item {
     property real topRowBottom: 0
     // Where this overlay's things along the bottom edge start (compact
     // layout: the tool strip and the constraint actions above it).
-    readonly property real bottomStackTop: actionPanel.visible && Theme.compact ? actionPanel.y : toolPanel.y
+    readonly property real bottomStackTop: Theme.compact ? Math.min(finishPanel.y, actionPanel.visible ? actionPanel.y : finishPanel.y) : toolPanel.y
     // Where the view is free of this overlay's controls (Main.qml: a sketch
     // started on a face frames the face there): below the tool bar, above
     // the tool strip (compact) or right of the tool palette (regular).
@@ -122,7 +131,9 @@ Item {
             id: toolRow
             anchors.centerIn: parent
             spacing: 2
+            // A phone has no room for the name; Finish sketch sits by the thumb there.
             Text {
+                visible: !Theme.compact
                 text: overlay.app.sketchName
                 textFormat: Text.PlainText // a name from the project
                 font.pixelSize: 13
@@ -131,9 +142,19 @@ Item {
                 Layout.leftMargin: 8
                 Layout.rightMargin: 6
             }
-            Separator {}
+            Separator { visible: !Theme.compact }
+            // Back to facing the sketch's plane head-on (after an orbit).
             ActionButton {
-                objectName: "finishSketchButton"
+                objectName: "faceSketchButton"
+                text: "Face on"
+                onClicked: overlay.app.faceSketch()
+                ToolTip.visible: hovered && !Theme.touch
+                ToolTip.text: "Turn the view to face the sketch"
+                ToolTip.delay: 500
+            }
+            ActionButton {
+                objectName: Theme.compact ? "" : "finishSketchButton"
+                visible: !Theme.compact
                 text: "Finish sketch"
                 accent: true
                 onClicked: {
@@ -144,29 +165,94 @@ Item {
         }
     }
 
+    // A phone: Finish sketch at the bottom, by the thumb (right of the
+    // sketch's actions, above the tool strip).
+    Panel {
+        id: finishPanel
+        visible: Theme.compact
+        x: overlay.width - Theme.insetRight - width
+        y: toolPanel.y - 8 - height
+        width: finishCompact.implicitWidth + 2 * Theme.panelPadding
+        height: Theme.controlHeight + 2 * Theme.panelPadding
+        ActionButton {
+            id: finishCompact
+            objectName: Theme.compact ? "finishSketchButton" : ""
+            anchors.centerIn: parent
+            text: "Finish sketch"
+            accent: true
+            onClicked: {
+                overlay.app.finishSketch()
+                overlay.finished()
+            }
+        }
+    }
+
     // ------------------------------------------------------------ tool palette
     // On the left like the Create palette in model mode (a row of ten tools no
     // longer fits between the top bar and the Model panel); scrolls when the
     // window is too short for touch-sized buttons. In a compact window (a
-    // phone): a strip along the bottom edge that scrolls sideways.
+    // phone): a strip along the bottom edge that scrolls sideways, with
+    // Select and Trim pinned at its left (always in reach: every edit starts
+    // there). The drawing tools go by how often they are used.
+    readonly property var drawTools: [
+        { id: "line", label: "Line", key: "L" },
+        { id: "rectangle", label: "Rectangle", key: "R" },
+        { id: "circle", label: "Circle", key: "C" },
+        { id: "arc", label: "Arc", key: "A" },
+        { id: "centerRectangle", label: "Center rect", key: "E" },
+        { id: "polygon", label: "Polygon", key: "P" },
+        { id: "tangentArc", label: "Tangent arc", key: "G" },
+        { id: "slot", label: "Slot", key: "O" }
+    ]
+    readonly property var editTools: [
+        { id: "select", label: "Select", key: "S" },
+        { id: "trim", label: "Trim", key: "T" }
+    ]
+    // The regular palette's column: Draw, then Edit (with their headings).
+    readonly property var paletteTools: {
+        const draw = drawTools.map((t, i) => i === 0 ? Object.assign({ section: "Draw" }, t) : t)
+        const edit = editTools.map((t, i) => i === 0 ? Object.assign({ section: "Edit" }, t) : t)
+        return draw.concat(edit)
+    }
     Panel {
         id: toolPanel
         objectName: "sketchToolPanel"
         readonly property real minY: Theme.insetTop + Theme.margin + Theme.controlHeight + 2 * Theme.panelPadding
         readonly property real maxBottom: overlay.height - Theme.safeBottom - 64
         readonly property real stripWidth: overlay.width - Theme.insetLeft - Theme.insetRight
+        readonly property real pinnedWidth: Theme.compact ? pinnedTools.width + 4 : 0
         x: Theme.compact ? Theme.insetLeft + Math.max(0, (stripWidth - width) / 2) : Theme.insetLeft
         y: Theme.compact ? overlay.height - Theme.insetBottom - height
                          : Math.max(minY, Math.min((overlay.height - height) / 2, maxBottom - height))
-        width: Theme.compact ? Math.min(toolColumn.implicitWidth + 2 * Theme.panelPadding, stripWidth)
+        width: Theme.compact ? Math.min(pinnedWidth + toolColumn.implicitWidth + 2 * Theme.panelPadding, stripWidth)
                              : toolColumn.implicitWidth + 2 * Theme.panelPadding
         height: Theme.compact ? Theme.controlHeight + 2 * Theme.panelPadding
                               : Math.min(toolColumn.implicitHeight + 2 * Theme.panelPadding, maxBottom - minY)
 
+        // A phone: Select and Trim, outside the scrolling part.
+        Row {
+            id: pinnedTools
+            objectName: "sketchPinnedTools"
+            visible: Theme.compact
+            anchors { left: parent.left; leftMargin: Theme.panelPadding; verticalCenter: parent.verticalCenter }
+            spacing: 4
+            Repeater {
+                model: Theme.compact ? overlay.editTools : []
+                delegate: ActionButton {
+                    required property var modelData
+                    objectName: "tool_" + modelData.id
+                    text: modelData.label
+                    checked: overlay.app.sketchTool === modelData.id
+                    onClicked: overlay.app.setSketchTool(modelData.id)
+                }
+            }
+            Rectangle { width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: Theme.panelBorder }
+        }
+
         Flickable {
             id: toolScroll
             objectName: "sketchToolScroll"
-            anchors { fill: parent; margins: Theme.panelPadding }
+            anchors { fill: parent; margins: Theme.panelPadding; leftMargin: Theme.panelPadding + toolPanel.pinnedWidth }
             contentWidth: Theme.compact ? toolColumn.implicitWidth : width
             contentHeight: Theme.compact ? height : toolColumn.implicitHeight
             clip: true
@@ -179,7 +265,7 @@ Item {
             property Item current: null
             function reveal(item) {
                 current = item
-                if (!item || !item.visible)
+                if (!item || !item.visible || !item.parent)
                     return
                 const p = item.mapToItem(contentItem, 0, 0)
                 if (Theme.compact) {
@@ -208,18 +294,7 @@ Item {
                 rowSpacing: 4
                 columnSpacing: 4
                 Repeater {
-                    model: [
-                        { section: "Draw", id: "line", label: "Line", key: "L" },
-                        { id: "rectangle", label: "Rectangle", key: "R" },
-                        { id: "centerRectangle", label: "Center rectangle", key: "E" },
-                        { id: "polygon", label: "Polygon", key: "P" },
-                        { id: "circle", label: "Circle", key: "C" },
-                        { id: "arc", label: "Arc", key: "A" },
-                        { id: "tangentArc", label: "Tangent arc", key: "G" },
-                        { id: "slot", label: "Slot", key: "O" },
-                        { section: "Edit", id: "select", label: "Select", key: "S" },
-                        { id: "trim", label: "Trim", key: "T" }
-                    ]
+                    model: Theme.compact ? overlay.drawTools : overlay.paletteTools
                     delegate: GridLayout {
                         required property var modelData
                         readonly property bool sectionStart: modelData.section !== undefined
@@ -233,8 +308,6 @@ Item {
                             text: parent.sectionStart ? modelData.section : ""
                             Layout.topMargin: modelData.section === "Draw" ? 0 : 6
                         }
-                        // The strip has no room for section names: a line between Draw and Edit.
-                        Separator { visible: Theme.compact && parent.sectionStart && modelData.section !== "Draw" }
                         ActionButton {
                             objectName: "tool_" + modelData.id
                             text: modelData.label
@@ -274,9 +347,9 @@ Item {
             }
         }
         Rectangle {
-            anchors { top: parent.top; bottom: parent.bottom; left: parent.left; margins: 1 }
+            anchors { top: parent.top; bottom: parent.bottom; left: parent.left; margins: 1; leftMargin: 1 + toolPanel.pinnedWidth + Theme.panelPadding - 2 }
             width: 32
-            radius: 12
+            radius: toolPanel.pinnedWidth > 0 ? 0 : 12
             visible: Theme.compact && toolScroll.contentX > 1
             gradient: Gradient {
                 orientation: Gradient.Horizontal
@@ -288,21 +361,92 @@ Item {
 
     // Constraint status under the tool bar.
     Rectangle {
-        anchors { horizontalCenter: toolbar.horizontalCenter; top: toolbar.bottom; topMargin: 8 }
+        id: statusPill
+        objectName: "sketchStatus"
+        readonly property bool done: overlay.app.sketchStatus === "Fully defined" || overlay.app.sketchStatus === "Fully sized"
+        // A phone: beside the tool bar when there is room (a row less over
+        // the drawing), else under it.
+        readonly property bool beside: Theme.compact && toolbar.x + toolbar.width + 8 + width <= overlay.topRowRight
+        x: beside ? toolbar.x + toolbar.width + 8 : toolbar.x + (toolbar.width - width) / 2
+        y: beside ? toolbar.y + (toolbar.height - height) / 2 : toolbar.y + toolbar.height + 8
         visible: overlay.app.sketchStatus.length > 0
         width: statusText.implicitWidth + 24
         height: 26
         radius: 13
-        color: overlay.app.sketchStatus === "Fully defined" ? "#E3F3E7"
-             : overlay.app.sketchStatus === "Conflicting constraints" ? "#FBE3E3" : Theme.panel
+        color: done ? "#E3F3E7" : overlay.app.sketchStatus === "Conflicting constraints" ? "#FBE3E3" : Theme.panel
         border.color: Theme.panelBorder
         Text {
             id: statusText
             anchors.centerIn: parent
             text: overlay.app.sketchStatus
             font.pixelSize: 12
-            color: overlay.app.sketchStatus === "Fully defined" ? "#1E7A3A"
+            color: statusPill.done ? "#1E7A3A"
                  : overlay.app.sketchStatus === "Conflicting constraints" ? Theme.error : Theme.mutedText
+        }
+    }
+
+    // ------------------------------------------------------------ loupe
+    // While a finger places or drags a point: what is under it, twice as
+    // large, beside the finger (AppController.sketchLoupe: placed clear of
+    // the finger and the controls), centered on the snapped point, with the
+    // snap hint. A live texture of the 3D view's own rendering (no second
+    // render of the model).
+    Item {
+        id: loupe
+        objectName: "sketchLoupe"
+        readonly property var info: overlay.app.sketchLoupe
+        readonly property real zoom: info.zoom !== undefined ? info.zoom : 2
+        visible: overlay.viewportItem !== null && info.visible === true
+        width: info.size !== undefined ? info.size : 112
+        height: width
+        x: (info.x !== undefined ? info.x : 0) - width / 2
+        y: (info.y !== undefined ? info.y : 0) - height / 2
+        z: 20
+        Rectangle {
+            anchors.fill: parent
+            radius: 10
+            color: Theme.panel
+            border.color: Theme.panelBorder
+        }
+        ShaderEffectSource {
+            id: loupeView
+            objectName: "sketchLoupeView"
+            anchors { fill: parent; margins: 3 }
+            sourceItem: loupe.visible ? overlay.viewportItem : null
+            sourceRect: Qt.rect(loupe.info.sx - width / (2 * loupe.zoom), loupe.info.sy - height / (2 * loupe.zoom),
+                                width / loupe.zoom, height / loupe.zoom)
+            live: true
+            hideSource: false
+            smooth: true
+        }
+        // The snapped point: a small cross in the middle.
+        Rectangle { anchors.centerIn: parent; width: 14; height: 1.5; color: Theme.accent }
+        Rectangle { anchors.centerIn: parent; width: 1.5; height: 14; color: Theme.accent }
+        Rectangle {
+            anchors.fill: parent
+            radius: 10
+            color: "transparent"
+            border.color: Theme.accent
+            border.width: 2
+        }
+        // What it snapped to.
+        Rectangle {
+            visible: loupeHint.text.length > 0
+            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 6 }
+            width: loupeHint.implicitWidth + 12
+            height: 20
+            radius: 10
+            color: "white"
+            border.color: Theme.panelBorder
+            Text {
+                id: loupeHint
+                objectName: "sketchLoupeHint"
+                anchors.centerIn: parent
+                text: loupe.info.hint !== undefined ? loupe.info.hint : ""
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                color: Theme.accent
+            }
         }
     }
 
@@ -398,8 +542,10 @@ Item {
                 visible: !labelItem.isConstraint
                 readonly property bool isHint: labelItem.modelData.kind === "hint"
                 readonly property bool isInput: labelItem.modelData.kind === "input"
-                width: label.implicitWidth + (caption.visible ? caption.implicitWidth + 4 : 0) + (isHint ? 12 : 16)
-                height: isHint ? 20 : 24
+                width: label.implicitWidth + (caption.visible ? caption.implicitWidth + 4 : 0)
+                       + (prefix.visible ? prefix.implicitWidth + 4 : 0) + (isHint ? 12 : 16)
+                // Touch: taller pills in a larger font (a 44 px tap area around them).
+                height: isHint ? (Theme.touch ? 24 : 20) : (Theme.touch ? 30 : 24)
                 radius: height / 2
                 // A size is measured, not set: dimmer than a dimension.
                 opacity: labelItem.isSize ? 0.8 : 1.0
@@ -411,11 +557,21 @@ Item {
                 Row {
                     anchors.centerIn: parent
                     spacing: 4
+                    // Which value it is ("W", "H" of a rectangle).
+                    Text {
+                        id: prefix
+                        visible: text.length > 0
+                        text: labelItem.modelData.prefix !== undefined ? labelItem.modelData.prefix : ""
+                        font.pixelSize: Theme.touch ? 12 : 11
+                        font.weight: Font.DemiBold
+                        color: Theme.mutedText
+                        anchors.verticalCenter: label.verticalCenter
+                    }
                     Text {
                         id: label
                         text: pill.isInput && labelItem.modelData.focused && overlay.typing.length > 0
                               ? overlay.typing : labelItem.modelData.text
-                        font.pixelSize: pill.isHint ? 11 : 12
+                        font.pixelSize: pill.isHint ? (Theme.touch ? 12 : 11) : (Theme.touch ? 13 : 12)
                         font.weight: labelItem.modelData.locked ? Font.DemiBold : Font.Normal
                         color: pill.isHint ? Theme.accent : labelItem.isSize ? Theme.mutedText : Theme.text
                     }
@@ -430,7 +586,9 @@ Item {
                     }
                 }
                 MouseArea {
-                    // At least 44 px to tap in the touch layout.
+                    // At least 44 px to tap in the touch layout (an invisible
+                    // area around the pill).
+                    objectName: labelItem.objectName.length > 0 ? labelItem.objectName + "_tap" : ""
                     anchors.centerIn: parent
                     width: Math.max(parent.width, Theme.touch ? 44 : 0)
                     height: Math.max(parent.height, Theme.touch ? 44 : 0)
@@ -525,7 +683,7 @@ Item {
         ScrollRow {
             id: actionRow
             anchors.centerIn: parent
-            maximumWidth: Theme.compact ? overlay.width - Theme.insetLeft - Theme.insetRight - 2 * Theme.panelPadding : Infinity
+            maximumWidth: Theme.compact ? overlay.width - Theme.insetLeft - Theme.insetRight - 2 * Theme.panelPadding - finishPanel.width - 8 : Infinity
             spacing: 4
             Repeater {
                 model: overlay.app.contextActions

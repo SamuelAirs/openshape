@@ -393,6 +393,46 @@ void AppController::setFrameInsets(const QVariantList& insets)
     emit viewChanged();
 }
 
+QVariantList AppController::sketchObstacles() const
+{
+    QVariantList list;
+    for (const auto& r : interaction_->sketchObstacles())
+        list.append(QRectF(QPointF(r.left, r.top), QPointF(r.right, r.bottom)));
+    return list;
+}
+
+void AppController::setSketchObstacles(const QVariantList& rects)
+{
+    std::vector<interact::ScreenRect> obstacles;
+    for (const QVariant& rect : rects)
+        if (const QRectF r = rect.toRectF(); r.width() > 0 && r.height() > 0)
+            obstacles.push_back(toScreenRect(r));
+    const auto& now = interaction_->sketchObstacles();
+    const bool same = obstacles.size() == now.size()
+                   && std::equal(obstacles.begin(), obstacles.end(), now.begin(), [](const auto& a, const auto& b) {
+                          return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
+                      });
+    if (same)
+        return;
+    interaction_->setSketchObstacles(std::move(obstacles));
+    emit viewChanged();
+}
+
+QVariantMap AppController::sketchLoupe() const
+{
+    const auto loupe = interaction_->sketchLoupe();
+    QVariantMap map;
+    map.insert(QStringLiteral("visible"), loupe.visible);
+    map.insert(QStringLiteral("x"), loupe.center.x);
+    map.insert(QStringLiteral("y"), loupe.center.y);
+    map.insert(QStringLiteral("sx"), loupe.subject.x);
+    map.insert(QStringLiteral("sy"), loupe.subject.y);
+    map.insert(QStringLiteral("size"), loupe.size);
+    map.insert(QStringLiteral("zoom"), loupe.zoom);
+    map.insert(QStringLiteral("hint"), q(loupe.hint));
+    return map;
+}
+
 QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
 {
     interact::ChipPlacementInput input;
@@ -565,6 +605,7 @@ QVariantList AppController::sketchLabels() const
         map.insert(QStringLiteral("entity"), int(label.entity));
         map.insert(QStringLiteral("text"), q(label.text));
         map.insert(QStringLiteral("caption"), q(label.caption));
+        map.insert(QStringLiteral("prefix"), q(label.prefix));
         map.insert(QStringLiteral("x"), label.screen.x);
         map.insert(QStringLiteral("y"), label.screen.y);
         map.insert(QStringLiteral("focused"), label.focused);
@@ -622,6 +663,11 @@ void AppController::startSketch(const QString& plane)
 void AppController::finishSketch()
 {
     interaction_->finishSketch();
+}
+
+void AppController::faceSketch()
+{
+    interaction_->faceSketch();
 }
 
 void AppController::setSketchTool(const QString& name)

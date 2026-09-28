@@ -38,6 +38,7 @@ struct SketchLabel {
     sketch::EntityId entity = sketch::kNoEntity;     // Size: the line, circle or arc
     std::string text;
     std::string caption; // what the value is, shown after it in muted text ("across flats", "sides")
+    std::string prefix;  // what the value is, shown before it in muted text ("W", "H")
     Vec2 screen;
     bool focused = false; // Input that receives typed digits
     bool locked = false;  // Input whose value the user typed
@@ -154,6 +155,9 @@ public:
     // The window's safe-area insets: live values moved out from under a
     // finger stay inside them (labels()).
     void setSafeInsets(const SafeInsets& insets) { safeInsets_ = insets; }
+    // The controls over the view (top bar, sketch tool bar, status, the right
+    // column): live values moved out from under a finger keep off them.
+    void setOverlayObstacles(std::vector<ScreenRect> obstacles) { obstacles_ = std::move(obstacles); }
     // Half the side of a constraint glyph's square tap target, px. Taps are
     // resolved here, not by the UI: with the Select tool a point or curve
     // within pick reach always wins, and only then a glyph under the pointer.
@@ -378,6 +382,7 @@ private:
     int polygonSides_ = 6;
     bool largeTargets_ = false;
     SafeInsets safeInsets_;
+    std::vector<ScreenRect> obstacles_;
 
     // The last pointer position and device: a finger or pen there hides the
     // labels beside it (labels()).
@@ -395,6 +400,7 @@ private:
     Grab grab_;                    // Select: what the press took hold of
     std::optional<Snap> dragSnap_; // a dragged point's snap (shown; joined on release)
     bool keepSelectionOnRelease_ = false; // a double-click chose the selection
+    bool addTipShown_ = false;            // "Taps add to the selection" was said
     sketch::Sketch dragStart_;
 
     std::vector<sketch::EntityId> selected_;

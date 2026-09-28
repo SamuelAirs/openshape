@@ -100,6 +100,7 @@ SketchReferences sketchReferences(const doc::Document& document, const sketch::P
                 break;
             case geom::PlaneEdge::Kind::Circle:
                 c.kind = SketchReferences::Curve::Kind::Circle;
+                c.start = c.end = c.center + Vec2{c.radius, 0}; // no ends: a point on it
                 addPoint(c.center, SketchReferences::PointKind::Center);
                 break;
             case geom::PlaneEdge::Kind::Arc: {

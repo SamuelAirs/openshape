@@ -88,6 +88,13 @@ class AppController : public QObject {
     // the hint and the tool strip): a sketch started on a face frames it
     // between them (InteractionController::setFrameInsets).
     Q_PROPERTY(QVariantList frameInsets READ frameInsets WRITE setFrameInsets NOTIFY viewChanged)
+    // The controls over the view while sketching (rects: top bar, sketch tool
+    // bar, status, the right column): live values moved out from under a
+    // finger and the loupe keep off them.
+    Q_PROPERTY(QVariantList sketchObstacles READ sketchObstacles WRITE setSketchObstacles NOTIFY viewChanged)
+    // The loupe while a finger places or drags a sketch point: {visible, x, y
+    // (its center), sx, sy (the snapped point it magnifies), size, zoom, hint}.
+    Q_PROPERTY(QVariantMap sketchLoupe READ sketchLoupe NOTIFY viewChanged)
     Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
@@ -180,6 +187,9 @@ public:
     void setSafeInsets(const QVariantList& insets);
     QVariantList frameInsets() const;
     void setFrameInsets(const QVariantList& insets);
+    QVariantList sketchObstacles() const;
+    void setSketchObstacles(const QVariantList& rects);
+    QVariantMap sketchLoupe() const;
     QVariantList axisTriad() const;
     bool touchMode() const;
     void setTouchMode(bool on);
@@ -391,6 +401,8 @@ public:
     Q_INVOKABLE void startSketch(const QString& plane = QString());
     Q_INVOKABLE bool faceSelected() const;
     Q_INVOKABLE void finishSketch();
+    // "Face on": the view faces the sketch's plane again (after an orbit).
+    Q_INVOKABLE void faceSketch();
     Q_INVOKABLE void setSketchTool(const QString& name);
     // Replaces the focused input's text while drawing; returns an error or "".
     Q_INVOKABLE QString sketchType(const QString& text);

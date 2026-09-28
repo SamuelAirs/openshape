@@ -433,3 +433,245 @@ TEST(SketchPhone, FingerReach)
     EXPECT_EQ(SketchSession::pickReach(PointerDevice::Touch), 22.0);
     EXPECT_GE(SketchSession::snapReach(PointerDevice::Touch), 22.0);
 }
+
+// One finger dragging empty space in a sketch pans (Select and Trim); the
+// view never tilts off the sketch's plane. A mouse still orbits.
+TEST(SketchPhone, OneFingerOnEmptySpacePansWithoutTilting)
+{
+    for (const SketchTool tool : {SketchTool::Select, SketchTool::Trim}) {
+        Phone p;
+        p.box();
+        p.sketchOnTop();
+        p.controller.setSketchTool(tool);
+        const Camera before = p.controller.camera();
+        // From beside the face (empty space) 120 px across and down.
+        const Vec2 from = p.sketchScreen({-14, 0});
+        p.drag(from, from + Vec2{120, 80});
+        const Camera after = p.controller.camera();
+        EXPECT_NEAR(after.pitch, before.pitch, 1e-12);
+        EXPECT_NEAR(after.yaw, before.yaw, 1e-12);
+        EXPECT_GT((after.target - before.target).length(), 1.0) << "it panned";
+        // The point under the finger moved with it.
+        EXPECT_NEAR((p.sketchScreen({-14, 0}) - (from + Vec2{120, 80})).length(), 0.0, 1.0);
+        EXPECT_TRUE(p.sketch().lines().empty());
+    }
+    // A mouse orbits as before.
+    Phone m(false);
+    m.box();
+    m.sketchOnTop();
+    m.controller.setSketchTool(SketchTool::Select);
+    const Camera mouseBefore = m.controller.camera();
+    const Vec2 from = m.sketchScreen({-16, 0});
+    m.drag(from, from + Vec2{120, 80});
+    EXPECT_GT(std::abs(m.controller.camera().yaw - mouseBefore.yaw) + std::abs(m.controller.camera().pitch - mouseBefore.pitch), 1e-3);
+}
+
+// "Face on" turns the view back to facing the sketch after an orbit, and
+// frames the face.
+TEST(SketchPhone, FaceOnFacesTheSketchAgain)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    const Camera faced = p.controller.camera();
+    EXPECT_NEAR(faced.forward().z, -1.0, 1e-9);
+    p.controller.setViewAngles(faced.yaw + 0.5, faced.pitch - 0.4, false);
+    EXPECT_GT(std::abs(p.controller.camera().forward().z + 1.0), 1e-3);
+    p.controller.faceSketch();
+    p.controller.skipAnimation();
+    const Camera again = p.controller.camera();
+    EXPECT_NEAR(again.forward().z, -1.0, 1e-9);
+    EXPECT_NEAR(again.yaw, faced.yaw, 1e-9);
+    // The face spans most of the phone's width again (1.15 margin).
+    const double across = (p.sketchScreen({10, 0}) - p.sketchScreen({-10, 0})).length();
+    EXPECT_GT(across, 0.6 * 402);
+    EXPECT_LT(across, 402);
+}
+
+// A sketch opened again on a face is framed on the face (not left small).
+TEST(SketchPhone, EditingAFaceSketchFramesTheFace)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    p.tap(p.sketchScreen({-5, -5}));
+    p.tap(p.sketchScreen({5, 5}));
+    p.finish();
+    p.controller.fitAll(false);
+    ASSERT_TRUE(p.controller.editSketch(p.document.sketches().front()->id()).ok());
+    p.controller.skipAnimation();
+    EXPECT_EQ(p.session().tool(), SketchTool::Select) << "an existing sketch opens in Select";
+    const double across = (p.sketchScreen({10, 0}) - p.sketchScreen({-10, 0})).length();
+    EXPECT_GT(across, 0.6 * 402);
+}
+
+// Live values: none while they are 0 (a finger's first tap), W and H on a
+// rectangle's; no snapped cursor left where a finger lifted.
+TEST(SketchPhone, LiveValuesAndTheCursorOnTouch)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    auto inputs = [&] {
+        std::vector<SketchLabel> out;
+        for (const auto& l : p.session().labels(p.controller.camera()))
+            if (l.kind == SketchLabel::Kind::Input)
+                out.push_back(l);
+        return out;
+    };
+    auto previewPoints = [&] {
+        int n = 0;
+        for (const auto& pt : p.session().renderData(p.controller.camera()).points)
+            n += pt.style == SketchStyle::Preview || pt.style == SketchStyle::Hovered;
+        return n;
+    };
+    p.tap(p.sketchScreen({-3, -3}));
+    ASSERT_TRUE(p.session().isDrawing());
+    EXPECT_TRUE(inputs().empty()) << "no 0 x 0 values after the first tap";
+    EXPECT_EQ(previewPoints(), 1) << "the first corner only: no cursor where the finger lifted";
+    // The finger down again and moving: W and H.
+    const Vec2 from = p.sketchScreen({4, 5});
+    p.controller.pointerPress(p.at(from));
+    p.controller.pointerMove(p.at(from + Vec2{3, 2}));
+    const auto live = inputs();
+    ASSERT_EQ(live.size(), 2u);
+    EXPECT_EQ(live[0].prefix, "W");
+    EXPECT_EQ(live[1].prefix, "H");
+    p.controller.pointerRelease(p.at(from + Vec2{3, 2}));
+    EXPECT_FALSE(p.session().isDrawing());
+    EXPECT_EQ(previewPoints(), 0);
+}
+
+// Plain words on touch: the status, the zero-size message, and "taps add".
+TEST(SketchPhone, PlainWordsOnTouch)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    EXPECT_EQ(p.session().statusText(), "Empty sketch");
+    // Two taps straight above each other: no width.
+    p.tap(p.sketchScreen({-3, -3}));
+    p.tap(p.sketchScreen({-3, 4}));
+    ASSERT_FALSE(p.messages.empty());
+    EXPECT_EQ(p.messages.back(), "Tap farther from the first corner.");
+    p.controller.keyPress(Key::Escape);
+    p.tap(p.sketchScreen({-3, -3}));
+    p.tap(p.sketchScreen({4, 4}));
+    EXPECT_EQ(p.session().statusText(), "Not fully sized");
+    // A mouse layout keeps the count.
+    Phone m(false);
+    ASSERT_TRUE(m.controller.startSketch().ok());
+    m.controller.skipAnimation();
+    m.tap(m.sketchScreen({0, 0}) + Vec2{60, -40});
+    m.tap(m.sketchScreen({0, 0}) + Vec2{160, -120});
+    EXPECT_EQ(m.session().statusText(), "4 degrees of freedom");
+
+    // Touch: a second tap adds to the selection: said once.
+    p.controller.setSketchTool(SketchTool::Select);
+    p.messages.clear();
+    p.tap(p.sketchScreen({0.5, -3}));
+    ASSERT_EQ(p.session().selection().size(), 1u);
+    EXPECT_NE(p.session().hintText().find("click empty space to start a new selection"), std::string::npos);
+    p.tap(p.sketchScreen({0.5, 4}));
+    ASSERT_EQ(p.session().selection().size(), 2u);
+    ASSERT_EQ(p.messages.size(), 1u);
+    EXPECT_EQ(p.messages.back(), "Taps add to the selection: tap empty space to start a new selection.");
+    p.tap(p.sketchScreen({-3, 0.5}));
+    EXPECT_EQ(p.messages.size(), 1u) << "once";
+    // Delete comes first in the actions.
+    ASSERT_FALSE(p.session().contextActions().empty());
+    EXPECT_EQ(p.session().contextActions().front().id, "delete");
+}
+
+// The loupe: placed beside the finger, whole inside the safe area, clear of
+// the finger and of the controls.
+TEST(SketchPhone, LoupePlacement)
+{
+    LoupeInput in;
+    in.area = {0, 62, 402, 840};
+    in.avoid = {{16, 62, 300, 110}, {320, 62, 392, 250}, {16, 700, 392, 840}}; // top bar, right column, bottom stack
+    // In the middle of the view: straight above the finger.
+    in.finger = {200, 400};
+    LoupePlacement placed = placeLoupe(in);
+    EXPECT_TRUE(placed.clear);
+    EXPECT_NEAR(placed.center.x, 200, 1e-9);
+    EXPECT_NEAR(placed.center.y, 320, 1e-9);
+    // Just below the top bar: no room above, so beside it, never over the finger.
+    for (const Vec2 finger : {Vec2{150, 140}, Vec2{30, 150}, Vec2{380, 300}, Vec2{200, 680}, Vec2{10, 690}}) {
+        in.finger = finger;
+        placed = placeLoupe(in);
+        const ScreenRect box{placed.center.x - in.size / 2, placed.center.y - in.size / 2, placed.center.x + in.size / 2,
+                             placed.center.y + in.size / 2};
+        EXPECT_TRUE(in.area.contains(box)) << finger.x << ", " << finger.y;
+        EXPECT_FALSE(box.inflated(-0.5).intersects(ScreenRect::around(finger).inflated(kLoupeFingerClearance)))
+            << finger.x << ", " << finger.y;
+        if (placed.clear) {
+            for (const auto& o : in.avoid)
+                EXPECT_FALSE(box.intersects(o)) << finger.x << ", " << finger.y;
+        }
+    }
+    in.finger = {150, 140};
+    EXPECT_TRUE(placeLoupe(in).clear) << "a clear spot beside the finger";
+}
+
+// The loupe shows while a finger places or drags a point, not with a mouse.
+TEST(SketchPhone, TheLoupeFollowsAFingerPlacingAPoint)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    EXPECT_FALSE(p.controller.sketchLoupe().visible);
+    const Vec2 corner = p.sketchScreen({10, 10});
+    p.controller.pointerPress(p.at(corner + Vec2{-6, 7}));
+    InteractionController::SketchLoupe loupe = p.controller.sketchLoupe();
+    ASSERT_TRUE(loupe.visible);
+    EXPECT_EQ(loupe.hint, "Corner");
+    EXPECT_NEAR((loupe.subject - corner).length(), 0.0, 1e-6) << "it magnifies the snapped corner";
+    EXPECT_GT((loupe.center - (corner + Vec2{-6, 7})).length(), loupe.size / 2) << "not over the finger";
+    p.controller.pointerRelease(p.at(corner + Vec2{-6, 7}));
+    EXPECT_FALSE(p.controller.sketchLoupe().visible) << "gone when the finger lifts";
+
+    // Live values keep off the controls: with the controls given, a value
+    // moved out from under the finger never lands on one.
+    p.controller.setSketchObstacles({{0, 62, 402, 200}});
+    const Vec2 from = p.sketchScreen({-8, -8});
+    p.controller.pointerPress(p.at(from));
+    p.controller.pointerMove(p.at(from + Vec2{0, -150}));
+    for (const auto& l : p.session().labels(p.controller.camera()))
+        if (l.kind == SketchLabel::Kind::Input || l.kind == SketchLabel::Kind::Hint) {
+            const ScreenRect box = ScreenRect::at(l.screen - SketchSession::kLiveLabelSize * 0.5, SketchSession::kLiveLabelSize);
+            EXPECT_FALSE(box.intersects({0, 62, 402, 200})) << l.text;
+        }
+    p.controller.pointerRelease(p.at(from + Vec2{0, -150}));
+
+    // A mouse: no loupe.
+    Phone m(false);
+    m.box();
+    m.sketchOnTop();
+    m.controller.pointerPress(m.at(m.sketchScreen({10, 10})));
+    EXPECT_FALSE(m.controller.sketchLoupe().visible);
+    m.controller.pointerRelease(m.at(m.sketchScreen({10, 10})));
+}
+
+// A mouse hover while a finger drags (Qt re-sends a stationary mouse's
+// position each frame the scene changes under it) never moves the drag.
+TEST(SketchPhone, AMouseHoverNeverMovesAFingersDrag)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    p.tap(p.sketchScreen({-5, -5}));
+    p.tap(p.sketchScreen({5, 5}));
+    p.controller.setSketchTool(SketchTool::Select);
+    p.controller.pointerPress(p.at(p.sketchScreen({5, 5})));
+    p.controller.pointerMove(p.at(p.sketchScreen({6, 6})));
+    PointerEvent hover;
+    hover.device = PointerDevice::Mouse;
+    hover.button = PointerButton::None;
+    hover.position = p.sketchScreen({-8, 8});
+    p.controller.pointerMove(hover);
+    EXPECT_TRUE(p.controller.sketchLoupe().visible) << "still the finger's loupe";
+    p.controller.pointerMove(p.at(p.sketchScreen({7, 7})));
+    p.controller.pointerRelease(p.at(p.sketchScreen({7, 7})));
+    EXPECT_TRUE(p.hasPoint({7, 7})) << "the finger's drop, not the mouse's position";
+}

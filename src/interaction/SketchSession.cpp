@@ -1763,7 +1763,15 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
                 hit = glyphAt(event.position, camera);
             const bool additive = InputProfile::forDevice(event.device).additiveSelection || event.modifiers.shift
                                || event.modifiers.control;
+            const std::size_t before = selected_.size();
             select(hit, additive);
+            // A finger's taps add up (no Shift on a phone): said once, when a
+            // tap first adds a second item.
+            if (additive && !event.modifiers.shift && !event.modifiers.control && before >= 1 && selected_.size() > before
+                && !addTipShown_) {
+                addTipShown_ = true;
+                message("Taps add to the selection: tap empty space to start a new selection.");
+            }
         }
         keepSelectionOnRelease_ = false;
         dragging_ = false;
@@ -1795,6 +1803,10 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
             resetShape();
     }
     dragging_ = false;
+    // A lifted finger or pen is nowhere: no snapped cursor left where it was
+    // (a shape under way keeps its placed points).
+    if (event.device != PointerDevice::Mouse)
+        cursorValid_ = false;
 }
 
 void SketchSession::hover(const PointerEvent& event, const Camera& camera)
@@ -2309,9 +2321,11 @@ std::vector<ContextAction> SketchSession::contextActions() const
         }
         actions.push_back({"construction", "Construction", allConstruction});
     }
+    // Delete first: the most common edit, in sight at the start of a phone's
+    // scrolling row.
     const bool onlyOrigin = selected_.size() == 1 && selected_.front() == sketch::kOriginId;
     if (!onlyOrigin)
-        actions.push_back({"delete", "Delete", false});
+        actions.insert(actions.begin(), {"delete", "Delete", false});
     return actions;
 }
 
@@ -2722,10 +2736,14 @@ std::string SketchSession::statusText() const
         return "Conflicting constraints";
     if (!working_.hasGeometry())
         return "Empty sketch";
+    // The touch layout (a phone or tablet, often a first-time user) says it
+    // plainly; a desktop shows the count of what can still move.
     if (report.degreesOfFreedom == 0)
-        return "Fully defined";
+        return largeTargets_ ? "Fully sized" : "Fully defined";
     if (report.degreesOfFreedom > 0)
-        return std::to_string(report.degreesOfFreedom) + (report.degreesOfFreedom == 1 ? " degree" : " degrees") + " of freedom";
+        return largeTargets_ ? "Not fully sized"
+                             : std::to_string(report.degreesOfFreedom) + (report.degreesOfFreedom == 1 ? " degree" : " degrees")
+                                   + " of freedom";
     return {};
 }
 
@@ -2776,12 +2794,17 @@ std::string SketchSession::hintText() const
         return "Extrude turns this shape into 3D \xC2\xB7 drag inside it to move it \xC2\xB7 click empty space to deselect";
     if (constraintSelected())
         return "Delete removes the constraint \xC2\xB7 click elsewhere to keep it";
+    // The first part is what a phone's one-line hint shows: what matters most.
     if (selected_.size() == 1 && (working_.line(selected_.front()) || working_.isRound(selected_.front())))
-        return "Click its size or dimension to type an exact one \xC2\xB7 drag it to move or resize it \xC2\xB7 add constraints below "
-               "\xC2\xB7 Delete removes";
+        return sizeCanBeSet(selected_.front())
+                 ? "Click its size to type it \xC2\xB7 drag it to move or resize it \xC2\xB7 add constraints below \xC2\xB7 "
+                   "Delete removes \xC2\xB7 click empty space to start a new selection"
+                 : "Drag it to move or resize it \xC2\xB7 add constraints below \xC2\xB7 Delete removes \xC2\xB7 "
+                   "click empty space to start a new selection";
     if (!selected_.empty())
-        return "Drag one of them to move them all \xC2\xB7 add constraints below \xC2\xB7 Delete removes";
-    return "Drag lines and circles to move or resize them \xC2\xB7 click one, then its size, to type an exact one \xC2\xB7 "
+        return "Drag one of them to move them all \xC2\xB7 click empty space to start a new selection \xC2\xB7 "
+               "add constraints below \xC2\xB7 Delete removes";
+    return "Drag points or lines to move them \xC2\xB7 click a line, then its size, to type an exact one \xC2\xB7 "
            "double-click selects a whole shape \xC2\xB7 click inside a shape to extrude or move it \xC2\xB7 drag elsewhere to orbit "
            "\xC2\xB7 pick a tool to draw";
 }
@@ -2944,9 +2967,11 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
             double measured = 0;
             if (in.key == "width") {
                 measured = std::abs(c.x - a.x);
+                label.prefix = "W";
                 label.screen = screen({(a.x + c.x) / 2, std::min(a.y, c.y)}) + Vec2{0, 26};
             } else if (in.key == "height") {
                 measured = std::abs(c.y - a.y);
+                label.prefix = "H";
                 label.screen = screen({std::max(a.x, c.x), (a.y + c.y) / 2}) + Vec2{44, 0};
             } else if (in.key == "diameter") {
                 measured = 2 * (c - a).length();
@@ -2973,6 +2998,10 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 out.push_back(label);
                 continue;
             }
+            // Nothing measured yet (a finger's first tap: no hover) and
+            // nothing typed: no "0" labels in the way.
+            if (!in.locked && in.text.empty() && measured < 1e-9)
+                continue;
             label.text = in.locked ? in.text : trimmed(measured, unit);
             out.push_back(label);
         }
@@ -3043,7 +3072,7 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 live.push_back(i);
                 centers.push_back(out[i].screen);
             }
-        keepLabelsClearOfFinger(centers, kLiveLabelSize, *pointerScreen_, safeInsets_.inside(camera.viewportSize));
+        keepLabelsClearOfFinger(centers, kLiveLabelSize, *pointerScreen_, safeInsets_.inside(camera.viewportSize), obstacles_);
         for (std::size_t k = 0; k < live.size(); ++k)
             out[live[k]].screen = centers[k];
     }
@@ -3223,7 +3252,7 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
     // small geometry would drown in them; zooming in brings them back.
     std::vector<std::pair<Vec2, double>> taken;
     // The dimension labels are pills: about 7.5 px per character plus 16 px
-    // of padding wide, 24 px high (SketchOverlay.qml). A glyph (18 px) keeps
+    // of padding wide, 24 px high (30 px and a larger font in the touch layout: SketchOverlay.qml). A glyph (18 px) keeps
     // clear of the whole pill, so neither covers the other.
     struct Box {
         Vec2 center;
@@ -3231,7 +3260,7 @@ void SketchSession::addConstraintIcons(std::vector<SketchLabel>& out, const Came
     };
     std::vector<Box> labelBoxes;
     for (const auto& label : out)
-        labelBoxes.push_back({label.screen, (7.5 * double(utf8Length(label.text)) + 16) / 2, 12});
+        labelBoxes.push_back({label.screen, ((largeTargets_ ? 8.2 : 7.5) * double(utf8Length(label.text)) + 16) / 2, largeTargets_ ? 15.0 : 12.0});
     for (const auto& [id, p] : working_.points())
         taken.emplace_back(screen(p.position), kPointClearance);
     // Curves too: a glyph's tap target must not cover a curve someone clicks.
@@ -3451,7 +3480,12 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
         case SketchTool::Select:
             break;
         }
-        out.points.push_back({plane.toWorld(a), SketchStyle::Preview});
+    }
+    // The points of the shape placed so far (also while no finger is down).
+    if (anchor_) {
+        out.points.push_back({plane.toWorld(anchor_->position), SketchStyle::Preview});
+        if (arcEnd_ && !cursorValid_)
+            out.points.push_back({plane.toWorld(arcEnd_->position), SketchStyle::Preview});
     }
     // Trim: the piece a click would remove, in red.
     if (tool_ == SketchTool::Trim && hovered_ != sketch::kNoEntity && trimCursor_) {

@@ -279,10 +279,14 @@ ScreenRect fingerShadow(Vec2 finger)
     return {finger.x - kShadowHalfWidth, finger.y - kShadowAbove, finger.x + kShadowHalfWidth, finger.y + kShadowBelow};
 }
 
-void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, const ScreenRect& bounds)
+void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, const ScreenRect& bounds,
+                             const std::vector<ScreenRect>& obstacles)
 {
     const ScreenRect shadow = fingerShadow(finger);
     auto box = [&](Vec2 c) { return ScreenRect::at({c.x - labelSize.x / 2, c.y - labelSize.y / 2}, labelSize); };
+    auto blocked = [&](const ScreenRect& r) {
+        return std::any_of(obstacles.begin(), obstacles.end(), [&](const ScreenRect& o) { return o.intersects(r); });
+    };
     std::vector<bool> hidden(centers.size(), false);
     int count = 0;
     for (std::size_t i = 0; i < centers.size(); ++i)
@@ -293,12 +297,6 @@ void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 fi
     if (count == 0)
         return;
     const double step = labelSize.y + 6;
-    // Above the finger when the stack fits below the top bar, else beside it
-    // (on the side with more room), from the fingertip's height down.
-    const double firstAbove = shadow.top - kFingerGap - labelSize.y / 2;
-    const bool above = firstAbove - (count - 1) * step - labelSize.y / 2 >= bounds.top + kTopRoom;
-    const bool toLeft = finger.x > bounds.center().x;
-    const double besideX = toLeft ? shadow.left - kFingerGap - labelSize.x / 2 : shadow.right + kFingerGap + labelSize.x / 2;
     // Whole labels inside the safe area (a finger near the window's edge, or
     // beside the Dynamic Island; a stack beside the finger starts high enough
     // to end above the home indicator).
@@ -306,8 +304,21 @@ void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 fi
     const double maxX = std::max(minX, bounds.right - labelSize.x / 2);
     const double minY = bounds.top + labelSize.y / 2;
     const double maxY = std::max(minY, bounds.bottom - labelSize.y / 2);
-    const double firstBeside = std::max(minY, std::min(std::max(finger.y, bounds.top + kTopRoom + labelSize.y / 2), maxY - (count - 1) * step));
-    std::vector<ScreenRect> taken;
+    // Without the controls' rectangles, keep a fixed room below the top for
+    // them (the top bar); with them, only the rectangles themselves.
+    const double topRoom = obstacles.empty() ? kTopRoom : 0;
+    // Above the finger when the stack fits there (below the top bar, clear
+    // of the controls), else beside it (on the side with more room), from
+    // the fingertip's height down.
+    const double firstAbove = shadow.top - kFingerGap - labelSize.y / 2;
+    const double aboveX = std::clamp(finger.x, minX, maxX);
+    bool above = firstAbove - (count - 1) * step - labelSize.y / 2 >= bounds.top + topRoom;
+    for (int k = 0; k < count && above; ++k)
+        above = !blocked(box({aboveX, firstAbove - k * step}));
+    const bool toLeft = finger.x > bounds.center().x;
+    const double besideX = toLeft ? shadow.left - kFingerGap - labelSize.x / 2 : shadow.right + kFingerGap + labelSize.x / 2;
+    const double firstBeside = std::max(minY, std::min(std::max(finger.y, bounds.top + topRoom + labelSize.y / 2), maxY - (count - 1) * step));
+    std::vector<ScreenRect> taken = obstacles;
     for (std::size_t i = 0; i < centers.size(); ++i)
         if (!hidden[i])
             taken.push_back(box(centers[i]));
@@ -317,8 +328,9 @@ void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 fi
             continue;
         Vec2 c = above ? Vec2{finger.x, firstAbove - moved * step} : Vec2{besideX, firstBeside + moved * step};
         c.x = std::clamp(c.x, minX, maxX);
-        // Not onto a label that stayed (a few steps further at most).
-        for (int k = 0; k < 6 && std::any_of(taken.begin(), taken.end(), [&](const ScreenRect& t) { return t.intersects(box(c)); }); ++k)
+        // Not onto a label that stayed, nor onto a control (a few steps
+        // further at most; beside the finger, down past a control).
+        for (int k = 0; k < 12 && std::any_of(taken.begin(), taken.end(), [&](const ScreenRect& t) { return t.intersects(box(c)); }); ++k)
             c.y += above ? -step : step;
         c.y = std::clamp(c.y, minY, maxY);
         centers[i] = c;
@@ -327,4 +339,59 @@ void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 fi
     }
 }
 
+// ---- The loupe over a finger ------------------------------------------------------
+
+LoupePlacement placeLoupe(const LoupeInput& input)
+{
+    const double half = input.size / 2;
+    const ScreenRect& area = input.area;
+    auto box = [&](Vec2 c) { return ScreenRect{c.x - half, c.y - half, c.x + half, c.y + half}; };
+    auto inside = [&](Vec2 c) {
+        const double minX = area.left + half, maxX = std::max(minX, area.right - half);
+        const double minY = area.top + half, maxY = std::max(minY, area.bottom - half);
+        return Vec2{std::clamp(c.x, minX, maxX), std::clamp(c.y, minY, maxY)};
+    };
+    // The fingertip itself: the loupe never covers it (it shows what is under it).
+    const ScreenRect tip{input.finger.x - kLoupeFingerClearance, input.finger.y - kLoupeFingerClearance,
+                         input.finger.x + kLoupeFingerClearance, input.finger.y + kLoupeFingerClearance};
+    auto overlap = [&](Vec2 c) {
+        const ScreenRect b = box(c);
+        double total = 0;
+        for (const ScreenRect& o : input.avoid)
+            if (const auto part = b.clippedTo(o); part && b.intersects(o))
+                total += part->width() * part->height();
+        if (b.intersects(tip))
+            total += 1e6; // over the finger: worst
+        return total;
+    };
+    // Above the finger, then up and to either side (the side away from the
+    // window's nearer edge first), then beside it, then below.
+    const double lift = input.lift;
+    const double side = input.finger.x > area.center().x ? -1.0 : 1.0;
+    const double diagonal = half + kLoupeFingerClearance + 8;
+    const Vec2 f = input.finger;
+    const Vec2 candidates[] = {
+        {f.x, f.y - lift},
+        {f.x + side * diagonal, f.y - lift},
+        {f.x - side * diagonal, f.y - lift},
+        {f.x + side * diagonal, f.y},
+        {f.x - side * diagonal, f.y},
+        {f.x + side * diagonal, f.y + lift},
+        {f.x - side * diagonal, f.y + lift},
+        {f.x, f.y + lift},
+    };
+    LoupePlacement best;
+    double bestOverlap = 1e300;
+    for (const Vec2& wanted : candidates) {
+        const Vec2 c = inside(wanted);
+        const double o = overlap(c);
+        if (o <= 0)
+            return {c, true};
+        if (o < bestOverlap) {
+            bestOverlap = o;
+            best = {c, false};
+        }
+    }
+    return best;
+}
 } // namespace os::interact
