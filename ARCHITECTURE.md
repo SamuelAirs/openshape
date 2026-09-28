@@ -29,7 +29,7 @@ Technology choices and the alternatives considered are in
         ▼                                         │
  interaction/  InteractionController ── Operations (PushPull, Edge, OffsetFace,
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
-        │         │   Pattern, Insert, Head, Hole, Text)
+        │         │   Pattern, Insert, Head, Hole, Text, Loft)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
         │         ├─ OverlayPlacement (value chip clear of the selection, labels clear of a finger)
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
@@ -41,12 +41,12 @@ Technology choices and the alternatives considered are in
         ▼
  document/  Document → Sketches, Datums + Bodies → Feature history (Box, PushPull,
         │            Fillet, Chamfer, Shell, Extrude, Revolve, Hole, Move,
-        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace, Text, …);
+        │            Combine, Mirror, Pattern, DeleteFaces, OffsetFace, Text, Loft, …);
         │            SketchProfiles bridge
         ├──────────────────────────────┐
         ▼                              ▼
  geometry/  Shape, Modeling,       sketch/  Sketch model (points, lines, circles,
-   Profiles, Tessellation,                  arcs, constraints) + SketchSolver
+   Profiles, Loft, Tessellation,            arcs, constraints) + SketchSolver
    TopoSignature, Exchange                        ▼
         ▼                             PlaneGCS (vendored, shared lib, Eigen)
  OpenCASCADE 7.9 (only included inside geometry/)
@@ -209,6 +209,25 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   (`BRepOffsetAPI_MakeOffset` could answer this, but crashed in its medial
   axis on a square with a small round hole). After it, a positive draft
   must remove volume and a negative one add some.
+- `loftFaces` (`Loft.h`): a solid through flat profiles (region faces) in
+  order, `BRepOffsetAPI_ThruSections` (solid, `ruled` for Straight, the
+  input never modified: `SetMutableInput(false)`, `CheckCompatibility` so
+  starting points and directions avoid twists and loops with different
+  edge counts are split to match, square to circle). Refused before any
+  kernel work: fewer than two profiles, a profile that is not one flat face,
+  two profiles in a row in one plane (not in a row is fine: an arch back
+  to the ground), different numbers of holes. Holes are lofted separately
+  (each paired with the nearest hole of the profile before, measured from
+  the profiles' middles) and cut out, and must take exactly their own
+  volume (else a hole's loft breaks through the outside). Each loft is
+  checked: its end faces must be exactly the first and last profile (area
+  in their planes), its volume positive, and `BRepAlgoAPI_Check` finds no
+  self-interference (a twist, profiles cutting through each other); ~160 ms
+  for a three-profile smooth loft with the checks. ThruSections carries
+  every side on a B-spline, also flat ones (a pyramid frustum's sides):
+  those (`GeomLib_IsPlanarSurface`) are rebuilt as planes and the faces
+  sewn into a solid again, kept only when valid and of the same volume, so
+  push/pull, sketches and holes take them as flat faces.
 - `offsetCurves` (Profiles.h): offsets one connected chain of planar curves
   (`BRepOffsetAPI_MakeOffset`, sharp corners) for the sketch Offset action.
 - `pointOnFace` (a point inside a flat face, away from holes) and
@@ -296,7 +315,7 @@ Document (UUID, display unit)
 - Features expose editable scalar `parameters()` (e.g. box width, push/pull
   distance, fillet radius, pattern count) — the basis for history editing.
 - Feature kinds (`FeatureKind`, stored by name): Box, and Extrude / Revolve
-  (base features when they make a new body); PushPull, Fillet, Chamfer,
+  / Loft (base features when they make a new body); PushPull, Fillet, Chamfer,
   Shell, Hole (at a circular rim: a plain cylinder such as a heat-set
   insert's pilot hole, or a counterbore / countersink for a screw head,
   whose exact ring or frustum volume is verified, and which measures the
@@ -440,6 +459,17 @@ Document (UUID, display unit)
   transitively (A combines with B, B with C: editing C updates B, then A),
   so the order of bodies in a file does not matter; a cycle from a hostile
   file stops after a bounded number of recomputes per body.
+- `LoftFeature` references its profiles as `LoftSection`s (a sketch UUID
+  and a profile ref each: every section may come from another sketch, in
+  its own plane); `dependencies()` lists each sketch once, so an edited
+  sketch, a moved construction plane (`syncSketchAttachments` moves the
+  sketch, then recomputes its dependents) or a moved face recomputes the
+  loft. Each sketch's regions are found once per compute (on its
+  `effectivePlane`), then `geom::loftFaces`; mode NewBody / Join / Cut as
+  for Extrude. Its options are *choice* parameters: `textParameters()` with
+  `TextParameterInfo::choices` ("sections": Smooth / Straight; for a join
+  or cut "mode": Join / Cut), set through `SetTextParameterCommand` like a
+  Text step's words; the Model panel shows them as buttons.
 
 ## Topological naming (interim strategy)
 
@@ -843,6 +873,28 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   so does an automatic cut that would remove nothing (a profile beside the
   body pushed in: `reconsiderRefusal` on `ErrorCode::NoEffect`). A cut
   chosen explicitly is refused with the reason instead.
+- **Loft:** Shift-click (any tap on touch) adds profiles of the same sketch,
+  or of another sketch whose plane differs from the last profile selected
+  (a loft's next section, in selection order); a profile of another sketch
+  in the same plane starts a new selection (they could neither extrude
+  together nor loft). Profiles of several sketches arm nothing: the
+  selection's actions offer **Loft** when they do not all lie in one plane
+  (`profilesOnSeveralPlanes`, plane arithmetic only). Loft (the action, or
+  `runTool("loft")` from the Create palette, which explains what to select
+  otherwise) sets `profileOperationKind_ = Loft`; `rebuildOperation` then
+  makes a `LoftOperation` from the selected sections and previews it at once
+  (no value, no handles: its actions stay in the selection bar, like
+  Mirror's). Smooth / Straight and a chosen mode live in the controller
+  (`loftRuled_`, `loftMode_`) while the selection lasts, so a tap that adds
+  or removes a section (not an Apply: `click` skips the apply-before-select
+  for a loft and a profile under an additive press) rebuilds the loft with
+  them. The host is the first section's sketch's (shown) host body: an
+  automatic join, or a new body when the preview's join would not touch it
+  (`reconsider`, `commitNeedsPreview`); without a host always a new body.
+  A profile's extrusion arrow (armed by the first click) often points up
+  through the next profile on screen: a press on an untouched extrusion's
+  arrow (value 0) released without moving, over a profile on another
+  plane, is a click on that profile (`pointerRelease`, `Drag::travel`).
 - **Touch:** `TouchGestureRecognizer` (Qt-free) turns touch frames into
   intents — one-finger pointer press/move/release and double-tap, two-finger
   pan/pinch once they move past a threshold, quick two/three-finger taps as
@@ -1142,7 +1194,9 @@ offset plane's distance or the angled plane's angle as parameters), bodies
 and each body's features into rows (name, detail, status — ok, warning,
 failed, blocked, suppressed — explanation, editable parameters: lengths,
 angles, counts, and strings such as a Text step's words, `Parameter::isText`,
-which `setFeatureParameter` takes as typed).
+which `setFeatureParameter` takes as typed; a string with `choices`, a
+loft's Smooth / Straight, is a row of buttons `historyChoice_<id>_<key>_<choice>`
+in `HistoryPanel.qml` that pass the choice to `setFeatureParameter`).
 Clicking a datum's row selects it (`selectDatum`); Hide / Show and Delete
 push `EditDatumCommand` / `DeleteDatumCommand`, and `setFeatureParameter`
 edits a datum's value when the id is a datum's.
@@ -1369,7 +1423,13 @@ them on a hidden menu separator after the Open Recent sub-menu).
   as text), `hole_allowance` (the 3D-printing allowance clicked and typed in
   Preferences, then a Hole tool preset drilled with it), `text` (the Text
   tool on a plate: typed words, size, depth, applied, edited in the Model
-  panel, undone, saved and reopened, then cut in from the palette) and
+  panel, undone, saved and reopened, then cut in from the palette), `loft`
+  (the palette's Loft explaining itself, a rectangle sketched on the
+  ground, Plane → From XY 30, a circle sketched on it, the rectangle clicked
+  and the circle Shift-clicked through the rectangle's extrusion arrow,
+  Loft and Straight previewed with the loft's volume, Apply, the plane's
+  distance edited in the Model panel with the loft following, Smooth
+  chosen in the Model panel, undo) and
   `userguide` (the help card's link to
   docs/USER_GUIDE.md is clicked; a `QDesktopServices` URL handler catches
   it, so no browser opens), `shading` and `perspective` (the viewport's

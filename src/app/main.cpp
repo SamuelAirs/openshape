@@ -6,7 +6,9 @@
 #include "app/CrashLog.h"
 #include "app/FaceContrast.h"
 #include "core/Log.h"
+#include "commands/DocumentCommands.h"
 #include "core/Version.h"
+#include "document/Datum.h"
 #include "geometry/Modeling.h"
 #include "ui/AppController.h"
 #include "ui/AppSettings.h"
@@ -402,6 +404,40 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
         (void)interaction.triggerAction("field:size");
         interaction.setValueText("4");
         (void)interaction.triggerAction("field:depth");
+        return;
+    }
+    if (demo == QLatin1String("loft")) {
+        // A hopper: a 30 x 20 rectangle on the ground and a circle of 12 mm
+        // on a construction plane 30 mm above it, both selected, Loft
+        // previewed.
+        auto& stack = interaction.undoStack();
+        os::doc::Datum plane;
+        plane.method = os::doc::DatumMethod::PlaneOffset;
+        plane.originIndex = 2;
+        plane.distance = 30;
+        plane.setName(app.document().nextDatumName(os::doc::DatumKind::Plane));
+        const os::Uuid planeId = plane.id();
+        (void)stack.push(std::make_unique<os::cmd::AddDatumCommand>(std::move(plane)), app.document());
+        os::sketch::Sketch ground;
+        ground.setName("Sketch 1");
+        os::sketch::addRectangle(ground, {-15, -10}, {15, 10});
+        os::sketch::Sketch top(os::Uuid::generate(), os::doc::sketchPlaneOn(app.document().datum(planeId)->geometry()));
+        top.setDatumPlane(planeId);
+        top.setName("Sketch 2");
+        top.addCircle(top.addPoint({0, 0}), 6);
+        (void)stack.push(std::make_unique<os::cmd::CreateSketchCommand>(std::move(ground)), app.document());
+        (void)stack.push(std::make_unique<os::cmd::CreateSketchCommand>(std::move(top)), app.document());
+        interaction.documentChanged();
+        interaction.fitAll(false);
+        os::interact::PointerEvent pick;
+        pick.position = interaction.camera().project({10, 6, 0});
+        interaction.pointerPress(pick);
+        interaction.pointerRelease(pick);
+        pick.position = interaction.camera().project({0, 0, 30});
+        pick.modifiers.shift = true;
+        interaction.pointerPress(pick);
+        interaction.pointerRelease(pick);
+        (void)interaction.triggerAction("loft");
         return;
     }
     if (demo == QLatin1String("rotate")) {

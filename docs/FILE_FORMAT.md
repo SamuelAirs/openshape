@@ -63,8 +63,8 @@ Rules:
   `displayUnit` (which is only the UI's default input/display unit). A reader
   must reject any other `lengthUnit`.
 - The first feature of every body must be a base feature (`Box`,
-  `SplitPiece`, `Copy`, `Imported`, or `Extrude` / `Revolve` with mode
-  `NewBody`).
+  `SplitPiece`, `Copy`, `Imported`, or `Extrude` / `Revolve` / `Loft` with
+  mode `NewBody`).
 - Sketch entity ids are integers unique within their sketch; id 1 is always
   the fixed origin point. `nextId` is the next unused id. Sketch coordinates
   are millimeters in the plane's (xAxis, yAxis) frame.
@@ -161,6 +161,21 @@ Rules:
 - `Revolve` params: like `Extrude` (sketch, profiles, mode) plus `"axis": "X" |
   "Y"` (the sketch's own axes through its origin) and `"angle"` in radians
   (0, 2π].
+- `Loft` params: `{ "sections": [{ "sketch": uuid, "point": [x, y], "area" }, …],
+  "ruled": bool, "mode": "NewBody" | "Join" | "Cut" }` — a solid through
+  closed sketch profiles in the order listed (2 to 100 sections; each a
+  profile referenced like `Extrude`'s, but each with its own sketch, so a
+  loft goes from a sketch on the ground to one on a construction plane or a
+  body's face; a sketch may be named by more than one section). `ruled`
+  false (Smooth, the default when absent) is one smooth surface through all
+  profiles, true (Straight) ruled faces from each profile to the next.
+  Profiles in a row must not lie in one plane, and holes are lofted through
+  only when every profile has the same number (otherwise the step fails
+  with a message, as it does when a profile no longer resolves). Readers
+  refuse fewer than 2 or more than 100 sections, a section without a sketch
+  uuid, point or area, a non-boolean `ruled` and an unknown `mode`
+  ("invalid loft"). Builds before lofts (2026-09-27) refuse the file:
+  unknown feature type.
 - `Mirror` params: `{ "origin": [x, y, z], "normal": [x, y, z] }` — the body
   plus its mirror image across that plane, joined; or `{ "keepOriginal":
   false, "plane": { "origin": [x, y, z], "normal": [x, y, z] } }` — the body
@@ -273,7 +288,7 @@ Rules:
   on the capital height (the baseline `size / 2` below `position`).
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`, `Text`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`, `Text`, `Loft`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 
@@ -283,8 +298,8 @@ Version 1 is frozen since 0.1.0 (the first public release, 2026-09-26):
 later builds add only optional fields, feature types and datum methods.
 Builds that do not know them either ignore them (`datums`, `datumPlane`:
 such a sketch stays where it was saved) or refuse the file with a "newer
-version" or "invalid" message (`Text`, unknown datum methods, a Mirror with
-a nested `plane`).
+version" or "invalid" message (`Text`, `Loft`, unknown datum methods, a
+Mirror with a nested `plane`).
 
 - `version` is an integer. Readers refuse files with a higher version than they
   support ("created by a newer version of OpenShape").

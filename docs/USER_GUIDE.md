@@ -60,7 +60,7 @@ On a desktop-sized window:
 
 - **Top bar** (top left): the **File** menu, **Undo** and **Redo** (their
   tooltips name the step), and **?** for the help card.
-- **Tool palette** (left): **Create** (Box, Sketch), **Modify**
+- **Tool palette** (left): **Create** (Box, Sketch, Loft), **Modify**
   (Push/Pull, Fillet, Chamfer, Shell, Offset, Hole, Text, Move, Rotate,
   Mirror, Pattern, Align), **Combine** (Union, Subtract, Intersect) and
   **Construct** (Axis, Plane). When the window is short, the palette
@@ -187,6 +187,7 @@ beside your finger, not under it.
 | A whole body | double-click it | double-tap it |
 | A second body | `Shift`+double-click | double-tap it |
 | A sketch shape (profile) | click inside it | tap inside it |
+| More shapes (of the same sketch, or on another plane for a [loft](#loft-a-solid-through-profiles-on-different-planes)) | `Shift`+click | tap more (taps add) |
 | From the Model panel | click a body's row (`Shift` adds) | tap its row |
 | Nothing | `Esc`, or click empty space | tap empty space |
 
@@ -284,6 +285,46 @@ shapes of the same sketch). An arrow appears:
   horizontal axis through its origin (**Axis: vertical** / **Axis:
   horizontal**); type the angle (`360` for a full turn).
 - **Edit sketch** opens the sketch again.
+
+### Loft (a solid through profiles on different planes)
+
+A loft joins two or more closed shapes that lie on different planes into
+one solid: a rectangle on the ground and a circle higher up make a
+transition piece (a funnel, a hose adapter, a vase).
+
+1. Sketch the first shape (on the ground, or on a face of a body).
+2. Add a plane for the next one: **Plane** in the tools, then **From XY**
+   (or click a face) and type how far away it is; with the plane selected,
+   **Sketch** draws on it. Repeat for more shapes.
+3. Click the first shape, then `Shift`+click the others in the order the
+   loft should go through them (on a touch screen, just tap them one after
+   the other). A shape on the same plane as the one before starts a new
+   selection instead. The first shape's extrusion arrow may point up
+   through the next shape: clicking there (without dragging) still picks
+   the shape.
+4. Click **Loft** (in the selection's actions, or in the tools on the
+   left: with nothing suitable selected it says what to select). The loft
+   appears at once.
+
+- **Smooth** (the default) makes one smooth surface through all the
+  shapes; **Straight** goes straight from each shape to the next, with a
+  crease at each shape in between. With only two shapes both are the same.
+- A loft starting on a body's face joins that body (**Join**); **New
+  body** keeps it separate and **Cut** removes it from the body. A loft
+  that would not touch the body becomes a new body by itself.
+- While the loft is shown, `Shift`+click (or tap) another shape to add it
+  as the next one, or a chosen one to take it out again.
+- Shapes may differ: a square can loft to a circle. Holes go through when
+  every shape has the same number of them (a ring to a smaller ring makes
+  a tube).
+- Press `Enter` or click **Apply**. The Model panel lists the step
+  ("2 profiles · Smooth · New body"); click it to switch between
+  **Smooth** and **Straight** (and **Join** / **Cut**) later.
+- The loft follows its sketches: edit a sketch, or change the plane's
+  distance in the Model panel, and the loft is rebuilt.
+- A loft is refused with a message when two shapes in a row lie in the
+  same plane, when a shape is no longer closed, or when the result would
+  cross through itself (try another order, or shapes further apart).
 
 ---
 
@@ -535,11 +576,12 @@ sketch step can be undone, also after finishing.
 
 The Model panel lists your sketches, construction axes and planes, and
 bodies, and under each body its steps in order (Box, Push/Pull, Fillet,
-Shell, Extrude …) with their main values.
+Shell, Extrude, Loft …) with their main values.
 
 - **Hover a row** to see its geometry highlighted in the view.
 - **Click a step** to open it: its values appear as fields; type a new value
   and press `Enter`, and the model is rebuilt with it (`Esc` leaves it).
+  A choice is a row of buttons instead (a loft's **Smooth** / **Straight**).
   **Suppress** switches the step off without deleting it (**Restore**
   switches it back on); **Delete** removes it. The first step of a body
   cannot be suppressed or deleted.
