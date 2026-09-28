@@ -199,7 +199,11 @@ plugin and image format plugins (and whatever C++ modules these need, such
 as Qt Network). iOS has no system HarfBuzz, PCRE2, libpng or libjpeg, so
 Qt's own copies (listed among its third-party parts) are in the app. From
 the next build on, every build's license gate lists exactly what the
-linker used (below).
+linker used (below). No ICU is built into the app: The Qt Company's iOS
+libraries carry no copy of it (the gate reports any library it does not
+know; Apple's own `libicucore` would be a system library). libzip uses
+the iOS SDK's zlib (`libz.tbd`); Qt's own zlib copy is listed among Qt's
+parts in case its iOS libraries contain it (TD-100).
 
 ### What the licenses require
 
@@ -383,7 +387,7 @@ testers; docs/IPAD.md 1b) are distributed too. Their Licenses notice
 names their commit, whose source is public and whose
 `scripts/ios/sources.txt` pins the exact library archives; the written
 offer covers those for three years. So that the offer never depends on
-upstream keeping an archive (TD-86), a release (a `-beta` tag is enough)
+upstream keeping an archive (TD-104), a release (a `-beta` tag is enough)
 must carry every pinned set that went to testers: `ipad.yml` warns
 ("iOS sources: no release tag has these library pins") until one does.
 A build that changes the pins should get a beta tag within days.

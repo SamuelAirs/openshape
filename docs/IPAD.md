@@ -22,7 +22,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Open in OpenShape (Files app, Mail) | 2026-09-27: document types for projects and STEP files (checked by the build and `test_uistate`), `QFileOpenEvent` handling; the `openin` scenario checks it on Windows and the Mac through Qt's own entry point; **to try on the devices** |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
-| Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-75); the owner: the custom EULA and the source-offer contact (TD-74) |
+| Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-103); the owner: the custom EULA and the source-offer contact (TD-102) |
 
 What is ready:
 
@@ -302,7 +302,7 @@ text (About → **Licenses**). What that means in practice:
 - **The owner, once, before the first public release:** set the custom
   EULA ([EULA.md](EULA.md): fill in name, address, telephone, e-mail; App
   Store Connect → App Information → License Agreement), decide the contact
-  for the written source offer (TD-74), and add the license sentence to
+  for the written source offer (TD-102), and add the license sentence to
   the App Store description (docs/LICENSING.md, "Releasing an App Store
   (or public beta) version").
 - Every build's notices on CI list what the app links, by origin, and the
