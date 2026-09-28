@@ -1,6 +1,6 @@
 # Manual test pass
 
-What the owner is asked to try by hand (last updated 2026-09-26). Anything
+What the owner is asked to try by hand (last updated 2026-09-27). Anything
 odd: a screenshot and a sentence is plenty. Starting the app with
 `OPENSHAPE_LOG=debug` lets Claude read the log afterwards
 (`%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log`).
@@ -220,3 +220,13 @@ iPhone". New in the build after 2026-09-27 (iPad 14-16, iPhone 14):
    opens as a copy).
 6. If OpenShape is missing from the share sheet for STEP files, say which
    other CAD or slicer apps are installed (TD-68).
+7. **Privacy policy link and Home folders:** File → About OpenShape → tap
+   "Privacy policy: OpenShape collects no data about you": Safari opens the
+   policy on GitHub (after this branch is on `main`). On Home, the cards of
+   projects saved in OpenShape's folder say *OpenShape (Files app)*, not a
+   long `/var/mobile/…` path, and the *OpenShape* title and **New project**
+   sit below the clock and the Dynamic Island (they used to sit under them).
+8. **Before the App Store:** look through the listing texts and the twelve
+   screenshots in [APP_STORE.md](APP_STORE.md), section 3, and compare them
+   with the app on your devices (the screenshots are made on Windows, so
+   the font differs slightly).

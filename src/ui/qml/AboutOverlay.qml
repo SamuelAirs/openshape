@@ -100,6 +100,30 @@ Rectangle {
                     font.pixelSize: 12
                     text: "This copy: " + overlay.buildText
                 }
+                // The privacy policy, linked inside the app as the App Store
+                // asks (docs/APP_STORE.md). The whole item is the link: as wide
+                // as its text with a mouse; on touch a full-width row at least
+                // 44 px tall (Apple's minimum touch target), so a finger just
+                // above or below the letters still opens it.
+                Text {
+                    objectName: "aboutPrivacyLink"
+                    readonly property string url: "https://github.com/SamuelAirs/openshape/blob/main/docs/PRIVACY.md"
+                    Layout.maximumWidth: content.width
+                    Layout.fillWidth: Theme.touch
+                    Layout.preferredHeight: Theme.touch ? Math.max(Theme.controlHeight, implicitHeight) : implicitHeight
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 13
+                    textFormat: Text.StyledText
+                    linkColor: Theme.accent
+                    text: "<a href=\"" + url + "\">Privacy policy: OpenShape collects no data about you</a>"
+                    MouseArea {
+                        objectName: "aboutPrivacyLinkArea"
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Qt.openUrlExternally(parent.url)
+                    }
+                }
                 SectionLabel { text: "Built with"; Layout.leftMargin: 0 }
                 Repeater {
                     model: [

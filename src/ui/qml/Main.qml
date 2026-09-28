@@ -17,6 +17,9 @@ ApplicationWindow {
     property var simulatedSafeArea: null
     readonly property bool simulatingSafeArea: simulatedSafeArea !== null && simulatedSafeArea !== undefined
                                                && simulatedSafeArea.length === 4
+    // Whether --safe-area shades the insets (off for App Store screenshots,
+    // --store-screenshot: the insets stay free, as on the device).
+    property bool shadeSafeArea: true
     // Phones and tablets size the window themselves (a phone is narrower
     // than the desktop minimum; Split View makes it narrower still).
     readonly property bool mobile: Qt.platform.os === "ios" || Qt.platform.os === "android"
@@ -1348,7 +1351,7 @@ ApplicationWindow {
     Item {
         anchors.fill: parent
         z: 1000
-        visible: window.simulatingSafeArea
+        visible: window.simulatingSafeArea && window.shadeSafeArea
         enabled: false
         Rectangle { anchors { left: parent.left; right: parent.right; top: parent.top } height: Theme.safeTop; color: "#33D93F42" }
         Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: Theme.safeBottom; color: "#33D93F42" }

@@ -41,9 +41,13 @@ Rectangle {
 
     Flickable {
         id: page
-        anchors.fill: parent
+        objectName: "homePage"
+        // Clear of the status bar / Dynamic Island and the rounded corners
+        // (iPhone, iPad); the cards scroll on behind the home indicator but
+        // the last one can be scrolled above it.
+        anchors { fill: parent; topMargin: Theme.safeTop; leftMargin: Theme.safeLeft; rightMargin: Theme.safeRight }
         contentWidth: width
-        contentHeight: content.implicitHeight + 2 * pageMargin
+        contentHeight: content.implicitHeight + 2 * pageMargin + Theme.safeBottom
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         readonly property int pageMargin: home.narrow || home.short_ ? 16 : 32
@@ -237,6 +241,9 @@ Rectangle {
                 elide: Text.ElideRight
             }
             Text {
+                // Where it is: on iPhone and iPad "OpenShape (Files app)"
+                // (io::homeFolderLabel), not the app's sandbox path.
+                objectName: "homeCardFolder_" + card.cardIndex
                 width: parent.width
                 text: card.project.folder || ""
                 textFormat: Text.PlainText

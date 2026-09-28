@@ -5,6 +5,7 @@
 #include "app/AcceptanceRunner.h"
 #include "app/CrashLog.h"
 #include "app/FaceContrast.h"
+#include "app/StoreScenes.h"
 #include "core/Log.h"
 #include "core/Version.h"
 #include "geometry/Modeling.h"
@@ -24,6 +25,7 @@
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
+#include <QtGui/QCursor>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
@@ -35,15 +37,24 @@
 #include <QtQuick/QQuickWindow>
 #include <QtQuickControls2/QQuickStyle>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 Q_IMPORT_QML_PLUGIN(OpenShapePlugin)
 
 namespace {
+
+// Set once a --store-screenshot run has saved its picture (the watchdog
+// thread then leaves the process alone).
+std::atomic<bool> storeShotDone{false};
 
 // The log folder: in the user's app-data folder (on iPadOS in Documents,
 // which the Files app shows, so testers can send it), or <data-dir>/logs.
@@ -162,6 +173,8 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
     auto& interaction = app.interaction();
     interaction.fitAll(false);
     if (demo == QLatin1String("empty"))
+        return;
+    if (os::app::runStoreScene(app, demo, dataDir)) // the App Store screenshots' scenes (StoreScenes.h)
         return;
     if (demo == QLatin1String("home")) {
         // Home with a few saved projects (and their previews).
@@ -581,10 +594,39 @@ void saveWindow(const WindowKeeper& keeper)
     os::ui::saveWindowPlacement(settings, {keeper.frame, keeper.client, keeper.maximized});
 }
 
+// --dpr <factor>: Qt reads its scale factor when QGuiApplication starts, so
+// the option is looked for before the command line parser exists. The
+// screen's own scale (Windows display scaling) is switched off, so the
+// device pixel ratio is exactly <factor> on any monitor: a 440x956 window
+// at --dpr 3 is 1320x2868 pixels, an iPhone Pro Max screenshot.
+void applyDevicePixelRatioOption(int argc, char* argv[])
+{
+    for (int i = 1; i < argc; ++i) {
+        const QByteArray arg(argv[i]);
+        QByteArray value;
+        if (arg == "--dpr" && i + 1 < argc)
+            value = argv[i + 1];
+        else if (arg.startsWith("--dpr="))
+            value = arg.mid(6);
+        else
+            continue;
+        bool ok = false;
+        const double factor = value.toDouble(&ok);
+        if (ok && factor >= 0.5 && factor <= 4) {
+            qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
+            qputenv("QT_SCALE_FACTOR", value);
+        } else {
+            std::fprintf(stderr, "warning: --dpr expects a number from 0.5 to 4, e.g. 3\n");
+        }
+        return;
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
 {
+    applyDevicePixelRatioOption(argc, argv);
     QGuiApplication application(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationName(QStringLiteral("OpenShape"));
@@ -605,7 +647,8 @@ int main(int argc, char* argv[])
                                   QStringLiteral("Run a scripted demo scene (empty, hover, pushpull, committed, fillet, move, sketch, "
                                                  "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
                                                  "polygon, constraints, holes, text, home, enclosure; panels: help, about, preferences, modelpanel, viewmenu, "
-                                                 "savename)."),
+                                                 "savename; App Store: store-enclosure, store-text, store-planes, store-sketch, "
+                                                 "store-history, store-home)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),
@@ -647,6 +690,17 @@ int main(int argc, char* argv[])
     QCommandLineOption simulateQuitOption(QStringLiteral("simulate-quit"),
                                           QStringLiteral("Test recovery: add a box, then quit without asking (as when iPadOS ends "
                                                          "the app); the unsaved box stays as a recovery copy."));
+    QCommandLineOption dprOption(QStringLiteral("dpr"),
+                                 QStringLiteral("Draw at this device pixel ratio (e.g. 3 for an iPhone, 2 for an iPad) whatever "
+                                                "the monitor's scaling: --size 440x956 --dpr 3 is 1320x2868 pixels."),
+                                 QStringLiteral("factor"));
+    QCommandLineOption storeScreenshotOption(
+        QStringLiteral("store-screenshot"),
+        QStringLiteral("With --screenshot and --size: an App Store screenshot. The window is frameless and exactly --size "
+                       "(also when taller than the screen), the mouse pointer highlights nothing, --safe-area insets are "
+                       "kept free but not shaded, and the picture has no alpha channel."));
+    parser.addOption(dprOption);
+    parser.addOption(storeScreenshotOption);
     parser.addOption(scenarioOption);
     parser.addOption(touchOption);
     parser.addOption(sizeOption);
@@ -783,6 +837,9 @@ int main(int argc, char* argv[])
         else
             OS_LOG(Warning, App) << "--safe-area expects four numbers, top,right,bottom,left, e.g. 62,0,34,0";
     }
+    const bool storeScreenshot = parser.isSet(storeScreenshotOption);
+    if (storeScreenshot)
+        initialProperties.insert(QStringLiteral("shadeSafeArea"), false);
     engine.setInitialProperties(initialProperties);
     engine.loadFromModule("OpenShape", "Main");
     if (engine.rootObjects().isEmpty()) {
@@ -802,6 +859,13 @@ int main(int argc, char* argv[])
         const QStringList wh = parser.value(sizeOption).split(QLatin1Char('x'));
         if (wh.size() == 2 && wh[0].toInt() > 0 && wh[1].toInt() > 0) {
             window->setMinimumSize({}); // allow phone-sized checks below the usual minimum
+            // Windows keeps a framed window within the desktop's height; a
+            // frameless one may be larger (an iPhone screenshot at 3x is
+            // 2868 pixels tall). It is drawn and grabbed whole either way.
+            if (storeScreenshot) {
+                window->setFlags(window->flags() | Qt::FramelessWindowHint);
+                window->setPosition(0, 0);
+            }
             window->resize(wh[0].toInt(), wh[1].toInt());
         } else {
             OS_LOG(Warning, App) << "--size expects WxH, e.g. 1180x820";
@@ -812,6 +876,24 @@ int main(int argc, char* argv[])
         trackWindow(window, keeper);
     } else {
         window->show();
+    }
+    if (storeScreenshot) {
+        // Nothing lit up by where the mouse pointer happens to rest: the
+        // view ignores hovering, and the pointer moves off the window.
+        if (auto* viewport = window->findChild<QQuickItem*>(QStringLiteral("viewport")))
+            viewport->setAcceptHoverEvents(false);
+        const QRect covered = window->frameGeometry().adjusted(-8, -8, 8, 8);
+        for (const QScreen* screen : QGuiApplication::screens()) {
+            const QRect area = screen->geometry();
+            const QPoint corners[] = {area.bottomRight() - QPoint(2, 2), area.topRight() + QPoint(-2, 2),
+                                      area.bottomLeft() + QPoint(2, -2)};
+            const auto free = std::find_if(std::begin(corners), std::end(corners),
+                                           [&covered](const QPoint& p) { return !covered.contains(p); });
+            if (free != std::end(corners)) {
+                QCursor::setPos(*free);
+                break;
+            }
+        }
     }
 
     if (!parser.positionalArguments().isEmpty())
@@ -832,8 +914,10 @@ int main(int argc, char* argv[])
         const QStringList views = parser.value(viewOption).split(QLatin1Char(';'), Qt::SkipEmptyParts);
         const QString view = views.isEmpty() ? QString() : views.front();
         const bool faceContrast = parser.isSet(faceContrastOption);
+        auto demoDone = std::make_shared<bool>(false); // the scene is built (App Store screenshots wait for it)
         // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, window, demo, view, dataDir, faceContrast] {
+        QTimer::singleShot(600, &controller, [&controller, window, demo, view, dataDir, faceContrast, demoDone] {
+            const auto done = qScopeGuard([demoDone] { *demoDone = true; }); // after --view (declared first: runs last)
             if (demo.isEmpty())
                 return;
             // Seen from --view once the scene is built (below).
@@ -851,6 +935,7 @@ int main(int argc, char* argv[])
                 {QStringLiteral("modelpanel"), {QStringLiteral("history"), "historyOpen"}},
                 {QStringLiteral("viewmenu"), {QStringLiteral("combine"), "viewMenuOpen"}},
                 {QStringLiteral("savename"), {QStringLiteral("bracket"), "saveNamePrompt"}},
+                {QStringLiteral("store-history"), {QStringLiteral("store-history"), "historyOpen"}},
             };
             const auto panel = panels.find(demo);
             runDemo(controller, panel == panels.end() ? demo : panel->first, dataDir);
@@ -866,6 +951,10 @@ int main(int argc, char* argv[])
                 controller.interaction().pointerMove(
                     {os::interact::PointerDevice::Mouse, os::interact::PointerButton::None, {-100, -100}, {}});
             }
+            // An App Store scene's Model panel step, open as if tapped.
+            if (const QString step = os::app::storeSceneOpenStep(controller, demo); !step.isEmpty())
+                if (auto* history = window->findChild<QQuickItem*>(QStringLiteral("historyPanel")))
+                    history->setProperty("expandedId", step);
             if (panel == panels.end())
                 return;
             if (auto* item = window->findChild<QQuickItem*>(QString::fromLatin1(panel->second))) {
@@ -881,7 +970,7 @@ int main(int argc, char* argv[])
             // One screenshot per view (<file>-<view>.png when there are
             // several), each after the next view has been drawn.
             auto next = std::make_shared<std::function<void(int)>>();
-            *next = [&controller, window, shot, views, faceContrast, self = std::weak_ptr(next)](int i) {
+            *next = [&controller, window, shot, views, faceContrast, storeScreenshot, self = std::weak_ptr(next)](int i) {
                 QString file = shot;
                 if (views.size() > 1) {
                     const QFileInfo info(shot);
@@ -890,13 +979,19 @@ int main(int argc, char* argv[])
                     file = info.path() + QLatin1Char('/') + info.completeBaseName() + QLatin1Char('-') + name + QLatin1Char('.')
                          + info.suffix();
                 }
+                // A message left by building the scene (e.g. "Saved") is not part of it.
+                if (storeScreenshot)
+                    if (auto* toast = window->findChild<QQuickItem*>(QStringLiteral("toast")))
+                        toast->setVisible(false);
                 const QImage image = window->grabWindow();
-                const bool ok = image.save(file);
+                // App Store Connect refuses pictures with an alpha channel.
+                const bool ok = storeScreenshot ? image.convertToFormat(QImage::Format_RGB888).save(file) : image.save(file);
                 OS_LOG(Info, App) << "screenshot " << file.toStdString() << (ok ? " saved" : " FAILED") << " (" << image.width()
                                   << "x" << image.height() << ")";
                 if (faceContrast)
                     OS_LOG(Info, App) << os::app::faceContrastReport(image, window, controller.interaction()).toStdString();
                 if (!ok || i + 1 >= views.size()) {
+                    storeShotDone = true;
                     QCoreApplication::exit(ok ? 0 : 2);
                     return;
                 }
@@ -904,7 +999,35 @@ int main(int argc, char* argv[])
                     OS_LOG(Warning, App) << "--view expects a view name (iso, front, top, ...) or yaw,pitch in degrees";
                 QTimer::singleShot(400, window, [step = self.lock(), i] { (*step)(i + 1); });
             };
-            QTimer::singleShot(1600, window, [next] { (*next)(0); });
+            if (storeScreenshot) {
+                // App Store scenes take a while to build (Home saves several
+                // projects): the picture follows once the scene is done and
+                // its previews and pictures (Home's, loaded in the background)
+                // have been drawn.
+                auto whenBuilt = std::make_shared<std::function<void()>>();
+                *whenBuilt = [window, next, demoDone, self = std::weak_ptr(whenBuilt)] {
+                    if (*demoDone)
+                        QTimer::singleShot(1500, window, [next] { (*next)(0); });
+                    else
+                        QTimer::singleShot(200, window, [again = self.lock()] { (*again)(); });
+                };
+                QTimer::singleShot(1600, window, [whenBuilt] { (*whenBuilt)(); });
+                // A scene that never finishes must not leave a window open
+                // (appstore_screenshots.sh may have been stopped meanwhile):
+                // give up after 3 minutes (Home takes about 20 s). The scene
+                // is built on the GUI thread, so a QTimer could not fire while
+                // it hangs; this thread ends the process whatever the GUI does.
+                std::thread([] {
+                    std::this_thread::sleep_for(std::chrono::minutes(3));
+                    if (storeShotDone.load())
+                        return;
+                    OS_LOG(Error, App) << "store scene: no screenshot after 3 minutes; giving up";
+                    std::fflush(nullptr);
+                    std::_Exit(4);
+                }).detach();
+            } else {
+                QTimer::singleShot(1600, window, [next] { (*next)(0); });
+            }
         }
     }
 

@@ -1732,7 +1732,10 @@ void AppController::updateRecentFiles()
         QVariantMap map;
         map.insert(QStringLiteral("path"), info.absoluteFilePath());
         map.insert(QStringLiteral("name"), info.completeBaseName());
-        map.insert(QStringLiteral("folder"), QDir::toNativeSeparators(info.absolutePath()));
+        // In OpenShape's own folder (iPhone / iPad): its name in the Files
+        // app, not the sandbox path.
+        map.insert(QStringLiteral("folder"), QDir::toNativeSeparators(QString::fromStdString(io::homeFolderLabel(
+                                                 info.absolutePath().toStdString(), appFolder_.toStdString()))));
         map.insert(QStringLiteral("modified"), QLocale().toString(modified, QLocale::ShortFormat));
         map.insert(QStringLiteral("thumbnail"), thumbnailSource(info.absoluteFilePath(), modified.toMSecsSinceEpoch()));
         map.insert(QStringLiteral("removable"),

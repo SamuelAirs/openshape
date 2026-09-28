@@ -796,7 +796,8 @@ iPad" below).
 
 - There are no save dialogs: **Save** asks only for a name and puts the
   project into OpenShape's folder (in the Files app: *On My iPhone / iPad →
-  OpenShape*). Home lists the projects in that folder.
+  OpenShape*). Home lists the projects in that folder (their cards say
+  *OpenShape (Files app)*).
 - **File → Export STL**, **Export 3MF** and **Export STEP** write straight
   into its *Exports* folder, then open the share sheet: a slicer app,
   AirDrop, Save to Files or Mail (closing it is fine: the file stays in
@@ -842,13 +843,15 @@ remembered:
   counterbore and countersink seats (0.2 mm to start with; see
   [Holes that fit](#holes-that-fit)).
 
-**File → About OpenShape** shows the version, the license and where the
-source code is. Its **Licenses** button lists OpenShape and every library
+**File → About OpenShape** shows the version, the license, where the
+source code is and the [privacy policy](PRIVACY.md) (OpenShape collects no
+data about you). Its **Licenses** button lists OpenShape and every library
 built into it, each with its full license text and where its source code
 is. OpenShape is free software (Mozilla Public License 2.0); on iPhone and
 iPad, "Your rights to the LGPL libraries" there explains how to rebuild the
 app with modified versions of Qt, Open CASCADE or PlaneGCS and where to get
-the exact source code of your version, free of charge.
+the exact source code of your version, free of charge. Help and contact
+routes: [SUPPORT.md](SUPPORT.md).
 
 ### Where things are kept (Windows)
 
