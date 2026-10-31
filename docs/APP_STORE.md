@@ -1,5 +1,13 @@
 # OpenShape on the App Store: the owner's checklist
 
+> **2026-10-31: the owner's new decisions.** The app is **free** with every
+> tool for **one project**, and a one-time in-app purchase, **Unlimited
+> Projects** (about USD 10), unlocks unlimited projects. It goes to App
+> Review directly; there is no public beta first. The order of today's steps
+> is in [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md). Sections 4 and 5 and
+> the description below are updated for this; the timeline in section 7
+> is history.
+
 _Written 2026-09-27 for the owner's decisions of that day: OpenShape goes on
 the App Store as a **paid** app, after a **public TestFlight beta**, in the
 store around or before **2026-10-23** (the foldable iPhone Duo launch). Every
@@ -82,8 +90,10 @@ rename.
 
 ## 1. Agreements, tax, banking and the Small Business Program
 
-A paid app can be priced only once the **Paid Apps Agreement** is active,
-and it becomes active only after the tax and bank details are in. Start
+A paid app can be priced, and an in-app purchase sold (also in a free
+app, as OpenShape is since 2026-10-31), only once the **Paid Apps
+Agreement** is active, and it becomes active only after the tax and bank
+details are in. Start
 this first: Apple checks the details, and it can take days.
 
 1. **YOU: accept the Paid Apps Agreement.** App Store Connect → **Business**
@@ -236,8 +246,8 @@ Design parts for your 3D printer by touch: push and pull faces, sketch with cons
 
 ### Description (max 4,000 characters)
 
-Accurate to what version 0.2.0 does (the README's feature list, checked
-against the code). Update it when a feature changes (guideline 2.3).
+Accurate to what version 0.3.0 does (the README's feature list and
+CHANGELOG.md, checked against the code on 2026-10-31). Update it when a feature changes (guideline 2.3).
 
 <!-- appstore:description max-chars=4000 -->
 ```text
@@ -247,13 +257,14 @@ MODEL
 • Tap a flat face to see the part's size, then drag the arrow or type a new size; +5 or -5 changes it by that much.
 • Round and chamfer edges, shell a body to a wall thickness, offset faces.
 • Tap a hole's wall and type a new diameter. Delete a hole, fillet or chamfer and the faces around it close the gap.
-• Extrude sketch profiles (a distance, both ways or up to a face; as a new body, joined, or cut, also through everything) or revolve them.
+• Extrude sketch profiles (a distance, both ways or up to a face; as a new body, joined, or cut, also through everything), revolve them, or loft between shapes on different planes.
 • Sizes accept units and arithmetic: 25, 1in, 2.5cm, 20+5, (10+2)*3.
 
 SKETCH
 • Sketch on the ground, an origin plane, a construction plane or any flat face.
 • Line, rectangle, center rectangle, polygon, circle, arc, tangent arc and slot; trim, round a corner, offset, mirror and pattern.
 • Constraints (horizontal, vertical, parallel, perpendicular, equal, tangent, concentric, midpoint, symmetric, distances, angles) shown as small glyphs, and a "Fully defined" status.
+• Drag a line, circle or point to change a sketch; tap a size to type it. On a face, points snap to its corners, edge middles, center and holes, with a magnifier under your finger.
 
 BODIES
 • Move, rotate and align bodies, lay a face on the build plate, mirror and pattern (in a row or around an axis), union, subtract and intersect.
@@ -275,8 +286,13 @@ YOUR FILES
 • When a step cannot be done, OpenShape says why in plain words, often with a size that works, and your model stays as it was.
 
 MADE FOR IPHONE AND IPAD
-• One app for iPhone and iPad. On iPhone the tools sit along the bottom and the value box docks where it covers nothing you selected; on iPad the full layout, also in Split View and Stage Manager. The layout follows the window as you rotate or resize.
-• One finger orbits, two fingers pan and zoom, a two-finger tap undoes and a three-finger tap redoes. Pen mode lets Apple Pencil draw and select while your fingers only move the view.
+• One app for iPhone and iPad. On iPhone the tools sit along the bottom and the value box docks where it covers nothing you selected; on iPad the full layout, also in Split View and Stage Manager.
+• One finger orbits, two fingers pan and zoom, a two-finger tap undoes and a three-finger tap redoes. A view cube shows how the view is turned; tap it to look from a side.
+• Apple Pencil: pen mode lets the Pencil draw and select while your fingers only move the view, and the hand holding the Pencil does not move the view.
+• Made for iPhone Duo: fills the inner display, and folding or unfolding keeps your work in place.
+
+FREE TO START
+Every tool is free for one project at a time. A one-time in-app purchase unlocks unlimited projects on your iPhone and iPad.
 
 OPEN SOURCE, NO ACCOUNT
 OpenShape is open-source software (Mozilla Public License 2.0) built on the OpenCASCADE solid-modeling kernel. The source code, a user guide and a Windows version are at github.com/SamuelAirs/openshape. There is no account, no advertising and no tracking: OpenShape collects no data.
@@ -376,6 +392,89 @@ size class and cannot stand in for the required ones.
 
 ## 4. Pricing
 
+**DECIDED 2026-10-31:** the app is **free**; a **non-consumable in-app
+purchase** unlocks unlimited projects (the owner's "one-time USD 10").
+
+| | Free | Unlimited Projects (one-time) |
+|---|---|---|
+| Every modeling, sketch, export and share tool | yes | yes |
+| Projects in OpenShape's folder | one at a time (delete it to start another) | as many as you like |
+| Price | 0 | **9.99 or 10.00** USD base price (both are Apple price points) |
+
+How the app enforces it (code: the purchase track of 2026-10-31,
+ARCHITECTURE.md): only the iPhone/iPad app has the limit. Adding a project
+while one exists opens the *Unlimited projects* sheet: New project, Import
+STEP as a project, Duplicate, saving under a new name, and a project or STEP
+file opened from another app. Opening, editing, renaming, deleting,
+exporting and sharing are never limited, and people who already have
+several projects keep all of them. Restore is on the sheet and in File →
+About. Windows has no limit.
+
+At 9.99 with the Small Business Program (15%) each sale brings about 8.49
+(before VAT in countries where the price includes it); 12 sales a year
+pay the USD 99 membership. A free app with an unlock answers the problem
+the 4.99 recommendation below worried about, because people can try the app
+fully before paying.
+
+**YOU, the app's price:** Apps → OpenShape → **Monetization → Pricing and
+Availability** → Price Schedule → base country **United States** → **USD 0
+(Free)**. **Availability** (same page): all countries and regions except
+**China mainland** (apps there need a Chinese ICP filing number), and
+except the **27 EU countries** if you chose not to declare trader status
+(section 1, item 5).
+
+**YOU, the in-app purchase:** Apps → OpenShape → **Monetization → In-App
+Purchases** → **+** → Type **Non-Consumable**, Reference Name `Unlimited
+Projects`, Product ID **`io.github.samuelairs.openshape.unlimited`**. The
+app asks the store for exactly this ID. Apple: a product ID "isn't editable
+after you save the In-App Purchase" and can't be reused within the app,
+even after deleting it. Then:
+
+- **Price Schedule:** United States, 9.99 or 10.00; accept Apple's other
+  storefronts.
+- **Availability:** the same countries as the app.
+- **App Store Localization**, English (U.S.): the display name and
+  description below.
+- **Review Information:** screenshot `docs/appstore/iap-review.png`, a
+  6.9" iPhone screenshot of the sheet. Apple accepts any screenshot size
+  the app supports; once uploaded it can be replaced but not removed.
+  Notes: the block below.
+- **Family Sharing:** off. It can be turned on later; once on, Apple
+  says, it can't be turned off.
+- Leave **"Show to all App Store users"** as it is (the app handles a
+  purchase started on its App Store page).
+
+It needs the active Paid Apps Agreement (section 1). Without it the store
+returns no product: TestFlight and App Review then see "The App Store
+can't be reached" on the sheet, and App Review rejects the app. Metadata
+changes can take up to an hour to reach the sandbox. The first in-app
+purchase must be submitted with an app version (section 6).
+
+### In-app purchase display name (max 30)
+
+<!-- appstore:iap-display-name max-chars=30 -->
+```text
+Unlimited Projects
+```
+
+### In-app purchase description (max 45)
+
+<!-- appstore:iap-description max-chars=45 -->
+```text
+Create as many projects as you like.
+```
+
+### In-app purchase review notes
+
+<!-- appstore:iap-review-notes max-chars=4000 -->
+```text
+Unlimited Projects is a non-consumable purchase. OpenShape is free with every tool for one project; this purchase allows any number of projects on the purchaser's Apple Account (iPhone and iPad).
+
+To see it: on the Home screen, tap New project, tap Box, then File, Save and give the project a name. Go back to Home and tap New project again: the "Unlimited projects" sheet opens with the price, Unlock, Restore purchase and Not now. The sheet also opens from the line "Unlock unlimited projects" on Home and from File, About OpenShape (Unlimited projects row, which also has Restore purchase). After the purchase, New project goes ahead and creates a second project.
+```
+
+### Before 2026-10-31: the paid-app recommendation (history)
+
 **DECIDE.** Recommendation: **one-time purchase, USD 4.99** (US base price;
 Apple fills in the other 174 storefronts), universal (one purchase for
 iPhone and iPad), no in-app purchases, no subscription.
@@ -417,17 +516,8 @@ Why 4.99, from the comparable apps checked in the App Store on 2026-09-27:
   can be scheduled in advance.
 - Apple's price points: every 0.10 up to 10 USD, every 0.50 up to 50.
 
-**YOU:** Apps → OpenShape → **Monetization → Pricing and Availability** →
-Price Schedule → **Add Pricing** → base country **United States** →
-**4.99** → review Apple's prices for the other storefronts (accept them) →
-**Confirm**. Needs the active Paid Apps Agreement (section 1).
-
-**YOU: availability** (same page): all countries and regions, except
-
-- **China mainland**: apps there need a Chinese ICP filing number; leave it
-  unchecked;
-- the **27 EU countries** only if you chose not to declare trader status
-  (section 1, item 5).
+(The 2026-09-27 steps for a 4.99 price are superseded by the free price
+and the in-app purchase above.)
 
 ---
 
@@ -498,7 +588,9 @@ If something is confusing, take a screenshot in OpenShape and send it from TestF
 
 <!-- appstore:review-notes max-bytes=4000 -->
 ```text
-OpenShape is a CAD (3D modeling) app for designing parts to 3D print. It needs no account or sign-in, has no in-app purchases, and makes no network connections; everything works offline. Links in Help and About open Safari.
+OpenShape is a CAD (3D modeling) app for designing parts to 3D print. It needs no account or sign-in and makes no network connections of its own (only Apple's StoreKit for the in-app purchase); everything works offline. Links in Help and About open Safari.
+
+In-app purchase: the app is free with every tool for one project; the non-consumable "Unlimited Projects" allows more. To see it, follow steps 1 to 6 below (they save one project), go back to Home and tap New project: the "Unlimited projects" sheet opens (Unlock, Restore purchase, Not now). It is also reachable from "Unlock unlimited projects" on Home and from File, About OpenShape.
 
 A 2-minute test path (iPhone or iPad):
 1. Launch: the Home screen appears. Tap New project.
@@ -520,8 +612,10 @@ OpenShape is open source (Mozilla Public License 2.0): https://github.com/Samuel
 
 ## 6. Submitting to the App Store
 
-1. **Lead: the build.** The version you submit is the build number
-   of an upload from `main` (docs/IPAD.md). **DECIDE the version number**:
+1. **Lead: the build.** The build you submit is the TestFlight upload of
+   a **version tag** (`v0.3.0`), whose GitHub release carries the iOS
+   library sources (docs/LICENSING.md); a plain `main` build is for
+   testing only. The lead names its build number. **DECIDE the version number**:
    the bundle says `0.2.0` today (CMake `project(VERSION)`). Recommendation:
    submit the next GitHub release's number so both platforms match, and
    call it **1.0.0** only if you are happy to drop "early pre-release" from
@@ -559,7 +653,8 @@ OpenShape is open source (Mozilla Public License 2.0): https://github.com/Samuel
 | 4.1 Copycats, 5.2.1 intellectual property | a name close to another developer's app or a trademark | section 0 | **DECIDE** |
 | 4.2 Minimum functionality | a thin app or a website in a wrapper | a native CAD app (OpenCASCADE, Metal through Qt RHI) with 30+ tools, working offline | **DONE** |
 | 2.5.2 Self-contained | downloading or running code | none: everything is in the bundle | **DONE** |
-| 3.1.1 In-app purchase | unlocking features outside Apple's in-app purchase | paid up front, nothing to unlock | **DONE** |
+| 3.1.1 In-app purchase | unlocking features outside Apple's in-app purchase; no way to restore a non-consumable | the only unlock (unlimited projects) is Apple's in-app purchase; Restore purchase on the sheet and in About; no link to buying elsewhere (the Windows version is free, not a purchase) | **DONE** (code, 2026-10-31) / **YOU** (create it, section 4) |
+| 2.1 In-app purchase completeness | the reviewer's purchase does not load or fails | Paid Apps Agreement **Active** and the in-app purchase submitted with the version; try it in TestFlight first (LAUNCH_CHECKLIST.md, step 10) | **YOU** |
 | 5.1.1 Privacy | a missing or vague privacy policy; data collected without saying so | docs/PRIVACY.md (what is kept, where, deletion, Apple's crash reports and TestFlight, contact); linked in App Store Connect and in About; "Data Not Collected" is accurate; privacy manifest in the bundle | **DONE** / **YOU** (answers) |
 | 2.4.1 / iPad | an iPhone app that does not work well on iPad | universal app with its own iPad layout, all orientations, Split View | **DONE** |
 | Licenses | LGPL libraries linked statically on iOS | the licensing track (docs/LICENSING.md, license texts in the app) | **TRACK** |
