@@ -25,4 +25,9 @@ inline constexpr int kAppVersionPatch = @PROJECT_VERSION_PATCH@;
 inline constexpr const char* kReleaseTag = "@OPENSHAPE_RELEASE_TAG@";
 inline constexpr const char* kBuildNumber = "@OPENSHAPE_BUILD_NUMBER@";
 
+// The App Store in-app purchase "Unlimited projects" (ui/Store.h): the
+// bundle identifier (OPENSHAPE_BUNDLE_ID, top-level CMakeLists.txt) plus
+// ".unlimited", as created in App Store Connect.
+inline constexpr const char* kUnlockProductId = "@OPENSHAPE_BUNDLE_ID@.unlimited";
+
 } // namespace os

@@ -25,6 +25,8 @@ namespace os::app {
 //   store-sketch     a plate's sketch with sizes and constraints
 //   store-history    the project box with its steps in the Model panel
 //   store-home       Home with the projects above and their previews
+//   store-iap        the purchase sheet "Unlimited projects" over Home with
+//                    one project, a sample price (App Review's screenshot)
 QStringList storeSceneNames();
 bool isStoreScene(const QString& name);
 // Builds `name` into the (new, empty) document. "store-home" saves its

@@ -62,8 +62,8 @@ set_target_properties(openshape PROPERTIES
 # own devices (the LGPL's relinking, BUILDING.md) sets their own with
 # -DOPENSHAPE_BUNDLE_ID=... (Apple ties an identifier to one team). Every
 # TestFlight upload needs a new build number (OPENSHAPE_BUILD_NUMBER, top
-# level): CI passes its run number.
-set(OPENSHAPE_BUNDLE_ID "io.github.samuelairs.openshape" CACHE STRING "Bundle identifier of the macOS / iOS app")
+# level): CI passes its run number. OPENSHAPE_BUNDLE_ID is set at the top
+# level (the in-app purchase's product identifier, core/Version.h.in, is made from it).
 if(APPLE)
     set_target_properties(openshape PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "${OPENSHAPE_BUNDLE_ID}"

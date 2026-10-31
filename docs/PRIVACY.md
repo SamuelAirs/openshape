@@ -59,6 +59,21 @@ app you pick deliver it, not OpenShape; OpenShape learns only whether the
 file was sent and the kind of destination, which it writes to its log on
 your device. Closing the share sheet sends nothing.
 
+## The purchase "Unlimited projects" (iPhone and iPad)
+
+FoldForm from the App Store is free for one project; a one-time in-app
+purchase unlocks unlimited projects. Apple handles the purchase entirely:
+the price, the payment, your Apple Account, Ask to Buy and Restore
+purchase go through Apple's App Store, under
+[Apple's privacy policy](https://www.apple.com/legal/privacy/), and
+FoldForm never sees your payment details or who you are. When you open the
+purchase sheet, FoldForm asks the App Store for the price; that request and
+the purchase itself are made by your device's App Store service, not by
+FoldForm's own code. All FoldForm keeps is an "unlocked" flag in its
+settings on your device (and a line in its log on your device saying that
+a purchase or restore happened). It sends nothing anywhere: still no data
+is collected.
+
 ## Network access
 
 OpenShape's own code never connects to the internet (the libraries it is

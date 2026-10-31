@@ -18,7 +18,10 @@
 #
 #   bash scripts/dev/appstore_screenshots.sh [only-these-names...]
 #
-# e.g. `... iphone-1-project-box`. Run from the repository root after
+# e.g. `... iphone-1-project-box`. The in-app purchase's review screenshot
+# (the sheet "Unlimited projects" over Home, a sample price; scene
+# store-iap) is made too, at the iPhone size, into docs/appstore/iap-review.png
+# (`... iap-review` for it alone; checked with --review). Run from the repository root after
 # building (BUILDING.md). Each shot opens a frameless window as large as the
 # picture (larger than most screens; --store-screenshot) and takes
 # OpenShape's automation lock, so shots wait for other automated runs and
@@ -137,7 +140,36 @@ for device_entry in "${devices[@]}"; do
         made+=("$file")
     done
 done
+# The in-app purchase's review screenshot (iPhone 6.9", portrait).
+review_out=${REVIEW_OUT:-docs/appstore/iap-review.png}
+review_made=""
+if [ $# -eq 0 ] || [[ " $* " == *" iap-review "* ]]; then
+    run="$work/iap-review"
+    rm -rf "$run"
+    mkdir -p "$run"
+    echo "== iap-review (store-iap, 440x956 at 3x)"
+    timeout --kill-after=10 1200 "$exe" --demo store-iap --touch --size 440x956 --dpr 3 --safe-area 62,0,34,0 \
+        --store-screenshot --app-folder "$run/OpenShape" --data-dir "$run/data" --screenshot "$rendered/iap-review.png" \
+        > "$run/log.txt" 2>&1 &
+    child=$!
+    status=0
+    wait "$child" || status=$?
+    child=""
+    if [ "$status" -ne 0 ] || [ ! -s "$rendered/iap-review.png" ] || grep -q "store scene:" "$run/log.txt"; then
+        tail -20 "$run/log.txt"
+        echo "FAILED: iap-review (exit status $status)"
+        exit 1
+    fi
+    "$python" scripts/dev/check_appstore_screenshots.py --review "$rendered/iap-review.png"
+    review_made=1
+fi
 if [ ${#made[@]} -eq 0 ]; then
+    if [ -n "$review_made" ]; then
+        cp "$rendered/iap-review.png" "$review_out.tmp"
+        mv -f "$review_out.tmp" "$review_out"
+        echo "review screenshot updated: $review_out"
+        exit 0
+    fi
     echo "no screenshot names matched: $*" >&2
     exit 1
 fi
@@ -148,10 +180,17 @@ staged="$work/staged"
 rm -rf "$staged"
 mkdir -p "$staged"
 cp "$out"/*.png "$staged"/ 2> /dev/null || true
-cp "$rendered"/*.png "$staged"/
+for file in "${made[@]}"; do
+    cp "$rendered/$file.png" "$staged"/
+done
 "$python" scripts/dev/check_appstore_screenshots.py "$staged"
 for file in "${made[@]}"; do
     cp "$rendered/$file.png" "$out/$file.png.tmp"
     mv -f "$out/$file.png.tmp" "$out/$file.png"
 done
 echo "${#made[@]} screenshot(s) updated in $out"
+if [ -n "$review_made" ]; then
+    cp "$rendered/iap-review.png" "$review_out.tmp"
+    mv -f "$review_out.tmp" "$review_out"
+    echo "review screenshot updated: $review_out"
+fi

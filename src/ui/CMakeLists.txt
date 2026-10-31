@@ -11,6 +11,7 @@ add_library(openshape_uistate STATIC
     AppSettings.cpp AppSettings.h
     IncomingFiles.cpp IncomingFiles.h
     Licenses.cpp Licenses.h
+    Purchase.cpp Purchase.h Store.h
     RecoverySession.cpp RecoverySession.h
     ThumbnailSource.cpp ThumbnailSource.h
     WindowMetrics.cpp WindowMetrics.h
@@ -59,6 +60,7 @@ qt_add_qml_module(openshape_ui
         qml/ScrollRow.qml
         qml/SaveNameOverlay.qml
         qml/NumericKeypad.qml
+        qml/PurchaseOverlay.qml
     SOURCES
         AppController.cpp AppController.h
         ThumbnailProvider.cpp ThumbnailProvider.h
@@ -70,10 +72,11 @@ target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshap
 target_include_directories(openshape_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_ui)
 
-# The share sheet (UIActivityViewController, ui/Share.h): Objective-C++,
-# iOS only, with ARC (other platforms have no share sheet).
+# The share sheet (UIActivityViewController, ui/Share.h) and the App
+# Store purchase (StoreKit, ui/Store.h): Objective-C++, iOS only, with ARC
+# (other platforms have neither).
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    target_sources(openshape_ui PRIVATE ios/ShareSheet.mm)
-    set_source_files_properties(ios/ShareSheet.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(openshape_ui PRIVATE "-framework UIKit")
+    target_sources(openshape_ui PRIVATE ios/ShareSheet.mm ios/StoreKitStore.mm)
+    set_source_files_properties(ios/ShareSheet.mm ios/StoreKitStore.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(openshape_ui PRIVATE "-framework UIKit" "-framework StoreKit")
 endif()

@@ -21,6 +21,11 @@ ipad-*.png must be
 
 and each device needs 1 to 10 of them. Prints one line per file and exits
 with the number of problems. Standard library only.
+
+    python scripts/dev/check_appstore_screenshots.py --review docs/appstore/iap-review.png
+
+checks one in-app purchase review screenshot (App Store Connect, the
+purchase's "Review Information") the same way, at an iPhone 6.9" size.
 """
 
 import os
@@ -90,6 +95,13 @@ def check(path, device):
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--review":
+        problems, summary = check(sys.argv[2], "iphone")
+        for problem in problems:
+            print("[FAIL] %s: %s" % (sys.argv[2], problem))
+        if not problems:
+            print("[PASS] %s: %s, RGB, no alpha" % (sys.argv[2], summary))
+        return len(problems)
     folder = sys.argv[1] if len(sys.argv) > 1 else "docs/appstore/screenshots"
     names = sorted(n for n in os.listdir(folder) if n.lower().endswith(".png"))
     failures = 0

@@ -125,6 +125,29 @@ Rectangle {
                 }
             }
 
+            // The free App Store version keeps one project: a quiet line
+            // that opens the purchase sheet (App Review must find it). The
+            // whole row is the target, 44 px tall on touch.
+            Text {
+                objectName: "homeUnlockLine"
+                visible: home.app.projectLimited
+                Layout.fillWidth: true
+                Layout.preferredHeight: Theme.touch ? Math.max(Theme.controlHeight, implicitHeight) : implicitHeight
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.WordWrap
+                font.pixelSize: 13
+                color: Theme.mutedText
+                textFormat: Text.StyledText
+                linkColor: Theme.accent
+                text: "Free version of FoldForm: one project · <a href=\"unlock\">Unlock unlimited projects</a>"
+                MouseArea {
+                    objectName: "homeUnlockArea"
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: home.app.offerUnlock()
+                }
+            }
+
             SectionLabel {
                 text: "Recent"
                 Layout.topMargin: home.short_ ? 2 : 10

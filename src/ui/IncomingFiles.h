@@ -59,6 +59,12 @@ struct StagedFile {
 StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places,
                              IncomingKind kind = IncomingKind::Unsupported);
 
+// Whether stageIncomingFile(source, places) would add a new project file to
+// the app folder (the free app's limit, ui/Purchase.h): a project from
+// elsewhere or from an inbox, unless the folder holds the same project
+// already. False for STEP files, unreadable files and without an app folder.
+bool stagingAddsProject(const QString& source, const IncomingPlaces& places);
+
 // Whether `path` is `folder` or inside it (compared as cleaned absolute
 // paths, case-insensitively on Windows).
 bool isInsideFolder(const QString& path, const QString& folder);
