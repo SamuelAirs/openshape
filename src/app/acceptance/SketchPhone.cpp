@@ -275,12 +275,20 @@ void addFlow(Steps& steps, AcceptanceRunner& r, const Config& c)
         r.check(hasPoint(r, {10, -10}) && !hasPoint(r, {5, -5}), label("the corner dropped exactly on the face's corner"), pointsText(r));
     });
     // ---- A side's size: a 44 pt tap target around a 30 pt pill; typed.
+    // The side is tapped with Line on: a finger's tap on a line selects it
+    // and switches to Select (no hover on a touch screen; owner, iPhone Duo,
+    // 2026-10-31).
+    steps.push_back([&r, label] { r.check(r.tapItem(QStringLiteral("tool_line")), label("Line, before tapping a side")); });
+    wait(steps, 2);
     steps.push_back([&r] { r.touchTap({at(r, {-5, 0.5})}); });
     wait(steps, 2);
     steps.push_back([&r, s, label] {
         const auto* ss = session(r);
         s->side = ss && ss->selection().size() == 1 ? ss->selection().front() : sketch::kNoEntity;
         r.check(s->side != sketch::kNoEntity && ss->sketch().line(s->side), label("the left side selected"));
+        r.check(ss && ss->tool() == interact::SketchTool::Select && !ss->isDrawing(),
+                label("a tap on the side with Line on selected it and switched to Select"));
+        r.check(r.app().sketchTool() == QStringLiteral("select"), label("the tool bar shows Select"), r.app().sketchTool());
         const QString name = QStringLiteral("sizeLabel_") + QString::number(s->side);
         QQuickItem* tap = r.findItem(name + QStringLiteral("_tap"));
         const QRectF pill = sceneRect(r, name);

@@ -713,3 +713,71 @@ TEST(SketchPhone, AMouseHoverNeverMovesAFingersDrag)
     p.controller.pointerRelease(p.at(p.sketchScreen({7, 7})));
     EXPECT_TRUE(p.hasPoint({7, 7})) << "the finger's drop, not the mouse's position";
 }
+
+// The owner, on the iPhone Duo (no hover), 2026-10-31: "I'm making a sketch
+// and cannot figure out how to select a line". A finger's tap on a line
+// while a drawing tool is on selects the line (and switches to Select); a
+// stroke from the line still draws, a tap on a point still starts a shape,
+// and a mouse click still starts one on the line.
+TEST(SketchPhone, ATapOnALineSelectsItWhileADrawingToolIsOn)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    p.session().setTool(SketchTool::Line);
+    EXPECT_NE(p.session().hintText().find("click a line to select it"), std::string::npos) << p.session().hintText();
+    p.drag(p.sketchScreen({-8, -5}), p.sketchScreen({8, -5}));
+    ASSERT_EQ(p.sketch().lines().size(), 1u);
+    const sketch::EntityId line = p.sketch().lines().begin()->first;
+    ASSERT_EQ(p.session().tool(), SketchTool::Line);
+
+    p.messages.clear();
+    p.tap(p.sketchScreen({3, -5}));
+    EXPECT_EQ(p.session().tool(), SketchTool::Select);
+    ASSERT_EQ(p.session().selection().size(), 1u);
+    EXPECT_EQ(p.session().selection().front(), line);
+    EXPECT_FALSE(p.session().isDrawing());
+    EXPECT_EQ(p.sketch().lines().size(), 1u) << "nothing drawn";
+    ASSERT_FALSE(p.messages.empty());
+    EXPECT_NE(p.messages.back().find("selects it"), std::string::npos) << p.messages.back();
+    EXPECT_NE(p.session().hintText().find("size"), std::string::npos) << "Select's hint for one line: " << p.session().hintText();
+
+    // Said once per sketch.
+    p.session().setTool(SketchTool::Line);
+    p.messages.clear();
+    p.tap(p.sketchScreen({-3, -5}));
+    EXPECT_EQ(p.session().tool(), SketchTool::Select);
+    EXPECT_TRUE(p.messages.empty());
+
+    // A stroke that starts on the line draws from it.
+    p.session().setTool(SketchTool::Line);
+    p.drag(p.sketchScreen({3, -5}), p.sketchScreen({3, 6}));
+    EXPECT_EQ(p.session().tool(), SketchTool::Line);
+    EXPECT_EQ(p.sketch().lines().size(), 2u);
+
+    // A tap on a line's end starts a line there (a chain goes on from it).
+    p.tap(p.sketchScreen({8, -5}));
+    EXPECT_EQ(p.session().tool(), SketchTool::Line);
+    EXPECT_TRUE(p.session().isDrawing());
+    p.controller.keyPress(Key::Escape);
+
+    // Other drawing tools too: a circle's first tap on the line selects it.
+    p.session().setTool(SketchTool::Circle);
+    p.tap(p.sketchScreen({-6, -5}));
+    EXPECT_EQ(p.session().tool(), SketchTool::Select);
+    EXPECT_EQ(p.session().selection().size(), 1u);
+}
+
+TEST(SketchPhone, AMouseClickOnALineStillStartsAShape)
+{
+    Phone p(false);
+    p.box();
+    p.sketchOnTop();
+    p.session().setTool(SketchTool::Line);
+    EXPECT_EQ(p.session().hintText().find("select it"), std::string::npos) << "no touch tip with a mouse: " << p.session().hintText();
+    p.drag(p.sketchScreen({-8, -5}), p.sketchScreen({8, -5}));
+    ASSERT_EQ(p.sketch().lines().size(), 1u);
+    p.tap(p.sketchScreen({3, -5}));
+    EXPECT_EQ(p.session().tool(), SketchTool::Line);
+    EXPECT_TRUE(p.session().isDrawing()) << "a click on a line starts a line there";
+}

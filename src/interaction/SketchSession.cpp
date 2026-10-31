@@ -1786,6 +1786,26 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
         return;
     }
 
+    // A finger or pen has no hover to show what a tap would take: a tap on a
+    // line, circle or arc, when it would only have placed a shape's first
+    // point, selects that curve and switches to Select (owner, on the iPhone
+    // Duo, 2026-10-31: "cannot figure out how to select a line"). A stroke
+    // from the curve still draws, and a tap on a point still starts a shape
+    // there (a chain goes on from a line's end).
+    if (event.device != PointerDevice::Mouse && !dragging_ && pressBeganShape_ && tool_ != SketchTool::TangentArc) {
+        const sketch::EntityId hit = pickEntity(pressScreen_, camera, pressEvent_.device);
+        if (hit != sketch::kNoEntity && !working_.point(hit)) {
+            setTool(SketchTool::Select);
+            select(hit, false);
+            cursorValid_ = false;
+            if (!tapSelectTipShown_) {
+                tapSelectTipShown_ = true;
+                message("A tap on a line selects it, and Select is on now. To draw from a line, drag.");
+            }
+            return;
+        }
+    }
+
     // Drawing tools: a press-drag-release draws the whole shape in one gesture;
     // a click leaves the first point placed and waits for the second click.
     const Snap snap = snapAt(event.position, camera, event.device);
@@ -2814,31 +2834,34 @@ std::string SketchSession::hintText() const
                    "- / + change the count \xC2\xB7 Enter or Apply adds them";
     if (isOffsetting())
         return "Move to the side to offset to and click \xC2\xB7 or type a distance and press Enter \xC2\xB7 Esc cancels";
+    // A touch screen: a tap on a curve selects it (pointerRelease), said
+    // after what the tool needs first.
+    const std::string selectTip = largeTargets_ ? " \xC2\xB7 click a line to select it" : "";
     switch (tool_) {
     case SketchTool::Slot:
         if (!anchor_)
-            return "Click the center of one end";
+            return "Click the center of one end" + selectTip;
         return arcEnd_ ? "Move to set the width and click, or type a width and press Enter" : "Click the center of the other end";
     case SketchTool::Trim:
         return "Click the piece of a curve to remove (up to where other curves cross it)";
     case SketchTool::Rectangle:
-        return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle";
+        return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle" + selectTip;
     case SketchTool::CenterRectangle:
-        return anchor_ ? "Click a corner, or type width, Tab, height, Enter" : "Click the center of the rectangle";
+        return anchor_ ? "Click a corner, or type width, Tab, height, Enter" : "Click the center of the rectangle" + selectTip;
     case SketchTool::Polygon:
         return anchor_ ? "The pointer sets the middle of a side \xC2\xB7 type the size across flats, Tab for the sides "
                          "\xC2\xB7 +/- change the sides"
-                       : "Click the center of the polygon \xC2\xB7 +/- change the number of sides";
+                       : "Click the center of the polygon \xC2\xB7 +/- change the number of sides" + selectTip;
     case SketchTool::Circle:
-        return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center";
+        return anchor_ ? "Click to set the size, or type a diameter and press Enter" : "Click the center" + selectTip;
     case SketchTool::Line:
-        return anchor_ ? "Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line" : "Click the start point";
+        return anchor_ ? "Click the next point \xC2\xB7 type a length \xC2\xB7 Esc ends the line" : "Click the start point" + selectTip;
     case SketchTool::TangentArc:
         return anchor_ ? "Click where the arc ends, or type a radius and press Enter \xC2\xB7 Esc ends"
                        : "Click the free end of a line or arc to continue it with a tangent arc";
     case SketchTool::Arc:
         if (!anchor_)
-            return "Click where the arc starts";
+            return "Click where the arc starts" + selectTip;
         return arcEnd_ ? "Move to bend the arc and click, or type a radius and press Enter" : "Click where the arc ends";
     case SketchTool::Select:
         break;

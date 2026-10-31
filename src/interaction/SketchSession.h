@@ -429,6 +429,7 @@ private:
     std::optional<Snap> dragSnap_; // a dragged point's snap (shown; joined on release)
     bool keepSelectionOnRelease_ = false; // a double-click chose the selection
     bool addTipShown_ = false;            // "Taps add to the selection" was said
+    bool tapSelectTipShown_ = false;      // a drawing tool's tap on a curve selected it: said once
     sketch::Sketch dragStart_;
 
     std::vector<sketch::EntityId> selected_;

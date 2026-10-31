@@ -276,11 +276,14 @@ Item {
         { id: "select", label: "Select", key: "S" },
         { id: "trim", label: "Trim", key: "T" }
     ]
-    // The regular palette's column: Draw, then Edit (with their headings).
+    // The regular palette's column: Edit, then Draw (with their headings).
+    // Select and Trim come first, as the compact strip pins them: in a short
+    // window (the iPhone Duo's inner display) the column scrolls, and Select
+    // at its end was out of sight while drawing (owner, 2026-10-31).
     readonly property var paletteTools: {
         const draw = drawTools.map((t, i) => i === 0 ? Object.assign({ section: "Draw" }, t) : t)
         const edit = editTools.map((t, i) => i === 0 ? Object.assign({ section: "Edit" }, t) : t)
-        return draw.concat(edit)
+        return edit.concat(draw)
     }
     Panel {
         id: toolPanel
