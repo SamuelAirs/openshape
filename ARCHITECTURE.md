@@ -1679,6 +1679,41 @@ points). The sheet's end comes back once (`ShareOutcome`): sent and closed
 are logged, a failure becomes a message. The acceptance run puts a stub in;
 `AcceptanceRunner` restores the platform's for each scenario.
 
+**Unlimited projects** (the App Store purchase; `ui/Store.h`,
+`ui/Purchase`, Qt Core, tested in `test_uistate` / `test_purchase.cpp`):
+the free iOS app keeps `kFreeProjectCount` (1) project in the app folder;
+an in-app purchase (product `<OPENSHAPE_BUNDLE_ID>.unlimited`,
+`kUnlockProductId` in the generated `core/Version.h`) lifts the limit.
+Like the share sheet, `AppController` is given a `ui::Store`
+(`setStore`): at start `platformStore()`, on iOS `src/ui/ios/StoreKitStore.mm`
+(Objective-C++, ARC, StoreKit 1: `SKProductsRequest` for the price,
+`SKPaymentQueue` with a transaction observer added when the listener is
+set, `restoreCompletedTransactions`, `finishTransaction` only after the
+event reached the listener, `shouldAddStorePayment` → YES for purchases
+started on the App Store page; every callback hops to the main thread),
+null elsewhere: no store means no limit and no purchase UI. The store
+reports `StoreEvent`s; `PurchaseFlow` turns them and the taps into the
+sheet's state (loading, ready, buying, waiting for Ask to Buy, restoring,
+failed, unavailable). The unlock is a QSettings flag on the device
+(`store/unlimitedProjects`). Counting: `appFolderProjects` lists the app
+folder's own `*.openshape` files (not Exports, Inbox, `.Trash`, hidden
+files); `limitAllowsProject` lets one more in while fewer than the limit
+are there besides the file being replaced. Gates: `newProject()` and
+`importNewProject()` in Main.qml call `gateProject("new" / "import")`
+before "Save changes?" and the file dialog; `saveInAppFolder` gates a new
+name (`"save"`, its own file excluded); `duplicateProject`,
+`importStepFrom(asProject)`, `openProject` (a copy brought in) and
+`openIncomingFile` (`stagingAddsProject`, or a STEP file) gate in C++
+before anything is copied. A refused action waits in `pendingProject_`:
+once unlocked the sheet closes and C++ runs it again, or emits
+`projectAllowed(action, argument)` for the window's (Main.qml redoes New,
+Import or the name prompt's Save); Not now drops it. `PurchaseOverlay.qml`
+is the sheet (z 128, over the name prompt); Home has a "Free version"
+line (`projectLimited`), About a row with Unlock… and Restore purchase
+(`storeAvailable`). `AcceptanceRunner` resets the store to none for each
+scenario; the `purchase` scenario puts a stand-in in, the `store-iap`
+scene (App Review's screenshot) a sample one.
+
 **Files from other apps** (`ui/IncomingFiles`, Qt Core, tested in
 `test_uistate`): `Info.plist` declares projects (Owner) and STEP files
 (Alternate, imported type `org.iso.step`) in `CFBundleDocumentTypes`. Qt
@@ -1780,7 +1815,17 @@ document pickers' files take the same staging when there is an app folder
   and a saved project hand the sheet an existing, non-empty file with the
   right name and the File button's rectangle, also at iPhone size; closed
   says nothing, a failure is said; no Share Project and no gap on the
-  desktop); `openin` (real project and STEP files handed over through
+  desktop); `purchase` (a stand-in App Store and a temporary app folder:
+  New allowed with no project, then the sheet with Not now; Unlock → the
+  new project opens; Restore with nothing found, then found; a declined
+  purchase; Ask to Buy approved later; the store unreachable (Unlock off);
+  Duplicate, Import STEP, a project and a STEP file from another app and
+  Save As under a new name all gated, the project's own name allowed;
+  testers' two projects open and save; Delete → New allowed; About's
+  Restore; the sheet by touch at iPhone, iPhone landscape, a small iPhone,
+  iPad, Split View, the iPhone Duo's outer display and its Split View;
+  the desktop without a store: no limit, no line, no About row);
+  `openin` (real project and STEP files handed over through
   `QWindowSystemInterface::handleFileOpenEvent`, as Qt's iOS delegate does:
   "Save changes?" first, the project copied byte for byte into the app
   folder and opened, no second copy the next time, Mail's STEP file moved

@@ -11,6 +11,7 @@ import OpenShape
 // section 3.2 asks binaries to tell people where the source is).
 Rectangle {
     id: overlay
+    required property AppController app
     color: "#66000000"
     visible: false
     focus: visible
@@ -122,6 +123,41 @@ Rectangle {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         onClicked: Qt.openUrlExternally(parent.url)
+                    }
+                }
+                // The App Store purchase (iPhone / iPad only): Restore is
+                // reachable here without reaching the free version's limit
+                // (App Review asks for that).
+                ColumnLayout {
+                    objectName: "aboutUnlimited"
+                    visible: overlay.app.storeAvailable
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Text {
+                        objectName: "aboutUnlimitedText"
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 13
+                        color: Theme.text
+                        text: overlay.app.projectsUnlocked ? "Unlimited projects: unlocked"
+                                                           : "Unlimited projects: not unlocked (the free version of FoldForm keeps one project)"
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: !overlay.app.projectsUnlocked
+                        ActionButton {
+                            objectName: "aboutUnlock"
+                            text: "Unlock…"
+                            outlined: true
+                            onClicked: overlay.app.offerUnlock()
+                        }
+                        ActionButton {
+                            objectName: "aboutRestore"
+                            text: "Restore purchase"
+                            outlined: true
+                            onClicked: overlay.app.restorePurchase()
+                        }
                     }
                 }
                 SectionLabel { text: "Built with"; Layout.leftMargin: 0 }

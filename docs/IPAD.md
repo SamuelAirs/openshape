@@ -318,6 +318,36 @@ File → About), the support page [SUPPORT.md](SUPPORT.md). The screenshots
 (iPhone 6.9" 1320 x 2868, iPad 13" 2752 x 2064) are made on Windows from
 the real app by `bash scripts/dev/appstore_screenshots.sh` (BUILDING.md).
 
+### The in-app purchase "Unlimited projects" (TestFlight)
+
+FoldForm on iPhone and iPad is free for one project; the in-app purchase
+"Unlimited projects" (non-consumable, product ID
+`io.github.samuelairs.openshape.unlimited`: the bundle ID plus
+`.unlimited`, `src/core/Version.h.in`) unlocks more. Before it works in a
+TestFlight build:
+
+1. App Store Connect → Business: the **Paid Apps Agreement** must be active
+   (tax and bank details done); without it the App Store returns no product
+   and the sheet says the App Store can't be reached.
+2. App Store Connect → the app → Monetization → In-App Purchases → **+**:
+   type *Non-Consumable*, reference name "Unlimited projects", product ID
+   exactly `io.github.samuelairs.openshape.unlimited`; a price (about USD 10:
+   FoldForm shows whatever the store returns, in the buyer's currency);
+   availability; a display name and description; **Review Information**:
+   the screenshot `docs/appstore/iap-review.png` (made by
+   `bash scripts/dev/appstore_screenshots.sh iap-review`) and a note such as
+   "Home → New project with one project saved opens the purchase; Restore
+   purchase is also in File → About".
+3. Submit the in-app purchase **with** the app version for review (the
+   first one must go with a new app version; its state shows "Ready to
+   Submit" until then). "Show to all App Store users" (on by default)
+   puts it on the product page; FoldForm accepts a purchase started there
+   (`shouldAddStorePayment`).
+
+TestFlight builds buy in Apple's **sandbox**: the same sheet, "[Environment:
+Sandbox]", nothing is charged. A tester with several projects from earlier
+builds keeps them all; only adding more asks.
+
 ## Licenses
 
 Checked on 2026-09-27 for the paid App Store release (docs/LICENSING.md,

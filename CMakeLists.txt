@@ -28,6 +28,9 @@ option(OPENSHAPE_OWN_OCCT "Use OpenShape's own OpenCASCADE build (scripts/window
 # About -> Licenses): every TestFlight upload needs a new one, CI passes its
 # run number (scripts/ios/build-app.sh).
 set(OPENSHAPE_BUILD_NUMBER "${PROJECT_VERSION}" CACHE STRING "Bundle build number (CFBundleVersion)")
+# The macOS / iOS app's bundle identifier (src/app/CMakeLists.txt); the
+# in-app purchase's product identifier is derived from it (core/Version.h.in).
+set(OPENSHAPE_BUNDLE_ID "io.github.samuelairs.openshape" CACHE STRING "Bundle identifier of the macOS / iOS app")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -36,7 +39,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 include(cmake/CompilerWarnings.cmake)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    # The share sheet (src/ui/ios/ShareSheet.mm) is Objective-C++.
+    # The share sheet and the App Store purchase (src/ui/ios/*.mm) are Objective-C++.
     enable_language(OBJCXX)
     # An Xcode archive (TestFlight/App Store) must contain only the app, not
     # the static libraries it is built from; the app target overrides this.

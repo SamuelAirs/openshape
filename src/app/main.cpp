@@ -712,7 +712,7 @@ int main(int argc, char* argv[])
                                                  "sketchdone, extrude, bracket, revolve, arc, combine, history, rotate, mirror, pattern, "
                                                  "polygon, constraints, holes, text, home, enclosure; panels: help, about, preferences, modelpanel, viewmenu, "
                                                  "savename; App Store: store-enclosure, store-text, store-planes, store-sketch, "
-                                                 "store-history, store-home)."),
+                                                 "store-history, store-home, store-iap)."),
                                   QStringLiteral("name"));
     QCommandLineOption screenshotOption(QStringLiteral("screenshot"),
                                         QStringLiteral("Save a screenshot to <file> after startup, then exit."),

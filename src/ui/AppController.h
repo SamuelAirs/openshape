@@ -11,7 +11,9 @@
 #include "ui/AppSettings.h"
 #include "ui/Licenses.h"
 #include "ui/IncomingFiles.h"
+#include "ui/Purchase.h"
 #include "ui/Share.h"
+#include "ui/Store.h"
 
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
@@ -171,6 +173,22 @@ class AppController : public QObject {
     // acceptance run): exports into the app folder open it, and File ->
     // Share Project... shares the project file.
     Q_PROPERTY(bool canShare READ canShare NOTIFY shareChanged)
+    // ---- The App Store purchase "Unlimited projects" (ui/Store.h, ui/Purchase.h)
+    // There is a store (iPhone / iPad; a stand-in in the acceptance run):
+    // About shows the purchase row. Without one there is no limit and no
+    // purchase UI (Windows, macOS).
+    Q_PROPERTY(bool storeAvailable READ storeAvailable NOTIFY purchaseChanged)
+    Q_PROPERTY(bool projectsUnlocked READ projectsUnlocked NOTIFY purchaseChanged)
+    // The free version's limit applies (a store, not unlocked): Home's line.
+    Q_PROPERTY(bool projectLimited READ projectLimited NOTIFY purchaseChanged)
+    // The purchase sheet (PurchaseOverlay.qml) and its state: purchaseStatus
+    // is a PurchaseStatus name ("loading", "ready", "buying", "waiting",
+    // "restoring", "failed", "unavailable").
+    Q_PROPERTY(bool purchaseVisible READ purchaseVisible NOTIFY purchaseChanged)
+    Q_PROPERTY(QString purchaseStatus READ purchaseStatus NOTIFY purchaseChanged)
+    Q_PROPERTY(QString purchasePrice READ purchasePrice NOTIFY purchaseChanged)
+    Q_PROPERTY(QString purchaseMessage READ purchaseMessage NOTIFY purchaseChanged)
+    Q_PROPERTY(bool purchaseCanBuy READ purchaseCanBuy NOTIFY purchaseChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -416,6 +434,44 @@ public:
     // a project without a file or with unsaved changes.
     Q_INVOKABLE bool shareProject(const QRectF& anchor = QRectF());
 
+    // ---- Unlimited projects (the App Store purchase; ui/Store.h, ui/Purchase.h)
+    // The free App Store app keeps one project in OpenShape's folder; adding
+    // another (New, Import STEP as a project, Duplicate, saving under a new
+    // name, a project or STEP file from another app) opens the purchase
+    // sheet instead, and goes ahead once unlimited projects are bought or
+    // restored. Opening, editing, saving, renaming and deleting are never
+    // limited.
+    bool storeAvailable() const { return bool(store_); }
+    bool projectsUnlocked() const { return purchase_.unlocked(); }
+    bool projectLimited() const { return store_ && !purchase_.unlocked(); }
+    bool purchaseVisible() const { return purchaseVisible_; }
+    QString purchaseStatus() const { return purchaseStatusName(purchase_.status()); }
+    QString purchasePrice() const { return purchase_.price(); }
+    QString purchaseMessage() const { return purchase_.message(); }
+    bool purchaseCanBuy() const { return store_ && purchase_.canBuy(); }
+    // The store: platformStore() on iOS (set at start), none elsewhere; the
+    // acceptance run and the App Store review screenshot put a stand-in in
+    // (nullptr: none). Asks it for the price unless unlocked.
+    void setStore(std::shared_ptr<Store> store);
+    // Forgets or sets the unlock (stored on the device): for the acceptance run.
+    void setProjectsUnlocked(bool unlocked);
+    // Whether a project may be added now (`replacing`: the project file that
+    // is written over, which does not count against itself).
+    Q_INVOKABLE bool mayAddProject(const QString& replacing = QString()) const;
+    // Before an action that adds a project ("new", "import"; "save" with the
+    // typed name, whose own file does not count): true when it may go ahead.
+    // Otherwise the purchase sheet opens, and once unlocked projectAllowed()
+    // asks the window to do it after all.
+    Q_INVOKABLE bool gateProject(const QString& action, const QVariant& argument = QVariant());
+    // Opens the purchase sheet with nothing waiting (Home's line, About).
+    Q_INVOKABLE void offerUnlock();
+    // The sheet's buttons: Unlock for <price>, Restore purchase (also in
+    // About; it opens the sheet to show how it goes), Not now (what waited
+    // for it is dropped).
+    Q_INVOKABLE void buyUnlock();
+    Q_INVOKABLE void restorePurchase();
+    Q_INVOKABLE void closePurchase();
+
     // ---- Files from other apps ("Open in OpenShape"; ui/IncomingFiles.h)
     // A file another app handed to OpenShape: on iOS, "Open in OpenShape" or
     // sharing to OpenShape from the Files app or Mail, or a project tapped
@@ -582,6 +638,9 @@ signals:
     void shareChanged();
     // A file from another app waits for "Save changes?" (openIncomingFile).
     void incomingFileWaiting();
+    void purchaseChanged();
+    // Unlimited projects were unlocked while `action` waited for it (gateProject).
+    void projectAllowed(const QString& action, const QVariant& argument);
 
 private:
     bool swallowViewPress_ = false; // swallowViewPress
@@ -625,6 +684,15 @@ private:
     // all: a new copy in the app folder, or a scratch copy (never the open
     // project's file).
     void discardStagedFile(const StagedFile& staged) const;
+    // The store's events (on the GUI thread).
+    void storeEvent(const StoreEvent& event);
+    // Opens the purchase sheet (asking for the price when there is none).
+    void showPurchase();
+    // gateProject for the actions the controller runs itself: `then` runs
+    // once unlocked. Returns whether the action may go ahead now.
+    bool gateProjectThen(const QString& action, const QString& replacing, std::function<void()> then);
+    // The file Save in the app folder writes for `name` ("" for no name).
+    QString appFolderProjectPath(const QString& name) const;
 
     std::unique_ptr<doc::Document> document_;
     std::unique_ptr<cmd::UndoStack> undoStack_;
@@ -660,6 +728,17 @@ private:
     QUrl nextFileChoice_;
     QString appFolder_; // see savesToAppFolder
     ShareHandler shareHandler_;
+    std::shared_ptr<Store> store_;
+    PurchaseFlow purchase_;
+    bool purchaseVisible_ = false;
+    // What waits for the purchase: an action of the window's (projectAllowed)
+    // or the controller's own (`run`).
+    struct PendingProject {
+        QString action;
+        QVariant argument;
+        std::function<void()> run;
+    };
+    std::optional<PendingProject> pendingProject_;
     TrashHandler trashHandler_;
     // A file from another app, brought in and waiting for "Save changes?".
     std::optional<StagedFile> pendingIncoming_;

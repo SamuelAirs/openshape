@@ -236,6 +236,32 @@ open; turn the inner display; Split View on both sides of the side bar;
 half fold while typing (TD-140). Then send Logs/openshape.log: its
 `window ...` lines give the real sizes and safe areas (TD-150).
 
+## The purchase "Unlimited projects" (TestFlight, iPhone or iPad)
+
+Needs the in-app purchase created in App Store Connect and the Paid Apps
+Agreement active ([IPAD.md](IPAD.md), "The in-app purchase"). TestFlight
+uses Apple's sandbox: nothing is charged.
+
+1. **Free with one project:** with one project in FoldForm's folder (delete
+   the others in the Files app, or use a new device), Home shows "Free
+   version of FoldForm: one project · Unlock unlimited projects". Tap New
+   project: the sheet "Unlimited projects" opens with "Unlock for <price>"
+   in your currency, Restore purchase and Not now. Not now: nothing changes.
+2. **Buy:** New project → Unlock for <price> → Apple's sheet (it says
+   "[Environment: Sandbox]") → confirm. The sheet closes, "Unlimited
+   projects unlocked" shows and the new project opens. Home's line is gone;
+   File → About says "Unlimited projects: unlocked".
+3. **Restore:** delete FoldForm and install it again from TestFlight (save
+   a project somewhere else first), save one project, then File → About →
+   Restore purchase: it unlocks without paying again. On the other device
+   (iPhone / iPad with the same Apple Account) Restore unlocks too.
+4. **Duplicate, Import STEP, Save As a new name, a project sent from Mail:**
+   each opens the sheet while free (repeat step 1 on a fresh install).
+5. **No connection:** airplane mode, open the sheet from Home's line: Unlock
+   is off and a line says the App Store can't be reached.
+6. Send Logs/openshape.log afterwards: the `store:` lines say what the App
+   Store answered.
+
 ## On the iPad and iPhone
 
 See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the

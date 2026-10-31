@@ -52,6 +52,33 @@ void makeWritable(const QString& path)
                                     | QFileDevice::ReadUser | QFileDevice::WriteUser);
 }
 
+// Where a project from elsewhere goes in the app folder: the first name
+// that is free, or that holds this very project already (`alreadyThere`).
+QString projectTarget(const QString& absolute, const QString& appFolder, bool* alreadyThere)
+{
+    QString base = projectFileBaseName(QFileInfo(absolute).completeBaseName());
+    if (base.isEmpty())
+        base = QStringLiteral("Untitled");
+    *alreadyThere = false;
+    for (int n = 1; n < 1000; ++n) {
+        const QString candidate = appFolder + QLatin1Char('/') + (n == 1 ? base : base + QLatin1Char(' ') + QString::number(n))
+                                + QStringLiteral(".openshape");
+        if (!QFileInfo::exists(candidate))
+            return candidate;
+        if (sameFileContents(absolute, candidate)) {
+            *alreadyThere = true;
+            return candidate;
+        }
+    }
+    return {};
+}
+
+bool fromAnInbox(const QString& absolute, const IncomingPlaces& places)
+{
+    return std::any_of(places.inboxes.begin(), places.inboxes.end(),
+                       [&](const QString& inbox) { return isInsideFolder(absolute, inbox); });
+}
+
 } // namespace
 
 IncomingKind incomingKind(const QString& fileName)
@@ -120,8 +147,7 @@ StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places
         staged.path = absolute;
         return staged;
     }
-    const bool fromInbox = std::any_of(places.inboxes.begin(), places.inboxes.end(),
-                                       [&](const QString& inbox) { return isInsideFolder(absolute, inbox); });
+    const bool fromInbox = fromAnInbox(absolute, places);
     if (!fromInbox && isInsideFolder(absolute, places.appFolder)) {
         staged.path = absolute;
         return staged;
@@ -133,23 +159,9 @@ StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places
     }
 
     if (staged.kind == IncomingKind::Project) {
-        QString base = projectFileBaseName(info.completeBaseName());
-        if (base.isEmpty())
-            base = QStringLiteral("Untitled");
         QDir().mkpath(places.appFolder);
-        // The first name that is free, or holds this very project already.
-        QString target;
         bool alreadyThere = false;
-        for (int n = 1; n < 1000 && target.isEmpty(); ++n) {
-            const QString candidate = places.appFolder + QLatin1Char('/') + (n == 1 ? base : base + QLatin1Char(' ') + QString::number(n))
-                                    + QStringLiteral(".openshape");
-            if (!QFileInfo::exists(candidate))
-                target = candidate;
-            else if (sameFileContents(absolute, candidate)) {
-                target = candidate;
-                alreadyThere = true;
-            }
-        }
+        const QString target = projectTarget(absolute, places.appFolder, &alreadyThere);
         bool ok = !target.isEmpty();
         if (ok && alreadyThere) {
             if (fromInbox)
@@ -189,6 +201,19 @@ StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places
             QDir().rmdir(inbox.absolutePath());
     }
     return staged;
+}
+
+bool stagingAddsProject(const QString& source, const IncomingPlaces& places)
+{
+    const QFileInfo info(source);
+    if (places.appFolder.isEmpty() || incomingKind(info.fileName()) != IncomingKind::Project || !info.isFile())
+        return false;
+    const QString absolute = info.absoluteFilePath();
+    if (!fromAnInbox(absolute, places) && isInsideFolder(absolute, places.appFolder))
+        return false; // opened where it is
+    bool alreadyThere = false;
+    const QString target = projectTarget(absolute, places.appFolder, &alreadyThere);
+    return !target.isEmpty() && !alreadyThere;
 }
 
 } // namespace os::ui

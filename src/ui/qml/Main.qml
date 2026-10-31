@@ -47,7 +47,7 @@ ApplicationWindow {
     property bool importAsProject: false // the import dialog makes a new document (from Home)
     // A question the user must answer first: the window's shortcuts wait
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
-    readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible || saveNamePrompt.visible
+    readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible || saveNamePrompt.visible || purchaseOverlay.visible
 
     // ---------------------------------------------------------------- layout
     // The window's size and safe areas drive the layout (Theme.compact,
@@ -198,15 +198,14 @@ ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.New]
         enabled: !window.modalOpen
-        onActivated: window.confirmDiscard(() => window.app.newDocument())
+        onActivated: window.newProject()
     }
     Shortcut { sequence: "Ctrl+,"; enabled: !window.modalOpen; onActivated: preferencesOverlay.open() }
     // From Home, an import starts a new project (like its Import STEP button).
     Shortcut {
         sequence: "Ctrl+I"
         enabled: !window.modalOpen
-        onActivated: window.app.homeVisible ? window.confirmDiscard(() => window.chooseImportFile(true))
-                                            : window.chooseImportFile(false)
+        onActivated: window.app.homeVisible ? window.importNewProject() : window.chooseImportFile(false)
     }
     // Keys for the view: never while Home covers it (whatever has the focus),
     // nor while the Text tool takes letters.
@@ -233,7 +232,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [saveNamePrompt, unsavedDialog, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, homeScreen]
+        const panels = [purchaseOverlay, saveNamePrompt, unsavedDialog, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, homeScreen]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -310,6 +309,21 @@ ApplicationWindow {
         if (app.dirty && !app.saveProject())
             return
         share()
+    }
+
+    // New project (File → New, Home, Ctrl+N) and Import STEP as a new
+    // project (Home): one more project, which the free App Store version
+    // offers to unlock first (AppController::gateProject; once unlocked,
+    // onProjectAllowed starts it again).
+    function newProject() {
+        if (!app.gateProject("new"))
+            return
+        confirmDiscard(() => window.app.newDocument())
+    }
+    function importNewProject() {
+        if (!app.gateProject("import"))
+            return
+        confirmDiscard(() => window.chooseImportFile(true))
     }
 
     // Runs `action` now if there are no unsaved changes, otherwise asks
@@ -419,7 +433,7 @@ ApplicationWindow {
         delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
         MenuItem { objectName: "homeMenuItem"; text: "Home"; onTriggered: window.app.homeVisible = true }
         MenuSeparator {}
-        MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.confirmDiscard(() => window.app.newDocument()) }
+        MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.newProject() }
         MenuItem { objectName: "openMenuItem"; text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
         Menu {
             id: recentMenu
@@ -1370,9 +1384,9 @@ ApplicationWindow {
         app: window.app
         anchors.fill: parent
         z: 90 // over the model and its panels; dialogs and the restore prompt go above
-        onNewRequested: window.confirmDiscard(() => window.app.newDocument())
+        onNewRequested: window.newProject()
         onOpenRequested: window.confirmDiscard(() => window.chooseFile(openDialog, (url) => window.app.openProject(url)))
-        onImportRequested: window.confirmDiscard(() => window.chooseImportFile(true))
+        onImportRequested: window.importNewProject()
         onProjectRequested: (path) => window.confirmDiscard(() => window.app.openRecent(path))
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
@@ -1393,6 +1407,7 @@ ApplicationWindow {
     AboutOverlay {
         id: aboutOverlay
         objectName: "aboutOverlay"
+        app: window.app
         anchors.fill: parent
         z: 100
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
@@ -1451,6 +1466,17 @@ ApplicationWindow {
         z: 125 // above "Save changes?", whose Save may ask for the name
         onSaved: window.finishSaveAs(true)
         onCancelled: window.finishSaveAs(false)
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // The App Store purchase "Unlimited projects" (iPhone / iPad): above
+    // every dialog, Save's name prompt included (its Save may open it).
+    PurchaseOverlay {
+        id: purchaseOverlay
+        objectName: "purchaseOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 128
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
@@ -1521,6 +1547,19 @@ ApplicationWindow {
         // unsaved changes: asked about first, as Home's Open does.
         function onIncomingFileWaiting() {
             window.confirmDiscard(() => window.app.openPendingIncomingFile(), () => window.app.dropPendingIncomingFile())
+        }
+        // Unlimited projects were unlocked: what waited for it goes ahead.
+        function onProjectAllowed(action, argument) {
+            if (action === "new")
+                window.newProject()
+            else if (action === "import")
+                window.importNewProject()
+            else if (action === "save") {
+                if (saveNamePrompt.visible)
+                    saveNamePrompt.save()
+                else
+                    window.app.saveInAppFolder(argument)
+            }
         }
     }
 
