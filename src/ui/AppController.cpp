@@ -471,6 +471,13 @@ QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
     input.touch = layout.value(QStringLiteral("touch")).toBool();
     input.frozen = layout.value(QStringLiteral("frozen")).toBool();
     input.typing = layout.value(QStringLiteral("typing")).toBool();
+    // The spot that left the keypad no clear room (Main.qml, placeKeypad), by its name.
+    if (const QString excluded = layout.value(QStringLiteral("excluded")).toString(); !excluded.isEmpty())
+        for (const interact::ChipSpot spot : {interact::ChipSpot::Right, interact::ChipSpot::Left, interact::ChipSpot::Above,
+                                              interact::ChipSpot::Below, interact::ChipSpot::TopLeft, interact::ChipSpot::TopRight,
+                                              interact::ChipSpot::BottomLeft, interact::ChipSpot::BottomRight})
+            if (const std::string_view name = interact::toString(spot); excluded == QString::fromUtf8(name.data(), qsizetype(name.size())))
+                input.excluded = spot;
     const interact::ChipPlacement placement = interaction_->placeValueChip(input);
     QVariantMap result;
     result.insert(QStringLiteral("x"), placement.position.x);
@@ -1288,7 +1295,7 @@ QString AppController::licenseText(const QString& id)
         return licenses_->sourceOffer(build);
     QString text = licenses_->text(id);
     if (id == QStringLiteral("openshape") && !text.isEmpty()) {
-        text.prepend(QStringLiteral("OpenShape %1 (%2)\nSource code: %3\n\n")
+        text.prepend(QStringLiteral("FoldForm %1 (%2)\nSource code: %3\n\n")
                          .arg(build.version, ui::buildDescription(build), ui::sourceCodeUrl(build)));
     }
     return text;
@@ -1355,7 +1362,7 @@ bool AppController::exportToAppFolder(const QString& format, const QRectF& share
     }
     // No share sheet: where to find it (the Files app shows the app's
     // folder by its name).
-    notifyMessage(QStringLiteral("Exported %1 to OpenShape \u2192 Exports (Files app)").arg(file));
+    notifyMessage(QStringLiteral("Exported %1 to FoldForm \u2192 Exports (Files app)").arg(file));
     return true;
 }
 
@@ -1599,7 +1606,7 @@ bool AppController::openIncomingFile(const QUrl& url)
     const QString source = localPath(url);
     if (!url.isLocalFile() && !url.isRelative()) {
         OS_LOG(Warning, File) << "not a file: " << url.toString().toStdString();
-        notifyMessage(QStringLiteral("OpenShape can only open files."));
+        notifyMessage(QStringLiteral("FoldForm can only open files."));
         return false;
     }
     // One more project (a project copied in, or a STEP file imported as a
@@ -1657,7 +1664,7 @@ bool AppController::openPendingIncomingFile()
         return false;
     }
     if (staged.copied)
-        notifyMessage(QStringLiteral("Opened \u201c%1\u201d, a copy in OpenShape\u2019s folder").arg(QFileInfo(staged.path).completeBaseName()));
+        notifyMessage(QStringLiteral("Opened \u201c%1\u201d, a copy in FoldForm\u2019s folder").arg(QFileInfo(staged.path).completeBaseName()));
     return true;
 }
 
@@ -2355,7 +2362,7 @@ QString AppController::deleteProject(const QString& path, bool permanently)
     const bool inAppFolder = !appFolder_.isEmpty() && io::isInsideFolder(file.toStdString(), appFolder_.toStdString());
     if (!projectDeletable(file, recent)) {
         OS_LOG(Warning, File) << "delete refused outside the app folder: " << file.toStdString();
-        notifyMessage(QStringLiteral("Only projects in OpenShape's folder can be deleted here."));
+        notifyMessage(QStringLiteral("Only projects in FoldForm's folder can be deleted here."));
         return {};
     }
     if (!info.isFile()) {

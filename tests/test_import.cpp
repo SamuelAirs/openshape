@@ -243,7 +243,7 @@ TEST(ImportedBody, BrokenImportEntriesFailCleanly)
         EXPECT_FALSE(r.ok()) << what;
         EXPECT_EQ(r.error(), ErrorCode::FileFormatError) << what;
         // "This project file is damaged ...", or "... an invalid imported body." for bad params.
-        EXPECT_TRUE(r.userMessage() == "This project file is damaged or not an OpenShape project."
+        EXPECT_TRUE(r.userMessage() == "This project file is damaged or not a FoldForm project."
                     || r.userMessage() == "The file contains an invalid imported body.")
             << what << ": " << r.userMessage();
         std::filesystem::remove(broken);
@@ -392,7 +392,7 @@ TEST(ImportedBody, ImportedGeometryIsReadOnceAndWithinItsBudget)
     auto over = io::loadProject(path, budget);
     ASSERT_FALSE(over.ok());
     EXPECT_EQ(over.error(), ErrorCode::FileFormatError);
-    EXPECT_EQ(over.userMessage(), "This project file is damaged or not an OpenShape project.");
+    EXPECT_EQ(over.userMessage(), "This project file is damaged or not a FoldForm project.");
 
     // Saving refuses what the loader would not read (the file is not touched).
     const auto other = temp("too_large.openshape");
@@ -431,7 +431,7 @@ TEST(ImportedBody, ImportedGeometryIsReadOnceAndWithinItsBudget)
     writeZip(sharing, crafted);
     auto shared = io::loadProject(sharing);
     ASSERT_FALSE(shared.ok());
-    EXPECT_EQ(shared.userMessage(), "This project file is damaged or not an OpenShape project.");
+    EXPECT_EQ(shared.userMessage(), "This project file is damaged or not a FoldForm project.");
     EXPECT_NE(shared.developerMessage().find("more than one step"), std::string::npos) << shared.developerMessage();
     for (const auto& p : {path, other, sharing})
         std::filesystem::remove(p);

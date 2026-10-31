@@ -1,11 +1,11 @@
-# OpenShape
+# FoldForm
 
 **Direct-modeling CAD for makers and 3D printing.** Push and pull faces,
 sketch a profile and extrude it, and type exact sizes as you go, in the
 spirit of Shapr3D. Free and open source (MPL-2.0), built on the
 OpenCASCADE solid-modeling kernel.
 
-![OpenShape with a small project box: rounded corners, 2 mm walls and a cable hole whose diameter is being typed](docs/images/hero.png)
+![FoldForm with a small project box: rounded corners, 2 mm walls and a cable hole whose diameter is being typed](docs/images/hero.png)
 
 *A 60 × 40 × 25 mm project box made from a box: three sizes typed, the
 corners rounded, the body shelled, a cable hole cut, and now the hole's
@@ -16,7 +16,11 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 [User guide](docs/USER_GUIDE.md) · [Build from source](BUILDING.md) ·
 [Report a bug](https://github.com/SamuelAirs/openshape/issues)
 
-> **Early pre-release (0.2).** OpenShape is young: it does the things below,
+FoldForm was called OpenShape: its source code, this repository
+(`openshape`), the Windows program (`OpenShape.exe`) and the project file
+format (`.openshape`) keep that name.
+
+> **Early pre-release (0.2).** FoldForm is young: it does the things below,
 > but expect rough edges. It keeps recovery copies of unsaved work, and bug
 > reports are very welcome.
 
@@ -81,7 +85,7 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 
 **Reliability**
 - Unsaved work is copied in the background and offered again after a crash.
-- When a step cannot be done, OpenShape says why in plain words, often with
+- When a step cannot be done, FoldForm says why in plain words, often with
   a size that works, and the model stays as it was.
 - The tools are exercised through the real window by an automated test
   run, and random modeling sessions check undo, redo and save/open.
@@ -95,7 +99,7 @@ diameter set to 10.4 mm for print clearance. Every step in the Model panel
 | macOS | Builds and passes the tests in CI; no download yet |
 | Linux | Not tried yet (see [BUILDING.md](BUILDING.md)) |
 
-OpenShape has a touch layout (larger controls, one finger orbits, two
+FoldForm has a touch layout (larger controls, one finger orbits, two
 fingers pan and zoom, two- and three-finger taps undo and redo) and a pen
 mode; on Windows the touch layout appears once you touch the screen. On a
 phone the tools sit in a strip along the bottom and the value box docks
@@ -107,7 +111,7 @@ where it covers nothing you selected.
    and download `OpenShape-<version>-windows-x64-setup.exe` (or the `.zip`
    to run it without installing).
 2. Run the installer. It installs for your user only (no administrator
-   rights needed) and adds OpenShape to the Start menu.
+   rights needed) and adds it to the Start menu (as OpenShape, the Windows program's name).
 3. Each release's notes say whether it is code-signed
    ([Code signing policy](#code-signing-policy)). If it is not, Windows
    SmartScreen may say "Windows protected your PC": click **More info**,
@@ -119,7 +123,7 @@ where it covers nothing you selected.
 Signed Windows releases: free code signing provided by
 [SignPath.io](https://about.signpath.io/), certificate by
 [SignPath Foundation](https://signpath.org/). What is signed, how releases
-are built and approved, the team roles and the privacy policy (OpenShape
+are built and approved, the team roles and the privacy policy (FoldForm
 does not transfer any information to other networked systems unless you
 ask it to) are in [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md).
 
@@ -127,7 +131,7 @@ ask it to) are in [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md).
 
 A 60 × 30 × 5 mm mounting plate with two 6 mm holes:
 
-1. **Sketch.** Start OpenShape and click **New project** on the Home screen.
+1. **Sketch.** Start FoldForm and click **New project** on the Home screen.
    Press `K` (or click **Sketch**, then **Top (XY) — ground**): you are
    drawing on the ground with the Rectangle tool. Click where the red and
    green axes cross, type `60`, press `Tab`, type `30`, press `Enter`. Click
@@ -151,14 +155,14 @@ card.
 
 ## Documentation
 
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): using OpenShape
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): using FoldForm
 - [BUILDING.md](BUILDING.md): building, testing and packaging from source
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the code is organized
 - [ROADMAP.md](ROADMAP.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md):
   where the project stands
 - [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md): code signing policy
-- [docs/PRIVACY.md](docs/PRIVACY.md): privacy policy (OpenShape collects no
+- [docs/PRIVACY.md](docs/PRIVACY.md): privacy policy (FoldForm collects no
   data); [docs/SUPPORT.md](docs/SUPPORT.md): getting help
 - [docs/APP_STORE.md](docs/APP_STORE.md): the App Store listing, pricing,
   public beta and screenshots
@@ -166,7 +170,7 @@ card.
 
 ## License
 
-OpenShape is free software under the [Mozilla Public License 2.0](LICENSE).
+FoldForm is free software under the [Mozilla Public License 2.0](LICENSE).
 Third-party components keep their own licenses: see
 [THIRD_PARTY.md](THIRD_PARTY.md), and [docs/LICENSING.md](docs/LICENSING.md)
 for what that means for distribution.

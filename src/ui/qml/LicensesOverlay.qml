@@ -113,7 +113,7 @@ Rectangle {
                         wrapMode: Text.WordWrap
                         color: Theme.mutedText
                         font.pixelSize: 13
-                        text: "OpenShape is free software under the Mozilla Public License 2.0. It is built with "
+                        text: "FoldForm is free software under the Mozilla Public License 2.0. It is built with "
                             + "the libraries below, which keep their own licenses. Each entry shows its license "
                             + "text and where its source code is."
                     }
@@ -133,7 +133,7 @@ Rectangle {
                                 Layout.leftMargin: 0
                                 Layout.topMargin: 10
                                 text: entry.modelData.group === "offer" ? "Your rights"
-                                    : entry.modelData.group === "app" ? "OpenShape"
+                                    : entry.modelData.group === "app" ? "FoldForm"
                                     : entry.modelData.group === "library" ? "Built with"
                                     : "Inside Qt (code from other projects)"
                             }

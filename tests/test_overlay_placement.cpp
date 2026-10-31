@@ -13,6 +13,7 @@
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "interaction/NumericKeypad.h"
 #include "interaction/OverlayPlacement.h"
 
 #include <gtest/gtest.h>
@@ -439,6 +440,77 @@ TEST(ChipPlacement, NeverCoversTheKeepClearWhenThereIsRoom)
         EXPECT_GT(clear, cases / 5) << "many random selections leave room";
         EXPECT_TRUE(layout.compact || searched > 5) << "some selections leave no room at all";
     }
+}
+
+// The iPad's push/pull value typed on the keypad (the numpad scenario, a
+// box's top face): with a narrower top bar the value box fits Above, just
+// right of the top bar, and the keypad beside it finds no spot clear of the
+// controls (right of it is the Model panel, below it the face). Main.qml then
+// places the value box again with that spot excluded, and the keypad beside
+// it again: both clear.
+TEST(ChipPlacement, ExcludedSpotLeavesTheKeypadRoom)
+{
+    const std::vector<ScreenRect> controls{
+        rect(16, 16, 331, 56),   // top bar
+        rect(16, 88, 90, 644),   // tool column
+        rect(874, 16, 290, 120), // Model panel
+        rect(670, 748, 494, 56), // view buttons
+        rect(1072, 648, 92, 92), // view cube
+        rect(16, 748, 638, 54),  // selection summary and hint
+    };
+    const ScreenRect face = rect(413, 218, 355, 192); // the top face and its arrow
+    ChipPlacementInput chip;
+    chip.area = rect(16, 16, 1148, 788);
+    chip.avoid = controls;
+    chip.size = {460, 146};
+    chip.tip = {590, 222};
+    chip.fieldCenter = 28;
+    chip.keepClear = face;
+    chip.touch = true;
+    chip.typing = true;
+    const auto keypadBeside = [&](const ChipPlacement& p) {
+        KeypadPlacementInput pad;
+        pad.area = rect(4, 4, 1172, 812);
+        pad.size = {340, 290};
+        pad.target = chipRect(p, chip);
+        pad.avoid = controls;
+        pad.keepClear = face;
+        return placeKeypad(pad);
+    };
+
+    const ChipPlacement above = placeValueChip(chip);
+    ASSERT_EQ(above.spot, ChipSpot::Above) << text(chipRect(above, chip));
+    EXPECT_TRUE(above.clear);
+    EXPECT_FALSE(coversControl(chipRect(above, chip), chip));
+    EXPECT_FALSE(keypadBeside(above).clear) << "beside the box Above, every spot covers a control or the face";
+    // Without an excluded spot the box keeps its spot (it moves along with the arrow).
+    EXPECT_EQ(placeValueChip(chip, ChipSpot::Above).spot, ChipSpot::Above);
+
+    chip.excluded = ChipSpot::Above;
+    for (const ChipSpot previous : {ChipSpot::None, ChipSpot::Above}) {
+        const ChipPlacement again = placeValueChip(chip, previous);
+        const ScreenRect box = chipRect(again, chip);
+        EXPECT_NE(again.spot, ChipSpot::Above) << "not even as the previous spot";
+        EXPECT_TRUE(again.clear) << text(box);
+        EXPECT_FALSE(coversControl(box, chip)) << text(box);
+        const KeypadPlacement pad = keypadBeside(again);
+        const ScreenRect keypad = ScreenRect::at(pad.position, {340, 290});
+        EXPECT_TRUE(pad.clear) << "the keypad beside the box at " << text(box) << ": " << text(keypad);
+        EXPECT_FALSE(keypad.intersects(box));
+        EXPECT_FALSE(keypad.intersects(face));
+        for (const ScreenRect& control : controls)
+            EXPECT_FALSE(keypad.intersects(control)) << text(keypad) << " covers " << text(control);
+        // Deterministic: the same input, the same places.
+        EXPECT_EQ(placeValueChip(chip, previous).position.y, again.position.y);
+        EXPECT_EQ(keypadBeside(again).position.y, pad.position.y);
+    }
+
+    // A phone docks as before: the excluded spot plays no part there.
+    ChipPlacementInput phone = chip;
+    phone.compact = true;
+    phone.frozen = true;
+    phone.typing = false;
+    EXPECT_EQ(placeValueChip(phone, ChipSpot::DockBottom).spot, ChipSpot::DockBottom) << "keeps its side while dragging";
 }
 
 // ---- The live values of a sketch beside a finger -------------------------------

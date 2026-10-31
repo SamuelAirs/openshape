@@ -5,6 +5,8 @@ the section of their version (`.github/workflows/release.yml`).
 
 ## 0.3.0 (unreleased)
 
+OpenShape is now called FoldForm (the source code and repository keep the name openshape).
+
 The answers to the second round of testing on iPhone and iPad (sketching
 and editing sketches with a finger, cutting pockets, typing sizes,
 selecting several bodies), Loft, and the groundwork for the App Store.

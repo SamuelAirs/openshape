@@ -474,7 +474,7 @@ Result<Datum> Datum::fromJson(const json& j)
     const auto method = datumMethodFromString(j["method"].get<std::string>());
     if (!method)
         return Result<Datum>::failure(ErrorCode::FileVersionUnsupported,
-                                      "This project uses a construction axis or plane this version of OpenShape does not support.",
+                                      "This project uses a construction axis or plane this version of FoldForm does not support.",
                                       "unknown datum method '" + j["method"].get<std::string>() + "'");
     Datum d(*id);
     d.method = *method;

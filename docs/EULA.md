@@ -1,7 +1,7 @@
-# OpenShape for iPhone and iPad: proposed End User License Agreement
+# FoldForm for iPhone and iPad: proposed End User License Agreement
 
 **Status: a proposal (2026-09-27), not in use yet.** It is meant for App
-Store Connect → OpenShape → App Information → License Agreement → Edit →
+Store Connect → FoldForm → App Information → License Agreement → Edit →
 "Apply a custom EULA to all chosen countries or regions" (plain text; paste
 everything between the two lines below and fill in the bracketed parts).
 Without it, Apple's standard EULA applies. Why a custom one: see
@@ -20,17 +20,17 @@ instructions: <https://www.apple.com/legal/internet-services/itunes/dev/minterms
 
 OPENSHAPE END USER LICENSE AGREEMENT
 
-This agreement is between you and [OWNER'S FULL LEGAL NAME] ("we", "us"), the developer of the OpenShape app for iPhone and iPad (the "App"). By downloading or using the App you accept it.
+This agreement is between you and [OWNER'S FULL LEGAL NAME] ("we", "us"), the developer of the FoldForm app for iPhone and iPad (the "App"). By downloading or using the App you accept it.
 
 1. The parties. This agreement is concluded between you and us only, not with Apple Inc. We, not Apple, are solely responsible for the App and its content.
 
 2. Your license. We grant you a non-transferable license to use the App on any Apple-branded products that you own or control, as permitted by the Usage Rules in the Apple Media Services Terms and Conditions; the App may also be used by other accounts associated with the purchaser through Family Sharing or volume purchasing. This agreement does not provide usage rules that conflict with the Apple Media Services Terms and Conditions.
 
 3. Open-source software. The App is free software built from open-source components, and nothing in this agreement limits the rights those components' licenses give you:
-   a. OpenShape's own source code is licensed to you under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/). You can get the complete source code of every version of the App, with its build scripts, free of charge at https://github.com/SamuelAirs/openshape (each App Store version is a release tag there).
+   a. FoldForm's own source code is licensed to you under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/). You can get the complete source code of every version of the App, with its build scripts, free of charge at https://github.com/SamuelAirs/openshape (each App Store version is a release tag there).
    b. The App contains Qt (GNU Lesser General Public License 3.0), Open CASCADE Technology (GNU Lesser General Public License 2.1 with the Open CASCADE exception) and PlaneGCS (GNU Lesser General Public License 2.1 or later), and other components under the licenses listed in the App (About, then Licenses). You may modify these libraries, rebuild and relink the App with your modified versions and use the result on your own devices, and you may reverse-engineer the App to debug such modifications. The exact source code of these libraries for each version is available free of charge as described in the App (About, then Licenses, then "Your rights to the LGPL libraries"), including a written offer valid for at least three years.
    c. Where this agreement and the license of an open-source component differ, that license prevails for that component. We do not use any power we may have to forbid the circumvention of technological measures to the extent such circumvention is done in exercising the rights these licenses give you.
-   d. Apart from what these licenses allow, you may not sell, rent or redistribute copies of the App obtained from the App Store; building, using and distributing OpenShape from its source code is governed by the Mozilla Public License 2.0 and the licenses of its components, not by this agreement. This agreement grants no rights in the name "OpenShape".
+   d. Apart from what these licenses allow, you may not sell, rent or redistribute copies of the App obtained from the App Store; building, using and distributing FoldForm from its source code is governed by the Mozilla Public License 2.0 and the licenses of its components, not by this agreement. This agreement grants no rights in the name "FoldForm".
 
 4. Maintenance and support. We alone are responsible for any maintenance and support of the App, as described in this agreement or required by applicable law. Apple has no obligation whatsoever to provide any maintenance or support for the App.
 

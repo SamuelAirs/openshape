@@ -20,7 +20,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); since 2026-09-27 builds may also go to external testers (`testFlightInternalTestingOnly` false: the public beta, section 1b). Only builds of release tags `v<version>...` are submitted for App Store review (they name the tag in About → Licenses and require the license gate; docs/LICENSING.md) |
 | Debug symbols (dSYM) | ✅ 2026-09-27 (ipad.yml run 39): Release is built with debug information (same optimization); the archive carries `OpenShape.app.dSYM` (62 MB; the app stays 55 MB). Xcode's archive step leaves the dSYM of a CMake project out (run 37), so `build-app.sh` copies the build's in and fails unless its UUID is the app binary's and OpenShape's functions are in it; the upload sends it (`uploadSymbols`), so TestFlight crash reports symbolicate |
 | Share sheet after exports, File → Share Project… | 2026-09-27: built on CI (`src/ui/ios/ShareSheet.mm`, run 39); the `share` acceptance scenario checks it with a stub sheet on Windows and the Mac (CI run 47); **to try on the devices** |
-| Open in OpenShape (Files app, Mail) | 2026-09-27: document types for projects and STEP files (checked by the build and `test_uistate`), `QFileOpenEvent` handling; the `openin` scenario checks it on Windows and the Mac through Qt's own entry point; **to try on the devices** |
+| Open in FoldForm (Files app, Mail) | 2026-09-27: document types for projects and STEP files (checked by the build and `test_uistate`), `QFileOpenEvent` handling; the `openin` scenario checks it on Windows and the Mac through Qt's own entry point; **to try on the devices** |
 | Home: Rename, Duplicate, Delete on a project card | 2026-09-27: Delete moves the project to the Files app's Recently Deleted (Qt's `QFile::moveToTrash` → `trashItemAtURL` → `Documents/.Trash`; asks again and deletes for good only if that fails); the `homeprojects` scenario checks all three with a stand-in trash on Windows and the Mac; **to try on the devices** (iPhone item 18 below, also on the iPad) |
 | Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking still to try |
 | Apple Pencil: palm rejection, hover, the finger-tap hint (2026-10-30) | built and checked on Windows (`test_pencil`, the `pencil` scenario injecting Qt tablet events the way the iOS plugin delivers them); **to try on the iPad** ("Apple Pencil" below), and on the iPhone Duo once Apple enables Pencil there |
@@ -276,17 +276,17 @@ scenarios `appfolder` (saving by name, exports), `share` (a stub share
 sheet) and `openin` (files handed over through `handleFileOpenEvent`, the
 call Qt's iOS delegate makes; the Open and Import STEP pickers with files
 from elsewhere) check it. Not verified on a device yet (TD-69): the share
-sheet itself, which apps offer "Open in OpenShape" for STEP files (another
+sheet itself, which apps offer "Open in FoldForm" for STEP files (another
 app's own STEP type may win, TD-68), and files in iCloud Drive that are not
 downloaded yet.
 
 ## Expected rough edges
 
-- Files: see above; sharing and "Open in OpenShape" need trying on the
+- Files: see above; sharing and "Open in FoldForm" need trying on the
   devices (the tests below).
 - Hover highlights only for an Apple Pencil held over an iPad that supports
   hover (fingers have none); the iPhone Duo has no Pencil hover.
-- Typing values: tap the value field for OpenShape's numeric keypad
+- Typing values: tap the value field for FoldForm's numeric keypad
   (typing without tapping needs a hardware keyboard).
 - Apple Pencil Scribble (handwriting into a field) is not expected to work,
   but has not been tried on a device: Qt 6.11's iOS platform plugin
@@ -301,7 +301,7 @@ downloaded yet.
   down); the keypad's keys take Pencil taps. See TD-90.
 - Not measured yet: speed and memory with bigger parts.
 
-The app's log is in the Files app: On My iPhone / On My iPad → OpenShape → Logs →
+The app's log is in the Files app: On My iPhone / On My iPad → FoldForm → Logs →
 `openshape.log` (share it with the Share button when reporting a problem).
 TestFlight also collects crash reports and screenshot feedback in App Store
 Connect.
@@ -448,9 +448,9 @@ there is no hover, so nothing lights up before the tip touches.
    next to a line and check the line is selected, not the glyph; draw a
    polygon and change its sides with the on-screen − / + buttons.
 8. Work is kept: add a box without saving, go to the Home Screen and swipe
-   OpenShape away in the App Switcher. Start it again: it offers to restore
+   FoldForm away in the App Switcher. Start it again: it offers to restore
    the box.
-9. Split View / Stage Manager: put OpenShape beside another app and drag
+9. Split View / Stage Manager: put FoldForm beside another app and drag
    the divider: at about half the width the compact layout appears (tools
    along the bottom, **Model** and **View** buttons), and back again. In a
    window (iPadOS 26 windowed apps), check that the window's controls at
@@ -494,19 +494,19 @@ there is no hover, so nothing lights up before the tip touches.
    popover pointing at **File**; pick the slicer app (the file arrives
    there), then Export 3MF and **AirDrop** it to a Mac or iPhone; Export
    STEP and **Save to Files**; close the sheet once without choosing (no
-   message; the file is in OpenShape → Exports). Then with the iPad in
+   message; the file is in FoldForm → Exports). Then with the iPad in
    Split View at half width: the sheet still appears.
 16. File → Share Project… on a new project: it asks for a name, saves, then
    the sheet offers AirDrop / Mail / Save to Files; send it to yourself by
    Mail.
-17. Open in OpenShape: in the Files app, on a `.openshape` project in
-   iCloud Drive: Share → OpenShape (or tap it): OpenShape opens it and says
-   "a copy in OpenShape's folder"; the copy is in On My iPad → OpenShape.
-   Tap a project in On My iPad → OpenShape: it opens directly (no copy).
-   A `.step` file in the Files app: Share → OpenShape: a new project with its
+17. Open in FoldForm: in the Files app, on a `.openshape` project in
+   iCloud Drive: Share → FoldForm (or tap it): FoldForm opens it and says
+   "a copy in FoldForm's folder"; the copy is in On My iPad → FoldForm.
+   Tap a project in On My iPad → FoldForm: it opens directly (no copy).
+   A `.step` file in the Files app: Share → FoldForm: a new project with its
    bodies. In Mail (the project mailed in 15, and a STEP attachment): touch
-   and hold the attachment → OpenShape. With unsaved changes, each first
-   asks "Save changes?". Afterwards On My iPad → OpenShape has no "Inbox"
+   and hold the attachment → FoldForm. With unsaved changes, each first
+   asks "Save changes?". Afterwards On My iPad → FoldForm has no "Inbox"
    folder left.
 18. Loft: sketch a rectangle on the ground, Construct → Plane → From XY,
    type `30`, ✓, **Sketch** on the plane, a circle over the rectangle,
@@ -564,7 +564,7 @@ What to try:
 5. Split View with another app, on either side of the bar; drag the divider.
 6. Half fold the phone (tent or laptop pose) while typing a value: tell us
    whether the value box, the keypad or a card sits on the crease (TD-140).
-7. Then send **Logs/openshape.log** (Files app → On My iPhone → OpenShape →
+7. Then send **Logs/openshape.log** (Files app → On My iPhone → FoldForm →
    Logs → Share): its `window ...` lines tell the real sizes and insets.
 
 Not done: placement aware of the fold (TD-140: keep the value box, the
@@ -611,14 +611,14 @@ margins (BUILDING.md).
    screen and scroll. About → **Licenses**: the list scrolls; tap Qt, then
    Back; tap "Your rights to the LGPL libraries": it names this version and
    build; the text pages scroll and fit the screen. About's line "Privacy
-   policy: OpenShape collects no data about you" opens the policy in Safari.
-11. File → Save: the first time it asks for a name and saves into OpenShape's
-   folder (Files app → On My iPhone → OpenShape); File → Open shows the
+   policy: FoldForm collects no data about you" opens the policy in Safari.
+11. File → Save: the first time it asks for a name and saves into FoldForm's
+   folder (Files app → On My iPhone → FoldForm); File → Open shows the
    system file picker (a project from iCloud Drive opens as a copy in
-   OpenShape's folder); Export STL/3MF/STEP writes into Exports there and
+   FoldForm's folder); Export STL/3MF/STEP writes into Exports there and
    opens the share sheet.
    After the next TestFlight update, File → Open Recent still lists those
-   projects and opens them. On Home, the project's card says *OpenShape
+   projects and opens them. On Home, the project's card says *FoldForm
    (Files app)* under its date (before: a long /var/mobile/… path).
 12. iPhone Duo: see "The iPhone Duo" below.
 13. The value box never covers what you tapped (your screen recording of
@@ -637,8 +637,8 @@ margins (BUILDING.md).
    send it to the slicer app, AirDrop it to the iPad or a Mac; File → Share
    Project… (asks a name for a new project) → Mail. Open the mailed project
    and a mailed STEP file from Mail (touch and hold the attachment →
-   OpenShape), and a STEP file from the Files app (Share → OpenShape): the
-   project opens as a copy in OpenShape's folder, the STEP file as a new
+   FoldForm), and a STEP file from the Files app (Share → FoldForm): the
+   project opens as a copy in FoldForm's folder, the STEP file as a new
    project.
 15. Cut a pocket (the owner's flow of 2026-09-27): Box → tap the top face →
    **Sketch**: the face fills most of the width; draw a 10 x 10 rectangle
@@ -667,7 +667,7 @@ margins (BUILDING.md).
    the tool strip.
 18. **Managing projects on Home** (2026-09-27). Touch and hold a project's
    card (or tap its ⋯): **Duplicate** (a "… copy" card with the same
-   picture appears first; the Files app shows the new file in OpenShape's
+   picture appears first; the Files app shows the new file in FoldForm's
    folder), **Rename…** (the keyboard does not cover the card; a taken name
    is refused under the field; the new name shows on the card, in the Files
    app and, for the open project, after Save), **Delete…** (the card names
@@ -675,6 +675,6 @@ margins (BUILDING.md).
    Then Files app → Browse → **Recently Deleted**: the project should be
    there; **Recover** puts it back (Home shows it again). Qt moves it with
    iOS's `trashItemAtURL` into `Documents/.Trash`, which the Files app
-   shows as Recently Deleted; if OpenShape instead asks "Delete … for
+   shows as Recently Deleted; if FoldForm instead asks "Delete … for
    good?", iOS refused that: please report it (it then deletes for good,
    after saying so).

@@ -394,7 +394,7 @@ Steps openInSteps(AcceptanceRunner& r)
                 app.documentTitle());
         r.check(app.projectFolder() == QUrl::fromLocalFile(s->documents).toString(),
                 "open in: the open project is the copy in OpenShape's folder", app.projectFolder());
-        r.check(lastMessage(s) == QStringLiteral("Opened “Gear plate”, a copy in OpenShape’s folder"),
+        r.check(lastMessage(s) == QStringLiteral("Opened “Gear plate”, a copy in FoldForm’s folder"),
                 "open in: it says a copy was made", lastMessage(s));
         r.check(QFileInfo::exists(s->gearPlate), "open in: the original stays where it was");
         r.screenshot(QStringLiteral("openin_project"));
@@ -466,7 +466,7 @@ Steps openInSteps(AcceptanceRunner& r)
     });
     wait(steps, 1);
     steps.push_back([&r, &app, s] {
-        r.check(lastMessage(s) == QStringLiteral("OpenShape opens projects (.openshape) and STEP files (.step, .stp); "
+        r.check(lastMessage(s) == QStringLiteral("FoldForm opens projects (.openshape) and STEP files (.step, .stp); "
                                                  "“readme.txt” is neither."),
                 "open in: another kind of file is refused plainly", lastMessage(s));
         r.check(app.bodyCount() == 1 && !shown(r, QStringLiteral("unsavedDialog")), "open in: nothing changes");

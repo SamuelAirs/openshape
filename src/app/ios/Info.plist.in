@@ -16,7 +16,7 @@
     <key>CFBundleName</key>
     <string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>OpenShape</string>
+    <string>FoldForm</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -121,7 +121,7 @@
             <key>UTTypeIdentifier</key>
             <string>io.github.samuelairs.openshape.project</string>
             <key>UTTypeDescription</key>
-            <string>OpenShape project</string>
+            <string>FoldForm project</string>
             <key>UTTypeConformsTo</key>
             <array>
                 <string>public.data</string>

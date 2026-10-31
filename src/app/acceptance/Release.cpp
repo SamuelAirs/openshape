@@ -76,7 +76,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         [&r, version] {
             QQuickItem* title = r.findItem(QStringLiteral("aboutVersion"));
             const QString text = title ? title->property("text").toString() : QString();
-            r.check(title && title->isVisible() && text == QStringLiteral("OpenShape ") + version,
+            r.check(title && title->isVisible() && text == QStringLiteral("FoldForm ") + version,
                     "release: the About card names the version", text);
             // Every build shows the license texts in Licenses (the
             // "licenses" scenario opens it); only the Windows package also

@@ -38,7 +38,7 @@ ApplicationWindow {
     rightPadding: 0
     // Shown by main.cpp once it has put the window where it was last time.
     visible: false
-    title: (app.dirty ? "• " : "") + app.documentTitle + " — OpenShape"
+    title: (app.dirty ? "• " : "") + app.documentTitle + " — FoldForm"
     color: Theme.background
 
     property bool closeConfirmed: false
@@ -376,7 +376,7 @@ ApplicationWindow {
 
             Text {
                 visible: !Theme.compact // a phone needs the room
-                text: "OpenShape"
+                text: "FoldForm"
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
                 color: Theme.text
@@ -411,7 +411,7 @@ ApplicationWindow {
                 implicitWidth: Theme.controlHeight
                 onClicked: helpOverlay.toggle()
                 ToolTip.visible: hovered && !Theme.touch
-                ToolTip.text: "How OpenShape works (F1)"
+                ToolTip.text: "How FoldForm works (F1)"
                 ToolTip.delay: 500
             }
         }
@@ -514,7 +514,7 @@ ApplicationWindow {
         }
         MenuSeparator {}
         MenuItem { objectName: "preferencesMenuItem"; text: "Preferences…"; onTriggered: preferencesOverlay.open() }
-        MenuItem { objectName: "aboutMenuItem"; text: "About OpenShape"; onTriggered: aboutOverlay.open() }
+        MenuItem { objectName: "aboutMenuItem"; text: "About FoldForm"; onTriggered: aboutOverlay.open() }
     }
 
     // ---------------------------------------------------------------- create palette
@@ -1222,8 +1222,13 @@ ApplicationWindow {
             compact: Theme.compact,
             touch: Theme.touch,
             frozen: window.app.manipulatorDragging,
-            typing: Theme.touch && valueChip.typing
+            typing: Theme.touch && valueChip.typing,
+            excluded: valueChip.excludedSpot
         }) : null
+        // A larger window: the spot that left the keypad no room clear of the
+        // controls (placeKeypad), while that keypad is open: the chip and the
+        // keypad are placed together.
+        property string excludedSpot: ""
         x: placement ? placement.x : Theme.insetLeft
         y: placement ? placement.y : Theme.insetTop
         // The field toward the tip; a docked bar left-aligned, like the top bar.
@@ -1254,7 +1259,11 @@ ApplicationWindow {
         wide: Theme.compact && window.width > window.height
         shortKeys: docked && window.height - Theme.safeTop - Theme.safeBottom < 700
         width: docked ? window.width - Theme.safeLeft - Theme.safeRight - 8 : implicitWidth
-        onClientChanged: if (client) Qt.callLater(window.placeKeypad)
+        onClientChanged: {
+            valueChip.excludedSpot = ""
+            if (client)
+                Qt.callLater(window.placeKeypad)
+        }
         onHeightChanged: if (open) Qt.callLater(window.placeKeypad)
     }
     onWidthChanged: windowChanged()
@@ -1305,6 +1314,17 @@ ApplicationWindow {
         })
         // (Not placed while it moves: the value chip must not flee from where
         // it is half-way, x moved and y not yet.)
+        // A larger window where the keypad found no spot beside the value box
+        // clear of the controls: the value box goes to its next spot (once
+        // while the keypad is open; never the docked ones), then the keypad
+        // is placed beside it again.
+        const spot = valueChip.placement ? valueChip.placement.spot : ""
+        if (!Theme.compact && !placement.clear && client.name === "valueChip" && valueChip.excludedSpot === ""
+                && ["right", "left", "above", "below"].indexOf(spot) >= 0) {
+            valueChip.excludedSpot = spot
+            Qt.callLater(window.placeKeypad, afterReveal)
+            return
+        }
         keypad.placed = false
         keypad.x = placement.x
         keypad.y = placement.y
@@ -1604,7 +1624,7 @@ ApplicationWindow {
         id: openDialog
         title: "Open project"
         currentFolder: window.app.projectFolder !== "" ? window.app.projectFolder : window.app.appFolderUrl
-        nameFilters: ["OpenShape projects (*.openshape)"]
+        nameFilters: ["FoldForm projects (*.openshape)"]
         onAccepted: window.app.openProject(selectedFile)
     }
     FileDialog {
@@ -1613,7 +1633,7 @@ ApplicationWindow {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "openshape"
         currentFolder: window.app.projectFolder
-        nameFilters: ["OpenShape projects (*.openshape)"]
+        nameFilters: ["FoldForm projects (*.openshape)"]
         onAccepted: window.finishSaveAs(window.app.saveProjectAs(selectedFile))
         onRejected: window.finishSaveAs(false)
     }

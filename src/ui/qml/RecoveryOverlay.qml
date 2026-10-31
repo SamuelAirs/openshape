@@ -58,7 +58,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "OpenShape closed unexpectedly"
+                    text: "FoldForm closed unexpectedly"
                     font.pixelSize: 20
                     font.weight: Font.DemiBold
                     color: Theme.text

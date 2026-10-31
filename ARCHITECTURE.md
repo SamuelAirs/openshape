@@ -1,5 +1,8 @@
 # OpenShape Architecture
 
+The product is called FoldForm; the code, repository, executable and file
+format keep the name OpenShape (docs/TECHNICAL_DEBT.md, TD-154).
+
 This document describes the architecture **as it is implemented today**.
 Technology choices and the alternatives considered are in
 [docs/TECHNOLOGY_EVALUATION.md](docs/TECHNOLOGY_EVALUATION.md).

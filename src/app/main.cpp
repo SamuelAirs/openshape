@@ -694,6 +694,9 @@ int main(int argc, char* argv[])
     QGuiApplication application(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("OpenShape"));
     QGuiApplication::setApplicationName(QStringLiteral("OpenShape"));
+    // The product is called FoldForm; the names above stay (they decide the
+    // settings and AppData paths). The display name ends window titles.
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("FoldForm"));
     QGuiApplication::setApplicationVersion(QString::fromLatin1(os::kAppVersion));
 #if !defined(Q_OS_IOS) // iPadOS shows the bundle's icon (and would need the SVG plugin)
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/openshape/icons/openshape.svg")));
@@ -704,7 +707,7 @@ int main(int argc, char* argv[])
     QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("OpenShape - direct solid modeling"));
+    parser.setApplicationDescription(QStringLiteral("FoldForm - direct solid modeling"));
     parser.addHelpOption();
     parser.addVersionOption();
     QCommandLineOption demoOption(QStringLiteral("demo"),

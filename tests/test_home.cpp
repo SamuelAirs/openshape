@@ -37,12 +37,12 @@ TEST(HomeList, FolderLabelNamesTheAppFolderAsTheFilesAppDoes)
 {
     const std::string documents = "/var/mobile/Containers/Data/Application/1F2E-AB/Documents";
     // The folder itself, and folders below it: the name the Files app shows.
-    EXPECT_EQ(io::homeFolderLabel(documents, documents), "OpenShape (Files app)");
-    EXPECT_EQ(io::homeFolderLabel(documents + "/", documents), "OpenShape (Files app)");
+    EXPECT_EQ(io::homeFolderLabel(documents, documents), "FoldForm (Files app)");
+    EXPECT_EQ(io::homeFolderLabel(documents + "/", documents), "FoldForm (Files app)");
     EXPECT_EQ(io::homeFolderLabel(documents + "/Parts/Printer", documents),
-              "OpenShape \xE2\x86\x92 Parts \xE2\x86\x92 Printer (Files app)");
+              "FoldForm \xE2\x86\x92 Parts \xE2\x86\x92 Printer (Files app)");
     // iOS names /var also /private/var: the same folder either way.
-    EXPECT_EQ(io::homeFolderLabel("/private" + documents, documents), "OpenShape (Files app)");
+    EXPECT_EQ(io::homeFolderLabel("/private" + documents, documents), "FoldForm (Files app)");
     // Anywhere else (iCloud Drive, a folder next to it), and without an app
     // folder (the desktop): the path as it is.
     const std::string icloud = "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Prints";
@@ -55,5 +55,5 @@ TEST(HomeList, FolderLabelNamesTheAppFolderAsTheFilesAppDoes)
     EXPECT_EQ(io::homeFolderLabel("", documents), "");
     // Windows paths (--app-folder on the desktop): either separator.
     EXPECT_EQ(io::homeFolderLabel("C:\\Users\\me\\AppFolder\\Boxes", "C:/Users/me/AppFolder"),
-              "OpenShape \xE2\x86\x92 Boxes (Files app)");
+              "FoldForm \xE2\x86\x92 Boxes (Files app)");
 }

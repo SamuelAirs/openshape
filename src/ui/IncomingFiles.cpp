@@ -133,7 +133,7 @@ StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places
     const QString name = info.fileName();
     staged.kind = kind == IncomingKind::Unsupported ? incomingKind(name) : kind;
     if (staged.kind == IncomingKind::Unsupported) {
-        staged.error = QStringLiteral("OpenShape opens projects (.openshape) and STEP files (.step, .stp); "
+        staged.error = QStringLiteral("FoldForm opens projects (.openshape) and STEP files (.step, .stp); "
                                       "“%1” is neither.")
                            .arg(name);
         return staged;
@@ -172,7 +172,7 @@ StagedFile stageIncomingFile(const QString& source, const IncomingPlaces& places
                 makeWritable(target);
         }
         if (!ok) {
-            staged.error = QStringLiteral("“%1” could not be copied into OpenShape’s folder.").arg(name);
+            staged.error = QStringLiteral("“%1” could not be copied into FoldForm’s folder.").arg(name);
             return staged;
         }
         staged.path = target;
