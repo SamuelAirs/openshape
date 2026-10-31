@@ -80,14 +80,15 @@ jobs:
         # What UIKit's headers call the fold (hinge, reserved regions, the
         # side bar), for a fold-aware layout (TD-140); printed, never fails.
         continue-on-error: true
+        # Run 41160904873 (Xcode 27.1) found UIHinge.h, UIHingeInteraction.h,
+        # UIViewReservedRegion.h and UIVerticalBarEdge.h: their declarations.
         run: |
           headers="$(xcrun --sdk iphoneos --show-sdk-path)/System/Library/Frameworks/UIKit.framework/Headers"
-          pattern='hinge|reservedregion|verticalbar|arrangementview|UIArrangement|foldable|posture'
-          files=$(grep -l -E -i "$pattern" "$headers"/*.h 2>/dev/null | head -n 8 || true)
-          [ -n "$files" ] || echo "::notice title=iPhone Duo APIs::none of $pattern in $headers"
-          for f in $files; do
-            lines=$(grep -E -i "$pattern" "$f" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]][[:space:]]*/ /g' | head -n 20 | cut -c1-180 | tr '\n%' '|_')
-            echo "::notice title=iPhone Duo APIs: $(basename "$f")::$lines"
+          for name in UIViewReservedRegion UIVerticalBarEdge UIHinge UIHingeInteraction; do
+            f="$headers/$name.h"
+            if [ ! -f "$f" ]; then echo "::notice title=iPhone Duo APIs: $name.h::not in this SDK"; continue; fi
+            lines=$(grep -v -E '^[[:space:]]*(#|$)|NS_ASSUME_NONNULL|^//[[:space:]]*$' "$f" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]][[:space:]]*/ /g' -e 's/ API_AVAILABLE([^)]*)//g' -e 's/ API_UNAVAILABLE([^)]*)//g' | head -n 45 | cut -c1-160 | tr '\n%' '|_')
+            echo "::notice title=iPhone Duo APIs: $name.h::$lines"
           done
       - name: Install build tools
         run: bash scripts/ci/run-logged.sh brew brew install ninja

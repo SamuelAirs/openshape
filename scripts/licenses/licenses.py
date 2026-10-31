@@ -938,6 +938,10 @@ def self_test(_args):
             f"{qt_dir}/plugins/platforms/objects-Release/QIOSIntegrationPlugin_init/QIOSIntegrationPlugin_init.cpp.o",
             f"{qt_dir}/plugins/imageformats/libqjpeg.a(x.o)", f"{qt_dir}/plugins/imageformats/libqsvg.a(x.o)",
             f"{qt_dir}/plugins/imageformats/objects-Release/QSvgPlugin_init/QSvgPlugin_init.cpp.o",
+            # Seen first with Xcode 27.1 (ipad.yml run on 449d377): Qt's upper-case
+            # ICO plugin and a Controls plugin's resources under .qt/rcc/.
+            f"{qt_dir}/plugins/imageformats/objects-Release/QICOPlugin_init/QICOPlugin_init.cpp.o",
+            f"{qt_dir}/lib/objects-Release/qtquickcontrols2plugin_resources_1/.qt/rcc/qrc_indirectBasic_init.cpp.o",
             f"{qt_dir}/plugins/iconengines/libqsvgicon.a(x.o)",
             f"{qt_dir}/qml/QtQuick/libqtquick2plugin.a(x.o)",
             f"{qt_dir}/qml/QtQuick/Controls/Basic/objects-Release/qtquickcontrols2basicstyleplugin_init/x.cpp.o",
