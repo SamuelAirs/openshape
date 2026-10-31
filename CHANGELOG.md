@@ -3,6 +3,10 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
+## 0.3.1 (unreleased)
+
+Nothing yet.
+
 ## 0.3.0 (2026-10-31)
 
 OpenShape is now called FoldForm (the source code and repository keep the name openshape).
