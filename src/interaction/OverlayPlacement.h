@@ -91,6 +91,11 @@ struct ChipPlacementInput {
     // field has the focus): the keyboard rises over the bottom of the window,
     // so a docked chip goes below the top bar, whatever else it would pick.
     bool typing = false;
+    // A larger window: a spot beside the tip that left the numeric keypad no
+    // room clear of the controls (interact::placeKeypad), so the chip and the
+    // keypad are placed together: it is not chosen, also not as the previous
+    // spot. None: every spot may be chosen.
+    ChipSpot excluded = ChipSpot::None;
 };
 
 struct ChipPlacement {

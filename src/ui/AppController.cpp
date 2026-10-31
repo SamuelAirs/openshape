@@ -467,6 +467,13 @@ QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
     input.touch = layout.value(QStringLiteral("touch")).toBool();
     input.frozen = layout.value(QStringLiteral("frozen")).toBool();
     input.typing = layout.value(QStringLiteral("typing")).toBool();
+    // The spot that left the keypad no clear room (Main.qml, placeKeypad), by its name.
+    if (const QString excluded = layout.value(QStringLiteral("excluded")).toString(); !excluded.isEmpty())
+        for (const interact::ChipSpot spot : {interact::ChipSpot::Right, interact::ChipSpot::Left, interact::ChipSpot::Above,
+                                              interact::ChipSpot::Below, interact::ChipSpot::TopLeft, interact::ChipSpot::TopRight,
+                                              interact::ChipSpot::BottomLeft, interact::ChipSpot::BottomRight})
+            if (const std::string_view name = interact::toString(spot); excluded == QString::fromUtf8(name.data(), qsizetype(name.size())))
+                input.excluded = spot;
     const interact::ChipPlacement placement = interaction_->placeValueChip(input);
     QVariantMap result;
     result.insert(QStringLiteral("x"), placement.position.x);

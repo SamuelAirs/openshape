@@ -2,7 +2,7 @@
 
 The product is called FoldForm: user-visible text (QML, messages, user docs)
 says FoldForm; code, repository, executable and file format keep the name
-OpenShape (docs/TECHNICAL_DEBT.md, TD-152).
+OpenShape (docs/TECHNICAL_DEBT.md, TD-154).
 
 ## Product priorities
 

@@ -264,12 +264,13 @@ public:
     {
         // The spot chosen before, while it is still clear: the chip moves
         // along with the arrow instead of jumping between sides.
-        if (previous != ChipSpot::None && !isDock(previous))
+        if (previous != ChipSpot::None && !isDock(previous) && previous != in_.excluded)
             if (const auto p = position(previous); p && good(*p))
                 return result(previous, *p);
         for (const ChipSpot spot : {ChipSpot::Right, ChipSpot::Left, ChipSpot::Above, ChipSpot::Below})
-            if (const auto p = position(spot); p && good(*p))
-                return result(spot, *p);
+            if (spot != in_.excluded)
+                if (const auto p = position(spot); p && good(*p))
+                    return result(spot, *p);
         // The free area's corners, nearest to the tip first.
         struct Corner {
             double distance;
@@ -278,7 +279,7 @@ public:
         };
         std::vector<Corner> corners;
         for (const ChipSpot spot : {ChipSpot::TopLeft, ChipSpot::TopRight, ChipSpot::BottomLeft, ChipSpot::BottomRight})
-            if (const auto p = position(spot); p && good(*p))
+            if (const auto p = position(spot); spot != in_.excluded && p && good(*p))
                 corners.push_back({(rectAt(*p).center() - in_.tip).length(), spot, *p});
         if (!corners.empty()) {
             const auto nearest = std::min_element(corners.begin(), corners.end(),

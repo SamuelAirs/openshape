@@ -1208,8 +1208,13 @@ ApplicationWindow {
             compact: Theme.compact,
             touch: Theme.touch,
             frozen: window.app.manipulatorDragging,
-            typing: Theme.touch && valueChip.typing
+            typing: Theme.touch && valueChip.typing,
+            excluded: valueChip.excludedSpot
         }) : null
+        // A larger window: the spot that left the keypad no room clear of the
+        // controls (placeKeypad), while that keypad is open: the chip and the
+        // keypad are placed together.
+        property string excludedSpot: ""
         x: placement ? placement.x : Theme.insetLeft
         y: placement ? placement.y : Theme.insetTop
         // The field toward the tip; a docked bar left-aligned, like the top bar.
@@ -1240,7 +1245,11 @@ ApplicationWindow {
         wide: Theme.compact && window.width > window.height
         shortKeys: docked && window.height - Theme.safeTop - Theme.safeBottom < 700
         width: docked ? window.width - Theme.safeLeft - Theme.safeRight - 8 : implicitWidth
-        onClientChanged: if (client) Qt.callLater(window.placeKeypad)
+        onClientChanged: {
+            valueChip.excludedSpot = ""
+            if (client)
+                Qt.callLater(window.placeKeypad)
+        }
         onHeightChanged: if (open) Qt.callLater(window.placeKeypad)
     }
     onWidthChanged: windowChanged()
@@ -1291,6 +1300,17 @@ ApplicationWindow {
         })
         // (Not placed while it moves: the value chip must not flee from where
         // it is half-way, x moved and y not yet.)
+        // A larger window where the keypad found no spot beside the value box
+        // clear of the controls: the value box goes to its next spot (once
+        // while the keypad is open; never the docked ones), then the keypad
+        // is placed beside it again.
+        const spot = valueChip.placement ? valueChip.placement.spot : ""
+        if (!Theme.compact && !placement.clear && client.name === "valueChip" && valueChip.excludedSpot === ""
+                && ["right", "left", "above", "below"].indexOf(spot) >= 0) {
+            valueChip.excludedSpot = spot
+            Qt.callLater(window.placeKeypad, afterReveal)
+            return
+        }
         keypad.placed = false
         keypad.x = placement.x
         keypad.y = placement.y
