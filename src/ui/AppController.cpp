@@ -112,6 +112,7 @@ AppController::AppController(QObject* parent)
     registerTextFonts();
     QSettings settings;
     preferences_ = loadPreferences(settings);
+    purchase_ = PurchaseFlow(unlockProductId(), loadProjectsUnlocked(settings));
     document_->setDisplayUnit(preferences_.defaultUnit);
     interaction_->setSketchGridSnap(preferences_.sketchGridSnap);
     interaction_->setHoleAllowance(preferences_.holeAllowance);
@@ -173,6 +174,9 @@ AppController::AppController(QObject* parent)
 #endif
     // The share sheet after exports and for Share Project (iOS only).
     shareHandler_ = platformShareHandler();
+    // The App Store purchase (iOS only): its transaction observer starts
+    // now, so purchases left unfinished by an earlier run arrive.
+    setStore(platformStore(unlockProductId()));
     interaction_->fitAll(false);
 }
 
@@ -991,6 +995,10 @@ bool AppController::openProject(const QUrl& url)
     // is moved out of it the same way; one elsewhere in the app folder
     // opens where it is (stageIncomingFile returns it unchanged).
     if (savesToAppFolder()) {
+        // A copy brought in is one more project (the free app's limit).
+        if (stagingAddsProject(localPath(url), incomingPlaces())
+            && !gateProjectThen(QStringLiteral("open"), QString(), [this, url] { (void)openProject(url); }))
+            return false;
         const StagedFile staged = stageIncomingFile(localPath(url), incomingPlaces(), IncomingKind::Project);
         if (staged.path.isEmpty()) {
             OS_LOG(Warning, File) << "open: " << localPath(url).toStdString() << ": " << staged.error.toStdString();
@@ -1150,6 +1158,8 @@ bool AppController::importStepAsProject(const QUrl& url)
 
 bool AppController::importStepFrom(const QUrl& url, bool asProject)
 {
+    if (asProject && !gateProjectThen(QStringLiteral("import"), QString(), [this, url] { (void)importStepFrom(url, true); }))
+        return false;
     const QString original = localPath(url);
     const QString name = QFileInfo(original).fileName();
     if (!savesToAppFolder())
@@ -1300,8 +1310,21 @@ bool AppController::saveInAppFolder(const QString& name)
         notifyMessage(QStringLiteral("Type a name for the project."));
         return false;
     }
+    // A new name is one more project (the free app's limit); the project's
+    // own file, or one it replaces, is not. Once unlocked the window saves
+    // again (projectAllowed "save").
+    if (!gateProject(QStringLiteral("save"), name))
+        return false;
     QDir().mkpath(appFolder_);
-    return saveProjectAs(QUrl::fromLocalFile(appFolder_ + QLatin1Char('/') + base + QStringLiteral(".openshape")));
+    return saveProjectAs(QUrl::fromLocalFile(appFolderProjectPath(name)));
+}
+
+QString AppController::appFolderProjectPath(const QString& name) const
+{
+    const QString base = projectFileBaseName(name);
+    if (!savesToAppFolder() || base.isEmpty())
+        return {};
+    return appFolder_ + QLatin1Char('/') + base + QStringLiteral(".openshape");
 }
 
 bool AppController::exportToAppFolder(const QString& format, const QRectF& shareAnchor)
@@ -1394,6 +1417,157 @@ bool AppController::shareProject(const QRectF& anchor)
     return shareFile(path_, anchor);
 }
 
+// ---- Unlimited projects (the App Store purchase) ------------------------------------------
+
+#if !defined(Q_OS_IOS)
+// The App Store exists on iOS only (src/ui/ios/StoreKitStore.mm): no limit elsewhere.
+std::shared_ptr<Store> platformStore(const QString& productId)
+{
+    Q_UNUSED(productId);
+    return nullptr;
+}
+#endif
+
+void AppController::setStore(std::shared_ptr<Store> store)
+{
+    if (store_)
+        store_->setListener({});
+    store_ = std::move(store);
+    purchase_ = PurchaseFlow(purchase_.productId(), purchase_.unlocked()); // a new store: its price is not known
+    purchaseVisible_ = false;
+    pendingProject_.reset();
+    if (store_) {
+        QPointer<AppController> self(this);
+        store_->setListener([self](const StoreEvent& event) {
+            if (self)
+                self->storeEvent(event);
+        });
+        if (!purchase_.unlocked())
+            store_->requestProduct(); // the price, ready when the sheet opens
+    }
+    emit purchaseChanged();
+}
+
+void AppController::setProjectsUnlocked(bool unlocked)
+{
+    QSettings settings;
+    saveProjectsUnlocked(settings, unlocked);
+    settings.sync();
+    purchase_ = PurchaseFlow(purchase_.productId(), unlocked);
+    if (store_ && !unlocked)
+        store_->requestProduct();
+    emit purchaseChanged();
+}
+
+bool AppController::mayAddProject(const QString& replacing) const
+{
+    return limitAllowsProject({bool(store_), purchase_.unlocked(), appFolder_}, replacing);
+}
+
+bool AppController::gateProject(const QString& action, const QVariant& argument)
+{
+    const QString replacing = action == QLatin1String("save") ? appFolderProjectPath(argument.toString()) : QString();
+    if (mayAddProject(replacing))
+        return true;
+    OS_LOG(Info, App) << "store: " << action.toStdString() << " adds a project; the free version keeps "
+                      << kFreeProjectCount << " (the purchase sheet opens)";
+    pendingProject_ = PendingProject{action, argument, {}};
+    showPurchase();
+    return false;
+}
+
+bool AppController::gateProjectThen(const QString& action, const QString& replacing, std::function<void()> then)
+{
+    if (mayAddProject(replacing))
+        return true;
+    OS_LOG(Info, App) << "store: " << action.toStdString() << " adds a project; the free version keeps "
+                      << kFreeProjectCount << " (the purchase sheet opens)";
+    pendingProject_ = PendingProject{action, QVariant(), std::move(then)};
+    showPurchase();
+    return false;
+}
+
+void AppController::offerUnlock()
+{
+    pendingProject_.reset();
+    showPurchase();
+}
+
+void AppController::showPurchase()
+{
+    if (!store_)
+        return;
+    if (purchase_.opening())
+        store_->requestProduct();
+    purchaseVisible_ = true;
+    emit purchaseChanged();
+}
+
+void AppController::buyUnlock()
+{
+    if (!store_ || !purchase_.startBuy())
+        return;
+    OS_LOG(Info, App) << "store: Unlock tapped (" << purchase_.productId().toStdString() << ")";
+    emit purchaseChanged();
+    store_->buy();
+}
+
+void AppController::restorePurchase()
+{
+    if (!store_)
+        return;
+    purchaseVisible_ = true; // the sheet shows how it goes (also when About asked)
+    if (purchase_.startRestore()) {
+        OS_LOG(Info, App) << "store: Restore purchase tapped";
+        emit purchaseChanged();
+        store_->restore();
+        return;
+    }
+    emit purchaseChanged();
+}
+
+void AppController::closePurchase()
+{
+    if (!purchaseVisible_ && !pendingProject_)
+        return;
+    if (pendingProject_)
+        OS_LOG(Info, App) << "store: Not now (" << pendingProject_->action.toStdString() << " not done)";
+    purchaseVisible_ = false;
+    pendingProject_.reset();
+    emit purchaseChanged();
+}
+
+void AppController::storeEvent(const StoreEvent& event)
+{
+    // Kinds and reasons only: nothing about the person.
+    OS_LOG(Info, App) << "store: " << storeEventName(event.kind)
+                      << (event.message.isEmpty() ? std::string() : " (" + event.message.toStdString() + ")");
+    if (!purchase_.apply(event)) {
+        emit purchaseChanged();
+        return;
+    }
+    // Unlocked just now (bought, restored, or a purchase that arrived at start).
+    {
+        QSettings settings;
+        saveProjectsUnlocked(settings, true);
+        settings.sync();
+    }
+    OS_LOG(Info, App) << "store: unlimited projects unlocked";
+    std::optional<PendingProject> pending;
+    std::swap(pending, pendingProject_);
+    purchaseVisible_ = false;
+    emit purchaseChanged();
+    notifyMessage(event.kind == StoreEvent::Kind::Restored ? QStringLiteral("Purchase restored: unlimited projects")
+                                                           : QStringLiteral("Unlimited projects unlocked. Thank you!"));
+    if (!pending)
+        return;
+    OS_LOG(Info, App) << "store: " << pending->action.toStdString() << " goes ahead";
+    if (pending->run)
+        pending->run();
+    else
+        emit projectAllowed(pending->action, pending->argument);
+}
+
 // ---- Files from other apps ----------------------------------------------------------------
 
 IncomingPlaces AppController::incomingPlaces() const
@@ -1428,6 +1602,14 @@ bool AppController::openIncomingFile(const QUrl& url)
         notifyMessage(QStringLiteral("OpenShape can only open files."));
         return false;
     }
+    // One more project (a project copied in, or a STEP file imported as a
+    // new project) waits for the purchase in the free app; nothing is
+    // copied before. A project already in OpenShape's folder just opens.
+    const IncomingKind kind = incomingKind(QFileInfo(source).fileName());
+    const bool adds = savesToAppFolder()
+        && (kind == IncomingKind::Step || (kind == IncomingKind::Project && stagingAddsProject(source, incomingPlaces())));
+    if (adds && !gateProjectThen(QStringLiteral("incoming"), QString(), [this, url] { (void)openIncomingFile(url); }))
+        return false;
     // Brought in at once (a project into the app folder, a STEP file into a
     // scratch copy), while iOS's access to it is fresh; opened below, or
     // after "Save changes?".
@@ -2102,6 +2284,10 @@ bool AppController::renameProject(const QString& path, const QString& newName)
 
 bool AppController::duplicateProject(const QString& path)
 {
+    // The copy goes next to the project: one more in OpenShape's folder.
+    if (savesToAppFolder() && isInsideFolder(path, appFolder_)
+        && !gateProjectThen(QStringLiteral("duplicate"), QString(), [this, path] { (void)duplicateProject(path); }))
+        return false;
     const auto copy = io::duplicateProjectFile(std::filesystem::path(path.toStdWString()));
     if (!copy) {
         OS_LOG(Warning, File) << copy.developerMessage();

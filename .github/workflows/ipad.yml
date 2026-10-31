@@ -90,6 +90,23 @@ jobs:
             lines=$(grep -v -E '^[[:space:]]*(#|$)|NS_ASSUME_NONNULL|^//[[:space:]]*$' "$f" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]][[:space:]]*/ /g' -e 's/ API_AVAILABLE([^)]*)//g' -e 's/ API_UNAVAILABLE([^)]*)//g' | head -n 45 | cut -c1-160 | tr '\n%' '|_')
             echo "::notice title=iPhone Duo APIs: $name.h::$lines"
           done
+      - name: StoreKit (in-app purchase) in the SDK
+        # src/ui/ios/StoreKitStore.mm uses StoreKit's original API
+        # (SKPaymentQueue, SKProductsRequest), deprecated since iOS 18 but
+        # still in the SDK (TD: migrate to StoreKit 2); printed, never fails.
+        continue-on-error: true
+        run: |
+          headers="$(xcrun --sdk iphoneos --show-sdk-path)/System/Library/Frameworks/StoreKit.framework/Headers"
+          for name in SKPaymentQueue SKProductsRequest SKPaymentTransaction SKProduct; do
+            f="$headers/$name.h"
+            if [ ! -f "$f" ]; then echo "::notice title=StoreKit: $name.h::not in this SDK"; continue; fi
+            marks=$(grep -c -E 'API_DEPRECATED|deprecated' "$f" || true)
+            echo "::notice title=StoreKit: $name.h::in this SDK ($marks deprecation markers)"
+          done
+          if [ -f "$headers/SKPaymentQueue.h" ]; then
+            lines=$(grep -E 'shouldAddStorePayment|restoreCompletedTransactions|finishTransaction|addTransactionObserver|canMakePayments' "$headers/SKPaymentQueue.h" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]][[:space:]]*/ /g' | cut -c1-200 | tr '\n%' '|_')
+            echo "::notice title=StoreKit: SKPaymentQueue.h::$lines"
+          fi
       - name: Install build tools
         run: bash scripts/ci/run-logged.sh brew brew install ninja
 

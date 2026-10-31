@@ -1248,6 +1248,7 @@ void AcceptanceRunner::beginScenario(const QString& name, bool reset)
     app_->setAppFolder(initialAppFolder_); // a scenario may save as on an iPhone
     app_->setShareHandler(ui::platformShareHandler()); // ...and put a stub share sheet in
     app_->setTrashHandler(ui::AppController::systemTrashHandler()); // ...or a stub trash (homeprojects)
+    app_->setStore(nullptr); // ...or a stand-in App Store (purchase): no store, no project limit
     window_->setProperty("historyOpen", false);
     window_->setProperty("viewMenuOpen", false);
     if (window_->size() != initialSize_) {

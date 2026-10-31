@@ -9,6 +9,17 @@ The answers to the second round of testing on iPhone and iPad (sketching
 and editing sketches with a finger, cutting pockets, typing sizes,
 selecting several bodies), Loft, and the groundwork for the App Store.
 
+**Free for one project; unlimited projects with a one-time purchase
+(iPhone and iPad).** FoldForm from the App Store is free with every tool,
+for one project. Adding a second one (New project, Import STEP, Duplicate,
+saving under a new name, a file opened from another app) offers
+"Unlimited projects", a one-time in-app purchase for your Apple Account;
+once bought, what you were doing goes ahead. Restore purchase is in the
+same sheet and in File → About. Opening, editing, saving, renaming,
+deleting, exporting and sharing are never limited, and anyone who already
+has several projects keeps all of them. The Windows version stays free
+with no limit.
+
 **Sketching with a finger.** A pinch or a two-finger pan in a sketch moves
 the view and never draws a rectangle, and each stroke with the Line tool
 is a line of its own instead of starting from the last point touched.

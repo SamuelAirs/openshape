@@ -98,6 +98,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario viewcube   # the view cube: Top face and a corner clicked, a drag orbits with the Line tool armed; then by finger at 402x874 and 874x402
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario appfolder,share,openin   # iPhone / iPad files: saving by name, the share sheet (stub), Open in OpenShape
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario purchase   # the free version's one project and the purchase sheet with a stand-in App Store: every gated action, buy / restore / fail / Ask to Buy / offline, phone, iPad, Split View and iPhone Duo sizes, the desktop without a store
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
@@ -167,7 +168,10 @@ stub in, and `openin` hands files over the way Qt's iOS delegate does.
 same tools a user taps) for the iPhone 6.9" (`--size 440x956 --dpr 3
 --safe-area 62,0,34,0`, 1320 x 2868 pixels) and the iPad 13" (`--size
 1376x1032 --dpr 2 --safe-area 24,0,20,0`, 2752 x 2064) into
-`docs/appstore/screenshots/`, then checks them with
+`docs/appstore/screenshots/`, plus the in-app purchase's review screenshot
+(scene `store-iap`: the sheet "Unlimited projects" over Home, a sample
+price $9.99) at the iPhone size into `docs/appstore/iap-review.png`
+(`... iap-review` for it alone; checked with `--review`), then checks them with
 `scripts/dev/check_appstore_screenshots.py` (exact size, no alpha channel,
 not blank); about three minutes. The pictures are rendered into
 `build/appstore-screenshots/` and copied into `docs/` only when the whole

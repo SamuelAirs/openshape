@@ -11,6 +11,7 @@
 #include "interaction/InteractionController.h"
 #include "interaction/SketchSession.h"
 #include "ui/AppController.h"
+#include "ui/Store.h"
 
 #include <QtCore/QDir>
 #include <QtCore/QUrl>
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -451,6 +453,29 @@ void buildCup(Builder& b)
     b.apply("2");
 }
 
+// The App Store as App Review sees it in the review screenshot: the
+// product with a sample price (App Store Connect sets the real one, and the
+// app shows whatever the store returns). It answers at once.
+class SampleStore final : public ui::Store {
+public:
+    void setListener(ui::StoreListener listener) override { listener_ = std::move(listener); }
+    void requestProduct() override
+    {
+        if (!listener_)
+            return;
+        ui::StoreEvent event;
+        event.kind = ui::StoreEvent::Kind::ProductLoaded;
+        event.productId = ui::unlockProductId();
+        event.price = QStringLiteral("$9.99");
+        listener_(event);
+    }
+    void buy() override {}
+    void restore() override {}
+
+private:
+    ui::StoreListener listener_;
+};
+
 // Saves the document as a project named `name` (into the app folder when
 // there is one, as on an iPhone) and starts a new one.
 void saveAs(ui::AppController& app, const QString& name, const QString& dataDir)
@@ -473,7 +498,8 @@ void saveAs(ui::AppController& app, const QString& name, const QString& dataDir)
 QStringList storeSceneNames()
 {
     return {QStringLiteral("store-enclosure"), QStringLiteral("store-text"), QStringLiteral("store-planes"),
-            QStringLiteral("store-sketch"),    QStringLiteral("store-history"), QStringLiteral("store-home")};
+            QStringLiteral("store-sketch"),    QStringLiteral("store-history"), QStringLiteral("store-home"),
+            QStringLiteral("store-iap")};
 }
 
 bool isStoreScene(const QString& name)
@@ -535,6 +561,18 @@ bool runStoreScene(ui::AppController& app, const QString& name, const QString& d
         b.escape();
         saveAs(app, QStringLiteral("Project box"), dataDir);
         app.setHomeVisible(true);
+    } else if (name == QLatin1String("store-iap")) {
+        // The purchase sheet for App Review: the free version's one project
+        // on Home, and New project tapped (as Home's button does).
+        buildEnclosure(b);
+        b.escape();
+        saveAs(app, QStringLiteral("Project box"), dataDir);
+        app.setStore(std::make_shared<SampleStore>());
+        app.setHomeVisible(true);
+        if (app.gateProject(QStringLiteral("new"))) // no app folder (--app-folder): nothing limits
+            app.offerUnlock();
+        if (!app.purchaseVisible() || app.purchasePrice().isEmpty())
+            OS_LOG(Warning, App) << "store scene: the purchase sheet did not open with its price";
     }
     (void)b.ix().waitForPreview();
     return true;
