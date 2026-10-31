@@ -29,7 +29,11 @@ concurrency:
 
 jobs:
   ipad:
-    runs-on: macos-15
+    # GitHub's Xcode 27 image (macOS 27, Apple silicon; a public preview):
+    # Xcode 27.1 with the iOS 27.1 SDK, which the iPhone Duo needs for the
+    # app to fill its inner display and get its fold and side-bar layout
+    # (docs/IPAD.md, "iPhone Duo"). The other workflows stay on macos-15.
+    runs-on: xcode-27
     timeout-minutes: 240
     defaults:
       run:
@@ -70,8 +74,8 @@ jobs:
           else
             echo "::warning title=iOS sources::no release tag has these library pins (scripts/ios/sources.txt) yet: tag a release (or beta) so their sources are attached to it (docs/LICENSING.md)"
           fi
-      - name: Select Xcode 26
-        run: bash scripts/ci/select-xcode.sh
+      - name: Select Xcode 27
+        run: bash scripts/ci/select-xcode.sh 27
       - name: Install build tools
         run: bash scripts/ci/run-logged.sh brew brew install ninja
 

@@ -38,6 +38,15 @@
     <!-- No UIRequiresFullScreen: the layout follows any window size, so the
          app takes part in Split View and Stage Manager on the iPad and in the
          split screen of a foldable iPhone (docs/IPAD.md). -->
+    <!-- The UIScene life cycle, which apps built with the iOS 27 SDK must
+         use (they fail to launch otherwise). Qt's iOS plugin is scene based
+         (its app delegate hands every scene to QIOSWindowSceneDelegate); one
+         scene, as Qt does not manage several windows on iOS yet. -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+    </dict>
     <!-- Projects saved in the app's Documents folder show up in the Files app. -->
     <key>UIFileSharingEnabled</key>
     <true/>
@@ -127,8 +136,10 @@
             </dict>
         </dict>
     </array>
-    <!-- iPhone: portrait and both landscapes (not upside down, as Apple's
-         apps); iPad: all four (required for multitasking). -->
+    <!-- iPhone: all four; iPhones that cannot turn upside down (Face ID)
+         ignore it, while the iPhone Duo's inner display turns like an iPad's
+         (an app that cannot rotate there is scaled instead). iPad: all four
+         (required for multitasking). -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -138,6 +149,7 @@
     <key>UISupportedInterfaceOrientations~iphone</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>

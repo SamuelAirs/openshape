@@ -920,6 +920,29 @@ TEST(IncomingFiles, InfoPlistDocumentTypesMatchWhatOpenShapeTakes)
     EXPECT_EQ(declared.value(QStringLiteral("org.iso.step")).first, (QStringList{QStringLiteral("step"), QStringLiteral("stp")}));
 }
 
+// Built with the iOS 27 SDK (for the iPhone Duo), an app without the UIScene
+// life cycle does not launch, and one that cannot rotate is scaled on the
+// Duo's inner display; a full-screen requirement would keep it out of Split
+// View. The Info.plist template declares one scene, every orientation on
+// both device families and no UIRequiresFullScreen.
+TEST(IosInfoPlist, SceneLifeCycleAndEveryOrientation)
+{
+    const QVariantMap plist = iosInfoPlist();
+    ASSERT_FALSE(plist.isEmpty()) << "src/app/ios/Info.plist.in could not be read";
+    const QVariantMap scenes = plist.value(QStringLiteral("UIApplicationSceneManifest")).toMap();
+    ASSERT_TRUE(scenes.contains(QStringLiteral("UIApplicationSupportsMultipleScenes")));
+    EXPECT_FALSE(scenes.value(QStringLiteral("UIApplicationSupportsMultipleScenes")).toBool());
+    EXPECT_FALSE(plist.contains(QStringLiteral("UIRequiresFullScreen")));
+    EXPECT_TRUE(plist.contains(QStringLiteral("UILaunchScreen"))); // also required by the iOS 27 SDK
+    const QStringList all{QStringLiteral("UIInterfaceOrientationPortrait"), QStringLiteral("UIInterfaceOrientationPortraitUpsideDown"),
+                          QStringLiteral("UIInterfaceOrientationLandscapeLeft"), QStringLiteral("UIInterfaceOrientationLandscapeRight")};
+    for (const char* key : {"UISupportedInterfaceOrientations~iphone", "UISupportedInterfaceOrientations~ipad"}) {
+        const QStringList orientations = plist.value(QString::fromLatin1(key)).toStringList();
+        for (const QString& orientation : all)
+            EXPECT_TRUE(orientations.contains(orientation)) << key << " lacks " << orientation.toStdString();
+    }
+}
+
 TEST(IncomingFiles, CopiesGetSafeNames)
 {
     IncomingFixture f;
