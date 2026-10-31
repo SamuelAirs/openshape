@@ -76,6 +76,19 @@ jobs:
           fi
       - name: Select Xcode 27
         run: bash scripts/ci/select-xcode.sh 27
+      - name: iPhone Duo APIs in the SDK
+        # What UIKit's headers call the fold (hinge, reserved regions, the
+        # side bar), for a fold-aware layout (TD-140); printed, never fails.
+        continue-on-error: true
+        run: |
+          headers="$(xcrun --sdk iphoneos --show-sdk-path)/System/Library/Frameworks/UIKit.framework/Headers"
+          pattern='hinge|reservedregion|verticalbar|arrangementview|UIArrangement|foldable|posture'
+          files=$(grep -l -E -i "$pattern" "$headers"/*.h 2>/dev/null | head -n 8 || true)
+          [ -n "$files" ] || echo "::notice title=iPhone Duo APIs::none of $pattern in $headers"
+          for f in $files; do
+            lines=$(grep -E -i "$pattern" "$f" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]][[:space:]]*/ /g' | head -n 20 | cut -c1-180 | tr '\n%' '|_')
+            echo "::notice title=iPhone Duo APIs: $(basename "$f")::$lines"
+          done
       - name: Install build tools
         run: bash scripts/ci/run-logged.sh brew brew install ninja
 
