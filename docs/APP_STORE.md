@@ -4,7 +4,9 @@
 > tool for **one project**, and a one-time in-app purchase, **Unlimited
 > Projects** (about USD 10), unlocks unlimited projects. It goes to App
 > Review directly; there is no public beta first. The order of today's steps
-> is in [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md). Sections 4 and 5 and
+> is in [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md). Also decided that day: the
+> product is called **FoldForm** (section 0), version **0.3.0**, contact
+> email **ayers177@gmail.com** (privacy policy, support page). Sections 4 and 5 and
 > the description below are updated for this; the timeline in section 7
 > is history.
 
@@ -49,6 +51,15 @@ the TestFlight upload from GitHub already exist (docs/IPAD.md, section 1).
 
 ## 0. First: the name
 
+**DECIDED 2026-10-31: FoldForm.** No App Store app of that name, and no
+trademark "FoldForm" in a web search that day (the iTunes Search API for
+`FoldForm` returned origami and form apps only). Recommended App Store
+name: `FoldForm: CAD for 3D Printing` (29 characters; the words after the
+colon help search), or plain `FoldForm`; the home-screen name is
+`FoldForm`. The code, repository, executable and file extension keep the
+name OpenShape (docs/TECHNICAL_DEBT.md). The research below is how the
+name question came up.
+
 **DECIDE, before anything is submitted.** The name is the hardest thing to
 change once the app is on sale (ratings, links and search history stay with
 the listing, but people will have learned the old name). What a check of
@@ -83,8 +94,8 @@ ways, in order of preference:
    source line in the description so people can tell the two apart. This
    keeps the confusion with OpenShape3D; accept that risk knowingly.
 
-The rest of this document uses "OpenShape"; replace it everywhere if you
-rename.
+The texts to paste below say FoldForm (since 2026-10-31); the rest of this
+document still says OpenShape where it describes the code.
 
 ---
 
@@ -146,12 +157,12 @@ this first: Apple checks the details, and it can take days.
 
 ## 2. App information
 
-App Store Connect → Apps → OpenShape → **App Information** (general) and
+App Store Connect → Apps → your app → **App Information** (general) and
 the version page (**iOS App → 1.0 Prepare for Submission**).
 
 | Field | What to enter | State |
 |---|---|---|
-| Name (max 30) | see section 0; e.g. `OpenShape: CAD for 3D Printing` | **DECIDE / YOU** |
+| Name (max 30) | `FoldForm: CAD for 3D Printing` (or `FoldForm`; section 0) | **YOU** |
 | Subtitle (max 30) | `Precise modeling for makers` (27) | **YOU** (paste) |
 | Bundle ID | `io.github.samuelairs.openshape` (set by the app record; cannot change after a build was uploaded) | **DONE** |
 | SKU | `openshape` (internal only, set when the record was made) | **DONE** |
@@ -192,7 +203,7 @@ Result: **4+**.
 
 ### App Privacy ("nutrition label")
 
-App Store Connect → Apps → OpenShape → **App Privacy** → **Get Started** →
+App Store Connect → Apps → your app → **App Privacy** → **Get Started** →
 **"No, we do not collect data from this app"** → **Save** → **Publish**.
 Then **Privacy Policy → Edit** and paste the privacy policy URL.
 
@@ -251,7 +262,7 @@ CHANGELOG.md, checked against the code on 2026-10-31). Update it when a feature 
 
 <!-- appstore:description max-chars=4000 -->
 ```text
-OpenShape is precise 3D CAD for makers and 3D printing, made for touch. Push and pull faces with a finger or Apple Pencil, sketch a profile and extrude it, and type exact sizes as you go. Every step stays editable.
+FoldForm is precise 3D CAD for makers and 3D printing, made for touch. Push and pull faces with a finger or Apple Pencil, sketch a profile and extrude it, and type exact sizes as you go. Every step stays editable.
 
 MODEL
 • Tap a flat face to see the part's size, then drag the arrow or type a new size; +5 or -5 changes it by that much.
@@ -280,10 +291,10 @@ MADE FOR 3D PRINTING
 YOUR FILES
 • Projects keep the full history, so sketches and steps stay editable after reopening.
 • Export opens the share sheet: send the file straight to your slicer app, AirDrop or Mail. Share a whole project the same way.
-• Projects are saved in OpenShape's folder in the Files app, exports in its Exports folder. Open projects and STEP files from the Files app or Mail.
+• Projects are saved in FoldForm's folder in the Files app, exports in its Exports folder. Open projects and STEP files from the Files app or Mail.
 • A Home screen with your projects and their previews.
 • Unsaved work is kept safe in the background and offered again if the app closes.
-• When a step cannot be done, OpenShape says why in plain words, often with a size that works, and your model stays as it was.
+• When a step cannot be done, FoldForm says why in plain words, often with a size that works, and your model stays as it was.
 
 MADE FOR IPHONE AND IPAD
 • One app for iPhone and iPad. On iPhone the tools sit along the bottom and the value box docks where it covers nothing you selected; on iPad the full layout, also in Split View and Stage Manager.
@@ -295,7 +306,7 @@ FREE TO START
 Every tool is free for one project at a time. A one-time in-app purchase unlocks unlimited projects on your iPhone and iPad.
 
 OPEN SOURCE, NO ACCOUNT
-OpenShape is open-source software (Mozilla Public License 2.0) built on the OpenCASCADE solid-modeling kernel. The source code, a user guide and a Windows version are at github.com/SamuelAirs/openshape. There is no account, no advertising and no tracking: OpenShape collects no data.
+FoldForm is open-source software (Mozilla Public License 2.0) built on the OpenCASCADE solid-modeling kernel. The source code, a user guide and a Windows version are at github.com/SamuelAirs/openshape. There is no account, no advertising and no tracking: FoldForm collects no data.
 ```
 
 Notes on the description:
@@ -416,14 +427,14 @@ pay the USD 99 membership. A free app with an unlock answers the problem
 the 4.99 recommendation below worried about, because people can try the app
 fully before paying.
 
-**YOU, the app's price:** Apps → OpenShape → **Monetization → Pricing and
+**YOU, the app's price:** Apps → your app → **Monetization → Pricing and
 Availability** → Price Schedule → base country **United States** → **USD 0
 (Free)**. **Availability** (same page): all countries and regions except
 **China mainland** (apps there need a Chinese ICP filing number), and
 except the **27 EU countries** if you chose not to declare trader status
 (section 1, item 5).
 
-**YOU, the in-app purchase:** Apps → OpenShape → **Monetization → In-App
+**YOU, the in-app purchase:** Apps → your app → **Monetization → In-App
 Purchases** → **+** → Type **Non-Consumable**, Reference Name `Unlimited
 Projects`, Product ID **`io.github.samuelairs.openshape.unlimited`**. The
 app asks the store for exactly this ID. Apple: a product ID "isn't editable
@@ -468,9 +479,9 @@ Create as many projects as you like.
 
 <!-- appstore:iap-review-notes max-chars=4000 -->
 ```text
-Unlimited Projects is a non-consumable purchase. OpenShape is free with every tool for one project; this purchase allows any number of projects on the purchaser's Apple Account (iPhone and iPad).
+Unlimited Projects is a non-consumable purchase. FoldForm is free with every tool for one project; this purchase allows any number of projects on the purchaser's Apple Account (iPhone and iPad).
 
-To see it: on the Home screen, tap New project, tap Box, then File, Save and give the project a name. Go back to Home and tap New project again: the "Unlimited projects" sheet opens with the price, Unlock, Restore purchase and Not now. The sheet also opens from the line "Unlock unlimited projects" on Home and from File, About OpenShape (Unlimited projects row, which also has Restore purchase). After the purchase, New project goes ahead and creates a second project.
+To see it: on the Home screen, tap New project, tap Box, then File, Save and give the project a name. Go back to Home and tap New project again: the "Unlimited projects" sheet opens with the price, Unlock, Restore purchase and Not now. The sheet also opens from the line "Unlock unlimited projects" on Home and from File, About FoldForm (Unlimited projects row, which also has Restore purchase). After the purchase, New project goes ahead and creates a second project.
 ```
 
 ### Before 2026-10-31: the paid-app recommendation (history)
@@ -564,9 +575,9 @@ version usually do not. Builds expire after 90 days.
 
 <!-- appstore:beta-description max-chars=4000 -->
 ```text
-OpenShape is precise 3D CAD for makers and 3D printing, made for touch: push and pull faces, sketch with constraints, type exact sizes, add holes that fit screws and raised text, and export STL, 3MF or STEP. One app for iPhone and iPad.
+FoldForm is precise 3D CAD for makers and 3D printing, made for touch: push and pull faces, sketch with constraints, type exact sizes, add holes that fit screws and raised text, and export STL, 3MF or STEP. One app for iPhone and iPad.
 
-This beta is what will go on the App Store. Please model a real part you want to print and tell us what was hard to find, hard to tap, slow or missing. The app needs no account and collects no data; your projects stay on your device (Files app, On My iPhone or On My iPad, OpenShape).
+This beta is what will go on the App Store. Please model a real part you want to print and tell us what was hard to find, hard to tap, slow or missing. The app needs no account and collects no data; your projects stay on your device (Files app, On My iPhone or On My iPad, FoldForm).
 ```
 
 ### What to Test (for the build you add; update it with each build)
@@ -579,18 +590,18 @@ Thank you for testing! Try these, then anything you like:
 3. Sketch on a face: draw a rectangle and a circle with your finger or Apple Pencil, tap a size to type it, Finish sketch, then tap inside the circle, tap the value box and type -10 to cut a hole.
 4. Hole (M3, with the print allowance) and Text on a flat face.
 5. File, Save: give it a name. File, Export STL or 3MF: the share sheet opens; pick your slicer app, or AirDrop it to your computer. File, Share Project sends the project itself.
-6. In the Files app or Mail, tap a project (or a STEP file, then Share, OpenShape): it opens in OpenShape.
+6. In the Files app or Mail, tap a project (or a STEP file, then Share, FoldForm): it opens in FoldForm.
 7. Turn the device and use Split View: the layout should follow. On iPhone, the value box should never cover what you tapped.
-If something is confusing, take a screenshot in OpenShape and send it from TestFlight with a note. Crash reports reach us automatically.
+If something is confusing, take a screenshot in FoldForm and send it from TestFlight with a note. Crash reports reach us automatically.
 ```
 
 ### Beta App Review notes (also used for App Review, section 6)
 
 <!-- appstore:review-notes max-bytes=4000 -->
 ```text
-OpenShape is a CAD (3D modeling) app for designing parts to 3D print. It needs no account or sign-in and makes no network connections of its own (only Apple's StoreKit for the in-app purchase); everything works offline. Links in Help and About open Safari.
+FoldForm is a CAD (3D modeling) app for designing parts to 3D print. It needs no account or sign-in and makes no network connections of its own (only Apple's StoreKit for the in-app purchase); everything works offline. Links in Help and About open Safari.
 
-In-app purchase: the app is free with every tool for one project; the non-consumable "Unlimited Projects" allows more. To see it, follow steps 1 to 6 below (they save one project), go back to Home and tap New project: the "Unlimited projects" sheet opens (Unlock, Restore purchase, Not now). It is also reachable from "Unlock unlimited projects" on Home and from File, About OpenShape.
+In-app purchase: the app is free with every tool for one project; the non-consumable "Unlimited Projects" allows more. To see it, follow steps 1 to 6 below (they save one project), go back to Home and tap New project: the "Unlimited projects" sheet opens (Unlock, Restore purchase, Not now). It is also reachable from "Unlock unlimited projects" on Home and from File, About FoldForm.
 
 A 2-minute test path (iPhone or iPad):
 1. Launch: the Home screen appears. Tap New project.
@@ -598,14 +609,14 @@ A 2-minute test path (iPhone or iPad):
 3. Tap the cube's top face. Drag the blue arrow up, or tap the value box, type 35 and tap the check mark: the cube is now 35 mm tall.
 4. Tap a vertical edge of the cube, tap the value box, type 4 and tap the check mark: the edge is rounded (fillet).
 5. Tap the top face, then Sketch. Tap Circle and draw a circle with a finger. Tap Finish sketch. Tap inside the circle, tap the value box, type -10 and tap the check mark: a 10 mm deep hole is cut.
-6. File, Save: type a name and tap Save. The project is in the Files app: On My iPhone (or iPad), OpenShape. File, Export STL writes Exports/<name>.stl there and opens the share sheet (close it, or pick Save to Files).
-7. The question mark button opens the help card with all gestures. File, About OpenShape shows the version, the license, the source code link and the privacy policy link.
+6. File, Save: type a name and tap Save. The project is in the Files app: On My iPhone (or iPad), FoldForm. File, Export STL writes Exports/<name>.stl there and opens the share sheet (close it, or pick Save to Files).
+7. The question mark button opens the help card with all gestures. File, About FoldForm shows the version, the license, the source code link and the privacy policy link.
 
 Gestures: one finger on empty space orbits the view, two fingers pan and pinch to zoom, a two-finger tap undoes, a three-finger tap redoes.
 
 Features in this version: direct modeling (push/pull faces, fillets, chamfers, shell, offset, holes with screw presets, raised or engraved text), sketches with constraints and typed dimensions, extrude and revolve, move, rotate, align, mirror, pattern, construction axes and planes, union, subtract and intersect, an editable Model panel with the full history, STEP import, STL, 3MF and STEP export through the share sheet, opening projects and STEP files from Files and Mail, recovery of unsaved work after a crash.
 
-OpenShape is open source (Mozilla Public License 2.0): https://github.com/SamuelAirs/openshape. It uses the open-source libraries Open CASCADE Technology, Qt, PlaneGCS, Eigen, libzip and nlohmann/json and the Noto Sans font under their licenses (listed in About).
+FoldForm is open source (Mozilla Public License 2.0): https://github.com/SamuelAirs/openshape. It uses the open-source libraries Open CASCADE Technology, Qt, PlaneGCS, Eigen, libzip and nlohmann/json and the Noto Sans font under their licenses (listed in About).
 ```
 
 ---

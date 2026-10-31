@@ -14,19 +14,20 @@ it says otherwise. Steps 1 to 7 can be done **now**, while the lead
 builds; steps 8 to 11 need the final build (the lead says when its build
 number is in TestFlight).
 
-## Tell the lead (one message)
+## Decided (2026-10-31)
 
-1. **The name.** Keep "OpenShape", or rename? OpenShape3D (a free, open
-   source touch CAD app on the same kernel) is on the App Store already;
-   see [APP_STORE.md, section 0](APP_STORE.md#0-first-the-name).
-   Recommendation if you keep it: store name `OpenShape: CAD for 3D
-   Printing`, home-screen name `OpenShape` (no new build needed). A new
-   home-screen name needs a new build, so decide this first.
-2. **The version number:** `0.3.0` (recommended: matches the Windows
-   release and the changelog) or `1.0.0`. It goes into the build.
-3. **A contact email** to publish on the privacy policy and support pages
-   (App Review rejects placeholder text). It is shown publicly, so use one
-   you are happy to publish.
+1. **Name: FoldForm.** No App Store app has that name. In App Store
+   Connect → your app → **App Information → Name**, enter
+   `FoldForm: CAD for 3D Printing` (29 characters; it helps people find
+   the app in search), or plain `FoldForm`. App Store Connect refuses a
+   name another developer already uses. The home-screen name in the
+   build is `FoldForm`. The code and the GitHub repository keep the name
+   openshape.
+2. **Version: 0.3.0.** On the version page, set the version to `0.3.0`
+   so the build appears there.
+3. **Contact email: ayers177@gmail.com.** It goes on the privacy policy
+   and support pages, which are public. Use the same address in App
+   Review Information.
 
 ## Start now (these can take hours or days at Apple)
 
@@ -42,7 +43,7 @@ number is in TestFlight).
    declare yourself a trader (your address or a P.O. box, phone and email
    are shown publicly on EU store pages), or leave the 27 EU countries out
    of the availability in step 9.
-7. **Create the in-app purchase:** Apps → OpenShape → **Monetization → In-App
+7. **Create the in-app purchase:** Apps → your app → **Monetization → In-App
    Purchases** → **+**:
    - Type **Non-Consumable**; Reference Name `Unlimited Projects`;
      Product ID **exactly** `io.github.samuelairs.openshape.unlimited`
