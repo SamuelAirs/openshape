@@ -490,6 +490,9 @@ public:
     // arrow lie in `region`, the part of the window left free
     // (InteractionController::revealKeepClear). True when it moved.
     Q_INVOKABLE bool revealKeepClear(const QRectF& region);
+    // The largest part of `area` clear of `avoid` (rectangles, each grown by
+    // `gap`): interact::largestFreeRect.
+    Q_INVOKABLE QRectF largestFreeRect(const QRectF& area, const QVariantList& avoid, double gap) const;
     // While sketching: the sketch on screen (a keypad beside a value keeps
     // clear of it; InteractionController::sketchScreenRect), or undefined.
     Q_INVOKABLE QVariant sketchScreenRect() const;

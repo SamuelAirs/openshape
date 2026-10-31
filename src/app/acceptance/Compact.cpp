@@ -8,7 +8,8 @@
 // bottom, the Model button's sliding panel, the View menu, the sketch's
 // strip; a box made and pushed there by touch; Undo / Redo saying what they
 // did (touch has no tooltip); a body's row tapped twice (selects it, then
-// folds the row and keeps it selected). The window goes back to the
+// folds the row and keeps it selected); then the iPhone Duo's outer display
+// and a Split View half beside its side bar. The window goes back to the
 // run's size at the end (and the runner's reset restores it too).
 
 #include "app/AcceptanceRunner.h"
@@ -362,6 +363,27 @@ Steps steps(AcceptanceRunner& r)
         r.check(r.clickItem(QStringLiteral("finishSketchButton")), "landscape: Finish sketch");
     });
     wait(steps, 4);
+    // ---- The iPhone Duo's outer display (466x678) and a Split View half on
+    // its inner display (440x669, the side bar of status icons on its right).
+    steps.push_back([&r] {
+        r.resizeWindow(466, 678);
+        setSafeArea(r, 59, 0, 34, 0);
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        checkCompactLayout(r, QStringLiteral("Duo outer display"), 59, 0, 34, 0);
+        r.screenshot(QStringLiteral("compact_08_duo_outer"));
+        r.resizeWindow(440, 669);
+        setSafeArea(r, 0, 84, 20, 0);
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        checkCompactLayout(r, QStringLiteral("Duo Split View half"), 0, 84, 20, 0);
+        const QRectF model = sceneRect(r, QStringLiteral("modelButtonPanel"));
+        r.check(shown(r, QStringLiteral("modelButtonPanel")) && insideSafeArea(r, model, 0, 84, 20, 0),
+                "Duo Split View half: the Model button stays left of the side bar", rectText(model));
+        r.screenshot(QStringLiteral("compact_09_duo_split"));
+    });
     // ---- Back to the run's window: the regular layout returns.
     steps.push_back([&r] {
         r.check(!r.app().sketchMode(), "compact: the sketch is finished");

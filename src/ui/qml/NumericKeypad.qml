@@ -56,8 +56,12 @@ FocusScope {
     readonly property int columns: rows.length > 0 ? rows[0].reduce((sum, key) => sum + key.span, 0) : 5
     readonly property int spacing: 6
     readonly property int padding: 8
+    // Main.qml: a short phone held upright (the iPhone Duo's outer display, a
+    // Split View half): keys of exactly 44 pt, so the selection keeps room
+    // between the value box at the top and the keypad.
+    property bool shortKeys: false
     // Apple's minimum touch target is 44 pt: a little more, for a thumb.
-    readonly property int keyHeight: 50
+    readonly property int keyHeight: shortKeys ? 44 : 50
     // (Sideways a little narrower, so the model keeps more than half the width.)
     readonly property int looseKeyWidth: wide ? 52 : 60
     readonly property real keyWidth: docked ? Math.floor((width - 2 * padding - (columns - 1) * spacing) / columns) : looseKeyWidth

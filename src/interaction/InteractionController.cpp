@@ -1812,6 +1812,12 @@ void InteractionController::notePress(Vec2 position) { lastPress_ = PressMark{po
 
 std::optional<ScreenRect> InteractionController::keepClearRect() const
 {
+    const auto bounds = keepClearBounds();
+    return bounds ? bounds->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y}) : std::nullopt;
+}
+
+std::optional<ScreenRect> InteractionController::keepClearBounds() const
+{
     if (session_)
         return std::nullopt;
     ScreenBounds selected(camera_);
@@ -1910,9 +1916,7 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
     // The last press, while the view and the selection it left are unchanged.
     if (lastPress_ && sameView(lastPress_->camera, camera_) && sameTargets(lastPress_->selection, selection_.items()))
         all.include(ScreenRect::around(lastPress_->position));
-    if (!all.rect)
-        return std::nullopt;
-    return all.rect->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y});
+    return all.rect;
 }
 
 std::optional<ScreenRect> InteractionController::sketchScreenRect() const
@@ -1928,17 +1932,17 @@ bool InteractionController::revealKeepClear(const ScreenRect& region)
     if (region.width() <= 1 || region.height() <= 1)
         return false;
     bool moved = false;
-    // A few rounds: the rectangle is clipped to the window, so one that
-    // reaches past it is only known in full once the view has moved.
+    // A few rounds: the arrows keep their size on screen while the view
+    // zooms, so the rectangle is only known exactly once the view has moved.
     for (int round = 0; round < 4; ++round) {
-        const auto keep = keepClearRect();
+        const auto keep = keepClearBounds();
         if (!keep || region.contains(*keep, 0.5))
             break;
         animation_.reset();
         const double scale = std::max(keep->width() / region.width(), keep->height() / region.height());
         if (scale > 1)
             camera_.zoomAt(keep->center(), scale * 1.08); // (a factor above 1 zooms out)
-        const auto after = keepClearRect();
+        const auto after = keepClearBounds();
         if (!after)
             break;
         camera_.pan(after->center(), region.center());

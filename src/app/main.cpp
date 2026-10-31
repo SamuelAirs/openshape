@@ -14,6 +14,7 @@
 #include "ui/AppController.h"
 #include "ui/AppSettings.h"
 #include "ui/ThumbnailProvider.h"
+#include "ui/WindowMetricsLog.h"
 
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
@@ -910,6 +911,10 @@ int main(int argc, char* argv[])
         return 1;
     }
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    // One log line whenever the window's size, pixel ratio, safe area or
+    // screen change (a phone turned or folded, Split View): a device test's
+    // log then says what the layout really got. Owned by the window.
+    new os::ui::WindowMetricsLog(window);
     // The window comes back where it was, except in automated runs, with
     // --size, and on tablets (always full screen).
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)

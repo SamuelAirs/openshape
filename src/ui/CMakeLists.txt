@@ -6,13 +6,14 @@ set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 # What the app remembers (settings, recent files, window place), recovery
 # sessions, Home's preview sources, where files from other apps go and the
-# license texts it shows: Qt Core only, so tests/test_uistate needs no GUI.
+# license texts it shows and the window metrics' log line: Qt Core only, so tests/test_uistate needs no GUI.
 add_library(openshape_uistate STATIC
     AppSettings.cpp AppSettings.h
     IncomingFiles.cpp IncomingFiles.h
     Licenses.cpp Licenses.h
     RecoverySession.cpp RecoverySession.h
     ThumbnailSource.cpp ThumbnailSource.h
+    WindowMetrics.cpp WindowMetrics.h
 )
 target_link_libraries(openshape_uistate PUBLIC openshape_io Qt6::Core)
 target_include_directories(openshape_uistate PUBLIC ${PROJECT_SOURCE_DIR}/src)
@@ -62,6 +63,7 @@ qt_add_qml_module(openshape_ui
         AppController.cpp AppController.h
         ThumbnailProvider.cpp ThumbnailProvider.h
         ViewportItem.cpp ViewportItem.h
+        WindowMetricsLog.cpp WindowMetricsLog.h
         Share.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)

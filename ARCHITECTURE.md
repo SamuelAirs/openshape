@@ -1090,6 +1090,30 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   fills the whole window (`ApplicationWindow` padding 0). Overlays center
   their cards in the safe rectangle. Regular windows (desktop, iPad full
   screen) look as before.
+  **A window that changes live** (a phone turned, Split View, the iPhone
+  Duo folded or unfolded: 466x678 outer, 951x669 inner with an 84 pt side
+  bar of status icons on one side, docs/IPAD.md): state lives in the
+  controller and in window properties, not in the layout, so nothing is
+  lost (`historyOpen` closes only when the history empties, not when the
+  Model button goes away). `Main.windowChanged()` (size and safe-area
+  changes) re-places an open keypad and, on touch, calls
+  `revealSelection()`: when the selection is out of sight, or (a regular
+  window) the value box sits within its margin of it, the view moves the
+  selection into the largest room the controls, the value box and the
+  keypad leave (`interact::largestFreeRect`, a pure function;
+  `InteractionController::revealKeepClear` uses the keep-clear bounds
+  before clipping, so a selection a fold left off screen comes back); it
+  also runs when the value box's placement changes in a regular touch
+  window. A short phone held upright docks a keypad of 44 pt keys
+  (`NumericKeypad.shortKeys`); a narrow value box narrows its field; the
+  sketch's tool bar goes beside the top bar when it fits before the Model
+  panel, else below the top bar (right of the palette in a regular
+  window); the regular sketch palette ends above a stacked hint
+  (`paletteMaxBottom`). `ui/WindowMetricsLog` logs one Info line (so it
+  is in Logs/openshape.log on iOS) per settled change of the window's
+  size, pixel ratio, safe area (or `--safe-area`'s), layout
+  (`Main.compactLayout`) or screen; the line is a pure function
+  (`ui/WindowMetrics`, tested in `test_uistate`).
 - **Where the value chip goes** (`interaction/OverlayPlacement`, Qt-free):
   the chip never covers the **keep-clear rectangle**
   (`InteractionController::keepClearRect`, exposed as
@@ -1696,8 +1720,14 @@ document pickers' files take the same staging when there is an app folder
   resized by its diameter and deleted; `compact` (the window resized live to
   an iPhone's 402x874 and 874x402 with simulated safe areas: tool strip,
   Model panel, View menu, a box pushed by touch, Undo / Redo with their
-  messages, a body row tapped twice, the sketch strip; the runner
-  restores the run's window size for the next scenario); `chipplacement`
+  messages, a body row tapped twice, the sketch strip, then the iPhone
+  Duo's outer display and a Split View half; the runner
+  restores the run's window size for the next scenario); `duo` (the
+  window resized live through the iPhone Duo's screens six times for each
+  of a sketch with a width typed, a push/pull with a value typed, the
+  keypad open, the Model panel open and Home: nothing lost, every control
+  inside the safe area, the value box off the selection, the log line
+  naming the size and insets); `chipplacement`
   (an edge on the left side of a box and a face, tapped or clicked at
   402x874 and 874x402 with the iPhone's safe areas, 1180x820 touch and
   1400x900: the chip is off the projected edge or face (with the margin),

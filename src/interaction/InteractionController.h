@@ -238,7 +238,9 @@ public:
     // Moves the view so that keepClearRect() lies inside `region` (the part
     // of the window a phone's numeric keypad and the value chip above it
     // leave free), zooming out first when it is larger. False when it
-    // already lies there, or there is nothing to keep clear.
+    // already lies there, or there is nothing to keep clear. The whole of
+    // it, also the part outside the window (a folding phone folded or a
+    // Split View narrowed may have left the selection off screen).
     bool revealKeepClear(const ScreenRect& region);
     // While sketching: the sketch on screen (SketchSession::screenBounds),
     // clipped to the view; nullopt outside a sketch or when it is empty.
@@ -411,6 +413,8 @@ public:
     std::function<void(const std::string&)> onMessage;
 
 private:
+    // keepClearRect() before it is clipped to the viewport.
+    std::optional<ScreenRect> keepClearBounds() const;
     enum class DragMode { None, Pending, Orbit, Pan, Manipulator, Sketch };
 
     // PreviewScheduler (operations call these).

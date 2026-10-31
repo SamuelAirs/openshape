@@ -18,6 +18,7 @@
 #include "ui/IncomingFiles.h"
 #include "ui/RecoverySession.h"
 #include "ui/ThumbnailSource.h"
+#include "ui/WindowMetrics.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -964,4 +965,50 @@ TEST(IncomingFiles, CopiesGetSafeNames)
     writeProject(name, 30);
     EXPECT_EQ(stageIncomingFile(name, f.places).path,
               f.places.appFolder + QString::fromUtf8("/Halterung f\xC3\xBCr Rad \xD0\x96.openshape"));
+}
+
+// The line logged when the window changes (ui/WindowMetricsLog): the iPhone
+// Duo's inner display with its side bar, then folded to the outer display.
+TEST(WindowMetrics, LineSaysSizesInsetsAndWhatChanged)
+{
+    WindowMetrics inner;
+    inner.width = 951;
+    inner.height = 669;
+    inner.devicePixelRatio = 3;
+    inner.safeRight = 84;
+    inner.safeBottom = 20;
+    inner.layout = QStringLiteral("regular");
+    inner.screenName = QStringLiteral("iPhone");
+    inner.screenWidth = 951;
+    inner.screenHeight = 669;
+    inner.screenDevicePixelRatio = 3;
+    EXPECT_EQ(describeWindowMetrics(inner),
+              QStringLiteral("window 951x669 pt at 3x (2853x2007 px), safe area top 0 right 84 bottom 20 left 0, usable 867x649 pt, "
+                             "regular layout; screen \"iPhone\" 951x669 pt at 3x"));
+    EXPECT_TRUE(windowMetricsChanges(inner, inner).isEmpty());
+
+    WindowMetrics outer = inner;
+    outer.width = 466;
+    outer.height = 678;
+    outer.safeTop = 59.5;
+    outer.safeRight = 0;
+    outer.safeBottom = 34;
+    outer.layout = QStringLiteral("compact");
+    outer.screenWidth = 466;
+    outer.screenHeight = 678;
+    const QStringList changes = windowMetricsChanges(inner, outer);
+    EXPECT_EQ(changes, (QStringList{QStringLiteral("size"), QStringLiteral("safe area"), QStringLiteral("layout"), QStringLiteral("screen")}));
+    const QString line = describeWindowMetrics(outer, changes);
+    EXPECT_TRUE(line.startsWith(QStringLiteral("window 466x678 pt at 3x (1398x2034 px), safe area top 59.5 right 0 bottom 34 left 0, "
+                                               "usable 466x584.5 pt, compact layout")))
+        << line.toStdString();
+    EXPECT_TRUE(line.endsWith(QStringLiteral(" (changed: size, safe area, layout, screen)"))) << line.toStdString();
+
+    // The desktop's --safe-area says so; a pixel ratio of its own.
+    WindowMetrics desk = outer;
+    desk.safeAreaSimulated = true;
+    desk.devicePixelRatio = 1.25;
+    EXPECT_EQ(windowMetricsChanges(outer, desk), (QStringList{QStringLiteral("pixel ratio"), QStringLiteral("safe area")}));
+    EXPECT_TRUE(describeWindowMetrics(desk).contains(QStringLiteral("at 1.25x (583x848 px), simulated safe area top 59.5")))
+        << describeWindowMetrics(desk).toStdString();
 }

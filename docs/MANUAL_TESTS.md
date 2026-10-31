@@ -228,6 +228,14 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 4. **Uninstall** from Settings → Apps → Installed apps → OpenShape. The
    Start-menu entry and the file association are gone; your projects stay.
 
+## On the iPhone Duo
+
+See [IPAD.md](IPAD.md), "The iPhone Duo": fold and unfold mid-sketch and
+mid-edit (a value typed on the keypad), on Home and with the Model panel
+open; turn the inner display; Split View on both sides of the side bar;
+half fold while typing (TD-140). Then send Logs/openshape.log: its
+`window ...` lines give the real sizes and safe areas (TD-150).
+
 ## On the iPad and iPhone
 
 See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the

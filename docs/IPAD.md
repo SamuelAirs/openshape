@@ -436,6 +436,51 @@ text (About → **Licenses**). What that means in practice:
 19. Note anything slow, hard to hit, or missing — with a screenshot
    (TestFlight: take a screenshot and share it as feedback, or send it).
 
+## The iPhone Duo
+
+The same app on both displays; the window keeps everything it had (the tool,
+values typed, the selection, an open Model panel, Home) when it moves
+between them. Point sizes from Apple's spec page and screenshot sizes; the
+safe areas are estimates until a device log says otherwise (TD-150).
+
+| Screen | Window (points) | Layout |
+|---|---|---|
+| Outer display, upright | 466x678 (top ~59, bottom ~34) | the phone layout; a keypad of 44 pt keys, so the face stays in sight between the value box and the keypad |
+| Outer display, sideways | 678x466 (sides ~59) | the phone layout held sideways (one-row value box, the keypad in a bottom corner) |
+| Inner display (book) | 951x669, a side bar of ~84 on the right or the left | the iPad layout, inside the bar: the sketch's tool bar goes below the top bar when it does not fit beside the Model panel; the tool palette ends above the hint; when the value box finds no spot beside the arrow, the view moves the selection into the free room |
+| Inner display, turned | 669x951 (the bar along the top) | the iPad layout in portrait |
+| Split View half | ~430-475 x 669 | the phone layout (a narrower value field, so the value box docks beside Model / View) |
+
+Folding, unfolding or a Split View change re-places the keypad and brings
+the selection back into sight if the change left it off screen. Each
+change of the window's size, pixel ratio, safe area or screen writes one
+line to the log, e.g. `window 951x669 pt at 3x (2853x2007 px), safe area top
+0 right 84 bottom 20 left 0, usable 867x649 pt, regular layout; screen ...`.
+Try it on Windows with the `duo` scenario (BUILDING.md) or
+`OpenShape.exe --touch --size 951x669 --safe-area 0,84,20,0`.
+
+What to try:
+
+1. Fold and unfold with a model open, on Home, and with the Model panel open
+   (it stays open; on the inner display it is the regular panel).
+2. Mid-sketch: Rectangle tool, tap the first corner, type its width (keypad
+   or keyboard), fold or unfold, then finish it: the rectangle has the size
+   typed and the Rectangle tool is still on.
+3. Mid-edit: tap a top face, tap the value, type `4` `2` on the keypad, fold
+   or unfold: the keypad comes back beside or under the value box, the face
+   in sight, 42 still typed; ✓ applies it.
+4. On the inner display: turn it (669x951 and back), and move the side bar
+   to the other side if iOS does that: nothing sits under the bar.
+5. Split View with another app, on either side of the bar; drag the divider.
+6. Half fold the phone (tent or laptop pose) while typing a value: tell us
+   whether the value box, the keypad or a card sits on the crease (TD-140).
+7. Then send **Logs/openshape.log** (Files app → On My iPhone → OpenShape →
+   Logs → Share): its `window ...` lines tell the real sizes and insets.
+
+Not done: placement aware of the fold (TD-140: keep the value box, the
+keypad and dialogs off the crease when the phone is half folded; the iOS
+27.1 SDK's hinge API is not used yet).
+
 ## What to test on the iPhone
 
 The same app; the compact layout is on from the start. On Windows the
@@ -485,8 +530,7 @@ margins (BUILDING.md).
    After the next TestFlight update, File → Open Recent still lists those
    projects and opens them. On Home, the project's card says *OpenShape
    (Files app)* under its date (before: a long /var/mobile/… path).
-12. iPhone Duo (once available): fold and unfold with a model open, and use
-   the inner display's Split View: the layout changes live, no restart.
+12. iPhone Duo: see "The iPhone Duo" below.
 13. The value box never covers what you tapped (your screen recording of
    2026-09-26): tap an edge on the left of a body low on the screen, then
    faces in different places: the box docks below the top bar or above the

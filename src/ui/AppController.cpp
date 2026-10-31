@@ -1620,6 +1620,14 @@ QVariantMap AppController::placeKeypad(const QVariantMap& layout) const
 
 bool AppController::revealKeepClear(const QRectF& region) { return interaction_->revealKeepClear(toScreenRect(region)); }
 
+QRectF AppController::largestFreeRect(const QRectF& area, const QVariantList& avoid, double gap) const
+{
+    std::vector<interact::ScreenRect> rects;
+    for (const QVariant& rect : avoid)
+        rects.push_back(toScreenRect(rect.toRectF()));
+    return toQRect(interact::largestFreeRect(toScreenRect(area), rects, gap));
+}
+
 QVariant AppController::sketchScreenRect() const
 {
     const auto rect = interaction_->sketchScreenRect();

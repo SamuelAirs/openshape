@@ -55,6 +55,8 @@ ApplicationWindow {
     // folds or unfolds).
     Binding { target: Theme; property: "windowWidth"; value: window.width }
     Binding { target: Theme; property: "windowHeight"; value: window.height }
+    // (Logged with the window's size and safe area: ui/WindowMetricsLog.)
+    readonly property bool compactLayout: Theme.compact
     Item {
         // The window's safe-area margins (SafeArea, Qt 6.9+; zero on the desktop).
         id: safeInsets
@@ -100,6 +102,11 @@ ApplicationWindow {
     // view buttons open from the View button (one at a time).
     property bool historyOpen: false
     property bool viewMenuOpen: false
+    // A new, empty document closes the Model panel. (Not the Model button
+    // going away: unfolding a folding phone hides it, and folding again
+    // brings the panel back as it was.)
+    readonly property bool hasHistory: app.history.length > 0
+    onHasHistoryChanged: if (!hasHistory) historyOpen = false
     onHistoryOpenChanged: if (historyOpen) viewMenuOpen = false
     onViewMenuOpenChanged: {
         if (viewMenuOpen)
@@ -694,7 +701,6 @@ ApplicationWindow {
         id: modelButtonPanel
         objectName: "modelButtonPanel"
         visible: Theme.compact && window.app.history.length > 0
-        onVisibleChanged: if (!visible) window.historyOpen = false // (a new, empty document)
         x: window.width - Theme.insetRight - width
         y: window.rightColumnY
         width: modelButton.implicitWidth + 2 * Theme.panelPadding
@@ -1141,7 +1147,13 @@ ApplicationWindow {
         // Room on the top row between the top bar and what is on the right.
         topRowLeft: topBar.x + topBar.width + 8
         topRowRight: Theme.compact ? (modelButtonPanel.visible ? modelButtonPanel.x : viewButtonPanel.x) - 8
-                                   : window.width - Theme.insetRight
+                                   : historyPanel.visible ? historyPanel.x - 8 : window.width - Theme.insetRight
+        // Regular windows: the tool palette ends above the hint (a short
+        // window, e.g. a folding phone's inner display, stacks the hint over
+        // the view buttons, where the palette would reach), leaving it two
+        // lines. (Not from the hint's own height: the hint follows the
+        // sketch, which follows the palette.)
+        paletteMaxBottom: !Theme.compact && statusColumn.stacked ? viewPanel.y - 2 * Theme.margin - 40 : window.height
         topRowBottom: Math.max(topBar.y + topBar.height, Theme.compact && window.rightColumnY > Theme.insetTop
                                                          ? viewButtonPanel.y + viewButtonPanel.height : 0)
         keypad: keypad
@@ -1205,6 +1217,9 @@ ApplicationWindow {
                  : placement.spot === "left" ? Qt.AlignRight : Qt.AlignLeft
         keypad: keypad
         onFinished: viewport.forceActiveFocus()
+        // A larger touch window with no clear spot for it: the view moves
+        // instead (revealSelection).
+        onPlacementChanged: if (Theme.touch && !Theme.compact) Qt.callLater(window.revealSelection)
     }
 
     // ---------------------------------------------------------------- numeric keypad
@@ -1223,14 +1238,35 @@ ApplicationWindow {
         // to a bottom corner, at its own size: interact::placeKeypad).
         docked: Theme.compact && window.height >= window.width
         wide: Theme.compact && window.width > window.height
+        shortKeys: docked && window.height - Theme.safeTop - Theme.safeBottom < 700
         width: docked ? window.width - Theme.safeLeft - Theme.safeRight - 8 : implicitWidth
         onClientChanged: if (client) Qt.callLater(window.placeKeypad)
         onHeightChanged: if (open) Qt.callLater(window.placeKeypad)
     }
-    onWidthChanged: if (keypad.open) Qt.callLater(window.placeKeypad)
-    onHeightChanged: if (keypad.open) Qt.callLater(window.placeKeypad)
+    onWidthChanged: windowChanged()
+    onHeightChanged: windowChanged()
+    // The window changed size or safe area: the keypad goes where it fits
+    // now, and the selection stays in sight. (The second only on touch: a
+    // window changes size by turning, folding or Split View there, not by a
+    // mouse dragging its edge step by step.)
+    function windowChanged() {
+        if (keypad.open)
+            Qt.callLater(window.placeKeypad)
+        if (Theme.touch)
+            Qt.callLater(window.revealSelection)
+    }
+    // The safe area may change after the size (a folding phone's side bar
+    // moves to the other side; iOS reports the new margins separately).
+    Connections {
+        target: Theme
+        function onSafeTopChanged() { window.windowChanged() }
+        function onSafeRightChanged() { window.windowChanged() }
+        function onSafeBottomChanged() { window.windowChanged() }
+        function onSafeLeftChanged() { window.windowChanged() }
+    }
 
-    function placeKeypad() {
+    // `afterReveal`: the view has just moved for the selection (revealSelection).
+    function placeKeypad(afterReveal) {
         const client = keypad.client
         if (!client)
             return
@@ -1273,6 +1309,37 @@ ApplicationWindow {
             if (room.width >= 120 && room.height >= 120)
                 app.revealKeepClear(room)
         }
+        if (client.keepClear === "selection" && !afterReveal)
+            Qt.callLater(window.revealSelection)
+    }
+
+    // The selection and its arrow out of sight, or under the value box of a
+    // larger touch window that is small for its controls, the value box and
+    // a keypad (a folding phone's inner display, 951x669: no spot beside the
+    // arrow is clear), e.g. after the window changed (folded, unfolded, a
+    // Split View narrowed: the selection may be off screen). The view moves
+    // them into the largest room the controls, the value box and the
+    // keypad leave (zooming out if needed); the keypad then goes beside the
+    // value box again. Never while an arrow is dragged. A phone's docked
+    // value box and keypad have their own room (placeKeypad).
+    function revealSelection() {
+        if (!valueChip.visible || !valueChip.placement || app.manipulatorDragging)
+            return
+        // (Within the chip's margin of the selection, 20 px on touch, counts.)
+        const keep = app.keepClearRect
+        const m = 20
+        const covered = keep && valueChip.x < keep.x + keep.width + m && keep.x - m < valueChip.x + valueChip.width
+                        && valueChip.y < keep.y + keep.height + m && keep.y - m < valueChip.y + valueChip.height
+        if (keep && (Theme.compact || !covered))
+            return
+        const area = Qt.rect(Theme.insetLeft, Theme.insetTop, window.width - Theme.insetLeft - Theme.insetRight,
+                             window.height - Theme.insetTop - Theme.insetBottom)
+        const avoid = window.chipObstacles().concat([Qt.rect(valueChip.x, valueChip.y, valueChip.width, valueChip.height)])
+        if (keypad.visible && Theme.compact)
+            avoid.push(Qt.rect(keypad.x, keypad.y, keypad.width, keypad.height))
+        const room = app.largestFreeRect(area, avoid, m + 4)
+        if (room.width >= 120 && room.height >= 120 && app.revealKeepClear(room) && keypad.open)
+            Qt.callLater(window.placeKeypad, true)
     }
 
     // The controls the value chip must not cover, as window rectangles, and

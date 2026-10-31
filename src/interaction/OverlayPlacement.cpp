@@ -31,6 +31,49 @@ void ScreenRect::include(Vec2 p)
     bottom = std::max(bottom, p.y);
 }
 
+ScreenRect largestFreeRect(const ScreenRect& area, const std::vector<ScreenRect>& avoid, double gap)
+{
+    std::vector<ScreenRect> blocks;
+    for (const ScreenRect& rect : avoid)
+        if (rect.width() > 0 && rect.height() > 0)
+            blocks.push_back(rect.inflated(gap));
+    // A largest free rectangle has each side on the area's side or on an
+    // obstacle's side: try every such pair of x and y edges (a handful of
+    // controls: a few thousand candidates).
+    std::vector<double> xs{area.left, area.right};
+    std::vector<double> ys{area.top, area.bottom};
+    for (const ScreenRect& b : blocks) {
+        for (double x : {b.left, b.right})
+            if (x > area.left && x < area.right)
+                xs.push_back(x);
+        for (double y : {b.top, b.bottom})
+            if (y > area.top && y < area.bottom)
+                ys.push_back(y);
+    }
+    std::sort(xs.begin(), xs.end());
+    xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
+    std::sort(ys.begin(), ys.end());
+    ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
+    ScreenRect best{area.left, area.top, area.left, area.top};
+    double bestArea = 0;
+    for (std::size_t l = 0; l < xs.size(); ++l)
+        for (std::size_t r = l + 1; r < xs.size(); ++r)
+            for (std::size_t t = 0; t < ys.size(); ++t)
+                for (std::size_t b = t + 1; b < ys.size(); ++b) {
+                    const ScreenRect candidate{xs[l], ys[t], xs[r], ys[b]};
+                    const double size = candidate.width() * candidate.height();
+                    if (size <= bestArea)
+                        continue;
+                    const bool free = std::none_of(blocks.begin(), blocks.end(),
+                                                   [&candidate](const ScreenRect& block) { return block.intersects(candidate); });
+                    if (!free)
+                        break; // taller ones from this top edge contain the same obstacle
+                    best = candidate;
+                    bestArea = size;
+                }
+    return best;
+}
+
 double separation(const ScreenRect& a, const ScreenRect& b)
 {
     // Positive: that far apart along the axis; negative: overlapping that much.

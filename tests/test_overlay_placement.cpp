@@ -989,3 +989,37 @@ TEST(FingerLabels, RectangleBesideTheDynamicIsland)
     EXPECT_EQ(inputs, 2) << "the width and the height";
     controller.pointerRelease(e);
 }
+
+// The iPhone Duo's inner display (951x669, the side bar on the right): the
+// top bar, the tool palette on the left, the Model panel top right, the
+// value box and a keypad bottom right leave the middle of the view free.
+TEST(LargestFreeRect, RoomBesideKeypadAndValueBox)
+{
+    const ScreenRect area{16, 16, 951 - 84 - 16, 669 - 20 - 16};
+    const std::vector<ScreenRect> controls{
+        {16, 16, 356, 72},   // top bar
+        {16, 88, 120, 600},  // tool palette
+        {561, 16, 851, 244}, // Model panel
+        {470, 300, 851, 633}, // keypad
+        {140, 90, 400, 150},  // value box
+        {},                   // an empty rectangle (a hidden control): ignored
+    };
+    const ScreenRect room = largestFreeRect(area, controls, 8);
+    for (const ScreenRect& c : controls) {
+        if (c.width() <= 0)
+            continue;
+        EXPECT_FALSE(room.intersects(c.inflated(8))) << room.left << "," << room.top << " " << room.width() << "x" << room.height();
+    }
+    EXPECT_TRUE(area.contains(room));
+    // Right of the palette, below the value box, left of the keypad: 128..462 x 158..633.
+    EXPECT_DOUBLE_EQ(room.left, 128);
+    EXPECT_DOUBLE_EQ(room.top, 158);
+    EXPECT_DOUBLE_EQ(room.right, 462);
+    EXPECT_DOUBLE_EQ(room.bottom, 633);
+
+    // Nothing in the way: the whole area; all of it covered: nothing.
+    const ScreenRect whole = largestFreeRect(area, {}, 8);
+    EXPECT_DOUBLE_EQ(whole.width() * whole.height(), area.width() * area.height());
+    const ScreenRect none = largestFreeRect(area, {area}, 0);
+    EXPECT_DOUBLE_EQ(none.width() * none.height(), 0);
+}
