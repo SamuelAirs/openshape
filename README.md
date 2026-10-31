@@ -20,7 +20,7 @@ FoldForm was called OpenShape: its source code, this repository
 (`openshape`), the Windows program (`OpenShape.exe`) and the project file
 format (`.openshape`) keep that name.
 
-> **Early pre-release (0.2).** FoldForm is young: it does the things below,
+> **Early release (0.3).** FoldForm is young: it does the things below,
 > but expect rough edges. It keeps recovery copies of unsaved work, and bug
 > reports are very welcome.
 
