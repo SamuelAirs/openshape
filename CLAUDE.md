@@ -42,7 +42,12 @@ Start here, in this order:
 ## Repository and CI
 - Remote: https://github.com/SamuelAirs/openshape (**public** since 2026-09-25).
   `gh` is not installed; git over HTTPS works with the owner's stored credentials.
-- CI runs on every push (free: public repository); docs-only pushes skip it.
+- **GitHub minutes are for compiling only** (the owner, 2026-10-31). No
+  workflow runs tests: before every push, run the headless suite and the full
+  real-UI run here, plus `scripts/dev/check_lambda_captures.py` (Apple Clang
+  fails on unused captures that GCC accepts). Push no throwaway branches to
+  CI; push only what is ready, so each Mac compile counts.
+- CI compiles on every branch push; docs-only pushes skip it.
   `ci.yml`: Windows (MSYS2) and macOS (Apple Clang, Homebrew), warnings as errors.
   `ipad.yml`: builds the iPad app on a GitHub Mac and, on `main`, uploads it to
   TestFlight for the owner's iPad (docs/IPAD.md; the owner has no usable Mac).

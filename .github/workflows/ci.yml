@@ -1,14 +1,17 @@
+# Compiles only (the owner's decision, 2026-10-31: GitHub minutes are for
+# compiling; every test runs on the owner's PC before each push, CLAUDE.md).
 # Windows: mirrors the build verified locally in BUILDING.md (MSYS2 UCRT64).
-# macOS: Apple Clang and Homebrew packages; also runs the app once (Metal)
-# and the real-UI acceptance run. The iPad build is ipad.yml.
-# A run takes 6-11 minutes (the repository is public, so the minutes are
-# free); documentation-only pushes skip CI; a newer push to the same branch
-# cancels a run still in progress. Failed steps report their error lines as
-# annotations, which anyone can read (scripts/ci/run-logged.sh).
+# macOS: Apple Clang and Homebrew packages, which warn where GCC does not
+# (e.g. unused lambda captures). The iPad build is ipad.yml. Branch pushes
+# only (a tag is built by ipad.yml and release.yml); documentation-only
+# pushes skip CI; a newer push to the same branch cancels a run still in
+# progress. Failed steps report their error lines as annotations, which
+# anyone can read (scripts/ci/run-logged.sh).
 name: CI
 
 on:
   push:
+    branches: ['**']
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'scripts/dev/**']
   pull_request:
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'scripts/dev/**']
@@ -48,12 +51,10 @@ jobs:
         run: bash scripts/ci/run-logged.sh configure cmake --preset msys2-ucrt64 -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
       - name: Build
         run: bash scripts/ci/run-logged.sh build cmake --build build/msys2-ucrt64
-      - name: Test (headless; the GUI acceptance run needs a desktop session)
-        run: bash scripts/ci/run-logged.sh test ctest --test-dir build/msys2-ucrt64 -LE gui --output-on-failure
 
   macos:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -70,20 +71,3 @@ jobs:
         run: bash scripts/ci/run-logged.sh configure cmake --preset macos -DOPENSHAPE_WARNINGS_AS_ERRORS=ON -DOPENSHAPE_BUILD_TOOLS=ON
       - name: Build
         run: bash scripts/ci/run-logged.sh build cmake --build build/macos -- -k 0 # all errors at once
-      - name: Test (headless)
-        run: |
-          bash scripts/ci/run-logged.sh test ctest --test-dir build/macos -LE gui --output-on-failure
-          grep -E "tests passed" "$LOGS/test.log" | sed 's/^/::notice title=macOS tests::/'
-      - name: Screenshot (Metal)
-        run: |
-          bash scripts/ci/run-logged.sh screenshot perl -e 'alarm 120; exec @ARGV' \
-            build/macos/bin/OpenShape.app/Contents/MacOS/OpenShape --demo bracket --screenshot "$LOGS/macos-bracket.png"
-          python3 scripts/ci/png_stats.py "$LOGS/macos-bracket.png" --github
-      # Passes in full at 1024x653 since run #29 (TD-35); still allowed to fail
-      # until the newer scenarios (compact, appfolder) have passed here too.
-      # -V keeps the run's own output, so the notice shows its check counts.
-      - name: GUI acceptance run (real UI, synthetic input)
-        continue-on-error: true
-        run: |
-          bash scripts/ci/run-logged.sh acceptance ctest --test-dir build/macos -L gui -V
-          grep -E "acceptance: scenarios|checks passed|tests passed" "$LOGS/acceptance.log" | tail -n 3 | sed 's/^/::notice title=macOS acceptance::/'

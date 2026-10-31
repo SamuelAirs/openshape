@@ -413,10 +413,17 @@ Before tagging a release:
    `scripts/ios/sources.txt` and the Licenses view's texts are current
    (`python scripts/licenses/licenses.py check`, also run by ctest as
    `licenses_check`; see "The iOS app's licenses" below).
-4. Push `main`, wait for CI (the iPad workflow's last run on `main` should
-   say `License gate: PASS`), and run Release once by hand (GitHub →
-   Actions → Release → Run workflow; a version bump alone does not start
-   it). Push the tag `v<version>` only when both are green.
+4. GitHub only compiles (the owner's decision, 2026-10-31), so test the
+   release here first: build the release preset against the own
+   OpenCASCADE (`cmake --preset msys2-ucrt64-release && cmake --build
+   build/msys2-ucrt64-release && ctest --test-dir build/msys2-ucrt64-release
+   -LE gui`), package it into a scratch folder (`bash
+   scripts/package-windows.sh build/msys2-ucrt64-release
+   build/relcheck/OpenShape`), make its installer (`bash
+   scripts/windows/make-installer.sh build/relcheck/OpenShape
+   build/relcheck`) and run `scripts\windows\test-installer.ps1` on it.
+   Then push `main`, wait for CI to compile (the iPad workflow's last run on
+   `main` should say `License gate: PASS`), and push the tag `v<version>`.
 5. The tag also builds the iOS app for the App Store (`ipad.yml`, docs/
    LICENSING.md "Releasing an App Store (or public beta) version"): submit
    only the build that run uploads (its notice names the build number)

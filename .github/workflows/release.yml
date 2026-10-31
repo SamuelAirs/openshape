@@ -177,12 +177,10 @@ jobs:
         run: bash scripts/ci/run-logged.sh configure cmake --preset msys2-ucrt64-release -DOPENSHAPE_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: bash scripts/ci/run-logged.sh build cmake --build build/msys2-ucrt64-release
-      - name: Test (headless, against the own OpenCASCADE)
-        # ctest puts the own OCCT first on PATH (TEST_LAUNCHER), and
-        # OcctBuild.TestsLoadOpenShapesOwnOcct fails if MSYS2's OCCT loads.
-        run: |
-          bash scripts/ci/run-logged.sh test ctest --test-dir build/msys2-ucrt64-release -LE gui --output-on-failure
-          grep -E "tests passed" "$LOGS/test.log" | sed 's/^/::notice title=Windows release tests::/'
+      # No tests here (the owner's decision, 2026-10-31: GitHub minutes are
+      # for compiling). Before a tag, the lead runs the headless suite
+      # against the own OpenCASCADE build and the installer test on the
+      # owner's PC (BUILDING.md, "Before tagging a release").
 
       - name: Package (with the license gate)
         run: |
@@ -291,17 +289,6 @@ jobs:
           bash scripts/ci/run-logged.sh sign-installer bash scripts/windows/use-signed.sh \
               "$(cygpath -u "$RUNNER_TEMP")/signed-installer/${setup##*/}" "$setup" "$SIGNPATH_POLICY"
           grep -E "^Signed: " "$LOGS/sign-installer.log" | sed 's/^/::notice title=Code signing::/'
-      - name: Test the installer (silent install, upgrade, uninstall)
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem dist -Filter 'OpenShape-*-setup.exe' | Select-Object -First 1
-          & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test-installer.ps1 `
-              -Setup $setup.FullName -InstallDir "$env:RUNNER_TEMP\install test\OpenShape" -PackageDir dist\OpenShape
-          $failed = $LASTEXITCODE
-          if ($failed -ne 0) { Write-Output "::error title=Installer test::$failed checks failed (see the step log)" }
-          else { Write-Output "::notice title=Installer test::silent install, upgrade and uninstall passed" }
-          exit $failed
-
       - name: Upload the release files (no release)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
