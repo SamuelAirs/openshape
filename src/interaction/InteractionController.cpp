@@ -455,8 +455,28 @@ bool InteractionController::tapViewCube(Vec2 box)
 
 // ---- Input -----------------------------------------------------------------------
 
+bool InteractionController::penOverridesTouch(const PointerEvent& event) const
+{
+    if (event.device != PointerDevice::Touch)
+        return false;
+    return touchIgnored_ || (drag_.mode != DragMode::None && drag_.press.device == PointerDevice::Pen);
+}
+
 void InteractionController::pointerPress(const PointerEvent& event)
 {
+    // Pen and fingers never share a press: a finger touching down while the
+    // pen draws is the hand holding it (its press would wipe the pen's
+    // drag), and the pen coming down ends a finger's press or drag.
+    if (event.device == PointerDevice::Touch) {
+        touchIgnored_ = false;
+        if (drag_.mode != DragMode::None && drag_.press.device == PointerDevice::Pen) {
+            touchIgnored_ = true;
+            return;
+        }
+    } else if (event.device == PointerDevice::Pen && drag_.mode != DragMode::None && drag_.press.device == PointerDevice::Touch) {
+        cancelPointer();
+        touchIgnored_ = true;
+    }
     // A value typed just now is taken before the press acts (a sketch's
     // typed length, then the tap that places the line's end).
     (void)flushTyping();
@@ -616,6 +636,11 @@ void InteractionController::pointerMove(const PointerEvent& event)
     // laptop), which would move the drag there.
     if (drag_.mode != DragMode::None && event.button == PointerButton::None && event.device != drag_.press.device)
         return;
+    // (Nor is a hover of the pen while it is down: a re-sent position.)
+    if (drag_.mode != DragMode::None && event.button == PointerButton::None && event.device == PointerDevice::Pen)
+        return;
+    if (penOverridesTouch(event))
+        return; // the hand that holds the pen
     if (drag_.mode == DragMode::Sketch) {
         session_->pointerMove(event, camera_);
         notifyState();
@@ -720,6 +745,10 @@ void InteractionController::pointerMove(const PointerEvent& event)
 
 void InteractionController::pointerRelease(const PointerEvent& event)
 {
+    if (penOverridesTouch(event)) {
+        touchIgnored_ = false; // the finger the pen overrode lifted (the pen's stroke goes on)
+        return;
+    }
     const DragMode mode = drag_.mode;
     const PointerEvent press = drag_.press;
     const double travel = drag_.travel;
@@ -729,7 +758,18 @@ void InteractionController::pointerRelease(const PointerEvent& event)
     drag_.ring = -1;
     latestPressReleased_ = true;
     if (press.device == PointerDevice::Touch && penMode_) {
-        notifyView(); // a finger only navigated (or merely tapped)
+        // A finger only navigated, or merely tapped: a tap on the model or
+        // in a sketch did nothing, which says why (now and then).
+        if (mode == DragMode::Pending && !doubleClicked && press.button == PointerButton::Left
+            && travel < InputProfile::forDevice(PointerDevice::Touch).dragThreshold
+            && (session_ || pickAt(press.position, InputProfile::forDevice(PointerDevice::Touch)).hit())) {
+            const auto now = clock_();
+            if (!penHintShown_ || now - *penHintShown_ >= std::chrono::duration<double>(kPenFingerHintInterval)) {
+                penHintShown_ = now;
+                message(kPenFingerHint);
+            }
+        }
+        notifyView();
         return;
     }
     if (session_) {
@@ -813,7 +853,7 @@ bool InteractionController::tapBesideHandle(const PointerEvent& press) const
 
 void InteractionController::pointerDoubleClick(const PointerEvent& event)
 {
-    if (event.device == PointerDevice::Touch && penMode_)
+    if ((event.device == PointerDevice::Touch && penMode_) || penOverridesTouch(event))
         return;
     if (session_) {
         // Select tool: a whole shape (the curves joined to the one tapped).
@@ -953,6 +993,14 @@ void InteractionController::pointerLeave()
         hoveredRing_ = -1;
         notifyView();
     }
+}
+
+void InteractionController::cancelPointer(PointerDevice device)
+{
+    if (device == PointerDevice::Touch)
+        touchIgnored_ = false; // the system ended every touch
+    if (drag_.mode != DragMode::None && drag_.press.device == device)
+        cancelPointer();
 }
 
 void InteractionController::cancelPointer()
@@ -1099,6 +1147,7 @@ bool InteractionController::keyPress(Key key)
 
 void InteractionController::updateHover(const PointerEvent& event)
 {
+    hoverDevice_ = event.device;
     const auto profile = InputProfile::forDevice(event.device);
     const int handle = handleAt(event.position, event.device);
     const int ring = handle >= 0 ? -1 : ringAt(event.position, event.device);
@@ -4069,8 +4118,8 @@ InteractionController::SketchLoupe InteractionController::sketchLoupe() const
     if (!session_)
         return loupe;
     const SketchSession::SnapInfo snap = session_->snapInfo(camera_);
-    if (!snap.active || snap.device == PointerDevice::Mouse)
-        return loupe; // a mouse pointer hides nothing
+    if (!snap.active || snap.device != PointerDevice::Touch)
+        return loupe; // a mouse pointer hides nothing, nor does a pen's thin tip
     LoupeInput input;
     input.finger = snap.pointer;
     input.area = safeInsets_.inside(camera_.viewportSize);

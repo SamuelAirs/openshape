@@ -21,6 +21,7 @@
 #include <QtQuick/QQuickWindow>
 #include <QtGui/private/qhighdpiscaling_p.h>
 #include <qpa/qwindowsysteminterface.h>
+#include <qpa/qwindowsysteminterface_p.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -169,6 +170,56 @@ void AcceptanceRunner::touchMove(QPointF p)
 void AcceptanceRunner::touchRelease(QPointF p)
 {
     touchFrame({p}, QEventPoint::State::Released);
+}
+
+namespace {
+QPointingDevice* pen()
+{
+    static QPointingDevice* device = [] {
+        auto* d = new QPointingDevice(QStringLiteral("OpenShape acceptance pen"), 4243, QInputDevice::DeviceType::Stylus,
+                                      QPointingDevice::PointerType::Pen,
+                                      QInputDevice::Capability::Position | QInputDevice::Capability::XTilt
+                                          | QInputDevice::Capability::YTilt | QInputDevice::Capability::Hover,
+                                      1, 1);
+        QWindowSystemInterface::registerInputDevice(d);
+        return d;
+    }();
+    return device;
+}
+} // namespace
+
+void AcceptanceRunner::penEvent(QPointF p, Qt::MouseButtons buttons)
+{
+    // Qt's iOS plugin leaves turning unhandled pen events into mouse events
+    // to Qt (a desktop plugin may make them itself, from the real pen's
+    // messages): the injected events go the iOS way.
+    const bool platformSynthesizes = QWindowSystemInterfacePrivate::TabletEvent::platformSynthesizesMouse;
+    QWindowSystemInterfacePrivate::TabletEvent::setPlatformSynthesizesMouse(false);
+    // Tilted (the Pencil USB-C reports tilt) and without pressure.
+    QWindowSystemInterface::handleTabletEvent(window_, pen(), nativeLocal(p), nativeGlobal(p), buttons, buttons == Qt::NoButton ? 0.0 : 1.0,
+                                              25, -15, 0, 0, 0);
+    QWindowSystemInterface::flushWindowSystemEvents();
+    QWindowSystemInterfacePrivate::TabletEvent::setPlatformSynthesizesMouse(platformSynthesizes);
+}
+
+void AcceptanceRunner::penHover(QPointF p)
+{
+    penEvent(p, Qt::NoButton);
+}
+
+void AcceptanceRunner::penPress(QPointF p)
+{
+    penEvent(p, Qt::LeftButton);
+}
+
+void AcceptanceRunner::penMove(QPointF p)
+{
+    penEvent(p, Qt::LeftButton);
+}
+
+void AcceptanceRunner::penRelease(QPointF p)
+{
+    penEvent(p, Qt::NoButton);
 }
 
 namespace {

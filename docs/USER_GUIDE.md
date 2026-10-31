@@ -233,6 +233,20 @@ modifier key: taps add to the selection (tap empty space to start over), a
 double-tap selects a body (another double-tap adds the next one), and
 every tool has a button. On an iPad the touch layout is on from the start.
 
+**Apple Pencil.** The first Pencil tap turns pen mode on: the Pencil
+selects and draws, fingers only move the view. A hand resting or sliding
+on the screen while you draw, or touching down within half a second after
+the Pencil lifts, is ignored (no drawing, no turning the view, no undo).
+After that pause one finger orbits again, two fingers pan and zoom, and
+two- and three-finger taps undo and redo. A finger tap on the model does
+nothing in pen mode; OpenShape says so and how to turn **Pen** off to
+select with a finger. On an iPad that supports Pencil hover, holding the
+tip just above the screen highlights the face or edge under it and, in a
+sketch, shows the point a tap would place (snapped). The magnifier that
+appears beside a finger while you place a sketch point never shows for
+the Pencil: its tip does not hide the point. Nothing needs pressure,
+double-tap or squeeze.
+
 **On a phone** (or any window narrower than about 600 px or lower than
 about 500 px, such as an iPad in Split View), the tools move to a strip along the bottom that scrolls
 sideways, the Model panel and the view buttons open from the **Model** and

@@ -4,12 +4,16 @@
 
 #pragma once
 
+#include "interaction/PalmRejection.h"
 #include "interaction/TouchGestures.h"
 
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
 #include <QtQml/qqmlregistration.h>
 #include <QtQuick/QQuickRhiItem>
+
+#include <optional>
+#include <vector>
 
 namespace os::ui {
 
@@ -44,6 +48,8 @@ protected:
     void hoverLeaveEvent(QHoverEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void touchEvent(QTouchEvent* event) override;
+    void itemChange(ItemChange change, const ItemChangeData& value) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void onViewChanged();
@@ -58,6 +64,17 @@ private:
 
     // Taps, drags, two-finger pan/pinch, two/three-finger undo/redo.
     interact::TouchGestureRecognizer gestures_;
+    void dispatchTouch(const std::vector<interact::TouchIntent>& intents);
+
+    // The pen (Apple Pencil): its contact, seen on the window before Qt
+    // Quick turns it into mouse events, drives palm rejection; its latest
+    // hover position tells its hover from the mouse's (hoverMoveEvent).
+    static double seconds(); // a monotonic clock for PalmRejection
+    void penDown();
+    void penUp();
+    interact::PalmRejection palm_;
+    std::optional<QPointF> penHoverAt_;
+    QPointer<QQuickWindow> watchedWindow_;
 };
 
 } // namespace os::ui

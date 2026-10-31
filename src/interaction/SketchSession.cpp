@@ -993,6 +993,13 @@ SketchSession::SnapInfo SketchSession::snapInfo(const Camera& camera) const
     return info;
 }
 
+std::optional<Vec2> SketchSession::cursorPoint() const
+{
+    if (!showsCursor())
+        return std::nullopt;
+    return cursor_.position;
+}
+
 bool SketchSession::showsCursor() const
 {
     if (!cursorValid_)

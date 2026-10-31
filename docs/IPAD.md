@@ -21,7 +21,8 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Share sheet after exports, File → Share Project… | 2026-09-27: built on CI (`src/ui/ios/ShareSheet.mm`, run 39); the `share` acceptance scenario checks it with a stub sheet on Windows and the Mac (CI run 47); **to try on the devices** |
 | Open in OpenShape (Files app, Mail) | 2026-09-27: document types for projects and STEP files (checked by the build and `test_uistate`), `QFileOpenEvent` handling; the `openin` scenario checks it on Windows and the Mac through Qt's own entry point; **to try on the devices** |
 | Home: Rename, Duplicate, Delete on a project card | 2026-09-27: Delete moves the project to the Files app's Recently Deleted (Qt's `QFile::moveToTrash` → `trashItemAtURL` → `Documents/.Trash`; asks again and deletes for good only if that fails); the `homeprojects` scenario checks all three with a stand-in trash on Windows and the Mac; **to try on the devices** (iPhone item 18 below, also on the iPad) |
-| Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking and the Pencil palm check still to try |
+| Running on the iPad | ✅ the owner's iPad Air (TestFlight, 2026-09-26); on-screen keyboard docking still to try |
+| Apple Pencil: palm rejection, hover, the finger-tap hint (2026-10-30) | built and checked on Windows (`test_pencil`, the `pencil` scenario injecting Qt tablet events the way the iOS plugin delivers them); **to try on the iPad** ("Apple Pencil" below), and on the iPhone Duo once Apple enables Pencil there |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
 | Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-103); the owner: the custom EULA and the source-offer contact (TD-102) |
 | App Store (paid, after a public TestFlight beta; target 2026-10-23) | 🟡 ready in the repository: [APP_STORE.md](APP_STORE.md) (the owner's checklist: agreements, listing texts, price, public beta, submission, timeline), [PRIVACY.md](PRIVACY.md) (linked in About), [SUPPORT.md](SUPPORT.md), 6 screenshots per device at Apple's required sizes (`docs/appstore/screenshots/`, `scripts/dev/appstore_screenshots.sh`); the owner's steps in App Store Connect are still to do |
@@ -282,7 +283,8 @@ downloaded yet.
 
 - Files: see above; sharing and "Open in OpenShape" need trying on the
   devices (the tests below).
-- No hover highlight (touch has no hover; Apple Pencil hover is not used yet).
+- Hover highlights only for an Apple Pencil held over an iPad that supports
+  hover (fingers have none); the iPhone Duo has no Pencil hover.
 - Typing values: tap the value field for OpenShape's numeric keypad
   (typing without tapping needs a hardware keyboard).
 - Apple Pencil Scribble (handwriting into a field) is not expected to work,
@@ -341,6 +343,53 @@ text (About → **Licenses**). What that means in practice:
 - Every build's notices on CI list what the app links, by origin, and the
   license gate's result (`scripts/ios/build-app.sh`).
 
+## Apple Pencil
+
+The owner's Pencil (USB-C) has tilt only: no pressure, no double-tap, no
+squeeze. Hover works on the iPad Air (M2, iPadOS 26), not on the iPhone
+Duo (Apple says Pencil support for it comes later in 2026). Nothing in
+OpenShape depends on pressure, hover or Pencil gestures; hover is a bonus.
+
+How it works: Qt 6.11's iOS plugin delivers the Pencil as tablet events
+(its hover through `UIHoverGestureRecognizer` as tablet moves without
+buttons) and turns those no item takes into mouse events; `ViewportItem`
+watches the window's tablet events for the Pencil's contact and hover.
+**Palm rejection** (`interaction/PalmRejection`): a finger touch that
+begins while the Pencil touches the screen, or within 0.5 s after it
+lifts, is ignored until it lifts; touches already down when the Pencil
+lands are ended (a one-finger press is cancelled, a pan stops). The
+controller also never lets a finger's press disturb the Pencil's stroke.
+
+Not yet seen on a device: whether iPadOS cancels palm touches itself
+(OpenShape then ends only the fingers' press, never the Pencil's
+stroke); whether the hover highlight goes away when the Pencil moves out
+of hover range (Qt may send no event then: TD-143); whether 0.5 s feels
+right.
+
+**On the iPad:**
+
+1. Hover: hold the Pencil tip about 1 cm above a box's face: the face
+   lights up; over an edge, the edge. Start a sketch (Rectangle): a dot
+   follows the tip and jumps to the face's corners and edge middles.
+2. Tap a face with the Pencil: "Pen detected" shows and **Pen** is on.
+3. Rest the side of your hand on the screen, then draw a rectangle with
+   the Pencil, sliding the hand while you draw: the rectangle is drawn, the
+   view does not move, nothing else is selected or drawn. No magnifier
+   (loupe) appears beside the Pencil.
+4. Lift the Pencil and put your hand down and up right away, also with two
+   fingers' worth of hand: nothing happens (no undo).
+5. Wait a moment, then drag one finger: the view turns; two fingers pan and
+   zoom; a quick two-finger tap undoes.
+6. Tap a face with a finger: nothing is selected and a message says how to
+   select with a finger (it does not repeat on every tap). Turn **Pen**
+   off (the view buttons): a finger tap selects again.
+7. Tell us if a stroke ever broke off, the view jumped while drawing, or a
+   finger was ignored when you meant to navigate (and how soon after
+   drawing).
+
+**On the iPhone Duo** (once Apple enables the Pencil there): steps 2 to 7;
+there is no hover, so nothing lights up before the tip touches.
+
 ## What to test on the iPad
 
 1. Launch: the model view, toolbars and the view cube appear; controls are
@@ -358,8 +407,8 @@ text (About → **Licenses**). What that means in practice:
    whole unit goes), `×` `2`, pause: the preview follows after a moment.
    With a keyboard case: tap the value and type on the keyboard (the
    keypad stays open, the keys still type).
-5. Sketch: draw a rectangle with a finger, then with the Pencil; turn on
-   **Pen** and check that a resting hand does not draw or select.
+5. Sketch: draw a rectangle with a finger, then with the Pencil (the
+   Pencil steps are in "Apple Pencil" above).
 6. Extrude a sketch profile; fillet an edge; save; close; reopen from the
    Files app.
 7. Rotate the iPad: the layout follows; the tool palette scrolls when short

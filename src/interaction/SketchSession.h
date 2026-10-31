@@ -91,6 +91,11 @@ public:
         std::string hint;
     };
     SnapInfo snapInfo(const Camera& camera) const;
+    // The snapped point shown under the pointer (hovering, placing or
+    // dragging a point), in sketch coordinates, when one shows.
+    std::optional<Vec2> cursorPoint() const;
+    // The device of the latest pointer event, hovers included.
+    PointerDevice pointerDevice() const { return pointerDevice_; }
 
     SketchTool tool() const { return tool_; }
     void setTool(SketchTool tool);
