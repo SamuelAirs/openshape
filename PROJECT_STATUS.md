@@ -148,7 +148,7 @@ Tracks port its useful parts (credited in THIRD_PARTY.md as they merge):
   refusals and exact volumes (merged);
 - a view cube (merged);
 - project Rename, Duplicate and Delete (merged);
-- a check of our keypad against its tests.
+- a check of our keypad against its tests (merged).
 
 Queued: a section view and snap refinements. Where OpenShape is ahead:
 - a Windows version;
@@ -158,8 +158,9 @@ Queued: a section view and snap refinements. Where OpenShape is ahead:
 - suggested sizes when an operation fails;
 - the licensing route for a paid app.
 
-**Still running:**
-- the keypad check.
+**Still running:** nothing; all five tracks are merged (2026-10-30), their
+real-UI scenarios still to be run (viewcube, sketchphone, typedvalues,
+homeprojects, openshape3d).
 
 **Try first:** docs/IPAD.md, iPad steps 12-18 and iPhone steps 13-17 (the
 value box, two bodies, the keypad, sharing, Open in, cutting a pocket,
@@ -832,9 +833,9 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 1. The owner's third test pass (docs/IPAD.md iPad 12-18, iPhone 13-17;
    docs/MANUAL_TESTS.md 18-19): act on what they report.
-2. Merge the running tracks: the keypad check (sketching on a phone,
-   OpenShape3D's kernel robustness, the view cube and project
-   Rename/Duplicate/Delete are merged). Then a section view and the snap refinements
+2. Run the real-UI scenarios of the tracks merged on 2026-10-30 (viewcube,
+   sketchphone, typedvalues, homeprojects, openshape3d, plus licenses and
+   numpad, which they touch). Then a section view and the snap refinements
    (ranking, grid along an edge, parallel/perpendicular guides).
 3. The App Store (docs/APP_STORE.md): the owner's decisions (name, price, EU
    trader status, contact addresses, EULA); a beta release tag that carries
@@ -858,18 +859,22 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 ## Tests currently passing
 
-725/725 headless (`ctest -LE gui`): GTest suites for core, geometry
+803/803 headless (`ctest -LE gui`, 2026-10-30, after the five merges): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
 and copies, holes and draft, robustness (stress sessions, file fuzzing,
 failure messages, kernel faults on worker threads), async previews,
 value-box placement, contact shadows, touch wording, touch selection and
-the cut flow, the typing pause and the numeric keypad, and the interaction
+the cut flow, the typing pause and the numeric keypad, typed values and
+units, the view cube, phone sketching (face references, loupe placement),
+project rename/duplicate/delete, kernel hardening (time limits, repairs,
+BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
 `acceptance_gui`: 2869/2869 checks through the real UI in 44 scenarios
+before the 2026-10-30 merges (now 49 scenarios; not yet run)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
 under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 (as CI does): 0 warnings.

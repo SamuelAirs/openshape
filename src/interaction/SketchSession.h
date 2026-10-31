@@ -183,6 +183,14 @@ public:
     // label) adds the dimension that sets its length, diameter or radius to
     // the value. Returns an error message or "".
     std::string setDimension(sketch::EntityId constraintOrCurve, const std::string& text);
+    // The value shown, confirmed without an edit (the dimension editor's
+    // check mark on the text it opened with, which is the label's, rounded
+    // to three decimals): a dimension stays exactly as it is, with no
+    // history step; a size label becomes the dimension that holds the
+    // present size exactly. Typing the rounded text back would move the
+    // geometry by the rounding (40 mm shown as 1.575 in is 40.005 mm).
+    // Returns an error message or "".
+    std::string keepDimension(sketch::EntityId constraintOrCurve);
 
     // ---- Selection & actions ----
     const std::vector<sketch::EntityId>& selection() const { return selected_; }
@@ -281,6 +289,9 @@ private:
     // Whether the size label of `curve` can take a typed size (cached per
     // working-copy change: one solve).
     bool sizeCanBeSet(sketch::EntityId curve) const;
+    // Adds the dimension a size label sets (setDimension, keepDimension):
+    // at `millimeters`, or at the present size exactly. An error message or "".
+    std::string addSizeDimension(sketch::EntityId curve, std::optional<double> millimeters);
     // Where a dragged point lands: other points, midpoints, curves (not its
     // own, nor what moves with it), then the grid.
     Snap dragSnapAt(Vec2 screen, const Camera& camera, PointerDevice device, sketch::EntityId dragged) const;

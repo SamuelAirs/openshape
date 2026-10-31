@@ -218,7 +218,13 @@ KeypadResult pressKeypadKey(const KeypadState& state, std::string_view id, Keypa
         text += id == "deg" ? std::string(kDegree) : std::string(id);
         return edited(std::move(text));
     }
-    std::string text = state.replacing ? std::string() : state.text;
+    // Times and divide work on the value shown (95 mm, then x 2: 190 mm), as
+    // a calculator's do: no value starts with them. Plus and minus still
+    // replace it: "+5" and "-5" change a measured value by that much
+    // (InteractionController::parseTypedValue), and a minus starts a
+    // negative number.
+    const bool onValueShown = id == "*" || id == "/";
+    std::string text = state.replacing && !onValueShown ? std::string() : state.text;
     if (id == ".") {
         // One decimal point per number.
         std::size_t start = text.size();

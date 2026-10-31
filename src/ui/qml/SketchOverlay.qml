@@ -670,11 +670,17 @@ Item {
         }
     }
 
-    // Typing error while drawing.
+    // Typing error while drawing: near the bottom, or just above the keypad
+    // while it is up (a phone's covers the bottom): never under it.
     Text {
+        objectName: "sketchTypingError"
+        readonly property bool aboveKeypad: overlay.keypad !== null && overlay.keypad.visible
+        readonly property real bottomMargin: Theme.compact ? overlay.height - overlay.bottomStackTop + 30 : 100 + Theme.safeBottom
         visible: overlay.typingError.length > 0 && overlay.app.sketchDrawing
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom
-                  bottomMargin: Theme.compact ? overlay.height - overlay.bottomStackTop + 30 : 100 + Theme.safeBottom }
+        x: aboveKeypad ? Math.max(Theme.insetLeft, Math.min(overlay.width - Theme.insetRight - width,
+                                                            overlay.keypad.x + (overlay.keypad.width - width) / 2))
+                       : (overlay.width - width) / 2
+        y: aboveKeypad ? overlay.keypad.y - height - 6 : overlay.height - bottomMargin - height
         text: overlay.typingError
         color: Theme.error
         font.pixelSize: 12
@@ -687,6 +693,10 @@ Item {
         // A dimension's id, or a size label's line, circle or arc.
         property int constraintId: 0
         property bool isAngle: false
+        // The text was changed (typed, or the keypad). Unchanged, the check
+        // mark keeps the value exactly: the text is the label's, rounded
+        // (SketchSession::keepDimension).
+        property bool edited: false
         visible: false
         width: overlay.usesKeypad ? 120 : 96
         height: overlay.usesKeypad ? 40 : 30
@@ -704,6 +714,8 @@ Item {
             replacing: () => dimensionEditor.text.length > 0 && dimensionEditor.selectedText === dimensionEditor.text,
             setText: (text, replacing) => {
                 dimensionEditor.text = text
+                dimensionEditor.edited = true
+                dimensionError.text = ""
                 if (replacing)
                     dimensionEditor.selectAll()
                 else
@@ -729,10 +741,15 @@ Item {
             border.color: dimensionError.text.length > 0 ? Theme.error : Theme.accent
             border.width: 1.5
         }
+        onTextEdited: {
+            edited = true
+            dimensionError.text = ""
+        }
         function open(id, text, cx, cy) {
             constraintId = id
             isAngle = text.indexOf("°") >= 0
             this.text = text.replace("Ø", "").replace("°", "").replace(/^R/, "")
+            edited = false
             x = cx - width / 2
             y = cy - height / 2
             dimensionError.text = ""
@@ -741,6 +758,26 @@ Item {
             selectAll()
             if (overlay.usesKeypad)
                 overlay.keypad.attach(keypadClient)
+        }
+        // The view moved (a pinch, a two-finger pan, the View buttons): the
+        // field stays on its dimension (off the keypad, as when it opened).
+        function follow() {
+            const id = constraintId
+            const label = overlay.app.sketchLabels.find(l => (l.kind === "dimension" && l.constraint === id)
+                                                              || (l.kind === "size" && l.entity === id))
+            if (!label)
+                return
+            x = label.x - width / 2
+            y = label.y - height / 2
+            if (overlay.usesKeypad && overlay.keypad.serves("dimension"))
+                moveOffKeypad(Qt.rect(overlay.keypad.x, overlay.keypad.y, overlay.keypad.width, overlay.keypad.height))
+        }
+        Connections {
+            target: overlay.app
+            function onViewChanged() {
+                if (dimensionEditor.visible)
+                    dimensionEditor.follow()
+            }
         }
         function moveOffKeypad(pad) {
             const e = mapToItem(null, 0, 0, width, height)
@@ -766,20 +803,55 @@ Item {
         }
         Keys.onReturnPressed: apply()
         Keys.onEnterPressed: apply()
+        // Esc: the dimension stays as it was.
         Keys.onEscapePressed: close()
-        onActiveFocusChanged: if (!activeFocus && visible) close()
+        onActiveFocusChanged: if (!activeFocus && visible) leave()
+        // The check mark: the value typed, or, unchanged, the value shown
+        // kept exactly (not its rounded text).
         function apply() {
-            const error = overlay.app.setSketchDimension(constraintId, text)
+            const error = edited ? overlay.app.setSketchDimension(constraintId, text) : overlay.app.keepSketchDimension(constraintId)
             dimensionError.text = error
             if (error.length === 0)
                 close()
         }
+        // The field left (a tap in the view, on a live value, a tool), as in
+        // Shapr3D: a value typed is applied; unchanged, nothing changes.
+        // Refused, the field stays with its message, to be corrected. A tap
+        // in the view that closes the field goes no further: it draws,
+        // trims, selects or moves nothing (AppController::swallowViewPress).
+        function leave() {
+            overlay.app.swallowViewPress()
+            if (!edited) {
+                close()
+                return
+            }
+            const error = overlay.app.setSketchDimension(constraintId, text)
+            dimensionError.text = error
+            if (error.length === 0) {
+                close()
+                return
+            }
+            Qt.callLater(() => {
+                if (!dimensionEditor.visible)
+                    return
+                dimensionEditor.forceActiveFocus()
+                if (overlay.usesKeypad)
+                    overlay.keypad.attach(dimensionEditor.keypadClient)
+            })
+        }
     }
     Text {
         id: dimensionError
+        objectName: "dimensionError"
         visible: dimensionEditor.visible && text.length > 0
-        x: dimensionEditor.x
-        y: dimensionEditor.y + dimensionEditor.height + 4
+        // Below the field, or above it where the keypad is below it: the
+        // keypad never covers the message.
+        readonly property real belowY: dimensionEditor.y + dimensionEditor.height + 4
+        readonly property bool keypadBelow: overlay.keypad !== null && overlay.keypad.visible
+                                            && x < overlay.keypad.x + overlay.keypad.width && overlay.keypad.x < x + width
+                                            && belowY < overlay.keypad.y + overlay.keypad.height && overlay.keypad.y < belowY + height
+        x: Math.max(Theme.insetLeft, Math.min(dimensionEditor.x, overlay.width - Theme.insetRight - width))
+        y: keypadBelow ? dimensionEditor.y - height - 4 : belowY
         color: Theme.error
         font.pixelSize: 11
     }

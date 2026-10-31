@@ -1548,9 +1548,12 @@ InteractionController::TypedValue InteractionController::parseTypedValue(const s
         return {std::nullopt, parsed.error};
     // Angle operations keep their value in degrees.
     double value = operation_->isAngle() ? *parsed.millimeters * 180.0 / kPi : *parsed.millimeters;
-    // "+5" / "-5" change a measured value (e.g. a push/pull's thickness) by that much.
+    // "+5" / "-5" change a measured value (e.g. a push/pull's thickness) by
+    // that much (the minus sign too, U+2212: handwriting, a paste).
     const auto first = text.find_first_not_of(" \t");
-    if (const auto base = operation_->relativeBase(); base && first != std::string::npos && (text[first] == '+' || text[first] == '-'))
+    const bool signed_ = first != std::string::npos
+                      && (text[first] == '+' || text[first] == '-' || text.compare(first, 3, "\xE2\x88\x92") == 0);
+    if (const auto base = operation_->relativeBase(); base && signed_)
         value += *base;
     value = operation_->typedValue(value);
     // (The Text tool's angle may be negative: it checks its own range.)

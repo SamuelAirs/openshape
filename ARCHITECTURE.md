@@ -84,8 +84,14 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 - `Uuid` (`core/Uuid.h`): RFC 4122 v4, the identity of bodies and features.
 - Units (`core/Units.h`): **millimeters are the only internal unit**. Input is
   parsed with `parseLength(text, displayUnit)`, which accepts units (`1in`,
-  `2.5cm`) and arithmetic (`20+5`, `(10+2)*3`). A bare number uses the
-  document display unit. Saved files state `"lengthUnit": "mm"`.
+  `2.5cm`, `2ft`, `1' 2"`: feet then inches without an operator add) and
+  arithmetic (`20+5`, `(10+2)*3`; the signs `×` `÷` `−` count as `* / -`; a
+  leading `=` is allowed). A bare number uses the document display unit; a
+  typed unit beats it. `parseAngle` is the same parser with degrees (`deg`,
+  `°`, `rad`) as its units: a length unit on an angle, or an angle unit on a
+  length, is refused with a message (cases from OpenShape3D's keypad tests:
+  `tests/test_units.cpp`, `tests/test_typed_values.cpp`). There is no feet
+  display unit (TD-135). Saved files state `"lengthUnit": "mm"`.
 - `Camera` (`core/Camera.h`): Z-up turntable, perspective by default (35
   degree vertical field of view: depth cues, so a box cannot flip in the
   viewer's mind), orthographic optional (the View buttons' toggle, remembered
@@ -1195,7 +1201,19 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   for sides and a pattern's count, degrees for a pattern's angle, which
   takes the value box's arithmetic, as do angle dimensions: `parseAngle`).
   A dimension's field closing because a live value took the keypad
-  (`typeIntoInput`) leaves the focus with the keypad.
+  (`typeIntoInput`) leaves the focus with the keypad. The dimension field
+  opens with its label's text; its check mark calls
+  `AppController.setSketchDimension` when the text was changed and
+  `keepSketchDimension` (`SketchSession::keepDimension`: the exact value,
+  no history step for a dimension) when not. Losing the focus applies a
+  changed text (refused: the field stays with its message) and calls
+  `AppController.swallowViewPress`: when the focus went to the view,
+  `ViewportItem::focusForPress` sees it and drops that press, its moves and
+  its release (the tap only closes the field; TD-137). The field follows
+  its label when the view moves (`viewChanged`), moving off the keypad; its
+  message and a live value's message go above the keypad rather than under
+  it. `pressKeypadKey`: × and ÷ on the value shown work on it (95 mm × 2),
+  the other keys replace it.
   On iOS a read-only field gets Qt's `QIOSTextResponder`, a plain
   `UIResponder` without `UIKeyInput`, so no keyboard shows (Qt 6.11
   `qiosinputcontext.mm`). `placeKeypad` (pure): docked along the
@@ -1214,8 +1232,8 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   while the chip moves: no binding loop), and adds it to
   `chipObstacles()`. The Text tool's words keep the system keyboard;
   numeric fields ask for numbers (`Qt.ImhPreferNumbers`) wherever the
-  system keyboard is used. Tests: `test_numeric_keypad.cpp`; acceptance
-  scenario `numpad`.
+  system keyboard is used. Tests: `test_numeric_keypad.cpp`,
+  `test_typed_values.cpp`; acceptance scenarios `numpad` and `typedvalues`.
 - **Buttons:** only a left click (or tap) selects and applies a pending value;
   right/middle drags orbit/pan and their clicks do nothing in 3D. In sketch
   mode a right click acts like Esc (ends the line chain, then leaves the tool).

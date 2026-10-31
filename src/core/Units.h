@@ -28,14 +28,22 @@ struct LengthParseResult {
 };
 
 // Parses user length input. Accepts a number with an optional unit suffix
-// ("25", "25mm", "1 in", "2.5cm") and simple arithmetic with parentheses
-// ("20 + 5", "1in - 2mm", "(10+2)*3"). A number without a unit is interpreted
-// in `defaultUnit` (the document's display unit). Multiplication/division
-// take plain factors: "2 * 10mm" is valid, "10mm * 10mm" is rejected.
+// ("25", "25mm", "1 in", "2.5cm", "0.5 m", "2 ft", "1'", "3\"") and simple
+// arithmetic with parentheses ("20 + 5", "1in - 2mm", "(10+2)*3"); the
+// times, division and minus signs (U+00D7, U+00F7, U+2212: the keypad's
+// labels, handwriting, a pasted formula) count as * / -, and a leading '='
+// is allowed. Feet and inches written together are added: "1' 2\"",
+// "5 ft 6 in", "1' 2" (a bare number after feet is inches). A number
+// without a unit is interpreted in `defaultUnit` (the document's display
+// unit); a typed unit beats it. Multiplication/division take plain
+// factors: "2 * 10mm" is valid, "10mm * 10mm" is rejected. An angle unit
+// ("45 deg") is refused with a message saying this is a length.
 LengthParseResult parseLength(std::string_view text, LengthUnit defaultUnit);
 
-// Parses an angle. Degrees by default; accepts "deg", "\xC2\xB0" and "rad"
-// suffixes and the same arithmetic as lengths. Returns radians.
+// Parses an angle. Degrees by default; accepts "deg", "degrees",
+// "\xC2\xB0" and "rad" suffixes and the same arithmetic as lengths. A length
+// unit ("10 mm") is refused with a message saying this is an angle.
+// Returns radians.
 LengthParseResult parseAngle(std::string_view text);
 std::string formatAngle(double radians, int decimals = 1);
 

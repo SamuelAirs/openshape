@@ -75,7 +75,9 @@ struct KeypadResult {
     KeypadAction action = KeypadAction::None;
 };
 
-// A key tapped. Digits and operators are added at the end; a unit replaces
+// A key tapped. Digits and operators are added at the end (over the value
+// shown while it is replaced, except times and divide, which work on it:
+// 95 mm, then x 2 is 190 mm); a unit replaces
 // the unit the text ends with (25 mm, then in: 25 in); backspace takes the
 // last character, or the whole unit it ends with (never leaving "25m", which
 // would be meters); clear empties the text.

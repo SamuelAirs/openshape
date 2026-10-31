@@ -791,6 +791,17 @@ QString AppController::setSketchDimension(int constraintId, const QString& text)
     return error;
 }
 
+QString AppController::keepSketchDimension(int constraintId)
+{
+    auto* s = interaction_->sketchSession();
+    if (!s)
+        return {};
+    const QString error = q(s->keepDimension(sketch::EntityId(constraintId)));
+    emit stateChanged();
+    emit viewChanged();
+    return error;
+}
+
 // ---- History ------------------------------------------------------------------------------
 
 namespace {
@@ -1675,6 +1686,7 @@ void AppController::setDisplayUnit(const QString& symbol)
     if (const auto unit = unitFromSymbol(symbol.toStdString())) {
         document_->setDisplayUnit(*unit);
         emit stateChanged();
+        emit viewChanged(); // the sketch's labels (sketchLabels) read in the new unit
     }
 }
 

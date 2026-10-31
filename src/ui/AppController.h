@@ -525,6 +525,21 @@ public:
     // A dimension's new value; for a size label (a line, circle or arc id)
     // the dimension it adds (SketchSession::setDimension).
     Q_INVOKABLE QString setSketchDimension(int constraintId, const QString& text);
+    // The dimension editor's check mark on the text it opened with: the
+    // value shown, kept exactly (SketchSession::keepDimension).
+    Q_INVOKABLE QString keepSketchDimension(int constraintId);
+    // A press in the view that takes the focus from the sketch's dimension
+    // editor only closes the editor (SketchOverlay.qml calls this as the
+    // editor loses the focus; ViewportItem asks right after taking it): the
+    // press, its moves and its release do not also draw, trim, select or
+    // move what is under the finger, as in Shapr3D and OpenShape3D.
+    Q_INVOKABLE void swallowViewPress() { swallowViewPress_ = true; }
+    bool takeSwallowedViewPress()
+    {
+        const bool swallow = swallowViewPress_;
+        swallowViewPress_ = false;
+        return swallow;
+    }
 
     // History panel. Ids are UUID strings. Edits return an error message or "".
     Q_INVOKABLE QString setFeatureParameter(const QString& featureId, const QString& key, const QString& text);
@@ -566,6 +581,7 @@ signals:
     void incomingFileWaiting();
 
 private:
+    bool swallowViewPress_ = false; // swallowViewPress
     void attach();
     // After every state change: rebuilds the Model panel rows and the action
     // list from the interaction core, and emits their signals if they changed.

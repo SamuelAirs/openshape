@@ -403,7 +403,10 @@ text (About → **Licenses**). What that means in practice:
 14. The keypad elsewhere: in a sketch, tap the first corner of a rectangle,
    then its live width: the keypad shows "Width" and what you type; `40`, **Next**,
    `25`, ✓ draws a 40 × 25 rectangle. Tap its width label: the keypad
-   again; `50` ✓. In the Model panel, tap the Box step, then Height:
+   again; `50` ✓. Tap it once more and ✓ without typing: it stays exactly
+   50 (also with inches shown). Tap it, type `6`, `0` and tap an empty
+   spot in the view: 60, and no rectangle starts where you tapped. On a
+   value, **×** **2** ✓ doubles it. In the Model panel, tap the Box step, then Height:
    `30` ✓. The Hole tool: tap the diameter, **Next** goes to depth, X, Y.
    Try Apple Pencil handwriting in a value field (Scribble): it is not
    expected to work (TD-90); tell us if you miss it.
