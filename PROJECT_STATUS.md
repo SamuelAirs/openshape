@@ -1,24 +1,100 @@
 # Project status
 
-_Last updated: 2026-09-27 (evening), after the owner's second iPhone/iPad
-test pass was answered and Loft was added (lead engineer + parallel
-agents). New here? Read "Handoff" first; the latest report is at its top._
+_Last updated: 2026-10-30, after the iPhone Duo and Apple Pencil work and
+the merge of the month-old tracks (lead engineer + agents). New here? Read
+"Blockers" and the latest session report first._
+
+## Blockers: waiting on the owner
+
+Nothing below can be done by an agent. The App Store date planned for
+2026-10-21 passed because these were not decided; the code is not the
+bottleneck. Details in docs/APP_STORE.md.
+
+1. **The name.** OpenShape3D (Laan Labs, MIT, free on the App Store since
+   2026-08-06) is a near-identical name on the same kernel. Rename, or at
+   least use a distinct store name, before the public beta link goes out.
+2. **Price** (recommended USD 4.99 one-time), **EU trader status**, and the
+   **contact details** still marked `[OWNER: ...]` in docs/PRIVACY.md,
+   docs/SUPPORT.md and docs/EULA.md.
+3. **A beta tag** (e.g. v0.3.0-beta1) so the TestFlight builds' source offer
+   points at a release that carries the iOS library sources.
+4. **Device testing:** the Duo and Pencil steps in docs/IPAD.md ("The iPhone
+   Duo", "Apple Pencil"), then send Logs/openshape.log from the Duo (its
+   `window ...` lines give the real screen sizes and safe areas, TD-150).
 
 ## Current milestone
 
 **Milestones 0, 1 and 2 complete; Milestone 4 core (editable history) done;
-Milestones 3 and 5 mostly done; v0.2.0 published (2026-09-27). The universal
-iPhone/iPad app runs on the owner's devices through TestFlight and is being
-prepared for a paid App Store release, after a public TestFlight beta, before
-the iPhone Duo launch (2026-10-23).** Since v0.2.0 the owner's second test
-pass has been answered: sketching and editing sketches by touch, Shapr3D's
-cut flow, typing without the model jumping, an in-app keypad, and touch
-multi-select. Loft is in, along with the iOS share sheet and Open in, and
-the licensing, privacy and listing work for the App Store. Next come the
-owner's third test pass, the product decisions under "Waiting for you"
-below, and the tracks still running.
+Milestones 3 and 5 mostly done; v0.2.0 published (2026-09-27).** The
+universal iPhone/iPad app runs on the owner's devices through TestFlight;
+since 2026-10-30 it is built with the iOS 27.1 SDK for the iPhone Duo. A
+paid App Store release waits on the blockers above.
 
 ## Handoff: where we left off
+
+### Session report (2026-10-30): iPhone Duo, Apple Pencil, the stale tracks merged
+
+**In one paragraph:** after a month without changes, the five tracks left
+unmerged on 2026-09-27 are on `main` (Home Rename/Duplicate/Delete, kernel
+robustness from OpenShape3D, the view cube, phone sketching with face
+snaps and a loupe, the keypad check); the real-UI run then found three
+regressions between them, fixed. The iOS app is now built with Xcode 27.1
+and the iOS 27.1 SDK, which the iPhone Duo needs to fill its inner display
+(older builds run there at a phone-like size). The layout was checked and
+fixed at every Duo size (outer, inner both ways round with the side bar on
+either side, Split View) and keeps its state through folding. The Apple
+Pencil gets palm rejection, hover on the iPad and pen/finger separation.
+A Fable 5.1 agent reviewed the project; its critique is summarized below.
+
+**What changed (and how it was verified):**
+
+- **Merged tracks** (each built with warnings as errors and tested after its
+  merge): Home project cards, kernel robustness (OpenShape3D, MIT), view
+  cube, phone sketching, keypad check. Regressions the real-UI run found:
+  a phone's live sizes vanished after the first corner (product fix: they
+  stay, an unmeasured one shows a dash), the value box avoided the keypad's
+  old position (product fix), a Text scenario double-clicked by accident
+  (scenario fix).
+- **iPhone Duo build:** `ipad.yml` runs on GitHub's `xcode-27` image
+  (Xcode 27.1, iOS SDK 27.1, an iPhone Duo simulator); `select-xcode.sh`
+  picks the newest released Xcode of a major version by its Info.plist;
+  `Info.plist` declares the UIScene life cycle (required by the iOS 27 SDK)
+  and every iPhone orientation. Verified: ipad.yml run 41160904873 built
+  the 57 MB archive with Xcode 27.1 (branch duo-ci). The license gate
+  learned two Qt files the new toolchain links. The SDK's fold API names
+  (`UIHingeInteraction`, `UIViewReservedRegion`, `UIVerticalBarEdge`) are
+  now known; fold-aware placement is TD-140.
+- **Duo layouts** (`duo` scenario: folds and unfolds live mid-sketch,
+  mid-edit, with the keypad, the Model panel and Home open): the sketch
+  tool bar no longer covers the top bar on the inner display (nor in iPad
+  portrait), the palette ends above the hint, unfolding keeps the Model
+  panel open, the keypad is re-placed after a size or safe-area change,
+  the selection is brought back into view, 44 pt keys on the outer
+  display. Every window change logs one line (`window ... pt at 3x ...`).
+  Safe areas are estimates until the owner's log (TD-150).
+- **Apple Pencil (USB-C: no pressure, no double-tap; hover only on the
+  iPad):** palm rejection (`interaction/PalmRejection`: touches beginning
+  while the pen is down or within 0.5 s are ignored for their whole life),
+  a finger can no longer break a pen stroke, Pencil hover highlights with
+  the pen's tolerances, a hint when a finger tap is ignored in pen mode,
+  the loupe for fingers only (`pencil` scenario injects Qt tablet events as
+  the iOS plugin does). TD-141..143 list what is left.
+
+**Tests:** 820 headless tests pass; the real-UI run has 4049 of 4050 checks passing in 50 scenarios (the one failure, a sketch typed across folds in `duo` after `compact`, is being fixed).
+
+**The Fable 5.1 review (2026-10-30), in short:** a capable engine (kernel
+checks, crash containment, fuzzing) in an unproven product. Its top
+points: the owner's decisions are the critical path (now at the top of
+this file); the name collides with OpenShape3D; no automated test runs on
+iOS, so touch, Pencil, keyboard and files are verified only with synthetic
+events on Windows; recompute still blocks the GUI thread (TD-1); very large
+files (`InteractionController.cpp` 5.2k lines, `AppController` with 65
+properties); topological naming picks the nearest signature without an
+ambiguity check (TD-3); the geometry cache is never read on open (TD-8);
+no icons and no autosave (TD-9, TD-51); 30 stale worktrees (36 GB) and
+very long docs. Recommended next: owner decisions and a beta tag; a timed
+end-to-end test on the devices; commit reusing the preview (TD-1), icons,
+autosave.
 
 ### Session report (2026-09-27, evening): second test pass, Loft, the App Store
 

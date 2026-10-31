@@ -66,6 +66,27 @@ about you. On an iPhone, Home no longer sits under the clock and the
 Dynamic Island, and its project cards say *OpenShape (Files app)* instead
 of a long path.
 
+**Made for the iPhone Duo.** The app fills the Duo's inner display (it is
+built with the iOS 27.1 SDK now) and lays itself out for the outer
+display, the inner display either way round and Split View. Folding or
+unfolding keeps the tool, the values typed, the selection and an open
+Model panel, and brings the selection back into view.
+
+**Apple Pencil.** The hand holding the Pencil no longer moves the view or
+breaks a stroke: touches that begin while the Pencil draws, or just after,
+are ignored. On an iPad the Pencil's hover highlights what it would pick,
+as a mouse does, and in a sketch shows where the next point lands. In pen
+mode a finger tap says that fingers only move the view, and the
+magnifier shows only under a finger.
+
+**Sketching on a phone, and Home.** Sketching on a face snaps to its
+corners, edge middles, center and holes; a magnifier shows under your
+finger; one finger pans the sketch. On Home, each project card can be
+renamed, duplicated and deleted. A view cube shows how the view is turned:
+tap a face or corner to look from there, drag it to turn the view. The
+keypad takes feet and inches and checks units, and a dimension confirmed
+without a change keeps its exact value.
+
 Fixed: a finger's small wobble on an arrow no longer moves the body;
 Esc or ✕ on an extrusion forgets a New body / Join / Cut chosen for it, so
 it does not carry over to the next one.

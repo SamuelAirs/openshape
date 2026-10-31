@@ -16,6 +16,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | iOS libraries (`build-deps.sh`) | ✅ 19 min on a 3-core runner, then cached |
 | Qt 6.11.2 for iOS (`install-qt.sh`) | ✅ 2.4 min, then cached |
 | iOS app archive (`build-app.sh`) | ✅ 50 MB, arm64, iPadOS 17+, icon, privacy manifest; the 30 QML modules it needs are linked (checked by the build). Universal (iPhone + iPad) since 2026-09-26: ✅ built on CI |
+| iPhone Duo build (iOS 27.1 SDK) | ✅ 2026-10-30: Xcode 27.1 (27A9275), iOS SDK 27.1 on the `xcode-27` runner (ipad.yml run 41160904873 on branch duo-ci: 57 MB, iOS 17+, iPhone + iPad); `UIApplicationSceneManifest` declared; **to try on the owner's Duo** (section "The iPhone Duo") |
 | Signing + TestFlight upload (`testflight.sh`) | ✅ on every push to `main` (build number = the workflow run number); since 2026-09-27 builds may also go to external testers (`testFlightInternalTestingOnly` false: the public beta, section 1b). Only builds of release tags `v<version>...` are submitted for App Store review (they name the tag in About → Licenses and require the license gate; docs/LICENSING.md) |
 | Debug symbols (dSYM) | ✅ 2026-09-27 (ipad.yml run 39): Release is built with debug information (same optimization); the archive carries `OpenShape.app.dSYM` (62 MB; the app stays 55 MB). Xcode's archive step leaves the dSYM of a CMake project out (run 37), so `build-app.sh` copies the build's in and fails unless its UUID is the app binary's and OpenShape's functions are in it; the upload sends it (`uploadSymbols`), so TestFlight crash reports symbolicate |
 | Share sheet after exports, File → Share Project… | 2026-09-27: built on CI (`src/ui/ios/ShareSheet.mm`, run 39); the `share` acceptance scenario checks it with a stub sheet on Windows and the Mac (CI run 47); **to try on the devices** |
@@ -486,6 +487,16 @@ there is no hover, so nothing lights up before the tip touches.
    (TestFlight: take a screenshot and share it as feedback, or send it).
 
 ## The iPhone Duo
+
+**Built for it since 2026-10-30.** `ipad.yml` builds the app with Xcode
+27.1 and the iOS 27.1 SDK on GitHub's `xcode-27` runner. An app built with
+an older SDK (every TestFlight build before that date) runs on the inner
+display at a smaller, phone-like size; built with 27.1 it fills it. The iOS
+27 SDK also requires the UIScene life cycle, which `Info.plist` declares
+(one scene; Qt's iOS plugin is scene based), and the iPhone lists every
+orientation, because an app that cannot turn is scaled on the inner display.
+The Apple Pencil (USB-C) works on the Duo once Apple enables it there
+(later in 2026), without hover (see "Apple Pencil").
 
 The same app on both displays; the window keeps everything it had (the tool,
 values typed, the selection, an open Model panel, Home) when it moves
