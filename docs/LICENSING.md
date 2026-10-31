@@ -11,7 +11,9 @@ chosen by the owner on 2026-09-25.
   code from OpenShape3D (MIT): after the MPL notice their header says which
   portions and names `third_party/openshape3d/LICENSE`, and
   `third_party/openshape3d/README.md` lists them (MIT code may be
-  relicensed as part of an MPL file as long as its notice stays).
+  relicensed as part of an MPL file as long as its notice stays). The app's
+  Licenses view lists OpenShape3D under OpenShape with its MIT text, so the
+  notice travels with the binaries too.
 - MPL-2.0 is a file-level copyleft: whoever distributes OpenShape, changed or
   not, must keep OpenShape's files available under the MPL. OpenShape may be
   combined with code under other licenses (including closed code) in a
@@ -331,9 +333,10 @@ copyright © 2026 The FreeType Project").
   the LGPL libraries" (the relinking notice and written offer, naming this
   build's version, build number, commit and release tag with links to its
   source and its iOS source archive; `resources/licenses/source-offer.txt`),
-  OpenShape (MPL-2.0), the 8 libraries and the 41 third-party parts inside
-  Qt, each with copyright, notice, where its exact source is and the full
-  license texts (51 files, 277 KiB, built into the app). Acceptance
+  OpenShape (MPL-2.0) with the portions adapted from OpenShape3D (MIT), the
+  8 libraries and the 41 third-party parts inside Qt, each with copyright,
+  notice, where its exact source is and the full license texts (52 files,
+  278 KiB, built into the app). Acceptance
   scenario `licenses`; GTests `Licenses.*`.
 - **Generated from the pinned sources:** `scripts/licenses/licenses.py
   generate` reads the archives of `scripts/ios/sources.txt` (SHA-256
@@ -343,7 +346,9 @@ copyright © 2026 The FreeType Project").
   update with a new third-party part fails until it is decided. `check`
   (ctest `licenses_check`, and ipad.yml on every run) fails when the
   committed texts do not match the pins, `components.json`, the
-  repository's own license files or ipad.yml's Qt version.
+  repository's own license files or ipad.yml's Qt version, and when a
+  folder in `third_party/` has no component whose license text lies in it
+  (code adapted from another project must be listed too).
 - **License gate** (`scripts/ios/build-app.sh`, `licenses.py gate`): the
   linker's map of the app is checked file by file: everything must come
   from Qt (with its source module pinned), the iOS libraries, this build or

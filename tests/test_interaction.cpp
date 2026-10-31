@@ -1272,27 +1272,6 @@ TEST(Interaction, PushPullWithoutParallelOppositeMovesByDistance)
     EXPECT_NEAR(geom::boundingBox(h.document.body(id)->shape()).size().z, 25.0, 1e-6);
 }
 
-TEST(Interaction, AxisTriadFollowsTheView)
-{
-    Harness h;
-    h.controller.setStandardView(StandardView::Top, false);
-    auto marks = h.controller.axisTriad();
-    ASSERT_EQ(marks.size(), 3u);
-    EXPECT_NEAR(marks[0].direction.x, 1.0, 1e-9); // X to the right
-    EXPECT_NEAR(marks[0].direction.y, 0.0, 1e-9);
-    EXPECT_NEAR(marks[1].direction.x, 0.0, 1e-9); // Y up the screen
-    EXPECT_NEAR(marks[1].direction.y, -1.0, 1e-9);
-    EXPECT_NEAR(marks[2].depth, 1.0, 1e-9); // Z straight at the viewer
-    EXPECT_NEAR(marks[2].direction.length(), 0.0, 1e-9);
-
-    h.controller.setStandardView(StandardView::Isometric, false);
-    marks = h.controller.axisTriad();
-    EXPECT_NEAR(marks[2].direction.x, 0.0, 1e-9);
-    EXPECT_LT(marks[2].direction.y, -0.8) << "Z points up the screen";
-    EXPECT_GT(marks[0].direction.x, 0.5) << "X to the lower right";
-    EXPECT_GT(marks[0].direction.y, 0.0);
-}
-
 // Fillets around a pushed face come along (Shapr3D-style), stored so that
 // older files without the flag recompute as before.
 TEST(Interaction, PushPullTakesRoundedEdgesAlong)

@@ -89,7 +89,6 @@ class AppController : public QObject {
     // the hint and the tool strip): a sketch started on a face frames it
     // between them (InteractionController::setFrameInsets).
     Q_PROPERTY(QVariantList frameInsets READ frameInsets WRITE setFrameInsets NOTIFY viewChanged)
-    Q_PROPERTY(QVariantList axisTriad READ axisTriad NOTIFY viewChanged)
     // The view cube (AxisTriad.qml): its six faces and twelve edges as
     // interact::ViewCube::layout gives them, in its box coordinates.
     Q_PROPERTY(QVariantMap viewCube READ viewCube NOTIFY viewChanged)
@@ -188,7 +187,6 @@ public:
     void setSafeInsets(const QVariantList& insets);
     QVariantList frameInsets() const;
     void setFrameInsets(const QVariantList& insets);
-    QVariantList axisTriad() const;
     QVariantMap viewCube() const;
     // The view cube, at box coordinates (u, v) in [-1, 1] (u right, v down):
     // what is there (interact::ViewCubeTarget::id, -1 off the cube), a tap

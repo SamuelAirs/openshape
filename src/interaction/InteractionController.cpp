@@ -1767,17 +1767,6 @@ ChipPlacement InteractionController::placeValueChip(const ChipPlacementInput& in
     return placement;
 }
 
-std::vector<InteractionController::AxisMark> InteractionController::axisTriad() const
-{
-    const Vec3 right = camera_.right(), up = camera_.up(), back = camera_.backward();
-    std::vector<AxisMark> marks;
-    for (int i = 0; i < 3; ++i) {
-        const Vec3 axis{i == 0 ? 1.0 : 0.0, i == 1 ? 1.0 : 0.0, i == 2 ? 1.0 : 0.0};
-        marks.push_back({i, Vec2{axis.dot(right), -axis.dot(up)}, axis.dot(back)});
-    }
-    return marks;
-}
-
 Status InteractionController::commitOperation()
 {
     if (!operation_)

@@ -55,7 +55,7 @@ Layout iphonePortrait()
             {rect(10, 72, 250, 56),    // top bar
              rect(320, 72, 72, 56),    // Model button
              rect(320, 136, 72, 56),   // View button
-             rect(328, 200, 64, 64),   // axis marker
+             rect(328, 200, 64, 64),   // view cube
              rect(10, 710, 382, 56),   // selection summary and hint
              rect(10, 774, 382, 56)},  // tool strip
             {298, 106},
@@ -86,7 +86,7 @@ Layout ipad()
              rect(16, 88, 105, 640),    // tool column
              rect(874, 16, 290, 120),   // Model panel
              rect(660, 748, 504, 56),   // view buttons
-             rect(1084, 660, 80, 80),   // axis marker
+             rect(1084, 660, 80, 80),   // view cube
              rect(16, 750, 628, 54)},   // selection summary and hint
             {300, 120},
             false,

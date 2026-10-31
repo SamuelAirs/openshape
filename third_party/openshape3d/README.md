@@ -12,7 +12,9 @@ and say so in their headers, after the MPL-2.0 notice:
 
 The MIT License asks that its copyright and permission notice be kept with
 copies of substantial portions of the software; this folder and the file
-headers do that in the source.
+headers do that in the source, and the app's About → Licenses view shows it
+with every binary ("OpenShape3D (portions)", from the `openshape3d` entry of
+`scripts/licenses/components.json`).
 
 | OpenShape file | What it adapts | From (OpenShape3D, commit be3f2fc) |
 | --- | --- | --- |

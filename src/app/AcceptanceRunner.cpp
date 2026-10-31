@@ -430,7 +430,7 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             key(Qt::Key_Escape);
             check(about && !about->isVisible(), "Esc closes the About card");
             auto* triad = findVisualItem(window_->contentItem(), QStringLiteral("axisTriad"));
-            check(triad && triad->isVisible() && triad->width() > 0, "the X/Y/Z axis marker is shown");
+            check(triad && triad->isVisible() && triad->width() > 0, "the view cube is shown");
         },
         [=, this] {
             key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));

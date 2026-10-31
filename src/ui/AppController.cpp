@@ -442,21 +442,6 @@ void AppController::setPenMode(bool on)
     emit stateChanged();
 }
 
-QVariantList AppController::axisTriad() const
-{
-    QVariantList list;
-    for (const auto& mark : interaction_->axisTriad()) {
-        QVariantMap map;
-        map.insert(QStringLiteral("axis"), mark.axis);
-        map.insert(QStringLiteral("label"), QString(QChar("XYZ"[mark.axis])));
-        map.insert(QStringLiteral("dx"), mark.direction.x);
-        map.insert(QStringLiteral("dy"), mark.direction.y);
-        map.insert(QStringLiteral("depth"), mark.depth);
-        list.append(map);
-    }
-    return list;
-}
-
 QVariantMap AppController::viewCube() const
 {
     const interact::ViewCubeLayout layout = interact::ViewCube::layout(interaction_->camera());

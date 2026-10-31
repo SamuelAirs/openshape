@@ -193,15 +193,6 @@ public:
     // selection chooses afresh.
     ChipPlacement placeValueChip(const ChipPlacementInput& input) const;
 
-    // Where the world axes point on screen, for the orientation marker:
-    // X, Y, Z in that order; `direction` is foreshortened (y down), `depth`
-    // is toward the viewer (1 = pointing straight out of the screen).
-    struct AxisMark {
-        int axis = 0;
-        Vec2 direction;
-        double depth = 0;
-    };
-    std::vector<AxisMark> axisTriad() const;
     Status commitOperation();
     void cancelOperation();
 
