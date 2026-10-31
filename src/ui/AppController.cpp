@@ -10,6 +10,7 @@
 #include "geometry/Text.h"
 #include "interaction/NumericKeypad.h"
 #include "interaction/TouchWording.h"
+#include "interaction/ViewCube.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
 #include "io/ProjectFiles.h"
@@ -456,19 +457,55 @@ void AppController::setPenMode(bool on)
     emit stateChanged();
 }
 
-QVariantList AppController::axisTriad() const
+QVariantMap AppController::viewCube() const
 {
-    QVariantList list;
-    for (const auto& mark : interaction_->axisTriad()) {
+    const interact::ViewCubeLayout layout = interact::ViewCube::layout(interaction_->camera());
+    QVariantList faces;
+    for (const auto& face : layout.faces) {
         QVariantMap map;
-        map.insert(QStringLiteral("axis"), mark.axis);
-        map.insert(QStringLiteral("label"), QString(QChar("XYZ"[mark.axis])));
-        map.insert(QStringLiteral("dx"), mark.direction.x);
-        map.insert(QStringLiteral("dy"), mark.direction.y);
-        map.insert(QStringLiteral("depth"), mark.depth);
-        list.append(map);
+        map.insert(QStringLiteral("name"), QString::fromLatin1(face.name));
+        map.insert(QStringLiteral("id"), static_cast<int>(face.view));
+        map.insert(QStringLiteral("facing"), face.facing);
+        map.insert(QStringLiteral("ox"), face.origin.x);
+        map.insert(QStringLiteral("oy"), face.origin.y);
+        map.insert(QStringLiteral("ax"), face.across.x);
+        map.insert(QStringLiteral("ay"), face.across.y);
+        map.insert(QStringLiteral("dx"), face.down.x);
+        map.insert(QStringLiteral("dy"), face.down.y);
+        map.insert(QStringLiteral("labelOpacity"), face.labelOpacity);
+        QVariantList corners;
+        for (const int id : face.cornerIds)
+            corners.append(id);
+        map.insert(QStringLiteral("corners"), corners);
+        faces.append(map);
     }
-    return list;
+    QVariantList edges;
+    for (const auto& edge : layout.edges) {
+        QVariantMap map;
+        map.insert(QStringLiteral("axis"), edge.axis);
+        map.insert(QStringLiteral("x1"), edge.from.x);
+        map.insert(QStringLiteral("y1"), edge.from.y);
+        map.insert(QStringLiteral("x2"), edge.to.x);
+        map.insert(QStringLiteral("y2"), edge.to.y);
+        map.insert(QStringLiteral("visible"), edge.visible);
+        edges.append(map);
+    }
+    return {{QStringLiteral("faces"), faces}, {QStringLiteral("edges"), edges}};
+}
+
+int AppController::viewCubeTarget(double u, double v) const
+{
+    return interact::ViewCube::hit(interaction_->camera(), {u, v}).id();
+}
+
+bool AppController::tapViewCube(double u, double v)
+{
+    return interaction_->tapViewCube({u, v});
+}
+
+void AppController::orbitView(double dxPixels, double dyPixels)
+{
+    interaction_->orbitBy(dxPixels, dyPixels);
 }
 
 QString AppController::documentTitle() const

@@ -116,9 +116,11 @@ Rectangle {
                             ["Zoom", "Wheel · pinch (toward what is under the pointer)", "Pinch with two fingers"],
                             ["Fit everything", "F", "Fit (in the View menu on a phone)"],
                             ["Standard views", "Iso / Top / Front / Right buttons", "Iso / Top / Front / Right (in the View menu on a phone)"],
+                            ["View cube", "Click a face or a corner to look from there; drag it to orbit, also while a tool is active",
+                             "Tap a face or a corner to look from there; drag it with one finger to orbit, also while a tool is active"],
                             ["Perspective", "The Perspective / Orthographic button switches the projection (remembered)",
                              "Perspective / Orthographic switches the projection (in the View menu on a phone; remembered)"],
-                            ["Axes", "X red, Y green, Z blue (the marker shows which way they point)"],
+                            ["Axes", "X red, Y green, Z blue (the view cube's edges show which way they point)"],
                             ["Display unit", "The mm / in button; any value can be typed in any unit, e.g. 1in or 25mm"]
                         ]
                     }

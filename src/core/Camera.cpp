@@ -223,6 +223,17 @@ void Camera::setStandardView(StandardView view)
     }
 }
 
+void Camera::lookFrom(const Vec3& direction)
+{
+    const double length = direction.length();
+    if (!(length > 1e-12))
+        return;
+    const Vec3 d = direction * (1.0 / length);
+    pitch = std::asin(std::clamp(d.z, -1.0, 1.0));
+    if (std::hypot(d.x, d.y) > 1e-9)
+        yaw = std::atan2(d.y, d.x);
+}
+
 void Camera::setProjection(Projection p)
 {
     if (projection == p)

@@ -16,7 +16,7 @@ for the verified Windows build (MSYS2 UCRT64, 2026-09-25).
 | GCC / MinGW-w64 runtime | 16.2.0 | GPL-3.0 with GCC Runtime Library Exception | Compiler and runtime | dynamic |
 | FreeType | 2.14.3 | FTL (or GPL-2.0; used under FTL) | Fonts (OCCT's TKService: the Text tool's glyph outlines; Qt) | dynamic |
 | Noto Sans (Regular, Bold) | 2.013 (see below) | SIL Open Font License 1.1 | Letters of the Text tool (emboss / deboss) | built into OpenShape.exe as a Qt resource; `OFL.txt` shipped as `NotoSans-OFL.txt` |
-| OpenShape3D (Laan Labs) | commit be3f2fc | MIT | kernel robustness code adapted into src/geometry (see third_party/openshape3d/README.md) | compiled into OpenShape |
+| OpenShape3D (Laan Labs) | commit be3f2fc | MIT | kernel robustness code adapted into src/geometry, the view cube's tap and label math (see third_party/openshape3d/README.md) | compiled into OpenShape |
 | NSIS | 3.12 | zlib/libpng; its LZMA module CPL-1.0 with a linking exception | Windows installer (`packaging/windows/openshape.nsi`) | build tool; its installer stub is part of the setup .exe |
 
 **Windows releases** (`msys2-ucrt64-release`) link OpenShape's own
@@ -52,8 +52,9 @@ in use:
 **OpenShape3D**: Copyright (c) 2026 Laan Labs and the openshape3d
 contributors, MIT License (`third_party/openshape3d/LICENSE`, a verbatim
 copy of theirs). Parts of `src/geometry` (deadlines, the BRep text screen,
-the repair policy, fuzzy booleans, blend and shell retries) and two tests
-are adapted from <https://github.com/laanlabs/openshape3d> at commit
+the repair policy, fuzzy booleans, blend and shell retries), the view
+cube's tap and label math (`src/interaction/ViewCube`) and two tests are
+adapted from <https://github.com/laanlabs/openshape3d> at commit
 be3f2fc; `third_party/openshape3d/README.md` lists their functions and our
 files. Each such file keeps OpenShape's MPL notice first, followed by the
 OpenShape3D copyright line; the app shows the MIT text under About →

@@ -1,6 +1,6 @@
 # OpenShape3D (adapted code)
 
-Parts of OpenShape's geometry code and tests are adapted from OpenShape3D,
+Parts of OpenShape's geometry code, its tests and the view cube are adapted from OpenShape3D,
 an iOS CAD app by Laan Labs.
 
 - Upstream: https://github.com/laanlabs/openshape3d
@@ -51,3 +51,18 @@ Tests (ideas and mutation classes):
 - `src/geometry/internal/BrepScreen.h`, `src/geometry/internal/BrepScreen.cpp`
 - `tests/test_ops_inputs_untouched.cpp`
 - `tests/test_brep_fuzz.cpp`
+- `src/interaction/ViewCube.h`, `src/interaction/ViewCube.cpp`
+
+## The view cube
+
+`openshape3d/Rendering/OrientationCube.swift` and `openshape3d/UI/ViewportView.swift` at the commit above:
+
+| OpenShape file | What it adapts | From (OpenShape3D, commit be3f2fc) |
+| --- | --- | --- |
+| `src/interaction/ViewCube.h`, `src/interaction/ViewCube.cpp` | The view cube's tap ray and slab intersection (`hitPose`, `intersectCube`), the corner fraction (0.55), and the face labels' visibility and fade (`faceLabels`: named when facing > 0.25); here with Z up and OpenShape's camera | `openshape3d/Rendering/OrientationCube.swift` |
+| `src/ui/qml/AxisTriad.qml` | The idea only (no code): a drag that starts on the cube orbits the view while a tool is armed | `openshape3d/UI/ViewportView.swift` (`gestureDragBegan`) |
+
+The app's About → Licenses view shows the MIT text with every binary
+("OpenShape3D (Laan Labs)", the `openshape3d` entry of
+`scripts/licenses/components.json`); `licenses_check` fails for a
+`third_party/` folder that no component lists.

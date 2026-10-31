@@ -7,7 +7,13 @@ chosen by the owner on 2026-09-25.
 
 - Everything outside `third_party/` is OpenShape's own code under MPL-2.0.
   Every source file starts with the MPL notice (Exhibit A of the license);
-  new files get it too — copy it from any existing file.
+  new files get it too — copy it from any existing file. A few files adapt
+  code from OpenShape3D (MIT): after the MPL notice their header says which
+  portions and names `third_party/openshape3d/LICENSE`, and
+  `third_party/openshape3d/README.md` lists them (MIT code may be
+  relicensed as part of an MPL file as long as its notice stays). The app's
+  Licenses view lists "OpenShape3D (Laan Labs)" with its MIT text, so the
+  notice travels with the binaries too.
 - MPL-2.0 is a file-level copyleft: whoever distributes OpenShape, changed or
   not, must keep OpenShape's files available under the MPL. OpenShape may be
   combined with code under other licenses (including closed code) in a
@@ -30,7 +36,7 @@ chosen by the owner on 2026-09-25.
 | libzip, GoogleTest | BSD-3-Clause | Notice with binaries (GoogleTest is not distributed). |
 | nlohmann/json | MIT | Notice with binaries. |
 | Noto Sans | OFL-1.1 | The license goes along; the fonts are not sold on their own. |
-| OpenShape3D (Laan Labs; code adapted into `src/geometry`, `third_party/openshape3d`) | MIT | Its copyright line and permission notice go along: the MIT text in `third_party/openshape3d/LICENSE`, a notice in each adapted file, and the Licenses view. |
+| OpenShape3D (Laan Labs; code adapted into `src/geometry` and the view cube, `third_party/openshape3d`) | MIT | Its copyright line and permission notice go along: the MIT text in `third_party/openshape3d/LICENSE`, a notice in each adapted file, and the Licenses view. |
 
 OpenCASCADE's files say "GNU Lesser General Public License version 2.1"
 without "or later" (e.g. `Standard_Transient.hxx`), so its SPDX id is
@@ -341,7 +347,9 @@ copyright © 2026 The FreeType Project").
   update with a new third-party part fails until it is decided. `check`
   (ctest `licenses_check`, and ipad.yml on every run) fails when the
   committed texts do not match the pins, `components.json`, the
-  repository's own license files or ipad.yml's Qt version.
+  repository's own license files or ipad.yml's Qt version, and when a
+  folder in `third_party/` has no component whose license text lies in it
+  (code adapted from another project must be listed too).
 - **License gate** (`scripts/ios/build-app.sh`, `licenses.py gate`): the
   linker's map of the app is checked file by file: everything must come
   from Qt (with its source module pinned), the iOS libraries, this build or
@@ -382,7 +390,7 @@ copyright © 2026 The FreeType Project").
    number). The two runs are independent.
 3. **Check the Licenses view** of the build to submit: About → Licenses
    lists "OpenShape3D (Laan Labs)" with MIT and its full text (the MIT
-   license of the adapted kernel code asks for the notice to go along;
+   license of the adapted kernel and view cube code asks for the notice to go along;
    acceptance scenario `openshape3d`).
 4. **Check the release first:** the GitHub release for the tag must be
    published and list `OpenShape-<version>-ios-sources.tar`, the file that

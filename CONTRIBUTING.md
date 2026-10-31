@@ -200,6 +200,11 @@ OpenShape is licensed under the Mozilla Public License 2.0 (`LICENSE`), and
 contributions are accepted under the same license. Every source file starts
 with the MPL notice; add it to new files (copy it from any existing file).
 Code in `third_party/` keeps its upstream license. See `docs/LICENSING.md`.
+Code adapted from another project (MIT and the like) gets a folder in
+`third_party/` with its license and a component in
+`scripts/licenses/components.json` (`sources: ["repo"]`, the text from that
+folder), so the app's Licenses view carries the notice; `licenses_check`
+fails for a `third_party/` folder that no component lists.
 
 **A new or updated library** (anything the app links or embeds): no GPL
 code in what we distribute. For the iOS app, pin its source archive in

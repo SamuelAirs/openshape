@@ -19,6 +19,7 @@ add_library(openshape_interaction STATIC
     TouchWording.cpp TouchWording.h
     NumericKeypad.cpp NumericKeypad.h
     TypingPause.h
+    ViewCube.cpp ViewCube.h
     ContextAction.h
 )
 # The preview worker thread (PreviewWorker).

@@ -34,6 +34,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -59,6 +60,7 @@ LICENSE_MARKERS = {
     "OFL-1.1": ["SIL OPEN FONT LICENSE Version 1.1"],
     "FTL": ["The FreeType Project LICENSE"],
     "OCCT-exception": ["Open CASCADE exception (version 1.0)"],
+    "MIT": ["Permission is hereby granted, free of charge", "The above copyright notice and this permission notice"],
 }
 
 
@@ -526,11 +528,27 @@ def check(args, checks=None):
         return read_text_file(os.path.join(texts_dir, files[n])) if n < len(files) and os.path.isfile(os.path.join(texts_dir, files[n])) else ""
     for cid, n, key in (("qt", 0, "LGPL-3.0-only"), ("qt", 1, "GPL-3.0-only"), ("occt", 0, "OCCT-exception"),
                         ("occt", 1, "LGPL-2.1"), ("planegcs", 0, "LGPL-2.1"), ("openshape", 0, "MPL-2.0"),
-                        ("notosans", 0, "OFL-1.1"), ("freetype", 1, "FTL")):
+                        ("notosans", 0, "OFL-1.1"), ("freetype", 1, "FTL"), ("openshape3d", 0, "MIT")):
         if cid not in listed:
             continue
         text = text_of(cid, n)
         checks(all(m in text for m in LICENSE_MARKERS[key]), f"licenses: {cid}'s text {n + 1} is the {key} text")
+
+    # Every folder in third_party/ (code, or code adapted from another
+    # project) has a component whose license text lies in that folder, so its
+    # notice reaches the app's Licenses view.
+    third_party = os.path.join(args.repo, "third_party")
+    folders = sorted(d for d in os.listdir(third_party) if os.path.isdir(os.path.join(third_party, d))) \
+        if os.path.isdir(third_party) else []
+    covered = set()
+    for c in components["components"]:
+        for t in c.get("texts", []):
+            parts = t.get("repo", "").replace("\\", "/").split("/")
+            if len(parts) >= 3 and parts[0] == "third_party":
+                covered.add(parts[1])
+    for folder in folders:
+        checks(folder in covered, f"licenses: third_party/{folder} is listed with its license text",
+               "add a component to scripts/licenses/components.json and regenerate (docs/LICENSING.md)")
 
     offer = os.path.join(args.out, OFFER_FILE)
     offer_text = read_text_file(offer) if os.path.isfile(offer) else ""
@@ -805,6 +823,15 @@ def self_test(_args):
                "self-test: a library's version and source come from its pin")
 
         checks(check_failures() == 0, "self-test: check passes on what generate wrote")
+
+        # A third_party folder that no component lists: check fails.
+        borrowed = os.path.join(repo, "third_party", "borrowed")
+        os.makedirs(borrowed)
+        with open(os.path.join(borrowed, "LICENSE"), "w", encoding="utf-8", newline="") as f:
+            f.write("MIT License of borrowed code\n")
+        checks(check_failures() > 0, "self-test: check fails when a third_party folder is not listed")
+        shutil.rmtree(borrowed)
+        checks(check_failures() == 0, "self-test: check passes again without that folder")
 
         # A changed pin, a changed components.json, a changed repository text: check fails.
         with open(sources_path, encoding="utf-8") as f:

@@ -598,7 +598,26 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   stops `Camera::kMinDistance` (0.05 mm, five times the near plane's floor)
   from it, so the near plane never cuts it either. Switching the projection
   during a view animation also switches the animation's start and end views
-  (`Camera::setProjection`), so the view shown is the one remembered. Sketches
+  (`Camera::setProjection`), so the view shown is the one remembered.
+  **View cube** (`interaction/ViewCube`, Qt-free; drawn by `AxisTriad.qml`,
+  object name `axisTriad`): a cube [-1, 1]^3 in world orientation drawn with
+  the camera's rotation only and a fixed orthographic box (±1.65: the
+  outline fits head-on and isometric; a corner looked at square across a
+  diagonal, sqrt(3) out, overshoots the item by 2 px). `ViewCube::layout` gives each face as the
+  affine image of its label square (origin, across, down: exact, the cube is
+  orthographic), so QML maps a 100x100 item onto the face with one
+  `Matrix4x4` (the label on it reads upright from the face's standard view)
+  and draws only faces turned toward the viewer (convex: no sorting); labels
+  fade in above a facing of 0.25; the twelve edges are tinted by axis.
+  `ViewCube::hit` casts an orthographic ray through the tap in cube space
+  (slab intersection): a hit with all three coordinates beyond 0.55 is a
+  corner (`Camera::lookFrom` its diagonal), otherwise the dominant axis is
+  a face (its `StandardView`, the same as the View menu's). A drag that
+  starts on the cube is the item's own `MouseArea` (`preventStealing`), so it
+  never reaches `ViewportItem`, and orbits by the same pixels-to-radians rate
+  as the view (`InteractionController::orbitBy`, around the view's center)
+  whatever tool is armed. Adapted from OpenShape3D (MIT,
+  `third_party/openshape3d`). Sketches
   keep the projection: the view faces the sketch plane head-on, which
   perspective shows undistorted.
 - **Sketch mode:** `startSketch()` creates a sketch on the selected planar face
@@ -1053,7 +1072,7 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   object names: a `GridLayout` whose `flow` switches), hides the Model panel
   behind a **Model** button (it slides in from the right; `historyOpen`),
   folds the view buttons into a menu behind a **View** button next to the
-  axis marker (`viewMenuOpen`; the same buttons, in columns when short),
+  view cube (`viewMenuOpen`; the same buttons, in columns when short),
   makes action rows scroll sideways (`ScrollRow.qml`) and the hint one line
   (a tap shows all of it). Positions derive from the window size
   (`Main.stripTop`, `bottomStackTop`), never from each other in a circle.
@@ -1270,7 +1289,8 @@ blocked) and draws with 4x MSAA:
 2. the ground (depth-tested, no depth write, pushed 1.5 px of depth away
    from the viewer so a body's bottom face on the ground hides it): soft
    **contact shadows**, the **grid** and the X/Y/Z **axes** (the orientation
-   marker is QML: `AxisTriad` from `InteractionController::axisTriad()`);
+   marker, the view cube, is QML: `AxisTriad.qml` from
+   `AppController::viewCube`, see "View cube" below);
 3. face highlights (hover, selection, and the orange Model-panel highlight
    with adjacent ranges merged) as **index sub-ranges of the body mesh** (no
    extra buffers);

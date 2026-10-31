@@ -87,8 +87,10 @@ On a desktop-sized window:
   **Right**, the projection (**Perspective**, the default, or
   **Orthographic**; click to switch, and OpenShape remembers your choice),
   **Pen** (in the touch layout) and the display unit (**mm** or
-  **in**; click to switch). Above them, the axis marker shows which way X
-  (red), Y (green) and Z (blue, up) point.
+  **in**; click to switch). Above them, the **view cube** turns with the
+  view (edges: X red, Y green, Z blue, up): click a face or a corner to look
+  from there, drag it to orbit, also while a tool is active (see
+  [Navigating the view](#navigating-the-view)).
 - Short messages ("Saved", "Exported STL", or why something failed) appear
   at the bottom of the window for a few seconds.
 
@@ -171,6 +173,8 @@ parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
 | | Mouse | Touch | Pen mode |
 |---|---|---|---|
 | Orbit | drag with the left or right button | drag one finger | one finger |
+| Orbit while a tool is active | drag the view cube | drag the view cube | the view cube |
+| Standard view | click a face or corner of the view cube | tap a face or corner of the view cube | the same |
 | Pan | `Shift`+drag, or drag with the middle button | drag two fingers | two fingers |
 | Zoom | mouse wheel (toward the pointer) | pinch | pinch |
 | Undo / redo | `Ctrl+Z` / `Ctrl+Y` | tap with two / three fingers | two / three fingers |
@@ -188,6 +192,16 @@ parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
   darkest from every angle, two sides of a box seen at once get clearly
   different shades, and a body resting flat on the grid casts a soft
   shadow beneath it.
+- The **view cube** (above the view buttons; under the **View** button on a
+  phone) turns with the view. Its faces say which standard view they turn
+  to (Top, Front, Right, Back, Left, Bottom) and its edges are colored like
+  the axes (X red, Y green, Z blue). Click or tap a face to look at it
+  head-on, or one of the small squares at a corner to look down that
+  corner's diagonal (an isometric view; the front right top corner is the
+  **Iso** view). A drag that starts on the cube orbits around the middle of
+  the view, even while a sketch tool is drawing or an arrow is showing: on a
+  phone, where one finger draws and two fingers pan and zoom, this is how
+  you turn the model without leaving the tool.
 - Dragging an arrow or a ring changes a value instead of turning the view.
 
 **Touch layout.** The first time you touch the screen, OpenShape switches

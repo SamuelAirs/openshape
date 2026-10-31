@@ -58,7 +58,7 @@ Steps steps(AcceptanceRunner& r)
         for (const QString& phrase :
              {QStringLiteral("MIT"), QStringLiteral("Copyright (c) 2026 Laan Labs and the openshape3d contributors"),
               QStringLiteral("Permission is hereby granted, free of charge"), QStringLiteral("THE SOFTWARE IS PROVIDED \"AS IS\""),
-              QStringLiteral("parts of the geometry code (adapted)"), QStringLiteral("https://github.com/laanlabs/openshape3d")})
+              QStringLiteral("parts of the geometry code and the view cube (adapted)"), QStringLiteral("https://github.com/laanlabs/openshape3d")})
             if (!text.contains(phrase))
                 missing << phrase;
         r.check(missing.isEmpty(), "openshape3d: the page shows the MIT license with Laan Labs' copyright",

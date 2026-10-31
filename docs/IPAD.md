@@ -343,8 +343,9 @@ text (About → **Licenses**). What that means in practice:
 
 ## What to test on the iPad
 
-1. Launch: the model view, toolbars and the axis marker appear; controls are
-   comfortably tappable.
+1. Launch: the model view, toolbars and the view cube appear; controls are
+   comfortably tappable. Tap the cube's faces and corners (the view turns
+   there) and drag it with one finger (orbits, also with a sketch tool armed).
 2. One finger: tap a face (selects), tap empty space (clears), drag empty
    space (orbits), double-tap a body (selects it).
 3. Two fingers: pan and pinch-zoom; a quick two-finger tap undoes, three
@@ -446,7 +447,7 @@ margins (BUILDING.md).
    Fillet, … Union, Subtract, Intersect); every button is easy to hit.
 3. **Model** (top right) slides the Model panel in from the right; tap a
    step, change a value, close it with **Close**.
-4. **View** (beside the X/Y/Z marker) opens Fit, Iso, Top, Front, Right,
+4. **View** (above the view cube) opens Fit, Iso, Top, Front, Right,
    the projection and the unit; each works and closes the menu.
 5. Box → tap the top face → drag the arrow, or tap the value field: the
    numeric keypad comes up along the bottom (not the system keyboard), the

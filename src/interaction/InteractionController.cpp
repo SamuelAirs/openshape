@@ -12,6 +12,7 @@
 #include "geometry/Modeling.h"
 #include "geometry/Text.h"
 #include "interaction/TouchWording.h"
+#include "interaction/ViewCube.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -419,6 +420,37 @@ void InteractionController::skipAnimation()
         return;
     animation_->start -= std::chrono::seconds(10);
     advanceAnimation();
+}
+
+void InteractionController::setViewDirection(const Vec3& direction, bool animate)
+{
+    Camera to = camera_;
+    to.lookFrom(direction);
+    if (animate) {
+        startAnimation(to);
+    } else {
+        animation_.reset();
+        camera_ = to;
+        notifyView();
+    }
+}
+
+void InteractionController::orbitBy(double dxPixels, double dyPixels)
+{
+    animation_.reset();
+    camera_.orbit(dxPixels, dyPixels, camera_.target);
+    notifyView();
+}
+
+bool InteractionController::tapViewCube(Vec2 box)
+{
+    const ViewCubeTarget target = ViewCube::hit(camera_, box);
+    switch (target.kind) {
+    case ViewCubeTarget::Kind::None: return false;
+    case ViewCubeTarget::Kind::Face: setStandardView(target.face); return true;
+    case ViewCubeTarget::Kind::Corner: setViewDirection(target.direction); return true;
+    }
+    return false;
 }
 
 // ---- Input -----------------------------------------------------------------------
@@ -1930,17 +1962,6 @@ ChipPlacement InteractionController::placeValueChip(const ChipPlacementInput& in
     chipSpot_ = placement.spot;
     chipLast_ = input;
     return placement;
-}
-
-std::vector<InteractionController::AxisMark> InteractionController::axisTriad() const
-{
-    const Vec3 right = camera_.right(), up = camera_.up(), back = camera_.backward();
-    std::vector<AxisMark> marks;
-    for (int i = 0; i < 3; ++i) {
-        const Vec3 axis{i == 0 ? 1.0 : 0.0, i == 1 ? 1.0 : 0.0, i == 2 ? 1.0 : 0.0};
-        marks.push_back({i, Vec2{axis.dot(right), -axis.dot(up)}, axis.dot(back)});
-    }
-    return marks;
 }
 
 Status InteractionController::commitOperation()
