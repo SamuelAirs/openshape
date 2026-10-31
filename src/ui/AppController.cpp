@@ -12,6 +12,7 @@
 #include "interaction/TouchWording.h"
 #include "io/Export3mf.h"
 #include "io/ProjectFile.h"
+#include "io/ProjectFiles.h"
 #include "io/RecentFiles.h"
 #include "ui/RecoverySession.h"
 #include "ui/ThumbnailSource.h"
@@ -147,6 +148,8 @@ AppController::AppController(QObject* parent)
         connect(core, &QCoreApplication::aboutToQuit, this, &AppController::endRecovery);
         core->installEventFilter(this);
     }
+
+    trashHandler_ = systemTrashHandler();
 
     updateRecentFiles();
     attach();
@@ -1872,8 +1875,10 @@ void AppController::updateRecentFiles()
                                                  info.absolutePath().toStdString(), appFolder_.toStdString()))));
         map.insert(QStringLiteral("modified"), QLocale().toString(modified, QLocale::ShortFormat));
         map.insert(QStringLiteral("thumbnail"), thumbnailSource(info.absoluteFilePath(), modified.toMSecsSinceEpoch()));
-        map.insert(QStringLiteral("removable"),
-                   std::any_of(recent.begin(), recent.end(), [&](const std::string& r) { return io::sameRecentPath(r, file); }));
+        const bool isRecent =
+            std::any_of(recent.begin(), recent.end(), [&](const std::string& r) { return io::sameRecentPath(r, file); });
+        map.insert(QStringLiteral("removable"), isRecent);
+        map.insert(QStringLiteral("deletable"), projectDeletable(info.absoluteFilePath(), isRecent));
         home.append(map);
     }
     if (list == recentFiles_ && home == homeProjects_)
@@ -1931,6 +1936,204 @@ void AppController::clearRecentFiles()
     QSettings settings;
     saveRecentFiles(settings, {});
     updateRecentFiles();
+}
+
+// ---- Home: Rename..., Duplicate, Delete... on a project card ------------------------------
+
+bool AppController::projectDeletable(const QString& path, bool recent) const
+{
+    if (!appFolder_.isEmpty() && io::isInsideFolder(path.toStdString(), appFolder_.toStdString()))
+        return true;
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    Q_UNUSED(recent);
+    return false; // the phone's own folder only
+#else
+    return recent; // through the trash only (deleteProject)
+#endif
+}
+
+QString AppController::projectNameProblem(const QString& path, const QString& name) const
+{
+    return q(io::projectRenameProblem(std::filesystem::path(path.toStdWString()), name.toStdString()));
+}
+
+bool AppController::isOpenProject(const QString& path) const
+{
+    return !path_.isEmpty() && !path.isEmpty()
+        && io::sameRecentPath(QFileInfo(path_).absoluteFilePath().toStdString(), QFileInfo(path).absoluteFilePath().toStdString());
+}
+
+bool AppController::renameProject(const QString& path, const QString& newName)
+{
+    const bool wasOpen = isOpenProject(path);
+    const auto renamed = io::renameProjectFile(std::filesystem::path(path.toStdWString()), newName.toStdString());
+    if (!renamed) {
+        OS_LOG(Warning, File) << renamed.developerMessage();
+        notifyMessage(q(renamed.userMessage()));
+        updateRecentFiles(); // a file that is gone drops out
+        return false;
+    }
+    const QString to = QString::fromStdWString(renamed.value().wstring());
+    OS_LOG(Info, File) << "renamed " << path.toStdString() << " to " << to.toStdString();
+    QSettings settings;
+    QStringList files;
+    for (const std::string& f : io::withRenamedRecentFile(toStd(loadRecentFiles(settings)), path.toStdString(),
+                                                          QFileInfo(to).absoluteFilePath().toStdString()))
+        files.append(QString::fromStdString(f));
+    saveRecentFiles(settings, files);
+    if (wasOpen) {
+        // Saving goes to the new name; the title says it.
+        path_ = to;
+        emit documentChanged();
+        // A recovery copy of unsaved work names its original file: rewrite
+        // it now, or a crash would restore to the old name (a second file).
+        if (dirty()) {
+            copyRevision_ = ~std::uint64_t(0);
+            writeRecoveryCopy();
+        }
+    }
+    updateRecentFiles();
+    notifyMessage(QStringLiteral("Renamed to “%1”").arg(QFileInfo(to).completeBaseName()));
+    return true;
+}
+
+bool AppController::duplicateProject(const QString& path)
+{
+    const auto copy = io::duplicateProjectFile(std::filesystem::path(path.toStdWString()));
+    if (!copy) {
+        OS_LOG(Warning, File) << copy.developerMessage();
+        notifyMessage(q(copy.userMessage()));
+        updateRecentFiles();
+        return false;
+    }
+    const QString file = QString::fromStdWString(copy.value().wstring());
+    OS_LOG(Info, File) << "duplicated " << path.toStdString() << " as " << file.toStdString();
+    rememberRecentFile(file); // the first card
+    notifyMessage(QStringLiteral("Duplicated as “%1”").arg(QFileInfo(file).completeBaseName()));
+    return true;
+}
+
+QString AppController::trashName() const
+{
+#if defined(Q_OS_WIN)
+    return QStringLiteral("the Recycle Bin");
+#elif defined(Q_OS_IOS)
+    return QStringLiteral("Recently Deleted in the Files app");
+#elif defined(Q_OS_MACOS)
+    return QStringLiteral("the Trash");
+#else
+    return QStringLiteral("the trash");
+#endif
+}
+
+AppController::TrashHandler AppController::systemTrashHandler()
+{
+    // The Recycle Bin, the macOS Trash; on iOS NSFileManager's trashItemAtURL
+    // (Qt 6 compiles its Darwin trash for iOS too), which moves a file in
+    // the app's Documents to Documents/.Trash: the Files app's Recently
+    // Deleted. On Windows Qt stops the shell's operation when the item
+    // would be deleted rather than recycled (a USB stick, a network share,
+    // a subst drive): moveToTrash then fails and the file stays (seen on
+    // a subst drive, 2026-09-27). Qt reports where the file went; an empty
+    // place means it is gone without a trash (see deleteProject).
+    return [](const QString& file, QString* trashedAt, QString* error) {
+        QFile target(file);
+        if (target.moveToTrash()) {
+            if (trashedAt)
+                *trashedAt = target.fileName();
+            return true;
+        }
+        if (error)
+            *error = target.errorString();
+        return false;
+    };
+}
+
+void AppController::setTrashHandler(TrashHandler handler)
+{
+    trashHandler_ = std::move(handler);
+}
+
+QString AppController::deleteProject(const QString& path, bool permanently)
+{
+    const QFileInfo info(path);
+    const QString name = info.completeBaseName();
+    const QString file = info.absoluteFilePath();
+    QSettings settings;
+    const std::vector<std::string> stored = toStd(loadRecentFiles(settings));
+    const bool recent = std::any_of(stored.begin(), stored.end(),
+                                    [&](const std::string& r) { return io::sameRecentPath(r, file.toStdString()); });
+    const bool inAppFolder = !appFolder_.isEmpty() && io::isInsideFolder(file.toStdString(), appFolder_.toStdString());
+    if (!projectDeletable(file, recent)) {
+        OS_LOG(Warning, File) << "delete refused outside the app folder: " << file.toStdString();
+        notifyMessage(QStringLiteral("Only projects in OpenShape's folder can be deleted here."));
+        return {};
+    }
+    if (!info.isFile()) {
+        notifyMessage(QStringLiteral("“%1” is not there any more.").arg(name));
+        updateRecentFiles();
+        return {};
+    }
+    const QString cannotTrash = QStringLiteral("“%1” could not be moved to %2, so it was not deleted.").arg(name, trashName());
+    QString result;
+    bool noTrash = false; // gone, but the system reported no place in the trash
+    if (!permanently) {
+        QString error;
+        QString trashedAt;
+        if (!trashHandler_ || !trashHandler_(file, &trashedAt, &error)) {
+            OS_LOG(Warning, File) << "cannot move " << file.toStdString() << " to the trash: " << error.toStdString();
+            if (inAppFolder)
+                return QStringLiteral("permanent"); // Home asks before deleting it for good
+            notifyMessage(cannotTrash);
+            return {};
+        }
+        if (QFileInfo::exists(file)) { // the invariant of the intent: it is gone from here
+            OS_LOG(Warning, File) << "moved to the trash but still there: " << file.toStdString();
+            notifyMessage(QStringLiteral("“%1” could not be deleted.").arg(name));
+            return {};
+        }
+        if (trashedAt.isEmpty()) {
+            // Never say it can be restored when no trash took it.
+            OS_LOG(Warning, File) << "removed without a place in the trash: " << file.toStdString();
+            noTrash = true;
+            result = QStringLiteral("deleted");
+        } else {
+            OS_LOG(Info, File) << "moved " << file.toStdString() << " to the trash: " << trashedAt.toStdString();
+            result = QStringLiteral("trashed");
+        }
+    } else {
+        if (!inAppFolder) {
+            // Never removed for good outside OpenShape's folder: the trash only.
+            notifyMessage(cannotTrash);
+            return {};
+        }
+        const Status removed = io::removeProjectFile(std::filesystem::path(file.toStdWString()));
+        if (!removed) {
+            OS_LOG(Warning, File) << removed.developerMessage();
+            notifyMessage(q(removed.userMessage()));
+            updateRecentFiles();
+            return {};
+        }
+        OS_LOG(Info, File) << "deleted " << file.toStdString() << " for good";
+        result = QStringLiteral("deleted");
+    }
+    const bool wasOpen = isOpenProject(file);
+    QStringList files;
+    for (const std::string& f : io::withoutRecentFile(stored, file.toStdString()))
+        files.append(QString::fromStdString(f));
+    saveRecentFiles(settings, files);
+    if (wasOpen) {
+        // Its file is gone: a new, empty document, and Home stays.
+        newDocument();
+        setHomeVisible(true);
+    }
+    updateRecentFiles();
+    if (noTrash)
+        notifyMessage(QStringLiteral("Deleted “%1” for good: it could not go to %2.").arg(name, trashName()));
+    else
+        notifyMessage(result == QStringLiteral("trashed") ? QStringLiteral("Moved “%1” to %2").arg(name, trashName())
+                                                          : QStringLiteral("Deleted “%1”").arg(name));
+    return result;
 }
 
 void AppController::savePreferences() const

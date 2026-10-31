@@ -106,7 +106,16 @@ odd: a screenshot and a sentence is plenty. Starting the app with
 13. **Home and STEP.** Start OpenShape from the shortcut: Home shows your
     recent projects with pictures (save a project once to give it one).
     Tap a card to open it; ⋯ (or a right click) → Remove from list. File →
-    Home comes back to it. Import STEP… with a part from another program
+    Home comes back to it. On a card's ⋯: Duplicate (a "… copy" card with
+    the same picture appears first), Rename… (try the name of another
+    project: refused; then a new name: the card and, for the open project,
+    the title bar change), Delete… (the card names the project; afterwards
+    it is in the Recycle Bin and can be restored from there).
+    **iPhone / iPad:** the same, by touch and hold on a card. After Delete…,
+    open the Files app → Browse → Recently Deleted: the project should be
+    there and "Recover" should put it back into On My iPhone → OpenShape
+    (Home shows it again). If instead OpenShape asks "Delete … for good?",
+    tell us: iOS did not take it into Recently Deleted. Import STEP… with a part from another program
     (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
     size and names; push/pull a face and round an edge of it, save, reopen.
 14. **Print helpers.**
@@ -209,7 +218,7 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 ## On the iPad and iPhone
 
 See [IPAD.md](IPAD.md), "What to test on the iPad" and "What to test on the
-iPhone". New in the build after 2026-09-27 (iPad 12-18, iPhone 13-17):
+iPhone". New in the build after 2026-09-27 (iPad 12-18, iPhone 13-18):
 
 1. **Share an STL to the slicer:** File → Export STL: the share sheet opens
    (on the iPad pointing at File); choose the slicer app, then AirDrop a

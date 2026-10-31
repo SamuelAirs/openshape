@@ -5,6 +5,7 @@
 add_library(openshape_io STATIC
     Export3mf.cpp Export3mf.h
     ProjectFile.cpp ProjectFile.h
+    ProjectFiles.cpp ProjectFiles.h
     RecentFiles.cpp RecentFiles.h
     Recovery.cpp Recovery.h
 )

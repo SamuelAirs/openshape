@@ -88,6 +88,34 @@ std::vector<std::string> withoutRecentFile(std::vector<std::string> list, const 
     return list;
 }
 
+std::vector<std::string> withRenamedRecentFile(std::vector<std::string> list, const std::string& from, const std::string& to)
+{
+    const auto at = std::find_if(list.begin(), list.end(), [&](const std::string& entry) { return sameRecentPath(entry, from); });
+    if (at == list.end())
+        return list;
+    const std::size_t index = std::size_t(at - list.begin());
+    std::vector<std::string> out;
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        if (i == index)
+            out.push_back(to);
+        else if (!sameRecentPath(list[i], from) && !sameRecentPath(list[i], to))
+            out.push_back(std::move(list[i])); // no second entry for either name
+    }
+    return out;
+}
+
+bool isInsideFolder(const std::string& path, const std::string& folder)
+{
+    const std::vector<std::string> inside = components(path);
+    const std::vector<std::string> outer = components(folder);
+    if (outer.empty() || inside.size() <= outer.size())
+        return false;
+    for (std::size_t i = 0; i < outer.size(); ++i)
+        if (!sameRecentPath(inside[i], outer[i]))
+            return false;
+    return true;
+}
+
 std::vector<std::string> homeProjects(const std::vector<std::string>& recent, const std::vector<std::string>& folder)
 {
     std::vector<std::string> out = recent;
