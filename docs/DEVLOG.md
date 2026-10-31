@@ -759,3 +759,19 @@ phone sketching and the keypad check were merged; the real-UI run did not.
 - The `numpad` scenario fails from "tap its live width" on (122 checks)
   on main at 329a5bb as well (a build of main's sources, the same first
   failure): not caused by this track.
+
+## 2026-10-31 — `compact,duo`: a measurement that counted the origin
+
+- `duo` failed only after `compact` ("40 x 25" measured 40 x 30). Tracing
+  the sketch session showed the product right: width 40 and height 25 both
+  typed and locked, the rectangle 40 x 25. The difference: `compact` leaves
+  the real mouse resting where the Duo inner display's 951-wide window
+  later grows over it, so Qt sends hover events, the free end follows the
+  mouse and the rectangle is drawn down from the tapped corner (-10, -5)
+  instead of up. The scenario's extent counted every sketch point,
+  including the always-present origin (`sketch::kOriginId`, at 0, 0): from
+  y -30 to 0. Fixed in the scenario (skip the origin). A user cannot hit it:
+  nothing in the sketch was wrong; a resting mouse taking the free end is
+  the desktop's normal hover. Lesson: measure a shape by its own points,
+  never the sketch's (Numpad's `sketchExtent` still counts the origin; it
+  passes today).

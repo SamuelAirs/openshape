@@ -238,9 +238,15 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r] { r.key(Qt::Key_Return); });
     wait(steps, 2);
     steps.push_back([&r] {
+        // The rectangle's corners: not the sketch's origin point, which
+        // widens the extent when the rectangle lies away from it (drawn
+        // down from the corner tapped when the window, resizing under a
+        // resting mouse, hovers it there).
         double left = 1e9, right = -1e9, bottom = 1e9, top = -1e9;
         if (const auto* session = r.app().interaction().sketchSession())
             for (const auto& [id, p] : session->sketch().points()) {
+                if (id == sketch::kOriginId)
+                    continue;
                 left = std::min(left, p.position.x);
                 right = std::max(right, p.position.x);
                 bottom = std::min(bottom, p.position.y);
