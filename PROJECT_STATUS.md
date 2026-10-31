@@ -80,7 +80,8 @@ A Fable 5.1 agent reviewed the project; its critique is summarized below.
   the loupe for fingers only (`pencil` scenario injects Qt tablet events as
   the iOS plugin does). TD-141..143 list what is left.
 
-**Tests:** 820 headless tests pass; the real-UI run has 4049 of 4050 checks passing in 50 scenarios (the one failure, a sketch typed across folds in `duo` after `compact`, is being fixed).
+**Tests:** 820 headless tests and 4050/4050 real-UI checks in 50 scenarios
+(new: `pencil` 53, `duo` 265), built with warnings as errors.
 
 **The Fable 5.1 review (2026-10-30), in short:** a capable engine (kernel
 checks, crash containment, fuzzing) in an unproven product. Its top
@@ -935,7 +936,7 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 ## Tests currently passing
 
-803/803 headless (`ctest -LE gui`, 2026-10-30, after the five merges): GTest suites for core, geometry
+820/820 headless (`ctest -LE gui`, 2026-10-31, after the five merges, the Duo and Pencil work): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -944,12 +945,13 @@ failure messages, kernel faults on worker threads), async previews,
 value-box placement, contact shadows, touch wording, touch selection and
 the cut flow, the typing pause and the numeric keypad, typed values and
 units, the view cube, phone sketching (face references, loupe placement),
+palm rejection and pen hover, window metrics for the Duo,
 project rename/duplicate/delete, kernel hardening (time limits, repairs,
 BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 2869/2869 checks through the real UI in 44 scenarios
+`acceptance_gui`: 4050/4050 checks through the real UI in 50 scenarios
 before the 2026-10-30 merges (now 49 scenarios; not yet run)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
 under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
@@ -959,9 +961,9 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 725/725 | ✅ 2869/2869 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 820/820 | ✅ 4050/4050 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |
 | macOS 15 (CI, Xcode 26.3, Metal) | ✅ | ✅ | ✅ screenshot; the full acceptance run passes in a 1024x653 window (CI #32) |
-| iOS / iPadOS (universal CI archive, arm64) | ✅ | — | ✅ TestFlight on the owner's iPhone 16 Pro and iPad (by hand); build 47 (keypad) uploaded 2026-09-27 |
+| iOS / iPadOS (universal CI archive, arm64) | ✅ Xcode 27.1, iOS SDK 27.1 (2026-10-30) | — | ✅ TestFlight on the owner's iPhone 16 Pro and iPad (by hand); the iPhone Duo still to try |
