@@ -715,3 +715,24 @@ This is not legal advice (docs/LICENSING.md). Other findings:
 - Eight agent tracks at once used up the owner's usage limit, and they all
   died together. Now at most five run at a time, at high effort for code and
   medium for reviews.
+
+## 2026-10-30 — Apple Pencil: palm rejection, hover, pen and fingers apart
+
+- Pen and finger shared one drag state: a palm touching down during a pen
+  stroke reset it (`pointerPress` starts with `drag_ = {}`), breaking the
+  stroke. Palm rejection (`interaction/PalmRejection`, timing only, 0.5 s
+  grace) now drops the hand's touches before the gesture recognizer, and
+  the controller ignores a finger while the pen drags.
+- Qt Quick turns an unhandled pen hover into a hover event of the primary
+  pointing device (the mouse): the pen hovered with mouse tolerances.
+  Measured by disabling the fix: the `pencil` scenario's "the hover is the
+  pen's" check fails. `ViewportItem` now matches the window's last tablet
+  hover position.
+- Injecting tablet events: the acceptance runner clears
+  `QWindowSystemInterfacePrivate::TabletEvent::platformSynthesizesMouse`
+  around each injected event, so Qt itself makes the mouse events from the
+  pen events no item takes: the path Qt's iOS
+  plugin relies on.
+- The `numpad` scenario fails from "tap its live width" on (122 checks)
+  on main at 329a5bb as well (a build of main's sources, the same first
+  failure): not caused by this track.

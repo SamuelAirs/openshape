@@ -8,6 +8,8 @@
 #include "ui/AppController.h"
 
 #include <QtGui/QPointingDevice>
+#include <QtGui/QTabletEvent>
+#include <QtQuick/QQuickWindow>
 
 #include <chrono>
 
@@ -40,6 +42,11 @@ interact::Modifiers modifiersOf(Qt::KeyboardModifiers m)
     return {m.testFlag(Qt::ShiftModifier), m.testFlag(Qt::ControlModifier), m.testFlag(Qt::AltModifier)};
 }
 
+bool isPen(const QPointerEvent* event)
+{
+    return event->pointingDevice() && event->pointingDevice()->pointerType() == QPointingDevice::PointerType::Pen;
+}
+
 double millisecondsSince(std::chrono::steady_clock::time_point start)
 {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -70,6 +77,80 @@ ViewportItem::ViewportItem(QQuickItem* parent) : QQuickRhiItem(parent)
             animationTimer_.stop();
         update();
     });
+}
+
+double ViewportItem::seconds()
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void ViewportItem::itemChange(ItemChange change, const ItemChangeData& value)
+{
+    QQuickRhiItem::itemChange(change, value);
+    if (change != ItemSceneChange)
+        return;
+    if (watchedWindow_)
+        watchedWindow_->removeEventFilter(this);
+    watchedWindow_ = value.window;
+    if (watchedWindow_)
+        watchedWindow_->installEventFilter(this);
+}
+
+bool ViewportItem::eventFilter(QObject* watched, QEvent* event)
+{
+    // The pen's own events, before Qt Quick turns the ones no item takes
+    // into mouse events (a press, a drag, or a hover without buttons): the
+    // pen's contact for palm rejection, and which hover is the pen's (Qt
+    // Quick's hover event no longer says what device moved).
+    if (watched != watchedWindow_)
+        return false;
+    switch (event->type()) {
+    case QEvent::TabletPress:
+        penDown();
+        break;
+    case QEvent::TabletRelease:
+        penUp();
+        break;
+    case QEvent::TabletMove: {
+        const auto* tablet = static_cast<QTabletEvent*>(event);
+        if (tablet->buttons() == Qt::NoButton)
+            penHoverAt_ = tablet->scenePosition();
+        break;
+    }
+    case QEvent::MouseMove: {
+        const auto* mouse = static_cast<QMouseEvent*>(event);
+        if (isPen(mouse)) {
+            if (mouse->buttons() == Qt::NoButton)
+                penHoverAt_ = mouse->scenePosition();
+        } else if (mouse->source() == Qt::MouseEventNotSynthesized) {
+            penHoverAt_.reset(); // a real mouse moved
+        }
+        break;
+    }
+    case QEvent::WindowDeactivate:
+        penUp(); // the pen's release may never come
+        break;
+    default:
+        break;
+    }
+    return false;
+}
+
+void ViewportItem::penDown()
+{
+    if (palm_.penIsDown())
+        return;
+    palm_.penDown(seconds());
+    penHoverAt_.reset();
+    // Fingers on the view now are the hand: whatever they did ends (a
+    // one-finger press is cancelled, a pan or pinch stops).
+    dispatchTouch(gestures_.abandon());
+}
+
+void ViewportItem::penUp()
+{
+    if (palm_.penIsDown())
+        palm_.penUp(seconds());
 }
 
 void ViewportItem::setController(AppController* controller)
@@ -120,6 +201,8 @@ bool ViewportItem::focusForPress()
 
 void ViewportItem::mousePressEvent(QMouseEvent* event)
 {
+    if (isPen(event))
+        penDown(); // (normally seen already, as the tablet press)
     const bool swallow = focusForPress();
     // A real mouse (not a touch or pen turned into mouse events) leaves touch mode.
     if (controller_ && event->source() == Qt::MouseEventNotSynthesized && event->pointingDevice()
@@ -155,6 +238,8 @@ void ViewportItem::mouseMoveEvent(QMouseEvent* event)
 
 void ViewportItem::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (isPen(event))
+        penUp();
     if (swallowing_) {
         swallowing_ = false;
         event->accept();
@@ -176,8 +261,16 @@ void ViewportItem::mouseDoubleClickEvent(QMouseEvent* event)
 
 void ViewportItem::hoverMoveEvent(QHoverEvent* event)
 {
-    if (controller_)
-        controller_->interaction().pointerMove(toPointer(event, Qt::NoButton));
+    if (!controller_)
+        return;
+    interact::PointerEvent e = toPointer(event, Qt::NoButton);
+    // Qt Quick makes a hover event of the mouse move it made of the pen's
+    // hover (Apple Pencil over an iPad), without the pen as its device: the
+    // pen's latest hover position says it is the pen (its tolerances, and
+    // never the mouse's).
+    if (penHoverAt_ && (event->scenePosition() - *penHoverAt_).manhattanLength() < 0.5)
+        e.device = interact::PointerDevice::Pen;
+    controller_->interaction().pointerMove(e);
 }
 
 void ViewportItem::hoverLeaveEvent(QHoverEvent*)
@@ -205,10 +298,10 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         return;
     }
     controller_->setTouchMode(true);
-    auto& interaction = controller_->interaction();
     if (event->type() == QEvent::TouchCancel) {
-        interaction.cancelPointer();
+        controller_->interaction().cancelPointer(interact::PointerDevice::Touch); // never the pen's stroke
         gestures_ = {};
+        palm_.touchesCancelled();
         swallowing_ = false;
         event->accept();
         return;
@@ -226,8 +319,19 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         }
         points.push_back(tp);
     }
+    // The hand holding the pen is not a finger (PalmRejection).
+    points = palm_.filter(points, seconds());
+    dispatchTouch(gestures_.update(points, double(event->timestamp()) / 1000.0));
+    event->accept();
+}
+
+void ViewportItem::dispatchTouch(const std::vector<interact::TouchIntent>& intents)
+{
+    if (!controller_)
+        return;
+    auto& interaction = controller_->interaction();
     using Kind = interact::TouchIntent::Kind;
-    for (const auto& intent : gestures_.update(points, double(event->timestamp()) / 1000.0)) {
+    for (const auto& intent : intents) {
         interact::PointerEvent e;
         e.device = interact::PointerDevice::Touch;
         e.button = interact::PointerButton::Left;
@@ -258,7 +362,7 @@ void ViewportItem::touchEvent(QTouchEvent* event)
             break;
         case Kind::PointerCancel:
             swallowing_ = false;
-            interaction.cancelPointer();
+            interaction.cancelPointer(interact::PointerDevice::Touch);
             break;
         case Kind::DoubleTap:
             if (!swallowing_)
@@ -270,7 +374,6 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         case Kind::Redo: controller_->redoWithFeedback(); break;
         }
     }
-    event->accept();
 }
 
 } // namespace os::ui

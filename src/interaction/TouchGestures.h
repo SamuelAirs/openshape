@@ -47,6 +47,12 @@ public:
     // included in the frame they lift). `seconds` is a monotonic timestamp.
     std::vector<TouchIntent> update(const std::vector<TouchPoint>& points, double seconds);
 
+    // Ends the current sequence without a gesture (a pen came down: the
+    // fingers on the screen are the hand from now on, PalmRejection): a
+    // one-finger press in progress is cancelled (no tap, no selection), a
+    // pan or pinch just stops, no undo/redo tap and no double-tap follows.
+    std::vector<TouchIntent> abandon();
+
     // Thresholds (logical pixels / seconds).
     static constexpr double kTapMovement = 12;     // a tap moves less than this
     static constexpr double kTapDuration = 0.35;   // and lifts within this

@@ -35,7 +35,7 @@ Technology choices and the alternatives considered are in
         │         ├─ SketchReferences (the face sketched on, as snap-only reference geometry; geom::planeReferences)
         │         ├─ TypingPause (typed values previewed once typing pauses), NumericKeypad (touch keypad model, placement)
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
-        │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)
+        │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo), PalmRejection (the hand holding a pen)
         │         ▼
         │   selection/  picking (CPU ray/segment/profile, BVH per mesh), SelectionSet (+signatures)
         ▼
@@ -1046,7 +1046,23 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   a finger's press on an arrow moves nothing until it passes the drag
   threshold. Pen mode (turned on
   by the first pen press, or the Pen switch) makes finger presses
-  navigation-only. `AppController::touchMode` (on after a touch, off after a
+  navigation-only; a finger tap on the model or in a sketch that pen mode
+  ignores shows `kPenFingerHint` (at most every 10 s). **Pen (Apple
+  Pencil):** Qt's iOS plugin delivers it as tablet events and Qt turns
+  those no item takes into mouse events (a hover into a Qt Quick hover
+  event that no longer names the pen). `ViewportItem` watches the window's
+  tablet events: a press or release feeds `interact::PalmRejection`
+  (Qt-free, steady-clock seconds), whose filter drops, for their whole
+  life, finger touches that begin while the pen is down or within 0.5 s
+  of it lifting, before `TouchGestureRecognizer` sees them; touches down
+  when the pen lands are ended (`TouchGestureRecognizer::abandon`: a
+  pending one-finger press is cancelled, a pan stops, no undo tap). The
+  last tablet hover position marks a hover event as the pen's, so the pen
+  hovers with its own tolerances (`InputProfile`). The controller keeps
+  the pen and the fingers apart too: a finger pressing during a pen drag
+  is ignored until it lifts, the pen's press cancels a finger's drag, and a
+  system touch cancel ends only a finger's press (`cancelPointer(device)`).
+  The sketch loupe is for fingers only. `AppController::touchMode` (on after a touch, off after a
   real mouse click, on from the start on iOS/Android, `--touch` on the
   command line) makes `Theme.controlHeight` 44 and shows the Pen switch. The
   flag itself lives in `InteractionController::touchLayout()` (AppController

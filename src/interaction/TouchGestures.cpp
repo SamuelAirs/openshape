@@ -19,6 +19,16 @@ void TouchGestureRecognizer::reset()
     start_.clear();
 }
 
+std::vector<TouchIntent> TouchGestureRecognizer::abandon()
+{
+    std::vector<TouchIntent> out;
+    if (pointerDown_)
+        out.push_back({TouchIntent::Kind::PointerCancel, {}, {}, {}, 1.0});
+    reset();
+    lastTapTime_ = -1e9;
+    return out;
+}
+
 std::vector<TouchIntent> TouchGestureRecognizer::update(const std::vector<TouchPoint>& points, double seconds)
 {
     std::vector<TouchIntent> out;

@@ -118,6 +118,9 @@ public:
     // Abandons an in-progress press/drag without treating it as a click
     // (e.g. a second finger touched down). A manipulator drag keeps its value.
     void cancelPointer();
+    // The same, only when the press in progress is that device's (a touch
+    // sequence the system cancelled must not end the pen's stroke).
+    void cancelPointer(PointerDevice device);
     // steps > 0 zooms in (one wheel notch = 1 step).
     void wheel(Vec2 position, double steps);
     // Two-finger gestures. scale > 1 means fingers moved apart (zoom in).
@@ -128,8 +131,17 @@ public:
     bool keyPress(Key key);
     // Pen mode (Shapr3D style): once a pen is used, it selects and draws and
     // fingers only move the view. Turned on by the first pen press.
+    // Pen and fingers never share a press: a finger touching down while the
+    // pen draws is ignored until it lifts (a palm the platform let through,
+    // PalmRejection being the first line), and the pen coming down ends a
+    // finger's press or drag (cancelled, no click). A finger tap that pen
+    // mode ignores says once in a while how to select with a finger
+    // (kPenFingerHint).
     bool penMode() const { return penMode_; }
     void setPenMode(bool on) { penMode_ = on; }
+    static constexpr const char* kPenFingerHint =
+        "In pen mode fingers only move the view. To select or draw with a finger, turn off Pen with the view buttons.";
+    static constexpr double kPenFingerHintInterval = 10; // s between two of them
     // Preferences: whether sketch points snap to the grid (this and later sketches).
     bool sketchGridSnap() const { return sketchGridSnap_; }
     void setSketchGridSnap(bool on);
@@ -158,9 +170,10 @@ public:
     // under a finger and the loupe keep off them.
     const std::vector<ScreenRect>& sketchObstacles() const { return sketchObstacles_; }
     void setSketchObstacles(std::vector<ScreenRect> obstacles);
-    // The loupe: while a finger or pen places or drags a sketch point, a
-    // magnified inset of the view around the snapped point (`subject`),
-    // placed beside the finger (placeLoupe), with the snap hint.
+    // The loupe: while a finger places or drags a sketch point, a magnified
+    // inset of the view around the snapped point (`subject`), placed beside
+    // the finger (placeLoupe), with the snap hint. Never for the pen (its
+    // tip is thin and shows the point itself) nor the mouse.
     struct SketchLoupe {
         bool visible = false;
         Vec2 center;  // where the loupe goes (screen px)
@@ -362,6 +375,8 @@ public:
     // ---- State ----
     const sel::SelectionSet& selection() const { return selection_; }
     const sel::PickResult& hover() const { return hover_; }
+    // The device of the latest hover (the pen keeps its own tolerances).
+    PointerDevice hoverDevice() const { return hoverDevice_; }
     std::string selectionSummary() const;
     RenderScene renderScene() const;
     // Call after the document was changed outside the controller.
@@ -506,6 +521,7 @@ private:
     SceneCache scene_;
     sel::SelectionSet selection_;
     sel::PickResult hover_;
+    PointerDevice hoverDevice_ = PointerDevice::Mouse;
     int hoveredHandle_ = -1;
     std::unique_ptr<Operation> operation_;
     std::unique_ptr<SketchSession> session_;
@@ -530,6 +546,15 @@ private:
     BodyTool bodyTool_ = BodyTool::Move;
     int hoveredRing_ = -1;
     bool penMode_ = false;
+    // A finger's press that the pen overrides (it touched down while the pen
+    // drew, or the pen came down during it): its moves, release and
+    // double-tap are ignored until it lifts.
+    bool touchIgnored_ = false;
+    // When the last kPenFingerHint was shown (clock_).
+    std::optional<TypingPause::Clock::time_point> penHintShown_;
+    // The press in progress is the pen's and `event` is a finger's (or the
+    // finger is one the pen overrides): the finger is ignored.
+    bool penOverridesTouch(const PointerEvent& event) const;
     bool sketchGridSnap_ = true;
     bool touchLayout_ = false;
     SafeInsets safeInsets_;

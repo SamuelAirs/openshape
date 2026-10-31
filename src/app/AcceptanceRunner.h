@@ -77,6 +77,13 @@ public:
     void touchPress(QPointF p);
     void touchMove(QPointF p);
     void touchRelease(QPointF p);
+    // The pen (an Apple Pencil, tilted, no pressure) through Qt's tablet
+    // path: hovering (no contact; an iPad's Pencil hover), down, moved,
+    // lifted. As on iOS, Qt turns what no item takes into mouse events.
+    void penHover(QPointF p);
+    void penPress(QPointF p);
+    void penMove(QPointF p);
+    void penRelease(QPointF p);
     // Clicks the center of a QML item found by objectName, first scrolling any
     // Flickable around it (the tool palette in a short window) so it is on
     // screen, as a user would; false if not found/visible.
@@ -125,6 +132,8 @@ private:
     void beginScenario(const QString& name, bool reset);
     void endScenario();
     std::vector<Step> coreScenario();
+    // One pen event (`buttons`: Left while it touches the screen).
+    void penEvent(QPointF p, Qt::MouseButtons buttons);
     // One touch frame: every finger of `points` in `state`.
     void touchFrame(const QList<QPointF>& points, QEventPoint::State state);
     QString describeClick() const;
