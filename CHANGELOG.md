@@ -3,7 +3,7 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-10-31)
 
 OpenShape is now called FoldForm (the source code and repository keep the name openshape).
 
@@ -25,6 +25,9 @@ with no limit.
 **Sketching with a finger.** A pinch or a two-finger pan in a sketch moves
 the view and never draws a rectangle, and each stroke with the Line tool
 is a line of its own instead of starting from the last point touched.
+With a finger or the Pencil, a tap on a line, circle or arc selects it even
+while a drawing tool is on (drag from it to draw), and Select and Trim head
+the tool list, so they stay in sight on the iPhone Duo's inner display.
 
 **Edit a sketch by dragging.** With Select, drag a line to move it (pull a
 rectangle's side out and the rectangle grows, its corners staying

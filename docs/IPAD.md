@@ -564,7 +564,12 @@ What to try:
 5. Split View with another app, on either side of the bar; drag the divider.
 6. Half fold the phone (tent or laptop pose) while typing a value: tell us
    whether the value box, the keypad or a card sits on the crease (TD-140).
-7. Then send **Logs/openshape.log** (Files app → On My iPhone → FoldForm →
+7. Selecting in a sketch (since 2026-10-31; the owner could not find how):
+   draw two lines with the Line tool, then tap one of them with a finger.
+   It turns blue, the tool bar shows **Select**, its length shows: tap the
+   length to type one. A drag from the line still draws. On the inner
+   display Select and Trim are at the top of the tool list.
+8. Then send **Logs/openshape.log** (Files app → On My iPhone → FoldForm →
    Logs → Share): its `window ...` lines tell the real sizes and insets.
 
 Not done: placement aware of the fold (TD-140: keep the value box, the

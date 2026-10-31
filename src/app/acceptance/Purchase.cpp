@@ -465,7 +465,7 @@ Steps steps(AcceptanceRunner& r)
     append(steps, notNow(r, s, QStringLiteral("failed purchase"), 2));
     // Ask to Buy, from File → New: the approval comes later; New, dropped
     // with Not now, does not run then.
-    steps.push_back([&r, s] { s->store->outcome = StandInStore::Outcome::Defer; });
+    steps.push_back([s] { s->store->outcome = StandInStore::Outcome::Defer; });
     append(steps, fileMenu(r, QStringLiteral("newMenuItem"), QStringLiteral("File → New (Ask to Buy)")));
     steps.push_back([&r] {
         expectSheet(r, QStringLiteral("File → New (Ask to Buy)"));
@@ -480,7 +480,7 @@ Steps steps(AcceptanceRunner& r)
         r.screenshot(QStringLiteral("purchase_waiting"));
     });
     append(steps, notNow(r, s, QStringLiteral("Ask to Buy"), 2));
-    steps.push_back([&r, s] {
+    steps.push_back([s] {
         s->messages.clear();
         s->store->approve();
     });
@@ -493,7 +493,7 @@ Steps steps(AcceptanceRunner& r)
     });
 
     // ---- The App Store cannot be reached: Unlock off, a line says why.
-    steps.push_back([&r, s] {
+    steps.push_back([&r] {
         r.app().setProjectsUnlocked(false);
         auto offline = std::make_shared<StandInStore>();
         offline->productAvailable = false;
@@ -552,14 +552,14 @@ Steps steps(AcceptanceRunner& r)
     append(steps, notNow(r, s, QStringLiteral("Import STEP"), 1));
     steps.push_back([&r] { r.check(r.app().homeVisible() && r.app().documentTitle() == QStringLiteral("First"), say(QStringLiteral("Home stays, First open"))); });
     // A project and a STEP file from another app.
-    steps.push_back([&r, s] { QWindowSystemInterface::handleFileOpenEvent(QUrl::fromLocalFile(s->elsewhere)); });
+    steps.push_back([s] { QWindowSystemInterface::handleFileOpenEvent(QUrl::fromLocalFile(s->elsewhere)); });
     wait(steps, 1);
     steps.push_back([&r, s] {
         expectSheet(r, QStringLiteral("a project from another app"));
         r.check(!QFileInfo::exists(s->folder + QStringLiteral("/Gift.openshape")), say(QStringLiteral("nothing was copied in")));
     });
     append(steps, notNow(r, s, QStringLiteral("a project from another app"), 1));
-    steps.push_back([&r, s] { QWindowSystemInterface::handleFileOpenEvent(QUrl::fromLocalFile(s->step)); });
+    steps.push_back([s] { QWindowSystemInterface::handleFileOpenEvent(QUrl::fromLocalFile(s->step)); });
     wait(steps, 1);
     steps.push_back([&r] { expectSheet(r, QStringLiteral("a STEP file from another app")); });
     append(steps, notNow(r, s, QStringLiteral("a STEP file from another app"), 1));
