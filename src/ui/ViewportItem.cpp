@@ -109,20 +109,36 @@ void ViewportItem::geometryChange(const QRectF& newGeometry, const QRectF& oldGe
         controller_->interaction().setViewportSize({newGeometry.width(), newGeometry.height()});
 }
 
+bool ViewportItem::focusForPress()
+{
+    if (controller_)
+        controller_->takeSwallowedViewPress(); // (a stale request from focus that went elsewhere)
+    forceActiveFocus(Qt::MouseFocusReason);
+    // The editor asked while it lost the focus to this press.
+    return controller_ && controller_->takeSwallowedViewPress();
+}
+
 void ViewportItem::mousePressEvent(QMouseEvent* event)
 {
-    forceActiveFocus(Qt::MouseFocusReason);
+    const bool swallow = focusForPress();
     // A real mouse (not a touch or pen turned into mouse events) leaves touch mode.
     if (controller_ && event->source() == Qt::MouseEventNotSynthesized && event->pointingDevice()
         && event->pointingDevice()->type() == QInputDevice::DeviceType::Mouse)
         controller_->setTouchMode(false);
-    if (controller_)
+    if (swallow)
+        swallowing_ = true;
+    else if (controller_)
         controller_->interaction().pointerPress(toPointer(event, event->button()));
     event->accept();
 }
 
 void ViewportItem::mouseMoveEvent(QMouseEvent* event)
 {
+    if (swallowing_ && event->buttons() != Qt::NoButton) {
+        event->accept(); // the press that closed the dimension editor, dragged
+        return;
+    }
+    swallowing_ = false;
     if (controller_) {
         const Qt::MouseButton held = event->buttons().testFlag(Qt::LeftButton) ? Qt::LeftButton
             : event->buttons().testFlag(Qt::RightButton)                      ? Qt::RightButton
@@ -139,6 +155,11 @@ void ViewportItem::mouseMoveEvent(QMouseEvent* event)
 
 void ViewportItem::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (swallowing_) {
+        swallowing_ = false;
+        event->accept();
+        return;
+    }
     if (controller_) {
         controller_->interaction().pointerRelease(toPointer(event, event->button()));
         controller_->notePointerRelease();
@@ -148,7 +169,7 @@ void ViewportItem::mouseReleaseEvent(QMouseEvent* event)
 
 void ViewportItem::mouseDoubleClickEvent(QMouseEvent* event)
 {
-    if (controller_ && event->button() == Qt::LeftButton)
+    if (controller_ && event->button() == Qt::LeftButton && !swallowing_)
         controller_->interaction().pointerDoubleClick(toPointer(event, event->button()));
     event->accept();
 }
@@ -188,6 +209,7 @@ void ViewportItem::touchEvent(QTouchEvent* event)
     if (event->type() == QEvent::TouchCancel) {
         interaction.cancelPointer();
         gestures_ = {};
+        swallowing_ = false;
         event->accept();
         return;
     }
@@ -212,21 +234,36 @@ void ViewportItem::touchEvent(QTouchEvent* event)
         e.position = intent.position;
         switch (intent.kind) {
         case Kind::PointerPress:
-            forceActiveFocus(Qt::MouseFocusReason);
-            interaction.pointerPress(e);
+            // A finger that closes the dimension editor only closes it.
+            if (focusForPress())
+                swallowing_ = true;
+            else
+                interaction.pointerPress(e);
             break;
         case Kind::PointerMove: {
+            if (swallowing_)
+                break;
             const auto start = std::chrono::steady_clock::now();
             interaction.pointerMove(e);
             controller_->notePointerMove(millisecondsSince(start), true);
             break;
         }
         case Kind::PointerRelease:
+            if (swallowing_) {
+                swallowing_ = false;
+                break;
+            }
             interaction.pointerRelease(e);
             controller_->notePointerRelease();
             break;
-        case Kind::PointerCancel: interaction.cancelPointer(); break;
-        case Kind::DoubleTap: interaction.pointerDoubleClick(e); break;
+        case Kind::PointerCancel:
+            swallowing_ = false;
+            interaction.cancelPointer();
+            break;
+        case Kind::DoubleTap:
+            if (!swallowing_)
+                interaction.pointerDoubleClick(e);
+            break;
         case Kind::Pan: interaction.twoFingerPan(intent.from, intent.to); break;
         case Kind::Pinch: interaction.pinch(intent.position, intent.scale); break;
         case Kind::Undo: controller_->undoWithFeedback(); break;

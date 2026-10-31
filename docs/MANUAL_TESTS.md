@@ -177,6 +177,16 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     after typing `30`: exactly 30. The same while drawing a rectangle
     (type the width, Tab, the height). On a touch screen the numeric keypad
     types instead (see IPAD.md).
+20. **Units and arithmetic, and a dimension's field.** Type `2 cm`, `1' 2"`
+    (14 inches), `6×7` and `10 deg` into a box's height: 20 mm, 355.6 mm,
+    42 mm, and a message that this is a length (nothing changes). In a
+    sketch with inches shown (the **mm / in** button), tap a dimension's
+    label and apply it without typing: the size stays exactly what it was
+    (a 12 mm side stays 12 mm, not 0.472 in). Type a new value and tap
+    somewhere empty in the view: the value is applied and nothing is drawn
+    there, even with the Rectangle tool; with the field open, a drag that
+    starts on a side moves nothing. On the iPad keypad, tap a value, then
+    **×** **2** **✓**: it doubles.
 
 ## The Windows installer (optional)
 

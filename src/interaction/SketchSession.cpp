@@ -1859,33 +1859,48 @@ bool SketchSession::sizeCanBeSet(sketch::EntityId curve) const
     return sizeCheck_.settable;
 }
 
+std::string SketchSession::addSizeDimension(sketch::EntityId curve, std::optional<double> millimeters)
+{
+    // At its present size first: a size other dimensions already set
+    // (a rectangle's side opposite a typed width) cannot take one more.
+    sketch::Sketch next;
+    const auto dimension = sizeDimension(curve, &next);
+    if (!dimension)
+        return "Other dimensions already set this size: change one of them.";
+    const std::string label = working_.line(curve) ? "Length" : working_.circle(curve) ? "Diameter" : "Radius";
+    sketch::EntityId id = sketch::kNoEntity;
+    for (const auto& [cid, c] : next.constraints())
+        if (c.kind == dimension->kind && c.a == dimension->a && c.b == dimension->b && !working_.constraint(cid))
+            id = cid;
+    if (id == sketch::kNoEntity)
+        return "That size cannot be set here.";
+    if (millimeters)
+        next.constraint(id)->value = *millimeters;
+    if (!commit(std::move(next), label))
+        return "The sketch cannot take that size.";
+    return {};
+}
+
+std::string SketchSession::keepDimension(sketch::EntityId constraintId)
+{
+    if (working_.line(constraintId) || working_.isRound(constraintId))
+        return addSizeDimension(constraintId, std::nullopt); // at the present size, exactly
+    const sketch::SketchConstraint* c = working_.constraint(constraintId);
+    if (!c || !c->isDimension())
+        return "That dimension no longer exists.";
+    return {}; // as it is: nothing to change, nothing to undo
+}
+
 std::string SketchSession::setDimension(sketch::EntityId constraintId, const std::string& text)
 {
     if (working_.line(constraintId) || working_.isRound(constraintId)) {
         // A size label: the curve gets its length, diameter or radius.
-        const sketch::EntityId curve = constraintId;
         const auto parsed = parseLength(text, document_.displayUnit());
         if (!parsed.millimeters)
             return parsed.error;
         if (*parsed.millimeters <= 0)
             return "Sizes must be greater than zero.";
-        // At its present size first: a size other dimensions already set
-        // (a rectangle's side opposite a typed width) cannot take one more.
-        sketch::Sketch next;
-        const auto dimension = sizeDimension(curve, &next);
-        if (!dimension)
-            return "Other dimensions already set this size: change one of them.";
-        const std::string label = working_.line(curve) ? "Length" : working_.circle(curve) ? "Diameter" : "Radius";
-        sketch::EntityId id = sketch::kNoEntity;
-        for (const auto& [cid, c] : next.constraints())
-            if (c.kind == dimension->kind && c.a == dimension->a && c.b == dimension->b && !working_.constraint(cid))
-                id = cid;
-        if (id == sketch::kNoEntity)
-            return "That size cannot be set here.";
-        next.constraint(id)->value = *parsed.millimeters;
-        if (!commit(std::move(next), label))
-            return "The sketch cannot take that size.";
-        return {};
+        return addSizeDimension(constraintId, *parsed.millimeters);
     }
     const sketch::SketchConstraint* c = working_.constraint(constraintId);
     if (!c || !c->isDimension())

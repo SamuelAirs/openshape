@@ -47,6 +47,11 @@ protected:
 
 private:
     void onViewChanged();
+    // Takes the keyboard focus for a press. True when the press only closed
+    // the sketch's dimension editor (AppController::swallowViewPress): it
+    // goes no further then, nor do its moves and its release (swallowing_).
+    bool focusForPress();
+    bool swallowing_ = false;
 
     QPointer<AppController> controller_;
     QTimer animationTimer_;

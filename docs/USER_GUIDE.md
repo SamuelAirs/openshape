@@ -118,15 +118,32 @@ ground.
 
 Lengths accept units and arithmetic everywhere: in the value box, in
 sketch dimensions and in the Model panel. Without a unit they are in the
-display unit (**mm** or **in**, bottom right). Angles are in degrees.
+display unit (**mm** or **in**, bottom right); a unit you type always wins
+(`20 cm` is 200 mm whatever the display unit). Angles are in degrees.
 
 | You type | Means |
 |---|---|
 | `25` | 25 in the display unit |
-| `1in`, `1"`, `2.5cm`, `2,5cm`, `0.1m`, `25mm` | that length in any unit |
-| `20+5`, `(10+2)*3`, `100/4` | the result |
+| `25mm`, `2.5cm`, `2,5cm`, `0.1m`, `1in`, `1"`, `2ft`, `2'` | that length in any unit |
+| `1' 2"`, `5 ft 6 in`, `1' 2` | feet and inches together (a number after feet is inches) |
+| `1in - 2mm`, `0.1cm + 0.2mm` | units mixed: each number takes its own unit |
+| `(10+5) cm` | a unit after parentheses applies to all of them |
+| `20+5`, `(10+2)*3`, `100/4`, `6×7`, `84÷2`, `50−8` | the result (the keypad's `×` `÷` `−` signs work typed too) |
 | `+5`, `-5` (in a size like Height) | 5 more or 5 less than now |
-| `90`, `90deg`, `90°`, `1.5rad` (angles in the value box) | an angle |
+| `90`, `90deg`, `90 degrees`, `90°`, `1.5rad`, `45°*2` | an angle |
+
+A leading `=` is allowed (`=20+5`). A length refuses an angle's unit
+(`5 deg` on a width) and an angle a length's unit (`10 mm` on an angle):
+the message says so and nothing changes; correct the value and apply it
+again. The same for any value that is not a number (`12+`, `1/0`, `2 pin`).
+
+A sketch dimension opens with the value its label shows (rounded to three
+decimals). Applied without a change, the dimension keeps its exact value:
+a 12 mm side shown as 0.472 in stays 12 mm (typing `0.472` makes it
+exactly 0.472 in). Leaving a dimension's field by tapping or clicking
+elsewhere applies the value typed (without a change it just closes); that
+tap only closes the field, it does not also draw, select or move anything.
+`Esc` closes the field without a change.
 
 **The model waits until you have typed the whole value.** Typing `100` does
 not show the model at 1 mm, then 10 mm, then 100 mm: the preview follows
@@ -145,6 +162,9 @@ parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
 **⌫** (backspace, which takes a whole unit at once), **C** (clear), **Next**
 (on to the next value, such as a rectangle's height or a hole's Y) and
 **✓** (apply). The keys are large enough for a finger or the Apple Pencil.
+The value shown when the keypad opens is replaced by the first digit you
+tap, but **×** and **÷** work on it: a height of 95, then **×** **2** and
+**✓**, is 190.
 
 - On an **iPhone** the keypad sits along the bottom and the value box moves
   to the top; the view shifts so that what you selected stays in sight

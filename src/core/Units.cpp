@@ -62,33 +62,115 @@ double fromMillimeters(double millimeters, LengthUnit unit)
 
 namespace {
 
-// Recursive-descent parser. Each value carries a flag saying whether it is a
-// length (has a unit, or is a bare number interpreted as a length) or a pure
+constexpr double kPiUnits = 3.14159265358979323846;
+
+// The units a value may be typed in. Feet are typed only: there is no feet
+// display unit (LengthUnit), so unitFromSymbol, which reads the document's
+// display unit, does not know them.
+enum class Quantity { Length, Angle };
+struct TypedUnit {
+    Quantity quantity = Quantity::Length;
+    double factor = 1.0; // millimeters (a length) or degrees (an angle) per unit
+    bool foot = false;
+    bool inch = false;
+};
+
+std::optional<TypedUnit> typedUnit(std::string_view symbol)
+{
+    std::string s;
+    for (char c : symbol)
+        s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    if (s == "ft" || s == "foot" || s == "feet" || s == "'" || s == "\xE2\x80\xB2") // U+2032 prime
+        return TypedUnit{Quantity::Length, 304.8, true, false};
+    if (s == "\xE2\x80\xB3") // U+2033 double prime
+        return TypedUnit{Quantity::Length, 25.4, false, true};
+    if (const auto unit = unitFromSymbol(s))
+        return TypedUnit{Quantity::Length, millimetersPer(*unit), false, *unit == LengthUnit::Inch};
+    if (s == "deg" || s == "degree" || s == "degrees" || s == "\xC2\xB0")
+        return TypedUnit{Quantity::Angle, 1.0, false, false};
+    if (s == "rad" || s == "radian" || s == "radians")
+        return TypedUnit{Quantity::Angle, 180.0 / kPiUnits, false, false};
+    return std::nullopt;
+}
+
+// The operators a keypad, a handwriting recognizer (the Apple Pencil) or a
+// pasted formula may use besides + - * /: the times, division and minus
+// signs, as ASCII.
+constexpr std::pair<std::string_view, char> kOperatorSigns[] = {
+    {"\xC3\x97", '*'},     // U+00D7 multiplication sign
+    {"\xC3\xB7", '/'},     // U+00F7 division sign
+    {"\xE2\x88\x92", '-'}, // U+2212 minus sign
+    {"\xE2\x88\x97", '*'}, // U+2217 asterisk operator
+    {"\xE2\x8B\x85", '*'}, // U+22C5 dot operator
+    {"\xE2\x88\x95", '/'}, // U+2215 division slash
+};
+
+std::string asciiOperators(std::string_view text)
+{
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size();) {
+        bool replaced = false;
+        for (const auto& [sign, ascii] : kOperatorSigns) {
+            if (text.compare(i, sign.size(), sign) == 0) {
+                out.push_back(ascii);
+                i += sign.size();
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced)
+            out.push_back(text[i++]);
+    }
+    return out;
+}
+
+// The character at `pos`: a whole UTF-8 sequence (for messages).
+std::string characterAt(std::string_view text, std::size_t pos)
+{
+    std::size_t end = pos + 1;
+    while (end < text.size() && (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80)
+        ++end;
+    return std::string(text.substr(pos, end - pos));
+}
+
+// Recursive-descent parser. Each value carries a flag saying whether it
+// has a unit (a length in millimeters, or an angle in degrees) or is a pure
 // scalar factor. Grammar:
 //   expr   := term (('+'|'-') term)*
 //   term   := factor (('*'|'/') factor)*
-//   factor := ('+'|'-') factor | '(' expr ')' unit? | number unit?
+//   factor := ('+'|'-') factor | '(' expr ')' unit? | number unit? (number inch-unit?)
+// The last part: feet and inches written together, 1' 2" (1 ft 2 in).
 struct Value {
-    double v = 0.0;      // in millimeters when isLength, otherwise a plain number
-    bool isLength = false;
+    double v = 0.0;       // in millimeters (degrees for an angle) when hasUnit, otherwise a plain number
+    bool hasUnit = false;
 };
 
 class Parser {
 public:
-    Parser(std::string_view text, LengthUnit defaultUnit) : text_(text), defaultUnit_(defaultUnit) {}
+    Parser(std::string_view text, Quantity quantity, LengthUnit defaultUnit)
+        : source_(asciiOperators(text)), text_(source_), quantity_(quantity), defaultUnit_(defaultUnit)
+    {
+    }
 
+    // Millimeters for a length, degrees for an angle.
     LengthParseResult run()
     {
         LengthParseResult result;
         skipSpace();
+        // A leading '=' (a spreadsheet habit, and OpenShape3D's formulas) is allowed.
+        if (pos_ < text_.size() && text_[pos_] == '=') {
+            ++pos_;
+            skipSpace();
+        }
         if (pos_ >= text_.size()) {
-            result.error = "Enter a value";
+            result.error = "Type a value.";
             return result;
         }
         Value value = expr();
         skipSpace();
         if (error_.empty() && pos_ != text_.size())
-            error_ = "Unexpected '" + std::string(1, text_[pos_]) + "'";
+            error_ = "Unexpected '" + characterAt(text_, pos_) + "'";
         if (!error_.empty()) {
             result.error = error_;
             return result;
@@ -98,11 +180,13 @@ public:
             return result;
         }
         // A pure scalar (e.g. "2*3") is interpreted in the default unit.
-        result.millimeters = value.isLength ? value.v : toMillimeters(value.v, defaultUnit_);
+        result.millimeters = value.hasUnit ? value.v : inDefaultUnit(value.v);
         return result;
     }
 
 private:
+    double inDefaultUnit(double v) const { return quantity_ == Quantity::Length ? toMillimeters(v, defaultUnit_) : v; }
+
     void skipSpace()
     {
         while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_])))
@@ -124,14 +208,14 @@ private:
         // Plain + plain stays plain (so "(20+5)mm" works). Adding a plain
         // number to a length treats the number as a default-unit length.
         Value out;
-        if (!a.isLength && !b.isLength) {
+        if (!a.hasUnit && !b.hasUnit) {
             out.v = subtract ? a.v - b.v : a.v + b.v;
             return out;
         }
-        const double av = a.isLength ? a.v : toMillimeters(a.v, defaultUnit_);
-        const double bv = b.isLength ? b.v : toMillimeters(b.v, defaultUnit_);
+        const double av = a.hasUnit ? a.v : inDefaultUnit(a.v);
+        const double bv = b.hasUnit ? b.v : inDefaultUnit(b.v);
         out.v = subtract ? av - bv : av + bv;
-        out.isLength = true;
+        out.hasUnit = true;
         return out;
     }
 
@@ -151,6 +235,7 @@ private:
 
     Value term()
     {
+        const char* what = quantity_ == Quantity::Length ? "length" : "angle";
         Value left = factor();
         while (error_.empty()) {
             const bool mul = accept('*');
@@ -158,12 +243,14 @@ private:
             if (!mul && !div)
                 break;
             Value right = factor();
-            if (left.isLength && right.isLength) {
-                error_ = "Cannot multiply or divide two lengths";
+            if (!error_.empty())
+                break;
+            if (left.hasUnit && right.hasUnit) {
+                error_ = std::string("Cannot multiply or divide two ") + what + "s";
                 break;
             }
-            if (div && right.isLength) {
-                error_ = "Cannot divide by a length";
+            if (div && right.hasUnit) {
+                error_ = std::string("Cannot divide by a ") + what;
                 break;
             }
             if (div && right.v == 0.0) {
@@ -172,7 +259,7 @@ private:
             }
             Value out;
             out.v = mul ? left.v * right.v : left.v / right.v;
-            out.isLength = left.isLength || right.isLength;
+            out.hasUnit = left.hasUnit || right.hasUnit;
             left = out;
         }
         return left;
@@ -196,12 +283,13 @@ private:
                     error_ = "Missing ')'";
                 return {};
             }
-            return applyUnit(inner);
+            return applyUnit(inner).value;
         }
-        return number();
+        return number(false);
     }
 
-    Value number()
+    // `inches`: the inches after feet (1' 2"): a bare number is inches too.
+    Value number(bool inches)
     {
         skipSpace();
         const std::size_t start = pos_;
@@ -216,7 +304,7 @@ private:
             digits += "." + std::string(text_.substr(fracStart, pos_ - fracStart));
         }
         if (digits.empty() || digits == ".") {
-            error_ = pos_ < text_.size() ? "Unexpected '" + std::string(1, text_[pos_]) + "'" : "Expected a number";
+            error_ = pos_ < text_.size() ? "Unexpected '" + characterAt(text_, pos_) + "'" : "Expected a number";
             return {};
         }
         // Locale-independent (Qt sets the C locale from the environment on
@@ -231,38 +319,72 @@ private:
         }
         Value v;
         v.v = value;
-        return applyUnit(v);
+        const Applied applied = applyUnit(v);
+        if (!error_.empty())
+            return {};
+        if (inches) {
+            if (applied.unit && !applied.unit->inch) {
+                error_ = "After feet, give the inches: 1' 2\"";
+                return {};
+            }
+            return applied.unit ? applied.value : Value{value * 25.4, true};
+        }
+        // Feet, then inches without an operator between them: 1' 2", 5 ft 6 in.
+        if (applied.unit && applied.unit->foot) {
+            skipSpace();
+            if (pos_ < text_.size() && (std::isdigit(static_cast<unsigned char>(text_[pos_])) || text_[pos_] == '.')) {
+                const Value rest = number(true);
+                if (!error_.empty())
+                    return {};
+                return Value{applied.value.v + rest.v, true};
+            }
+        }
+        return applied.value;
     }
 
-    Value applyUnit(Value v)
+    struct Applied {
+        Value value;
+        std::optional<TypedUnit> unit; // the unit read, if any
+    };
+
+    Applied applyUnit(Value v)
     {
         skipSpace();
         const std::size_t start = pos_;
-        if (pos_ < text_.size() && text_[pos_] == '"') {
+        if (pos_ < text_.size() && (text_[pos_] == '"' || text_[pos_] == '\'')) {
             ++pos_;
+        } else if (text_.compare(pos_, 2, "\xC2\xB0") == 0) { // the degree sign
+            pos_ += 2;
+        } else if (text_.compare(pos_, 3, "\xE2\x80\xB2") == 0 || text_.compare(pos_, 3, "\xE2\x80\xB3") == 0) { // primes
+            pos_ += 3;
         } else {
             while (pos_ < text_.size() && std::isalpha(static_cast<unsigned char>(text_[pos_])))
                 ++pos_;
         }
         if (pos_ == start)
-            return v;
+            return {v, std::nullopt};
         const auto symbol = text_.substr(start, pos_ - start);
-        const auto unit = unitFromSymbol(symbol);
+        const auto unit = typedUnit(symbol);
         if (!unit) {
             error_ = "Unknown unit '" + std::string(symbol) + "'";
             return {};
         }
-        if (v.isLength) {
+        if (unit->quantity != quantity_) {
+            // (OpenShape3D's rule: a length unit never resizes an angle, nor an angle unit a length.)
+            error_ = quantity_ == Quantity::Length ? "This is a length: type it in mm, cm, m, in or ft, not in degrees."
+                                                   : "This is an angle: type it in degrees, not in " + std::string(symbol) + ".";
+            return {};
+        }
+        if (v.hasUnit) {
             error_ = "Value already has a unit";
             return {};
         }
-        Value out;
-        out.v = toMillimeters(v.v, *unit);
-        out.isLength = true;
-        return out;
+        return {Value{v.v * unit->factor, true}, unit};
     }
 
+    std::string source_;
     std::string_view text_;
+    Quantity quantity_;
     LengthUnit defaultUnit_;
     std::size_t pos_ = 0;
     std::string error_;
@@ -272,24 +394,14 @@ private:
 
 LengthParseResult parseLength(std::string_view text, LengthUnit defaultUnit)
 {
-    return Parser(text, defaultUnit).run();
+    return Parser(text, Quantity::Length, defaultUnit).run();
 }
 
 LengthParseResult parseAngle(std::string_view text)
 {
-    // Reuse the length expression parser: rewrite angle units into plain
-    // arithmetic on degrees and parse as a unitless (default-unit) value.
-    std::string s(text);
-    auto replaceAll = [&](const std::string& from, const std::string& to) {
-        for (std::size_t pos = 0; (pos = s.find(from, pos)) != std::string::npos; pos += to.size())
-            s.replace(pos, from.size(), to);
-    };
-    replaceAll("\xC2\xB0", "");
-    replaceAll("deg", "");
-    replaceAll("rad", "*57.29577951308232");
-    LengthParseResult result = parseLength(s, LengthUnit::Millimeter);
+    LengthParseResult result = Parser(text, Quantity::Angle, LengthUnit::Millimeter).run();
     if (result.millimeters)
-        result.millimeters = *result.millimeters * 3.14159265358979323846 / 180.0;
+        result.millimeters = *result.millimeters * kPiUnits / 180.0;
     return result;
 }
 

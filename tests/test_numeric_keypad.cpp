@@ -125,6 +125,75 @@ TEST(NumericKeypad, AnglesTakeDegreesAndCountsWholeNumbers)
     EXPECT_FALSE(keypadValue("2.5", KeypadMode::Count, LengthUnit::Millimeter).millimeters.has_value());
 }
 
+// OpenShape3D's keypad cases (NumericKeypadTests.swift), on our keypad.
+// Every operator key evaluates: the keys show the times, division and minus
+// signs and type * / -; times and divide work on the value shown (a
+// calculator's keys; a value cannot start with them), while plus and minus
+// still replace it ("+5" / "-5" change a measured value by that much).
+TEST(NumericKeypad, EveryOperatorKeyEvaluatesAndTimesWorksOnTheValueShown)
+{
+    const auto value = [](std::initializer_list<const char*> keys, std::string start = "") {
+        return millimeters(tap(keys, KeypadMode::Length, std::move(start)).text);
+    };
+    EXPECT_DOUBLE_EQ(value({"6", "*", "7"}), 42.0);
+    EXPECT_DOUBLE_EQ(value({"8", "4", "/", "2"}), 42.0);
+    EXPECT_DOUBLE_EQ(value({"5", "0", "-", "8"}), 42.0);
+    EXPECT_DOUBLE_EQ(value({"4", "0", "+", "2"}), 42.0);
+    EXPECT_DOUBLE_EQ(value({"(", "1", "+", "5", ")", "*", "7"}), 42.0);
+    EXPECT_DOUBLE_EQ(value({"-", "4", "2"}), -42.0);
+    EXPECT_DOUBLE_EQ(value({"4", "2", "mm"}), 42.0);
+    // Each operator key's label is a sign the parser takes too (a hardware
+    // keyboard, handwriting or a paste may type the label).
+    for (const auto& row : keypadLayout(KeypadMode::Length, false)) {
+        for (const KeypadKey& key : row) {
+            if (key.id != "*" && key.id != "/" && key.id != "-" && key.id != "+")
+                continue;
+            const auto typed = parseLength("84" + key.label + "2", LengthUnit::Millimeter);
+            ASSERT_TRUE(typed.millimeters.has_value()) << key.id << ": " << typed.error;
+            const double expected = key.id == "*" ? 168.0 : key.id == "/" ? 42.0 : key.id == "-" ? 82.0 : 86.0;
+            EXPECT_DOUBLE_EQ(*typed.millimeters, expected) << key.id;
+        }
+    }
+    // Times and divide on the value shown: 95 mm, x 2 is 190 mm.
+    const KeypadState doubled = tap({"*", "2"}, KeypadMode::Length, "95.00 mm");
+    EXPECT_EQ(doubled.text, "95.00 mm*2");
+    EXPECT_FALSE(doubled.replacing);
+    EXPECT_DOUBLE_EQ(millimeters(doubled.text), 190.0);
+    EXPECT_DOUBLE_EQ(millimeters(tap({"/", "4"}, KeypadMode::Length, "95.00 mm").text), 23.75);
+    const KeypadState turned = tap({"*", "2"}, KeypadMode::Angle, "30.0\xC2\xB0");
+    const auto radians = keypadValue(turned.text, KeypadMode::Angle, LengthUnit::Millimeter);
+    ASSERT_TRUE(radians.millimeters.has_value()) << radians.error;
+    EXPECT_NEAR(*radians.millimeters, kPi / 3, 1e-12);
+    // Plus, minus and digits still replace it.
+    EXPECT_EQ(tap({"+", "5"}, KeypadMode::Length, "95.00 mm").text, "+5");
+    EXPECT_EQ(tap({"-", "5"}, KeypadMode::Length, "95.00 mm").text, "-5");
+    EXPECT_EQ(tap({"(", "1"}, KeypadMode::Length, "95.00 mm").text, "(1");
+}
+
+// OpenShape3D: testTrailingUnitPrefersTheLongerToken. Backspace takes a
+// unit whole (never "20m" from "20mm") and only a unit after a number.
+TEST(NumericKeypad, BackspaceTakesTheWholeTrailingUnitOnly)
+{
+    const auto back = [](std::string text) { return pressKeypadKey({std::move(text), false}, "back", KeypadMode::Length).state.text; };
+    EXPECT_EQ(back("20 mm"), "20");
+    EXPECT_EQ(back("20 m"), "20");
+    EXPECT_EQ(back("20 cm"), "20");
+    EXPECT_EQ(back("0.05 in"), "0.05");
+    EXPECT_EQ(back("0.0025 ft"), "0.0025");
+    EXPECT_EQ(back("1' 2\""), "1' 2");
+    EXPECT_EQ(back("(10+5)mm"), "(10+5)");
+    EXPECT_EQ(back("45 deg"), "45");
+    // Not a unit: one character.
+    EXPECT_EQ(back("loft"), "lof");
+    EXPECT_EQ(back("pin"), "pi");
+    EXPECT_EQ(back("20"), "2");
+    EXPECT_EQ(back("25.4/2"), "25.4/");
+    // A unit key replaces the unit the text ends with, whole: 20 mm, then cm.
+    EXPECT_EQ(pressKeypadKey({"20 mm", false}, "cm", KeypadMode::Length).state.text, "20 cm");
+    EXPECT_EQ(pressKeypadKey({"20 m", false}, "mm", KeypadMode::Length).state.text, "20 mm");
+    EXPECT_DOUBLE_EQ(millimeters(pressKeypadKey({"20 m", false}, "mm", KeypadMode::Length).state.text), 20.0);
+}
+
 // A sketch's live values: which keys the keypad has for each.
 TEST(NumericKeypad, SketchInputsGetTheirKindOfKeys)
 {
