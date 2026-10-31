@@ -775,3 +775,64 @@ phone sketching and the keypad check were merged; the real-UI run did not.
   the desktop's normal hover. Lesson: measure a shape by its own points,
   never the sketch's (Numpad's `sketchExtent` still counts the origin; it
   passes today).
+
+## 2026-10-31 — Shell: the retries tested, wrong shapes refused
+
+Shell's retries (split at C0 faces, then intersection joins, adapted from
+OpenShape3D) had never run in a test: OCCT 7.9.3 never refused one of our
+bodies with `BRepOffset_C0Geometry`. A test hook
+(`detail::setShellFirstAttemptRefusedForTesting`) forces them;
+`tests/test_shell_retries.cpp` runs 21 bodies (domes with pipes, a pipe at
+a rounded corner, a rounded T, a rounded box, a boss box, a bump box)
+normally and forced, and asserts.
+
+- **A wrong shape reported as success.** Forced, a dome with a rounded
+  pipe came back at 3314 mm^3 where the shell has 1881. Intersection joins
+  had built a solid of two shells (the outside left open, the inner skin
+  closed apart); `finishSolid`'s repair (ShapeFix_Shape) turned that into
+  5 faces of inner skin. Now every retry's result is measured
+  (`wallProblem`): the outside must be kept whole, every new face must lie
+  `thickness` from the closed faces (5 sample points), and the volume must
+  match the band between outside area A and inside area a,
+  `thickness * (A + a) / 2`. That band is exact for flat walls and was
+  within 0.1% on every right result (0.02% on the bench enclosure). It
+  also caught a natural wrong shape: intersection joins on a box with a
+  half-buried cylinder whose end chords are rounded keep 5492 mm^3 where
+  1 mm walls hold 3939. The old dome body is rebuilt in the test and
+  refused ("the outside lost faces"); the forced dome itself is now
+  stopped earlier by the shell count below, and shells through the new
+  complete-intersection retry.
+- **The access violation** ("dome 5 r 1", forced) was not in the offset:
+  `BRepCheck_Analyzer`'s solid check classifies one shell against the
+  other and crashed in `Extrema_ExtCC` on the same kind of two-shell
+  solid. Shells and free edges are now counted before anything classifies
+  (`unjoinedWalls`), on every attempt: the boss box opened at its top gets
+  a two-shell solid from the *first* attempt, and with the count disabled
+  for it, the test process died once (no gdb), so the count runs always
+  (0.02 ms). TD-153.
+- **Split at C0 had a bug.** A real C0 face (a B-spline profile with a
+  full-multiplicity knot, extruded, as STEP files bring them) is refused
+  with error 3, so the split runs for real. It built a two-shell solid:
+  the open floor, which only borders the split face, was looked up with
+  the reshape context's `Value` (still the old face, not in the split
+  body), so the offset opened nothing. `Apply` gives the rebuilt face. The
+  shelled volume now equals that of the same block built of two C1 faces
+  (to 1e-6).
+- **Two maker parts shell now.** Arc joins refuse the boss box (error 1 at
+  1 mm; 0.79 mm works) and the bump box (error 1 at every thickness). New
+  retries before intersection joins: the body with faces of one surface
+  merged (`ShapeUpgrade_UnifySameDomain`; the boss box: 4508 mm^3 at
+  1 mm), and arc joins in OCCT's "complete intersection" mode (the bump
+  box: 3983 mm^3 at 1 mm, 7574 at 2). Tolerance changes (1e-4 to 1e-2) did
+  nothing. Rounded box, 12 mm walls: arc joins fail, the complete mode
+  gives exactly the plain inner box (16 x 6 x 8 mm).
+- **Honest refusals.** Without a size that works, "Try thinner walls" is
+  said only when the walls meet for sure (half the narrowest side or
+  more); otherwise "Unable to hollow this body with this wall thickness."
+  With the size search, a failed smallest size (0.1 mm) now leads to "Try
+  opening a different face" even when the search runs out of time before
+  trying every half (the bump box opened at its side fails at 0.1 mm).
+- **Areas across a C0 knot.** BRepGProp's adaptive rule (eps 1e-2) took
+  0.2 ms on an offset fillet where the default rule took 8 ms, but on a C0
+  face it was off by 3% (664 mm^2 for 644; 1e-3 and 1e-5 were off too);
+  the default rule is used on C0 surfaces (0.05%).

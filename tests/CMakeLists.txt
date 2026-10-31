@@ -25,7 +25,10 @@ openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_b
     test_plane_references.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
 # Kernel robustness (partly adapted from OpenShape3D, third_party/openshape3d).
-target_sources(test_geometry PRIVATE test_ops_inputs_untouched.cpp test_brep_fuzz.cpp)
+target_sources(test_geometry PRIVATE test_ops_inputs_untouched.cpp test_brep_fuzz.cpp test_shell_retries.cpp)
+# test_shell_retries builds a C0 face and a wrong shell with OpenCASCADE itself.
+target_link_libraries(test_geometry PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlgo TKPrim TKOffset TKShHealing)
+target_compile_definitions(test_geometry PRIVATE _USE_MATH_DEFINES) # OCCT headers use M_PI
 # Text tests read the bundled font from the source tree (tests/TestFonts.h).
 target_compile_definitions(test_geometry PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 if(OPENSHAPE_OWN_OCCT)

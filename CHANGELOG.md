@@ -89,7 +89,11 @@ without a change keeps its exact value.
 
 Fixed: a finger's small wobble on an arrow no longer moves the body;
 Esc or ✕ on an extrusion forgets a New body / Join / Cut chosen for it, so
-it does not carry over to the next one.
+it does not carry over to the next one. Shell hollows bodies it used to
+refuse (a box with a round boss half outside it, a box with a rounded bump
+on top, faces with creases as STEP files bring them), checks the walls of
+what it builds instead of trusting the kernel, and no longer tells you to
+try thinner walls when no thickness would work.
 
 Known limitations: Apple Pencil handwriting (Scribble) does not work in
 value fields (tap the keypad's keys with the Pencil instead); Loft has no
