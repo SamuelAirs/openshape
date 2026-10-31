@@ -7,7 +7,8 @@
 # Mac; keeps the default when there is none. Usage: select-xcode.sh [major]
 # (default 26). App Store Connect refuses betas, so betas and release
 # candidates are skipped, also behind the version-named symlinks the runner
-# images add (Xcode_27.2.app -> Xcode_27.2_Release_Candidate.app).
+# images add (Xcode_27.2.app -> Xcode_27.2_Release_Candidate.app). Versions
+# come from each Xcode's Info.plist, not from the folder names.
 # ipad.yml asks for 27: the iOS 27.1 SDK makes the app fill the iPhone Duo's
 # inner display (apps built with older SDKs run there at a smaller,
 # phone-like size; docs/IPAD.md).
@@ -15,16 +16,25 @@ set -euo pipefail
 
 major=${1:-26}
 ls -d /Applications/Xcode*.app
-xcode=""
-for candidate in $(ls -d /Applications/Xcode_"$major"*.app 2>/dev/null | grep -E "Xcode_$major(\.[0-9]+)*\.app$" | sort -V); do
+best=""
+best_version=""
+for candidate in /Applications/Xcode*.app; do
     real=$(cd "$candidate" && pwd -P)
     case "$real" in
         *[Bb]eta*|*Release_Candidate*|*_RC*) continue ;;
     esac
-    xcode=$candidate
+    version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$real/Contents/Info.plist" 2>/dev/null || true)
+    case "$version" in
+        "$major"|"$major".*) ;;
+        *) continue ;;
+    esac
+    if [ -z "$best" ] || [ "$(printf '%s\n%s\n' "$best_version" "$version" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" = "$version" ]; then
+        best=$real
+        best_version=$version
+    fi
 done
-if [ -n "$xcode" ]; then
-    sudo xcode-select -s "$xcode"
+if [ -n "$best" ]; then
+    sudo xcode-select -s "$best"
 else
     echo "::warning title=Xcode::no released Xcode $major on this runner; keeping the default"
 fi
