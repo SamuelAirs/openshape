@@ -283,6 +283,7 @@ Item {
                 spacing: 6
 
                 Text {
+                    id: valueLabel
                     text: chip.app.operationValueLabel
                     color: Theme.mutedText
                     font.pixelSize: 12
@@ -291,7 +292,11 @@ Item {
                 TextField {
                     id: field
                     objectName: "valueChipField"
-                    implicitWidth: 104
+                    // Narrower in a narrow window (a Split View half beside
+                    // a folding phone's side bar), so the box still docks
+                    // beside the Model / View buttons.
+                    implicitWidth: Math.max(72, Math.min(104, chip.maximumWidth - 2 * Theme.panelPadding - valueLabel.implicitWidth
+                                                         - 6 - 3 * row.spacing - 2 * Theme.controlHeight))
                     implicitHeight: Theme.controlHeight
                     font.pixelSize: 15
                     horizontalAlignment: TextInput.AlignRight

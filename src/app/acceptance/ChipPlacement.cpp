@@ -5,7 +5,8 @@
 // The value chip never covers what was tapped (the owner's iPhone report:
 // "the input dialogue often obscures what I've tapped"). On an iPhone in
 // portrait (402x874, Dynamic Island) and in landscape, an iPad (1180x820,
-// touch) and a desktop window (1400x900, mouse): an edge on the left side of
+// touch), a desktop window (1400x900, mouse) and the iPhone Duo's outer
+// display, inner display and a Split View half there: an edge on the left side of
 // a box and then a face are tapped (clicked), and the chip must stay clear of
 // the selected edge or face as projected on screen, of the arrow and its tip,
 // and of the controls, inside the safe area. On the phone the chip is docked
@@ -439,6 +440,14 @@ Steps steps(AcceptanceRunner& r)
     addConfig(steps, r, landscape, s, false);
     addConfig(steps, r, tablet, s, false);
     addConfig(steps, r, desk, s, false);
+    // The iPhone Duo (docs/IPAD.md): the outer display, the inner one with
+    // its side bar on the right, a Split View half beside the bar.
+    const Config duoOuter{QStringLiteral("duo_outer"), 466, 678, true, QVariantList{59, 0, 34, 0}, {59, 0, 34, 0}};
+    const Config duoInner{QStringLiteral("duo_inner"), 951, 669, true, QVariantList{0, 84, 20, 0}, {0, 84, 20, 0}};
+    const Config duoSplit{QStringLiteral("duo_split"), 440, 669, true, QVariantList{0, 84, 20, 0}, {0, 84, 20, 0}};
+    addConfig(steps, r, duoOuter, s, false);
+    addConfig(steps, r, duoInner, s, false);
+    addConfig(steps, r, duoSplit, s, false);
     // ---- Back to the run's window.
     steps.push_back([&r] {
         r.window()->setProperty("simulatedSafeArea", QVariant());

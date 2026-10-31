@@ -432,7 +432,7 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
         steps.push_back([&r, c] {
             r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face for a hole"),
                     r.app().operationTitle());
-            r.check(tapItem(r, QStringLiteral("tool_hole")), c.name + QStringLiteral(": tap Hole"));
+            r.check(r.tapItem(QStringLiteral("tool_hole")), c.name + QStringLiteral(": tap Hole"));
         });
         wait(steps, 2);
         steps.push_back([&r, s] { r.touchTap({r.screenPoint(0, 0, s->height + 10)}); });
@@ -472,7 +472,7 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
                     c.name + QStringLiteral(": tap the block in the Model panel"));
         });
         wait(steps, 2);
-        steps.push_back([&r, c] { r.check(tapItem(r, QStringLiteral("tool_rotate")), c.name + QStringLiteral(": tap Rotate")); });
+        steps.push_back([&r, c] { r.check(r.tapItem(QStringLiteral("tool_rotate")), c.name + QStringLiteral(": tap Rotate")); });
         wait(steps, 2);
         steps.push_back([&r, c] {
             r.check(r.app().operationValueLabel() == QStringLiteral("Angle Z"), c.name + QStringLiteral(": turning it on the table"),
@@ -512,7 +512,7 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
     wait(steps, 5);
     steps.push_back([&r, c] {
         r.check(r.app().sketchMode(), c.name + QStringLiteral(": sketching"));
-        r.check(tapItem(r, QStringLiteral("tool_rectangle")), c.name + QStringLiteral(": the Rectangle tool"));
+        r.check(r.tapItem(QStringLiteral("tool_rectangle")), c.name + QStringLiteral(": the Rectangle tool"));
     });
     steps.push_back([&r] { r.touchTap({r.screenPoint(3, 4, 0)}); });
     wait(steps, 2);
@@ -686,6 +686,11 @@ Steps steps(AcceptanceRunner& r)
     addConfig(out, r, phone, state);
     addConfig(out, r, sideways, state);
     addConfig(out, r, tablet, state);
+    // The iPhone Duo's outer display (docs/IPAD.md). (Its inner display,
+    // 951x669, is in the duo scenario: there the iPad's checks that the
+    // keypad sits beside the value box and covers no control cannot hold
+    // with a fitted box, TD-151.)
+    addConfig(out, r, Config{QStringLiteral("duo_outer"), 466, 678, QVariantList{59, 0, 34, 0}, {59, 0, 34, 0}}, state);
     out.push_back([&r] {
         r.window()->setProperty("simulatedSafeArea", QVariant());
         r.resizeWindow(r.initialWindowSize().width(), r.initialWindowSize().height());

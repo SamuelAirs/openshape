@@ -81,7 +81,9 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo bracket --screenshot phone.png   # iPhone 16 Pro, portrait
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 874x402 --safe-area 0,62,21,62 --demo sketch --screenshot phone-landscape.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo fillet --screenshot phone-fillet.png   # the value chip docked away from the edge
-./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario chipplacement   # the chip vs. the tapped edge / face at phone, iPad and desktop sizes; on the phone its buttons and the dock while typing
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario chipplacement   # the chip vs. the tapped edge / face at phone, iPad, desktop and iPhone Duo sizes; on the phone its buttons and the dock while typing
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario duo   # the iPhone Duo folded / unfolded live (466x678, 678x466, 951x669 with the side bar right and left, 669x951, a 440x669 Split View half) mid-sketch, mid-push/pull, keypad open, Model panel open, on Home: pictures duo_<task>_<screen>.png
+./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 951x669 --safe-area 0,84,20,0 --demo bracket --screenshot duo-inner.png   # iPhone Duo inner display, side bar on the right (466x678 --safe-area 59,0,34,0: outer display)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario licenses,release   # About → Licenses (every library's text, the LGPL notice, at iPhone size too) and the About card
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo licenses --screenshot licenses.png   # the Licenses list on an iPhone
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario extrudetouch   # a pocket cut on the phone layout with one finger (framed face sketch, arrow and profile drags, Cut / Join / Flip), then with the mouse
@@ -90,7 +92,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchphone   # sketching on a face by finger at 402x874 and 1180x820: face snaps, the loupe, one-finger pan, Face on, a size typed (demo scene facesketch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario pencil   # Apple Pencil at 1180x820 and 402x874 (Qt tablet events as iOS sends them): hover highlight and sketch hover point, a rectangle drawn while a palm rests and slides, the grace period, the finger-tap hint, Pen off
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
-./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario numpad   # the numeric keypad by touch at iPhone and iPad sizes: value box, Model panel, sketch values
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario numpad   # the numeric keypad by touch at iPhone, iPad and iPhone Duo (outer) sizes: value box, Model panel, sketch values
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario viewcube   # the view cube: Top face and a corner clicked, a drag orbits with the Line tool armed; then by finger at 402x874 and 874x402

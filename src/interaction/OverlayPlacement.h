@@ -62,6 +62,12 @@ struct SafeInsets {
 // horizontal and vertical overlap). Larger is farther.
 double separation(const ScreenRect& a, const ScreenRect& b);
 
+// The largest rectangle (by area) inside `area` that overlaps none of
+// `avoid`, each grown by `gap` (empty ones are ignored): where the view can
+// show the selection when the controls, the value box and a keypad leave no
+// spot beside it. A zero-size rectangle at `area`'s corner when nothing is free.
+ScreenRect largestFreeRect(const ScreenRect& area, const std::vector<ScreenRect>& avoid, double gap = 0);
+
 // ---- The operation's value chip --------------------------------------------------
 
 // Where the chip went. Beside the arrow tip, in a corner of the free area,

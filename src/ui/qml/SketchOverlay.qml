@@ -34,6 +34,8 @@ Item {
     property real topRowLeft: 0
     property real topRowRight: width
     property real topRowBottom: 0
+    // Regular windows: the lowest the tool palette may reach (above the hint).
+    property real paletteMaxBottom: height
     // Where this overlay's things along the bottom edge start (compact
     // layout: the tool strip and the constraint actions above it).
     readonly property real bottomStackTop: Theme.compact ? Math.min(finishPanel.y, actionPanel.visible ? actionPanel.y : finishPanel.y) : toolPanel.y
@@ -171,15 +173,19 @@ Item {
 
     // ------------------------------------------------------------ tool bar
     Item {
-        // Where the tool bar goes: the whole top row (centered in the window),
-        // or in a compact window without room there, below the top bar.
+        // Where the tool bar goes: the whole top row (centered in the window)
+        // when it fits between the top bar and what is on the right (the
+        // Model panel, or a phone's Model / View buttons); in a regular
+        // window otherwise centered in that room, or below the top bar right
+        // of the tool palette (an iPad in portrait, a folding phone's inner
+        // display); in a compact one below the top bar.
         id: toolbarSlot
-        readonly property bool fitsTopRow: !Theme.compact
-            || ((overlay.width - toolbar.width) / 2 >= overlay.topRowLeft
-                && (overlay.width + toolbar.width) / 2 <= overlay.topRowRight)
-        x: fitsTopRow ? 0 : Theme.insetLeft
-        y: fitsTopRow ? Theme.insetTop : overlay.topRowBottom + 8
-        width: fitsTopRow ? overlay.width : toolbar.width
+        readonly property bool fitsTopRow: (overlay.width - toolbar.width) / 2 >= overlay.topRowLeft
+                                           && (overlay.width + toolbar.width) / 2 <= overlay.topRowRight
+        readonly property bool fitsRoom: !Theme.compact && overlay.topRowRight - overlay.topRowLeft >= toolbar.width
+        x: fitsTopRow ? 0 : fitsRoom ? overlay.topRowLeft : Theme.compact ? Theme.insetLeft : overlay.paletteRight + 8
+        y: fitsTopRow || fitsRoom ? Theme.insetTop : overlay.topRowBottom + 8
+        width: fitsTopRow ? overlay.width : fitsRoom ? overlay.topRowRight - overlay.topRowLeft : toolbar.width
         height: toolbar.height
     }
     Panel {
@@ -280,7 +286,7 @@ Item {
         id: toolPanel
         objectName: "sketchToolPanel"
         readonly property real minY: Theme.insetTop + Theme.margin + Theme.controlHeight + 2 * Theme.panelPadding
-        readonly property real maxBottom: overlay.height - Theme.safeBottom - 64
+        readonly property real maxBottom: Math.min(overlay.height - Theme.safeBottom - 64, overlay.paletteMaxBottom)
         readonly property real stripWidth: overlay.width - Theme.insetLeft - Theme.insetRight
         readonly property real pinnedWidth: Theme.compact ? pinnedTools.width + 4 : 0
         x: Theme.compact ? Theme.insetLeft + Math.max(0, (stripWidth - width) / 2) : Theme.insetLeft
