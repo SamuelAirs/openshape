@@ -1,26 +1,27 @@
 # Project status
 
-_Last updated: 2026-10-30, after the iPhone Duo and Apple Pencil work and
-the merge of the month-old tracks (lead engineer + agents). New here? Read
-"Blockers" and the latest session report first._
+_Last updated: 2026-10-31, the App Store launch day (lead engineer +
+agents). New here? Read "Blockers" and the latest session report first._
 
 ## Blockers: waiting on the owner
 
-Nothing below can be done by an agent. The App Store date planned for
-2026-10-21 passed because these were not decided; the code is not the
-bottleneck. Details in docs/APP_STORE.md.
+Decided on 2026-10-31: the product is **FoldForm** (code, repository,
+executable and file format keep the name OpenShape, TD-154), version
+**0.3.0**, contact **ayers177@gmail.com**, and the App Store app is **free
+for one project** with a one-time in-app purchase **Unlimited Projects**
+(product ID `io.github.samuelairs.openshape.unlimited`, about USD 10).
+What is left is the owner's App Store Connect work, in order, in
+[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md):
 
-1. **The name.** OpenShape3D (Laan Labs, MIT, free on the App Store since
-   2026-08-06) is a near-identical name on the same kernel. Rename, or at
-   least use a distinct store name, before the public beta link goes out.
-2. **Price** (recommended USD 4.99 one-time), **EU trader status**, and the
-   **contact details** still marked `[OWNER: ...]` in docs/PRIVACY.md,
-   docs/SUPPORT.md and docs/EULA.md.
-3. **A beta tag** (e.g. v0.3.0-beta1) so the TestFlight builds' source offer
-   points at a release that carries the iOS library sources.
-4. **Device testing:** the Duo and Pencil steps in docs/IPAD.md ("The iPhone
-   Duo", "Apple Pencil"), then send Logs/openshape.log from the Duo (its
-   `window ...` lines give the real screen sizes and safe areas, TD-150).
+1. **Paid Apps Agreement Active** (tax, bank), Small Business Program, EU
+   trader status. The purchase does not load until the agreement is Active.
+2. **Create the in-app purchase** with exactly that product ID, and the
+   listing (name `FoldForm: CAD for 3D Printing`, texts in
+   docs/APP_STORE.md, screenshots in docs/appstore/).
+3. **Try the purchase** with the TestFlight build of `v0.3.0` (sandbox),
+   then **submit** that build with the in-app purchase.
+4. **Device testing:** the Duo steps in docs/IPAD.md (7: selecting in a
+   sketch), then send Logs/openshape.log from the Duo (TD-150).
 
 ## Current milestone
 
@@ -28,9 +29,42 @@ bottleneck. Details in docs/APP_STORE.md.
 Milestones 3 and 5 mostly done; v0.2.0 published (2026-09-27).** The
 universal iPhone/iPad app runs on the owner's devices through TestFlight;
 since 2026-10-30 it is built with the iOS 27.1 SDK for the iPhone Duo. A
-paid App Store release waits on the blockers above.
+free App Store release with an in-app purchase (FoldForm 0.3.0) waits
+on the owner's App Store Connect steps above.
 
 ## Handoff: where we left off
+
+### Session report (2026-10-31): FoldForm 0.3.0 for the App Store
+
+**In one paragraph:** the owner chose to launch today as **FoldForm**, free
+for one project with an **Unlimited Projects** in-app purchase. Three
+tracks ran in parallel and are merged: the purchase (StoreKit 1 in
+Objective-C++ behind `ui::Store`, the one-project rule in `ui/Purchase`,
+the "Unlimited projects" sheet, Restore on the sheet and in About; iPhone
+and iPad only, Windows unlimited), the rename (everything users see says
+FoldForm; technical names stay, TD-154; the value box and the keypad are
+now placed together, a bug the shorter title exposed), and Shell (the
+abandoned 2026-09-27 experiment became tests/test_shell_retries.cpp: its
+fallback returned a wrong shape and once crashed the kernel's checker;
+results of retries are now measured, the C0 split works, two everyday
+bodies that failed now shell, and "Try thinner walls" is said only when
+true; TD-152, TD-153). The owner then reported from the Duo: "cannot figure
+out how to select a line". With no hover, a tap on a line with a drawing
+tool started a shape, and on the inner display the palette scrolled Select
+out of sight: a finger's or pen's tap on a curve now selects it (and
+switches to Select), and Edit heads the palette.
+
+**Verified:** 844/844 headless tests; the full real-UI run 4356/4356; the
+purchase's Objective-C++ compiled on CI (ipad.yml run 41211127830, Xcode
+27.1, License gate PASS 15/15; a snapshot of the track, branch
+`ci/purchase-ios-check`); Apple Clang caught four unused lambda captures
+in the purchase scenario that GCC did not (fixed; run
+`scripts/dev/check_lambda_captures.py` before pushing).
+
+**Not verified:** the real StoreKit sandbox (needs the owner's in-app
+purchase and the active agreement); the tap-to-select on a device. Only 8 agent worktrees were left (not 30,
+as said on 2026-10-30); all are deleted (one held the shell experiment,
+now in the tests).
 
 ### Session report (2026-10-30): iPhone Duo, Apple Pencil, the stale tracks merged
 
@@ -936,7 +970,7 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 ## Tests currently passing
 
-820/820 headless (`ctest -LE gui`, 2026-10-31, after the five merges, the Duo and Pencil work): GTest suites for core, geometry
+844/844 headless (`ctest -LE gui`, 2026-10-31, after the purchase, shell, FoldForm and sketch-selection merges): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -951,7 +985,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 4050/4050 checks through the real UI in 50 scenarios
+`acceptance_gui`: 4356/4356 checks through the real UI in 51 scenarios (2026-10-31)
 before the 2026-10-30 merges (now 49 scenarios; not yet run)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
 under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
@@ -961,7 +995,7 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 820/820 | ✅ 4050/4050 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 844/844 | ✅ 4356/4356 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |
