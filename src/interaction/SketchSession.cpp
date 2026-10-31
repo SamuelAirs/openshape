@@ -1805,9 +1805,12 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
     }
     dragging_ = false;
     // A lifted finger or pen is nowhere: no snapped cursor left where it was
-    // (a shape under way keeps its placed points).
-    if (event.device != PointerDevice::Mouse)
+    // (a shape under way keeps its placed points, and its free end its live
+    // values: tap one to type it on the keypad, liftedEnd_).
+    if (event.device != PointerDevice::Mouse) {
+        liftedEnd_ = cursorValid_ && anchor_.has_value();
         cursorValid_ = false;
+    }
 }
 
 void SketchSession::hover(const PointerEvent& event, const Camera& camera)
@@ -2997,8 +3000,9 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
     if (!anchor_ && !isOffsetting() && !isMirroring() && !isPatterning())
         addConstraintIcons(out, camera);
 
-    // Live inputs of the shape being drawn.
-    if (anchor_ && cursorValid_) {
+    // Live inputs of the shape being drawn (also once a finger lifted: they
+    // are what the keypad types).
+    if (anchor_ && (cursorValid_ || liftedEnd_)) {
         // A center rectangle spans from the corner opposite the cursor.
         const Vec2 a = tool_ == SketchTool::CenterRectangle ? anchor_->position * 2.0 - constrainedCursor() : anchor_->position;
         const Vec2 c = constrainedCursor();
@@ -3044,9 +3048,15 @@ std::vector<SketchLabel> SketchSession::labels(const Camera& camera) const
                 continue;
             }
             // Nothing measured yet (a finger's first tap: no hover) and
-            // nothing typed: no "0" labels in the way.
-            if (!in.locked && in.text.empty() && measured < 1e-9)
+            // nothing typed: no "0" labels in the way. Once the finger lifted
+            // they stay, without a number, to be tapped: the first corner,
+            // then a live size on the keypad (and Next needs them all).
+            if (!in.locked && in.text.empty() && measured < 1e-9) {
+                if (!liftedEnd_)
+                    continue;
+                out.push_back(label);
                 continue;
+            }
             label.text = in.locked ? in.text : trimmed(measured, unit);
             out.push_back(label);
         }
@@ -3451,8 +3461,10 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
     for (const auto& [id, p] : working_.points())
         out.points.push_back({plane.toWorld(p.position), styleOf(id, false)});
 
-    // Rubber band of the shape being drawn.
-    if (anchor_ && cursorValid_) {
+    // Rubber band of the shape being drawn (once a finger lifted, only what
+    // values typed on the keypad size: otherwise it is no bigger than a point).
+    const bool typed = std::any_of(inputs_.begin(), inputs_.end(), [](const Input& in) { return in.locked; });
+    if (anchor_ && (cursorValid_ || (liftedEnd_ && typed))) {
         const Vec2 a = anchor_->position;
         const Vec2 c = constrainedCursor();
         switch (tool_) {

@@ -314,6 +314,7 @@ private:
     {
         pointerScreen_ = event.position;
         pointerDevice_ = event.device;
+        liftedEnd_ = false;
     }
     std::optional<Vec2> toLocal(Vec2 screen, const Camera& camera) const;
     Vec2 toScreen(Vec2 local, const Camera& camera) const;
@@ -390,7 +391,12 @@ private:
     bool gridSnap_ = true;
     Snap cursor_;
     bool cursorValid_ = false;
-    std::optional<Snap> anchor_;                        // first point of the shape being drawn
+    // A finger or pen lifted while a shape is under way: no cursor is shown,
+    // but the shape's free end stays where it lifted (cursor_), so its live
+    // values stay there to be tapped and typed on the keypad, and what they
+    // type is previewed. Cleared by the next pointer event (notePointer).
+    bool liftedEnd_ = false;
+    std::optional<Snap> anchor_;                       // first point of the shape being drawn
     std::optional<Snap> arcEnd_;                        // Arc tool: second click (the end); the third bends it
     sketch::EntityId chainStart_ = sketch::kNoEntity;   // first point of a line chain
     TangentStart tangentStart_;                         // Tangent arc: the curve continued from the anchor

@@ -1253,8 +1253,12 @@ ApplicationWindow {
                      : client.keepClear === "sketch" ? app.sketchScreenRect() : undefined,
             compact: Theme.compact
         })
+        // (Not placed while it moves: the value chip must not flee from where
+        // it is half-way, x moved and y not yet.)
+        keypad.placed = false
         keypad.x = placement.x
         keypad.y = placement.y
+        keypad.placed = true
         if (client.avoidKeypad)
             client.avoidKeypad(Qt.rect(keypad.x, keypad.y, keypad.width, keypad.height))
         // A phone: the selection and its arrow move into sight in the room
@@ -1284,7 +1288,7 @@ ApplicationWindow {
         const rects = items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
         // The numeric keypad beside it (a larger window; a phone's is docked
         // along the bottom while the chip is at the top).
-        if (keypad.visible && !Theme.compact)
+        if (keypad.visible && keypad.placed && !Theme.compact)
             rects.push(Qt.rect(keypad.x, keypad.y, keypad.width, keypad.height))
         if (Qt.inputMethod.visible)
             rects.push(Qt.inputMethod.keyboardRectangle)

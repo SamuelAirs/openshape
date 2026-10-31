@@ -309,9 +309,13 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(r.app().operationText() == QStringLiteral("V2 X"), "text: later keys add to the words", r.app().operationText());
             r.check(tool && std::abs(tool->depth() + 1) < 1e-9, "text: a digit goes to the words, not to the depth",
                     tool ? AcceptanceRunner::num(tool->depth()) : QString());
-            // Back to the view (a click on the face, where the words are).
-            r.click(r.screenPoint(0, -6.5, 5));
         },
+        // The same spot clicked again now could be a double-click (it applies
+        // the words and selects the body, whose Delete the next Backspace
+        // would be): whether it was depended on how long the previews took.
+        [] {}, [] {}, [] {},
+        // Back to the view (a click on the face, where the words are).
+        [&r] { r.click(r.screenPoint(0, -6.5, 5)); },
         [&r] {
             // Ctrl+Backspace in the view: the last word, never the face (its
             // Delete would remove the face under the words).
@@ -326,8 +330,9 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         },
         [&r] {
             r.check(r.app().operationText() == QStringLiteral("V2"), "text: Backspace erases a character", r.app().operationText());
-            r.click(r.screenPoint(0, -6.5, 5));
         },
+        [] {}, [] {}, [] {}, // past the double-click interval again
+        [&r] { r.click(r.screenPoint(0, -6.5, 5)); },
         [&r] {
             // AltGr (Ctrl+Alt on Windows) types '@', the euro sign or '{' on many keyboards.
             r.key(Qt::Key_At, Qt::ControlModifier | Qt::AltModifier, QStringLiteral("@"));

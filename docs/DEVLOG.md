@@ -715,3 +715,26 @@ This is not legal advice (docs/LICENSING.md). Other findings:
 - Eight agent tracks at once used up the owner's usage limit, and they all
   died together. Now at most five run at a time, at high effort for code and
   medium for reviews.
+
+## 2026-10-30 — Integration: three real-UI regressions after the October merges
+
+Headless tests passed after Home cards, kernel robustness, the view cube,
+phone sketching and the keypad check were merged; the real-UI run did not.
+- **Live values on a phone.** Phone sketching hid a shape's live values
+  while they measure 0 and dropped the cursor when a finger lifts, so after
+  the first corner's tap there was nothing to tap: the keypad flow ("tap the
+  first corner, then a live size", the hint and the help card) was gone on
+  iPhone and iPad. Now, once a finger lifts with a shape under way, the live
+  values stay (`SketchSession::liftedEnd_`): unmeasured ones show a dash (also
+  on the keypad's display), and values typed on the keypad are previewed. No
+  "0" values under a finger, and still no cursor where it lifted.
+- **The Text tool and AltGr.** Not a key handler: the scenario clicked the
+  same spot twice within Qt's 500 ms double-click interval. A double-click
+  applies the words and selects the body, and the next Backspace deleted it.
+  Whether the clicks were 490 or 550 ms apart depended on how long previews
+  took. The scenario now waits past the interval, as others do.
+- **The keypad beside the value box (iPad).** At the instant the keypad
+  opened, the value chip kept off its old rectangle (where it was last shown).
+  When that happened to cover the chip's spot, the chip moved to a corner
+  and the keypad was placed far from it. The chip now ignores the keypad
+  until it is placed for its client (`placed`).

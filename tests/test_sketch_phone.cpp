@@ -505,8 +505,9 @@ TEST(SketchPhone, EditingAFaceSketchFramesTheFace)
     EXPECT_GT(across, 0.6 * 402);
 }
 
-// Live values: none while they are 0 (a finger's first tap), W and H on a
-// rectangle's; no snapped cursor left where a finger lifted.
+// Live values: no "0" values (a finger's first tap): none while the finger
+// is down, places to tap without a number once it lifts (the keypad types
+// them); W and H on a rectangle's; no snapped cursor left where a finger lifted.
 TEST(SketchPhone, LiveValuesAndTheCursorOnTouch)
 {
     Phone p;
@@ -525,9 +526,17 @@ TEST(SketchPhone, LiveValuesAndTheCursorOnTouch)
             n += pt.style == SketchStyle::Preview || pt.style == SketchStyle::Hovered;
         return n;
     };
-    p.tap(p.sketchScreen({-3, -3}));
+    const Vec2 corner = p.sketchScreen({-3, -3});
+    p.controller.pointerPress(p.at(corner));
     ASSERT_TRUE(p.session().isDrawing());
-    EXPECT_TRUE(inputs().empty()) << "no 0 x 0 values after the first tap";
+    EXPECT_TRUE(inputs().empty()) << "no 0 x 0 values under the finger";
+    p.controller.pointerRelease(p.at(corner));
+    ASSERT_TRUE(p.session().isDrawing());
+    const auto waiting = inputs();
+    ASSERT_EQ(waiting.size(), 2u) << "after the first tap: the width and height, to tap and type";
+    EXPECT_EQ(waiting[0].key, "width");
+    EXPECT_EQ(waiting[1].key, "height");
+    EXPECT_TRUE(waiting[0].text.empty() && waiting[1].text.empty()) << "no numbers: nothing is measured yet";
     EXPECT_EQ(previewPoints(), 1) << "the first corner only: no cursor where the finger lifted";
     // The finger down again and moving: W and H.
     const Vec2 from = p.sketchScreen({4, 5});
@@ -540,6 +549,35 @@ TEST(SketchPhone, LiveValuesAndTheCursorOnTouch)
     p.controller.pointerRelease(p.at(from + Vec2{3, 2}));
     EXPECT_FALSE(p.session().isDrawing());
     EXPECT_EQ(previewPoints(), 0);
+}
+
+// The keypad after a finger's first tap: a live value tapped and typed shows
+// its number, and the rectangle it sizes is previewed though no finger is down.
+TEST(SketchPhone, KeypadTypesALiveValueAfterTheFirstTap)
+{
+    Phone p;
+    p.box();
+    p.sketchOnTop();
+    p.controller.setSketchTool(SketchTool::Rectangle);
+    auto bandLines = [&] {
+        int n = 0;
+        for (const auto& line : p.session().renderData(p.controller.camera()).lines)
+            n += line.style == SketchStyle::Preview;
+        return n;
+    };
+    p.tap(p.sketchScreen({-3, -3}));
+    ASSERT_TRUE(p.session().isDrawing());
+    EXPECT_EQ(bandLines(), 0) << "nothing typed: no rectangle yet";
+    ASSERT_TRUE(p.session().focusInput("width"));
+    EXPECT_EQ(p.session().typeIntoInput("12"), "");
+    ASSERT_TRUE(p.session().focusInput("height"));
+    EXPECT_EQ(p.session().typeIntoInput("8"), "");
+    std::vector<std::string> shown;
+    for (const auto& l : p.session().labels(p.controller.camera()))
+        if (l.kind == SketchLabel::Kind::Input)
+            shown.push_back(l.text);
+    EXPECT_EQ(shown, (std::vector<std::string>{"12", "8"}));
+    EXPECT_EQ(bandLines(), 4) << "the 12 x 8 rectangle typed is previewed";
 }
 
 // Plain words on touch: the status, the zero-size message, and "taps add".

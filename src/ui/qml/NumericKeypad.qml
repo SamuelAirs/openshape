@@ -40,6 +40,10 @@ FocusScope {
     required property AppController app
     property var client: null
     readonly property bool open: client !== null
+    // Main.qml placed it for this client. Until then its x and y are where it
+    // was last shown, which nothing must keep off (the value chip, say).
+    property bool placed: false
+    onClientChanged: placed = false
     // Main.qml: docked along the bottom (a phone) rather than beside the value box.
     property bool docked: false
     // Main.qml: a phone held sideways: seven columns, four rows (fits below

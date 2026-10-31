@@ -152,7 +152,8 @@ Item {
         // The keypad shows what is typed too: a phone's docked keypad may cover the live value.
         display: () => {
             const input = overlay.focusedInput()
-            return overlay.typing.length > 0 ? overlay.typing : input ? input.text : ""
+            // (Nothing measured yet, after a finger's first tap: the pill's dash.)
+            return overlay.typing.length > 0 ? overlay.typing : !input ? "" : input.text.length > 0 ? input.text : "–"
         },
         // The live values show only numbers: the display line names the one typed.
         displayName: () => {
@@ -630,11 +631,14 @@ Item {
                     }
                     Text {
                         id: label
-                        text: pill.isInput && labelItem.modelData.focused && overlay.typing.length > 0
-                              ? overlay.typing : labelItem.modelData.text
+                        // A live value with nothing measured or typed yet (a
+                        // finger's first tap): a dash, to tap and type.
+                        readonly property bool typed: pill.isInput && labelItem.modelData.focused && overlay.typing.length > 0
+                        readonly property bool empty: pill.isInput && !typed && labelItem.modelData.text.length === 0
+                        text: typed ? overlay.typing : empty ? "–" : labelItem.modelData.text
                         font.pixelSize: pill.isHint ? (Theme.touch ? 12 : 11) : (Theme.touch ? 13 : 12)
                         font.weight: labelItem.modelData.locked ? Font.DemiBold : Font.Normal
-                        color: pill.isHint ? Theme.accent : labelItem.isSize ? Theme.mutedText : Theme.text
+                        color: pill.isHint ? Theme.accent : labelItem.isSize || empty ? Theme.mutedText : Theme.text
                     }
                     // What the value is ("across flats", "sides").
                     Text {
