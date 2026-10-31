@@ -18,8 +18,11 @@ What is left is the owner's App Store Connect work, in order, in
 2. **Create the in-app purchase** with exactly that product ID, and the
    listing (name `FoldForm: CAD for 3D Printing`, texts in
    docs/APP_STORE.md, screenshots in docs/appstore/).
-3. **Try the purchase** with the TestFlight build of `v0.3.0` (sandbox),
-   then **submit** that build with the in-app purchase.
+3. **Try the purchase** with TestFlight **build 54** (the `v0.3.0` tag's,
+   ipad.yml run 41224892140; the GitHub release v0.3.0 with
+   OpenShape-0.3.0-ios-sources.tar is published), then **submit build 54**
+   with the in-app purchase. `main` is at 0.3.1 locally (not pushed yet:
+   GitHub minutes are for compiling only, so it goes with the next change).
 4. **Device testing:** the Duo steps in docs/IPAD.md (7: selecting in a
    sketch), then send Logs/openshape.log from the Duo (TD-150).
 
