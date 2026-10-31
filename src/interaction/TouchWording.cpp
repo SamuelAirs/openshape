@@ -23,7 +23,7 @@ namespace {
 // specific first. (Sources: SketchSession::hintText and its messages,
 // Operation::prompt, InteractionController::runTool and messages, and the
 // hints in Main.qml.)
-constexpr std::array<std::pair<std::string_view, std::string_view>, 43> kPhrases{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 46> kPhrases{{
     // ---- Texts written for both ("click or tap") read "tap or tap" otherwise
     {"Click or tap", "Tap"},
     {"click or tap", "tap"},
@@ -52,7 +52,11 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 43> kPhrases
      "Tap where the arc ends " DOT " tap Tangent arc again to stop"},
     {"Move to bend the arc and click, or type a radius and press Enter", "Tap a point the arc passes through"},
     {"Delete removes the constraint " DOT " click elsewhere to keep it", "Delete constraint removes it " DOT " tap elsewhere to keep it"},
+    // A finger dragging empty space in a sketch pans (a mouse orbits).
+    {"drag elsewhere to orbit", "drag elsewhere to pan"},
     // ---- Sketch messages
+    {"Drag out a rectangle with some width and height.", "Tap farther from the first corner."},
+    {"Drag out a circle with some size.", "Tap farther from the center."},
     {"Move away from the center to give the rectangle some width and height.",
      "Tap farther from the center to give the rectangle some width and height."},
     {"Move away from the center to give the polygon a size.", "Tap farther from the center to give the polygon a size."},

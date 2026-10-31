@@ -227,6 +227,33 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
         interaction.setValueText("270");
         return;
     }
+    if (demo == QLatin1String("facesketch")) {
+        // A sketch on a box's top face (its outline: faint reference marks),
+        // a rectangle snapped to two of its corners, and a finger held near
+        // the middle of an edge with the Line tool (the snap hint and, in the
+        // touch layout, the loupe).
+        (void)app.createBox(20);
+        interaction.fitAll(false);
+        os::interact::PointerEvent tap;
+        tap.device = os::interact::PointerDevice::Touch;
+        tap.position = interaction.camera().project({0, 0, 20});
+        interaction.pointerPress(tap);
+        interaction.pointerRelease(tap);
+        (void)interaction.startSketch();
+        interaction.skipAnimation();
+        auto screenOf = [&](os::Vec2 local) {
+            return interaction.camera().project(interaction.sketchSession()->sketch().plane().toWorld(local));
+        };
+        for (const os::Vec2 corner : {os::Vec2{-10, -10}, os::Vec2{0, 0}}) {
+            tap.position = screenOf(corner) + os::Vec2{6, -5};
+            interaction.pointerPress(tap);
+            interaction.pointerRelease(tap);
+        }
+        interaction.setSketchTool(os::interact::SketchTool::Line);
+        tap.position = screenOf({10, 0}) + os::Vec2{-7, 6};
+        interaction.pointerPress(tap); // held down
+        return;
+    }
     if (demo.startsWith(QLatin1String("sketch")) || demo == QLatin1String("extrude") || demo == QLatin1String("bracket")) {
         using os::interact::Key;
         using os::interact::SketchTool;

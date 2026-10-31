@@ -78,8 +78,20 @@ ApplicationWindow {
         target: window.app
         property: "frameInsets"
         value: [sketchOverlay.toolbarBottom + 8, Theme.insetRight,
-                Theme.compact ? window.height - sketchOverlay.toolStripTop + 36 : Theme.insetBottom + 40,
+                Theme.compact ? window.height - sketchOverlay.bottomStackTop + 36 : Theme.insetBottom + 40,
                 Math.max(Theme.insetLeft, sketchOverlay.paletteRight + 8)]
+    }
+    // While sketching: the controls over the view, which the live values
+    // moved out from under a finger and the loupe keep off.
+    Binding {
+        target: window.app
+        property: "sketchObstacles"
+        value: window.app.sketchMode ? window.sketchObstacles() : []
+    }
+    function sketchObstacles() {
+        const items = [topBar, modelButtonPanel, viewButtonPanel, axisTriad, statusColumn]
+        const rects = items.filter(item => item.visible).map(item => Qt.rect(item.x, item.y, item.width, item.height))
+        return rects.concat(sketchOverlay.controlRects)
     }
     // Touch-sized controls once the app is used by touch (from the start on a tablet).
     Binding { target: Theme; property: "touch"; value: window.app.touchMode }
@@ -1124,6 +1136,7 @@ ApplicationWindow {
         id: sketchOverlay
         anchors.fill: parent
         app: window.app
+        viewportItem: viewport
         visible: window.app.sketchMode
         // Room on the top row between the top bar and what is on the right.
         topRowLeft: topBar.x + topBar.width + 8

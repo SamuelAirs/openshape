@@ -31,7 +31,8 @@ Technology choices and the alternatives considered are in
         │         │   Shell, Extrude, Revolve, Move, Rotate, Align, Mirror,
         │         │   Pattern, Insert, Head, Hole, Text, Loft)
         │         │  camera, hover, selection, manipulators (arrows, rings), previews
-        │         ├─ OverlayPlacement (value chip clear of the selection, labels clear of a finger)
+        │         ├─ OverlayPlacement (value chip clear of the selection, labels clear of a finger, the sketch loupe)
+        │         ├─ SketchReferences (the face sketched on, as snap-only reference geometry; geom::planeReferences)
         │         ├─ TypingPause (typed values previewed once typing pauses), NumericKeypad (touch keypad model, placement)
         │         ├─ SketchSession (tools, snapping, inference, typed dimensions)
         │         ├─ TouchGestureRecognizer (touch frames → pointer, pan/pinch, undo/redo)

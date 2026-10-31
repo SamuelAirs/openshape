@@ -21,7 +21,8 @@ target_link_libraries(test_core PRIVATE openshape_core)
 target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJECT_VERSION}")
 
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_build.cpp test_draft.cpp test_step.cpp
-    test_text_geometry.cpp test_kernel_threads.cpp test_loft_geometry.cpp)
+    test_text_geometry.cpp test_kernel_threads.cpp test_loft_geometry.cpp
+    test_plane_references.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
 # Kernel robustness (partly adapted from OpenShape3D, third_party/openshape3d).
 target_sources(test_geometry PRIVATE test_ops_inputs_untouched.cpp test_brep_fuzz.cpp)
@@ -40,7 +41,7 @@ openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_intera
     test_text_interaction.cpp test_async_preview.cpp test_contact_shadow.cpp test_datum_interaction.cpp
     test_cut_flow.cpp test_touch_selection.cpp test_typing_pause.cpp test_numeric_keypad.cpp
     test_loft_interaction.cpp test_project_files.cpp
-    test_view_cube.cpp)
+    test_view_cube.cpp test_sketch_phone.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
 # test_touch_wording reads the QML hints and the help card; test_bodies a
 # project saved by an older build (tests/data).

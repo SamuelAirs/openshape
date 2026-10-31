@@ -610,6 +610,12 @@ int InteractionController::handleAt(Vec2 screen, double tolerance) const
 
 void InteractionController::pointerMove(const PointerEvent& event)
 {
+    // A hover of another device while a finger or pen is down is not part of
+    // its press: Qt re-sends the mouse's last position each frame the scene
+    // changes under it (a stationary mouse over the window of a touchscreen
+    // laptop), which would move the drag there.
+    if (drag_.mode != DragMode::None && event.button == PointerButton::None && event.device != drag_.press.device)
+        return;
     if (drag_.mode == DragMode::Sketch) {
         session_->pointerMove(event, camera_);
         notifyState();
@@ -652,8 +658,11 @@ void InteractionController::pointerMove(const PointerEvent& event)
     if (drag_.mode == DragMode::Pending) {
         if ((event.position - drag_.press.position).length() < profile.dragThreshold)
             return;
+        // In a sketch a finger or pen dragging empty space pans: orbiting
+        // would tilt the view off the sketch's plane (a mouse still orbits).
         const bool pan = drag_.press.button == PointerButton::Middle
-            || (drag_.press.button == PointerButton::Left && drag_.press.modifiers.shift);
+            || (drag_.press.button == PointerButton::Left && drag_.press.modifiers.shift)
+            || (session_ && drag_.press.button == PointerButton::Left && drag_.press.device != PointerDevice::Mouse);
         drag_.mode = pan ? DragMode::Pan : DragMode::Orbit;
         if (!pan) {
             const auto hit = sel::pickFace(pickTargets(), camera_, drag_.press.position);
@@ -4019,8 +4028,11 @@ void InteractionController::enterSketch(const Uuid& sketchId, SketchTool tool)
     session_->onCommitted = [this] { afterDocumentEdit(); };
     session_->setLargeTargets(touchLayout_);
     session_->setSafeInsets(safeInsets_);
+    session_->setOverlayObstacles(sketchObstacles_);
     session_->setTool(tool);
-    alignViewTo(session_->sketch().plane());
+    // Facing the plane, framing the sketch and the face it is on (its
+    // reference geometry): a sketch opened again is not left small.
+    alignViewTo(session_->sketch().plane(), sketchReferenceFrame());
     afterDocumentEdit();
 }
 
@@ -4039,6 +4051,34 @@ void InteractionController::setSafeInsets(const SafeInsets& insets)
     if (session_)
         session_->setSafeInsets(insets);
     notifyView();
+}
+
+void InteractionController::setSketchObstacles(std::vector<ScreenRect> obstacles)
+{
+    sketchObstacles_ = std::move(obstacles);
+    if (session_)
+        session_->setOverlayObstacles(sketchObstacles_);
+}
+
+InteractionController::SketchLoupe InteractionController::sketchLoupe() const
+{
+    SketchLoupe loupe;
+    if (!session_)
+        return loupe;
+    const SketchSession::SnapInfo snap = session_->snapInfo(camera_);
+    if (!snap.active || snap.device == PointerDevice::Mouse)
+        return loupe; // a mouse pointer hides nothing
+    LoupeInput input;
+    input.finger = snap.pointer;
+    input.area = safeInsets_.inside(camera_.viewportSize);
+    input.avoid = sketchObstacles_;
+    input.size = loupe.size;
+    const LoupePlacement placed = placeLoupe(input);
+    loupe.visible = true;
+    loupe.center = placed.center;
+    loupe.subject = snap.screen;
+    loupe.hint = snap.hint;
+    return loupe;
 }
 
 void InteractionController::setTouchLayout(bool on)
@@ -4140,6 +4180,47 @@ void InteractionController::setSketchTool(SketchTool tool)
     dropTyping(); // the shape being drawn goes
     session_->setTool(tool);
     notifyState();
+    notifyView();
+}
+
+std::optional<geom::BoundingBox> InteractionController::sketchReferenceFrame() const
+{
+    if (!session_ || session_->references().empty())
+        return std::nullopt;
+    const sketch::Plane& plane = session_->sketch().plane();
+    geom::BoundingBox box;
+    auto include = [&](Vec2 local) {
+        const Vec3 p = plane.toWorld(local);
+        if (!box.valid) {
+            box.min = box.max = p;
+            box.valid = true;
+        }
+        box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
+        box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
+    };
+    const SketchReferences& refs = session_->references();
+    for (const auto& point : refs.points)
+        include(point.position);
+    for (const auto& curve : refs.curves) {
+        if (curve.kind != SketchReferences::Curve::Kind::Circle) {
+            include(curve.start);
+            include(curve.end);
+        }
+        if (curve.kind == SketchReferences::Curve::Kind::Circle || curve.kind == SketchReferences::Curve::Kind::Arc) {
+            include(curve.center - Vec2{curve.radius, curve.radius});
+            include(curve.center + Vec2{curve.radius, curve.radius});
+        }
+        for (const Vec2 p : curve.points)
+            include(p);
+    }
+    return box;
+}
+
+void InteractionController::faceSketch()
+{
+    if (!session_)
+        return;
+    alignViewTo(session_->sketch().plane(), sketchReferenceFrame());
     notifyView();
 }
 

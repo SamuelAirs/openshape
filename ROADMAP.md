@@ -71,9 +71,9 @@ two-finger pan never draws, each stroke is a line of its own · ✅ drag
 lines, circle rims and centers, arcs, whole shapes and selections; dropped
 points connect (merge, or On line / On circle / Midpoint) · ✅ tap a
 selected curve's size to type its dimension · ✅ movable items blue, fully
-sized ones dark · ✅ tap inside a closed shape → Extrude · 🟡 lock-on points
+sized ones dark · ✅ tap inside a closed shape → Extrude · ✅ lock-on points
 from the face sketched on, snap hints, a loupe and one-finger panning in a
-sketch (in progress).
+sketch, Face on.
 
 ## Milestone 2 — common modeling tools ✅
 

@@ -87,6 +87,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario extrudetouch   # a pocket cut on the phone layout with one finger (framed face sketch, arrow and profile drags, Cut / Join / Flip), then with the mouse
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario loft   # a rectangle on the ground lofted to a circle on a plane 30 mm up (Smooth / Straight, Apply, the plane moved in the Model panel), then with taps; then New body / Join / Cut through a block and Join in the Model panel
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchdrag   # sketch editing by dragging: mouse on the desktop, then one finger at 402x874 (touchPress/Move/Release)
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchphone   # sketching on a face by finger at 402x874 and 1180x820: face snaps, the loupe, one-finger pan, Face on, a size typed (demo scene facesketch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario numpad   # the numeric keypad by touch at iPhone and iPad sizes: value box, Model panel, sketch values
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir

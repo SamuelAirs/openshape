@@ -101,6 +101,13 @@ class AppController : public QObject {
     // The view cube (AxisTriad.qml): its six faces and twelve edges as
     // interact::ViewCube::layout gives them, in its box coordinates.
     Q_PROPERTY(QVariantMap viewCube READ viewCube NOTIFY viewChanged)
+    // The controls over the view while sketching (rects: top bar, sketch tool
+    // bar, status, the right column): live values moved out from under a
+    // finger and the loupe keep off them.
+    Q_PROPERTY(QVariantList sketchObstacles READ sketchObstacles WRITE setSketchObstacles NOTIFY viewChanged)
+    // The loupe while a finger places or drags a sketch point: {visible, x, y
+    // (its center), sx, sy (the snapped point it magnifies), size, zoom, hint}.
+    Q_PROPERTY(QVariantMap sketchLoupe READ sketchLoupe NOTIFY viewChanged)
     // Used by touch: touch-sized controls and the Pen switch (on from the
     // start on tablets; on desktops after a touch, off after a real mouse click).
     Q_PROPERTY(bool touchMode READ touchMode NOTIFY touchModeChanged)
@@ -212,6 +219,9 @@ public:
     Q_INVOKABLE int viewCubeTarget(double u, double v) const;
     Q_INVOKABLE bool tapViewCube(double u, double v);
     Q_INVOKABLE void orbitView(double dxPixels, double dyPixels);
+    QVariantList sketchObstacles() const;
+    void setSketchObstacles(const QVariantList& rects);
+    QVariantMap sketchLoupe() const;
     bool touchMode() const;
     void setTouchMode(bool on);
     bool penMode() const;
@@ -500,6 +510,8 @@ public:
     Q_INVOKABLE void startSketch(const QString& plane = QString());
     Q_INVOKABLE bool faceSelected() const;
     Q_INVOKABLE void finishSketch();
+    // "Face on": the view faces the sketch's plane again (after an orbit).
+    Q_INVOKABLE void faceSketch();
     Q_INVOKABLE void setSketchTool(const QString& name);
     // Replaces the focused input's text while drawing, at once; returns an
     // error or "". (Keys use typeSketchValue.)

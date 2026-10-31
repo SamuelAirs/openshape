@@ -295,15 +295,17 @@ TEST(SketchDragInteraction, DragInsideAShapeMovesItWhole)
     }
 }
 
-TEST(SketchDragInteraction, DragInsideAShapeNotSelectedOrbits)
+TEST(SketchDragInteraction, DragInsideAShapeNotSelectedMovesTheView)
 {
-    // One finger (or the left button) inside a shape not tapped first turns
-    // the view as before: a sketched plate may fill a phone's view.
+    // The left button inside a shape not tapped first turns the view as
+    // before; one finger pans it (it never tilts off the sketch's plane): a
+    // sketched plate may fill a phone's view.
     for (const bool touch : {false, true}) {
         Harness h(touch);
         h.rectangle();
         const sketch::Sketch before = h.sketch();
         const std::size_t steps = h.stack.index();
+        const Vec3 targetBefore = h.controller.camera().target;
         if (touch)
             h.stroke({30, 20}, {40, 30});
         else
@@ -312,7 +314,12 @@ TEST(SketchDragInteraction, DragInsideAShapeNotSelectedOrbits)
             EXPECT_NEAR((p.position - before.point(id)->position).length(), 0, 1e-12);
         EXPECT_EQ(h.stack.index(), steps);
         EXPECT_TRUE(h.messages.empty());
-        EXPECT_GT(std::abs(h.controller.camera().forward().z + 1.0), 1e-3) << (touch ? "touch" : "mouse") << ": orbited";
+        if (touch) {
+            EXPECT_NEAR(h.controller.camera().forward().z, -1.0, 1e-9) << "touch: still facing the sketch";
+            EXPECT_GT((h.controller.camera().target - targetBefore).length(), 1.0) << "touch: panned";
+        } else {
+            EXPECT_GT(std::abs(h.controller.camera().forward().z + 1.0), 1e-3) << "mouse: orbited";
+        }
     }
 }
 

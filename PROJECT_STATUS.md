@@ -159,8 +159,6 @@ Queued: a section view and snap refinements. Where OpenShape is ahead:
 - the licensing route for a paid app.
 
 **Still running:**
-- lock-on points from the face you sketch on, snap hints, a loupe and
-  one-finger panning in a sketch (your iPhone reports);
 - the keypad check.
 
 **Try first:** docs/IPAD.md, iPad steps 12-18 and iPhone steps 13-17 (the
@@ -834,9 +832,8 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 
 1. The owner's third test pass (docs/IPAD.md iPad 12-18, iPhone 13-17;
    docs/MANUAL_TESTS.md 18-19): act on what they report.
-2. Merge the running tracks: sketching on a phone (lock-on points from the
-   face, snap hints, loupe, one-finger pan, compact sketch toolbar), the
-   keypad check (OpenShape3D's kernel robustness, the view cube and project
+2. Merge the running tracks: the keypad check (sketching on a phone,
+   OpenShape3D's kernel robustness, the view cube and project
    Rename/Duplicate/Delete are merged). Then a section view and the snap refinements
    (ranking, grid along an edge, parallel/perpendicular guides).
 3. The App Store (docs/APP_STORE.md): the owner's decisions (name, price, EU

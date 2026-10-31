@@ -153,6 +153,23 @@ public:
     // plane frames it in the view between them (with the safe insets).
     const SafeInsets& frameInsets() const { return frameInsets_; }
     void setFrameInsets(const SafeInsets& insets) { frameInsets_ = insets; }
+    // The controls over the view while sketching (Main.qml: top bar, sketch
+    // tool bar, status, the right column): the live values moved out from
+    // under a finger and the loupe keep off them.
+    const std::vector<ScreenRect>& sketchObstacles() const { return sketchObstacles_; }
+    void setSketchObstacles(std::vector<ScreenRect> obstacles);
+    // The loupe: while a finger or pen places or drags a sketch point, a
+    // magnified inset of the view around the snapped point (`subject`),
+    // placed beside the finger (placeLoupe), with the snap hint.
+    struct SketchLoupe {
+        bool visible = false;
+        Vec2 center;  // where the loupe goes (screen px)
+        Vec2 subject; // the point it magnifies: the snapped point
+        std::string hint;
+        double size = 112;
+        double zoom = 2;
+    };
+    SketchLoupe sketchLoupe() const;
 
     // ---- Operation / numeric entry ----
     const Operation* operation() const { return operation_.get(); }
@@ -287,6 +304,11 @@ public:
     // A tap on the live value `key` (the keypad then types into it): the
     // value typed just now is taken first. False when there is no such value.
     bool focusSketchInput(const std::string& key);
+    // "Face on": turns the view to face the sketch's plane head-on again (after
+    // an orbit), framing the sketch and the face it is on.
+    void faceSketch();
+    // The box of the sketch's reference geometry (the face it is on), for framing.
+    std::optional<geom::BoundingBox> sketchReferenceFrame() const;
 
     // ---- History (model tree) ----
     std::vector<HistoryRow> historyRows() const;
@@ -512,6 +534,7 @@ private:
     bool touchLayout_ = false;
     SafeInsets safeInsets_;
     SafeInsets frameInsets_;
+    std::vector<ScreenRect> sketchObstacles_;
     // Where the profile selected last was tapped (in the view, or inside the
     // open sketch before extrudeSketchRegion): its Extrude arrow starts there
     // (under the finger), not at the region's inner point.

@@ -259,7 +259,14 @@ iPhone". New in the build after 2026-09-27 (iPad 12-18, iPhone 13-18):
    view orbits and no line is drawn; lift the finger and draw a line as
    usual. Does the cube feel big enough to hit its corners on the iPhone,
    in portrait and in landscape? Is the drag's speed right?
-10. **Before the App Store:** look through the listing texts and the twelve
+10. **Sketching on a face (iPhone).** Select a box's top face, Sketch:
+    draw a rectangle from one corner of the face to the opposite one; the
+    points lock onto the corners, edge middles and the center (the hint
+    names them), and a loupe beside your finger shows where the point goes.
+    Drag empty space with one finger: the view pans. Orbit with two
+    fingers, then **Face on**: the view faces the sketch again. Are the
+    lock-on points easy to hit, and is the loupe in the way?
+11. **Before the App Store:** look through the listing texts and the twelve
    screenshots in [APP_STORE.md](APP_STORE.md), section 3, and compare them
    with the app on your devices (the screenshots are made on Windows, so
    the font differs slightly).

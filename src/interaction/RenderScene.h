@@ -97,6 +97,8 @@ enum class SketchStyle {
     Measure,      // a size measured in 3D (push/pull thickness), drawn with the arrow
     Conflict,     // over-constrained
     Reference,    // construction axes and planes
+    FaceReference, // the model's geometry in a sketch's plane (a face's outline): faint snap marks
+    Alignment,    // a guide lining a point up with another (Shapr3D's purple guidelines)
 };
 
 struct RenderSketchLine {

@@ -121,9 +121,35 @@ ChipPlacement placeValueChip(const ChipPlacementInput& input, ChipSpot previous 
 // the hand below it. Labels (centers, all about `labelSize`) whose box falls
 // there move above the finger, stacked in their order, or beside it when
 // there is no room above, and stay inside `bounds` (the window inside its
-// safe area) from side to side. Others stay put.
-void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, const ScreenRect& bounds);
+// safe area) from side to side, off the `obstacles` (the controls over the
+// view: top bar, sketch tool bar, status, the right column; none given: a
+// fixed room below the top is kept). Others stay put.
+void keepLabelsClearOfFinger(std::vector<Vec2>& centers, Vec2 labelSize, Vec2 finger, const ScreenRect& bounds,
+                             const std::vector<ScreenRect>& obstacles = {});
 // The region a finger at `finger` hides (for tests and callers that check).
 ScreenRect fingerShadow(Vec2 finger);
+
+// ---- The loupe over a finger ----------------------------------------------------
+
+// While a finger places or drags a sketch point, a magnified inset of what is
+// under it (and the snapped point) shows beside the finger.
+struct LoupeInput {
+    Vec2 finger;                   // where the finger touches
+    ScreenRect area;               // the window inside its safe area
+    std::vector<ScreenRect> avoid; // controls it should not cover (top bar, tool bars)
+    double size = 112;             // the loupe's side, px
+    double lift = 80;              // its center this far above the finger
+};
+struct LoupePlacement {
+    Vec2 center;
+    bool clear = false; // covers no control and not the fingertip
+};
+// The fingertip's half size the loupe keeps clear of, px.
+inline constexpr double kLoupeFingerClearance = 22;
+// Above the finger (`lift` px), else up to one side (away from the nearer
+// window edge first), beside it, or below; always whole inside `area`, never
+// over the fingertip, over no control when a spot allows (else the spot
+// covering the least).
+LoupePlacement placeLoupe(const LoupeInput& input);
 
 } // namespace os::interact
