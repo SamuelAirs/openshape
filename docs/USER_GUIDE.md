@@ -1,9 +1,9 @@
-# OpenShape user guide
+# FoldForm user guide
 
-OpenShape is a direct-modeling CAD program for makers and 3D printing: you
+FoldForm is a direct-modeling CAD program for makers and 3D printing: you
 shape a part by pushing and pulling its faces, rounding its edges and
 sketching profiles to extrude, and you type exact sizes whenever you want
-them. This guide describes OpenShape on Windows, iPhone and iPad (the iPhone
+them. This guide describes FoldForm on Windows, iPhone and iPad (the iPhone
 and iPad app is being tested through TestFlight). The same summary is in the
 app: press `F1` or the **?** button.
 
@@ -11,9 +11,9 @@ The guide lives with the source code. The copy on GitHub's `main` branch
 (the one the in-app card links to) follows the newest development version;
 the copy that matches a release is in that release's source, under its tag
 (listed on the [Releases page](https://github.com/SamuelAirs/openshape/releases)).
-**File → About OpenShape** shows which version you have.
+**File → About FoldForm** shows which version you have.
 
-![A project box in OpenShape](images/hero.png)
+![A project box in FoldForm](images/hero.png)
 
 ## Contents
 
@@ -44,12 +44,12 @@ the copy that matches a release is in that release's source, under its tag
    if it is not, Windows SmartScreen may say "Windows protected your PC":
    click **More info**, then **Run anyway**.
 3. It installs for your user only, without administrator rights, into
-   `%LOCALAPPDATA%\Programs\OpenShape`, adds OpenShape to the Start menu
+   `%LOCALAPPDATA%\Programs\OpenShape`, adds it to the Start menu as *OpenShape*
    (and, if you tick the box on the last page, to the desktop) and opens
    `.openshape` files when you double-click them.
 
 Installing a newer version over an older one replaces it. To remove
-OpenShape, use *Settings → Apps → Installed apps*; your projects and
+FoldForm, use *Settings → Apps → Installed apps* (listed as OpenShape); your projects and
 settings stay.
 
 ### The screen
@@ -85,7 +85,7 @@ On a desktop-sized window:
   value box in red.
 - **View buttons** (bottom right): **Fit**, **Iso**, **Top**, **Front**,
   **Right**, the projection (**Perspective**, the default, or
-  **Orthographic**; click to switch, and OpenShape remembers your choice),
+  **Orthographic**; click to switch, and FoldForm remembers your choice),
   **Pen** (in the touch layout) and the display unit (**mm** or
   **in**; click to switch). Above them, the **view cube** turns with the
   view (edges: X red, Y green, Z blue, up): click a face or a corner to look
@@ -94,7 +94,7 @@ On a desktop-sized window:
 - Short messages ("Saved", "Exported STL", or why something failed) appear
   at the bottom of the window for a few seconds.
 
-When OpenShape starts without a file it shows [Home](#projects) with your
+When FoldForm starts without a file it shows [Home](#projects) with your
 recent projects: click **New project** for an empty document. A new document
 is empty: click **Box** (or press `B`) to start with a 20 mm cube, or press
 `K` (or click **Sketch**, then **Top (XY) — ground**) to draw a profile on the
@@ -157,7 +157,7 @@ in a sketch, `Esc` drops the shape with the value typed for it. (Sketch values w
 same way. Model panel values and sketch dimensions change only when you
 confirm them.)
 
-**On an iPhone or iPad**, tapping a value opens OpenShape's own keypad
+**On an iPhone or iPad**, tapping a value opens FoldForm's own keypad
 instead of the system keyboard, so you never have to switch the keyboard
 to numbers. It has the digits, the decimal point, minus, `+ − × ÷` and
 parentheses, the units (**mm**, **cm**, **in**, or **°** for an angle),
@@ -183,7 +183,7 @@ tap, but **×** and **÷** work on it: a height of 95, then **×** **2** and
   value while the keypad is open. The Text tool's words use the system
   keyboard.
 - Apple Pencil handwriting (Scribble) is not expected to work in
-  OpenShape's fields (not yet tried on a device); tap the keypad's keys
+  FoldForm's fields (not yet tried on a device); tap the keypad's keys
   with the Pencil instead.
 
 ---
@@ -224,10 +224,10 @@ tap, but **×** and **÷** work on it: a height of 95, then **×** **2** and
   you turn the model without leaving the tool.
 - Dragging an arrow or a ring changes a value instead of turning the view.
 
-**Touch layout.** The first time you touch the screen, OpenShape switches
+**Touch layout.** The first time you touch the screen, FoldForm switches
 to larger buttons and shows the **Pen** button. With a pen, the pen selects
 and draws and your fingers only move the view, so a hand resting on the
-screen does nothing; OpenShape turns this on when it first sees a pen, and
+screen does nothing; FoldForm turns this on when it first sees a pen, and
 **Pen** switches it on or off. Nothing needs hovering, a right-click or a
 modifier key: taps add to the selection (tap empty space to start over), a
 double-tap selects a body (another double-tap adds the next one), and
@@ -239,7 +239,7 @@ on the screen while you draw, or touching down within half a second after
 the Pencil lifts, is ignored (no drawing, no turning the view, no undo).
 After that pause one finger orbits again, two fingers pan and zoom, and
 two- and three-finger taps undo and redo. A finger tap on the model does
-nothing in pen mode; OpenShape says so and how to turn **Pen** off to
+nothing in pen mode; FoldForm says so and how to turn **Pen** off to
 select with a finger. On an iPad that supports Pencil hover, holding the
 tip just above the screen highlights the face or edge under it and, in a
 sketch, shows the point a tap would place (snapped). The magnifier that
@@ -345,7 +345,7 @@ more faces (with several faces selected, Shell is what you get).
   clearance for printing, and press `Enter`.
 - **Other faces:** select a face and click **Offset** in the tool palette:
   the face moves by the typed distance and its neighbours follow. When they
-  cannot follow (for example next to a rounded edge), OpenShape says so
+  cannot follow (for example next to a rounded edge), FoldForm says so
   instead of making a broken part.
 
 ### Delete faces
@@ -572,7 +572,7 @@ undo.
 
 Select a body and press `Delete` (or **Delete**). A body that other bodies
 are built from (a subtracted tool body you showed again, or split pieces
-and separate copies in projects saved by OpenShape 0.1) is hidden instead.
+and separate copies in projects saved by FoldForm 0.1) is hidden instead.
 **Hide** and **Show** are in the body's Model-panel row. Hidden bodies are
 not exported.
 
@@ -821,7 +821,7 @@ the diameter. A counterbore's arrow into the hole sets its depth.
    part).
 2. Click the rim of the hole on the flat face (the circular edge).
 3. Click **Heat-set insert** and choose the size: **M2**, **M2.5**, **M3**
-   (the default), **M4** or **M5**. OpenShape drills the pilot hole for it:
+   (the default), **M4** or **M5**. FoldForm drills the pilot hole for it:
 
    | Insert | Hole diameter | Depth |
    |---|---|---|
@@ -887,7 +887,7 @@ edited as a model.
 CAD programs.
 
 On an **iPhone or iPad**, **File → Export STL**, **Export 3MF** and
-**Export STEP** save the file into OpenShape's *Exports* folder and then
+**Export STEP** save the file into FoldForm's *Exports* folder and then
 open the share sheet: pick the app of your printer or slicer (if it takes
 STL or 3MF files), **AirDrop** it to
 the computer next to the printer, **Save to Files** or send it by **Mail**.
@@ -903,7 +903,7 @@ iPad" below).
 
 - **Home** shows your recent projects as cards with a preview of each (saved
   inside the project), with **New project**, **Open…** and **Import STEP…**.
-  It appears when OpenShape starts without a file and from **File → Home**;
+  It appears when FoldForm starts without a file and from **File → Home**;
   `Esc` or **Back to …** (**Back** in a narrow window, such as a phone held
   upright) returns to the open document. Each card's **⋯** button
   (or a right-click or a long touch) offers:
@@ -914,12 +914,12 @@ iPad" below).
   - **Duplicate**: a copy next to it, named "*Name* copy" (then "copy 2",
     "copy 3", …), with its preview. It becomes the first card.
   - **Remove from list**: the card goes, the file stays where it is.
-  - **Delete…** (for projects in OpenShape's folder on iPhone and iPad, and
+  - **Delete…** (for projects in FoldForm's folder on iPhone and iPad, and
     for recent projects on Windows): after a card that names the project,
     it goes to the **Recycle Bin** (Windows) or to **Recently Deleted** in
     the Files app (iPhone, iPad), where it can be put back. If it cannot go
-    there, OpenShape asks again and says that deleting it cannot be undone;
-    a project outside OpenShape's folder is then not deleted at all (on a
+    there, FoldForm asks again and says that deleting it cannot be undone;
+    a project outside FoldForm's folder is then not deleted at all (on a
     USB stick or a network drive, which have no Recycle Bin, Delete… says
     so and leaves the file). Deleting the open project closes it (an empty
     document takes its place).
@@ -934,17 +934,17 @@ iPad" below).
 - **File → Open…** (`Ctrl+O`), **New** (`Ctrl+N`), and **Open Recent** (the
   last projects that still exist; **Clear Recent** empties the list). After
   installing, double-clicking an `.openshape` file opens it too.
-- Before New, Open or closing with unsaved changes, OpenShape asks: **Save**,
+- Before New, Open or closing with unsaved changes, FoldForm asks: **Save**,
   **Don't Save** or **Cancel**.
-- A project from a newer OpenShape version is refused with a message rather
+- A project from a newer FoldForm version is refused with a message rather
   than opened wrongly.
 
 ### Files on iPhone and iPad
 
 - There are no save dialogs: **Save** asks only for a name and puts the
-  project into OpenShape's folder (in the Files app: *On My iPhone / iPad →
-  OpenShape*). Home lists the projects in that folder (their cards say
-  *OpenShape (Files app)*).
+  project into FoldForm's folder (in the Files app: *On My iPhone / iPad →
+  FoldForm*). Home lists the projects in that folder (their cards say
+  *FoldForm (Files app)*).
 - **File → Export STL**, **Export 3MF** and **Export STEP** write straight
   into its *Exports* folder, then open the share sheet: a slicer app,
   AirDrop, Save to Files or Mail (closing it is fine: the file stays in
@@ -953,26 +953,26 @@ iPad" below).
   file, with its full history) by AirDrop, Mail or to the Files app. It
   saves first; a new project is asked for its name.
 - **From other apps:** in the Files app, tap a project to open it in
-  OpenShape, or use **Share → OpenShape** on a project or a STEP file (`.step`,
-  `.stp`); in Mail, touch and hold an attachment and choose OpenShape. A
+  FoldForm, or use **Share → FoldForm** on a project or a STEP file (`.step`,
+  `.stp`); in Mail, touch and hold an attachment and choose FoldForm. A
   project from elsewhere (iCloud Drive, another app, Mail) is **copied into
-  OpenShape's folder** and opened; the original stays as it was, and your
+  FoldForm's folder** and opened; the original stays as it was, and your
   changes go into the copy (the same file opened again uses that copy; a
   different project with the same name becomes "Name 2"). A STEP file
   becomes a **new project**, as Home's **Import STEP…** does. If the open
-  project has unsaved changes, OpenShape asks first (Cancel keeps your work
+  project has unsaved changes, FoldForm asks first (Cancel keeps your work
   and makes no copy). A project that cannot be opened (damaged, or from a
-  newer OpenShape) is not kept in OpenShape's folder.
-- **Open…** picks any project; one outside OpenShape's folder is copied in
+  newer FoldForm) is not kept in FoldForm's folder.
+- **Open…** picks any project; one outside FoldForm's folder is copied in
   the same way. **Import STEP…** reads STEP files from anywhere (iCloud
   Drive, On My iPhone / iPad).
 
 ### Recovery after a crash
 
-While a document has unsaved changes, OpenShape keeps a recovery copy in its
+While a document has unsaved changes, FoldForm keeps a recovery copy in its
 own folder, a few seconds after you stop editing and at least every minute
 (adjustable in Preferences). Your own file changes only when you save. If
-OpenShape closes unexpectedly, the next start shows "OpenShape closed
+FoldForm closes unexpectedly, the next start shows "FoldForm closed
 unexpectedly" with **Restore**, **Discard** and **Decide later**. A
 restored document opens unsaved: save it to keep it. Choosing **Don't Save**
 when closing discards the copy on purpose.
@@ -990,11 +990,11 @@ remembered:
   counterbore and countersink seats (0.2 mm to start with; see
   [Holes that fit](#holes-that-fit)).
 
-**File → About OpenShape** shows the version, the license, where the
-source code is and the [privacy policy](PRIVACY.md) (OpenShape collects no
-data about you). Its **Licenses** button lists OpenShape and every library
+**File → About FoldForm** shows the version, the license, where the
+source code is and the [privacy policy](PRIVACY.md) (FoldForm collects no
+data about you). Its **Licenses** button lists FoldForm and every library
 built into it, each with its full license text and where its source code
-is. OpenShape is free software (Mozilla Public License 2.0); on iPhone and
+is. FoldForm is free software (Mozilla Public License 2.0); on iPhone and
 iPad, "Your rights to the LGPL libraries" there explains how to rebuild the
 app with modified versions of Qt, Open CASCADE or PlaneGCS and where to get
 the exact source code of your version, free of charge. Help and contact
@@ -1072,7 +1072,7 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
   code-signed (the release notes say whether a release is) and, now and
   then, a new signed one (the warning then names SignPath Foundation as the
   publisher). Click **More info**, then **Run anyway**.
-- **The installer says OpenShape is running:** close OpenShape, then click
+- **The installer says OpenShape is running:** close FoldForm, then click
   **Retry**.
 - **A tool does nothing:** read the hint line (bottom left) and the red text
   under the value box; they say what to select or why the step cannot be
@@ -1080,10 +1080,10 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
 - **A step in the Model panel turned red:** an earlier change made it
   impossible (for example a fillet larger than the new edge). Open the step
   and change its value, suppress it, or undo.
-- **OpenShape closed unexpectedly:** start it again and click **Restore**.
+- **FoldForm closed unexpectedly:** start it again and click **Restore**.
   After a crash, the last line of the log usually names where it happened:
   include the log in a bug report.
-- **Something is slow:** start OpenShape with detailed timing in the log,
+- **Something is slow:** start FoldForm with detailed timing in the log,
   from PowerShell:
 
   ```powershell
@@ -1094,7 +1094,7 @@ time. Letters work when the 3D view has the keyboard focus (click in it).
 
 Open an issue at <https://github.com/SamuelAirs/openshape/issues> with:
 
-1. the OpenShape version (**File → About OpenShape**) and your Windows
+1. the FoldForm version (**File → About FoldForm**) and your Windows
    version;
 2. what you did, what you expected and what happened instead (a screenshot
    helps);

@@ -68,7 +68,7 @@ TEST(TextGeometry, RefusesTextItCannotMake)
     EXPECT_EQ(checkText(spec("tiny", 0.2)), "The size (the height of capital letters) must be between 0.5 and 1000 mm.");
     EXPECT_EQ(checkText(spec("huge", 5000)), "The size (the height of capital letters) must be between 0.5 and 1000 mm.");
     EXPECT_EQ(checkText(spec(std::string(201, 'x'))), "The text is too long: at most 200 characters.");
-    EXPECT_EQ(checkText(TextSpec{"Hi", "NoSuchFont", 10}), "The font \"NoSuchFont\" is not available in this version of OpenShape.");
+    EXPECT_EQ(checkText(TextSpec{"Hi", "NoSuchFont", 10}), "The font \"NoSuchFont\" is not available in this version of FoldForm.");
     EXPECT_EQ(checkText(TextSpec{"Hi", "", 10}), "No font is available for text in this build.");
     // Accented letters are fine.
     EXPECT_EQ(checkText(spec("Caf\xC3\xA9 \xC3\x85")), "");

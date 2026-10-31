@@ -1,5 +1,9 @@
 # OpenShape — notes for AI assistants picking up this project
 
+The product is called **FoldForm** (since 2026-10-31): everything users see says
+FoldForm, while the code, repository, executable and file format keep the name
+OpenShape (docs/TECHNICAL_DEBT.md, TD-152).
+
 Start here, in this order:
 1. `PROJECT_STATUS.md` — "Handoff: where we left off" first; then what works,
    what's missing, next tasks, test counts.

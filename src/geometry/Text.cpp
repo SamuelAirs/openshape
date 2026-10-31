@@ -458,7 +458,7 @@ std::string checkText(const TextSpec& spec)
     const std::shared_ptr<FontFile> file = findFont(spec.font);
     if (!file)
         return spec.font.empty() ? std::string("No font is available for text in this build.")
-                                 : "The font \"" + spec.font + "\" is not available in this version of OpenShape.";
+                                 : "The font \"" + spec.font + "\" is not available in this version of FoldForm.";
     static_assert(kMinCapHeight == 0.5 && kMaxCapHeight == 1000.0, "the message below names the limits");
     if (!(spec.capHeight >= kMinCapHeight) || !(spec.capHeight <= kMaxCapHeight))
         return "The size (the height of capital letters) must be between 0.5 and 1000 mm.";

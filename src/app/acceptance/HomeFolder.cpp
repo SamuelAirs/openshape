@@ -57,7 +57,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             QQuickItem* folder = r.findItem(QStringLiteral("homeCardFolder_0"));
             const QString text = folder ? folder->property("text").toString() : QString();
             r.check(folder && folder->isVisible(), "home folder: the card says where the project is");
-            r.check(text == QStringLiteral("OpenShape (Files app)"), "home folder: in OpenShape's folder of the Files app", text);
+            r.check(text == QStringLiteral("FoldForm (Files app)"), "home folder: in FoldForm's folder of the Files app", text);
             r.check(!text.contains(QDir::toNativeSeparators(QDir::tempPath())) && !text.contains(QLatin1Char('/'))
                         && !text.contains(QLatin1Char('\\')),
                     "home folder: not the folder's path on the device", text);

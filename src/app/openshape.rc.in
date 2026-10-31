@@ -25,12 +25,12 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "CompanyName", "OpenShape contributors"
-            VALUE "FileDescription", "OpenShape - direct, precise solid CAD"
+            VALUE "FileDescription", "FoldForm - direct, precise solid CAD"
             VALUE "FileVersion", "@PROJECT_VERSION@"
             VALUE "InternalName", "OpenShape"
             VALUE "LegalCopyright", "Copyright (C) OpenShape contributors. Mozilla Public License 2.0."
             VALUE "OriginalFilename", "OpenShape.exe"
-            VALUE "ProductName", "OpenShape"
+            VALUE "ProductName", "FoldForm"
             VALUE "ProductVersion", "@PROJECT_VERSION@"
         END
     END

@@ -515,7 +515,7 @@ TEST(Licenses, TheSourceOfferNamesExactlyThisBuildsSource)
                             QStringLiteral("0123456789abcdef0123456789abcdef01234567"), QStringLiteral("v1.2.3-beta1"),
                             true};
     const QString offer = catalog.sourceOffer(release);
-    EXPECT_TRUE(offer.contains(QStringLiteral("This is OpenShape 1.2.3 (build 57, release v1.2.3-beta1, commit 0123456789ab).")))
+    EXPECT_TRUE(offer.contains(QStringLiteral("This is FoldForm 1.2.3 (build 57, release v1.2.3-beta1, commit 0123456789ab).")))
         << offer.toStdString();
     EXPECT_TRUE(offer.contains(QStringLiteral("https://github.com/SamuelAirs/openshape/tree/v1.2.3-beta1")));
     EXPECT_TRUE(offer.contains(QStringLiteral(
@@ -831,7 +831,7 @@ TEST(IncomingFiles, WhatCannotBeUsedIsSaidPlainly)
     EXPECT_TRUE(unsupported.path.isEmpty());
     EXPECT_EQ(unsupported.kind, IncomingKind::Unsupported);
     EXPECT_EQ(unsupported.error.toStdString(),
-              "OpenShape opens projects (.openshape) and STEP files (.step, .stp); \xE2\x80\x9Cnotes.txt\xE2\x80\x9D is neither.");
+              "FoldForm opens projects (.openshape) and STEP files (.step, .stp); \xE2\x80\x9Cnotes.txt\xE2\x80\x9D is neither.");
 
     const StagedFile missing = stageIncomingFile(f.elsewhere + QStringLiteral("/gone.openshape"), f.places);
     EXPECT_TRUE(missing.path.isEmpty());

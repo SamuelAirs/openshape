@@ -37,7 +37,7 @@ std::string pathString(const std::filesystem::path& path)
 Status formatError(const std::string& dev)
 {
     OS_LOG(Warning, File) << "project format error: " << dev;
-    return Status::failure(ErrorCode::FileFormatError, "This project file is damaged or not an OpenShape project.", dev);
+    return Status::failure(ErrorCode::FileFormatError, "This project file is damaged or not a FoldForm project.", dev);
 }
 
 // ---- Version migrations ------------------------------------------------------
@@ -249,7 +249,7 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
     const int version = input["version"].get<int>();
     if (version > kProjectFormatVersion)
         return R::failure(ErrorCode::FileVersionUnsupported,
-                          "This project was created by a newer version of OpenShape. Please update OpenShape to open it.",
+                          "This project was created by a newer version of FoldForm. Please update FoldForm to open it.",
                           "file version " + std::to_string(version) + " > supported " + std::to_string(kProjectFormatVersion));
     if (version < 1)
         return R::failureFrom(formatError("invalid version " + std::to_string(version)));
@@ -332,7 +332,7 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
             const auto kind = doc::featureKindFromString(f["type"].get<std::string>());
             if (!kind)
                 return R::failure(ErrorCode::FileVersionUnsupported,
-                                  "This project uses a feature this version of OpenShape does not support.",
+                                  "This project uses a feature this version of FoldForm does not support.",
                                   "unknown feature type '" + f["type"].get<std::string>() + "'");
             auto feature = doc::createFeature(*kind, *featureId);
             if (Status s = feature->readParams(f["params"]); !s)
@@ -616,12 +616,12 @@ Result<std::vector<unsigned char>> readProjectThumbnail(const std::filesystem::p
         return R::failure(ErrorCode::FileNotFound, "The project file could not be found.", "not a file: " + pathString(path));
     const auto size = std::filesystem::file_size(path, ec);
     if (ec || size == 0 || size > kMaxProjectFileBytes)
-        return R::failure(ErrorCode::FileFormatError, "This is not an OpenShape project.", "bad file size: " + pathString(path));
+        return R::failure(ErrorCode::FileFormatError, "This is not a FoldForm project.", "bad file size: " + pathString(path));
     int error = 0;
     ZipArchive archive;
     archive.archive = zip_open(pathString(path).c_str(), ZIP_RDONLY, &error); // UTF-8 names on Windows too
     if (!archive.archive)
-        return R::failure(ErrorCode::FileFormatError, "This is not an OpenShape project.",
+        return R::failure(ErrorCode::FileFormatError, "This is not a FoldForm project.",
                           "zip_open failed (" + std::to_string(error) + "): " + pathString(path));
     const zip_int64_t index = zip_name_locate(archive.archive, "thumbnail.png", 0);
     if (index < 0)

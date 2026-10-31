@@ -169,7 +169,7 @@ std::string homeFolderLabel(const std::string& directory, const std::string& app
     for (std::size_t i = 0; i < app.size(); ++i)
         if (!sameRecentPath(inside[i], app[i]))
             return directory;
-    std::string label = "OpenShape";
+    std::string label = "FoldForm";
     for (std::size_t i = app.size(); i < inside.size(); ++i)
         label += " \xE2\x86\x92 " + inside[i]; // →
     return label + " (Files app)";

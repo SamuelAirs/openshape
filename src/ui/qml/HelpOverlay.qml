@@ -61,7 +61,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Text {
                         Layout.fillWidth: true
-                        text: "How OpenShape works"
+                        text: "How FoldForm works"
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: Theme.text
@@ -259,10 +259,10 @@ Rectangle {
                     HelpSection {
                         title: "Files"
                         rows: (overlay.appFolder ? [
-                            ["Where files go", "Projects into OpenShape's folder (the Files app: On My iPhone / iPad → OpenShape), "
+                            ["Where files go", "Projects into FoldForm's folder (the Files app: On My iPhone / iPad → FoldForm), "
                              + "by name; exports into its Exports folder. Open picks any project (one from elsewhere is copied in)"],
-                            ["From other apps", "In the Files app or Mail, share a project or a STEP file to OpenShape: "
-                             + "a project is copied into OpenShape's folder and opened, a STEP file becomes a new project"]
+                            ["From other apps", "In the Files app or Mail, share a project or a STEP file to FoldForm: "
+                             + "a project is copied into FoldForm's folder and opened, a STEP file becomes a new project"]
                         ] : []).concat(overlay.share ? [
                             ["To a slicer", "File → Export STL or 3MF, then pick your printer’s or slicer’s app (or AirDrop, Save to Files, Mail) in the share sheet"],
                             ["Send a project", "File → Share Project… (saves it first)"]
@@ -277,7 +277,7 @@ Rectangle {
                             ["After a crash", "Unsaved work is kept in a recovery copy and offered at the next start (your file changes only when you save)"],
                             ["Preferences", "File → Preferences… (Ctrl+,): units, grid snapping, recovery copies, hole allowance for 3D printing",
                              "File → Preferences…: units, grid snapping, recovery copies, hole allowance for 3D printing"],
-                            ["Licenses", "File → About OpenShape → Licenses: the licenses of OpenShape and its libraries, where their source code is, and how to rebuild the app with modified libraries"]
+                            ["Licenses", "File → About FoldForm → Licenses: the licenses of FoldForm and its libraries, where their source code is, and how to rebuild the app with modified libraries"]
                         ])
                     }
                 }

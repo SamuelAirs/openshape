@@ -133,7 +133,7 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r] {
         QQuickItem* toast = r.findItem(QStringLiteral("toast"));
         const QString text = toast ? toast->property("text").toString() : QString();
-        r.check(toast && toast->isVisible() && text == QStringLiteral("Exported Click lid.stl to OpenShape → Exports (Files app)"),
+        r.check(toast && toast->isVisible() && text == QStringLiteral("Exported Click lid.stl to FoldForm → Exports (Files app)"),
                 "app folder: the message names the exported file (in the touch layout too)", text);
     });
     append(steps, fileMenu(r, QStringLiteral("export3mfMenuItem"), QStringLiteral("app folder: File → Export 3MF")));

@@ -131,7 +131,7 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r, version] {
         checkPage(r, QStringLiteral("Your rights to the LGPL libraries"),
-                  {QStringLiteral("This is OpenShape ") + version, QStringLiteral("You may modify these libraries"),
+                  {QStringLiteral("This is FoldForm ") + version, QStringLiteral("You may modify these libraries"),
                    QStringLiteral("https://github.com/SamuelAirs/openshape"),
                    QStringLiteral("Rebuilding the iOS app with modified libraries"), QStringLiteral("Written offer"),
                    QStringLiteral("at least three years")},
@@ -154,7 +154,7 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r, version] {
         checkPage(r, QStringLiteral("OpenShape"),
-                  {QStringLiteral("OpenShape ") + version, QStringLiteral("Mozilla Public License Version 2.0")},
+                  {QStringLiteral("FoldForm ") + version, QStringLiteral("Mozilla Public License Version 2.0")},
                   QStringLiteral("OpenShape"));
         r.check(r.clickItem(QStringLiteral("licensesBack")), "licenses: Back");
     });

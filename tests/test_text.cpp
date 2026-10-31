@@ -122,7 +122,7 @@ TEST(Text, AStepThatCannotBeMadeIsRefused)
     unknownFont->font = "Comic Sans 2099";
     Status font = plate.stack.push(std::make_unique<cmd::AddFeatureCommand>(plate.body, std::move(unknownFont)), plate.document);
     ASSERT_FALSE(font);
-    EXPECT_EQ(font.userMessage(), "The font \"Comic Sans 2099\" is not available in this version of OpenShape.");
+    EXPECT_EQ(font.userMessage(), "The font \"Comic Sans 2099\" is not available in this version of FoldForm.");
     EXPECT_EQ(plate.document.body(plate.body)->features().size(), 1u) << "nothing was added";
 }
 
@@ -243,7 +243,7 @@ TEST(Text, TextStepsRoundTripThroughTheProjectFile)
     ASSERT_TRUE(opened.ok()) << opened.developerMessage();
     const doc::Body& withOtherFont = *opened.value()->body(plate.body);
     ASSERT_TRUE(withOtherFont.hasFailures());
-    EXPECT_EQ(withOtherFont.state(1).userMessage, "The font \"NotoSerif-Regular\" is not available in this version of OpenShape.");
+    EXPECT_EQ(withOtherFont.state(1).userMessage, "The font \"NotoSerif-Regular\" is not available in this version of FoldForm.");
 }
 
 // An angle is a direction: whatever is typed in the Model panel or read from

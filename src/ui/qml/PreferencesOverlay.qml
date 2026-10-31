@@ -94,8 +94,8 @@ Rectangle {
                 }
                 Note {
                     text: overlay.app.recoveryInterval === 0
-                          ? "Off: work that is not saved is lost if OpenShape closes unexpectedly."
-                          : "While there are unsaved changes, OpenShape keeps a copy in its own folder, a few seconds after "
+                          ? "Off: work that is not saved is lost if FoldForm closes unexpectedly."
+                          : "While there are unsaved changes, FoldForm keeps a copy in its own folder, a few seconds after "
                             + "you stop editing and at least this often, and offers it after a crash. Your file changes only when you save."
                 }
 

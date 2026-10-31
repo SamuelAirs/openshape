@@ -104,7 +104,7 @@ std::vector<io::RecoveryEntry> RecoverySession::findOrphans()
 Status RecoverySession::adopt(const std::string& orphan, const io::RecoveryInfo& info)
 {
     if (orphan == session_ || isAlive(orphan))
-        return Status::failure(ErrorCode::InvalidArgument, "That work is open in another OpenShape window.",
+        return Status::failure(ErrorCode::InvalidArgument, "That work is open in another FoldForm window.",
                                "adopt a live session " + orphan);
     Status status = store_.adopt(orphan, session_, info);
     if (status)
@@ -115,7 +115,7 @@ Status RecoverySession::adopt(const std::string& orphan, const io::RecoveryInfo&
 Status RecoverySession::discard(const std::string& orphan)
 {
     if (orphan == session_ || isAlive(orphan))
-        return Status::failure(ErrorCode::InvalidArgument, "That work is open in another OpenShape window.",
+        return Status::failure(ErrorCode::InvalidArgument, "That work is open in another FoldForm window.",
                                "discard a live session " + orphan);
     Status status = store_.remove(orphan);
     if (status)

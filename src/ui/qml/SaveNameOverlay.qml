@@ -108,7 +108,7 @@ Rectangle {
                 font.pixelSize: 12
                 color: overlay.replaces ? "#9A6A00" : Theme.mutedText
                 text: overlay.replaces ? "A project with this name is there already: saving replaces it."
-                                       : "Saved in OpenShape's folder, which the Files app shows."
+                                       : "Saved in FoldForm's folder, which the Files app shows."
             }
             RowLayout {
                 Layout.fillWidth: true

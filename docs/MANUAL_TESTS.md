@@ -50,7 +50,7 @@ odd: a screenshot and a sentence is plenty. Starting the app with
    red, Y green, Z blue). Click its Top face, then a corner (an isometric
    view down that corner), then drag the cube: the view orbits. Press `K`,
    arm Line and drag the cube again: it orbits and draws nothing.
-6. **About.** File → About OpenShape.
+6. **About.** File → About FoldForm.
 7. **Touch layout (optional).** Add ` --touch` after `OpenShape.exe` in the
    shortcut's Properties → Target: bigger buttons and a Pen switch.
 8. **A real part.** Design something you need, export STL or 3MF, print it
@@ -116,8 +116,8 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     it is in the Recycle Bin and can be restored from there).
     **iPhone / iPad:** the same, by touch and hold on a card. After Delete…,
     open the Files app → Browse → Recently Deleted: the project should be
-    there and "Recover" should put it back into On My iPhone → OpenShape
-    (Home shows it again). If instead OpenShape asks "Delete … for good?",
+    there and "Recover" should put it back into On My iPhone → FoldForm
+    (Home shows it again). If instead FoldForm asks "Delete … for good?",
     tell us: iOS did not take it into Recently Deleted. Import STEP… with a part from another program
     (Onshape, Fusion, FreeCAD, a download): the bodies should keep their
     size and names; push/pull a face and round an edge of it, save, reopen.
@@ -170,7 +170,7 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     on the ground. The Perspective / Orthographic button switches back;
     close and start again: your choice is kept. Is anything harder to
     read than before (edges, sketches, selected faces)?
-18. **Licenses (for the App Store release).** File → About OpenShape →
+18. **Licenses (for the App Store release).** File → About FoldForm →
     **Licenses**: the list starts with "Your rights to the LGPL libraries",
     then OpenShape, the libraries (Open CASCADE, Qt, PlaneGCS, FreeType,
     libzip, nlohmann/json, Eigen, Noto Sans) and "Inside Qt". Open a few:
@@ -244,24 +244,24 @@ iPhone". New in the build after 2026-09-27 (iPad 12-18, iPhone 13-18):
 1. **Share an STL to the slicer:** File → Export STL: the share sheet opens
    (on the iPad pointing at File); choose the slicer app, then AirDrop a
    3MF to another device; close the sheet once without choosing (no
-   message; the file is in OpenShape → Exports).
+   message; the file is in FoldForm → Exports).
 2. **Share Project…:** on a new project it asks for a name first, then the
    sheet; send the project to yourself by Mail.
-3. **Open a STEP file from the Files app:** Share → OpenShape: a new project
+3. **Open a STEP file from the Files app:** Share → FoldForm: a new project
    with the file's bodies (unsaved changes are asked about first).
 4. **Open a STEP file and a project from Mail:** touch and hold the
-   attachment → OpenShape; the project opens as a copy in OpenShape's
-   folder; no "Inbox" folder is left in OpenShape's folder afterwards.
+   attachment → FoldForm; the project opens as a copy in FoldForm's
+   folder; no "Inbox" folder is left in FoldForm's folder afterwards.
 5. **Open a project from the Files app:** tap one in On My iPhone / iPad →
-   OpenShape (opens directly), and one in iCloud Drive (Share → OpenShape:
+   FoldForm (opens directly), and one in iCloud Drive (Share → FoldForm:
    opens as a copy).
-6. If OpenShape is missing from the share sheet for STEP files, say which
+6. If FoldForm is missing from the share sheet for STEP files, say which
    other CAD or slicer apps are installed (TD-68).
-7. **Privacy policy link and Home folders:** File → About OpenShape → tap
-   "Privacy policy: OpenShape collects no data about you": Safari opens the
+7. **Privacy policy link and Home folders:** File → About FoldForm → tap
+   "Privacy policy: FoldForm collects no data about you": Safari opens the
    policy on GitHub (after this branch is on `main`). On Home, the cards of
-   projects saved in OpenShape's folder say *OpenShape (Files app)*, not a
-   long `/var/mobile/…` path, and the *OpenShape* title and **New project**
+   projects saved in FoldForm's folder say *FoldForm (Files app)*, not a
+   long `/var/mobile/…` path, and the *FoldForm* title and **New project**
    sit below the clock and the Dynamic Island (they used to sit under them).
 8. **Loft:** sketch a rectangle on the ground; Plane → From XY, type 30;
    Sketch on the plane, a circle over the rectangle; Finish. Tap the

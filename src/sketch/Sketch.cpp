@@ -643,7 +643,7 @@ Result<Sketch> Sketch::fromJson(const json& j)
         const auto kind = kindFromName(e["type"].get<std::string>());
         if (!kind)
             return Result<Sketch>::failure(ErrorCode::FileVersionUnsupported,
-                                           "This sketch uses a constraint this version of OpenShape does not support.",
+                                           "This sketch uses a constraint this version of FoldForm does not support.",
                                            "unknown constraint type");
         if (e.contains("c") && !idField(e, "c"))
             return bad("invalid constraint");

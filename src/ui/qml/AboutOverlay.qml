@@ -63,7 +63,7 @@ Rectangle {
                     Text {
                         objectName: "aboutVersion"
                         Layout.fillWidth: true
-                        text: "OpenShape " + Qt.application.version
+                        text: "FoldForm " + Qt.application.version
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: Theme.text
@@ -116,7 +116,7 @@ Rectangle {
                     font.pixelSize: 13
                     textFormat: Text.StyledText
                     linkColor: Theme.accent
-                    text: "<a href=\"" + url + "\">Privacy policy: OpenShape collects no data about you</a>"
+                    text: "<a href=\"" + url + "\">Privacy policy: FoldForm collects no data about you</a>"
                     MouseArea {
                         objectName: "aboutPrivacyLinkArea"
                         anchors.fill: parent
@@ -169,7 +169,7 @@ Rectangle {
                     // app; the Windows package also carries them as files, with
                     // the libraries only it bundles (scripts/package-windows.sh).
                     text: "These libraries and the ones they use keep their own licenses: Licenses shows each license text, "
-                        + "where each library's source code is and how to rebuild OpenShape with modified versions of the LGPL libraries."
+                        + "where each library's source code is and how to rebuild FoldForm with modified versions of the LGPL libraries."
                         + (Qt.platform.os === "windows"
                            ? " The Windows package also has them as files next to OpenShape.exe (LICENSE.txt, "
                              + "THIRD_PARTY_LICENSES.txt with every bundled library, PlaneGCS-COPYING.LIB.txt and NotoSans-OFL.txt)."

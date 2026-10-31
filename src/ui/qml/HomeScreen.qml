@@ -81,7 +81,7 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: 2
                     Text {
-                        text: "OpenShape"
+                        text: "FoldForm"
                         font.pixelSize: home.narrow || home.short_ ? 22 : 26
                         font.weight: Font.DemiBold
                         color: Theme.text
@@ -257,7 +257,7 @@ Rectangle {
                 elide: Text.ElideRight
             }
             Text {
-                // Where it is: on iPhone and iPad "OpenShape (Files app)"
+                // Where it is: on iPhone and iPad "FoldForm (Files app)"
                 // (io::homeFolderLabel), not the app's sandbox path.
                 objectName: "homeCardFolder_" + card.cardIndex
                 width: parent.width

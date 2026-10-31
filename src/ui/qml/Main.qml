@@ -38,7 +38,7 @@ ApplicationWindow {
     rightPadding: 0
     // Shown by main.cpp once it has put the window where it was last time.
     visible: false
-    title: (app.dirty ? "• " : "") + app.documentTitle + " — OpenShape"
+    title: (app.dirty ? "• " : "") + app.documentTitle + " — FoldForm"
     color: Theme.background
 
     property bool closeConfirmed: false
@@ -362,7 +362,7 @@ ApplicationWindow {
 
             Text {
                 visible: !Theme.compact // a phone needs the room
-                text: "OpenShape"
+                text: "FoldForm"
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
                 color: Theme.text
@@ -397,7 +397,7 @@ ApplicationWindow {
                 implicitWidth: Theme.controlHeight
                 onClicked: helpOverlay.toggle()
                 ToolTip.visible: hovered && !Theme.touch
-                ToolTip.text: "How OpenShape works (F1)"
+                ToolTip.text: "How FoldForm works (F1)"
                 ToolTip.delay: 500
             }
         }
@@ -500,7 +500,7 @@ ApplicationWindow {
         }
         MenuSeparator {}
         MenuItem { objectName: "preferencesMenuItem"; text: "Preferences…"; onTriggered: preferencesOverlay.open() }
-        MenuItem { objectName: "aboutMenuItem"; text: "About OpenShape"; onTriggered: aboutOverlay.open() }
+        MenuItem { objectName: "aboutMenuItem"; text: "About FoldForm"; onTriggered: aboutOverlay.open() }
     }
 
     // ---------------------------------------------------------------- create palette
@@ -1565,7 +1565,7 @@ ApplicationWindow {
         id: openDialog
         title: "Open project"
         currentFolder: window.app.projectFolder !== "" ? window.app.projectFolder : window.app.appFolderUrl
-        nameFilters: ["OpenShape projects (*.openshape)"]
+        nameFilters: ["FoldForm projects (*.openshape)"]
         onAccepted: window.app.openProject(selectedFile)
     }
     FileDialog {
@@ -1574,7 +1574,7 @@ ApplicationWindow {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "openshape"
         currentFolder: window.app.projectFolder
-        nameFilters: ["OpenShape projects (*.openshape)"]
+        nameFilters: ["FoldForm projects (*.openshape)"]
         onAccepted: window.finishSaveAs(window.app.saveProjectAs(selectedFile))
         onRejected: window.finishSaveAs(false)
     }
