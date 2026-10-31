@@ -436,6 +436,7 @@ TEST(Licenses, TheBuiltInListHasEveryLibraryWithItsLicense)
         {"json", "MIT"},
         {"eigen", "MPL-2.0"},
         {"notosans", "OFL-1.1"},
+        {"openshape3d", "MIT"},
     };
     for (const auto& [id, license] : expected) {
         const LicenseEntry* entry = catalog.find(QString::fromLatin1(id));
@@ -496,6 +497,10 @@ TEST(Licenses, EveryEntryShowsItsFullTexts)
     EXPECT_TRUE(catalog.text(QStringLiteral("freetype")).contains(QStringLiteral("Portions of this software are copyright")));
     EXPECT_TRUE(catalog.text(QStringLiteral("openshape")).contains(QStringLiteral("Mozilla Public License Version 2.0")));
     EXPECT_TRUE(catalog.text(QStringLiteral("notosans")).contains(QStringLiteral("SIL OPEN FONT LICENSE Version 1.1")));
+    // Adapted kernel code (third_party/openshape3d): MIT asks for the notice.
+    const QString openshape3d = catalog.text(QStringLiteral("openshape3d"));
+    EXPECT_TRUE(openshape3d.contains(QStringLiteral("Copyright (c) 2026 Laan Labs and the openshape3d contributors")));
+    EXPECT_TRUE(openshape3d.contains(QStringLiteral("Permission is hereby granted, free of charge")));
     EXPECT_TRUE(catalog.text(QStringLiteral("nothing")).isEmpty());
 }
 

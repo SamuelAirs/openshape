@@ -143,11 +143,11 @@ is green on Windows, macOS, the iPad build and the Release dry run.
 
 **OpenShape3D, and what we take from it.** Its source is on GitHub under
 the MIT license: Swift, SwiftUI and Metal over the same OpenCASCADE kernel.
-Tracks now running port its useful parts (credited in THIRD_PARTY.md as they merge):
+Tracks port its useful parts (credited in THIRD_PARTY.md as they merge):
 - kernel robustness: time limits, a repair attempt, fuzzy booleans, better
-  refusals and exact volumes;
+  refusals and exact volumes (merged);
 - a view cube;
-- project Rename, Duplicate and Delete;
+- project Rename, Duplicate and Delete (merged);
 - a check of our keypad against its tests.
 
 Queued: a section view and snap refinements. Where OpenShape is ahead:
@@ -161,9 +161,7 @@ Queued: a section view and snap refinements. Where OpenShape is ahead:
 **Still running:**
 - lock-on points from the face you sketch on, snap hints, a loupe and
   one-finger panning in a sketch (your iPhone reports);
-- kernel robustness from OpenShape3D;
 - the view cube;
-- project management on Home;
 - the keypad check.
 
 **Try first:** docs/IPAD.md, iPad steps 12-18 and iPhone steps 13-17 (the
@@ -838,9 +836,9 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
 1. The owner's third test pass (docs/IPAD.md iPad 12-18, iPhone 13-17;
    docs/MANUAL_TESTS.md 18-19): act on what they report.
 2. Merge the running tracks: sketching on a phone (lock-on points from the
-   face, snap hints, loupe, one-finger pan, compact sketch toolbar),
-   OpenShape3D's kernel robustness, the view cube, project Rename/Duplicate/
-   Delete, the keypad check. Then a section view and the snap refinements
+   face, snap hints, loupe, one-finger pan, compact sketch toolbar), the
+   view cube, the keypad check (OpenShape3D's kernel robustness and project
+   Rename/Duplicate/Delete are merged). Then a section view and the snap refinements
    (ranking, grid along an edge, parallel/perpendicular guides).
 3. The App Store (docs/APP_STORE.md): the owner's decisions (name, price, EU
    trader status, contact addresses, EULA); a beta release tag that carries

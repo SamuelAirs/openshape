@@ -1,17 +1,26 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Portions of this file are adapted from OpenShape3D
+// (https://github.com/laanlabs/openshape3d, commit be3f2fc),
+// Copyright (c) 2026 Laan Labs and the openshape3d contributors,
+// licensed under the MIT License (third_party/openshape3d/LICENSE).
 
 #include "geometry/Modeling.h"
 #include "geometry/KernelSignals.h"
 
 #include "core/Log.h"
 #include "core/Timer.h"
+#include "geometry/internal/BrepScreen.h"
+#include "geometry/internal/Deadline.h"
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAlgoAPI_BooleanOperation.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -61,7 +70,15 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Solid.hxx>
+#include <ShapeAnalysis_ShapeTolerance.hxx>
+#include <ShapeExtend_Status.hxx>
+#include <ShapeFix_Shape.hxx>
+#include <ShapeBuild_ReShape.hxx>
+#include <ShapeUpgrade_ShapeDivideContinuity.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <BRepTools_History.hxx>
+#include <Poly_Triangulation.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Quaternion.hxx>
@@ -373,6 +390,25 @@ std::uint64_t kernelCallsOnThisThread()
     return detail::t_kernelCalls;
 }
 
+namespace {
+thread_local std::chrono::milliseconds t_kernelTimeLimit = kDefaultKernelTimeLimit;
+} // namespace
+
+std::chrono::milliseconds kernelTimeLimit()
+{
+    return t_kernelTimeLimit;
+}
+
+ScopedKernelTimeLimit::ScopedKernelTimeLimit(std::chrono::milliseconds limit) : previous_(t_kernelTimeLimit)
+{
+    t_kernelTimeLimit = limit;
+}
+
+ScopedKernelTimeLimit::~ScopedKernelTimeLimit()
+{
+    t_kernelTimeLimit = previous_;
+}
+
 bool insideKernelCall()
 {
     return Standard_ErrorHandler::IsInTryBlock();
@@ -398,6 +434,24 @@ void runInsideKernelCallForTesting(const std::function<void()>& fn)
 
 namespace detail {
 
+namespace {
+
+std::string checkStatusName(BRepCheck_Status status)
+{
+    std::ostringstream name;
+    BRepCheck::Print(status, name);
+    std::string text = name.str();
+    while (!text.empty() && (text.back() == '\n' || text.back() == ' '))
+        text.pop_back();
+    return text;
+}
+
+} // namespace
+
+// The statuses a sub-shape carries within one parent are stored against
+// the pair (a wire can be fine alone and self-intersecting in its face) and
+// reached through the result's context iterator: adapted from the health
+// check of OpenShape3D (its sub-shape-in-parent walk).
 std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const TopoDS_Shape& shape)
 {
     std::map<std::string, int> counts;
@@ -408,15 +462,15 @@ std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const Topo
             const Handle(BRepCheck_Result)& result = analyzer.Result(subs(i));
             if (result.IsNull())
                 continue;
-            for (BRepCheck_ListIteratorOfListOfStatus it(result->Status()); it.More(); it.Next()) {
-                if (it.Value() == BRepCheck_NoError)
-                    continue;
-                std::ostringstream name;
-                BRepCheck::Print(it.Value(), name);
-                std::string text = name.str();
-                while (!text.empty() && (text.back() == '\n' || text.back() == ' '))
-                    text.pop_back();
-                ++counts[std::string(TopAbs::ShapeTypeToString(type)) + ": " + text];
+            for (BRepCheck_ListIteratorOfListOfStatus it(result->Status()); it.More(); it.Next())
+                if (it.Value() != BRepCheck_NoError)
+                    ++counts[std::string(TopAbs::ShapeTypeToString(type)) + ": " + checkStatusName(it.Value())];
+            for (result->InitContextIterator(); result->MoreShapeInContext(); result->NextShapeInContext()) {
+                const std::string where = std::string(TopAbs::ShapeTypeToString(type)) + " in "
+                                        + TopAbs::ShapeTypeToString(result->ContextualShape().ShapeType()) + ": ";
+                for (BRepCheck_ListIteratorOfListOfStatus it(result->StatusOnShape()); it.More(); it.Next())
+                    if (it.Value() != BRepCheck_NoError)
+                        ++counts[where + checkStatusName(it.Value())];
             }
         }
     }
@@ -426,36 +480,237 @@ std::string describeCheckFailures(const BRepCheck_Analyzer& analyzer, const Topo
     return out.empty() ? std::string("no detail") : out;
 }
 
-Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage)
+// Adapted from OS3DVolume (OpenShape3D).
+double exactVolume(const TopoDS_Shape& shape, gp_Pnt* centroid)
+{
+    GProp_GProps props;
+    BRepGProp::VolumePropertiesGK(shape, props, 1e-7, Standard_False, Standard_True, centroid != nullptr);
+    if (centroid)
+        *centroid = props.CentreOfMass();
+    return props.Mass();
+}
+
+TopoDS_Shape independentCopy(const TopoDS_Shape& shape)
+{
+    BRepBuilderAPI_Copy copier(shape, Standard_False, Standard_False);
+    return copier.Shape();
+}
+
+namespace {
+
+bool hasTriangulation(const TopoDS_Shape& shape)
+{
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        TopLoc_Location location;
+        if (!BRep_Tool::Triangulation(TopoDS::Face(ex.Current()), location).IsNull())
+            return true;
+    }
+    return false;
+}
+
+// The single solid of a result, or the result itself when it holds several;
+// `count` gets the number of solids.
+TopoDS_Shape unwrapSolids(const TopoDS_Shape& result, int& count)
+{
+    count = 0;
+    TopoDS_Shape last;
+    for (TopExp_Explorer ex(result, TopAbs_SOLID); ex.More(); ex.Next()) {
+        ++count;
+        last = ex.Current();
+    }
+    return count == 1 ? last : result;
+}
+
+double diagonal(const TopoDS_Shape& shape)
+{
+    Bnd_Box box;
+    BRepBndLib::Add(shape, box, false);
+    return box.IsVoid() ? 0.0 : std::sqrt(box.SquareExtent());
+}
+
+std::string number(double value)
+{
+    std::ostringstream out;
+    out << value;
+    return out.str();
+}
+
+// One ShapeFix_Shape run on an independent copy of `shape`, accepted only
+// when the result is valid, has as many solids and its largest tolerance
+// stays under the cap (see finishSolid). `note` says what happened.
+// Adapted from OS3DHealAndValidate and the tolerance cap of OpenShape3D's
+// boolean path.
+std::optional<TopoDS_Shape> repairOnce(const TopoDS_Shape& shape, int solidCount, const std::vector<TopoDS_Shape>& inputs,
+                                       std::string& note)
+{
+    double before = maxTolerance(shape);
+    for (const TopoDS_Shape& input : inputs)
+        if (!input.IsNull())
+            before = std::max(before, maxTolerance(input));
+    Handle(ShapeFix_Shape) fixer = new ShapeFix_Shape(independentCopy(shape));
+    Handle(KernelDeadline) deadline = new KernelDeadline();
+    fixer->Perform(deadline->Start());
+    if (deadline->fired()) {
+        note = "the repair was stopped by its time limit";
+        return std::nullopt;
+    }
+    int count = 0;
+    const TopoDS_Shape fixed = unwrapSolids(fixer->Shape(), count);
+    if (fixed.IsNull() || count != solidCount) {
+        note = "the repair gave " + std::to_string(count) + " solids instead of " + std::to_string(solidCount);
+        return std::nullopt;
+    }
+    if (!validGeometry(fixed)) {
+        note = "still invalid after one repair";
+        return std::nullopt;
+    }
+    const double after = maxTolerance(fixed);
+    const double limit = std::max(0.01 * diagonal(fixed), 10.0 * before);
+    if (after > limit) {
+        note = "the repair loosened the tolerance to " + number(after) + " mm (limit " + number(limit)
+             + " mm), too loose to build on";
+        return std::nullopt;
+    }
+    note = "repaired by ShapeFix_Shape (largest tolerance " + number(before) + " -> " + number(after) + " mm)";
+    return fixed;
+}
+
+std::vector<std::string> piecesWarning(int solidCount)
+{
+    if (solidCount > 1)
+        return {"The body is now in " + std::to_string(solidCount) + " separate pieces."};
+    return {};
+}
+
+} // namespace
+
+// Adapted from OS3DIsValid (OpenShape3D).
+bool validGeometry(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull())
+        return false;
+    if (BRepCheck_Analyzer(shape).IsValid())
+        return true;
+    return hasTriangulation(shape) && BRepCheck_Analyzer(independentCopy(shape)).IsValid();
+}
+
+double maxTolerance(const TopoDS_Shape& shape)
+{
+    ShapeAnalysis_ShapeTolerance analysis;
+    return analysis.Tolerance(shape, 1); // mode 1: the largest
+}
+
+Result<Shape> finishSolid(const TopoDS_Shape& result, const char* operation, const char* userMessage,
+                          const FinishOptions& options)
 {
     if (result.IsNull())
         return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, std::string(operation) + " returned a null shape");
 
-    TopoDS_Shape out = result;
     int solidCount = 0;
-    TopoDS_Shape lastSolid;
-    for (TopExp_Explorer ex(result, TopAbs_SOLID); ex.More(); ex.Next()) {
-        ++solidCount;
-        lastSolid = ex.Current();
-    }
+    const TopoDS_Shape out = unwrapSolids(result, solidCount);
     if (solidCount == 0)
         return Result<Shape>::failure(ErrorCode::EmptyResult, "This operation would remove the entire body.",
                                       std::string(operation) + " produced no solids");
-    if (solidCount == 1)
-        out = lastSolid;
 
     BRepCheck_Analyzer analyzer(out);
-    if (!analyzer.IsValid()) {
-        const std::string dev = std::string(operation) + " produced an invalid shape (BRepCheck_Analyzer failed: "
-                              + describeCheckFailures(analyzer, out) + ")";
-        OS_LOG(Error, Kernel) << dev;
-        return Result<Shape>::failure(ErrorCode::InvalidResultShape, userMessage, dev);
-    }
+    if (analyzer.IsValid())
+        return Result<Shape>::success(makeShape(out), piecesWarning(solidCount));
+    // Only the display mesh some of its faces carry (shared with an input
+    // that was meshed for the screen) may be what the checker rejects.
+    if (hasTriangulation(out) && BRepCheck_Analyzer(independentCopy(out)).IsValid())
+        return Result<Shape>::success(makeShape(out), piecesWarning(solidCount));
 
-    std::vector<std::string> warnings;
-    if (solidCount > 1)
-        warnings.push_back("The body is now in " + std::to_string(solidCount) + " separate pieces.");
-    return Result<Shape>::success(makeShape(out), std::move(warnings));
+    std::string dev = std::string(operation) + " produced an invalid shape (BRepCheck_Analyzer failed: "
+                    + describeCheckFailures(analyzer, out) + ")";
+    // Merging faces broke a valid result: keep it unmerged.
+    if (!options.unmerged.IsNull() && !options.unmerged.IsSame(result)) {
+        int unmergedCount = 0;
+        const TopoDS_Shape unmerged = unwrapSolids(options.unmerged, unmergedCount);
+        if (unmergedCount > 0 && validGeometry(unmerged)) {
+            OS_LOG(Warning, Kernel) << dev << "; kept the result with its faces unmerged";
+            return Result<Shape>::success(makeShape(unmerged), piecesWarning(unmergedCount))
+                .withDeveloperMessage(dev + "; kept unmerged");
+        }
+    }
+    std::string note;
+    if (const auto repaired = repairOnce(out, solidCount, options.inputs, note)) {
+        OS_LOG(Warning, Kernel) << dev << "; " << note;
+        return Result<Shape>::success(makeShape(*repaired), piecesWarning(solidCount)).withDeveloperMessage(dev + "; " + note);
+    }
+    dev += "; " + note;
+    OS_LOG(Error, Kernel) << dev;
+    return Result<Shape>::failure(ErrorCode::InvalidResultShape, userMessage, dev);
+}
+
+// Adapted from OS3DUnified and the merge-on-a-copy step of OpenShape3D's
+// boolean path. concatBSplines stays on (unlike theirs): it only joins
+// B-spline edges and faces that continue each other, and the tests show no
+// change of analytic surfaces from it.
+TopoDS_Shape unifyCopy(const TopoDS_Shape& built)
+{
+    try {
+        BRepBuilderAPI_Copy copier(built, Standard_False, Standard_True);
+        ShapeUpgrade_UnifySameDomain unify(copier.Shape(), Standard_True, Standard_True, Standard_True);
+        unify.Build();
+        const TopoDS_Shape merged = unify.Shape();
+        return merged.IsNull() ? built : merged;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "merging faces threw " << describeFailure(failure) << "; kept the result unmerged";
+        return built;
+    }
+}
+
+Result<Shape> finishMerged(const TopoDS_Shape& built, const char* operation, const char* userMessage,
+                           std::vector<TopoDS_Shape> inputs)
+{
+    if (built.IsNull())
+        return finishSolid(built, operation, userMessage);
+    FinishOptions options;
+    options.unmerged = built;
+    options.inputs = std::move(inputs);
+    return finishSolid(unifyCopy(built), operation, userMessage, options);
+}
+
+BooleanRun runBoolean(BOPAlgo_Operation operation, const TopTools_ListOfShape& arguments, const TopTools_ListOfShape& tools)
+{
+    Bnd_Box bounds;
+    for (const TopoDS_Shape& s : arguments)
+        BRepBndLib::Add(s, bounds, false);
+    for (const TopoDS_Shape& s : tools)
+        BRepBndLib::Add(s, bounds, false);
+    const double base = bounds.IsVoid() ? 0.0 : std::sqrt(bounds.SquareExtent()) * Precision::Confusion();
+    BooleanRun run;
+    for (const double fuzzy : {base, 10.0 * base}) {
+        BRepAlgoAPI_BooleanOperation op;
+        op.SetOperation(operation);
+        op.SetArguments(arguments);
+        op.SetTools(tools);
+        op.SetNonDestructive(Standard_True);
+        op.SetFuzzyValue(fuzzy);
+        Handle(KernelDeadline) deadline = new KernelDeadline();
+        op.Build(deadline->Start());
+        if (deadline->fired()) {
+            run.timedOut = true; // a hang is not cured by more fuzz
+            return run;
+        }
+        if (op.IsDone() && !op.HasErrors()) {
+            run.shape = op.Shape();
+            run.errors.clear();
+            run.fuzzy = fuzzy;
+            return run;
+        }
+        run.errors = describeAlgoErrors(op);
+        OS_LOG(Debug, Kernel) << "boolean failed with fuzzy value " << fuzzy << ": " << run.errors;
+    }
+    return run;
+}
+
+BooleanRun runBoolean(BOPAlgo_Operation operation, const TopoDS_Shape& argument, const TopoDS_Shape& tool)
+{
+    TopTools_ListOfShape arguments, tools;
+    arguments.Append(argument);
+    tools.Append(tool);
+    return runBoolean(operation, arguments, tools);
 }
 
 } // namespace detail
@@ -518,24 +773,6 @@ CurveKind curveKind(GeomAbs_CurveType type)
     }
 }
 
-// Runs a boolean leaving its inputs untouched. By default OCCT may raise
-// tolerances of the arguments' sub-shapes in place; those belong to cached
-// step outputs (and the previous state kept for undo), which must not change
-// under later steps. Found by the undo/redo stress test: the same step
-// recomputed after an undo gave a bounding box 4e-5 mm different; and one
-// push/pull left a STEP-imported plate invalid for every later step.
-template <typename Op>
-void runBoolean(Op& op, const TopoDS_Shape& argument, const TopoDS_Shape& tool)
-{
-    TopTools_ListOfShape arguments, tools;
-    arguments.Append(argument);
-    tools.Append(tool);
-    op.SetArguments(arguments);
-    op.SetTools(tools);
-    op.SetNonDestructive(Standard_True);
-    op.Build();
-}
-
 } // namespace
 
 Result<Shape> makeBox(const Vec3& origin, const Vec3& size)
@@ -589,7 +826,9 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "pushPullFace: normal undefined");
 
         const gp_Vec sweep = gp_Vec(*normal) * distance;
-        BRepPrimAPI_MakePrism prismMaker(face, sweep);
+        // Swept from a copy of the face: the sweep adds curves on its side
+        // faces to the edges it starts from, which belong to the body.
+        BRepPrimAPI_MakePrism prismMaker(independentCopy(face), sweep);
         prismMaker.Build();
         if (!prismMaker.IsDone())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "BRepPrimAPI_MakePrism not done");
@@ -603,24 +842,13 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
             break;
         }
 
-        TopoDS_Shape combined;
-        if (distance > 0) {
-            BRepAlgoAPI_Fuse op;
-            runBoolean(op, occ(shape), prism);
-            if (op.HasErrors())
-                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Fuse failed: " + describeAlgoErrors(op));
-            combined = op.Shape();
-        } else {
-            BRepAlgoAPI_Cut op;
-            runBoolean(op, occ(shape), prism);
-            if (op.HasErrors())
-                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Cut failed: " + describeAlgoErrors(op));
-            combined = op.Shape();
-        }
-
-        ShapeUpgrade_UnifySameDomain unify(combined, true, true, true);
-        unify.Build();
-        return finishSolid(unify.Shape(), "pushPullFace", userMessage);
+        const BooleanRun run = runBoolean(distance > 0 ? BOPAlgo_FUSE : BOPAlgo_CUT, occ(shape), prism);
+        if (run.timedOut)
+            return tookTooLong<Result<Shape>>("pushPullFace");
+        if (run.shape.IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          std::string(distance > 0 ? "Fuse" : "Cut") + " failed: " + run.errors);
+        return finishMerged(run.shape, "pushPullFace", userMessage, {occ(shape)});
     });
 }
 
@@ -645,12 +873,31 @@ std::optional<double> largestWorkingSize(double failed, std::chrono::steady_cloc
     };
 
     std::optional<double> largest;
-    double lo = std::min(kTinySize, failed * 0.02);
+    const double tiny = std::min(kTinySize, failed * 0.02);
+    double lo = tiny;
     double hi = failed;
     if (affordable()) {
-        if (!attempt(lo)) {
-            largest = 0.0;
-        } else {
+        bool found = attempt(lo);
+        if (!found) {
+            // Halving down from the failed size (adapted from OpenShape3D's
+            // fillet radius search, which found the same non-monotonic case).
+            bool exhausted = true;
+            for (double size = failed / 2; size > tiny; size /= 2) {
+                if (!affordable()) {
+                    exhausted = false;
+                    break;
+                }
+                if (attempt(size)) {
+                    lo = size;
+                    hi = std::min(failed, 2 * size);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && exhausted)
+                largest = 0.0;
+        }
+        if (found) {
             while (hi / lo > 1.02 && affordable()) {
                 const double mid = hi / lo > 2 ? std::sqrt(lo * hi) : (lo + hi) / 2;
                 (attempt(mid) ? lo : hi) = mid;
@@ -764,6 +1011,64 @@ std::string edgeSizeMessage(SizedOperation operation, const Shape& shape, const 
     return fillet ? "Unable to create this fillet. Try a smaller radius." : "Unable to create this chamfer. Try a smaller distance.";
 }
 
+// Whether a fillet or chamfer can be built on the edge at all: it is not
+// degenerate (a cone's apex) and joins exactly two different faces (a seam
+// has the same face on both sides, a free edge one). Handing the blend
+// builder such an edge is a known way to crash it. Adapted from
+// OS3DBlendableEdges; their continuity test is left to isSmoothEdge, which
+// explains a refusal in plain words (edgeSizeMessage).
+bool blendableEdge(const Shape& shape, int edgeIndex)
+{
+    {
+        const KernelLock lock;
+        if (BRep_Tool::Degenerated(edgeAt(shape, edgeIndex)))
+            return false;
+    }
+    return facesOfEdge(shape, edgeIndex).size() == 2;
+}
+
+// The requested edges a blend can be built on (blendableEdge), or the
+// refusal when there are none. Others are left out, as OpenShape3D does:
+// seams are not drawn, so a user cannot pick one, but a reference saved
+// with a set of edges (e.g. every straight vertical edge) may name one.
+Result<std::vector<int>> blendableEdges(const Shape& shape, const std::vector<int>& edgeIndices, SizedOperation operation)
+{
+    std::vector<int> kept;
+    for (int e : edgeIndices) {
+        if (blendableEdge(shape, e))
+            kept.push_back(e);
+        else
+            OS_LOG(Debug, Geometry) << "blend: edge " << e << " left out (degenerate, a seam or not between two faces)";
+    }
+    if (!kept.empty())
+        return Result<std::vector<int>>::success(std::move(kept));
+    const bool fillet = operation == SizedOperation::Fillet;
+    return Result<std::vector<int>>::failure(fillet ? ErrorCode::FilletRadiusTooLarge : ErrorCode::ChamferTooLarge,
+                                             std::string(edgeIndices.size() > 1 ? "These edges are not corners" : "This edge is not a corner")
+                                                 + " between two faces, so " + (edgeIndices.size() > 1 ? "they" : "it")
+                                                 + " cannot be " + (fillet ? "rounded." : "bevelled."),
+                                             "no edge is between two faces (degenerate or seams)");
+}
+
+// How many of the requested edges the builder did not blend. IsDone() with
+// no faulty contour can still mean an edge was quietly left out. An edge
+// counts as blended when faces were generated from it, or when it is gone
+// from the result without a modified image: the builder credits the faces
+// of a tangent chain to some of its edges only. Adapted from
+// OS3DEdgeBlended and OS3DFinishBlend.
+int unblendedEdges(BRepFilletAPI_LocalOperation& maker, const Shape& shape, const std::vector<int>& edgeIndices)
+{
+    TopTools_IndexedMapOfShape resultEdges;
+    TopExp::MapShapes(maker.Shape(), TopAbs_EDGE, resultEdges);
+    int missed = 0;
+    for (int e : edgeIndices) {
+        const TopoDS_Edge edge = edgeAt(shape, e);
+        const bool blended = !maker.Generated(edge).IsEmpty() || (!resultEdges.Contains(edge) && maker.Modified(edge).IsEmpty());
+        missed += blended ? 0 : 1;
+    }
+    return missed;
+}
+
 Result<Shape> tryFillet(const Shape& shape, const std::vector<int>& edgeIndices, double radius)
 {
     const char* userMessage = "Unable to create this fillet. Try a smaller radius.";
@@ -772,14 +1077,23 @@ Result<Shape> tryFillet(const Shape& shape, const std::vector<int>& edgeIndices,
         BRepFilletAPI_MakeFillet maker(occ(shape));
         for (int e : edgeIndices)
             maker.Add(radius, edgeAt(shape, e));
-        maker.Build();
-        if (!maker.IsDone()) {
+        Handle(KernelDeadline) deadline = new KernelDeadline();
+        maker.Build(deadline->Start());
+        if (deadline->fired())
+            return tookTooLong<Result<Shape>>("filletEdges");
+        if (!maker.IsDone() || maker.NbFaultyContours() > 0) {
             std::ostringstream dev;
-            dev << "BRepFilletAPI_MakeFillet not done: radius=" << radius << " mm, edges=" << edgeIndices.size()
-                << ", faulty contours=" << maker.NbFaultyContours() << ", faulty vertices=" << maker.NbFaultyVertices();
+            dev << "BRepFilletAPI_MakeFillet " << (maker.IsDone() ? "partial" : "not done") << ": radius=" << radius
+                << " mm, edges=" << edgeIndices.size() << ", faulty contours=" << maker.NbFaultyContours()
+                << ", faulty vertices=" << maker.NbFaultyVertices();
             return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, userMessage, dev.str());
         }
-        return finishSolid(maker.Shape(), "BRepFilletAPI_MakeFillet", userMessage);
+        if (const int missed = unblendedEdges(maker, shape, edgeIndices); missed > 0)
+            return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, userMessage,
+                                          "BRepFilletAPI_MakeFillet left " + std::to_string(missed) + " of "
+                                              + std::to_string(edgeIndices.size()) + " edges unrounded: radius="
+                                              + std::to_string(radius));
+        return finishSolid(maker.Shape(), "BRepFilletAPI_MakeFillet", userMessage, FinishOptions{TopoDS_Shape(), {occ(shape)}});
     });
 }
 
@@ -791,12 +1105,75 @@ Result<Shape> tryChamfer(const Shape& shape, const std::vector<int>& edgeIndices
         BRepFilletAPI_MakeChamfer maker(occ(shape));
         for (int e : edgeIndices)
             maker.Add(distance, edgeAt(shape, e));
-        maker.Build();
+        Handle(KernelDeadline) deadline = new KernelDeadline();
+        maker.Build(deadline->Start());
+        if (deadline->fired())
+            return tookTooLong<Result<Shape>>("chamferEdges");
         if (!maker.IsDone())
             return Result<Shape>::failure(ErrorCode::ChamferTooLarge, userMessage,
                                           "BRepFilletAPI_MakeChamfer not done: distance=" + std::to_string(distance));
-        return finishSolid(maker.Shape(), "BRepFilletAPI_MakeChamfer", userMessage);
+        if (const int missed = unblendedEdges(maker, shape, edgeIndices); missed > 0)
+            return Result<Shape>::failure(ErrorCode::ChamferTooLarge, userMessage,
+                                          "BRepFilletAPI_MakeChamfer left " + std::to_string(missed) + " of "
+                                              + std::to_string(edgeIndices.size()) + " edges unbevelled: distance="
+                                              + std::to_string(distance));
+        return finishSolid(maker.Shape(), "BRepFilletAPI_MakeChamfer", userMessage, FinishOptions{TopoDS_Shape(), {occ(shape)}});
     });
+}
+
+// One MakeThickSolidByJoin (walls grow inward: negative offset), under a
+// time limit. Null when it failed; `error` gets its error code.
+TopoDS_Shape thickSolid(const TopoDS_Shape& body, const TopTools_ListOfShape& openFaces, double thickness, GeomAbs_JoinType join,
+                        std::string& error, bool& timedOut)
+{
+    BRepOffsetAPI_MakeThickSolid maker;
+    Handle(KernelDeadline) deadline = new KernelDeadline();
+    maker.MakeThickSolidByJoin(body, openFaces, -thickness, 1e-3, BRepOffset_Skin, Standard_False, Standard_False, join,
+                               Standard_False, deadline->Start());
+    timedOut = deadline->fired();
+    if (!timedOut && maker.IsDone())
+        return maker.Shape();
+    error = timedOut ? "stopped by its time limit" : "error " + std::to_string(int(maker.MakeOffset().Error()));
+    return {};
+}
+
+// The body with its faces split where they are only C0 (a fillet's
+// approximated B-spline faces have C0 knots where the rolling ball moves
+// from one support face to the next; the offset refuses any C0 face), with
+// `openFaces` mapped to their pieces. Null when nothing was split or the
+// split failed. Adapted from OS3DSplitAtC0 and OS3DImagesThrough.
+TopoDS_Shape splitAtC0(const TopoDS_Shape& body, const TopTools_ListOfShape& openFaces, TopTools_ListOfShape& openPieces)
+{
+    try {
+        ShapeUpgrade_ShapeDivideContinuity divide(body);
+        divide.SetBoundaryCriterion(GeomAbs_C1);
+        divide.SetPCurveCriterion(GeomAbs_C1);
+        divide.SetSurfaceCriterion(GeomAbs_C1);
+        divide.Perform();
+        if (!divide.Status(ShapeExtend_DONE))
+            return {};
+        const Handle(ShapeBuild_ReShape) context = divide.GetContext();
+        for (const TopoDS_Shape& face : openFaces)
+            for (TopExp_Explorer ex(context->Value(face), TopAbs_FACE); ex.More(); ex.Next())
+                openPieces.Append(ex.Current());
+        return divide.Result();
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Debug, Kernel) << "shell: splitting C0 faces threw " << describeFailure(failure);
+        return {};
+    }
+}
+
+// The offset of a split body comes back with edges whose same-range flag
+// is wrong; set it on the edges the offset made (the others belong to the
+// body). Adapted from OS3DSetSameRangeOnNewEdges.
+void setSameRangeOnNewEdges(const TopoDS_Shape& built, const TopoDS_Shape& input)
+{
+    TopTools_IndexedMapOfShape inputEdges, builtEdges;
+    TopExp::MapShapes(input, TopAbs_EDGE, inputEdges);
+    TopExp::MapShapes(built, TopAbs_EDGE, builtEdges);
+    for (int i = 1; i <= builtEdges.Extent(); ++i)
+        if (!inputEdges.Contains(builtEdges(i)))
+            BRepLib::SameRange(TopoDS::Edge(builtEdges(i)));
 }
 
 Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
@@ -804,17 +1181,43 @@ Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, do
     const char* userMessage = "Unable to shell with this wall thickness. Try thinner walls.";
     return guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("shell");
+        // On an independent copy: the offset writes into the shape it is
+        // given (it raised edge tolerances of an imported plate to 8 mm).
+        BRepBuilderAPI_Copy copier(occ(shape), Standard_False, Standard_False);
+        const TopoDS_Shape input = copier.Shape();
         TopTools_ListOfShape faces;
         for (int f : openFaces)
-            faces.Append(faceAt(shape, f));
-        BRepOffsetAPI_MakeThickSolid maker;
-        // Negative offset: walls grow inward, the outside stays where it is.
-        maker.MakeThickSolidByJoin(occ(shape), faces, -thickness, 1e-3);
-        maker.Build();
-        if (!maker.IsDone())
+            faces.Append(copier.ModifiedShape(faceAt(shape, f)));
+
+        // Arc joins first (OCCT's default, robust on analytic walls); then,
+        // when C0 faces were refused, the body split where they are C0; then
+        // intersection joins, which a B-spline wall can take when arcs fail.
+        // Adapted from the shell retries of OpenShape3D.
+        std::string error, tried;
+        bool timedOut = false;
+        TopoDS_Shape built = thickSolid(input, faces, thickness, GeomAbs_Arc, error, timedOut);
+        tried = "arc joins: " + error;
+        if (built.IsNull() && !timedOut && error == "error " + std::to_string(int(BRepOffset_C0Geometry))) {
+            TopTools_ListOfShape pieces;
+            const TopoDS_Shape split = splitAtC0(input, faces, pieces);
+            if (!split.IsNull() && !pieces.IsEmpty()) {
+                built = thickSolid(split, pieces, thickness, GeomAbs_Arc, error, timedOut);
+                tried += "; split at C0: " + (built.IsNull() ? error : std::string("done"));
+                if (!built.IsNull())
+                    setSameRangeOnNewEdges(built, split);
+            }
+        }
+        if (built.IsNull() && !timedOut) {
+            built = thickSolid(input, faces, thickness, GeomAbs_Intersection, error, timedOut);
+            tried += "; intersection joins: " + (built.IsNull() ? error : std::string("done"));
+        }
+        if (timedOut)
+            return tookTooLong<Result<Shape>>("shell");
+        if (built.IsNull())
             return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage,
-                                          "MakeThickSolidByJoin not done: thickness=" + std::to_string(thickness));
-        auto hollow = finishSolid(maker.Shape(), "BRepOffsetAPI_MakeThickSolid", userMessage);
+                                          "MakeThickSolidByJoin not done: thickness=" + std::to_string(thickness) + " (" + tried + ")");
+        OS_LOG(Debug, Geometry) << "shell: " << tried;
+        auto hollow = finishSolid(built, "BRepOffsetAPI_MakeThickSolid", userMessage, FinishOptions{TopoDS_Shape(), {occ(shape)}});
         // When the walls would meet, OCCT can report success and hand back the
         // untouched solid. A shell always removes material: reject anything else.
         if (hollow && volume(hollow.value()) >= volume(shape) * (1.0 - 1e-9))
@@ -837,12 +1240,16 @@ Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndice
         if (!validIndex(shape, e, shape.edgeCount()))
             return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
                                           "filletEdges: edge index " + std::to_string(e) + " out of range");
+    const auto usable = blendableEdges(shape, edgeIndices, SizedOperation::Fillet);
+    if (!usable)
+        return Result<Shape>::failureFrom(usable);
+    const std::vector<int>& edges = usable.value();
     const auto start = Clock::now();
-    auto result = tryFillet(shape, edgeIndices, radius);
-    if (result)
+    auto result = tryFillet(shape, edges, radius);
+    if (result || stoppedByTimeLimit(result))
         return result;
-    const std::string message = edgeSizeMessage(SizedOperation::Fillet, shape, edgeIndices, radius, advice, Clock::now() - start,
-                                                [&](double r) { return tryFillet(shape, edgeIndices, r).ok(); });
+    const std::string message = edgeSizeMessage(SizedOperation::Fillet, shape, edges, radius, advice, Clock::now() - start,
+                                                [&](double r) { return tryFillet(shape, edges, r).ok(); });
     return Result<Shape>::failure(ErrorCode::FilletRadiusTooLarge, message, result.developerMessage());
 }
 
@@ -857,12 +1264,16 @@ Result<Shape> chamferEdges(const Shape& shape, const std::vector<int>& edgeIndic
         if (!validIndex(shape, e, shape.edgeCount()))
             return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected edge no longer exists.",
                                           "chamferEdges: edge index " + std::to_string(e) + " out of range");
+    const auto usable = blendableEdges(shape, edgeIndices, SizedOperation::Chamfer);
+    if (!usable)
+        return Result<Shape>::failureFrom(usable);
+    const std::vector<int>& edges = usable.value();
     const auto start = Clock::now();
-    auto result = tryChamfer(shape, edgeIndices, distance);
-    if (result)
+    auto result = tryChamfer(shape, edges, distance);
+    if (result || stoppedByTimeLimit(result))
         return result;
-    const std::string message = edgeSizeMessage(SizedOperation::Chamfer, shape, edgeIndices, distance, advice, Clock::now() - start,
-                                                [&](double d) { return tryChamfer(shape, edgeIndices, d).ok(); });
+    const std::string message = edgeSizeMessage(SizedOperation::Chamfer, shape, edges, distance, advice, Clock::now() - start,
+                                                [&](double d) { return tryChamfer(shape, edges, d).ok(); });
     return Result<Shape>::failure(ErrorCode::ChamferTooLarge, message, result.developerMessage());
 }
 
@@ -879,7 +1290,7 @@ Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, doubl
                                           "shell: face index " + std::to_string(f) + " out of range");
     const auto start = Clock::now();
     auto result = tryShell(shape, openFaces, thickness);
-    if (result)
+    if (result || stoppedByTimeLimit(result))
         return result;
     std::string message = "Unable to shell with this wall thickness. Try thinner walls.";
     const auto largest = advice.suggest ? largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness, Clock::now() - start,
@@ -899,48 +1310,20 @@ Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind)
     const char* userMessage = "Unable to combine these bodies. Moving one of them slightly often helps.";
     return guarded("booleanOp", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("booleanOp");
-        TopoDS_Shape out;
-        std::string errors;
-        switch (kind) {
-        case BooleanKind::Union: {
-            BRepAlgoAPI_Fuse op;
-            runBoolean(op, occ(a), occ(b));
-            if (op.HasErrors())
-                errors = describeAlgoErrors(op);
-            else
-                out = op.Shape();
-            break;
-        }
-        case BooleanKind::Subtract: {
-            BRepAlgoAPI_Cut op;
-            runBoolean(op, occ(a), occ(b));
-            if (op.HasErrors())
-                errors = describeAlgoErrors(op);
-            else
-                out = op.Shape();
-            break;
-        }
-        case BooleanKind::Intersect: {
-            BRepAlgoAPI_Common op;
-            runBoolean(op, occ(a), occ(b));
-            if (op.HasErrors())
-                errors = describeAlgoErrors(op);
-            else
-                out = op.Shape();
-            break;
-        }
-        }
-        if (!errors.empty())
-            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Boolean failed: " + errors);
-        if (kind == BooleanKind::Intersect && !TopExp_Explorer(out, TopAbs_SOLID).More())
+        const BOPAlgo_Operation operation = kind == BooleanKind::Union      ? BOPAlgo_FUSE
+                                          : kind == BooleanKind::Subtract ? BOPAlgo_CUT
+                                                                          : BOPAlgo_COMMON;
+        const BooleanRun run = runBoolean(operation, occ(a), occ(b));
+        if (run.timedOut)
+            return tookTooLong<Result<Shape>>("booleanOp");
+        if (run.shape.IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Boolean failed: " + run.errors);
+        if (kind == BooleanKind::Intersect && !TopExp_Explorer(run.shape, TopAbs_SOLID).More())
             return Result<Shape>::failure(ErrorCode::EmptyResult, "These bodies do not overlap, so nothing would be left.",
                                           "booleanOp: intersection is empty");
-        if (kind != BooleanKind::Intersect) {
-            ShapeUpgrade_UnifySameDomain unify(out, true, true, true);
-            unify.Build();
-            out = unify.Shape();
-        }
-        auto result = finishSolid(out, "booleanOp", userMessage);
+        auto result = kind == BooleanKind::Intersect
+                        ? finishSolid(run.shape, "booleanOp", userMessage, FinishOptions{TopoDS_Shape(), {occ(a), occ(b)}})
+                        : finishMerged(run.shape, "booleanOp", userMessage, {occ(a), occ(b)});
         // A cut must remove material. One that misses (or only touches the
         // surface) would silently change nothing.
         if (result && kind == BooleanKind::Subtract) {
@@ -1028,13 +1411,14 @@ Result<Shape> deleteFaces(const Shape& shape, const std::vector<int>& faceIndice
         defeaturing.SetShape(occ(shape));
         for (int f : faceIndices)
             defeaturing.AddFaceToRemove(faceAt(shape, f));
-        defeaturing.Build();
+        Handle(KernelDeadline) deadline = new KernelDeadline();
+        defeaturing.Build(deadline->Start());
+        if (deadline->fired())
+            return tookTooLong<Result<Shape>>("deleteFaces");
         if (!defeaturing.IsDone() || defeaturing.HasErrors())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
                                           "Defeaturing failed: " + describeAlgoErrors(defeaturing));
-        ShapeUpgrade_UnifySameDomain unify(defeaturing.Shape(), true, true, true);
-        unify.Build();
-        auto out = finishSolid(unify.Shape(), "deleteFaces", userMessage);
+        auto out = finishMerged(defeaturing.Shape(), "deleteFaces", userMessage, {occ(shape)});
         // Defeaturing may leave faces it cannot remove in place and report
         // success: require a real change.
         if (out && out.value().faceCount() >= shape.faceCount()
@@ -1074,9 +1458,7 @@ Result<Shape> offsetFace(const Shape& shape, int faceIndex, double distance)
             BRepLib::OrientClosedSolid(solid);
             result = solid;
         }
-        ShapeUpgrade_UnifySameDomain unify(result, true, true, true);
-        unify.Build();
-        auto out = finishSolid(unify.Shape(), "offsetFace", userMessage);
+        auto out = finishMerged(result, "offsetFace", userMessage, {occ(shape)});
         if (!out)
             return out;
         // Kernel "success" is not success: when the neighbours cannot follow
@@ -1119,17 +1501,12 @@ Result<Shape> fuseInOnePass(const std::vector<TopoDS_Shape>& shapes, const char*
     arguments.Append(shapes.front());
     for (std::size_t i = 1; i < shapes.size(); ++i)
         tools.Append(shapes[i]);
-    BRepAlgoAPI_Fuse fuse;
-    fuse.SetArguments(arguments);
-    fuse.SetTools(tools);
-    fuse.SetNonDestructive(Standard_True);
-    fuse.Build();
-    if (fuse.HasErrors())
-        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
-                                      std::string(operation) + ": fuse failed: " + describeAlgoErrors(fuse));
-    ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), true, true, true);
-    unify.Build();
-    return finishSolid(unify.Shape(), operation, userMessage);
+    const BooleanRun run = runBoolean(BOPAlgo_FUSE, arguments, tools);
+    if (run.timedOut)
+        return tookTooLong<Result<Shape>>(operation);
+    if (run.shape.IsNull())
+        return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, std::string(operation) + ": fuse failed: " + run.errors);
+    return finishMerged(run.shape, operation, userMessage, shapes);
 }
 } // namespace
 
@@ -1196,10 +1573,9 @@ SolidSignature solidSignature(const Shape& solid)
     if (solid.isNull())
         return signature;
     const KernelLock lock;
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(occ(solid), props);
-    signature.volume = props.Mass();
-    signature.centroid = fromPnt(props.CentreOfMass());
+    gp_Pnt centroid;
+    signature.volume = exactVolume(occ(solid), &centroid);
+    signature.centroid = fromPnt(centroid);
     const BoundingBox box = approximateBoundingBox(solid);
     signature.min = box.min;
     signature.max = box.max;
@@ -1313,23 +1689,24 @@ Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double
             return BRepPrimAPI_MakeBox(gp_Ax2(corner, frame.Direction(), frame.XDirection()), size, size, size).Shape();
         };
         const TopoDS_Shape above = boxAbove(split);
-        BRepAlgoAPI_Common upperOp;
-        runBoolean(upperOp, occ(shape), above);
-        BRepAlgoAPI_Cut lowerOp;
-        runBoolean(lowerOp, occ(shape), distance > 0 ? above : boxAbove(bandLow));
-        if (upperOp.HasErrors() || lowerOp.HasErrors())
+        const BooleanRun upperOp = runBoolean(BOPAlgo_COMMON, occ(shape), above);
+        const BooleanRun lowerOp = upperOp.timedOut ? BooleanRun{}
+                                                    : runBoolean(BOPAlgo_CUT, occ(shape), distance > 0 ? above : boxAbove(bandLow));
+        if (upperOp.timedOut || lowerOp.timedOut)
+            return tookTooLong<R>("pushPullFaceKeepingEdges");
+        if (upperOp.shape.IsNull() || lowerOp.shape.IsNull())
             return R::failure(ErrorCode::KernelFailure, userMessage, "pushPullFaceKeepingEdges: split failed");
         gp_Trsf shift;
         shift.SetTranslation(gp_Vec(toDir(n)) * distance);
-        const TopoDS_Shape upper = BRepBuilderAPI_Transform(upperOp.Shape(), shift, Standard_True).Shape();
+        const TopoDS_Shape upper = BRepBuilderAPI_Transform(upperOp.shape, shift, Standard_True).Shape();
 
         // The cross-section on the split plane (the cut faces of the lower part
         // facing the normal): extruded to fill the gap when pushing out, and
         // the measure for the volume check either way.
-        std::vector<TopoDS_Shape> parts{lowerOp.Shape(), upper};
+        std::vector<TopoDS_Shape> parts{lowerOp.shape, upper};
         double capArea = 0;
         const double capHeight = distance > 0 ? split : bandLow;
-        for (TopExp_Explorer f(lowerOp.Shape(), TopAbs_FACE); f.More(); f.Next()) {
+        for (TopExp_Explorer f(lowerOp.shape, TopAbs_FACE); f.More(); f.Next()) {
             const TopoDS_Face cap = TopoDS::Face(f.Current());
             BRepAdaptor_Surface surface(cap);
             if (surface.GetType() != GeomAbs_Plane)
@@ -1435,9 +1812,7 @@ double volume(const Shape& shape)
     if (shape.isNull())
         return 0.0;
     const KernelLock lock;
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(occ(shape), props);
-    return props.Mass();
+    return exactVolume(occ(shape));
 }
 
 double surfaceArea(const Shape& shape)
@@ -1496,24 +1871,72 @@ BoundingBox approximateBoundingBox(const Shape& shape)
     return toBoundingBox(box);
 }
 
+namespace {
+
+// What a face is made of: its surface object, placement and orientation,
+// and each edge's curve object (3D, or else its curve on this face),
+// placement and range. Two faces with the same key are the same face, also
+// across a copy of the topology that shares the geometry.
+std::string faceKey(const TopoDS_Face& face)
+{
+    std::ostringstream key;
+    key.precision(17);
+    TopLoc_Location location;
+    const Handle(Geom_Surface) surface = BRep_Tool::Surface(face, location);
+    const auto placement = [&key](const TopLoc_Location& l) {
+        const gp_Trsf t = l.Transformation();
+        for (int r = 1; r <= 3; ++r)
+            for (int c = 1; c <= 4; ++c)
+                key << t.Value(r, c) << ',';
+    };
+    key << static_cast<const void*>(surface.get()) << ' ' << int(face.Orientation()) << ' ';
+    placement(location);
+    std::vector<std::string> edges;
+    for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(ex.Current());
+        std::ostringstream e;
+        e.precision(17);
+        TopLoc_Location edgeLocation;
+        double first = 0, last = 0;
+        const Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, edgeLocation, first, last);
+        const void* geometry = curve.get();
+        if (!geometry)
+            geometry = BRep_Tool::CurveOnSurface(edge, face, first, last).get();
+        e << geometry << ' ' << first << ' ' << last << ' ' << int(edge.Orientation());
+        const gp_Trsf t = edgeLocation.Transformation();
+        for (int r = 1; r <= 3; ++r)
+            for (int c = 1; c <= 4; ++c)
+                e << ',' << t.Value(r, c);
+        edges.push_back(e.str());
+    }
+    std::sort(edges.begin(), edges.end());
+    for (const std::string& e : edges)
+        key << '|' << e;
+    return key.str();
+}
+
+} // namespace
+
 std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const Shape& current)
 {
     std::vector<int> out;
     if (after.isNull() || current.isNull())
         return out;
     const KernelLock lock;
-    // TopTools_MapOfShape compares with IsSame (same TShape and location), so a
-    // moved face counts as changed while an untouched one does not.
-    TopTools_MapOfShape old;
+    // Faces are compared by what they are made of, not by kernel identity:
+    // results are merged on a copy of their topology (unifyCopy), which
+    // shares curves and surfaces, so an untouched face comes back as a new
+    // face on the same surface bounded by the same curves.
+    std::set<std::string> old;
     if (!before.isNull())
         for (int i = 1; i <= before.data()->faces.Extent(); ++i)
-            old.Add(before.data()->faces(i));
-    TopTools_MapOfShape changed;
+            old.insert(faceKey(TopoDS::Face(before.data()->faces(i))));
+    std::set<std::string> changed;
     for (int i = 1; i <= after.data()->faces.Extent(); ++i)
-        if (!old.Contains(after.data()->faces(i)))
-            changed.Add(after.data()->faces(i));
+        if (std::string key = faceKey(TopoDS::Face(after.data()->faces(i))); !old.count(key))
+            changed.insert(std::move(key));
     for (int i = 1; i <= current.data()->faces.Extent(); ++i)
-        if (changed.Contains(current.data()->faces(i)))
+        if (changed.count(faceKey(TopoDS::Face(current.data()->faces(i)))))
             out.push_back(i - 1);
     return out;
 }
@@ -1535,15 +1958,16 @@ std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const S
             TopLoc_Location location;
             oldSurfaces.insert(BRep_Tool::Surface(face, location).get());
         }
-    TopTools_MapOfShape created;
+    std::set<std::string> created;
     for (int i = 1; i <= after.data()->faces.Extent(); ++i) {
         const TopoDS_Face face = TopoDS::Face(after.data()->faces(i));
         TopLoc_Location location;
         if (!oldFaces.Contains(face) && !oldSurfaces.count(BRep_Tool::Surface(face, location).get()))
-            created.Add(face);
+            created.insert(faceKey(face));
     }
+    // (Later steps may have merged faces on a copy: see facesChangedBy.)
     for (int i = 1; i <= current.data()->faces.Extent(); ++i)
-        if (created.Contains(current.data()->faces(i)))
+        if (created.count(faceKey(TopoDS::Face(current.data()->faces(i)))))
             out.push_back(i - 1);
     return out;
 }
@@ -1553,8 +1977,7 @@ bool isValid(const Shape& shape)
     if (shape.isNull())
         return false;
     const KernelLock lock;
-    BRepCheck_Analyzer analyzer(occ(shape));
-    return analyzer.IsValid();
+    return validGeometry(occ(shape));
 }
 
 std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex)
@@ -1812,18 +2235,28 @@ std::string toBrepString(const Shape& shape, bool withTriangulation)
 
 Result<Shape> fromBrepString(const std::string& text)
 {
-    return guarded("BRepTools::Read", "The stored geometry could not be read.", [&]() -> Result<Shape> {
+    const char* userMessage = "The stored geometry could not be read.";
+    // Stored geometry is untrusted (project files). Counts and indices OCCT's
+    // reader would trust are screened first (BrepScreen.h).
+    std::string why;
+    if (!plausibleBrepText(text, &why))
+        return Result<Shape>::failure(ErrorCode::FileFormatError, userMessage, "BRep text refused before reading: " + why);
+    return guarded("BRepTools::Read", userMessage, [&]() -> Result<Shape> {
         std::istringstream in(text);
-        // Stored geometry is untrusted (project files): a truncated or damaged
-        // text must end the read with an error. OCCT's reader does not check
-        // the stream everywhere and looped forever at the end of a cut-off text.
+        // A truncated or damaged text must end the read with an error. OCCT's
+        // reader does not check the stream everywhere and looped forever at
+        // the end of a cut-off text.
         in.exceptions(std::ios::failbit | std::ios::badbit);
         TopoDS_Shape shape;
         BRep_Builder builder;
-        BRepTools::Read(shape, in, builder);
+        Handle(KernelDeadline) deadline = new KernelDeadline();
+        BRepTools::Read(shape, in, builder, deadline->Start());
+        if (deadline->fired())
+            return Result<Shape>::failure(ErrorCode::FileFormatError, userMessage, "BRepTools::Read stopped by its time limit");
         if (shape.IsNull())
-            return Result<Shape>::failure(ErrorCode::FileFormatError, "The stored geometry could not be read.",
-                                          "BRepTools::Read produced a null shape");
+            return Result<Shape>::failure(ErrorCode::FileFormatError, userMessage, "BRepTools::Read produced a null shape");
+        if (!finiteBounds(shape))
+            return Result<Shape>::failure(ErrorCode::FileFormatError, userMessage, "the stored shape has no finite bounds");
         return Result<Shape>::success(makeShape(shape));
     });
 }

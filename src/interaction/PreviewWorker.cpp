@@ -5,6 +5,7 @@
 #include "interaction/PreviewWorker.h"
 
 #include "core/Log.h"
+#include "geometry/KernelSignals.h"
 
 #include <cstddef>
 #include <exception>
@@ -146,6 +147,8 @@ void PreviewWorker::run()
 {
     // Kernel timings logged from here are off the GUI thread.
     setThreadLogPrefix("[worker] ");
+    // Previews give up sooner than recompute (geom::kernelTimeLimit).
+    const geom::ScopedKernelTimeLimit timeLimit(geom::kPreviewKernelTimeLimit);
     for (;;) {
         Job job;
         std::chrono::milliseconds delay{0};

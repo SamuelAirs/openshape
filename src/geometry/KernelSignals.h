@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 
@@ -55,5 +56,32 @@ void resetInteractiveKernelWaits();
 // Kernel calls made by the calling thread so far (tests: a drag step makes
 // none on the GUI thread when previews run on the worker).
 std::uint64_t kernelCallsOnThisThread();
+
+// ---- Time limits ----------------------------------------------------------
+// A kernel algorithm that runs away (a boolean spinning on nearly tangent
+// faces, meshing or reading damaged geometry) would freeze the app for
+// good. The long ones - booleans, fillets, chamfers, shells, face removal,
+// meshing and reading stored geometry - are given a progress range that
+// stops them once this thread's limit has passed; the step then fails with
+// "This took too long and was stopped." Each algorithm gets the full limit.
+inline constexpr std::chrono::milliseconds kDefaultKernelTimeLimit{60'000}; // recompute, file reads (an iPhone is slower)
+inline constexpr std::chrono::milliseconds kPreviewKernelTimeLimit{25'000}; // the preview worker
+
+// The calling thread's limit (kDefaultKernelTimeLimit unless set).
+std::chrono::milliseconds kernelTimeLimit();
+
+// Sets the calling thread's limit while it exists (nests; restores the
+// previous one). The preview worker holds one for its lifetime; tests use a
+// zero limit to stop algorithms at their first progress check.
+class ScopedKernelTimeLimit {
+public:
+    explicit ScopedKernelTimeLimit(std::chrono::milliseconds limit);
+    ~ScopedKernelTimeLimit();
+    ScopedKernelTimeLimit(const ScopedKernelTimeLimit&) = delete;
+    ScopedKernelTimeLimit& operator=(const ScopedKernelTimeLimit&) = delete;
+
+private:
+    std::chrono::milliseconds previous_;
+};
 
 } // namespace os::geom

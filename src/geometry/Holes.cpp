@@ -6,6 +6,7 @@
 
 #include "core/Timer.h"
 #include "geometry/Modeling.h"
+#include "geometry/internal/Deadline.h"
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
@@ -398,15 +399,13 @@ Result<Shape> drillHoles(const Shape& shape, const std::vector<HoleCut>& holes)
                 toolVolume += t.volume;
             }
         }
-        BRepAlgoAPI_Cut cut;
-        cut.SetArguments(arguments);
-        cut.SetTools(tools);
-        cut.Build();
-        if (cut.HasErrors() || !cut.IsDone())
-            return R::failure(ErrorCode::KernelFailure, userMessage, "drillHoles: cut failed: " + describeAlgoErrors(cut));
-        ShapeUpgrade_UnifySameDomain unify(cut.Shape(), true, true, true);
-        unify.Build();
-        auto result = finishSolid(unify.Shape(), "drillHoles", userMessage);
+        // Non-destructive (the part is a cached step output), fuzzy, timed.
+        const BooleanRun cut = runBoolean(BOPAlgo_CUT, arguments, tools);
+        if (cut.timedOut)
+            return tookTooLong<R>("drillHoles");
+        if (cut.shape.IsNull())
+            return R::failure(ErrorCode::KernelFailure, userMessage, "drillHoles: cut failed: " + cut.errors);
+        auto result = finishMerged(cut.shape, "drillHoles", userMessage, {occ(shape)});
         if (!result)
             return result;
         // What the cut must have done: take something away, and no more than

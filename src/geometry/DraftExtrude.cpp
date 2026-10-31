@@ -8,6 +8,7 @@
 #include "core/Timer.h"
 #include "geometry/Modeling.h"
 #include "geometry/Profiles.h"
+#include "geometry/internal/Deadline.h"
 #include "geometry/internal/KernelUtil.h"
 #include "geometry/internal/ShapeData.h"
 
@@ -134,7 +135,8 @@ Result<TopoDS_Shape> draftedPrism(const TopoDS_Face& face, const Vec3& vector, d
 {
     using R = Result<TopoDS_Shape>;
     const char* userMessage = "Unable to extrude this shape with a draft.";
-    BRepPrimAPI_MakePrism prism(face, toVec(vector));
+    // From a copy: the sweep adds curves to the profile's edges (the sketch's cached region).
+    BRepPrimAPI_MakePrism prism(independentCopy(face), toVec(vector));
     prism.Build();
     if (!prism.IsDone())
         return R::failure(ErrorCode::KernelFailure, userMessage, "draft: prism not done");
@@ -203,21 +205,19 @@ Result<Shape> extrudeFacesDrafted(const std::vector<Shape>& faces, const Vec3& v
         if (solids.Extent() == 1) {
             result = solids.First();
         } else {
-            BRepAlgoAPI_Fuse fuse;
             TopTools_ListOfShape arguments, tools;
             arguments.Append(solids.First());
             for (auto it = std::next(solids.begin()); it != solids.end(); ++it)
                 tools.Append(*it);
-            fuse.SetArguments(arguments);
-            fuse.SetTools(tools);
-            fuse.Build();
-            if (fuse.HasErrors() || !fuse.IsDone())
-                return R::failure(ErrorCode::KernelFailure, userMessage, "draft: fuse failed: " + describeAlgoErrors(fuse));
-            ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), true, true, true);
-            unify.Build();
-            result = unify.Shape();
+            const BooleanRun fuse = runBoolean(BOPAlgo_FUSE, arguments, tools);
+            if (fuse.timedOut)
+                return tookTooLong<R>("extrudeFacesDrafted");
+            if (fuse.shape.IsNull())
+                return R::failure(ErrorCode::KernelFailure, userMessage, "draft: fuse failed: " + fuse.errors);
+            result = fuse.shape;
         }
-        auto finished = finishSolid(result, "extrudeFacesDrafted", userMessage);
+        auto finished = solids.Extent() == 1 ? finishSolid(result, "extrudeFacesDrafted", userMessage)
+                                             : finishMerged(result, "extrudeFacesDrafted", userMessage);
         if (!finished)
             return finished;
         // What a draft must do: a positive one takes material away from the

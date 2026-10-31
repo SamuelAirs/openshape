@@ -127,6 +127,18 @@
       "homepage": "https://notofonts.github.io",
       "sources": ["repo"],
       "texts": [{"title": "SIL Open Font License 1.1", "repo": "resources/fonts/OFL.txt"}]
+    },
+    {
+      "id": "openshape3d",
+      "name": "OpenShape3D (Laan Labs)",
+      "group": "library",
+      "version": "commit be3f2fc",
+      "license": "MIT",
+      "usedFor": "parts of the geometry code (adapted)",
+      "copyright": "Copyright (c) 2026 Laan Labs and the openshape3d contributors.",
+      "homepage": "https://github.com/laanlabs/openshape3d",
+      "sources": ["repo"],
+      "texts": [{"title": "MIT License", "repo": "third_party/openshape3d/LICENSE"}]
     }
   ],
   "qtThirdParty": {

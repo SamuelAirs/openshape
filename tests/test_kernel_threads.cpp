@@ -393,9 +393,20 @@ TEST(KernelThreads, IsolatedMeshingLeavesSharedEdgesAlone)
         }
     }
     EXPECT_EQ(geom::toBrepString(parts.rounded).size(), before) << "previews left meshes on the body's edges";
-    // Meshing in place does leave them (why previews are isolated).
-    const auto preview = geom::pushPullFace(parts.rounded, top, 7.0);
-    ASSERT_TRUE(preview.ok());
-    (void)geom::tessellate(preview.value());
-    EXPECT_GT(geom::toBrepString(parts.rounded).size(), before);
+    // Push/pull results share no edges with the body any more (their faces
+    // are merged on a copy of the topology), so even meshing one in place
+    // leaves the body alone.
+    const auto pushed = geom::pushPullFace(parts.rounded, top, 7.0);
+    ASSERT_TRUE(pushed.ok());
+    (void)geom::tessellate(pushed.value());
+    EXPECT_EQ(geom::toBrepString(parts.rounded).size(), before);
+    // A fillet keeps the faces it does not touch, so meshing its result in
+    // place does leave polygons on its input's edges (why previews are isolated).
+    const auto block = geom::makeBox({0, 0, 0}, {30, 20, 10});
+    ASSERT_TRUE(block.ok());
+    const std::size_t blockBefore = geom::toBrepString(block.value()).size();
+    const auto rounded = geom::filletEdges(block.value(), {0}, 1.0);
+    ASSERT_TRUE(rounded.ok()) << rounded.developerMessage();
+    (void)geom::tessellate(rounded.value());
+    EXPECT_GT(geom::toBrepString(block.value()).size(), blockBefore);
 }

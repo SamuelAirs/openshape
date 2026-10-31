@@ -30,6 +30,7 @@ chosen by the owner on 2026-09-25.
 | libzip, GoogleTest | BSD-3-Clause | Notice with binaries (GoogleTest is not distributed). |
 | nlohmann/json | MIT | Notice with binaries. |
 | Noto Sans | OFL-1.1 | The license goes along; the fonts are not sold on their own. |
+| OpenShape3D (Laan Labs; code adapted into `src/geometry`, `third_party/openshape3d`) | MIT | Its copyright line and permission notice go along: the MIT text in `third_party/openshape3d/LICENSE`, a notice in each adapted file, and the Licenses view. |
 
 OpenCASCADE's files say "GNU Lesser General Public License version 2.1"
 without "or later" (e.g. `Standard_Transient.hxx`), so its SPDX id is
@@ -327,9 +328,10 @@ copyright © 2026 The FreeType Project").
   the LGPL libraries" (the relinking notice and written offer, naming this
   build's version, build number, commit and release tag with links to its
   source and its iOS source archive; `resources/licenses/source-offer.txt`),
-  OpenShape (MPL-2.0), the 8 libraries and the 41 third-party parts inside
-  Qt, each with copyright, notice, where its exact source is and the full
-  license texts (51 files, 277 KiB, built into the app). Acceptance
+  OpenShape (MPL-2.0), the 9 libraries (OpenShape3D's adapted code among
+  them) and the 41 third-party parts inside Qt, each with copyright,
+  notice, where its exact source is and the full license texts (52 files,
+  278 KiB, built into the app). Acceptance
   scenario `licenses`; GTests `Licenses.*`.
 - **Generated from the pinned sources:** `scripts/licenses/licenses.py
   generate` reads the archives of `scripts/ios/sources.txt` (SHA-256
@@ -378,7 +380,11 @@ copyright © 2026 The FreeType Project").
    publishes the GitHub release with the iOS sources; its `ipad.yml` run
    uploads the build that may be submitted (the notice names its build
    number). The two runs are independent.
-3. **Check the release first:** the GitHub release for the tag must be
+3. **Check the Licenses view** of the build to submit: About → Licenses
+   lists "OpenShape3D (Laan Labs)" with MIT and its full text (the MIT
+   license of the adapted kernel code asks for the notice to go along;
+   acceptance scenario `openshape3d`).
+4. **Check the release first:** the GitHub release for the tag must be
    published and list `OpenShape-<version>-ios-sources.tar`, the file that
    build's Licenses view names. If the Release run failed (a Windows build,
    a SignPath approval that does not come, a changed forge archive,
@@ -389,7 +395,7 @@ copyright © 2026 The FreeType Project").
    submit **only** that tag's build for App Store review. Keep the release
    and its files published for at least three years after that version was
    last offered.
-4. Right after tagging, raise `project(VERSION)` in `CMakeLists.txt` on
+5. Right after tagging, raise `project(VERSION)` in `CMakeLists.txt` on
    `main` to the next version and add its `(unreleased)` section to
    `CHANGELOG.md`: once a version is in review or released, App Store
    Connect refuses further builds of it, so every TestFlight upload from

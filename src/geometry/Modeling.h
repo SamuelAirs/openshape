@@ -53,8 +53,12 @@ namespace detail {
 // The search behind SizeAdvice, exposed for tests: the largest size below
 // `failed` for which `works` holds. Feasibility is close to monotonic in the
 // size for these operations. A tiny size is tried first (kTinySize, or 2% of
-// `failed` if smaller): when it fails too, no practical size works and the
-// answer is 0. Otherwise the bounds [works, fails] are narrowed by bisection,
+// `failed` if smaller). Feasibility is not quite monotonic, though: a tiny
+// blend can fail where larger ones work (a fillet chain failing at 0.05 mm
+// and building from 0.1 to 5 mm), so when the tiny size fails, halves of
+// `failed` are tried down to it; only when all of them fail is the answer 0
+// (and nullopt when the limits stop the halving first). Once a size works
+// the bounds [works, fails] are narrowed by bisection,
 // geometric while they are far apart (a value typed 100x too large) and
 // arithmetic after. At most kMaxSizeAttempts attempts are made, and none
 // that would end past kSizeBudget, judged by the slowest attempt so far
@@ -126,8 +130,10 @@ BoundingBox approximateBoundingBox(const Shape& shape);
 bool isValid(const Shape& shape);
 
 // Faces of `current` that a step created or modified: present in the step's
-// output `after` but not in its input `before`, compared by kernel identity
-// (faces a step leaves untouched keep their identity). With a null `before`
+// output `after` but not in its input `before`, compared by what they are
+// made of (surface, placement, bounding curves and their ranges): faces a
+// step leaves untouched keep those, also where the step merged faces on a
+// copy of the topology (which shares the geometry). With a null `before`
 // (a base feature) every face of `after` counts. Faces changed again by later
 // steps are not in `current` any more and are not reported.
 std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const Shape& current);
