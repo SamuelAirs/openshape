@@ -70,6 +70,16 @@ inline constexpr int kMaxSizeAttempts = 10;
 inline constexpr std::chrono::milliseconds kSizeBudget{600};
 std::optional<double> largestWorkingSize(double failed, std::chrono::steady_clock::duration firstAttempt,
                                          const std::function<bool(double)>& works);
+// Tests: while set (on the calling thread), shell's first attempt (arc
+// joins) counts as refused for C0 faces, so its retries run (the body split
+// where faces are C0, then intersection joins). OCCT 7.9.3 has not refused
+// a body of ours that way; the retries come from OpenShape3D, whose bodies
+// it did refuse.
+void setShellFirstAttemptRefusedForTesting(bool refused);
+// Why `hollow` is not `shape` shelled with walls of `thickness` and
+// `openFaces` open, or empty when it is: the check shell runs on the results
+// of its retries and on repaired results (see tryShell in Modeling.cpp).
+std::string shellWallProblem(const Shape& shape, const std::vector<int>& openFaces, const Shape& hollow, double thickness);
 } // namespace detail
 
 Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius,

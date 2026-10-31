@@ -25,6 +25,7 @@
 #include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepOffset_MakeOffset.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
@@ -43,6 +44,7 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepTools.hxx>
+#include <BRepTopAdaptor_FClass2d.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -56,6 +58,7 @@
 #include <Precision.hxx>
 #include <Message_Report.hxx>
 #include <OSD.hxx>
+#include <OSD_Exception.hxx>
 #include <OSD_Exception_ACCESS_VIOLATION.hxx>
 #include <OSD_Exception_ILLEGAL_INSTRUCTION.hxx>
 #include <Standard_NumericError.hxx>
@@ -70,6 +73,8 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Solid.hxx>
+#include <TopoDS_Vertex.hxx>
+#include <TopLoc_Location.hxx>
 #include <ShapeAnalysis_ShapeTolerance.hxx>
 #include <ShapeExtend_Status.hxx>
 #include <ShapeFix_Shape.hxx>
@@ -97,6 +102,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -922,31 +928,49 @@ enum class SizedOperation { Fillet, Chamfer, Shell };
 
 using Clock = std::chrono::steady_clock;
 
+// What the search found: the largest size that works (see
+// detail::largestWorkingSize), and whether the smallest size it tried
+// failed. The search tries a tiny size first, so when nothing was found
+// and that failed, no size may work at all.
+struct SizeFinding {
+    std::optional<double> largest;
+    bool smallestFailed = false;
+};
+
 // detail::largestWorkingSize for one operation on one shape and items. The
 // last answer is cached, "unknown" included: a drag keeps asking about the
 // same shape and items, and should not wait for the search again.
-std::optional<double> largestWorkingSize(SizedOperation operation, const Shape& shape, const std::vector<int>& items,
-                                         double failed, Clock::duration firstAttempt,
-                                         const std::function<bool(double)>& works)
+SizeFinding largestWorkingSize(SizedOperation operation, const Shape& shape, const std::vector<int>& items, double failed,
+                               Clock::duration firstAttempt, const std::function<bool(double)>& works)
 {
     struct Entry {
         SizedOperation operation;
         Shape shape; // held, so its address cannot be reused by another shape
         std::vector<int> items;
-        std::optional<double> largest;
+        SizeFinding finding;
     };
     static std::mutex mutex;
     static std::optional<Entry> last;
     {
         std::lock_guard lock(mutex);
         if (last && last->operation == operation && last->shape.sameAs(shape) && last->items == items
-            && (!last->largest || *last->largest < failed))
-            return last->largest;
+            && (!last->finding.largest || *last->finding.largest < failed))
+            return last->finding;
     }
-    const std::optional<double> largest = detail::largestWorkingSize(failed, firstAttempt, works);
+    double smallest = std::numeric_limits<double>::infinity();
+    bool smallestWorked = true;
+    const auto tracked = [&](double size) {
+        const bool ok = works(size);
+        if (size < smallest) {
+            smallest = size;
+            smallestWorked = ok;
+        }
+        return ok;
+    };
+    const SizeFinding finding{detail::largestWorkingSize(failed, firstAttempt, tracked), !smallestWorked};
     std::lock_guard lock(mutex);
-    last = Entry{operation, shape, items, largest};
-    return largest;
+    last = Entry{operation, shape, items, finding};
+    return finding;
 }
 
 // "2.9 mm", "0.11 in": two significant digits (half units from 10 up),
@@ -998,7 +1022,7 @@ std::string edgeSizeMessage(SizedOperation operation, const Shape& shape, const 
             if (isSmoothEdge(shape, e))
                 return std::string(several ? "One of these edges" : "This edge") + " joins two faces smoothly, so there is no corner to "
                      + (fillet ? "round" : "bevel") + ". Select sharp edges only.";
-        const auto largest = advice.suggest ? largestWorkingSize(operation, shape, edges, size, attempt, works) : std::nullopt;
+        const auto largest = advice.suggest ? largestWorkingSize(operation, shape, edges, size, attempt, works).largest : std::nullopt;
         const std::string what = fillet ? "radius" : "distance";
         const std::string where = several ? "these edges" : "this edge";
         if (largest && *largest <= 0)
@@ -1121,27 +1145,47 @@ Result<Shape> tryChamfer(const Shape& shape, const std::vector<int>& edgeIndices
     });
 }
 
+// Set by detail::setShellFirstAttemptRefusedForTesting (Modeling.h).
+thread_local bool t_shellFirstAttemptRefused = false;
+
 // One MakeThickSolidByJoin (walls grow inward: negative offset), under a
-// time limit. Null when it failed; `error` gets its error code.
+// time limit. With `complete`, the offset faces are intersected with all
+// others, not only with their neighbours (OCCT's "complete intersection"
+// mode, documented as not finished). Null when it failed; `error` gets its
+// error code, or the exception it threw (one attempt throwing leaves the
+// next one to try; a crash inside the kernel ends the operation).
 TopoDS_Shape thickSolid(const TopoDS_Shape& body, const TopTools_ListOfShape& openFaces, double thickness, GeomAbs_JoinType join,
-                        std::string& error, bool& timedOut)
+                        bool complete, std::string& error, bool& timedOut)
 {
     BRepOffsetAPI_MakeThickSolid maker;
     Handle(KernelDeadline) deadline = new KernelDeadline();
-    maker.MakeThickSolidByJoin(body, openFaces, -thickness, 1e-3, BRepOffset_Skin, Standard_False, Standard_False, join,
-                               Standard_False, deadline->Start());
-    timedOut = deadline->fired();
-    if (!timedOut && maker.IsDone())
-        return maker.Shape();
+    try {
+        maker.MakeThickSolidByJoin(body, openFaces, -thickness, 1e-3, BRepOffset_Skin, complete ? Standard_True : Standard_False,
+                                   Standard_False, join, Standard_False, deadline->Start());
+        timedOut = deadline->fired();
+        if (!timedOut && maker.IsDone())
+            return maker.Shape();
+    } catch (const OSD_Exception&) {
+        throw;
+    } catch (const Standard_Failure& failure) {
+        error = "threw " + describeFailure(failure);
+        return {};
+    }
     error = timedOut ? "stopped by its time limit" : "error " + std::to_string(int(maker.MakeOffset().Error()));
     return {};
 }
 
 // The body with its faces split where they are only C0 (a fillet's
 // approximated B-spline faces have C0 knots where the rolling ball moves
-// from one support face to the next; the offset refuses any C0 face), with
-// `openFaces` mapped to their pieces. Null when nothing was split or the
-// split failed. Adapted from OS3DSplitAtC0 and OS3DImagesThrough.
+// from one support face to the next, STEP files bring C0 faces; the offset
+// refuses any C0 face), with `openFaces` mapped to their pieces. Null when
+// nothing was split, the split failed or an open face has no piece in it.
+// Adapted from OS3DSplitAtC0 and OS3DImagesThrough. The pieces come from
+// the context's Apply, not Value: an open face that is not split itself but
+// borders a split face (the floor under a kinked wall) gets new edges, and
+// Value still names the old face, which is not in the result. Handed that
+// face, the offset opened nothing and built a closed inner skin beside the
+// outside (a solid of two shells).
 TopoDS_Shape splitAtC0(const TopoDS_Shape& body, const TopTools_ListOfShape& openFaces, TopTools_ListOfShape& openPieces)
 {
     try {
@@ -1152,11 +1196,22 @@ TopoDS_Shape splitAtC0(const TopoDS_Shape& body, const TopTools_ListOfShape& ope
         divide.Perform();
         if (!divide.Status(ShapeExtend_DONE))
             return {};
+        const TopoDS_Shape result = divide.Result();
+        TopTools_IndexedMapOfShape resultFaces;
+        TopExp::MapShapes(result, TopAbs_FACE, resultFaces);
         const Handle(ShapeBuild_ReShape) context = divide.GetContext();
-        for (const TopoDS_Shape& face : openFaces)
-            for (TopExp_Explorer ex(context->Value(face), TopAbs_FACE); ex.More(); ex.Next())
-                openPieces.Append(ex.Current());
-        return divide.Result();
+        for (const TopoDS_Shape& face : openFaces) {
+            const int before = openPieces.Extent();
+            for (TopExp_Explorer ex(context->Apply(face), TopAbs_FACE); ex.More(); ex.Next())
+                if (resultFaces.Contains(ex.Current()))
+                    openPieces.Append(ex.Current());
+            if (openPieces.Extent() == before) {
+                OS_LOG(Debug, Kernel) << "shell: an open face has no piece in the split body";
+                openPieces.Clear();
+                return {};
+            }
+        }
+        return result;
     } catch (const Standard_Failure& failure) {
         OS_LOG(Debug, Kernel) << "shell: splitting C0 faces threw " << describeFailure(failure);
         return {};
@@ -1176,9 +1231,293 @@ void setSameRangeOnNewEdges(const TopoDS_Shape& built, const TopoDS_Shape& input
             BRepLib::SameRange(TopoDS::Edge(builtEdges(i)));
 }
 
+// Why the solid an offset built cannot be a shell of `body`, or empty. The
+// inner walls must join the outside at the openings: a solid with more
+// shells than the body has (an inner skin on its own) or with free edges
+// (an outside left open) is not a shell. Checked before anything classifies
+// points against the solid: BRepCheck_Analyzer's solid check classifies one
+// shell against the others, and on such a solid (intersection joins on a
+// dome with a rounded pipe) it crashed inside OCCT (an access violation in
+// Extrema_ExtCC, called from BRepClass3d_SClassifier).
+std::string unjoinedWalls(const TopoDS_Shape& built, const TopoDS_Shape& body)
+{
+    const auto mostShells = [](const TopoDS_Shape& shape) {
+        int most = 0;
+        for (TopExp_Explorer solid(shape, TopAbs_SOLID); solid.More(); solid.Next()) {
+            int shells = 0;
+            for (TopExp_Explorer shell(solid.Current(), TopAbs_SHELL); shell.More(); shell.Next())
+                ++shells;
+            most = std::max(most, shells);
+        }
+        return most;
+    };
+    if (const int shells = mostShells(built); shells > mostShells(body))
+        return "a solid of " + std::to_string(shells) + " shells (inner walls not joined to the outside)";
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndUniqueAncestors(built, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    int free = 0;
+    for (int i = 1; i <= edgeFaces.Extent(); ++i) {
+        const TopoDS_Edge& edge = TopoDS::Edge(edgeFaces.FindKey(i));
+        const TopTools_ListOfShape& faces = edgeFaces(i);
+        // A seam has the same face on both sides.
+        if (faces.Extent() < 2 && !BRep_Tool::Degenerated(edge)
+            && (faces.IsEmpty() || !BRep_Tool::IsClosed(edge, TopoDS::Face(faces.First()))))
+            ++free;
+    }
+    if (free > 0)
+        return std::to_string(free) + " free edges (walls not closed)";
+    return {};
+}
+
+// ---- Checking a shell's walls ----------------------------------------------------
+
+// The face's area: faces other than planes and quadrics to 1% (adaptive),
+// as OCCT's default rule took 8 ms on a rounded pipe's offset fillet,
+// against 0.2. Not on a C0 surface: across its kink the adaptive rule was
+// off by 3% (664 mm^2 for 644), the default one by 0.05%.
+double faceArea(const TopoDS_Face& face)
+{
+    GProp_GProps props;
+    const BRepAdaptor_Surface surface(face, Standard_False);
+    const bool smooth = surface.UContinuity() != GeomAbs_C0 && surface.VContinuity() != GeomAbs_C0;
+    if (surface.GetType() <= GeomAbs_Torus || !smooth)
+        BRepGProp::SurfaceProperties(face, props);
+    else
+        BRepGProp::SurfaceProperties(face, props, 1e-2);
+    return props.Mass();
+}
+
+double boxDistance(const Bnd_Box& box, const gp_Pnt& p)
+{
+    if (box.IsVoid())
+        return std::numeric_limits<double>::infinity();
+    double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
+    box.Get(x0, y0, z0, x1, y1, z1);
+    const double dx = std::max({x0 - p.X(), 0.0, p.X() - x1});
+    const double dy = std::max({y0 - p.Y(), 0.0, p.Y() - y1});
+    const double dz = std::max({z0 - p.Z(), 0.0, p.Z() - z1});
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// Faces with their bounding boxes, for distances from points.
+class FaceSet {
+public:
+    void add(const TopoDS_Face& face)
+    {
+        Bnd_Box box;
+        BRepBndLib::Add(face, box, Standard_False);
+        faces_.push_back(face);
+        boxes_.push_back(box);
+    }
+
+    // The distance from `p` to the nearest face, or `limit` when none is
+    // nearer. Only faces whose boxes are nearer than the best so far are
+    // measured.
+    double distance(const gp_Pnt& p, double limit) const
+    {
+        std::vector<std::pair<double, std::size_t>> candidates;
+        for (std::size_t i = 0; i < faces_.size(); ++i)
+            if (const double d = boxDistance(boxes_[i], p); d < limit)
+                candidates.emplace_back(d, i);
+        std::sort(candidates.begin(), candidates.end());
+        double best = limit;
+        if (candidates.empty())
+            return best;
+        const TopoDS_Vertex vertex = BRepBuilderAPI_MakeVertex(p);
+        for (const auto& [boxDistanceToP, i] : candidates) {
+            if (boxDistanceToP >= best)
+                break;
+            BRepExtrema_DistShapeShape extrema(vertex, faces_[i]);
+            if (extrema.IsDone() && extrema.NbSolution() > 0)
+                best = std::min(best, extrema.Value());
+        }
+        return best;
+    }
+
+private:
+    std::vector<TopoDS_Face> faces_;
+    std::vector<Bnd_Box> boxes_;
+};
+
+// Points inside the face: the middle and four points between it and the
+// corners of its parameter box, where inside.
+std::vector<gp_Pnt> samplesOnFace(const TopoDS_Face& face)
+{
+    double u0 = 0, u1 = 0, v0 = 0, v1 = 0;
+    BRepTools::UVBounds(face, u0, u1, v0, v1);
+    const BRepAdaptor_Surface surface(face, Standard_False);
+    BRepTopAdaptor_FClass2d classifier(face, Precision::PConfusion());
+    std::vector<gp_Pnt> points;
+    for (const auto& [a, b] : {std::pair{0.5, 0.5}, {0.2, 0.2}, {0.8, 0.2}, {0.2, 0.8}, {0.8, 0.8}}) {
+        const gp_Pnt2d uv(u0 + a * (u1 - u0), v0 + b * (v1 - v0));
+        if (classifier.Perform(uv) == TopAbs_IN)
+            points.push_back(surface.Value(uv.X(), uv.Y()));
+    }
+    return points;
+}
+
+std::string pointText(const gp_Pnt& p)
+{
+    return "(" + number(std::round(p.X() * 1000) / 1000) + ", " + number(std::round(p.Y() * 1000) / 1000) + ", "
+         + number(std::round(p.Z() * 1000) / 1000) + ")";
+}
+
+// Why `hollow` (of volume `hollowVolume`) is not `body` shelled with walls of
+// `thickness` and `openFaces` open, or empty when it is. OCCT can report
+// success for a wrong solid, and repairing an invalid result can make one:
+// intersection joins left a dome's walls unjoined, and ShapeFix turned that
+// into 5 faces of inner skin (3314 mm^3 instead of 1881). A shell keeps the
+// closed faces as its outside and adds inner walls parallel to them, so
+// - its faces on the closed faces' surfaces cover their whole area;
+// - every other face (sampled on a 3 x 3 grid of its parameters) lies
+//   `thickness` from the closed faces: no sample nearer (a thinner wall),
+//   and its nearest sample no farther (a join at an inner corner may be
+//   farther, the face itself is not);
+// - the volume is that of a band between the outside's area A and the
+//   inside's area a: thickness * (A + a) / 2, exact for flat walls (a box
+//   opened at the bottom), within 10%.
+// Faces on an open face's surface are the rims around the openings.
+std::string wallProblem(const TopoDS_Shape& body, const TopTools_ListOfShape& openFaces, const TopoDS_Shape& hollow,
+                        double thickness, double hollowVolume)
+{
+    ScopedTimer timer("shell wall check");
+    TopTools_MapOfShape open;
+    for (const TopoDS_Shape& face : openFaces)
+        open.Add(face);
+    TopTools_IndexedMapOfShape bodyFaces;
+    TopExp::MapShapes(body, TopAbs_FACE, bodyFaces);
+    FaceSet closed, opened;
+    // The body's surfaces (with their placement): a face of the result on
+    // one is a closed face kept as the outside, or a rim.
+    enum class On { Nothing, Closed, Open, Both };
+    std::multimap<const Geom_Surface*, std::pair<TopLoc_Location, bool>> surfaces;
+    double closedArea = 0;
+    for (int i = 1; i <= bodyFaces.Extent(); ++i) {
+        const TopoDS_Face& face = TopoDS::Face(bodyFaces(i));
+        const bool isOpen = open.Contains(face);
+        (isOpen ? opened : closed).add(face);
+        if (!isOpen)
+            closedArea += faceArea(face);
+        TopLoc_Location location;
+        const Handle(Geom_Surface)& surface = BRep_Tool::Surface(face, location);
+        surfaces.emplace(surface.get(), std::make_pair(location, isOpen));
+    }
+    const auto on = [&](const TopoDS_Face& face) {
+        TopLoc_Location location;
+        const Handle(Geom_Surface)& surface = BRep_Tool::Surface(face, location);
+        On result = On::Nothing;
+        const auto [first, last] = surfaces.equal_range(surface.get());
+        for (auto it = first; it != last; ++it)
+            if (it->second.first.IsEqual(location)) {
+                const On kind = it->second.second ? On::Open : On::Closed;
+                result = result == On::Nothing || result == kind ? kind : On::Both;
+            }
+        return result;
+    };
+
+    constexpr double kRelative = 0.02;
+    const double tolerance = 1e-3 + maxTolerance(hollow);
+    const double thinnest = thickness * (1 - kRelative) - tolerance;
+    const double farthest = thickness * (1 + kRelative) + tolerance;
+    double outsideArea = 0, insideArea = 0;
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(hollow, TopAbs_FACE, faces);
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        const TopoDS_Face& face = TopoDS::Face(faces(i));
+        const On kind = on(face);
+        if (kind == On::Closed) {
+            outsideArea += faceArea(face);
+            continue;
+        }
+        if (kind == On::Open)
+            continue;
+        bool outside = false, inside = false;
+        double nearest = farthest;
+        gp_Pnt where;
+        for (const gp_Pnt& p : samplesOnFace(face)) {
+            if (opened.distance(p, tolerance) < tolerance)
+                continue; // a rim
+            const double d = closed.distance(p, farthest);
+            if (d < tolerance) {
+                outside = true;
+                continue;
+            }
+            inside = true;
+            if (d < thinnest)
+                return "a wall " + number(d) + " mm thick at " + pointText(p) + ", thinner than " + number(thickness) + " mm";
+            if (d < nearest) {
+                nearest = d;
+                where = p;
+            }
+        }
+        if (outside && !inside) {
+            outsideArea += faceArea(face);
+        } else if (inside) {
+            insideArea += faceArea(face);
+            if (nearest >= farthest)
+                return "an inner face " + number(farthest) + " mm or more inside, walls of " + number(thickness) + " mm asked";
+        }
+    }
+    if (outsideArea < closedArea * (1 - 0.005))
+        return "the outside lost faces (" + number(outsideArea) + " of " + number(closedArea) + " mm^2 left)";
+    const double band = thickness * (closedArea + insideArea) / 2;
+    if (std::abs(hollowVolume - band) > 0.1 * band)
+        return "volume " + number(hollowVolume) + " mm^3, walls of " + number(thickness) + " mm hold about " + number(band)
+             + " mm^3 (outside " + number(closedArea) + " mm^2, inside " + number(insideArea) + " mm^2)";
+    OS_LOG(Debug, Geometry) << "shell walls: volume " << hollowVolume << " mm^3, band " << band << " mm^3 (outside " << closedArea
+                            << " mm^2, inside " << insideArea << " mm^2)";
+    return {};
+}
+
+// The body with faces that lie on one surface merged
+// (ShapeUpgrade_UnifySameDomain), with `openFaces` mapped to their merged
+// faces. Null when nothing was merged, the merge failed or an open face has
+// no image in it. A box with a cylinder boss half outside it (the boss's
+// top edge rounded) was refused by arc joins at 1 mm (error 1) and shelled
+// once merged.
+TopoDS_Shape mergedFaces(const TopoDS_Shape& body, const TopTools_ListOfShape& openFaces, TopTools_ListOfShape& openMerged)
+{
+    try {
+        ShapeUpgrade_UnifySameDomain unify(body, Standard_True, Standard_True, Standard_True);
+        unify.Build();
+        const TopoDS_Shape result = unify.Shape();
+        if (result.IsNull())
+            return {};
+        TopTools_IndexedMapOfShape beforeFaces, afterFaces, beforeEdges, afterEdges;
+        TopExp::MapShapes(body, TopAbs_FACE, beforeFaces);
+        TopExp::MapShapes(result, TopAbs_FACE, afterFaces);
+        TopExp::MapShapes(body, TopAbs_EDGE, beforeEdges);
+        TopExp::MapShapes(result, TopAbs_EDGE, afterEdges);
+        if (afterFaces.Extent() == beforeFaces.Extent() && afterEdges.Extent() == beforeEdges.Extent())
+            return {};
+        TopTools_MapOfShape added;
+        for (const TopoDS_Shape& face : openFaces) {
+            TopTools_ListOfShape images = unify.History()->Modified(face);
+            if (images.IsEmpty())
+                images.Append(face); // kept as it was
+            int found = 0;
+            for (const TopoDS_Shape& image : images)
+                for (TopExp_Explorer ex(image, TopAbs_FACE); ex.More(); ex.Next())
+                    if (afterFaces.Contains(ex.Current())) {
+                        ++found;
+                        if (added.Add(ex.Current()))
+                            openMerged.Append(ex.Current());
+                    }
+            if (found == 0) {
+                openMerged.Clear();
+                return {};
+            }
+        }
+        return result;
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Debug, Kernel) << "shell: merging faces threw " << describeFailure(failure);
+        return {};
+    }
+}
+
 Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, double thickness)
 {
-    const char* userMessage = "Unable to shell with this wall thickness. Try thinner walls.";
+    const char* userMessage = "Unable to hollow this body with this wall thickness.";
     return guarded("BRepOffsetAPI_MakeThickSolid", userMessage, [&]() -> Result<Shape> {
         ScopedTimer timer("shell");
         // On an independent copy: the offset writes into the shape it is
@@ -1188,46 +1527,122 @@ Result<Shape> tryShell(const Shape& shape, const std::vector<int>& openFaces, do
         TopTools_ListOfShape faces;
         for (int f : openFaces)
             faces.Append(copier.ModifiedShape(faceAt(shape, f)));
+        const double solidVolume = volume(shape);
 
         // Arc joins first (OCCT's default, robust on analytic walls); then,
         // when C0 faces were refused, the body split where they are C0; then
-        // intersection joins, which a B-spline wall can take when arcs fail.
-        // Adapted from the shell retries of OpenShape3D.
-        std::string error, tried;
+        // the body with faces of one surface merged; then arc joins in
+        // OCCT's complete intersection mode; last intersection joins, which
+        // a B-spline wall can take when arcs fail. Adapted from the shell
+        // retries of OpenShape3D (split, intersection joins). Each result is
+        // checked; a wrong one counts as a failed attempt.
+        std::string tried;
         bool timedOut = false;
-        TopoDS_Shape built = thickSolid(input, faces, thickness, GeomAbs_Arc, error, timedOut);
-        tried = "arc joins: " + error;
-        if (built.IsNull() && !timedOut && error == "error " + std::to_string(int(BRepOffset_C0Geometry))) {
+        std::optional<Result<Shape>> hollow;
+        // One attempt, its outcome added to `tried`; `error` gets the
+        // offset's own error.
+        const auto attempt = [&](const char* name, const TopoDS_Shape& body, const TopTools_ListOfShape& open,
+                                 GeomAbs_JoinType join, bool complete, std::string& error) {
+            const bool first = tried.empty();
+            tried += std::string(first ? "" : "; ") + name + ": ";
+            error.clear();
+            const TopoDS_Shape built = thickSolid(body, open, thickness, join, complete, error, timedOut);
+            if (built.IsNull()) {
+                tried += error;
+                return;
+            }
+            if (!body.IsSame(input))
+                setSameRangeOnNewEdges(built, body);
+            if (const std::string problem = unjoinedWalls(built, body); !problem.empty()) {
+                tried += problem;
+                return;
+            }
+            auto result = finishSolid(built, "BRepOffsetAPI_MakeThickSolid", userMessage, FinishOptions{TopoDS_Shape(), {occ(shape)}});
+            if (!result) {
+                tried += result.developerMessage();
+                return;
+            }
+            // When the walls would meet, OCCT can report success and hand
+            // back the untouched solid. A shell always removes material.
+            const double after = volume(result.value());
+            if (after >= solidVolume * (1.0 - 1e-9)) {
+                tried += "removed no material";
+                return;
+            }
+            // The walls are measured on the retries and on repaired results,
+            // where wrong shapes came from; a clean first attempt is trusted
+            // (its check would cost about as much as the offset).
+            if (!first || !result.developerMessage().empty())
+                if (const std::string problem = wallProblem(body, open, occ(result.value()), thickness, after); !problem.empty()) {
+                    tried += "wrong walls: " + problem;
+                    return;
+                }
+            tried += "done";
+            hollow = std::move(result);
+        };
+
+        const std::string c0Refusal = "error " + std::to_string(int(BRepOffset_C0Geometry));
+        std::string error;
+        if (t_shellFirstAttemptRefused) {
+            error = c0Refusal + " (for testing)";
+            tried = "arc joins: " + error;
+        } else {
+            attempt("arc joins", input, faces, GeomAbs_Arc, false, error);
+        }
+        if (!hollow && !timedOut && error.rfind(c0Refusal, 0) == 0) {
             TopTools_ListOfShape pieces;
             const TopoDS_Shape split = splitAtC0(input, faces, pieces);
-            if (!split.IsNull() && !pieces.IsEmpty()) {
-                built = thickSolid(split, pieces, thickness, GeomAbs_Arc, error, timedOut);
-                tried += "; split at C0: " + (built.IsNull() ? error : std::string("done"));
-                if (!built.IsNull())
-                    setSameRangeOnNewEdges(built, split);
-            }
+            if (split.IsNull() || pieces.IsEmpty())
+                tried += "; split at C0: nothing to split";
+            else
+                attempt("split at C0", split, pieces, GeomAbs_Arc, false, error);
         }
-        if (built.IsNull() && !timedOut) {
-            built = thickSolid(input, faces, thickness, GeomAbs_Intersection, error, timedOut);
-            tried += "; intersection joins: " + (built.IsNull() ? error : std::string("done"));
+        if (!hollow && !timedOut) {
+            TopTools_ListOfShape merged;
+            const TopoDS_Shape unified = mergedFaces(input, faces, merged);
+            if (unified.IsNull())
+                tried += "; merged faces: nothing to merge";
+            else
+                attempt("merged faces", unified, merged, GeomAbs_Arc, false, error);
         }
+        if (!hollow && !timedOut)
+            attempt("complete intersection", input, faces, GeomAbs_Arc, true, error);
+        if (!hollow && !timedOut)
+            attempt("intersection joins", input, faces, GeomAbs_Intersection, false, error);
         if (timedOut)
             return tookTooLong<Result<Shape>>("shell");
-        if (built.IsNull())
+        if (!hollow)
             return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage,
-                                          "MakeThickSolidByJoin not done: thickness=" + std::to_string(thickness) + " (" + tried + ")");
+                                          "MakeThickSolidByJoin: no shell of thickness=" + std::to_string(thickness) + " (" + tried + ")");
         OS_LOG(Debug, Geometry) << "shell: " << tried;
-        auto hollow = finishSolid(built, "BRepOffsetAPI_MakeThickSolid", userMessage, FinishOptions{TopoDS_Shape(), {occ(shape)}});
-        // When the walls would meet, OCCT can report success and hand back the
-        // untouched solid. A shell always removes material: reject anything else.
-        if (hollow && volume(hollow.value()) >= volume(shape) * (1.0 - 1e-9))
-            return Result<Shape>::failure(ErrorCode::ShellTooThick, userMessage,
-                                          "MakeThickSolidByJoin removed no material: thickness=" + std::to_string(thickness));
-        return hollow;
+        if (tried == "arc joins: done")
+            return std::move(*hollow);
+        std::string note = "shell retried: " + tried;
+        if (!hollow->developerMessage().empty())
+            note += "; " + hollow->developerMessage();
+        return std::move(*hollow).withDeveloperMessage(note);
     });
 }
 
 } // namespace
+
+void detail::setShellFirstAttemptRefusedForTesting(bool refused)
+{
+    t_shellFirstAttemptRefused = refused;
+}
+
+std::string detail::shellWallProblem(const Shape& shape, const std::vector<int>& openFaces, const Shape& hollow, double thickness)
+{
+    try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
+        TopTools_ListOfShape faces;
+        for (int f : openFaces)
+            faces.Append(faceAt(shape, f));
+        return wallProblem(occ(shape), faces, occ(hollow), thickness, exactVolume(occ(hollow)));
+    } catch (const Standard_Failure& failure) {
+        return "the check threw " + describeFailure(failure);
+    }
+}
 
 Result<Shape> filletEdges(const Shape& shape, const std::vector<int>& edgeIndices, double radius, const SizeAdvice& advice)
 {
@@ -1292,14 +1707,22 @@ Result<Shape> shell(const Shape& shape, const std::vector<int>& openFaces, doubl
     auto result = tryShell(shape, openFaces, thickness);
     if (result || stoppedByTimeLimit(result))
         return result;
-    std::string message = "Unable to shell with this wall thickness. Try thinner walls.";
-    const auto largest = advice.suggest ? largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness, Clock::now() - start,
-                                                             [&](double t) { return tryShell(shape, openFaces, t).ok(); })
-                                        : std::nullopt;
-    if (largest && *largest <= 0)
+    // Without a size that works, "Try thinner walls" only when walls this
+    // thick meet across the body for sure (half its narrowest side or
+    // more): OCCT refuses some bodies at every thickness (a box with a
+    // half-buried cylinder on top, opened at its side), and the user must
+    // not be sent to try ever thinner walls.
+    const Vec3 size = boundingBox(shape).size();
+    std::string message = thickness >= 0.5 * std::min({size.x, size.y, size.z})
+                              ? "Unable to shell with this wall thickness. Try thinner walls."
+                              : "Unable to hollow this body with this wall thickness.";
+    const SizeFinding finding = advice.suggest ? largestWorkingSize(SizedOperation::Shell, shape, openFaces, thickness, Clock::now() - start,
+                                                                    [&](double t) { return tryShell(shape, openFaces, t).ok(); })
+                                               : SizeFinding{};
+    if ((finding.largest && *finding.largest <= 0) || (!finding.largest && finding.smallestFailed))
         message = "Unable to hollow this body with these faces open. Try opening a different face.";
-    else if (largest && *largest >= kMinLength)
-        message = "The walls are too thick for this body. Try " + sizeText(*largest, advice.unit) + " or less.";
+    else if (finding.largest && *finding.largest >= kMinLength)
+        message = "The walls are too thick for this body. Try " + sizeText(*finding.largest, advice.unit) + " or less.";
     return Result<Shape>::failure(ErrorCode::ShellTooThick, message, result.developerMessage());
 }
 
