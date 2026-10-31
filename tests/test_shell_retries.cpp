@@ -492,7 +492,14 @@ TEST(ShellRetries, WallCheckRejectsIntersectionJoinsThatKeepTooMuch)
     SizeAdvice advice;
     advice.suggest = true;
     const auto advised = shell(body, {open}, 1.0, advice);
-    EXPECT_EQ(advised.userMessage(), "Unable to hollow this body with these faces open. Try opening a different face.");
+    // The size search has a time budget (kSizeBudget): on a fast machine it
+    // reaches 0.1 mm, which fails too, and says to open another face; on a
+    // slow one (GitHub's macOS runner, 2026-10-31) it runs out first and the
+    // plain message stays. Either is true; "Try thinner walls" never is.
+    EXPECT_TRUE(advised.userMessage() == "Unable to hollow this body with these faces open. Try opening a different face."
+                || advised.userMessage() == "Unable to hollow this body with this wall thickness.")
+        << advised.userMessage();
+    EXPECT_EQ(advised.userMessage().find("thinner"), std::string::npos) << advised.userMessage();
 }
 
 // A face that is really C0, as STEP files bring them: the extrusion of a
@@ -597,7 +604,12 @@ TEST(ShellRetries, RefusalsAreHonest)
         const auto plain = shell(c.shape, {open}, 1.0);
         expectCleanFailure(plain, c.name);
         EXPECT_EQ(plain.userMessage().find("thinner"), std::string::npos) << c.name << ": " << plain.userMessage();
+        // As in WallCheckRejectsIntersectionJoinsThatKeepTooMuch: a slow
+        // machine's size search may run out of time before 0.1 mm.
         const auto advised = shell(c.shape, {open}, 1.0, advice);
-        EXPECT_EQ(advised.userMessage(), "Unable to hollow this body with these faces open. Try opening a different face.") << c.name;
+        EXPECT_TRUE(advised.userMessage() == "Unable to hollow this body with these faces open. Try opening a different face."
+                    || advised.userMessage() == "Unable to hollow this body with this wall thickness.")
+            << c.name << ": " << advised.userMessage();
+        EXPECT_EQ(advised.userMessage().find("thinner"), std::string::npos) << c.name << ": " << advised.userMessage();
     }
 }
