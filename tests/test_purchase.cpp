@@ -50,7 +50,7 @@ TEST(Purchase, ProductIdIsTheBundleIdWithUnlimited)
     EXPECT_GT(id.size(), int(sizeof(".unlimited")));
 }
 
-TEST(Purchase, OnlyProjectFilesInTheFolderItselfCount)
+TEST(Purchase, ProjectFilesInTheFolderAndItsFoldersCount)
 {
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
@@ -63,14 +63,37 @@ TEST(Purchase, OnlyProjectFilesInTheFolderItselfCount)
     writeFile(folder + "/Inbox/Mailed.openshape", "p");           // iOS's copy, not taken in yet
     writeFile(folder + "/.Trash/Deleted.openshape", "p");         // Recently Deleted
     writeFile(folder + "/.hidden.openshape", "p");                // hidden
+    writeFile(folder + "/.hidden/Inside.openshape", "p");         // in a hidden folder
     writeFile(folder + "/notes.txt", "t");
     writeFile(folder + "/Bracket.openshape.tmp", "t");
     QDir().mkpath(folder + "/Folder.openshape");                  // a folder, not a file
+    // Moved into folders in the Files app (TD-155): still projects.
+    writeFile(folder + "/Garage/Hook.openshape", "p");
+    writeFile(folder + "/Garage/Old/Clip.openshape", "p");
+    writeFile(folder + "/Garage/Exports/Shelf.openshape", "p");   // only the top Exports is left out
     const QStringList projects = appFolderProjects(folder);
-    ASSERT_EQ(projects.size(), 2) << projects.join(", ").toStdString();
+    ASSERT_EQ(projects.size(), 5) << projects.join(", ").toStdString();
     EXPECT_TRUE(projects[0].endsWith("/Bracket.openshape"));
     EXPECT_TRUE(projects[1].endsWith("/Upper.OPENSHAPE"));
+    EXPECT_TRUE(projects[2].endsWith("/Garage/Hook.openshape"));
+    EXPECT_TRUE(projects[3].endsWith("/Garage/Exports/Shelf.openshape"));
+    EXPECT_TRUE(projects[4].endsWith("/Garage/Old/Clip.openshape"));
     EXPECT_TRUE(appFolderProjects(QString()).isEmpty());
+}
+
+TEST(Purchase, AProjectInAFolderStillFillsTheFreeVersion)
+{
+    // The leak the 2026-11-03 critique found: moving the one project into a
+    // folder in the Files app made room for another.
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QString folder = dir.path();
+    const ProjectLimit freeVersion{true, false, folder};
+    writeFile(folder + "/Parts/Part.openshape", "p");
+    EXPECT_FALSE(limitAllowsProject(freeVersion)) << "a new project";
+    EXPECT_FALSE(limitAllowsProject(freeVersion, folder + "/Other.openshape")) << "saving under a new name";
+    EXPECT_TRUE(limitAllowsProject(freeVersion, folder + "/Parts/Part.openshape")) << "re-saving the one project";
+    EXPECT_TRUE(limitAllowsProject({true, true, folder})) << "unlocked";
 }
 
 TEST(Purchase, FreeVersionAddsOneProject)

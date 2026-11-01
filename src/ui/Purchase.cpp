@@ -31,17 +31,42 @@ QString unlockProductId()
     return QString::fromLatin1(kUnlockProductId);
 }
 
+namespace {
+
+// Adds the projects in `dir` and the folders below it. A leading dot hides
+// a file or folder on iOS (not on Windows): skipped everywhere, which also
+// leaves out the Files app's Recently Deleted (.Trash). Links are not
+// followed, so a folder linked into itself cannot loop.
+void collectProjects(const QDir& dir, bool top, QStringList& projects)
+{
+    // Name filters ignore case unless asked.
+    for (const QFileInfo& info : dir.entryInfoList({QStringLiteral("*.openshape")}, QDir::Files, QDir::Name))
+        if (!info.fileName().startsWith(QLatin1Char('.')))
+            projects << info.absoluteFilePath();
+    const QFileInfoList folders = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name);
+    for (const QFileInfo& info : folders) {
+        const QString name = info.fileName();
+        if (name.startsWith(QLatin1Char('.')))
+            continue;
+        // Exports holds STL / 3MF / STEP files, and iOS's Inbox holds copies
+        // of mailed files that are not taken in yet: neither is a project.
+        if (top && (name.compare(QLatin1String("Exports"), Qt::CaseInsensitive) == 0
+                    || name.compare(QLatin1String("Inbox"), Qt::CaseInsensitive) == 0))
+            continue;
+        collectProjects(QDir(info.absoluteFilePath()), false, projects);
+    }
+}
+
+} // namespace
+
 QStringList appFolderProjects(const QString& folder)
 {
     if (folder.isEmpty())
         return {};
-    const QDir dir(folder);
+    // The whole folder, not only its top: a project moved into a folder of
+    // its own in the Files app still counts (TD-155; it opens in place).
     QStringList projects;
-    // Name filters ignore case unless asked; hidden files are left out
-    // (a leading dot hides a file on iOS, not on Windows: skipped everywhere).
-    for (const QFileInfo& info : dir.entryInfoList({QStringLiteral("*.openshape")}, QDir::Files, QDir::Name))
-        if (!info.fileName().startsWith(QLatin1Char('.')))
-            projects << info.absoluteFilePath();
+    collectProjects(QDir(folder), true, projects);
     return projects;
 }
 

@@ -19,9 +19,11 @@ namespace os::ui {
 inline constexpr int kFreeProjectCount = 1;
 
 // The projects in OpenShape's own folder (Documents on iOS): its
-// *.openshape files, in any case. Not what lies in folders below it
-// (Exports, the Inbox, the Files app's Recently Deleted in .Trash), nor
-// hidden files. Sorted by name.
+// *.openshape files, in any case, also in the folders below it (a project
+// moved into a folder in the Files app still counts, TD-155). Not those in
+// its Exports and Inbox folders, in hidden folders (the Files app's
+// Recently Deleted, .Trash) or hidden files. The folder's own first, each
+// folder sorted by name.
 QStringList appFolderProjects(const QString& folder);
 
 struct ProjectLimit {
