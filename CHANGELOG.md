@@ -5,7 +5,35 @@ the section of their version (`.github/workflows/release.yml`).
 
 ## 0.3.1 (unreleased)
 
-Nothing yet.
+The answers to the first session on the iPhone Duo.
+
+**Several faces at once, and pushing them through.** A tap on another
+face of the same body adds it, and Push/Pull stays Push/Pull: one arrow (or
+a finger on any of the faces) moves faces that face the same way
+together. A tap on a selected face takes it out; tap empty space, or Clear,
+to start again; the selection says how many faces it holds. Holding a
+finger on a face for half a second selects every face of the step that
+made it: all of a text, or an extrusion's top and walls. Pushed in, the
+faces cut: push raised text down past the face it stands on and it is
+engraved, and faces pushed into another body cut their shape out of it
+too, shown in the preview and undone as one step. Faces facing different
+ways get no arrow (Shell and Delete faces are offered instead), and Shell,
+chosen from the bar, adds a face to open with each tap as before. On an
+iPad keyboard, Cmd-click adds a face.
+
+**Zooming and panning with a face selected no longer jump.** On a larger
+touch screen, each step of a pinch moved the value box, and the view moved
+back to make room for the selection, in the middle of the pinch. The view
+now stays the user's while they move it. A pinch zooms steadily about the
+fingers, also as they drift over nearer and farther faces.
+
+**The value box on the iPhone Duo's inner display** docks at the top or
+bottom edge, away from the selection, instead of floating beside the arrow
+over the part, and the view no longer moves when it appears (unless the
+part fills the screen and no spot keeps clear of the selection).
+
+**The free version's one project** is counted in folders too: a project
+moved into a folder in the Files app still counts.
 
 ## 0.3.0 (2026-10-31)
 

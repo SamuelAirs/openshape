@@ -1042,70 +1042,96 @@ log come first.
 
 ### 0.3.1, in this order
 
-`main` already says 0.3.1 (CMakeLists.txt, CHANGELOG.md). Push only with
-the first of these code changes (all three local release commits go with
-it), after the headless suite, the real-UI run and
-`scripts/dev/check_lambda_captures.py`; tag `v0.3.1` when the owner wants
-it in the store.
+`main` says 0.3.1 (CMakeLists.txt, CHANGELOG.md). Nothing is pushed yet: a
+push of `main` uploads a TestFlight build (ipad.yml), and the coordinator
+waits for the 0.3.0 submission before the first 0.3.1 build. Before the
+push: the headless suite, the real-UI run and
+`scripts/dev/check_lambda_captures.py` (its one report, `Duo.cpp:400`
+capture `st`, is a `std::shared_ptr` kept alive on purpose: Apple Clang does
+not warn about a capture that is not trivially copyable). Tag `v0.3.1` when
+the owner wants it in the store.
 
-1. **The project limit's leak (TD-155), first.** Confirmed in the code on
-   2026-11-03 (the critique's section 4, item 7): `appFolderProjects`
-   (`src/ui/Purchase.cpp`) counts only the `.openshape` files at the top
-   of the app folder (`QDir::entryInfoList`, not recursive), while a
-   project anywhere inside the app folder opens in place without the gate
-   (`AppController::openProject`: `stageIncomingFile` returns a file
-   inside the folder unchanged, so `stagingAddsProject` is false). Moving
-   projects into a folder in the Files app therefore lifts the limit.
-   Fix: count recursively, minus `Exports`, the `Inbox`, `.Trash` and
-   hidden files; a GTest in `tests/test_purchase.cpp` with projects in a
-   subfolder, and the `purchase` scenario. Not worth holding the 0.3.0
-   submission: it takes a deliberate move in the Files app, App Review
-   does not test for it (guideline 3.1.1 asks that unlocking uses the
-   in-app purchase, which it does), and a fix means a new tag and build
-   55, restarting the submission.
-2. **Fixes from App Review and the Duo** (above). A rejection that needs a
-   new build is the owner's call; simplest is to rename the App Store
-   version to 0.3.1 and submit the `v0.3.1` tag's build, since the tag
-   check in ipad.yml wants the tag to match `CMakeLists.txt`. Also check
-   the privacy manifest (checked 2026-11-03): Apple's required-reason
-   list for user defaults names only the `UserDefaults` (`NSUserDefaults`)
-   API; QSettings' native format on iOS calls Core Foundation's
-   `CFPreferences` functions, which the list does not name; Qt 6.11.2
-   calls `NSUserDefaults` only under `Q_OS_MACOS` (`qcore_mac.mm`,
-   `qlocale_mac.mm`), and neither FoldForm's code nor the Qt iOS plugin
-   files checked use it or the active-keyboards API. Build 54 drew no
-   ITMS-91053 email (the owner). So nothing is missing for 0.3.0; adding
-   `NSPrivacyAccessedAPICategoryUserDefaults` with CA92.1 in 0.3.1 is
-   harmless and guards against Apple widening the list (low priority). **The written source offer's contact** (decided 2026-10-31):
-   ayers177@gmail.com instead of the issue tracker (TD-102). Not done on
-   the 0.3.0 code because it is more than the one line
-   (`kSourceContactUrl` in `src/ui/Licenses.h`): `tests/test_uistate.cpp`
-   checks a filled-in offer for any `@` to catch a placeholder left over,
-   so those checks must look for `@NAME@` placeholders instead, and the
-   `licenses` scenario (real UI) should run once after it.
-3. **Real autosave** (TD-51: today a recovery copy keeps unsaved work, and
-   Home asks Save / Don't Save). A project that has a file saves itself
-   after each committed step (debounced) and when the app goes to the
+**Done on `main` (2026-11-01, local, not pushed):**
+
+1. **The project limit's leak (TD-155)**, 10b22a2: projects in the app
+   folder's subfolders count too (not `Exports`, the `Inbox`, hidden
+   folders such as `.Trash`).
+2. **The jumping pinch (the owner's Duo recording, 2026-11-03)**, 7955d68:
+   with a face selected on a larger touch window, each zoom step moved the
+   value box and Main.qml's `revealSelection` then zoomed out and panned
+   the view to uncover the selection, mid-pinch.
+   `InteractionController::revealKeepClear` now refuses while the user
+   moves the view and for 0.5 s after (`kNavigationQuiet`), and a
+   perspective zoom picks its depth once per gesture.
+   `Touch.ReplayedPinchWithAFaceSelectedZoomsSteadilyAboutTheFingers`
+   replays a two-finger pinch through the recognizer (fails without the
+   fix from its second frame). Not yet confirmed against the Duo's own log.
+3. **Several faces at once, and pushing them through (the owner's request
+   of 2026-11-03)**, b88f546 and 9d4b66a: the selection model (a tap adds a face of the
+   same body, a tap on a selected one takes it out, empty space or Clear
+   starts again, the count in the summary, Cmd-click with a keyboard, a
+   0.5 s hold for a whole step's faces), one arrow for faces facing the
+   same way (`MultiPushPullOperation`, `doc::PushPullFacesFeature`), and
+   faces pushed in cut, also into another body (`doc::SweepCutFeature`,
+   one undo step, shown in the preview). Shell only when chosen.
+   `tests/test_multi_face.cpp` (engraved "Fold": volume and a closed STL;
+   two tops pushed through a bar into a plate). TD-156.
+4. **The value box on the Duo's inner display**, 9d4b66a: docked at the
+   top or bottom edge first (`ChipPlacementInput::dockFirst`, both sides
+   under 720 points), and the view no longer moves when it appears there.
+   The tool column already keeps to the safe area the system reports; the
+   real insets come with the owner's log (TD-150). TD-157.
+
+The real-UI run after these: 4356/4356 real-UI checks in 907 s run directly (ctest's 900 s timeout ended the first full run just short of the end, all checks passed until then; its timeout is now 1500 s, 03ad90b), and 855/855 headless.
+
+**What the owner should try on the Duo** (the first 0.3.1 TestFlight
+build, once the coordinator says to push):
+
+- Raised text on a box: hold a finger on a letter for half a second: all
+  of the text is selected and the message says how many faces. Drag the
+  arrow into the box (or type -1.5 on the keypad): the letters are cut in
+  0.5 mm. Undo brings them back in one step.
+- Tap one face, then another face facing the same way: both stay
+  selected, the tools stay Push/Pull, the summary says "2 faces". Tap one
+  of them again: it is taken out. Clear, or a tap on empty space, starts
+  again.
+- With a face selected, pinch in and out and pan with two fingers: the
+  part follows the fingers without jumping, and the value box goes to the
+  top or bottom edge, not over the part.
+- Send Logs/openshape.log afterwards (the `window ...` lines: TD-150).
+
+**Next, in this order:**
+
+1. **Fixes from App Review and the Duo log** (above). A rejection that
+   needs a new build is the owner's call; simplest is to rename the App
+   Store version to 0.3.1 and submit the `v0.3.1` tag's build.
+2. **The written source offer's contact** (decided 2026-10-31):
+   ayers177@gmail.com instead of the issue tracker (TD-102): more than the
+   one line (`kSourceContactUrl` in `src/ui/Licenses.h`):
+   `tests/test_uistate.cpp` checks a filled-in offer for any `@` to catch a
+   placeholder left over, so those checks must look for `@NAME@`
+   placeholders instead, and the `licenses` scenario should run once after.
+   With it, optionally `NSPrivacyAccessedAPICategoryUserDefaults` (CA92.1)
+   in the privacy manifest: not required by Apple's list today (it names
+   `NSUserDefaults`; QSettings on iOS uses `CFPreferences`; Qt 6.11.2 calls
+   `NSUserDefaults` only on macOS), no ITMS-91053 for build 54.
+3. **Real autosave** (TD-51): a project that has a file saves itself after
+   each committed step (debounced) and when the app goes to the
    background; an untitled one keeps the recovery copy and gets a file only
-   when the user names it, so autosave never creates a project and never
-   meets the one-project limit (`ui/Purchase`). Check first that
-   `io::ProjectFile` writes to a temporary file and renames. Tests: GTests
-   for when a save happens and that a failed save keeps the recovery copy;
-   an acceptance scenario that edits, backgrounds and reads the file back;
-   Home opens another project without asking for a saved one.
-4. **Icons for the text-only buttons** (TD-9): one original, consistent
-   set (SVG in `resources/icons`, MPL like the rest, no copied icon fonts),
-   for the tool palette and strip, the top bar, Home's card menu and the
-   sketch tool bar. Each button keeps its `objectName` (the acceptance run
-   clicks by it) and its text as the accessible name and tooltip; the
-   screenshots are retaken afterwards (TD-95).
-5. **Reuse the preview on confirm for large parts** (TD-1): the commit
-   computes the step again (~190 ms on the 249-face enclosure) although
-   the preview worker just made the same shape. Take the preview's shape
-   when the document and the operation's inputs are unchanged since it was
-   computed, else recompute as now. Measure before and after with
-   `tools/bench/bench_session.cpp`; a test compares the reused result with
-   a recompute (volume, bounding box, face count).
+   when named, so autosave never creates a project nor meets the
+   one-project limit. Check first that `io::ProjectFile` writes to a
+   temporary file and renames. Tests: when a save happens, a failed save
+   keeps the recovery copy, an acceptance scenario that edits, backgrounds
+   and reads the file back.
+4. **Icons for the text-only buttons** (TD-9): one original set (SVG in
+   `resources/icons`, MPL), for the palette and strip, the top bar, Home's
+   card menu and the sketch tool bar; each button keeps its `objectName`
+   and its text as the accessible name and tooltip; retake the screenshots
+   (TD-95).
+5. **Reuse the preview on confirm for large parts** (TD-1): take the
+   preview's shape when the document and the operation's inputs are
+   unchanged since it was computed; measure with
+   `tools/bench/bench_session.cpp`; a test compares it with a recompute.
 
 ### Later (from the 2026-09-27 list)
 
@@ -1129,7 +1155,7 @@ it in the store.
 
 ## Tests currently passing
 
-844/844 headless (`ctest -LE gui`, 2026-10-31, after the purchase, shell, FoldForm and sketch-selection merges; again that evening on `main`, the `v0.3.0` code at version 0.3.1): GTest suites for core, geometry
+855/855 headless (`ctest -LE gui`, 2026-11-01, `main` at 0.3.1 with the Duo fixes; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1145,7 +1171,8 @@ scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
 `acceptance_gui`: 4356/4356 checks through the real UI in 51 scenarios
-(2026-10-31, after the merges of 2026-10-30 and 2026-10-31)
+(2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
+old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
 under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 (as CI does): 0 warnings.
