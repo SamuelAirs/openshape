@@ -1,6 +1,11 @@
 # FoldForm for iPhone and iPad: proposed End User License Agreement
 
-**Status: a proposal (2026-09-27), not in use yet.** It is meant for App
+**Status: not used.** The owner decided on 2026-10-31 that FoldForm keeps
+**Apple's standard EULA**, because a custom EULA has to publish the
+developer's address and phone. This file stays as the record of the
+proposal (2026-09-27), in case that changes.
+
+**Original status: a proposal (2026-09-27), not in use yet.** It is meant for App
 Store Connect → FoldForm → App Information → License Agreement → Edit →
 "Apply a custom EULA to all chosen countries or regions" (plain text; paste
 everything between the two lines below and fill in the bracketed parts).

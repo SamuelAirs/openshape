@@ -27,20 +27,25 @@ the texts fit Apple's limits; the screenshots (iPhone 1320 x 2868, iPad
 Connect accepts. The headless suite on `main` (the tag's code at 0.3.1):
 844/844.
 
-What is left is the owner's App Store Connect work, in order, in
-[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md): the Paid Apps
-Agreement **Active** (tax, bank), the Small Business Program, a DSA status
-(required even with the EU left out), the in-app purchase, the listing,
-App Privacy, age rating and price, then on build 54 the sandbox purchase,
-the share sheet and opening from the Files app (not yet seen on a device),
-then **submit build 54 with the purchase**.
+**Done by the owner (2026-10-31, about 23:05):** the Paid Apps Agreement
+is **Active**, the Small Business Program enrollment is sent, and the DSA
+status is **not a trader**. Build 54 shows as processed in App Store
+Connect and no email from Apple reported a problem.
 
-**Open questions for the owner:** Apple's standard EULA or the custom one
-(docs/EULA.md); EU trader or the EU left out; any email from Apple about
-build 54 after its upload (processing warnings); whether the lead may make
-6.3" iPhone screenshots if App Store Connect asks for them (the script
-opens windows and moves the pointer); the written source offer's contact
-for 0.3.1 (TD-102).
+What is left is the owner's App Store Connect work, in order, in
+[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md), from step 4: the
+in-app purchase, the listing, App Privacy, age rating, price and
+availability (all except China mainland and the 27 EU countries), then on
+build 54 the sandbox purchase and two tries not yet done on a device (the
+share sheet after Export STL, opening a project from the Files app), then
+**submit build 54 with the purchase**.
+
+**The owner's answers (2026-10-31):** Apple's standard EULA (docs/EULA.md
+is not used: a custom EULA would publish the address and phone); the EU
+left out, not a trader; 6.3" iPhone screenshots only if App Store Connect
+asks, taken by the owner on the iPhone 16 Pro (1206 x 2622; the six scenes
+in docs/APP_STORE.md, section 3), not rendered; the written source offer
+gives ayers177@gmail.com from 0.3.1 (TD-102, "0.3.1" below).
 
 **Not pushed:** `main` is ahead of origin by the three commits of the
 release (5ebed49, which the tag already published, the 0.3.1 bump and a
@@ -1044,11 +1049,18 @@ it in the store.
    new build is the owner's call; simplest is to rename the App Store
    version to 0.3.1 and submit the `v0.3.1` tag's build, since the tag
    check in ipad.yml wants the tag to match `CMakeLists.txt`. Also check
-   build 54's processing email: on iOS the settings (with the purchase's
-   unlocked flag) go through QSettings' native format, the user defaults,
-   which `src/app/ios/PrivacyInfo.xcprivacy`
-   does not list as a required-reason API (`NSPrivacyAccessedAPICategoryUserDefaults`,
-   CA92.1); add it if Apple warned, and consider it anyway.
+   the privacy manifest: on iOS the settings (with the purchase's unlocked
+   flag) go through QSettings' native format, the user defaults, which
+   `src/app/ios/PrivacyInfo.xcprivacy` does not list as a required-reason
+   API (`NSPrivacyAccessedAPICategoryUserDefaults`, CA92.1). Apple sent no
+   warning about build 54 (the owner, 2026-10-31); add it anyway, it is
+   true. **The written source offer's contact** (decided 2026-10-31):
+   ayers177@gmail.com instead of the issue tracker (TD-102). Not done on
+   the 0.3.0 code because it is more than the one line
+   (`kSourceContactUrl` in `src/ui/Licenses.h`): `tests/test_uistate.cpp`
+   checks a filled-in offer for any `@` to catch a placeholder left over,
+   so those checks must look for `@NAME@` placeholders instead, and the
+   `licenses` scenario (real UI) should run once after it.
 2. **Real autosave** (TD-51: today a recovery copy keeps unsaved work, and
    Home asks Save / Don't Save). A project that has a file saves itself
    after each committed step (debounced) and when the app goes to the

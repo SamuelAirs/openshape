@@ -104,6 +104,12 @@ document still says OpenShape where it describes the code.
 
 ## 1. Agreements, tax, banking and the Small Business Program
 
+**DONE by the owner (2026-10-31, about 23:05):** the Paid Apps Agreement is
+**Active** (tax form and bank account in), the Small Business Program
+enrollment is sent, and the DSA status is **not a trader**, with the 27 EU
+countries left out of the availability (item 5, section 4). The steps
+below stay as the record of how.
+
 A paid app can be priced, and an in-app purchase sold (also in a free
 app, as OpenShape is since 2026-10-31), only once the **Paid Apps
 Agreement** is active, and it becomes active only after the tax and bank
@@ -134,7 +140,8 @@ this first: Apple checks the details, and it can take days.
    end of the fiscal month in which Apple approves the enrollment, so enroll
    now, weeks before the first sale. It stays until your proceeds pass USD 1
    million in a year.
-5. **YOU and DECIDE: EU Digital Services Act trader status.** Every developer
+5. **DONE (2026-10-31): not a trader, the EU left out.** EU Digital
+   Services Act trader status. Every developer
    must declare a status, **also one who leaves the EU out** (Apple asks for
    it when a new app is submitted): Business → Agreements → Compliance →
    **Complete Compliance Requirements** next to *Digital Services Act* →
@@ -153,6 +160,9 @@ this first: Apple checks the details, and it can take days.
      trader account": Apple's page says a developer who distributes on the
      App Store only outside the EU is not acting as a trader there. Do not
      choose "not a trader" while selling in the EU.
+
+   The owner chose the second. If FoldForm should ever be sold in the EU,
+   the status becomes "trader" first (with the public contact details).
 6. **DONE: export compliance.** `src/app/ios/Info.plist.in` sets
    `ITSAppUsesNonExemptEncryption` to `false`, so App Store Connect does not
    ask the encryption questions for each build. This is true for OpenShape:
@@ -188,7 +198,7 @@ the version page (**iOS App → 0.3.0 Prepare for Submission**).
 | Support URL | `https://github.com/SamuelAirs/openshape/blob/main/docs/SUPPORT.md` (how to get help, with the contact routes and the email; Apple requires a page with real contact information; live, fetched 2026-10-31) | **DONE** (page) / **YOU** (paste) |
 | Marketing URL | `https://github.com/SamuelAirs/openshape` (optional) | **YOU** |
 | Copyright | `2026 Sam Ayers` (App Store Connect adds the ©; use your legal name if you prefer) | **YOU** |
-| License agreement | Apple's standard EULA (the default), unless you choose the custom EULA in [EULA.md](EULA.md): docs/LICENSING.md recommends it because it grants the LGPL's modification and reverse-engineering permissions in so many words; it needs your name, address, phone and email filled in. Either passes App Review; it can be changed later. | **DECIDE** |
+| License agreement | **Apple's standard EULA** (the default: leave it as it is). Decided 2026-10-31; [EULA.md](EULA.md) is not used, because a custom EULA would publish the owner's address and phone. | **DONE** |
 | Routing app coverage file | none (not a navigation app) | — |
 | Accessibility (Nutrition Labels) | optional; leave empty for now: nothing has been checked with VoiceOver, and a label must not claim what was not tested | — |
 
@@ -402,10 +412,10 @@ not blank):
   required iPhone size in its summary, while its table still fills that size
   from scaled large-display screenshots. If App Store Connect accepts the
   6.9" set and Media Manager (**View All Sizes**) shows the 6.3" size filled,
-  nothing more is needed; if it insists on its own 6.3" screenshots, the
-  lead makes a 1206 x 2622 set (about three minutes on the PC while nobody
-  uses it: windows open and the pointer moves), or take six on an iPhone
-  16 Pro (exactly that size).
+  nothing more is needed. **Only if it insists on its own 6.3"
+  screenshots**, the owner takes them on the iPhone 16 Pro (decided
+  2026-10-31), following "6.3-inch screenshots from the iPhone 16 Pro"
+  below.
 - **iPhone Duo** (the foldable): App Store Connect accepts its sizes now
   (outer display 1398 x 2034, inner 2007 x 2853, either way round);
   optional for this submission. They give the product page an "optimized
@@ -431,7 +441,43 @@ UI font (Windows' Segoe UI instead of San Francisco) and the missing status
 bar (docs/TECHNICAL_DEBT.md, TD-95). If you prefer, replace any of them with
 a screenshot from your own iPhone 16 Pro Max or 13-inch iPad (same sizes);
 an iPhone 16 Pro (1206 x 2622) or 11-inch iPad screenshot is a different
-size class and cannot stand in for the required ones.
+size class and cannot replace the 6.9" or 13" set (the 16 Pro's fill only
+the 6.3" slot, below).
+
+#### 6.3-inch screenshots from the iPhone 16 Pro (only if App Store Connect asks)
+
+The iPhone 16 Pro's display is 2622 by 1206 pixels (Apple's iPhone 16 Pro
+tech specs, support.apple.com/en-us/121031), so its screenshots (side
+button + volume up) are **1206 x 2622** in portrait. Apple's screenshot
+specifications (read 2026-10-31) list exactly that size, with the iPhone
+16 Pro, under "iPhone with Dynamic Island (medium display)", the 6.3"
+slot. Take them in portrait, in TestFlight build 54, in this order, as in
+the 6.9" set (open each `iphone-*.png` beside you to match the view):
+
+1. **Project box:** the 60 x 40 x 22 mm box with rounded corners, 2 mm
+   walls and four countersunk M3 holes; tap the cable hole's wall in the
+   end and type a diameter with print clearance, so the value box and its
+   arrow show (do not apply).
+2. **Key tag:** the 70 x 24 x 3 mm tag with raised bold text, the text
+   being edited (size, depth, raised or engraved, angle on screen).
+3. **Sketch:** a mounting plate's sketch on the ground, 80 x 50 with four
+   5 mm screw holes and a 20 mm opening, sizes typed and constraint glyphs
+   shown, the Select tool on.
+4. **Construction plane:** the 50 x 50 flange plate with an axis through
+   its bore and the Plane tool placing a plane 25 mm above it.
+5. **Model panel:** the project box seen from the back left, the Model
+   panel open with the fillet step open to change its radius.
+6. **Home:** six projects with their previews (Project box, Key tag,
+   Mounting plate, Flange plate, Spacer M8, Pen cup).
+
+The six projects the 6.9" set was made from are on the PC in
+`C:\Users\ayers\OpenShape\build\appstore-screenshots\iphone-6-home\OpenShape\` (`.openshape`
+files; until the next screenshot run or a clean build): email them to
+yourself or put them in iCloud Drive, then open each in FoldForm (after
+the purchase in step 8 of LAUNCH_CHECKLIST.md, so the one-project limit
+does not get in the way). Upload the six in the same order to the 6.3"
+slot (Media Manager, **View All Sizes**). The status bar shows on a
+device; that is fine.
 
 ---
 
@@ -464,9 +510,10 @@ fully before paying.
 **YOU, the app's price:** Apps → your app → **Monetization → Pricing and
 Availability** → Price Schedule → base country **United States** → **USD 0
 (Free)**. **Availability** (same page): all countries and regions except
-**China mainland** (apps there need a Chinese ICP filing number), and
-except the **27 EU countries** if you chose not to declare trader status
-(section 1, item 5).
+**China mainland** (apps there need a Chinese ICP filing number) and the
+**27 EU countries** (decided 2026-10-31: not a trader, section 1, item 5):
+Austria, Belgium, Bulgaria, Croatia, Cyprus, Czechia, Denmark, Estonia, Finland, France, Germany, Greece, Hungary, Ireland, Italy, Latvia, Lithuania, Luxembourg, Malta, Netherlands, Poland, Portugal, Romania, Slovakia, Slovenia, Spain, Sweden. Norway, Iceland, Liechtenstein and Switzerland are not in the
+EU and stay in.
 
 **YOU, the in-app purchase:** Apps → your app → **Monetization → In-App
 Purchases** → **+** → Type **Non-Consumable**, Reference Name `Unlimited
@@ -477,7 +524,8 @@ even after deleting it. Then:
 
 - **Price Schedule:** United States, 9.99; accept Apple's other
   storefronts.
-- **Availability:** the same countries as the app.
+- **Availability:** the same countries as the app (all except China
+  mainland and the 27 EU countries).
 - **App Store Localization**, English (U.S.): the display name and
   description below.
 - **Review Information:** screenshot `docs/appstore/iap-review.png`, a
@@ -701,7 +749,7 @@ FoldForm is open source (Mozilla Public License 2.0): https://github.com/SamuelA
 | 2.1 In-app purchase completeness | the reviewer's purchase does not load or fails | Paid Apps Agreement **Active** and the in-app purchase submitted with the version; try it in TestFlight first (LAUNCH_CHECKLIST.md, step 10) | **YOU** |
 | 5.1.1 Privacy | a missing or vague privacy policy; data collected without saying so | docs/PRIVACY.md (what is kept, where, deletion, Apple's crash reports and TestFlight, contact); linked in App Store Connect and in About; "Data Not Collected" is accurate; privacy manifest in the bundle | **DONE** / **YOU** (answers) |
 | 2.4.1 / iPad | an iPhone app that does not work well on iPad | universal app with its own iPad layout, all orientations, Split View | **DONE** |
-| Licenses | LGPL libraries linked statically on iOS | About → Licenses with every text and the written source offer, in the `v0.3.0` code; build 54's license gate PASS 15/15; the release v0.3.0 carries the iOS sources; the description names the LGPL libraries (docs/LICENSING.md) | **DONE** / **DECIDE** (EULA, section 2) |
+| Licenses | LGPL libraries linked statically on iOS | About → Licenses with every text and the written source offer, in the `v0.3.0` code; build 54's license gate PASS 15/15; the release v0.3.0 carries the iOS sources; the description names the LGPL libraries (docs/LICENSING.md); Apple's standard EULA (decided 2026-10-31) | **DONE** |
 
 ---
 

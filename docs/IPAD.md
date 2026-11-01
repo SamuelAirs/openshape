@@ -365,11 +365,9 @@ text (About → **Licenses**). What that means in practice:
   commit in About → Licenses; each run warns when their library pins are on
   no release yet, so a beta tag keeps those sources. The tag's GitHub
   release carries `OpenShape-<version>-ios-sources.tar`.
-- **The owner, once:** choose Apple's standard EULA or the custom one
-  ([EULA.md](EULA.md): fill in name, address, telephone, e-mail; App
-  Store Connect → App Information → License Agreement; still open for
-  0.3.0, LAUNCH_CHECKLIST.md) and the contact for the written source offer
-  (TD-102; build 54 names the GitHub issue tracker). The license sentence
+- **Decided 2026-10-31:** Apple's standard EULA ([EULA.md](EULA.md) is
+  not used), and the written source offer will give ayers177@gmail.com
+  from 0.3.1 (TD-102; build 54 names the GitHub issue tracker). The license sentence
   is in the App Store description since 2026-10-31 (docs/LICENSING.md,
   "Releasing an App Store (or public beta) version").
 - Every build's notices on CI list what the app links, by origin, and the

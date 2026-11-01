@@ -169,6 +169,8 @@ certainty is said at the end.
   explicitly costs nothing and removes the doubt: proposed in
   [EULA.md](EULA.md), to be set in App Store Connect before the first
   public release (the owner's decision; a lawyer's review recommended).
+  **Decided 2026-10-31: Apple's standard EULA**, because a custom EULA
+  would publish the owner's address and phone; EULA.md is not used.
 - **Residual risk:** the FSF's view that App Store terms conflict with the
   GPL, if someone applied it to the LGPL, and Apple's DRM on the delivered
   copy. The realistic consequence would be a takedown request to Apple,
@@ -377,8 +379,8 @@ copyright © 2026 The FreeType Project").
 
 ### Releasing an App Store (or public beta) version
 
-1. Before the first public release, once: set the custom EULA in App Store
-   Connect (EULA.md; the owner fills in name, address, contact), and add to
+1. Before the first public release, once: the EULA (decided 2026-10-31:
+   Apple's standard one; EULA.md is not used), and add to
    the App Store description: "OpenShape is free software (Mozilla Public
    License 2.0). It uses Qt, Open CASCADE Technology and PlaneGCS under the
    GNU LGPL; source code and license texts: https://github.com/SamuelAirs/openshape
