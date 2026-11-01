@@ -10,9 +10,9 @@ Connect** (appstoreconnect.apple.com) unless it says otherwise. Apple then
 reviews the app, usually within 24 to 48 hours, and you press Release (or
 let it release itself).
 
-**Where you are (2026-10-31, 23:05):** steps 1 to 3 are done. **Next is
-step 4**, the in-app purchase; then the listing (5 to 7), the tries on
-build 54 (8) and the submission (9).
+**Where you are (2026-11-01, 04:48 UTC):** steps 1 to 4, 7 and 8 are
+done. **Next is the listing** (steps 5 and 6), **then the submission**
+(step 9).
 
 ## Ready (checked by the lead on 2026-10-31)
 
@@ -36,11 +36,9 @@ build 54 (8) and the submission (9).
   sizes App Store Connect accepts (iPhone 6.9" 1320 x 2868, iPad 13"
   2752 x 2064, no transparency), plus `docs/appstore/iap-review.png`.
 
-**Not seen working on a device yet** (step 8 covers all but the Duo): the
-purchase itself (Apple's sandbox), the share sheet after an export and
-opening a project from the Files app (both in the review notes), and the
-iPhone Duo's real screen edges and tap-to-select in a sketch (after
-submitting: docs/IPAD.md, "The iPhone Duo", steps 7 and 8).
+**Still not seen on a device:** the iPhone Duo's real screen edges and
+tap-to-select in a sketch (after submitting: docs/IPAD.md, "The iPhone
+Duo", steps 7 and 8).
 
 ## Decided (2026-10-31)
 
@@ -54,35 +52,31 @@ submitting: docs/IPAD.md, "The iPhone Duo", steps 7 and 8).
 - **License agreement:** Apple's standard EULA (a custom one would have
   to publish your address and phone).
 
-## Done (2026-10-31, about 23:05)
+## Done
 
-1. ~~**Paid Apps Agreement**, tax form and bank account~~: **Active**.
-2. ~~**App Store Small Business Program**~~: enrollment sent. Apple's
-   commission becomes 15% instead of 30% from 15 days after the end of the
-   month Apple approves it; nothing else to do.
-3. ~~**EU Digital Services Act status**~~: **not a trader**. So the 27 EU
-   countries stay out of the app's and the purchase's availability (steps
-   4 and 7).
+- **Step 1:** ~~**Paid Apps Agreement**, tax form and bank account~~: **Active**
+  (2026-10-31).
+- **Step 2:** ~~**App Store Small Business Program**~~: enrollment sent (2026-10-31).
+  Apple's commission becomes 15% instead of 30% from 15 days after the
+  end of the month Apple approves it; nothing else to do.
+- **Step 3:** ~~**EU Digital Services Act status**~~: **not a trader** (2026-10-31),
+  so the 27 EU countries are out of the app's and the purchase's
+  availability.
+- **Step 4:** ~~**The in-app purchase** *Unlimited Projects*~~ (2026-11-01, 04:21
+  UTC): Non-Consumable, product ID
+  `io.github.samuelairs.openshape.unlimited`, USD 9.99, review screenshot
+  and notes ([APP_STORE.md, section 4](APP_STORE.md#4-pricing)).
+- **Step 7:** ~~**Pricing and Availability**~~ (04:25 UTC): **Free**, all countries
+  and regions except China mainland and the 27 EU countries (Austria,
+  Belgium, Bulgaria, Croatia, Cyprus, Czechia, Denmark, Estonia, Finland,
+  France, Germany, Greece, Hungary, Ireland, Italy, Latvia, Lithuania,
+  Luxembourg, Malta, Netherlands, Poland, Portugal, Romania, Slovakia,
+  Slovenia, Spain, Sweden).
+- **Step 8:** ~~**The tries on build 54**~~ (04:48 UTC): the purchase in TestFlight's
+  sandbox, Restore purchase, the share sheet after Export STL and opening
+  a project from the Files app; no failure reported.
 
-## Next: the in-app purchase
-
-4. **Apps → FoldForm → Monetization → In-App Purchases → +**:
-   - Type **Non-Consumable**; Reference Name `Unlimited Projects`;
-     Product ID **exactly** `io.github.samuelairs.openshape.unlimited`
-     (it can never be changed or reused; the app asks for this ID).
-   - **Price Schedule:** base country United States, **9.99** (the app
-     shows whatever price you set).
-   - **Availability:** the same countries as the app (step 7): all except
-     China mainland and the 27 EU countries.
-   - **App Store Localization** (English U.S.): Display Name `Unlimited
-     Projects`; Description `Create as many projects as you like.`
-   - **Review Information:** screenshot `docs/appstore/iap-review.png`;
-     Review Notes: the text in
-     [APP_STORE.md, "In-app purchase review notes"](APP_STORE.md#in-app-purchase-review-notes).
-   - **Family Sharing:** leave it off (once on, it can never be turned
-     off). Leave "Show to all App Store users" as it is.
-
-## The listing
+## Next: the listing
 
 5. **App Information:** Name (above), Subtitle, categories, content
    rights, age rating (every answer None or No: **4+**), Privacy Policy
@@ -91,40 +85,13 @@ submitting: docs/IPAD.md, "The iPhone Duo", steps 7 and 8).
    **License Agreement:** leave Apple's standard EULA as it is.
 6. **App Privacy → Get Started → "No, we do not collect data from this
    app" → Save → Publish** ("Data Not Collected").
-7. **Monetization → Pricing and Availability:** price **Free** (USD 0).
-   Availability: all countries and regions **except China mainland and
-   the 27 EU countries**: Austria, Belgium, Bulgaria, Croatia, Cyprus,
-   Czechia, Denmark, Estonia, Finland, France, Germany, Greece, Hungary,
-   Ireland, Italy, Latvia, Lithuania, Luxembourg, Malta, Netherlands,
-   Poland, Portugal, Romania, Slovakia, Slovenia, Spain, Sweden. (Norway,
-   Iceland, Liechtenstein and Switzerland are not in the EU and stay in.)
 
-## Try build 54 on your iPhone (TestFlight)
+## Then: submit
 
-8. In TestFlight, install FoldForm **0.3.0 (54)**. Purchases in TestFlight
-   are Apple's test purchases: nothing is charged.
-   - **The purchase.** Save one project, then tap **New project**: a sheet
-     "Unlimited projects" opens with your price. Tap **Restore purchase**:
-     it says no earlier purchase was found. Tap **Unlock** and buy: a new
-     project opens.
-   - **Restore on the iPad** (same Apple Account, build 54): File → About
-     FoldForm → **Restore purchase**: it says "Purchase restored:
-     unlimited projects".
-   - **Two more tries** that App Review will do and nobody has done on a
-     device yet:
-     - File → **Export STL**: Apple's share sheet opens (AirDrop, Mail,
-       Save to Files ...). Close it.
-     - Open the **Files** app → On My iPhone → FoldForm → tap a project:
-       it opens in FoldForm.
-
-   If no price shows on the sheet, the purchase (step 4) is less than an
-   hour old or still misses a field. If either of the two tries fails, tell
-   the lead before submitting: its line comes out of the description and
-   the review notes, with no new build.
-
-## Submit
-
-9. The version page (**iOS App → 0.3.0 Prepare for Submission**):
+9. The version page (**iOS App → 0.3.0 Prepare for Submission**). The
+   texts come from the marked blocks (`<!-- appstore:... -->`) in
+   docs/APP_STORE.md; a tool on this PC that fills App Store Connect from
+   those blocks may enter them for you.
    - **Product Page Information → App Previews and Screenshots:** the
      **iPhone** tab: `iphone-1` … `iphone-6` from
      `docs/appstore/screenshots/`, in that order; the **iPad** tab:

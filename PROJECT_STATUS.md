@@ -32,13 +32,15 @@ is **Active**, the Small Business Program enrollment is sent, and the DSA
 status is **not a trader**. Build 54 shows as processed in App Store
 Connect and no email from Apple reported a problem.
 
-What is left is the owner's App Store Connect work, in order, in
-[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md), from step 4: the
-in-app purchase, the listing, App Privacy, age rating, price and
-availability (all except China mainland and the 27 EU countries), then on
-build 54 the sandbox purchase and two tries not yet done on a device (the
-share sheet after Export STL, opening a project from the Files app), then
-**submit build 54 with the purchase**.
+**Done by the owner (2026-11-01, 04:21 to 04:48 UTC):** the in-app
+purchase, Free with the availability (all except China mainland and the
+27 EU countries), and the tries on build 54 (sandbox purchase, Restore, the
+share sheet, opening from the Files app; no failure reported).
+
+What is left is the owner's App Store Connect work in
+[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md): the listing (App
+Information, App Privacy: steps 5 and 6), then **submit build 54 with the
+purchase** (step 9).
 
 **The owner's answers (2026-10-31):** Apple's standard EULA (docs/EULA.md
 is not used: a custom EULA would publish the address and phone); the EU
