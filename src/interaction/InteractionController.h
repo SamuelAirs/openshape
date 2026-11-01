@@ -254,7 +254,15 @@ public:
     // already lies there, or there is nothing to keep clear. The whole of
     // it, also the part outside the window (a folding phone folded or a
     // Split View narrowed may have left the selection off screen).
+    // Never while the user moves the view, nor within kNavigationQuiet after
+    // the last step of an orbit, pan, pinch, wheel or view-cube drag: the
+    // view is theirs then (the owner's iPhone Duo, 2026-11-03: a pinch with
+    // a face selected jumped, as each zoom step moved the value box and the
+    // view moved back to reveal the selection). False, nothing moved.
     bool revealKeepClear(const ScreenRect& region);
+    static constexpr std::chrono::milliseconds kNavigationQuiet{500};
+    // The user moved the view within kNavigationQuiet (or is moving it).
+    bool navigatingRecently() const;
     // While sketching: the sketch on screen (SketchSession::screenBounds),
     // clipped to the view; nullopt outside a sketch or when it is empty.
     std::optional<ScreenRect> sketchScreenRect() const;
@@ -556,6 +564,13 @@ private:
     bool touchIgnored_ = false;
     // When the last kPenFingerHint was shown (clock_).
     std::optional<TypingPause::Clock::time_point> penHintShown_;
+    // When the user last moved the view (an orbit or pan step, a pinch, a
+    // wheel notch, a view-cube drag; clock_), and when a zoom last picked
+    // the depth it heads for: a pinch's steps all head for the depth its
+    // first step found (zoomAt).
+    std::optional<TypingPause::Clock::time_point> lastNavigation_;
+    std::optional<TypingPause::Clock::time_point> lastZoomPick_;
+    void noteNavigation() { lastNavigation_ = clock_(); }
     // The press in progress is the pen's and `event` is a finger's (or the
     // finger is one the pen overrides): the finger is ignored.
     bool penOverridesTouch(const PointerEvent& event) const;

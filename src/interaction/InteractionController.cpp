@@ -438,6 +438,7 @@ void InteractionController::setViewDirection(const Vec3& direction, bool animate
 void InteractionController::orbitBy(double dxPixels, double dyPixels)
 {
     animation_.reset();
+    noteNavigation();
     camera_.orbit(dxPixels, dyPixels, camera_.target);
     notifyView();
 }
@@ -702,9 +703,11 @@ void InteractionController::pointerMove(const PointerEvent& event)
 
     switch (drag_.mode) {
     case DragMode::Orbit:
+        noteNavigation();
         camera_.orbit(event.position.x - drag_.last.x, event.position.y - drag_.last.y, drag_.pivot);
         break;
     case DragMode::Pan:
+        noteNavigation();
         camera_.pan(drag_.last, event.position);
         break;
     case DragMode::Manipulator:
@@ -1039,6 +1042,7 @@ void InteractionController::noteValueBeforeDrag()
 void InteractionController::wheel(Vec2 position, double steps)
 {
     animation_.reset();
+    noteNavigation();
     zoomAt(position, std::pow(kWheelZoomPerStep, steps));
     notifyView();
 }
@@ -1048,6 +1052,7 @@ void InteractionController::pinch(Vec2 center, double scale)
     if (scale <= 0)
         return;
     animation_.reset();
+    noteNavigation();
     zoomAt(center, 1.0 / scale);
     notifyView();
 }
@@ -1057,8 +1062,14 @@ void InteractionController::zoomAt(Vec2 screen, double factor)
     // In perspective the zoom heads for the surface under the pointer: the
     // target first moves along the view axis to that surface's depth (the
     // image does not change), so the point under the pointer stays there and
-    // zooming in approaches it without ever passing through it.
-    if (camera_.projection == Camera::Projection::Perspective) {
+    // zooming in approaches it without ever passing through it. Once per
+    // gesture: the later steps of a pinch (or quick wheel notches) keep that
+    // depth, so the zoom's rate does not change as the fingers drift over
+    // nearer or farther faces, and no step waits for a pick.
+    const auto now = clock_();
+    const bool sameGesture = lastZoomPick_ && now - *lastZoomPick_ < kNavigationQuiet;
+    lastZoomPick_ = now;
+    if (camera_.projection == Camera::Projection::Perspective && !sameGesture) {
         const auto hit = sel::pickFace(pickTargets(), camera_, screen);
         if (const double depth = hit.hit() ? camera_.depthOf(hit.point) : 0.0; depth > 1e-6) {
             camera_.target = camera_.eye() + camera_.forward() * depth;
@@ -1071,6 +1082,7 @@ void InteractionController::zoomAt(Vec2 screen, double factor)
 void InteractionController::twoFingerPan(Vec2 from, Vec2 to)
 {
     animation_.reset();
+    noteNavigation();
     camera_.pan(from, to);
     notifyView();
 }
@@ -1078,6 +1090,7 @@ void InteractionController::twoFingerPan(Vec2 from, Vec2 to)
 void InteractionController::twoFingerRotate(double dxPixels, double dyPixels)
 {
     animation_.reset();
+    noteNavigation();
     camera_.orbit(dxPixels, dyPixels, camera_.target);
     notifyView();
 }
@@ -1976,9 +1989,14 @@ std::optional<ScreenRect> InteractionController::sketchScreenRect() const
     return bounds ? bounds->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y}) : std::nullopt;
 }
 
+bool InteractionController::navigatingRecently() const
+{
+    return lastNavigation_ && clock_() - *lastNavigation_ < kNavigationQuiet;
+}
+
 bool InteractionController::revealKeepClear(const ScreenRect& region)
 {
-    if (region.width() <= 1 || region.height() <= 1)
+    if (region.width() <= 1 || region.height() <= 1 || navigatingRecently())
         return false;
     bool moved = false;
     // A few rounds: the arrows keep their size on screen while the view
