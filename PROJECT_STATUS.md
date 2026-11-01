@@ -34,8 +34,9 @@ Connect and no email from Apple reported a problem.
 
 **Done by the owner (2026-11-01, 04:21 to 04:48 UTC):** the in-app
 purchase, Free with the availability (all except China mainland and the
-27 EU countries), and the tries on build 54 (sandbox purchase, Restore, the
-share sheet, opening from the Files app; no failure reported).
+27 EU countries), and the tries on build 54 (the real price and the sandbox
+purchase, the share sheet, opening from the Files app: passed, the owner's
+word; Restore on the iPad still owed, not blocking).
 
 What is left is the owner's App Store Connect work in
 [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md): the listing (App

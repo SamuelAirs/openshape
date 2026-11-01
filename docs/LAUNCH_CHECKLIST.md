@@ -72,9 +72,12 @@ Duo", steps 7 and 8).
   France, Germany, Greece, Hungary, Ireland, Italy, Latvia, Lithuania,
   Luxembourg, Malta, Netherlands, Poland, Portugal, Romania, Slovakia,
   Slovenia, Spain, Sweden).
-- **Step 8:** ~~**The tries on build 54**~~ (04:48 UTC): the purchase in TestFlight's
-  sandbox, Restore purchase, the share sheet after Export STL and opening
-  a project from the Files app; no failure reported.
+- **Step 8:** ~~**The tries on build 54**~~ (04:48 UTC; the owner's word,
+  2026-11-01): the sheet showed the real price and the sandbox purchase
+  went through; Export STL opened the share sheet; a project opened from
+  the Files app. **Still owed, not blocking:** Restore purchase on the
+  iPad ("I haven't yet tested on the iPad"); Restore was used on the
+  iPhone before the purchase.
 
 ## Next: the listing
 
