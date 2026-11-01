@@ -1,6 +1,6 @@
 # FoldForm privacy policy
 
-_Last updated: 27 September 2026. Applies to FoldForm for iPhone and iPad
+_Last updated: 31 October 2026 (the purchase "Unlimited projects"). Applies to FoldForm for iPhone and iPad
 (App Store and TestFlight) and FoldForm for Windows, version 0.2 and
 later._
 

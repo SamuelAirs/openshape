@@ -8,7 +8,10 @@
 > product is called **FoldForm** (section 0), version **0.3.0**, contact
 > email **ayers177@gmail.com** (privacy policy, support page). Sections 4 and 5 and
 > the description below are updated for this; the timeline in section 7
-> is history.
+> is history. The build to submit is **build 54** (tag `v0.3.0`, section 6).
+> Apple's pages for screenshots, the DSA, the Small Business Program, in-app
+> purchases and guidelines 2.3, 3.1.1 and 5.1.1 were read again on
+> 2026-10-31 and the steps below follow them.
 
 _Written 2026-09-27 for the owner's decisions of that day: OpenShape goes on
 the App Store as a **paid** app, after a **public TestFlight beta**, in the
@@ -124,7 +127,7 @@ this first: Apple checks the details, and it can take days.
    amounts carry over to the next month).
 4. **YOU: the App Store Small Business Program** (reduces Apple's commission
    from 30% to **15%**): developer.apple.com/app-store/small-business-program
-   → **Enroll**. It is for developers with up to USD 1 million in proceeds in
+   → **Enroll now**. It is for developers with up to USD 1 million in proceeds in
    the previous calendar year (new developers qualify). Needs: the Account
    Holder, the accepted Paid Apps Agreement, and a list of any associated
    developer accounts (none). The lower rate applies from 15 days after the
@@ -132,16 +135,24 @@ this first: Apple checks the details, and it can take days.
    now, weeks before the first sale. It stays until your proceeds pass USD 1
    million in a year.
 5. **YOU and DECIDE: EU Digital Services Act trader status.** Every developer
-   must declare it: Business → Agreements → Compliance → **Complete
-   Compliance Requirements** next to *Digital Services Act*. A **paid** app is
-   a strong sign of a *trader* (Apple lists "a paid app" among the signs). A
-   trader who is an individual must give an **address (or P.O. box), a phone
-   number and an email address, which are shown publicly on the EU App Store
-   pages**, verified by codes and a document. So decide one of:
-   - declare trader status with a **P.O. box** and a separate phone number
-     and email (recommended if you want EU customers without publishing your
-     home address), or
-   - leave the 27 EU countries out of the app's availability (section 4).
+   must declare a status, **also one who leaves the EU out** (Apple asks for
+   it when a new app is submitted): Business → Agreements → Compliance →
+   **Complete Compliance Requirements** next to *Digital Services Act* →
+   "This is a trader account." or "This is not a trader account." (Account
+   Holder or Admin; an app's own status can be changed later under App
+   Information → App Store Regulations and Permits). Apple's signs of a
+   trader include making revenue from the app, **for example In-App
+   Purchases**. A trader who is an individual gives an **address (or P.O.
+   box), a phone number and an email address, shown publicly on the App
+   Store pages in the 27 EU countries**, verified by codes and a document
+   (and proof of the P.O. box). So decide one of:
+   - **trader, EU included:** a **P.O. box** and a phone number and email
+     you are happy to publish (verification can take Apple some time: start
+     now), or
+   - **EU left out** of the availability (section 4) and "This is not a
+     trader account": Apple's page says a developer who distributes on the
+     App Store only outside the EU is not acting as a trader there. Do not
+     choose "not a trader" while selling in the EU.
 6. **DONE: export compliance.** `src/app/ios/Info.plist.in` sets
    `ITSAppUsesNonExemptEncryption` to `false`, so App Store Connect does not
    ask the encryption questions for each build. This is true for OpenShape:
@@ -158,7 +169,7 @@ this first: Apple checks the details, and it can take days.
 ## 2. App information
 
 App Store Connect → Apps → your app → **App Information** (general) and
-the version page (**iOS App → 1.0 Prepare for Submission**).
+the version page (**iOS App → 0.3.0 Prepare for Submission**).
 
 | Field | What to enter | State |
 |---|---|---|
@@ -172,12 +183,12 @@ the version page (**iOS App → 1.0 Prepare for Submission**).
 | Content rights | "Does your app contain, show, or access third-party content?" **Yes** → "I have the necessary rights": the bundled font (Noto Sans, SIL Open Font License) and libraries are used under their licenses (THIRD_PARTY.md). The app shows no other third-party content. | **YOU** |
 | Age rating | the questionnaire below → **4+** | **YOU** |
 | Made for Kids | No | **YOU** |
-| Privacy Policy URL | `https://github.com/SamuelAirs/openshape/blob/main/docs/PRIVACY.md` (works once this branch is merged and pushed to `main`) | **DONE** (page) / **YOU** (paste) |
+| Privacy Policy URL | `https://github.com/SamuelAirs/openshape/blob/main/docs/PRIVACY.md` (live; fetched 2026-10-31, with the purchase section and the contact email) | **DONE** (page) / **YOU** (paste) |
 | User Privacy Choices URL | leave empty (optional; there is nothing to choose) | — |
-| Support URL | `https://github.com/SamuelAirs/openshape/blob/main/docs/SUPPORT.md` (how to get help, with the contact routes; Apple requires a page with real contact information) | **DONE** (page) / **YOU** (paste) |
+| Support URL | `https://github.com/SamuelAirs/openshape/blob/main/docs/SUPPORT.md` (how to get help, with the contact routes and the email; Apple requires a page with real contact information; live, fetched 2026-10-31) | **DONE** (page) / **YOU** (paste) |
 | Marketing URL | `https://github.com/SamuelAirs/openshape` (optional) | **YOU** |
 | Copyright | `2026 Sam Ayers` (App Store Connect adds the ©; use your legal name if you prefer) | **YOU** |
-| License agreement | Apple's standard EULA (the default). The MPL-2.0 license of the source code is unaffected; what the LGPL libraries need is the licensing track's (docs/LICENSING.md). | **TRACK** |
+| License agreement | Apple's standard EULA (the default), unless you choose the custom EULA in [EULA.md](EULA.md): docs/LICENSING.md recommends it because it grants the LGPL's modification and reverse-engineering permissions in so many words; it needs your name, address, phone and email filled in. Either passes App Review; it can be changed later. | **DECIDE** |
 | Routing app coverage file | none (not a navigation app) | — |
 | Accessibility (Nutrition Labels) | optional; leave empty for now: nothing has been checked with VoiceOver, and a label must not claim what was not tested | — |
 
@@ -231,14 +242,18 @@ Then **Privacy Policy → Edit** and paste the privacy policy URL.
   "required reason" APIs Qt and OpenCASCADE use (file timestamps, disk space,
   system boot time) with their reasons. **DONE.**
 - Guideline 5.1.1 wants the policy linked inside the app too: **File →
-  About OpenShape → "Privacy policy: OpenShape collects no data about you"**
+  About FoldForm → "Privacy policy: FoldForm collects no data about you"**
   (checked by the `privacy` acceptance scenario, on a desktop and a phone
   layout). **DONE.**
+- Rechecked in the code of the `v0.3.0` tag (2026-10-31): no networking
+  class, socket, `URLSession` or analytics, crash-reporting or advertising
+  SDK anywhere in `src/`; the only web addresses are the GitHub and
+  mozilla.org links handed to Safari (`Qt.openUrlExternally`); StoreKit
+  asks Apple for the price and makes the purchase. **DONE.**
 
-Before submitting: **YOU** replace the email placeholder at the end of
-docs/PRIVACY.md (and docs/SUPPORT.md) with a real address, or ask the lead
-to do it; an App Store listing must not point to placeholder text
-(guideline 2.1).
+**DONE:** docs/PRIVACY.md and docs/SUPPORT.md give the contact address
+ayers177@gmail.com, and both pages are live on `main` (guideline 2.1: no
+placeholder text).
 
 ---
 
@@ -306,7 +321,7 @@ FREE TO START
 Every tool is free for one project at a time. A one-time in-app purchase unlocks unlimited projects on your iPhone and iPad.
 
 OPEN SOURCE, NO ACCOUNT
-FoldForm is open-source software (Mozilla Public License 2.0) built on the OpenCASCADE solid-modeling kernel. The source code, a user guide and a Windows version are at github.com/SamuelAirs/openshape. There is no account, no advertising and no tracking: FoldForm collects no data.
+FoldForm is open-source software (Mozilla Public License 2.0) using Qt, Open CASCADE Technology and PlaneGCS under the GNU LGPL. Source code, license texts, a user guide and a Windows version: github.com/SamuelAirs/openshape. No account, no advertising, no tracking: FoldForm collects no data.
 ```
 
 Notes on the description:
@@ -318,9 +333,15 @@ Notes on the description:
 - No prices or "pay once" wording anywhere in the metadata (guideline 2.3.7
   forbids pricing information in names, subtitles, screenshots and
   previews; the price is shown by the App Store itself).
-- The share sheet and "Open in OpenShape" lines describe `main` since
-  2026-09-27; the owner's device tests of them (docs/IPAD.md, iPad items
-  14 to 16, iPhone item 14) should pass before submission, or those lines come out.
+- The share sheet and "Open projects ... from the Files app or Mail" lines
+  (and step 6 of the review notes) have not been seen working on a device
+  yet: check them on build 54 before submitting (LAUNCH_CHECKLIST.md, step
+  8). If one fails, take its line out here and in the review notes; that
+  needs no new build.
+- The last paragraph names the LGPL libraries, as the release steps in
+  docs/LICENSING.md ask of the App Store description.
+- "FREE TO START" says which part needs the purchase (guideline 2.3.2:
+  the description must say what requires an in-app purchase).
 
 ### Keywords (max 100 bytes, comma-separated, no spaces)
 
@@ -370,24 +391,37 @@ not blank):
 | `*-3-sketch.png` | a mounting plate's sketch: typed sizes and constraint glyphs |
 | `*-4-construction-plane.png` | an axis through a bore and the Plane tool placing a plane 25 mm above the part |
 | `*-5-model-panel.png` | the Model panel with the fillet step open to change its radius (highlighted on the part) |
-| `*-6-home.png` | Home with six projects and their previews, in "OpenShape (Files app)" |
+| `*-6-home.png` | Home with six projects and their previews, in "FoldForm (Files app)" |
 
 - **iPhone** `iphone-*.png`: 1320 x 2868 pixels, portrait, the **6.9"
-  display** size (iPhone 16, 17 and 18 Pro Max class; 440 x 956 points at
-  3x, with their safe areas). An iPhone app needs 6.9" screenshots (or, if
-  there are none, 6.5" ones); Apple scales them down for smaller iPhones.
-- **iPhone Duo** (the foldable): Apple's page lists its sizes (outer display
-  1398 x 2034, inner 2007 x 2853) but says uploading them "will be
-  available later this year", so they are not required for this
-  submission. Nothing to do now; when App Store Connect accepts them, the lead adds the
-  two sizes to the script (TD-95).
+  display** size (Apple: "iPhone with Dynamic Island (large display)",
+  iPhone 16, 17 and 18 Pro Max class; 440 x 956 points at 3x, with their
+  safe areas); Apple scales them down for smaller iPhones. **Check at
+  upload:** on 2026-10-31 Apple's page names "iPhone with Dynamic Island
+  (medium display)" (6.3", 1206 x 2622, the iPhone 16/17/18 Pro) as the
+  required iPhone size in its summary, while its table still fills that size
+  from scaled large-display screenshots. If App Store Connect accepts the
+  6.9" set and Media Manager (**View All Sizes**) shows the 6.3" size filled,
+  nothing more is needed; if it insists on its own 6.3" screenshots, the
+  lead makes a 1206 x 2622 set (about three minutes on the PC while nobody
+  uses it: windows open and the pointer moves), or take six on an iPhone
+  16 Pro (exactly that size).
+- **iPhone Duo** (the foldable): App Store Connect accepts its sizes now
+  (outer display 1398 x 2034, inner 2007 x 2853, either way round);
+  optional for this submission. They give the product page an "optimized
+  for iPhone Duo" badge, and Apple will **require** them from April 2027
+  for apps built with the iOS 27.1 SDK or later, which FoldForm is. The
+  lead adds the two sizes to the script after the owner's Duo log (TD-95,
+  TD-150).
 - **iPad** `ipad-*.png`: 2752 x 2064 pixels, landscape, the **13" display**
   size (iPad Pro 13-inch M4 class; 1376 x 1032 points at 2x). Required for
   an app that runs on iPad; scaled down for smaller iPads.
 
-**YOU:** version page → **Previews and Screenshots** → **iPhone** → 6.9"
-Display → drag in `iphone-1` … `iphone-6` in that order; **iPad** → 13"
-Display → `ipad-1` … `ipad-6`. The first three show in search results.
+**YOU:** version page → **Product Page Information** → **App Previews and
+Screenshots** → the **iPhone** tab → drag in `iphone-1` … `iphone-6` in
+that order; the **iPad** tab → `ipad-1` … `ipad-6` (Apple's help, "Upload
+app previews and screenshots", 2026-10-31; **View All Sizes** in Media
+Manager shows the scaled sizes). The first three show in search results.
 Apple allows plain screenshots (no captions needed); captions or a device
 frame are optional marketing. If the UI changes before submission, the lead
 re-runs `bash scripts/dev/appstore_screenshots.sh` (about three minutes).
@@ -410,7 +444,7 @@ purchase** unlocks unlimited projects (the owner's "one-time USD 10").
 |---|---|---|
 | Every modeling, sketch, export and share tool | yes | yes |
 | Projects in OpenShape's folder | one at a time (delete it to start another) | as many as you like |
-| Price | 0 | **9.99 or 10.00** USD base price (both are Apple price points) |
+| Price | 0 | **9.99** USD base price (decided 2026-10-31) |
 
 How the app enforces it (code: the purchase track of 2026-10-31,
 ARCHITECTURE.md): only the iPhone/iPad app has the limit. Adding a project
@@ -441,7 +475,7 @@ app asks the store for exactly this ID. Apple: a product ID "isn't editable
 after you save the In-App Purchase" and can't be reused within the app,
 even after deleting it. Then:
 
-- **Price Schedule:** United States, 9.99 or 10.00; accept Apple's other
+- **Price Schedule:** United States, 9.99; accept Apple's other
   storefronts.
 - **Availability:** the same countries as the app.
 - **App Store Localization**, English (U.S.): the display name and
@@ -481,7 +515,7 @@ Create as many projects as you like.
 ```text
 Unlimited Projects is a non-consumable purchase. FoldForm is free with every tool for one project; this purchase allows any number of projects on the purchaser's Apple Account (iPhone and iPad).
 
-To see it: on the Home screen, tap New project, tap Box, then File, Save and give the project a name. Go back to Home and tap New project again: the "Unlimited projects" sheet opens with the price, Unlock, Restore purchase and Not now. The sheet also opens from the line "Unlock unlimited projects" on Home and from File, About FoldForm (Unlimited projects row, which also has Restore purchase). After the purchase, New project goes ahead and creates a second project.
+To see it: on the Home screen, tap New project, tap Box, then File, Save and give the project a name. Go back to Home (File, Home) and tap New project again: the "Unlimited projects" sheet opens with the price, Unlock, Restore purchase and Not now. The sheet also opens from the line "Unlock unlimited projects" on Home and from File, About FoldForm (Unlimited projects row, which also has Restore purchase). After the purchase, New project goes ahead and creates a second project.
 ```
 
 ### Before 2026-10-31: the paid-app recommendation (history)
@@ -601,7 +635,7 @@ If something is confusing, take a screenshot in FoldForm and send it from TestFl
 ```text
 FoldForm is a CAD (3D modeling) app for designing parts to 3D print. It needs no account or sign-in and makes no network connections of its own (only Apple's StoreKit for the in-app purchase); everything works offline. Links in Help and About open Safari.
 
-In-app purchase: the app is free with every tool for one project; the non-consumable "Unlimited Projects" allows more. To see it, follow steps 1 to 6 below (they save one project), go back to Home and tap New project: the "Unlimited projects" sheet opens (Unlock, Restore purchase, Not now). It is also reachable from "Unlock unlimited projects" on Home and from File, About FoldForm.
+In-app purchase: the app is free with every tool for one project; the non-consumable "Unlimited Projects" allows more. To see it, follow steps 1 to 6 below (they save one project), go back to Home (File, Home) and tap New project: the "Unlimited projects" sheet opens (Unlock, Restore purchase, Not now). It is also reachable from "Unlock unlimited projects" on Home and from File, About FoldForm.
 
 A 2-minute test path (iPhone or iPad):
 1. Launch: the Home screen appears. Tap New project.
@@ -623,27 +657,25 @@ FoldForm is open source (Mozilla Public License 2.0): https://github.com/SamuelA
 
 ## 6. Submitting to the App Store
 
-1. **Lead: the build.** The build you submit is the TestFlight upload of
-   a **version tag** (`v0.3.0`), whose GitHub release carries the iOS
-   library sources (docs/LICENSING.md); a plain `main` build is for
-   testing only. The lead names its build number. **DECIDE the version number**:
-   the bundle says `0.2.0` today (CMake `project(VERSION)`). Recommendation:
-   submit the next GitHub release's number so both platforms match, and
-   call it **1.0.0** only if you are happy to drop "early pre-release" from
-   the README at the same time; otherwise **0.3.0**. The lead changes it in
-   `CMakeLists.txt`.
-2. **YOU: the version page** (iOS App → *1.0 Prepare for Submission*):
+1. **DONE: the build.** Submit **build 54**: the TestFlight upload of the
+   **version tag** `v0.3.0` (ipad.yml run 41224892140, whose public notice
+   says "build 54 from v0.3.0 uploaded"; version 0.3.0, license gate PASS
+   15/15). Its GitHub release v0.3.0 is published with
+   `OpenShape-0.3.0-ios-sources.tar` (docs/LICENSING.md). Builds of `main`
+   are for testing only, and `main` is 0.3.1 since the tag.
+2. **YOU: the version page** (iOS App → *0.3.0 Prepare for Submission*):
    screenshots (section 3), promotional text, description, keywords, support
-   and marketing URLs, version, copyright; **Build** → **+** → pick the
-   build.
+   and marketing URLs, version, copyright; **Build** → **+** → build
+   **54**; **In-App Purchases and Subscriptions** → add *Unlimited
+   Projects* (the first in-app purchase must go with an app version).
 3. **YOU: App Review Information** (same page, at the bottom): sign-in
    **not required**; contact name, phone, email; *Notes*: the review notes
    from section 5 (they must describe the features specifically: guideline
    2.3.1(a)). No attachment needed.
 4. **YOU: version release.** Choose **Manually release this version** (you
    press *Release* when you want) or **Automatically release this version
-   after App Review, no earlier than** a date and time (e.g. 2026-10-21,
-   09:00). Phased release only applies to updates.
+   after App Review, no earlier than** a date and time. Phased release
+   only applies to updates.
 5. **YOU: submit.** Top right **Add for Review** → **Submit for Review**.
    The status goes *Waiting for Review* → *In Review* → *Pending Developer
    Release* or *Ready for Distribution*. On average 90% of submissions are
@@ -657,18 +689,19 @@ FoldForm is open source (Mozilla Public License 2.0): https://github.com/SamuelA
 
 | Guideline | The risk | How OpenShape meets it | State |
 |---|---|---|---|
-| 2.1 App completeness (over 40% of rejections) | crashes, broken links, placeholder text, incomplete information | real-UI acceptance run and TestFlight on the owner's iPhone and iPad; all links go to `main` on GitHub, so **merge and push before submitting** and open each URL once; replace the email placeholder in docs/PRIVACY.md and docs/SUPPORT.md; review notes give a test path | **DONE** / **YOU** (email, push) |
-| 2.3 Accurate metadata, 2.3.3 screenshots | screenshots or text promising what the app does not do | the screenshots are produced from the real app's own scenes; the description lists only features of 0.2.0 | **DONE** |
-| 2.3.7 names and keywords | trademarks or other apps' names in the metadata, prices in name/subtitle | none used; see section 0 for the name itself | **DONE** / **DECIDE** (name) |
+| 2.1 App completeness (over 40% of rejections) | crashes, broken links, placeholder text, incomplete information | real-UI acceptance run (4356/4356) and TestFlight on the owner's iPhone and iPad; every link in the app and the listing answered on 2026-10-31 (privacy policy, support page, user guide, repository, `tree/v0.3.0`, release v0.3.0); the contact email is real; review notes give a test path | **DONE** |
+| 2.3 Accurate metadata, 2.3.3 screenshots | screenshots or text promising what the app does not do | the screenshots are produced from the real app's own scenes (FoldForm 0.3.0); the description lists features of 0.3.0; the share sheet and Open-in lines wait for the device check (LAUNCH_CHECKLIST.md, step 8) | **DONE** / **YOU** (check) |
+| 2.3.2 in-app purchases in the metadata | not saying what needs a purchase | "FREE TO START" in the description; the in-app purchase's own name and description | **DONE** |
+| 2.3.7 names and keywords | trademarks or other apps' names in the metadata, prices in name/subtitle | none used; the name is FoldForm (section 0) | **DONE** |
 | 2.3.10 other platforms | mentioning other platforms | only Windows (not a mobile platform), once; remove it if asked | **DONE** |
-| 4.1 Copycats, 5.2.1 intellectual property | a name close to another developer's app or a trademark | section 0 | **DECIDE** |
+| 4.1 Copycats, 5.2.1 intellectual property | a name close to another developer's app or a trademark | renamed FoldForm (section 0) | **DONE** |
 | 4.2 Minimum functionality | a thin app or a website in a wrapper | a native CAD app (OpenCASCADE, Metal through Qt RHI) with 30+ tools, working offline | **DONE** |
 | 2.5.2 Self-contained | downloading or running code | none: everything is in the bundle | **DONE** |
 | 3.1.1 In-app purchase | unlocking features outside Apple's in-app purchase; no way to restore a non-consumable | the only unlock (unlimited projects) is Apple's in-app purchase; Restore purchase on the sheet and in About; no link to buying elsewhere (the Windows version is free, not a purchase) | **DONE** (code, 2026-10-31) / **YOU** (create it, section 4) |
 | 2.1 In-app purchase completeness | the reviewer's purchase does not load or fails | Paid Apps Agreement **Active** and the in-app purchase submitted with the version; try it in TestFlight first (LAUNCH_CHECKLIST.md, step 10) | **YOU** |
 | 5.1.1 Privacy | a missing or vague privacy policy; data collected without saying so | docs/PRIVACY.md (what is kept, where, deletion, Apple's crash reports and TestFlight, contact); linked in App Store Connect and in About; "Data Not Collected" is accurate; privacy manifest in the bundle | **DONE** / **YOU** (answers) |
 | 2.4.1 / iPad | an iPhone app that does not work well on iPad | universal app with its own iPad layout, all orientations, Split View | **DONE** |
-| Licenses | LGPL libraries linked statically on iOS | the licensing track (docs/LICENSING.md, license texts in the app) | **TRACK** |
+| Licenses | LGPL libraries linked statically on iOS | About → Licenses with every text and the written source offer, in the `v0.3.0` code; build 54's license gate PASS 15/15; the release v0.3.0 carries the iOS sources; the description names the LGPL libraries (docs/LICENSING.md) | **DONE** / **DECIDE** (EULA, section 2) |
 
 ---
 
@@ -695,6 +728,17 @@ rejection costs a round trip, so the plan keeps a week of buffer.
 ---
 
 ## Sources
+
+Read again on 2026-10-31 (the 0.3.0 submission): the screenshot
+specifications, "Upload app previews and screenshots"
+(https://developer.apple.com/help/app-store-connect/manage-app-information/upload-app-previews-and-screenshots),
+the DSA trader requirements, the Small Business Program, "In-App Purchase
+information"
+(https://developer.apple.com/help/app-store-connect/reference/in-app-purchases-and-subscriptions/in-app-purchase-information),
+"Submit an In-App Purchase"
+(https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase)
+and the App Review Guidelines 2.3.2, 2.3.3, 2.3.7, 2.3.10, 3.1.1 and
+5.1.1(i).
 
 Apple pages read on 2026-09-27:
 

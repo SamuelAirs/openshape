@@ -9,27 +9,56 @@ Decided on 2026-10-31: the product is **FoldForm** (code, repository,
 executable and file format keep the name OpenShape, TD-154), version
 **0.3.0**, contact **ayers177@gmail.com**, and the App Store app is **free
 for one project** with a one-time in-app purchase **Unlimited Projects**
-(product ID `io.github.samuelairs.openshape.unlimited`, about USD 10).
-What is left is the owner's App Store Connect work, in order, in
-[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md):
+(product ID `io.github.samuelairs.openshape.unlimited`, USD 9.99).
 
-1. **Paid Apps Agreement Active** (tax, bank), Small Business Program, EU
-   trader status. The purchase does not load until the agreement is Active.
-2. **Create the in-app purchase** with exactly that product ID, and the
-   listing (name `FoldForm: CAD for 3D Printing`, texts in
-   docs/APP_STORE.md, screenshots in docs/appstore/).
-3. **Try the purchase** with TestFlight **build 54** (the `v0.3.0` tag's,
-   ipad.yml run 41224892140; the GitHub release v0.3.0 with
-   OpenShape-0.3.0-ios-sources.tar is published), then **submit build 54**
-   with the in-app purchase. `main` is at 0.3.1 locally (not pushed yet:
-   GitHub minutes are for compiling only, so it goes with the next change).
-4. **Device testing:** the Duo steps in docs/IPAD.md (7: selecting in a
-   sketch), then send Logs/openshape.log from the Duo (TD-150).
+**FoldForm's side is ready** (audited on 2026-10-31, read-only, nothing
+rebuilt): **build 54** is the build to submit. GitHub's public record of
+ipad.yml run 41224892140 (tag `v0.3.0`, commit 5ebed49) says "build 54
+from v0.3.0 uploaded" (59 MB, iOS 17+, iPhone and iPad, Xcode 27.1,
+license gate PASS 15/15); Apple's processing of it is visible only in App
+Store Connect. The tagged code has the display name FoldForm, version
+0.3.0, exactly that product ID, Restore purchase on the sheet and in About,
+About → Licenses with the source offer, `ITSAppUsesNonExemptEncryption`
+NO, and no network code or analytics. The GitHub release v0.3.0 is
+published with `OpenShape-0.3.0-ios-sources.tar`; every link in the app
+and the listing answers (privacy policy and support page with the email);
+the texts fit Apple's limits; the screenshots (iPhone 1320 x 2868, iPad
+2752 x 2064) and `docs/appstore/iap-review.png` are at sizes App Store
+Connect accepts. The headless suite on `main` (the tag's code at 0.3.1):
+844/844.
+
+What is left is the owner's App Store Connect work, in order, in
+[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md): the Paid Apps
+Agreement **Active** (tax, bank), the Small Business Program, a DSA status
+(required even with the EU left out), the in-app purchase, the listing,
+App Privacy, age rating and price, then on build 54 the sandbox purchase,
+the share sheet and opening from the Files app (not yet seen on a device),
+then **submit build 54 with the purchase**.
+
+**Open questions for the owner:** Apple's standard EULA or the custom one
+(docs/EULA.md); EU trader or the EU left out; any email from Apple about
+build 54 after its upload (processing warnings); whether the lead may make
+6.3" iPhone screenshots if App Store Connect asks for them (the script
+opens windows and moves the pointer); the written source offer's contact
+for 0.3.1 (TD-102).
+
+**Not pushed:** `main` is ahead of origin by the three commits of the
+release (5ebed49, which the tag already published, the 0.3.1 bump and a
+status commit) and the audit's docs commits. A push of `main` now starts
+ci.yml and ipad.yml (a TestFlight upload of 0.3.1), because those commits
+change a workflow and `CMakeLists.txt`; it waits for the first 0.3.1 code
+change (CLAUDE.md: GitHub minutes are for compiling). The live privacy
+policy keeps the date "27 September" until then; its content is current.
+
+**Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
+iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
+decide the first 0.3.1 fixes ("Next" below).
 
 ## Current milestone
 
 **Milestones 0, 1 and 2 complete; Milestone 4 core (editable history) done;
-Milestones 3 and 5 mostly done; v0.2.0 published (2026-09-27).** The
+Milestones 3 and 5 mostly done; v0.2.0 published (2026-09-27); v0.3.0 tagged
+and released on GitHub (2026-10-31).** The
 universal iPhone/iPad app runs on the owner's devices through TestFlight;
 since 2026-10-30 it is built with the iOS 27.1 SDK for the iPhone Duo. A
 free App Store release with an in-app purchase (FoldForm 0.3.0) waits
@@ -67,7 +96,21 @@ in the purchase scenario that GCC did not (fixed; run
 **Not verified:** the real StoreKit sandbox (needs the owner's in-app
 purchase and the active agreement); the tap-to-select on a device. Only 8 agent worktrees were left (not 30,
 as said on 2026-10-30); all are deleted (one held the shell experiment,
-now in the tests).
+now in the tests). Three made later that day are still under
+`.claude/worktrees/` (the shell, rename and review-screenshot tracks): all
+merged into `main` and clean, one locked by a Claude process still
+running, so they were left alone; on GitHub, the branches
+`ci/purchase-ios-check` and `duo-ci` (one CI snapshot commit each) and
+`worktree-wf_9132cfe3-632-1` (merged) can be deleted on the owner's word.
+
+**Later that day: the submission audit** (read-only; build 54 is final).
+What was checked and how is under "Blockers" above. Corrected in the
+docs: Apple now wants a DSA status even with the EU left out; the
+screenshot upload path and the 6.3" question; the description names the
+LGPL libraries (docs/LICENSING.md's release step); the review notes say how
+to get back to Home (File, Home); the price is 9.99; the share sheet and
+Open-in lines wait for a device check; stale 0.2 / OpenShape / placeholder
+lines. docs/LAUNCH_CHECKLIST.md is the owner's one list, in order.
 
 ### Session report (2026-10-30): iPhone Duo, Apple Pencil, the stale tracks merged
 
@@ -943,37 +986,116 @@ non-destructive booleans cost nothing measurable. A recovery copy of a
   holes of a step share one size (TD-47); the draft's "closes up" check is
   analytic per edge, so a nearly closed top is refused (TD-48).
 
-## Next concrete tasks (owner priorities)
+## Next concrete tasks
 
-1. The owner's third test pass (docs/IPAD.md iPad 12-18, iPhone 13-17;
-   docs/MANUAL_TESTS.md 18-19): act on what they report.
-2. Run the real-UI scenarios of the tracks merged on 2026-10-30 (viewcube,
-   sketchphone, typedvalues, homeprojects, openshape3d, plus licenses and
-   numpad, which they touch). Then a section view and the snap refinements
-   (ranking, grid along an edge, parallel/perpendicular guides).
-3. The App Store (docs/APP_STORE.md): the owner's decisions (name, price, EU
-   trader status, contact addresses, EULA); a beta release tag that carries
-   the iOS library pins; the public TestFlight beta; App Review submitted by
-   2026-10-13 (2026-10-16 at the latest) for a release before 2026-10-23.
-4. When SignPath approves: the owner follows docs/CODE_SIGNING.md, then a
-   test signing through release.yml.
-5. Follow-ups: Loft joins or cuts a body it runs into from planes only
-   (TD-106) and guide rails (TD-107); Scribble in value fields (TD-90);
-   keep the value box off a fillet's whole new surface (TD-58); orbiting
-   should not carry the eye inside a surface.
-6. Sketch: separate sketches on one plane should interact (TD-27);
-   center-point arc, editable pattern spacing (TD-28); splines.
-7. Hole tool follow-ups (TD-47): edit positions after applying, per-hole
-   sizes; draft for Revolve and push/pull (TD-48). Construction points and
-   more methods (TD-64, TD-67); text kerning and text on curved faces
-   (TD-60).
-8. Reliability follow-ups: report the OCCT crash upstream (TD-41), check
-   unions against their inputs (TD-42), suggest sizes for failed history
-   rows (TD-43); recompute off the GUI thread.
+Nothing here starts before the owner asks; App Review's answer and the Duo
+log come first.
+
+### When the owner's Duo log arrives (docs/IPAD.md, "The iPhone Duo", steps 7 and 8)
+
+1. **Real sizes and safe areas.** `ui/WindowMetricsLog` wrote one line per
+   change: `window <w>x<h> pt at <n>x (<px>), safe area top .. right ..
+   bottom .. left .., usable .., <compact|regular> layout; screen ...`.
+   Expect one each for the outer display upright and sideways, the inner
+   display with the side bar right and left, the inner display turned, and
+   a Split View half. Put the logged sizes and insets into the `Screen`
+   constants of `src/app/acceptance/Duo.cpp` (`kOuter` 466x678 {59,0,34,0},
+   `kOuterSideways`, `kInnerBarRight` 951x669 {0,84,20,0}, `kInnerBarLeft`,
+   `kInnerTurned`, `kSplitHalf`), the table in docs/IPAD.md ("The iPhone
+   Duo") and the `--safe-area` examples in BUILDING.md; close TD-150.
+2. **What the new numbers break.** Run the `duo` scenario and the phone
+   scenarios that place things against the edges (`compact`, `sketchphone`,
+   `typedvalues`, `purchase`, `homeprojects`) through the real UI (it moves
+   the mouse: when the owner is away), plus the headless suite. A control
+   outside the real safe area is a layout fix in `ui/qml/Main.qml`, kept by
+   the scenario's existing "inside the safe area" checks; never loosen a
+   check to fit.
+3. **Tap-to-select in a sketch** (cfe65a6, `SketchSession::pointerRelease`).
+   When a finger or pen tap selected a line, the log has `user message: A
+   tap on a line selects it, and Select is on now...` (once per sketch).
+   If the owner's tap did not select and that line is missing, the causes
+   in the code, in order: the tap counted as a stroke (moved more than
+   `InputProfile::forDevice(..).dragThreshold`, `dragging_`), the pick
+   missed (`pickReach(device)` at the Duo's 3x), or the tap was not one
+   that would only have begun a shape (`pressBeganShape_`, e.g. a second
+   corner) or it hit a point (which starts a shape there, by design). The
+   log does not show which: if the owner's description does
+   not settle it, add one Info line per touch tap in a sketch (device,
+   distance moved, what was hit) and ask for one more log rather than
+   guess. The fix starts as a failing test in
+   `tests/test_sketch_phone.cpp` (beside
+   `SketchPhone.ATapOnALineSelectsItWhileADrawingToolIsOn`), then the
+   `sketchphone` scenario.
+4. **Duo screenshots:** with the real sizes known, add the outer (466x678
+   pt = 1398 x 2034) and inner (669x951 pt = 2007 x 2853) shots to
+   `scripts/dev/appstore_screenshots.sh` and the check script (TD-95).
+   Apple shows an "optimized for iPhone Duo" badge with them and requires
+   them from April 2027 for apps built with the iOS 27.1 SDK.
+
+### 0.3.1, in this order
+
+`main` already says 0.3.1 (CMakeLists.txt, CHANGELOG.md). Push only with
+the first of these code changes (all three local release commits go with
+it), after the headless suite, the real-UI run and
+`scripts/dev/check_lambda_captures.py`; tag `v0.3.1` when the owner wants
+it in the store.
+
+1. **Fixes from App Review and the Duo** (above). A rejection that needs a
+   new build is the owner's call; simplest is to rename the App Store
+   version to 0.3.1 and submit the `v0.3.1` tag's build, since the tag
+   check in ipad.yml wants the tag to match `CMakeLists.txt`. Also check
+   build 54's processing email: on iOS the settings (with the purchase's
+   unlocked flag) go through QSettings' native format, the user defaults,
+   which `src/app/ios/PrivacyInfo.xcprivacy`
+   does not list as a required-reason API (`NSPrivacyAccessedAPICategoryUserDefaults`,
+   CA92.1); add it if Apple warned, and consider it anyway.
+2. **Real autosave** (TD-51: today a recovery copy keeps unsaved work, and
+   Home asks Save / Don't Save). A project that has a file saves itself
+   after each committed step (debounced) and when the app goes to the
+   background; an untitled one keeps the recovery copy and gets a file only
+   when the user names it, so autosave never creates a project and never
+   meets the one-project limit (`ui/Purchase`). Check first that
+   `io::ProjectFile` writes to a temporary file and renames. Tests: GTests
+   for when a save happens and that a failed save keeps the recovery copy;
+   an acceptance scenario that edits, backgrounds and reads the file back;
+   Home opens another project without asking for a saved one.
+3. **Icons for the text-only buttons** (TD-9): one original, consistent
+   set (SVG in `resources/icons`, MPL like the rest, no copied icon fonts),
+   for the tool palette and strip, the top bar, Home's card menu and the
+   sketch tool bar. Each button keeps its `objectName` (the acceptance run
+   clicks by it) and its text as the accessible name and tooltip; the
+   screenshots are retaken afterwards (TD-95).
+4. **Reuse the preview on confirm for large parts** (TD-1): the commit
+   computes the step again (~190 ms on the 249-face enclosure) although
+   the preview worker just made the same shape. Take the preview's shape
+   when the document and the operation's inputs are unchanged since it was
+   computed, else recompute as now. Measure before and after with
+   `tools/bench/bench_session.cpp`; a test compares the reused result with
+   a recompute (volume, bounding box, face count).
+
+### Later (from the 2026-09-27 list)
+
+- The owner's device test pass (docs/IPAD.md, iPad 12-18 and iPhone 13-18;
+  docs/MANUAL_TESTS.md): act on what they report.
+- When SignPath approves: the owner follows docs/CODE_SIGNING.md, then a
+  test signing through release.yml.
+- Follow-ups: Loft joins or cuts a body it runs into from planes only
+  (TD-106) and guide rails (TD-107); Scribble in value fields (TD-90);
+  keep the value box off a fillet's whole new surface (TD-58); orbiting
+  should not carry the eye inside a surface.
+- Sketch: separate sketches on one plane should interact (TD-27);
+  center-point arc, editable pattern spacing (TD-28); splines.
+- Hole tool follow-ups (TD-47): edit positions after applying, per-hole
+  sizes; draft for Revolve and push/pull (TD-48). Construction points and
+  more methods (TD-64, TD-67); text kerning and text on curved faces
+  (TD-60).
+- Reliability follow-ups: report the OCCT crash upstream (TD-41), check
+  unions against their inputs (TD-42), suggest sizes for failed history
+  rows (TD-43); recompute off the GUI thread.
 
 ## Tests currently passing
 
-844/844 headless (`ctest -LE gui`, 2026-10-31, after the purchase, shell, FoldForm and sketch-selection merges): GTest suites for core, geometry
+844/844 headless (`ctest -LE gui`, 2026-10-31, after the purchase, shell, FoldForm and sketch-selection merges; again that evening on `main`, the `v0.3.0` code at version 0.3.1): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -988,8 +1110,8 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 4356/4356 checks through the real UI in 51 scenarios (2026-10-31)
-before the 2026-10-30 merges (now 49 scenarios; not yet run)
+`acceptance_gui`: 4356/4356 checks through the real UI in 51 scenarios
+(2026-10-31, after the merges of 2026-10-30 and 2026-10-31)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
 under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 (as CI does): 0 warnings.

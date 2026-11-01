@@ -26,7 +26,7 @@ foldable iPhone Duo once it ships (2026-10-23, iOS 27: a 5.4" outer and a
 | Apple Pencil: palm rejection, hover, the finger-tap hint (2026-10-30) | built and checked on Windows (`test_pencil`, the `pencil` scenario injecting Qt tablet events the way the iOS plugin delivers them); **to try on the iPad** ("Apple Pencil" below), and on the iPhone Duo once Apple enables Pencil there |
 | Running on the iPhone | ✅ the owner's iPhone 16 Pro (TestFlight, 2026-09-26) |
 | Licenses for the App Store (2026-09-27) | ✅ checked (docs/LICENSING.md); the app shows every license (About → Licenses); release tags build the App Store upload with the license gate required; the release carries the iOS sources. 🟡 on CI: the license gate's first real run (TD-103); the owner: the custom EULA and the source-offer contact (TD-102) |
-| App Store (paid, after a public TestFlight beta; target 2026-10-23) | 🟡 ready in the repository: [APP_STORE.md](APP_STORE.md) (the owner's checklist: agreements, listing texts, price, public beta, submission, timeline), [PRIVACY.md](PRIVACY.md) (linked in About), [SUPPORT.md](SUPPORT.md), 6 screenshots per device at Apple's required sizes (`docs/appstore/screenshots/`, `scripts/dev/appstore_screenshots.sh`); the owner's steps in App Store Connect are still to do |
+| App Store: FoldForm 0.3.0, free with the in-app purchase Unlimited Projects (2026-10-31) | ✅ build 54 from the tag `v0.3.0` uploaded (ipad.yml run 41224892140, license gate PASS 15/15); the release v0.3.0 carries the iOS sources; texts, screenshots and the purchase's review screenshot in the repository ([APP_STORE.md](APP_STORE.md)); privacy and support pages live. 🟡 the owner's App Store Connect steps, in order: [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md) |
 
 What is ready:
 
@@ -308,12 +308,12 @@ Connect.
 
 ## The App Store
 
-The paid release after a public TestFlight beta is prepared in
-[APP_STORE.md](APP_STORE.md): what to do in App Store Connect, in order
-(agreements, tax and bank, the Small Business Program, app information,
-the "Data Not Collected" privacy answers, age rating, listing texts,
-price, the public beta, the submission) with a dated timeline to
-2026-10-23. The privacy policy is [PRIVACY.md](PRIVACY.md) (also linked in
+FoldForm 0.3.0 (build 54) goes to App Review directly, free with the
+in-app purchase below; the owner's steps, in order, are
+[LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md), and the details and texts to
+paste [APP_STORE.md](APP_STORE.md) (agreements, tax and bank, the Small
+Business Program, the DSA, app information, the "Data Not Collected"
+privacy answers, age rating, listing texts, price, the submission). The privacy policy is [PRIVACY.md](PRIVACY.md) (also linked in
 File → About), the support page [SUPPORT.md](SUPPORT.md). The screenshots
 (iPhone 6.9" 1320 x 2868, iPad 13" 2752 x 2064) are made on Windows from
 the real app by `bash scripts/dev/appstore_screenshots.sh` (BUILDING.md).
@@ -365,12 +365,13 @@ text (About → **Licenses**). What that means in practice:
   commit in About → Licenses; each run warns when their library pins are on
   no release yet, so a beta tag keeps those sources. The tag's GitHub
   release carries `OpenShape-<version>-ios-sources.tar`.
-- **The owner, once, before the first public release:** set the custom
-  EULA ([EULA.md](EULA.md): fill in name, address, telephone, e-mail; App
-  Store Connect → App Information → License Agreement), decide the contact
-  for the written source offer (TD-102), and add the license sentence to
-  the App Store description (docs/LICENSING.md, "Releasing an App Store
-  (or public beta) version").
+- **The owner, once:** choose Apple's standard EULA or the custom one
+  ([EULA.md](EULA.md): fill in name, address, telephone, e-mail; App
+  Store Connect → App Information → License Agreement; still open for
+  0.3.0, LAUNCH_CHECKLIST.md) and the contact for the written source offer
+  (TD-102; build 54 names the GitHub issue tracker). The license sentence
+  is in the App Store description since 2026-10-31 (docs/LICENSING.md,
+  "Releasing an App Store (or public beta) version").
 - Every build's notices on CI list what the app links, by origin, and the
   license gate's result (`scripts/ios/build-app.sh`).
 
