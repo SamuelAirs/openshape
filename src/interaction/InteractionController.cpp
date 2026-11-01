@@ -484,6 +484,7 @@ void InteractionController::pointerPress(const PointerEvent& event)
     animation_.reset();
     drag_ = {};
     drag_.press = event;
+    drag_.pressedAt = clock_();
     drag_.last = event.position;
     drag_.mode = DragMode::Pending;
 
@@ -564,6 +565,15 @@ std::optional<Vec3> InteractionController::selectedRegionAt(Vec2 screen) const
         if (face.hit() && face.depth + camera_.pixelSize(region.point) * 2 < region.depth)
             return std::nullopt;
         return region.point;
+    }
+    if (const auto* faces = dynamic_cast<const MultiPushPullOperation*>(operation_.get())) {
+        // Any of the faces that move: the arrow moves them all.
+        const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen);
+        const auto& moving = faces->movingFaces();
+        if (face.kind == sel::PickKind::Face && face.bodyId == faces->bodyId()
+            && std::find(moving.begin(), moving.end(), face.index) != moving.end())
+            return face.point;
+        return std::nullopt;
     }
     if (dynamic_cast<const PushPullOperation*>(operation_.get()) && selection_.size() == 1
         && selection_.items().front().kind == sel::SelectionKind::Face) {
@@ -816,8 +826,15 @@ void InteractionController::pointerRelease(const PointerEvent& event)
         const sketch::Sketch* other = hit.kind == sel::PickKind::Profile ? document_->sketch(hit.bodyId) : nullptr;
         profileUnderArrow = own && other && !samePlane(own->plane(), other->plane());
     }
+    // A finger or pen held still on a face: the whole step that made it.
+    const bool longPress = mode == DragMode::Pending && press.button == PointerButton::Left
+                        && press.device != PointerDevice::Mouse && !doubleClicked && pendingRing < 0
+                        && travel < InputProfile::forDevice(press.device).dragThreshold
+                        && clock_() - drag_.pressedAt >= kLongPress;
     if (doubleClicked && mode == DragMode::Pending) {
         // The double-click this press was part of has selected: no click.
+    } else if (longPress && selectStepFacesAt(press)) {
+        pressMemos_[1].toolPick = false;
     } else if (pendingRing >= 0 && operation_ && !axisUnderRing) {
         operation_->setActiveHandle(pendingRing); // clicking a ring makes it the active one
         notifyState();
@@ -1462,6 +1479,92 @@ void InteractionController::click(const PointerEvent& event)
     notifyView();
 }
 
+namespace {
+std::string featureTitle(const doc::Feature& f); // (the Model panel's name for a step, below)
+} // namespace
+
+std::optional<Vec3> InteractionController::stepFacesDirection() const
+{
+    if (!stepFaces_ || !selection_.allOfKind(sel::SelectionKind::Face) || selection_.size() != stepFaces_->faces.size())
+        return std::nullopt;
+    for (const auto& item : selection_.items())
+        if (item.bodyId != stepFaces_->body
+            || std::find(stepFaces_->faces.begin(), stepFaces_->faces.end(), item.index) == stepFaces_->faces.end())
+            return std::nullopt;
+    return stepFaces_->direction;
+}
+
+bool InteractionController::selectStepFacesAt(const PointerEvent& press)
+{
+    // The face under the finger, not an edge near it (a letter's stroke is
+    // narrower than a finger's edge zone).
+    const sel::PickResult hit = sel::pickFace(pickTargets(), camera_, press.position);
+    const doc::Body* body = hit.kind == sel::PickKind::Face ? document_->body(hit.bodyId) : nullptr;
+    if (!body)
+        return false;
+    // The latest step whose new faces include this one (a fillet on a text's
+    // letter is the fillet's): its faces as they are now.
+    const auto& features = body->features();
+    int step = -1;
+    std::vector<int> faces;
+    for (int i = static_cast<int>(features.size()) - 1; i >= 0 && step < 0; --i) {
+        const doc::FeatureState& state = body->state(i);
+        if (state.status != doc::FeatureStatus::Ok || features[std::size_t(i)]->isBaseFeature())
+            continue;
+        std::vector<int> created = geom::facesCreatedBy(body->shapeBefore(i), state.output, body->shape());
+        if (std::find(created.begin(), created.end(), hit.index) != created.end()) {
+            step = i;
+            faces = std::move(created);
+        }
+    }
+    if (step < 0 || faces.size() < 2)
+        return false;
+    // The way the step pushes its faces: a text's is the face it stands on
+    // (its letters' tops and floors face that way); otherwise the way most of
+    // its flat area faces (an extrusion's top, not its walls).
+    std::optional<Vec3> direction;
+    if (const auto* text = dynamic_cast<const doc::TextFeature*>(features[std::size_t(step)].get())) {
+        const geom::Shape before = body->shapeBefore(step);
+        if (const auto index = geom::resolveFace(before, text->face.signature, text->face.indexHint))
+            if (const auto info = geom::faceInfo(before, *index); info && info->isPlanar())
+                direction = info->normal.normalized();
+    }
+    if (!direction) {
+        std::vector<std::pair<Vec3, double>> areas;
+        for (const int index : faces) {
+            const auto info = geom::faceInfo(body->shape(), index);
+            if (!info || !info->isPlanar())
+                continue;
+            const Vec3 n = info->normal.normalized();
+            auto same = std::find_if(areas.begin(), areas.end(), [&](const auto& a) { return a.first.dot(n) > 1.0 - 1e-9; });
+            if (same == areas.end())
+                areas.emplace_back(n, info->area);
+            else
+                same->second += info->area;
+        }
+        const auto most = std::max_element(areas.begin(), areas.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+        if (most != areas.end())
+            direction = most->first;
+    }
+    if (!direction)
+        return false;
+    selection_.clear();
+    for (const int index : faces)
+        if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Face, body->id(), index))
+            selection_.add(*item);
+    stepFaces_ = StepFaces{body->id(), faces, *direction};
+    faceOperationKind_ = doc::FeatureKind::PushPull;
+    rebuildOperation();
+    const doc::Feature& f = *features[std::size_t(step)];
+    const std::string name = f.name().empty() ? featureTitle(f) : f.name();
+    message("All " + std::to_string(faces.size()) + " faces of " + name
+            + (operation_ ? ": drag the arrow to push or pull them together. Tap a face to leave it out."
+                          : ". Tap a face to leave it out."));
+    notifyState();
+    notifyView();
+    return true;
+}
+
 // ---- Operations ------------------------------------------------------------------
 
 void InteractionController::rebuildOperation()
@@ -1536,13 +1639,21 @@ void InteractionController::rebuildOperation()
             if (const doc::Body* body = document_->body(first.bodyId))
                 if (const auto info = geom::faceInfo(body->shape(), first.index); info && info->kind == geom::SurfaceKind::Cylinder)
                     operation_ = OffsetFaceOperation::create(*document_, first.bodyId, first.index);
-        if (!operation_) {
-            // Several faces, a curved face, or Shell chosen explicitly.
-            std::vector<int> faces;
-            for (const auto& item : selection_.items())
-                faces.push_back(item.index);
-            operation_ = ShellOperation::create(*document_, first.bodyId, faces);
+        std::vector<int> faces;
+        for (const auto& item : selection_.items())
+            faces.push_back(item.index);
+        // Several faces stay with Push/Pull (a second face tapped does not
+        // switch tools; the owner on his Duo, 2026-11-03): one arrow moves
+        // them all when they face the same way (a long press's step faces:
+        // those facing its way). Faces facing different ways have no arrow;
+        // their actions (Shell, Delete faces) wait in the bar.
+        if (!operation_ && selection_.size() >= 2 && faceOperationKind_ != doc::FeatureKind::Shell) {
+            faceOperationKind_ = doc::FeatureKind::PushPull;
+            operation_ = MultiPushPullOperation::create(*document_, first.bodyId, faces, stepFacesDirection());
         }
+        // A curved face, or Shell chosen (then each tap adds a face to open).
+        if (!operation_ && (selection_.size() == 1 || faceOperationKind_ == doc::FeatureKind::Shell))
+            operation_ = ShellOperation::create(*document_, first.bodyId, faces);
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && selection_.singleBody()) {
         std::vector<int> edges;
         for (const auto& item : selection_.items())
@@ -2697,10 +2808,15 @@ std::vector<ContextAction> InteractionController::contextActions() const
         actions.push_back({"delete", "Delete", false});
         return actions;
     }
-    if (operation_ && (operation_->featureKind() == doc::FeatureKind::PushPull
-                       || operation_->featureKind() == doc::FeatureKind::Shell
-                       || operation_->featureKind() == doc::FeatureKind::OffsetFace)) {
+    const bool facesWithoutArrow = !operation_ && selection_.size() >= 2 && selection_.allOfKind(sel::SelectionKind::Face)
+                                && selection_.singleBody();
+    if (facesWithoutArrow
+        || (operation_
+            && (operation_->featureKind() == doc::FeatureKind::PushPull || operation_->featureKind() == doc::FeatureKind::PushPullFaces
+                || operation_->featureKind() == doc::FeatureKind::Shell
+                || operation_->featureKind() == doc::FeatureKind::OffsetFace))) {
         const bool single = selection_.size() == 1;
+        const doc::FeatureKind current = operation_ ? operation_->featureKind() : doc::FeatureKind::PushPull;
         SelectionMemo& memo = selectionMemo();
         if (single && !memo.planarFace) {
             memo.planarFace = false;
@@ -2710,8 +2826,11 @@ std::vector<ContextAction> InteractionController::contextActions() const
         }
         const bool planar = single && *memo.planarFace;
         if (single && planar)
-            actions.push_back({"pushpull", "Push/Pull", operation_->featureKind() == doc::FeatureKind::PushPull});
-        actions.push_back({"shell", "Shell", operation_->featureKind() == doc::FeatureKind::Shell});
+            actions.push_back({"pushpull", "Push/Pull", current == doc::FeatureKind::PushPull});
+        // Several faces: Push/Pull moves them together where they face the same way.
+        if (!single && (current == doc::FeatureKind::PushPullFaces || current == doc::FeatureKind::Shell))
+            actions.push_back({"pushpull", "Push/Pull", current == doc::FeatureKind::PushPullFaces});
+        actions.push_back({"shell", "Shell", operation_ && current == doc::FeatureKind::Shell});
         // Several faces (a stray tap adds one on a touch screen): Sketch goes
         // on the last flat face tapped (startSketch).
         if ((single && planar) || !single)
@@ -2721,10 +2840,13 @@ std::vector<ContextAction> InteractionController::contextActions() const
         if (single && planar)
             actions.push_back({"text", "Text", false});
         if (single && !planar)
-            actions.push_back({"offset", "Offset", operation_->featureKind() == doc::FeatureKind::OffsetFace});
+            actions.push_back({"offset", "Offset", current == doc::FeatureKind::OffsetFace});
         if (single)
             actions.push_back({"align", "Align", false});
         actions.push_back({"deleteFaces", single ? "Delete face" : "Delete faces", false});
+        // Several faces picked one tap at a time: start again in one tap.
+        if (!single)
+            actions.push_back({"clearSelection", "Clear", false});
     } else if (selection_.allOfKind(sel::SelectionKind::Edge) && operation_) {
         actions.push_back({"fillet", "Fillet", edgeOperationKind_ == doc::FeatureKind::Fillet});
         actions.push_back({"chamfer", "Chamfer", edgeOperationKind_ == doc::FeatureKind::Chamfer});
@@ -3142,6 +3264,13 @@ Status InteractionController::triggerAction(const std::string& id)
     }
     if (id == "deleteFaces")
         return deleteSelectedFaces();
+    if (id == "clearSelection") {
+        selection_.clear();
+        rebuildOperation();
+        notifyState();
+        notifyView();
+        return okStatus();
+    }
     if (id == "pushpull" || id == "shell" || id == "offset") {
         faceOperationKind_ = id == "shell" ? doc::FeatureKind::Shell
                            : id == "offset" ? doc::FeatureKind::OffsetFace
@@ -3274,9 +3403,11 @@ std::string InteractionController::computeSelectionSummary() const
         const auto b = refOf(selection_.items()[1]);
         if (a && b) {
             if (const auto m = geom::measure(*a, *b)) {
+                // How many are selected (faces are added one tap at a time), then how they measure.
+                const std::string count = selection_.allOfKind(sel::SelectionKind::Face) ? "2 faces · " : "";
                 if (m->parallelGap)
-                    return "Gap " + formatLength(*m->parallelGap, unit) + " · parallel";
-                std::string text = "Distance " + formatLength(m->distance, unit);
+                    return count + "Gap " + formatLength(*m->parallelGap, unit) + " · parallel";
+                std::string text = count + "Distance " + formatLength(m->distance, unit);
                 if (m->angle)
                     text += " · Angle " + formatAngle(*m->angle);
                 return text;
@@ -3331,8 +3462,15 @@ RenderScene InteractionController::renderScene() const
 {
     RenderScene scene;
     scene.camera = camera_;
+    // Bodies a preview of another body's step shows changed (faces pushed
+    // into them): that preview's mesh draws them.
+    const std::vector<Uuid> noBodies;
+    const auto& replacedByPreview =
+        operation_ && operation_->hasPreview() ? operation_->previewMeshAlsoReplaces() : noBodies;
     for (const auto& body : document_->bodies()) {
         if (!body->isVisible())
+            continue;
+        if (std::find(replacedByPreview.begin(), replacedByPreview.end(), body->id()) != replacedByPreview.end())
             continue;
         RenderBody rb;
         rb.id = body->id();
@@ -4470,6 +4608,8 @@ std::string featureTitle(const doc::Feature& f)
     case doc::FeatureKind::Imported: return "Import";
     case doc::FeatureKind::Text: return "Text";
     case doc::FeatureKind::Loft: return "Loft";
+    case doc::FeatureKind::PushPullFaces: return "Push/Pull";
+    case doc::FeatureKind::SweepCut: return "Cut by Push/Pull";
     }
     return "Step";
 }
@@ -4566,6 +4706,15 @@ std::string featureDetail(const doc::Feature& f, LengthUnit unit, const doc::Doc
     case doc::FeatureKind::DeleteFaces: {
         const auto n = static_cast<const doc::DeleteFacesFeature&>(f).faces.size();
         return std::to_string(n) + (n == 1 ? " face" : " faces");
+    }
+    case doc::FeatureKind::PushPullFaces: {
+        const auto& p = static_cast<const doc::PushPullFacesFeature&>(f);
+        return formatLength(p.distance, unit) + dot + std::to_string(p.faces.size()) + (p.faces.size() == 1 ? " face" : " faces");
+    }
+    case doc::FeatureKind::SweepCut: {
+        const auto& c = static_cast<const doc::SweepCutFeature&>(f);
+        const doc::Body* source = document.body(c.sourceBody);
+        return "Faces of " + (source ? source->name() : std::string("a deleted body")) + " pushed in";
     }
     case doc::FeatureKind::OffsetFace: {
         const double d = static_cast<const doc::OffsetFaceFeature&>(f).distance;
@@ -5086,7 +5235,7 @@ Status InteractionController::runTool(const std::string& id)
     const bool edges = selection_.allOfKind(sel::SelectionKind::Edge) && selection_.singleBody();
     const bool bodies = selection_.allOfKind(sel::SelectionKind::Body);
     if (id == "pushpull") {
-        if (faces && selection_.size() == 1)
+        if (faces)
             return triggerAction("pushpull");
         return explain("Click a flat face, then drag its arrow or type a distance.");
     }

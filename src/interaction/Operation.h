@@ -36,6 +36,9 @@ struct PreviewOutcome {
     double value = 0;
     std::shared_ptr<const geom::Mesh> mesh; // null when the preview failed
     Uuid meshBody;                          // the body the mesh stands in for (nil: a new body)
+    // Other bodies the mesh shows changed too (their own meshes are not
+    // drawn while it is): faces pushed into another body cut it.
+    std::vector<Uuid> alsoReplaces;
     std::string error;                      // user message when it failed
     std::string developerMessage;
     // The mesh's box (world coordinates), measured where it was computed.
@@ -111,6 +114,8 @@ public:
     // The body the shown preview mesh stands in for (nil: a new body). While
     // a newer preview is pending, previewBody() may already differ.
     const Uuid& previewMeshBody() const { return previewMeshBody_; }
+    // Other bodies the shown preview mesh includes, changed (PreviewOutcome::alsoReplaces).
+    const std::vector<Uuid>& previewMeshAlsoReplaces() const { return previewAlsoReplaces_; }
 
     // ---- Where the operation takes what it works on ----
     // The value chip keeps clear of the selection also where the operation
@@ -230,6 +235,9 @@ protected:
     }
     // Whether the neutral value means "no change" (no preview). Align previews at 0.
     virtual bool neutralIsIdentity() const { return true; }
+    // Other bodies the last computePreview on this object included in its
+    // result (PreviewOutcome::alsoReplaces); none by default.
+    virtual std::vector<Uuid> previewAlsoReplaces() const { return {}; }
     // Operations whose preview is not a body's shape (construction axes and
     // planes) work it out here instead of computePreview: "" when it could be
     // shown, else why not (the error).
@@ -259,6 +267,7 @@ private:
     int activeHandle_ = 0;
     std::shared_ptr<const geom::Mesh> previewMesh_;
     Uuid previewMeshBody_;
+    std::vector<Uuid> previewAlsoReplaces_;
     Carry previewCarry_;
     geom::BoundingBox previewBounds_;
     std::uint64_t previewKey_ = 0;
@@ -404,6 +413,49 @@ private:
     doc::FaceRef face_;
     std::optional<geom::FaceThickness> thickness_;
     std::string thicknessLabel_; // "Height", "Width", "Depth" or "Thickness"
+};
+
+// Several flat faces of one body that face the same way, pushed or pulled
+// together by one arrow (doc::PushPullFacesFeature): pulled out they add
+// material, pushed in they take it away (raised text pushed into the face
+// it stands on engraves it). Pushed into another visible body, they cut the
+// volume they sweep out of that body too (doc::SweepCutFeature, one undo
+// step with the push), shown in the preview with it.
+class MultiPushPullOperation final : public Operation {
+public:
+    // `faces` of `bodyId`. Without `direction` every face must be flat and
+    // face the same way; with it (a whole step's faces, picked by a long
+    // press) the flat faces facing that way move and the others (its walls)
+    // come along. nullptr when no face would move.
+    static std::unique_ptr<MultiPushPullOperation> create(const doc::Document& document, const Uuid& bodyId,
+                                                          const std::vector<int>& faces,
+                                                          std::optional<Vec3> direction = std::nullopt);
+
+    std::unique_ptr<Operation> clone() const override { return std::unique_ptr<Operation>(new MultiPushPullOperation(*this)); }
+    std::string title() const override { return "Push/Pull"; }
+    std::string valueLabel() const override { return "Distance"; }
+    bool allowsNegative() const override { return true; }
+    doc::FeatureKind featureKind() const override { return doc::FeatureKind::PushPullFaces; }
+    // The faces that move (the body's face indices).
+    const std::vector<int>& movingFaces() const { return indices_; }
+    // The other bodies the last preview cut (faces pushed into them).
+    std::vector<Uuid> previewAlsoReplaces() const override { return cutBodies_; }
+    std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
+
+protected:
+    std::unique_ptr<doc::Feature> makeFeature(double value) const override;
+    Result<geom::Shape> computePreview(double value, const doc::Document& document) const override;
+
+private:
+    MultiPushPullOperation(Uuid bodyId, LinearManipulator m, std::vector<doc::FaceRef> faces, std::vector<int> indices)
+        : Operation(bodyId, std::move(m)), faces_(std::move(faces)), indices_(std::move(indices)) {}
+    // The other bodies a push by `value` cuts, each with its shape after the
+    // cut: visible bodies the swept faces reach (none when pulling, and none
+    // this body is built from, which would make a loop).
+    Result<std::vector<std::pair<Uuid, geom::Shape>>> cuts(double value, const doc::Document& document) const;
+    std::vector<doc::FaceRef> faces_;
+    std::vector<int> indices_;
+    mutable std::vector<Uuid> cutBodies_; // what the last computePreview cut
 };
 
 // Fillet or chamfer on a set of edges of one body. The handle starts at the

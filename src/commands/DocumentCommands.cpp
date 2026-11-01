@@ -95,6 +95,8 @@ std::string AddFeatureCommand::label() const
     case doc::FeatureKind::Imported: return "Import";
     case doc::FeatureKind::Text: return "Text";
     case doc::FeatureKind::Loft: return "Loft";
+    case doc::FeatureKind::PushPullFaces: return "Push/Pull";
+    case doc::FeatureKind::SweepCut: return "Cut by Push/Pull";
     }
     return "Add step";
 }

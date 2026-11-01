@@ -36,6 +36,22 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance);
 // ErrorCode::Unsupported when the face has no such edges or the region that
 // moves is not straight walls; callers then use pushPullFace.
 Result<Shape> pushPullFaceKeepingEdges(const Shape& shape, int faceIndex, double distance);
+// The outward normal several faces share: every one flat and facing the
+// same way (within about 0.003 degrees); nullopt otherwise or for no faces.
+std::optional<Vec3> commonFaceNormal(const Shape& shape, const std::vector<int>& faceIndices);
+// Moves several flat faces of one body together along their common outward
+// normal by `distance` (positive adds material, negative removes it): each
+// face sweeps a prism, and the prisms are fused with the body or cut from
+// it in one boolean (the tops of raised text pushed down through the face
+// they stand on engrave it). Refused with ErrorCode::InvalidArgument unless
+// the faces share a normal (commonFaceNormal).
+Result<Shape> pushPullFaces(const Shape& shape, const std::vector<int>& faceIndices, double distance);
+// Cuts from `target` (another body) the volume those faces of `source`
+// sweep by `distance` (pushPullFaces' prisms): faces pushed into another
+// body take their shape out of it. ErrorCode::NoEffect when the sweep
+// misses `target`.
+Result<Shape> cutBySweptFaces(const Shape& target, const Shape& source, const std::vector<int>& faceIndices,
+                              double distance);
 
 // How a refused fillet, chamfer or shell explains itself. By default the
 // message says what went wrong and what to try ("Try a smaller radius.").

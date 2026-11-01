@@ -45,7 +45,7 @@ openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_intera
     test_cut_flow.cpp test_touch_selection.cpp test_typing_pause.cpp test_numeric_keypad.cpp
     test_loft_interaction.cpp test_project_files.cpp
     test_view_cube.cpp test_sketch_phone.cpp
-    test_typed_values.cpp test_pencil.cpp)
+    test_typed_values.cpp test_pencil.cpp test_multi_face.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
 # test_touch_wording reads the QML hints and the help card; test_bodies a
 # project saved by an older build (tests/data).

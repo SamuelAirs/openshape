@@ -1098,11 +1098,13 @@ TEST(Interaction, MeasureBetweenTwoFaces)
     h.controller.pointerPress(e);
     h.controller.pointerRelease(e);
     ASSERT_EQ(h.controller.selection().size(), 2u);
-    EXPECT_EQ(h.controller.selectionSummary(), "Distance 0.00 mm \xC2\xB7 Angle 90.0\xC2\xB0");
+    // The count first (faces are added one tap at a time on a touch screen), then the measure.
+    EXPECT_EQ(h.controller.selectionSummary(), "2 faces \xC2\xB7 Distance 0.00 mm \xC2\xB7 Angle 90.0\xC2\xB0");
+    EXPECT_EQ(h.controller.operation(), nullptr) << "facing different ways: no arrow, and no Shell unless chosen";
 
     // Top and bottom are parallel: 20 mm apart. Pick the bottom through a
     // view from below.
-    h.controller.keyPress(Key::Escape); // clear (the armed shell arrow would catch the next click)
+    h.controller.keyPress(Key::Escape); // clear
     h.controller.setStandardView(StandardView::Bottom, false);
     h.controller.fitAll(false);
     h.clickAt(h.screen({0, 0, 0}));
@@ -1113,7 +1115,7 @@ TEST(Interaction, MeasureBetweenTwoFaces)
     h.controller.pointerPress(top);
     h.controller.pointerRelease(top);
     ASSERT_EQ(h.controller.selection().size(), 2u);
-    EXPECT_EQ(h.controller.selectionSummary(), "Gap 20.00 mm \xC2\xB7 parallel");
+    EXPECT_EQ(h.controller.selectionSummary(), "2 faces \xC2\xB7 Gap 20.00 mm \xC2\xB7 parallel");
 }
 
 // The heat-set insert helper: select a hole's rim, choose the insert size.

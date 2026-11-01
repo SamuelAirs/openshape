@@ -142,6 +142,9 @@ public:
     static constexpr const char* kPenFingerHint =
         "In pen mode fingers only move the view. To select or draw with a finger, turn off Pen with the view buttons.";
     static constexpr double kPenFingerHintInterval = 10; // s between two of them
+    // A finger or pen held this long without moving on a face selects every
+    // face of the step that made it (selectStepFacesAt).
+    static constexpr std::chrono::milliseconds kLongPress{500};
     // Preferences: whether sketch points snap to the grid (this and later sketches).
     bool sketchGridSnap() const { return sketchGridSnap_; }
     void setSketchGridSnap(bool on);
@@ -460,6 +463,11 @@ private:
     std::string computeSelectionSummary() const;
 
     void click(const PointerEvent& event);
+    // A finger or pen held still on a face for kLongPress: every face of the
+    // step that made that face is selected (all of a text, an extrusion's top
+    // and walls), and Push/Pull moves the ones facing the step's way. False
+    // (nothing changed) where no step made the face: the press then clicks.
+    bool selectStepFacesAt(const PointerEvent& press);
     // A click elsewhere (or on a Model panel row) applies the operation first.
     // Applied; Refused: the operation stays (its message says why), the click
     // stops; Dropped: nothing to apply, or the command refused a value whose
@@ -564,6 +572,16 @@ private:
     bool touchIgnored_ = false;
     // When the last kPenFingerHint was shown (clock_).
     std::optional<TypingPause::Clock::time_point> penHintShown_;
+    // A step's faces selected by a long press (selectStepFacesAt), and the
+    // way they are pushed: used while the selection is still exactly those.
+    struct StepFaces {
+        Uuid body;
+        std::vector<int> faces;
+        Vec3 direction;
+    };
+    std::optional<StepFaces> stepFaces_;
+    // The long press's direction, if the selection is still that step's faces.
+    std::optional<Vec3> stepFacesDirection() const;
     // When the user last moved the view (an orbit or pan step, a pinch, a
     // wheel notch, a view-cube drag; clock_), and when a zoom last picked
     // the depth it heads for: a pinch's steps all head for the depth its
@@ -653,6 +671,7 @@ private:
         int handleBefore = 0;
         bool handleMoved = false;   // a finger's handle or ring drag went past its drag threshold
         bool doubleClicked = false; // a double-click came during this press: its release does not click
+        TypingPause::Clock::time_point pressedAt{}; // clock_ at the press (a long press)
     } drag_;
     // Notes the operation's value and active handle before a manipulator drag.
     void noteValueBeforeDrag();

@@ -48,6 +48,8 @@ std::string_view toString(FeatureKind kind)
     case FeatureKind::Imported: return "Imported";
     case FeatureKind::Text: return "Text";
     case FeatureKind::Loft: return "Loft";
+    case FeatureKind::PushPullFaces: return "PushPullFaces";
+    case FeatureKind::SweepCut: return "SweepCut";
     }
     return "Unknown";
 }
@@ -59,7 +61,7 @@ std::optional<FeatureKind> featureKindFromString(std::string_view text)
                           FeatureKind::Revolve, FeatureKind::Hole, FeatureKind::Mirror, FeatureKind::Pattern,
                           FeatureKind::DeleteFaces, FeatureKind::OffsetFace, FeatureKind::Split, FeatureKind::SplitPiece,
                           FeatureKind::Copy, FeatureKind::Holes, FeatureKind::Imported, FeatureKind::Text,
-                          FeatureKind::Loft})
+                          FeatureKind::Loft, FeatureKind::PushPullFaces, FeatureKind::SweepCut})
         if (toString(k) == text)
             return k;
     return std::nullopt;
@@ -89,6 +91,8 @@ std::unique_ptr<Feature> createFeature(FeatureKind kind, Uuid id)
     case FeatureKind::Imported: return std::make_unique<ImportedFeature>(id);
     case FeatureKind::Text: return std::make_unique<TextFeature>(id);
     case FeatureKind::Loft: return std::make_unique<LoftFeature>(id);
+    case FeatureKind::PushPullFaces: return std::make_unique<PushPullFacesFeature>(id);
+    case FeatureKind::SweepCut: return std::make_unique<SweepCutFeature>(id);
     }
     return nullptr;
 }
@@ -266,6 +270,124 @@ Status PushPullFeature::readParams(const json& in)
     face = *ref;
     distance = in["distance"].get<double>();
     keepEdges = in.contains("keepEdges") && in["keepEdges"].is_boolean() && in["keepEdges"].get<bool>();
+    return okStatus();
+}
+
+// ---- Push/pull several faces -----------------------------------------------------
+
+Result<std::vector<int>> PushPullFacesFeature::resolveFaces(const geom::Shape& input) const
+{
+    std::vector<int> indices;
+    for (const FaceRef& ref : faces) {
+        const auto index = geom::resolveFace(input, ref.signature, ref.indexHint);
+        if (!index)
+            return Result<std::vector<int>>::failure(ErrorCode::InvalidReference,
+                                                     "A face this step moved no longer exists.",
+                                                     "PushPullFaces: face reference unresolved (hint "
+                                                         + std::to_string(ref.indexHint) + ")");
+        indices.push_back(*index);
+    }
+    return Result<std::vector<int>>::success(std::move(indices));
+}
+
+Result<geom::Shape> PushPullFacesFeature::compute(const geom::Shape& input, const EvalContext&) const
+{
+    auto indices = resolveFaces(input);
+    if (!indices)
+        return Result<geom::Shape>::failure(indices.error(), indices.userMessage(), indices.developerMessage());
+    return geom::pushPullFaces(input, indices.value(), distance);
+}
+
+std::vector<ParameterInfo> PushPullFacesFeature::parameters() const
+{
+    return {{"distance", "Distance", ParameterKind::Length, distance}};
+}
+
+Status PushPullFacesFeature::setParameter(std::string_view key, double value)
+{
+    if (key != "distance")
+        return unknownParameter(key);
+    if (!std::isfinite(value))
+        return Status::failure(ErrorCode::InvalidArgument, "Enter a valid distance.", "non-finite distance");
+    distance = value;
+    return okStatus();
+}
+
+void PushPullFacesFeature::writeParams(json& out) const
+{
+    json list = json::array();
+    for (const FaceRef& ref : faces)
+        list.push_back(faceRefToJson(ref));
+    out["faces"] = list;
+    out["distance"] = distance;
+}
+
+Status PushPullFacesFeature::readParams(const json& in)
+{
+    if (!in.contains("faces") || !in["faces"].is_array() || in["faces"].empty() || !in.contains("distance")
+        || !in["distance"].is_number())
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid push/pull.", "PushPullFaces: bad params");
+    faces.clear();
+    for (const auto& item : in["faces"]) {
+        const json wrapper{{"face", item}};
+        const auto ref = faceRefFromJson(wrapper, "face");
+        if (!ref)
+            return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid push/pull.",
+                                   "PushPullFaces: bad face ref");
+        faces.push_back(*ref);
+    }
+    distance = in["distance"].get<double>();
+    return okStatus();
+}
+
+// ---- The cut another body's pushed faces make ------------------------------------
+
+Result<geom::Shape> SweepCutFeature::compute(const geom::Shape& input, const EvalContext& context) const
+{
+    const Body* source = context.document ? context.document->body(sourceBody) : nullptr;
+    const int index = source ? source->featureIndex(sourceFeature) : -1;
+    const auto* push = index >= 0 ? dynamic_cast<const PushPullFacesFeature*>(source->features()[std::size_t(index)].get())
+                                  : nullptr;
+    if (!push)
+        return Result<geom::Shape>::failure(ErrorCode::InvalidReference,
+                                            "The Push/Pull step this cut follows no longer exists.",
+                                            "SweepCut: source step " + sourceFeature.toString() + " missing");
+    // The faces as they were where that step pushed them.
+    const geom::Shape before = source->shapeBefore(index);
+    auto indices = push->resolveFaces(before);
+    if (!indices)
+        return Result<geom::Shape>::failure(indices.error(), indices.userMessage(), indices.developerMessage());
+    return geom::cutBySweptFaces(input, before, indices.value(), push->distance);
+}
+
+Status SweepCutFeature::setParameter(std::string_view key, double)
+{
+    return unknownParameter(key);
+}
+
+void SweepCutFeature::remapReferences(const std::map<Uuid, Uuid>& copies)
+{
+    remap(sourceBody, copies);
+    remap(sourceFeature, copies);
+}
+
+void SweepCutFeature::writeParams(json& out) const
+{
+    out["sourceBody"] = sourceBody.toString();
+    out["sourceFeature"] = sourceFeature.toString();
+}
+
+Status SweepCutFeature::readParams(const json& in)
+{
+    auto read = [&](const char* key) {
+        return in.contains(key) && in[key].is_string() ? Uuid::parse(in[key].get<std::string>()) : std::nullopt;
+    };
+    const auto body = read("sourceBody");
+    const auto feature = read("sourceFeature");
+    if (!body || !feature)
+        return Status::failure(ErrorCode::FileFormatError, "The file contains an invalid cut.", "SweepCut: bad params");
+    sourceBody = *body;
+    sourceFeature = *feature;
     return okStatus();
 }
 

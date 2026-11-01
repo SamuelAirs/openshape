@@ -30,7 +30,7 @@ class Body;
 
 enum class FeatureKind {
     Box, PushPull, Fillet, Chamfer, Extrude, Shell, Move, Combine, Revolve, Hole, Mirror, Pattern, DeleteFaces, OffsetFace,
-    Split, SplitPiece, Copy, Holes, Imported, Text, Loft
+    Split, SplitPiece, Copy, Holes, Imported, Text, Loft, PushPullFaces, SweepCut
 };
 
 // What a feature may consult besides its input shape.
@@ -177,6 +177,46 @@ public:
     Status setParameter(std::string_view key, double value) override;
     void writeParams(nlohmann::json& out) const override;
     Status readParams(const nlohmann::json& in) override;
+};
+
+// Several flat faces facing the same way, moved together along that normal
+// (geom::pushPullFaces): pulled out they add material, pushed in they take
+// it away (raised text pushed into the face it stands on engraves it).
+class PushPullFacesFeature final : public Feature {
+public:
+    using Feature::Feature;
+    std::vector<FaceRef> faces;
+    double distance = 0; // mm, positive = outward
+
+    FeatureKind kind() const override { return FeatureKind::PushPullFaces; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new PushPullFacesFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override;
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    // The faces' indices in `input` (the shape before this step).
+    Result<std::vector<int>> resolveFaces(const geom::Shape& input) const;
+};
+
+// The cut a PushPullFaces step of another body makes in this one: its faces
+// pushed into this body take the volume they sweep out of it
+// (geom::cutBySweptFaces), and follow that step (its distance, its faces).
+class SweepCutFeature final : public Feature {
+public:
+    using Feature::Feature;
+    Uuid sourceBody;    // the body whose faces were pushed
+    Uuid sourceFeature; // its PushPullFaces step
+
+    FeatureKind kind() const override { return FeatureKind::SweepCut; }
+    std::unique_ptr<Feature> clone() const override { return std::unique_ptr<Feature>(new SweepCutFeature(*this)); }
+    Result<geom::Shape> compute(const geom::Shape& input, const EvalContext& context) const override;
+    std::vector<ParameterInfo> parameters() const override { return {}; }
+    Status setParameter(std::string_view key, double value) override;
+    void writeParams(nlohmann::json& out) const override;
+    Status readParams(const nlohmann::json& in) override;
+    std::vector<Uuid> dependencies() const override { return {sourceBody}; }
+    void remapReferences(const std::map<Uuid, Uuid>& copies) override;
 };
 
 class EdgeTreatmentFeature : public Feature {

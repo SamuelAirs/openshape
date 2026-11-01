@@ -858,6 +858,152 @@ Result<Shape> pushPullFace(const Shape& shape, int faceIndex, double distance)
     });
 }
 
+namespace {
+
+// Two normals count as the same direction within this (cosine), about
+// 0.003 degrees: the tops of raised text are one plane.
+constexpr double kSameNormalCos = 1.0 - 1e-9;
+
+// The outward normal of a flat face (at the middle of its parameter range);
+// nullopt for a curved face.
+std::optional<gp_Dir> planarNormal(const TopoDS_Face& face)
+{
+    BRepAdaptor_Surface surface(face);
+    if (surface.GetType() != GeomAbs_Plane)
+        return std::nullopt;
+    return faceNormal(face, (surface.FirstUParameter() + surface.LastUParameter()) / 2,
+                      (surface.FirstVParameter() + surface.LastVParameter()) / 2);
+}
+
+// The prisms the faces sweep along their common normal by `distance`, as
+// tools for one boolean; empty with `why` set when the faces are not flat,
+// do not face the same way, or a sweep fails.
+TopTools_ListOfShape sweptPrisms(const Shape& shape, const std::vector<int>& faceIndices, double distance, std::string& why)
+{
+    TopTools_ListOfShape prisms;
+    std::optional<gp_Dir> common;
+    for (const int index : faceIndices) {
+        if (!validIndex(shape, index, shape.faceCount())) {
+            why = "face index " + std::to_string(index) + " out of range";
+            return {};
+        }
+        const TopoDS_Face face = faceAt(shape, index);
+        const auto normal = planarNormal(face);
+        if (!normal) {
+            why = "face " + std::to_string(index) + " is not flat";
+            return {};
+        }
+        if (!common)
+            common = *normal;
+        else if (common->Dot(*normal) < kSameNormalCos) {
+            why = "face " + std::to_string(index) + " faces another way";
+            return {};
+        }
+        BRepPrimAPI_MakePrism maker(independentCopy(face), gp_Vec(*common) * distance);
+        maker.Build();
+        if (!maker.IsDone()) {
+            why = "BRepPrimAPI_MakePrism not done for face " + std::to_string(index);
+            return {};
+        }
+        TopoDS_Shape prism = maker.Shape();
+        for (TopExp_Explorer ex(prism, TopAbs_SOLID); ex.More(); ex.Next()) {
+            TopoDS_Solid solid = TopoDS::Solid(ex.Current());
+            BRepLib::OrientClosedSolid(solid); // swept against its normal: inside out
+            prism = solid;
+            break;
+        }
+        prisms.Append(prism);
+    }
+    if (prisms.IsEmpty())
+        why = "no faces";
+    return prisms;
+}
+
+} // namespace
+
+std::optional<Vec3> commonFaceNormal(const Shape& shape, const std::vector<int>& faceIndices)
+{
+    if (faceIndices.empty() || shape.isNull())
+        return std::nullopt;
+    try {
+        std::optional<gp_Dir> common;
+        for (const int index : faceIndices) {
+            if (!validIndex(shape, index, shape.faceCount()))
+                return std::nullopt;
+            const auto normal = planarNormal(faceAt(shape, index));
+            if (!normal || (common && common->Dot(*normal) < kSameNormalCos))
+                return std::nullopt;
+            if (!common)
+                common = *normal;
+        }
+        return Vec3{common->X(), common->Y(), common->Z()};
+    } catch (const Standard_Failure&) {
+        return std::nullopt;
+    }
+}
+
+Result<Shape> pushPullFaces(const Shape& shape, const std::vector<int>& faceIndices, double distance)
+{
+    if (faceIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the faces to push or pull.", "pushPullFaces: no faces");
+    if (std::abs(distance) < kMinLength)
+        return Result<Shape>::success(shape); // zero offset: no change
+    const char* userMessage = "Unable to move these faces by that distance. Try a slightly different distance.";
+    return guarded("pushPullFaces", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("pushPullFaces");
+        std::string why;
+        const TopTools_ListOfShape prisms = sweptPrisms(shape, faceIndices, distance, why);
+        if (prisms.IsEmpty())
+            return Result<Shape>::failure(ErrorCode::InvalidArgument,
+                                          "Push/Pull moves flat faces that face the same way together.",
+                                          "pushPullFaces: " + why);
+        TopTools_ListOfShape arguments;
+        arguments.Append(occ(shape));
+        const BooleanRun run = runBoolean(distance > 0 ? BOPAlgo_FUSE : BOPAlgo_CUT, arguments, prisms);
+        if (run.timedOut)
+            return tookTooLong<Result<Shape>>("pushPullFaces");
+        if (run.shape.IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          std::string(distance > 0 ? "Fuse" : "Cut") + " failed: " + run.errors);
+        return finishMerged(run.shape, "pushPullFaces", userMessage, {occ(shape)});
+    });
+}
+
+Result<Shape> cutBySweptFaces(const Shape& target, const Shape& source, const std::vector<int>& faceIndices,
+                              double distance)
+{
+    if (target.isNull() || faceIndices.empty() || std::abs(distance) < kMinLength)
+        return Result<Shape>::failure(ErrorCode::NoEffect, "The faces do not reach this body, so nothing would be cut away.",
+                                      "cutBySweptFaces: nothing to sweep");
+    const char* userMessage = "Unable to cut the pushed faces' shape out of this body. Try a slightly different distance.";
+    return guarded("cutBySweptFaces", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("cutBySweptFaces");
+        std::string why;
+        const TopTools_ListOfShape prisms = sweptPrisms(source, faceIndices, distance, why);
+        if (prisms.IsEmpty())
+            return Result<Shape>::failure(ErrorCode::InvalidArgument,
+                                          "Push/Pull moves flat faces that face the same way together.",
+                                          "cutBySweptFaces: " + why);
+        TopTools_ListOfShape arguments;
+        arguments.Append(occ(target));
+        const BooleanRun run = runBoolean(BOPAlgo_CUT, arguments, prisms);
+        if (run.timedOut)
+            return tookTooLong<Result<Shape>>("cutBySweptFaces");
+        if (run.shape.IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "Cut failed: " + run.errors);
+        auto result = finishMerged(run.shape, "cutBySweptFaces", userMessage, {occ(target)});
+        // A cut that misses (or only touches the surface) changes nothing.
+        if (result) {
+            const double before = volume(target), after = volume(result.value());
+            if (after >= before - 1e-9 * std::max(before, 1.0))
+                return Result<Shape>::failure(ErrorCode::NoEffect,
+                                              "The faces do not reach this body, so nothing would be cut away.",
+                                              "cutBySweptFaces: no volume removed");
+        }
+        return result;
+    });
+}
+
 namespace detail {
 
 std::optional<double> largestWorkingSize(double failed, std::chrono::steady_clock::duration firstAttempt,

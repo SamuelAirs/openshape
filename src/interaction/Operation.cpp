@@ -142,6 +142,7 @@ PreviewOutcome Operation::computeOutcome(double value, const doc::Document& docu
         if (result ? reconsider(result.value(), document) : reconsiderRefusal(result.error()))
             result = computePreview(value, document);
         outcome.meshBody = previewBody();
+        outcome.alsoReplaces = previewAlsoReplaces();
         if (!result) {
             outcome.error = result.userMessage();
             outcome.developerMessage = result.developerMessage();
@@ -175,6 +176,7 @@ void Operation::showOutcome(const PreviewOutcome& outcome)
 {
     previewMesh_ = outcome.mesh;
     previewMeshBody_ = outcome.meshBody;
+    previewAlsoReplaces_ = outcome.mesh ? outcome.alsoReplaces : std::vector<Uuid>{};
     if (previewMesh_)
         previewKey_ = nextPreviewKey();
     previewBounds_ = outcome.bounds;
@@ -229,6 +231,7 @@ void Operation::refusePendingValue(std::string message)
 void Operation::dropPreviews()
 {
     previewMesh_.reset();
+    previewAlsoReplaces_.clear();
     floorSerial_ = nextPreviewSerial();
     if (pendingSerial_ != 0 && scheduler_)
         scheduler_->dropScheduledPreview();
@@ -348,6 +351,130 @@ std::string PushPullOperation::checkValue(double value) const
 {
     // Same wording as a typed value that is refused.
     return thickness_ && value <= 1e-6 ? thicknessLabel_ + " must be greater than zero." : std::string();
+}
+
+// ---- Push/pull several faces ---------------------------------------------------
+
+std::unique_ptr<MultiPushPullOperation> MultiPushPullOperation::create(const doc::Document& document, const Uuid& bodyId,
+                                                                       const std::vector<int>& faces,
+                                                                       std::optional<Vec3> direction)
+{
+    const doc::Body* body = document.body(bodyId);
+    if (!body || body->shape().isNull() || faces.empty())
+        return nullptr;
+    const geom::Shape& shape = body->shape();
+    std::vector<int> moving;
+    if (direction) {
+        const Vec3 dir = direction->normalized();
+        for (const int index : faces)
+            if (const auto info = geom::faceInfo(shape, index); info && info->isPlanar() && info->normal.dot(dir) > 1.0 - 1e-9)
+                moving.push_back(index);
+    } else {
+        moving = faces;
+    }
+    const auto normal = geom::commonFaceNormal(shape, moving);
+    if (!normal)
+        return nullptr;
+    std::vector<doc::FaceRef> refs;
+    int largest = -1;
+    double largestArea = -1;
+    for (const int index : moving) {
+        const auto signature = geom::captureFaceSignature(shape, index);
+        const auto info = geom::faceInfo(shape, index);
+        if (!signature || !info)
+            return nullptr;
+        refs.push_back(doc::FaceRef{index, *signature});
+        if (info->area > largestArea) {
+            largestArea = info->area;
+            largest = index;
+        }
+    }
+    // The arrow sits on the largest of them.
+    const auto info = geom::faceInfo(shape, largest);
+    const Vec3 anchor = geom::pointOnFace(shape, largest, info->centroid).value_or(info->centroid);
+    return std::unique_ptr<MultiPushPullOperation>(
+        new MultiPushPullOperation(bodyId, LinearManipulator(anchor, *normal), std::move(refs), std::move(moving)));
+}
+
+std::unique_ptr<doc::Feature> MultiPushPullOperation::makeFeature(double value) const
+{
+    auto feature = std::make_unique<doc::PushPullFacesFeature>();
+    feature->faces = faces_;
+    feature->distance = value;
+    return feature;
+}
+
+Result<std::vector<std::pair<Uuid, geom::Shape>>> MultiPushPullOperation::cuts(double value,
+                                                                                const doc::Document& document) const
+{
+    using R = Result<std::vector<std::pair<Uuid, geom::Shape>>>;
+    std::vector<std::pair<Uuid, geom::Shape>> out;
+    const doc::Body* source = document.body(bodyId());
+    if (value >= 0 || !source || source->shape().isNull())
+        return R::success(std::move(out));
+    // Where the swept faces can reach: the body's box grown by the push.
+    auto reach = geom::approximateBoundingBox(source->shape());
+    if (!reach.valid)
+        return R::success(std::move(out));
+    const double grow = std::abs(value);
+    reach.min = reach.min - Vec3{grow, grow, grow};
+    reach.max = reach.max + Vec3{grow, grow, grow};
+    for (const auto& other : document.bodies()) {
+        if (other->id() == bodyId() || !other->isVisible() || other->shape().isNull())
+            continue;
+        // A body this one is built from cannot follow it (a loop).
+        if (document.dependsOn(bodyId(), other->id()))
+            continue;
+        const auto box = geom::approximateBoundingBox(other->shape());
+        if (!box.valid || box.max.x < reach.min.x || box.min.x > reach.max.x || box.max.y < reach.min.y
+            || box.min.y > reach.max.y || box.max.z < reach.min.z || box.min.z > reach.max.z)
+            continue;
+        auto cut = geom::cutBySweptFaces(other->shape(), source->shape(), indices_, value);
+        if (cut)
+            out.emplace_back(other->id(), cut.value());
+        else if (cut.error() != ErrorCode::NoEffect)
+            return R::failure(cut.error(), cut.userMessage(), cut.developerMessage());
+    }
+    return R::success(std::move(out));
+}
+
+Result<geom::Shape> MultiPushPullOperation::computePreview(double value, const doc::Document& document) const
+{
+    cutBodies_.clear();
+    auto own = document.preview(bodyId(), *makeFeature(value));
+    if (!own)
+        return own;
+    auto others = cuts(value, document);
+    if (!others)
+        return Result<geom::Shape>::failure(others.error(), others.userMessage(), others.developerMessage());
+    if (others.value().empty())
+        return own;
+    std::vector<geom::Shape> shapes{own.value()};
+    for (const auto& [id, shape] : others.value()) {
+        cutBodies_.push_back(id);
+        shapes.push_back(shape);
+    }
+    return geom::gatherSolids(shapes);
+}
+
+std::unique_ptr<cmd::Command> MultiPushPullOperation::makeCommand(const doc::Document& document) const
+{
+    auto feature = makeFeature(value());
+    const Uuid pushId = feature->id();
+    auto push = std::make_unique<cmd::AddFeatureCommand>(bodyId(), std::move(feature));
+    const auto others = cuts(value(), document);
+    if (!others || others.value().empty())
+        return push;
+    // The push and the cuts it makes in other bodies: one undo step.
+    std::vector<std::unique_ptr<cmd::Command>> children;
+    children.push_back(std::move(push));
+    for (const auto& [id, shape] : others.value()) {
+        auto cut = std::make_unique<doc::SweepCutFeature>();
+        cut->sourceBody = bodyId();
+        cut->sourceFeature = pushId;
+        children.push_back(std::make_unique<cmd::AddFeatureCommand>(id, std::move(cut)));
+    }
+    return std::make_unique<cmd::CompositeCommand>("Push/Pull", std::move(children));
 }
 
 // ---- Align -----------------------------------------------------------------------
