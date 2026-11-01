@@ -184,7 +184,7 @@ the version page (**iOS App → 0.3.0 Prepare for Submission**).
 | Field | What to enter | State |
 |---|---|---|
 | Name (max 30) | `FoldForm: CAD for 3D Printing` (or `FoldForm`; section 0) | **YOU** |
-| Subtitle (max 30) | `Precise modeling for makers` (27) | **YOU** (paste) |
+| Subtitle (max 30) | `Parametric parts, STL and 3MF` (29; the marked block in section 3; until 2026-11-03 `Precise modeling for makers`, which carried no search term) | **YOU** (paste) |
 | Bundle ID | `io.github.samuelairs.openshape` (set by the app record; cannot change after a build was uploaded) | **DONE** |
 | SKU | `openshape` (internal only, set when the record was made) | **DONE** |
 | Primary language | English (U.S.) | **YOU** (check) |
@@ -271,7 +271,30 @@ placeholder text).
 
 Paste these into the version page (English (U.S.)). Their lengths are
 checked by `python scripts/dev/check_appstore_texts.py` (run it after
-editing a block below; limits from App Store Connect's reference).
+editing a block below; limits from App Store Connect's reference). The
+listing tool on this PC reads the same marked blocks (`<!-- appstore:...
+-->`).
+
+**Changed on 2026-11-03** (each marked `changed 2026-11-03` above its
+block; re-apply them): the subtitle (new block below), the description
+(the iPhone and iPad header, the Apple Pencil line and the iPhone Duo
+line), the keywords, What's New (one real sentence instead of the
+examples) and the featuring nomination (new blocks, section 3b). Why: the
+outside critique (docs/CRITIQUE_2026-11-03.md, section 4, items 1, 2 and
+10): "Made for iPhone Duo" is the wording of Apple's own badge, the palm
+rejection had not been tried on a device, and the keywords repeated words
+the name already indexes.
+
+### Subtitle (max 30 characters)
+
+Words in the subtitle are searchable, so it carries search terms that are
+not in the name and not in the keywords.
+
+<!-- changed 2026-11-03: re-apply this block -->
+<!-- appstore:subtitle max-chars=30 -->
+```text
+Parametric parts, STL and 3MF
+```
 
 ### Promotional text (max 170 characters; can be changed any time without review)
 
@@ -285,6 +308,7 @@ Design parts for your 3D printer by touch: push and pull faces, sketch with cons
 Accurate to what version 0.3.0 does (the README's feature list and
 CHANGELOG.md, checked against the code on 2026-10-31). Update it when a feature changes (guideline 2.3).
 
+<!-- changed 2026-11-03: re-apply this block -->
 <!-- appstore:description max-chars=4000 -->
 ```text
 FoldForm is precise 3D CAD for makers and 3D printing, made for touch. Push and pull faces with a finger or Apple Pencil, sketch a profile and extrude it, and type exact sizes as you go. Every step stays editable.
@@ -321,11 +345,11 @@ YOUR FILES
 • Unsaved work is kept safe in the background and offered again if the app closes.
 • When a step cannot be done, FoldForm says why in plain words, often with a size that works, and your model stays as it was.
 
-MADE FOR IPHONE AND IPAD
+ON IPHONE AND IPAD
 • One app for iPhone and iPad. On iPhone the tools sit along the bottom and the value box docks where it covers nothing you selected; on iPad the full layout, also in Split View and Stage Manager.
 • One finger orbits, two fingers pan and zoom, a two-finger tap undoes and a three-finger tap redoes. A view cube shows how the view is turned; tap it to look from a side.
-• Apple Pencil: pen mode lets the Pencil draw and select while your fingers only move the view, and the hand holding the Pencil does not move the view.
-• Made for iPhone Duo: fills the inner display, and folding or unfolding keeps your work in place.
+• Apple Pencil on iPad: pen mode lets the Pencil draw and select while your fingers only move the view.
+• On iPhone Duo: closed, the phone layout; opened, the full layout on the inner display, with a larger canvas for your model.
 
 FREE TO START
 Every tool is free for one project at a time. A one-time in-app purchase unlocks unlimited projects on your iPhone and iPad.
@@ -352,39 +376,44 @@ Notes on the description:
   docs/LICENSING.md ask of the App Store description.
 - "FREE TO START" says which part needs the purchase (guideline 2.3.2:
   the description must say what requires an in-app purchase).
+- The iPhone Duo line says only what the layout does (the phone layout on
+  the outer display, the regular one on the inner display), not Apple's
+  badge wording "Made for iPhone Duo" (the badge comes from the Duo
+  screenshots), and nothing about the Apple Pencil on the Duo (Apple has
+  not enabled it there yet) or the screen edges (estimates until the
+  owner's log, TD-150). The owner confirms it on his Duo before the
+  listing is applied. The Apple Pencil line no longer promises palm
+  rejection, which has not been tried on the iPad yet.
 
 ### Keywords (max 100 bytes, comma-separated, no spaces)
 
 Each keyword must be longer than two characters (so not "3d"); the app
-name, the company name and the subtitle are searchable already, so they are
-not repeated; no names of other apps or companies (guideline 2.3.7).
+name (`FoldForm: CAD for 3D Printing`), the company name and the subtitle
+(`Parametric parts, STL and 3MF`) are searchable already, so none of their
+words is repeated (no cad, print, printing, parametric, part, stl, 3mf);
+no "app" or "free"; no names of other apps or companies (guideline
+2.3.7). The words are what makers search for when they need a part:
+the kind of part, the hardware it holds, the tool they measure with.
 
+<!-- changed 2026-11-03: re-apply this block -->
 <!-- appstore:keywords max-bytes=100 -->
 ```text
-print,printing,stl,3mf,step,cad,sketch,parametric,solid,design,part,enclosure,fillet,extrude,bracket
+modeling,design,sketch,step,enclosure,bracket,caliper,mount,spacer,knob,clip,insert,hole,screw,jig
 ```
-
-(If the name becomes `OpenShape: CAD for 3D Printing`, these fit instead,
-without repeating the name's words:
-`slicer,stl,3mf,step,sketch,parametric,solid,design,part,enclosure,fillet,extrude,engineering,bracket`,
-exactly 100 bytes.)
 
 ### What's New
 
-Not asked for the first version on the App Store. For the next ones
-(guideline 2.3.12 wants new features listed specifically, not "bug fixes"),
-take the version's section of CHANGELOG.md and shorten it; a draft for a
-first update:
+App Store Connect asks for it only from the second version on; if it
+shows the field for 0.3.0, this is the text. For later versions
+(guideline 2.3.12 wants new features listed specifically, not "bug
+fixes"), shorten the version's section of CHANGELOG.md into one line per
+change a user can notice.
 
+<!-- changed 2026-11-03: re-apply this block -->
 <!-- appstore:whats-new max-chars=4000 -->
 ```text
-• Holes: new thread sizes. (EXAMPLE: replace with this version's changes)
-• The value box follows the keyboard on iPad. (EXAMPLE)
-• Fixes for the problems reported in the beta: a fillet on a thin wall no longer fails. (EXAMPLE)
+The first App Store version of FoldForm: precise CAD for 3D printing by touch on iPhone, iPad and iPhone Duo, free for one project.
 ```
-
-(The lines above only show the form: one short line per change a user can
-notice, taken from CHANGELOG.md. Never paste them unchanged.)
 
 ### Screenshots
 
@@ -478,6 +507,86 @@ the purchase in step 8 of LAUNCH_CHECKLIST.md, so the one-project limit
 does not get in the way). Upload the six in the same order to the 6.3"
 slot (Media Manager, **View All Sizes**). The status bar shows on a
 device; that is fine.
+
+---
+
+## 3b. The iPhone Duo product page
+
+The badge ("optimized for iPhone Duo") comes with screenshots in App Store
+Connect's iPhone Duo slot (section 3), so they go into this submission.
+They are taken by the owner on his Duo with build 54; the listing tool
+finds Apple's exact Duo sizes and uploads them in file-name order.
+
+### The captures (the owner, on the Duo, build 54)
+
+**First:** TestFlight build 54 installed; File → About FoldForm →
+**Restore purchase** on the Duo (it was bought on the iPhone; this also
+shows that Restore works on a second device), so the sample projects open
+without the sheet; the
+six sample projects on the phone (the `.openshape` files in
+`C:\Users\ayers\OpenShape\build\appstore-screenshots\iphone-6-home\OpenShape\`,
+mailed to yourself or put in iCloud Drive, each opened in FoldForm); Focus
+on (no notifications); Light appearance. Every capture with the phone
+**opened flat or closed**, never half folded (FoldForm does not place
+things around the crease yet, TD-140). Before each one, look along every
+edge and the side bar: if anything is cut off or hidden, skip that capture
+and tell the lead. A capture is the side button and volume up. Save them
+as these files in `docs/appstore/duo/` (the folder the listing tool reads,
+in this order):
+
+1. `01-inner-project-box.png`: **inner display, opened flat, wide** (the
+   way it opens, side bar along the side). *Project box*, Model panel
+   open, tap the cable hole's wall and type `8.4` on the keypad; do not
+   apply (the value box and its arrow on the part).
+2. `02-inner-sketch.png`: **inner display, opened flat, wide.** *Mounting
+   plate* → Model panel → its sketch → edit: the sizes and constraint
+   glyphs showing, the Select tool on.
+3. `03-inner-tall-holes.png`: **inner display, opened flat, turned tall**
+   (portrait). *Flange plate* → Hole tool, M3 countersunk, the allowance
+   0.2, two holes placed, not applied.
+4. `04-outer-project-box.png`: **outer display, closed, upright**
+   (portrait). Right after capture 1, fold the phone without touching
+   anything else: the same project, the same value still typed.
+5. `05-outer-key-tag.png`: **outer display, closed, upright.** *Key tag*,
+   tap the text: its size and depth showing, with the keypad.
+6. `06-outer-sideways-model.png`: **outer display, closed, sideways**
+   (landscape). *Project box*, nothing selected, the part filling the
+   view.
+
+Then send **Logs/openshape.log** (Files → On My iPhone → FoldForm →
+Logs): its `window ...` lines give the real screen sizes and insets for
+0.3.1 (TD-150).
+
+### Captions (for a later, captioned set; the captures above go up plain)
+
+1. The whole part, every step: open it up.
+2. Sketch with your finger. Type the size.
+3. Holes that fit M3 screws.
+4. Fold it: your work stays where it was.
+5. Raised text for labels and version marks.
+6. Precise CAD that fits in your pocket.
+
+(Caption 4 only once capture 4 shows the same value as capture 1.)
+
+### Featuring nomination (App Store Connect → Featuring → Nominations)
+
+Type **App Launch**; platforms iOS (iPhone) and iOS (iPad); countries:
+those the app is sold in; publish date: the day it is released (Apple
+asks for at least two to three weeks' notice, so this is a late
+nomination; an **App Enhancements** nomination for 0.3.1's Duo work can go
+in with notice). Supplemental material: https://github.com/SamuelAirs/openshape.
+
+<!-- changed 2026-11-03: re-apply this block -->
+<!-- appstore:nomination-name max-chars=60 -->
+```text
+FoldForm: precise CAD for 3D printing on iPhone Duo
+```
+
+<!-- changed 2026-11-03: re-apply this block -->
+<!-- appstore:nomination-description max-chars=1000 -->
+```text
+FoldForm is new: precise, open-source CAD by touch for people who design parts for their 3D printers, with the phone layout on iPhone Duo's outer display, the full layout on its inner display, no account, no data collected and every tool free for one project.
+```
 
 ---
 

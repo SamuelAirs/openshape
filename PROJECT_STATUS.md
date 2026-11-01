@@ -1048,23 +1048,42 @@ it), after the headless suite, the real-UI run and
 `scripts/dev/check_lambda_captures.py`; tag `v0.3.1` when the owner wants
 it in the store.
 
-1. **Fixes from App Review and the Duo** (above). A rejection that needs a
+1. **The project limit's leak (TD-155), first.** Confirmed in the code on
+   2026-11-03 (the critique's section 4, item 7): `appFolderProjects`
+   (`src/ui/Purchase.cpp`) counts only the `.openshape` files at the top
+   of the app folder (`QDir::entryInfoList`, not recursive), while a
+   project anywhere inside the app folder opens in place without the gate
+   (`AppController::openProject`: `stageIncomingFile` returns a file
+   inside the folder unchanged, so `stagingAddsProject` is false). Moving
+   projects into a folder in the Files app therefore lifts the limit.
+   Fix: count recursively, minus `Exports`, the `Inbox`, `.Trash` and
+   hidden files; a GTest in `tests/test_purchase.cpp` with projects in a
+   subfolder, and the `purchase` scenario. Not worth holding the 0.3.0
+   submission: it takes a deliberate move in the Files app, App Review
+   does not test for it (guideline 3.1.1 asks that unlocking uses the
+   in-app purchase, which it does), and a fix means a new tag and build
+   55, restarting the submission.
+2. **Fixes from App Review and the Duo** (above). A rejection that needs a
    new build is the owner's call; simplest is to rename the App Store
    version to 0.3.1 and submit the `v0.3.1` tag's build, since the tag
    check in ipad.yml wants the tag to match `CMakeLists.txt`. Also check
-   the privacy manifest: on iOS the settings (with the purchase's unlocked
-   flag) go through QSettings' native format, the user defaults, which
-   `src/app/ios/PrivacyInfo.xcprivacy` does not list as a required-reason
-   API (`NSPrivacyAccessedAPICategoryUserDefaults`, CA92.1). Apple sent no
-   warning about build 54 (the owner, 2026-10-31); add it anyway, it is
-   true. **The written source offer's contact** (decided 2026-10-31):
+   the privacy manifest (checked 2026-11-03): Apple's required-reason
+   list for user defaults names only the `UserDefaults` (`NSUserDefaults`)
+   API; QSettings' native format on iOS calls Core Foundation's
+   `CFPreferences` functions, which the list does not name; Qt 6.11.2
+   calls `NSUserDefaults` only under `Q_OS_MACOS` (`qcore_mac.mm`,
+   `qlocale_mac.mm`), and neither FoldForm's code nor the Qt iOS plugin
+   files checked use it or the active-keyboards API. Build 54 drew no
+   ITMS-91053 email (the owner). So nothing is missing for 0.3.0; adding
+   `NSPrivacyAccessedAPICategoryUserDefaults` with CA92.1 in 0.3.1 is
+   harmless and guards against Apple widening the list (low priority). **The written source offer's contact** (decided 2026-10-31):
    ayers177@gmail.com instead of the issue tracker (TD-102). Not done on
    the 0.3.0 code because it is more than the one line
    (`kSourceContactUrl` in `src/ui/Licenses.h`): `tests/test_uistate.cpp`
    checks a filled-in offer for any `@` to catch a placeholder left over,
    so those checks must look for `@NAME@` placeholders instead, and the
    `licenses` scenario (real UI) should run once after it.
-2. **Real autosave** (TD-51: today a recovery copy keeps unsaved work, and
+3. **Real autosave** (TD-51: today a recovery copy keeps unsaved work, and
    Home asks Save / Don't Save). A project that has a file saves itself
    after each committed step (debounced) and when the app goes to the
    background; an untitled one keeps the recovery copy and gets a file only
@@ -1074,13 +1093,13 @@ it in the store.
    for when a save happens and that a failed save keeps the recovery copy;
    an acceptance scenario that edits, backgrounds and reads the file back;
    Home opens another project without asking for a saved one.
-3. **Icons for the text-only buttons** (TD-9): one original, consistent
+4. **Icons for the text-only buttons** (TD-9): one original, consistent
    set (SVG in `resources/icons`, MPL like the rest, no copied icon fonts),
    for the tool palette and strip, the top bar, Home's card menu and the
    sketch tool bar. Each button keeps its `objectName` (the acceptance run
    clicks by it) and its text as the accessible name and tooltip; the
    screenshots are retaken afterwards (TD-95).
-4. **Reuse the preview on confirm for large parts** (TD-1): the commit
+5. **Reuse the preview on confirm for large parts** (TD-1): the commit
    computes the step again (~190 ms on the 249-face enclosure) although
    the preview worker just made the same shape. Take the preview's shape
    when the document and the operation's inputs are unchanged since it was

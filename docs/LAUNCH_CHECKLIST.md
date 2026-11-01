@@ -94,11 +94,17 @@ Duo", steps 7 and 8).
 9. The version page (**iOS App → 0.3.0 Prepare for Submission**). The
    texts come from the marked blocks (`<!-- appstore:... -->`) in
    docs/APP_STORE.md; a tool on this PC that fills App Store Connect from
-   those blocks may enter them for you.
+   those blocks may enter them for you. **First, on your Duo:** the six
+   captures in [APP_STORE.md, section 3b](APP_STORE.md#3b-the-iphone-duo-product-page)
+   into `docs/appstore/duo/`, and your word that the Duo line in the
+   description ("closed, the phone layout; opened, the full layout on the
+   inner display") is what you see. Then the listing is applied and you
+   submit.
    - **Product Page Information → App Previews and Screenshots:** the
      **iPhone** tab: `iphone-1` … `iphone-6` from
      `docs/appstore/screenshots/`, in that order; the **iPad** tab:
-     `ipad-1` … `ipad-6`. Only if App Store Connect then asks for 6.3"
+     `ipad-1` … `ipad-6`; the **iPhone Duo** size (Media Manager, View All
+     Sizes): `01` … `06` from `docs/appstore/duo/` (the badge). Only if App Store Connect then asks for 6.3"
      iPhone screenshots: take the six scenes on your iPhone 16 Pro (its
      screenshots are 1206 x 2622, the size Apple lists for that slot);
      the six scenes are listed in
