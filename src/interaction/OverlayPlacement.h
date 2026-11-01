@@ -85,6 +85,11 @@ struct ChipPlacementInput {
     // stays a margin away from it. nullopt: nothing to keep clear.
     std::optional<ScreenRect> keepClear;
     bool compact = false; // a phone-sized window: always docked
+    // A cramped touch window that is not a phone (the iPhone Duo's inner
+    // display, 951 x 669 points): docked first, like a phone, so the chip
+    // never floats over the part; beside the arrow only when neither docked
+    // side keeps clear of the selection.
+    bool dockFirst = false;
     bool touch = false;   // a finger: larger margins
     bool frozen = false;  // a manipulator is being dragged: a docked chip keeps its side
     // The value is being typed on an on-screen keyboard (a touch window's

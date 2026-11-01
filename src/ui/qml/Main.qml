@@ -57,6 +57,11 @@ ApplicationWindow {
     Binding { target: Theme; property: "windowHeight"; value: window.height }
     // (Logged with the window's size and safe area: ui/WindowMetricsLog.)
     readonly property bool compactLayout: Theme.compact
+    // A cramped touch window that is not a phone (the iPhone Duo's inner
+    // display, 951 x 669 points, either way round): the value box docks at
+    // an edge instead of floating beside the arrow over the part, and the
+    // view never moves to make room for it (the owner on his Duo, 2026-11-03).
+    readonly property bool dockChipFirst: Theme.touch && !Theme.compact && Math.min(window.width, window.height) < 720
     Item {
         // The window's safe-area margins (SafeArea, Qt 6.9+; zero on the desktop).
         id: safeInsets
@@ -1104,6 +1109,10 @@ ApplicationWindow {
             return "Drag the arrow, or just type a value · Shift-click to add more edges"
         if (app.operationActive && app.operationTitle === "Shell")
             return "Type the wall thickness · Shift-click to open more faces"
+        // Push/Pull by a distance: one face without an opposite one, or several faces.
+        if (app.operationActive && app.operationTitle === "Push/Pull")
+            return "Drag the arrow or type a distance: out adds material, in cuts · "
+                 + "Shift-click a face to add or take it out · Enter applies"
         if (app.operationActive)
             return "Drag the arrow, or just type a value"
         if (app.hasSelection && app.contextActions.length > 0)
@@ -1220,6 +1229,7 @@ ApplicationWindow {
             fieldCenter: Theme.controlHeight / 2 + Theme.panelPadding,
             keepClear: window.app.keepClearRect,
             compact: Theme.compact,
+            dockFirst: window.dockChipFirst,
             touch: Theme.touch,
             frozen: window.app.manipulatorDragging,
             typing: Theme.touch && valueChip.typing,
@@ -1237,8 +1247,11 @@ ApplicationWindow {
         keypad: keypad
         onFinished: viewport.forceActiveFocus()
         // A larger touch window with no clear spot for it: the view moves
-        // instead (revealSelection).
-        onPlacementChanged: if (Theme.touch && !Theme.compact) Qt.callLater(window.revealSelection)
+        // instead (revealSelection). Where it docks first (the Duo's inner
+        // display) the view stays as the user left it unless the chip found
+        // no spot at all clear of the selection (a part filling the window).
+        onPlacementChanged: if (Theme.touch && !Theme.compact && (!window.dockChipFirst || (placement && !placement.clear)))
+                                Qt.callLater(window.revealSelection)
     }
 
     // ---------------------------------------------------------------- numeric keypad

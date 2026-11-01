@@ -1485,7 +1485,9 @@ std::string featureTitle(const doc::Feature& f); // (the Model panel's name for 
 
 std::optional<Vec3> InteractionController::stepFacesDirection() const
 {
-    if (!stepFaces_ || !selection_.allOfKind(sel::SelectionKind::Face) || selection_.size() != stepFaces_->faces.size())
+    // Still those faces, or some of them (a tap took a wall or a letter out).
+    if (!stepFaces_ || selection_.empty() || !selection_.allOfKind(sel::SelectionKind::Face)
+        || selection_.size() > stepFaces_->faces.size())
         return std::nullopt;
     for (const auto& item : selection_.items())
         if (item.bodyId != stepFaces_->body

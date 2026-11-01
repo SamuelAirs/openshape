@@ -128,7 +128,10 @@ Rectangle {
                         title: "Select"
                         rows: [
                             ["Face or edge", "Click · tap", "Tap"],
-                            ["Add to selection", "Shift+click · taps add on touch", "Tap more: taps add"],
+                            ["Add to selection", "Shift+click (Cmd+click on an iPad keyboard) · taps add on touch",
+                             "Tap more: taps add; tap a selected one to take it out; Clear starts again"],
+                            ["A whole step's faces", "Touch: hold a face (all of a text, an extrusion's top and walls)",
+                             "Hold a face: every face of the step that made it (all of a text, an extrusion's top and walls)"],
                             ["Whole body", "Double-click · double-tap", "Double-tap"],
                             ["Second body", "Shift+double-click", "Double-tap it too (or tap it); double-tap a selected one to take it out"],
                             ["From the Model panel", "Click a body (Shift adds) · hover a step to see it",
@@ -141,6 +144,7 @@ Rectangle {
                         rows: [
                             ["New box / sketch", "B / K", "Box / Sketch in the tools (along the bottom on a phone)"],
                             ["Push or pull a flat face", "Select it, drag or type"],
+                            ["Several faces at once", "Faces that face the same way move together on one arrow; pushed in they cut, also through another body (push a raised text into its face to engrave it)"],
                             ["Resize to an exact size", "Click a face: it shows the size to the opposite face; type the new one (+5 / -5 adds or removes)",
                              "Tap a face: it shows the size to the opposite face; tap the value and type the new one (+5 / -5 adds or removes)"],
                             ["Round or bevel edges", "Select edges → Fillet / Chamfer"],

@@ -395,15 +395,20 @@ TEST(MultiFace, LongPressOnRaisedTextSelectsItAndPushingItInEngravesTheFace)
     const double letters = geom::surfaceArea(geom::textFaces({"Fold", doc::kTextFontRegular, 10}).value());
     ASSERT_NEAR(h.volume(plate), 9000 + letters, 1e-4 * letters);
 
-    // A point on a letter's top (z = 6).
+    // A point on a letter's top (z = 6) that a mouse click picks as that face
+    // (not an edge of the thin stroke beside it), zoomed in on the words.
+    h.controller.wheel(h.screen({30, 15, 6}), 8);
     const geom::Shape& shape = h.document.body(plate)->shape();
     std::optional<Vec3> onLetter;
     int letterTops = 0;
+    const auto mouse = InputProfile::forDevice(PointerDevice::Mouse);
     for (int i = 0; i < shape.faceCount(); ++i)
         if (const auto f = geom::faceInfo(shape, i); f && f->isPlanar() && f->normal.z > 0.999 && std::abs(f->point.z - 6) < 1e-6) {
             ++letterTops;
-            if (!onLetter)
-                onLetter = geom::pointOnFace(shape, i, f->centroid);
+            for (const Vec3& candidate : {geom::pointOnFace(shape, i, f->centroid).value_or(f->point), f->point})
+                if (const auto hit = h.controller.pickAt(h.screen(candidate), mouse);
+                    !onLetter && hit.kind == sel::PickKind::Face && hit.index == i)
+                    onLetter = candidate;
         }
     ASSERT_TRUE(onLetter.has_value());
     ASSERT_GE(letterTops, 4);
@@ -416,6 +421,24 @@ TEST(MultiFace, LongPressOnRaisedTextSelectsItAndPushingItInEngravesTheFace)
     EXPECT_EQ(h.multi()->movingFaces().size(), std::size_t(letterTops)) << "the tops move; the walls come along";
     ASSERT_FALSE(h.messages.empty());
     EXPECT_NE(h.messages.back().find("faces of Text"), std::string::npos) << h.messages.back();
+
+    // One letter's top taken out (Cmd-click: a finger near a thin stroke may
+    // pick its edge), the others keep their arrow; then put back.
+    auto cmdClick = [&] {
+        h.now += std::chrono::seconds(1);
+        PointerEvent e = Harness::at(h.screen(*onLetter), PointerDevice::Mouse);
+        e.modifiers.control = true;
+        h.controller.pointerPress(e);
+        h.controller.pointerRelease(e);
+    };
+    cmdClick();
+    EXPECT_EQ(h.controller.selection().size(), selected - 1);
+    ASSERT_NE(h.multi(), nullptr) << "some of the step's faces: still pushed its way";
+    EXPECT_EQ(h.multi()->movingFaces().size(), std::size_t(letterTops) - 1);
+    cmdClick();
+    EXPECT_EQ(h.controller.selection().size(), selected);
+    ASSERT_NE(h.multi(), nullptr);
+    EXPECT_EQ(h.multi()->movingFaces().size(), std::size_t(letterTops));
 
     // 1.5 mm in: the raised letters go, and 0.5 mm is engraved.
     EXPECT_EQ(h.controller.setValueText("-1.5"), "");

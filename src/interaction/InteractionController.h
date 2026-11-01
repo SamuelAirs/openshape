@@ -573,14 +573,15 @@ private:
     // When the last kPenFingerHint was shown (clock_).
     std::optional<TypingPause::Clock::time_point> penHintShown_;
     // A step's faces selected by a long press (selectStepFacesAt), and the
-    // way they are pushed: used while the selection is still exactly those.
+    // way they are pushed: used while the selection is those faces or some
+    // of them (a tap took one out).
     struct StepFaces {
         Uuid body;
         std::vector<int> faces;
         Vec3 direction;
     };
     std::optional<StepFaces> stepFaces_;
-    // The long press's direction, if the selection is still that step's faces.
+    // The long press's direction, if the selection is still (some of) that step's faces.
     std::optional<Vec3> stepFacesDirection() const;
     // When the user last moved the view (an orbit or pan step, a pinch, a
     // wheel notch, a view-cube drag; clock_), and when a zoom last picked

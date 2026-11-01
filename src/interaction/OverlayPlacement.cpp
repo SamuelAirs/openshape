@@ -297,11 +297,30 @@ private:
 
 } // namespace
 
+namespace {
+// While the arrow is dragged, a docked chip stays docked (it does not jump
+// beside the arrow mid-drag).
+bool in_frozen_dock(const ChipPlacementInput& input, ChipSpot previous)
+{
+    return input.frozen && isDock(previous);
+}
+} // namespace
+
 ChipPlacement placeValueChip(const ChipPlacementInput& input, ChipSpot previous)
 {
     const Placer placer(input);
     if (input.compact)
         return placer.dock(isDock(previous) ? previous : ChipSpot::None);
+    // A cramped touch window (the iPhone Duo's inner display): docked at an
+    // edge, so the chip and its actions never float over the part; beside
+    // the arrow only when neither docked side is clear of the selection.
+    if (input.dockFirst) {
+        const ChipPlacement docked = placer.dock(isDock(previous) ? previous : ChipSpot::None);
+        if (docked.clear || in_frozen_dock(input, previous))
+            return docked;
+        const ChipPlacement beside = placer.regular(isDock(previous) ? ChipSpot::None : previous);
+        return beside.clear ? beside : docked;
+    }
     return placer.regular(previous);
 }
 

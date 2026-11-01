@@ -23,7 +23,7 @@ namespace {
 // specific first. (Sources: SketchSession::hintText and its messages,
 // Operation::prompt, InteractionController::runTool and messages, and the
 // hints in Main.qml.)
-constexpr std::array<std::pair<std::string_view, std::string_view>, 46> kPhrases{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 47> kPhrases{{
     // ---- Texts written for both ("click or tap") read "tap or tap" otherwise
     {"Click or tap", "Tap"},
     {"click or tap", "tap"},
@@ -72,6 +72,8 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 46> kPhrases
     {"Shift-click adds profiles", "tap more profiles to add them"},
     {"Shift-click to add more edges", "tap more edges to add them"},
     {"Shift-click to open more faces", "tap more faces to open them"},
+    // A finger can also hold a face: every face of the step that made it.
+    {"double-click selects the body", "double-tap selects the body " DOT " hold a face for its whole step"},
     {" " DOT " Duplicate (Ctrl+D) makes a copy to drag away " DOT " Shift+double-click another body to combine them",
      " " DOT " Duplicate makes a copy to drag away " DOT " double-tap another body to combine them"},
     // ---- Applying and cancelling: the value chip's ✓ and ✕

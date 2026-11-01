@@ -468,6 +468,7 @@ QVariantMap AppController::placeValueChip(const QVariantMap& layout) const
     if (const QVariant keepClear = layout.value(QStringLiteral("keepClear")); keepClear.typeId() == QMetaType::QRectF)
         input.keepClear = toScreenRect(keepClear.toRectF());
     input.compact = layout.value(QStringLiteral("compact")).toBool();
+    input.dockFirst = layout.value(QStringLiteral("dockFirst")).toBool();
     input.touch = layout.value(QStringLiteral("touch")).toBool();
     input.frozen = layout.value(QStringLiteral("frozen")).toBool();
     input.typing = layout.value(QStringLiteral("typing")).toBool();

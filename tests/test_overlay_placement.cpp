@@ -1095,3 +1095,49 @@ TEST(LargestFreeRect, RoomBesideKeypadAndValueBox)
     const ScreenRect none = largestFreeRect(area, {area}, 0);
     EXPECT_DOUBLE_EQ(none.width() * none.height(), 0);
 }
+
+// The iPhone Duo's inner display (951 x 669 points, the side bar on the
+// right): a cramped touch window that is not a phone. The owner on his Duo
+// (2026-11-03): the value box and its actions floated beside the arrow over
+// the part. Docked first, it sits at an edge clear of the selection.
+TEST(ChipPlacement, DuoInnerDisplayDocksAtAnEdgeClearOfTheSelection)
+{
+    const Layout duo{"Duo inner",
+                     rect(8, 8, 851, 633),
+                     {rect(8, 8, 360, 56),    // top bar
+                      rect(8, 72, 100, 500),  // tool column
+                      rect(600, 8, 251, 120), // Model panel
+                      rect(400, 585, 451, 56), // view buttons
+                      rect(8, 590, 380, 48)},  // selection summary and hint
+                     {300, 120},
+                     false,
+                     true};
+    // A face in the middle, its arrow pointing up from it.
+    const ScreenRect face = rect(330, 230, 220, 160);
+    auto in = input(duo, {440, 230}, face);
+    const ChipPlacement beside = placeValueChip(in);
+    EXPECT_FALSE(beside.spot == ChipSpot::DockTop || beside.spot == ChipSpot::DockBottom) << "without it: beside the arrow";
+
+    in.dockFirst = true;
+    const ChipPlacement docked = placeValueChip(in);
+    EXPECT_TRUE(docked.spot == ChipSpot::DockTop || docked.spot == ChipSpot::DockBottom) << toString(docked.spot);
+    EXPECT_TRUE(docked.clear);
+    const ScreenRect chip = chipRect(docked, in);
+    EXPECT_TRUE(duo.area.contains(chip)) << text(chip);
+    EXPECT_TRUE(clearOfKeep(chip, in)) << text(chip);
+    EXPECT_FALSE(coversControl(chip, in)) << text(chip);
+
+    // Dragging the arrow keeps it docked on its side.
+    in.frozen = true;
+    in.keepClear = rect(330, 60, 220, 560); // the face pulled tall
+    const ChipPlacement dragged = placeValueChip(in, docked.spot);
+    EXPECT_EQ(dragged.spot, docked.spot);
+
+    // A face near the bottom edge: it docks at the top.
+    in.frozen = false;
+    in.keepClear = rect(330, 420, 220, 150);
+    in.tip = {440, 420};
+    const ChipPlacement high = placeValueChip(in);
+    EXPECT_EQ(high.spot, ChipSpot::DockTop);
+    EXPECT_TRUE(clearOfKeep(chipRect(high, in), in));
+}
