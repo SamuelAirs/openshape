@@ -129,6 +129,8 @@ if(OPENSHAPE_BUILD_TESTS)
     add_test(NAME acceptance_gui
              COMMAND openshape --acceptance ${CMAKE_BINARY_DIR}/acceptance)
     # The timeout includes waiting for another automated GUI run to finish
-    # (they take turns: see the automation lock in main.cpp).
-    set_tests_properties(acceptance_gui PROPERTIES LABELS gui TIMEOUT 900)
+    # (they take turns: see the automation lock in main.cpp). The whole run
+    # took 907 s on 2026-11-01 (4356 checks), past the 900 s it had: a hang
+    # still ends it.
+    set_tests_properties(acceptance_gui PROPERTIES LABELS gui TIMEOUT 1500)
 endif()
