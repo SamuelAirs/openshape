@@ -942,6 +942,16 @@ int main(int argc, char* argv[])
             OS_LOG(Warning, App) << "--size expects WxH, e.g. 1180x820";
         }
     }
+#if defined(Q_OS_IOS)
+    // The window covers the whole screen, under the status bar, the home
+    // indicator and the iPhone Duo's side bar too: the layout keeps its
+    // controls out of them itself (SafeArea in Main.qml, Theme.inset*).
+    // Without this hint Qt keeps a maximized window (every window on iOS)
+    // inside the safe areas: on the Duo 84 x 34 points smaller than either
+    // display, with black bars at the right and bottom (the owner's log and
+    // video, 2026-11-02, TD-150).
+    window->setFlag(Qt::ExpandedClientAreaHint, true);
+#endif
     if (rememberWindow) {
         showRemembered(window, keeper);
         trackWindow(window, keeper);

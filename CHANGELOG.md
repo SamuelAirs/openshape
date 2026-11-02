@@ -35,6 +35,12 @@ part fills the screen and no spot keeps clear of the selection).
 **The free version's one project** is counted in folders too: a project
 moved into a folder in the Files app still counts.
 
+**FoldForm fills the screen** on the iPhone Duo (and every iPhone and
+iPad): the model runs under the status bar, the home indicator and the
+Duo's side bar, with the controls kept clear of them. Before, the window
+stopped short of them, leaving black bars at the Duo's right and bottom
+edges (above and below the app on other iPhones).
+
 **File → Open on an iPhone or iPad shows Home**, which lists every project
 in FoldForm's folder, also those in folders made in the Files app (their
 cards say which folder), newest first. On the iPhone Duo, File → Open's

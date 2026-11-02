@@ -71,8 +71,10 @@ build 56). The log: Pen mode was on in build 55 (a Pencil touch turns it
 on; then fingers only move the view), Shell failed five times with an
 invalid shape, and FoldForm's window on both Duo displays is 84 x 34 pt
 smaller than the screen with no safe areas (inner 867x635 of 951x669,
-outer 382x644 of 466x678: black bars at the right and bottom), which
-replaces TD-150's estimates and is not explained yet. Build 55's five
+outer 382x644 of 466x678: black bars at the right and bottom). Cause:
+Qt keeps a maximized window (every window on iOS) inside the safe areas
+unless it has `Qt::ExpandedClientAreaHint`; main.cpp sets it on iOS since
+build 57 (TD-150; the real insets come with the next log). Build 55's five
 checks are not done yet.
 
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The

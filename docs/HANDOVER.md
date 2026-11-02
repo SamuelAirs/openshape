@@ -26,8 +26,9 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   collections `notes` and `ticks`, FoldForm's ids start with `f-`), and his Duo log came in.
   **File → Open closed the app on the Duo** (54 and 55; fine on the iPad; cause unknown,
   TD-158): on iOS File → Open is now Home, which lists the app folder's projects and its
-  folders' (main, for build 56). The log's other findings (pen mode on, Shell failures, the
-  window 84 x 34 pt smaller than both Duo screens) are in `PROJECT_STATUS.md`. The vault's
+  folders' (build 56). The black bars on the Duo: Qt kept the maximized window inside the safe
+  areas; main.cpp sets `Qt::ExpandedClientAreaHint` on iOS (build 57, TD-150). The log's other
+  findings (pen mode on, Shell failures) are in `PROJECT_STATUS.md`. The vault's
   `DuoApps/FoldForm handover.md` keeps the short version.
   `scripts/dev/check_lambda_captures.py` flags `src/app/acceptance/Duo.cpp:400` (`st`, a
   `shared_ptr`): Apple Clang doesn't warn for it, and CI #64 compiled it.

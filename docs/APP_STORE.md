@@ -777,20 +777,22 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
-For the second 0.3.1 build (2026-11-02: File → Open is Home on iOS, after
-it closed the app on the owner's Duo, TD-158; build 55's five checks
-again, which he has not done yet). Before: build 55's five checks alone.
+For 0.3.1 builds 56 and 57 (2026-11-02: File → Open is Home on iOS, after
+it closed the app on the owner's Duo, TD-158; from 57 the window fills the
+screen, TD-150; build 55's five checks again, which he has not done yet).
+Before: build 55's five checks alone.
 
 <!-- changed 2026-11-02: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
 FoldForm 0.3.1, on iPhone Duo. First: if the View buttons show Pen on (it turns on when the Apple Pencil touches the screen), tap Pen to turn it off; with Pen on, fingers only move the view.
-0. File, Open: Home appears with your projects (also those in folders you made in the Files app), and nothing closes. Tap one to open it. Then, once, Home's Open... button, and say whether the file picker works or closes the app, and how the Duo was held (closed; open flat; open and turned tall).
-1. Raised text on a box: hold a finger on a letter for half a second. All of the text is selected, and a message says how many faces.
-2. Then drag the arrow into the box, or type -1.5: the letters are cut 0.5 mm into the face (engraved). Undo brings them back in one step.
-3. Tap a face, then another face that faces the same way: both stay selected and the tool stays Push/Pull. Tap one of them again to take it out; Clear or a tap on empty space starts again.
-4. With a face selected, pinch and pan with two fingers: the part follows your fingers without jumping, and the value box sits at the top or bottom edge, not over the part.
-5. Free version only (without the purchase): a project moved into a folder in the Files app still counts as your one project, so New project offers the purchase.
+1. Closed and opened: the model now reaches every edge (no black bar at the right or bottom), and no button or text sits under the clock, the side bar or the home bar. Turn it tall on the inner display too.
+2. File, Open: Home appears with your projects (also those in folders you made in the Files app), and nothing closes. Tap one to open it. Then, once, Home's Open... button, and say whether the file picker works or closes the app, and how the Duo was held (closed; open flat; open and turned tall).
+3. Raised text on a box: hold a finger on a letter for half a second. All of the text is selected, and a message says how many faces.
+4. Then drag the arrow into the box, or type -1.5: the letters are cut 0.5 mm into the face (engraved). Undo brings them back in one step.
+5. Tap a face, then another face that faces the same way: both stay selected and the tool stays Push/Pull. Tap one of them again to take it out; Clear or a tap on empty space starts again.
+6. With a face selected, pinch and pan with two fingers: the part follows your fingers without jumping, and the value box sits at the top or bottom edge, not over the part.
+7. Free version only (without the purchase): a project moved into a folder in the Files app still counts as your one project, so New project offers the purchase.
 Then send the log: Files app, FoldForm, Logs, openshape.log, Share. Screenshots with a note go from TestFlight; crash reports reach us automatically.
 ```
 

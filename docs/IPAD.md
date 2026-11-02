@@ -530,7 +530,11 @@ The Apple Pencil (USB-C) works on the Duo once Apple enables it there
 The same app on both displays; the window keeps everything it had (the tool,
 values typed, the selection, an open Model panel, Home) when it moves
 between them. Point sizes from Apple's spec page and screenshot sizes; the
-safe areas are estimates until a device log says otherwise (TD-150).
+safe areas are estimates until a device log says otherwise (TD-150). The
+first Duo log (builds 54 and 55) gave none: Qt kept the window inside them
+(867x635 of 951x669 inner, 382x644 of 466x678 outer, black bars at the
+right and bottom); from build 57 the window covers the whole display and
+its `window ...` lines carry the real safe areas.
 
 | Screen | Window (points) | Layout |
 |---|---|---|
