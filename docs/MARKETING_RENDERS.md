@@ -149,6 +149,26 @@ says so.
   nor shows one).
 - **Hours:** lead 3 (script and two rounds of wording); owner 0.5 (the
   screenshots in the requests below).
+- **Made (2026-11-04)** from the twelve existing screenshots by
+  `scripts/dev/appstore_captions.py` (Pillow, Noto Sans), in
+  `docs/appstore/captioned/` for the listing tool to upload with 0.3.1:
+  `iphone-1` … `iphone-6` (1320 x 2868) and `ipad-1` … `ipad-6` (2752 x
+  2064), RGB, checked by `check_appstore_screenshots.py`. Each shows the
+  whole screenshot in a plain dark frame under its caption, in this order:
+  1. "Type the size you measured" / "Holes that fit M3 screws, with a
+     print allowance" (the project box);
+  2. "Sketch with your finger" / "Constraints, and sizes you type";
+  3. "Raised text for labels" / "Engraved too: push it in" (0.3.1);
+  4. "Change any step later" / "Every size stays editable" (the Model
+     panel);
+  5. "Planes and axes where you need them" / "Sketch, mirror and turn
+     around them";
+  6. "All your projects, with previews" / "Unlimited projects with the
+     in-app purchase" (guideline 2.3.2).
+
+  No "Made for iPhone Duo" caption (Apple's badge wording) and no Duo
+  picture yet: the Duo set comes from the owner's captures. Rerun the
+  script on his device screenshots (same names) to caption those.
 
 ### 4. The iPhone Duo, folded and unfolded (website, social, press)
 

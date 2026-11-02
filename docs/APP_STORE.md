@@ -456,6 +456,10 @@ not blank):
   size (iPad Pro 13-inch M4 class; 1376 x 1032 points at 2x). Required for
   an app that runs on iPad; scaled down for smaller iPads.
 
+**For 0.3.1:** the captioned set in `docs/appstore/captioned/` (the same
+sizes and names, a caption above each; docs/MARKETING_RENDERS.md, piece 3)
+replaces these.
+
 **YOU:** version page → **Product Page Information** → **App Previews and
 Screenshots** → the **iPhone** tab → drag in `iphone-1` … `iphone-6` in
 that order; the **iPad** tab → `ipad-1` … `ipad-6` (Apple's help, "Upload
