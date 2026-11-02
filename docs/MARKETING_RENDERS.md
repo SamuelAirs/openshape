@@ -2,12 +2,15 @@
 
 _Written 2026-11-01 at the owner's request ("detailed plans" for renders
 or animations, and "requests for any screenshots that may help
-marketing"). A plan only: nothing here is made yet, nothing was installed,
-and none of it holds up the 0.3.0 submission (docs/LAUNCH_CHECKLIST.md)._
+marketing"). On 2026-11-04 the owner said to go ahead ("in the order that
+makes sense and download the necessary tools"): what is made is marked
+**Made** below, with its files; the recordings only the owner can make are
+in [Recording briefs](#recording-briefs-for-the-owner)._
 
 Contents: [what this PC has](#what-this-pc-has-checked-2026-11-01),
 [Apple's rules](#apples-rules-that-shape-the-plan-read-2026-11-01),
 [the pieces](#the-pieces-in-the-order-worth-doing),
+[recording briefs](#recording-briefs-for-the-owner),
 [screenshot requests for the owner](#screenshot-and-recording-requests-for-the-owner),
 [the first App Store screenshots](#the-first-app-store-screenshots-2026-10-31-and-what-marketing-wants-instead),
 [decisions](#decisions-for-the-owner).
@@ -189,6 +192,25 @@ says so.
   option is a small code change (about 2 hours with its test, a later
   version).
 - **Hours:** lead 4 (still 1.5, loop 2.5); owner 0.25 (two screenshots).
+- **Made (2026-11-04)** by `scripts/dev/marketing_hero.py`, nothing
+  installed: one run of the Windows build opens the project box once with
+  `--view "0,25;2,25;...;358,25" --face-contrast` and saves 180 pictures
+  (a normal window for about a minute; the pointer is not moved; no breathing:
+  `Camera::fit` frames the box's bounding sphere, the same at every angle),
+  each cropped to the view's middle and joined by ffmpeg:
+  - `docs/marketing/hero-loop.mp4`: 1280 x 720, 30 fps, 6 s, H.264, no
+    audio, 1.7 MB (loops seamlessly: 0 to 358 degrees);
+  - `docs/marketing/hero-loop.webm`: the same in VP9, 1.3 MB;
+  - `docs/marketing/hero-loop.gif`: 480 px, 12 fps, 3.2 MB, for READMEs;
+  - `docs/marketing/hero-loop-poster.png`: its three-quarter frame;
+  - `docs/marketing/hero.png`: the still, 1600 x 900: "FoldForm", the
+    line "Precise CAD for 3D printing, made for touch.", the platforms
+    and "Open source · no account · no tracking" beside the iPad and
+    iPhone App Store screenshots of the project box in plain dark rounded
+    frames (Apple's own device frames need the owner's Apple sign-in).
+
+  The still uses the Windows-rendered screenshots; once the owner's
+  device screenshots exist, `--compose-only` rebuilds it from them.
 
 ### 6. Social clips (a set of five, 6 to 15 s each)
 
@@ -246,6 +268,57 @@ A model-only or transparent-background export at any size and angle
 (from the project-preview renderer), and an option that writes a camera
 orbit's frames: about half a day with tests, after 0.3.1's list
 (PROJECT_STATUS.md).
+
+## Recording briefs for the owner
+
+Two recordings no render can stand in for. One task each.
+
+### Recording A: the App Store preview (iPhone 16 Pro)
+
+1. **Device and build:** the iPhone 16 Pro, FoldForm 0.3.1 from TestFlight
+   (build 55 or newer), held upright (portrait).
+2. **Settings first:** Focus on (Do Not Disturb), Light appearance,
+   Display Zoom Standard, brightness up, battery over 50 %, Screen Recording
+   in Control Center (Settings → Control Center), its microphone off.
+3. **A fresh project for each take**, one Screen Recording per take,
+   started from Control Center and stopped the same way; 1 s still before
+   and after the action; slow, deliberate taps:
+   1. Home → **New project** → **Box**: the cube drops in (5 s).
+   2. Tap the top face, drag the arrow up a little, then tap the value,
+      type **35** on the keypad, tap ✓ (8 s).
+   3. Tap a vertical edge, type **4**, ✓: the edge rounds (6 s).
+   4. Tap the top face, **Shell**, type **2**, ✓: an open box (6 s).
+   5. On a side face: **Hole**, M3, Countersink, tap two spots, ✓ (8 s).
+   6. On the other side: **Text**, type **FOLD**, ✓ (8 s).
+4. **Length:** about 40 s of takes in all; the lead cuts them to 25-30 s
+   (886 x 1920, captions, end card "Free for one project. Unlimited
+   projects: in-app purchase.").
+5. **Send:** Photos → select the six → Share → Save to Files → iCloud
+   Drive (or mail them in batches); tell the lead the folder.
+
+### Recording B: the iPhone Duo, folded and unfolded (website, social)
+
+1. **Devices:** the Duo with FoldForm 0.3.1 (build 55 or newer), and a
+   second phone or camera on a stand or tripod filming it: 4K, 30 fps,
+   landscape for the 16:9 cut (a second take upright for 9:16).
+2. **Setup:** a plain matte table and wall (white or light grey), one soft
+   light from the side, no window behind the camera (no reflections on the
+   Duo's screen), the Duo's brightness at the top, Focus on, Light
+   appearance. On the filming phone, lock focus and exposure on the Duo
+   (touch and hold the Duo in the Camera app until AE/AF LOCK shows).
+3. **The part:** the project box (or any part) open, a face selected,
+   the value box showing a typed value.
+4. **Shot 1 (15 s):** the Duo closed, the part on the outer display, held
+   2 s; unfold slowly to flat over 3 s; the same part on the inner display,
+   held 3 s; turn the Duo a little to show the screen; fold back slowly;
+   held 2 s.
+5. **Shot 2 (8 s):** half folded on the table (laptop pose), the part on
+   the upper half, still; then a pinch on the upper half.
+6. **Also, on the Duo:** a Screen Recording during shot 1 (Control Center),
+   in case it keeps recording through the fold (the lead puts it beside the
+   camera shot).
+7. **Send:** the camera's files and the Duo's screen recording (iCloud
+   Drive or AirDrop to the filming phone, then iCloud Drive); about 1 GB.
 
 ## Screenshot and recording requests for the owner
 
