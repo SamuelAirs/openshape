@@ -773,17 +773,19 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
+For the first 0.3.1 build (2026-11-04: the answers to the owner's Duo
+session). Until 2026-11-04 this block held the public beta's general list.
+
+<!-- changed 2026-11-04: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
-Thank you for testing! Try these, then anything you like:
-1. New project, Box: tap the top face, drag the arrow or tap the value and type 35, then tap the check mark.
-2. Tap an edge, tap the value box and type a radius to round it. Shell the box (tap the top face, Shell, tap the value box, type 2).
-3. Sketch on a face: draw a rectangle and a circle with your finger or Apple Pencil, tap a size to type it, Finish sketch, then tap inside the circle, tap the value box and type -10 to cut a hole.
-4. Hole (M3, with the print allowance) and Text on a flat face.
-5. File, Save: give it a name. File, Export STL or 3MF: the share sheet opens; pick your slicer app, or AirDrop it to your computer. File, Share Project sends the project itself.
-6. In the Files app or Mail, tap a project (or a STEP file, then Share, FoldForm): it opens in FoldForm.
-7. Turn the device and use Split View: the layout should follow. On iPhone, the value box should never cover what you tapped.
-If something is confusing, take a screenshot in FoldForm and send it from TestFlight with a note. Crash reports reach us automatically.
+FoldForm 0.3.1, first try on iPhone Duo. Please check:
+1. Raised text on a box: hold a finger on a letter for half a second. All of the text is selected, and a message says how many faces.
+2. Then drag the arrow into the box, or type -1.5: the letters are cut 0.5 mm into the face (engraved). Undo brings them back in one step.
+3. Tap a face, then another face that faces the same way: both stay selected and the tool stays Push/Pull. Tap one of them again to take it out; Clear or a tap on empty space starts again.
+4. With a face selected, pinch and pan with two fingers: the part follows your fingers without jumping, and the value box sits at the top or bottom edge, not over the part.
+5. Free version only (without the purchase): a project moved into a folder in the Files app still counts as your one project, so New project offers the purchase.
+Then send the log: Files app, FoldForm, Logs, openshape.log, Share. Screenshots with a note go from TestFlight; crash reports reach us automatically.
 ```
 
 ### Beta App Review notes (also used for App Review, section 6)
