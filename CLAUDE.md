@@ -72,3 +72,10 @@ Start here, in this order:
   literal passed via heredoc becomes a real newline): write such files with the
   Write/Edit tools.
 - Only `src/geometry` may include OpenCASCADE; only `src/render`, `src/ui`, `src/app` may use Qt.
+
+## Shared notes (Sam's vault)
+`C:\Users\ayers\Notes` is an Obsidian vault Sam reads on his phone, shared by every Claude
+session on this PC. Before a session, read its `CLAUDE.md` (the rules) and the "Duo apps"
+heading of `Inbox.md`; the open tasks are in `DuoApps/Board.md`. When something changed that
+Sam should try, append a short note at the top of `DuoApps/FoldForm.md` and commit it there
+(`git -C C:\Users\ayers\Notes commit -am "..."`).
