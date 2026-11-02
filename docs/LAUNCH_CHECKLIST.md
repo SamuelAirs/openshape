@@ -10,9 +10,10 @@ Connect** (appstoreconnect.apple.com) unless it says otherwise. Apple then
 reviews the app, usually within 24 to 48 hours, and you press Release (or
 let it release itself).
 
-**Where you are (2026-11-01, 04:48 UTC):** steps 1 to 4, 7 and 8 are
-done. **Next is the listing** (steps 5 and 6), **then the submission**
-(step 9).
+**Where you are (2026-11-04):** **FoldForm 0.3.0 is submitted** with build
+54 and waits for App Review (steps 1 to 9 done). Next: press Release once
+it is approved (step 10), and the open items below. **0.3.1** is on
+TestFlight for your Duo (build 55, last section).
 
 ## Ready (checked by the lead on 2026-10-31)
 
@@ -78,60 +79,63 @@ Duo", steps 7 and 8).
   the Files app. **Still owed, not blocking:** Restore purchase on the
   iPad ("I haven't yet tested on the iPad"); Restore was used on the
   iPhone before the purchase.
+- **Steps 5 and 6:** ~~**the listing**: App Information, App Privacy~~
+  ("Data Not Collected"), age rating 4+, Apple's standard EULA.
+- **Step 9:** ~~**Submitted for Review**~~ (2026-11-04): version 0.3.0,
+  build 54, with the in-app purchase *Unlimited Projects*.
 
-## Next: the listing
+## Waiting: App Review
 
-5. **App Information:** Name (above), Subtitle, categories, content
-   rights, age rating (every answer None or No: **4+**), Privacy Policy
-   URL, copyright: paste them from
-   [APP_STORE.md, section 2](APP_STORE.md#2-app-information).
-   **License Agreement:** leave Apple's standard EULA as it is.
-6. **App Privacy → Get Started → "No, we do not collect data from this
-   app" → Save → Publish** ("Data Not Collected").
-
-## Then: submit
-
-9. The version page (**iOS App → 0.3.0 Prepare for Submission**). The
-   texts come from the marked blocks (`<!-- appstore:... -->`) in
-   docs/APP_STORE.md; a tool on this PC that fills App Store Connect from
-   those blocks may enter them for you. **First, on your Duo:** the six
-   captures in [APP_STORE.md, section 3b](APP_STORE.md#3b-the-iphone-duo-product-page)
-   into `docs/appstore/duo/`, and your word that the Duo line in the
-   description ("closed, the phone layout; opened, the full layout on the
-   inner display") is what you see. Then the listing is applied and you
-   submit.
-   - **Product Page Information → App Previews and Screenshots:** the
-     **iPhone** tab: `iphone-1` … `iphone-6` from
-     `docs/appstore/screenshots/`, in that order; the **iPad** tab:
-     `ipad-1` … `ipad-6`; the **iPhone Duo** size (Media Manager, View All
-     Sizes): `01` … `06` from `docs/appstore/duo/` (the badge). Only if App Store Connect then asks for 6.3"
-     iPhone screenshots: take the six scenes on your iPhone 16 Pro (its
-     screenshots are 1206 x 2622, the size Apple lists for that slot);
-     the six scenes are listed in
-     [APP_STORE.md, "6.3-inch screenshots"](APP_STORE.md#63-inch-screenshots-from-the-iphone-16-pro-only-if-app-store-connect-asks).
-   - Promotional text, description, keywords, support and marketing URLs,
-     copyright: [APP_STORE.md, section 3](APP_STORE.md#3-the-listing-text).
-   - **Build → + → 54** (version 0.3.0; it declares no non-exempt
-     encryption, so no export questions should come up).
-   - **In-App Purchases and Subscriptions:** add *Unlimited Projects*
-     (the first purchase must go in with an app version).
-   - **App Review Information:** sign-in **not required**; your name,
-     phone and email; Notes: the review notes in
-     [APP_STORE.md, section 5](APP_STORE.md#beta-app-review-notes-also-used-for-app-review-section-6).
-   - Release: **Manually** (you press Release) or **Automatically**.
-   - **Add for Review → Submit for Review.**
-
-## After
-
-10. If you chose manual release, press **Release** once it is approved.
-    Send the lead the App Store link: it goes into the README and the
-    GitHub release.
+Apple usually answers within 24 to 48 hours (an email, and the status in
+App Store Connect: *Waiting for Review*, *In Review*, then *Pending
+Developer Release* or *Ready for Distribution*).
 
 If App Review rejects: a problem in the texts, screenshots or notes is
 fixed in App Store Connect and resubmitted without a new build. A problem
-in the app itself needs a fix, a new tag and a build 55, which restarts the
-submission: that is your call when it comes.
+in the app itself needs a fix in a tagged build (`v0.3.1`, which carries
+the 0.3.1 work below): rename the App Store version to 0.3.1 and submit
+that tag's build. That is your call when it comes; tell the lead what
+Apple wrote.
 
-Any time after submitting: the iPhone Duo checks in docs/IPAD.md ("The
-iPhone Duo", steps 1 to 8) and **Logs/openshape.log** from the Duo; they
-decide the Duo fixes in 0.3.1 (PROJECT_STATUS.md, "Next").
+## Still open on your board (none of them holds up the review)
+
+- **The iPhone Duo screenshots** (six captures, APP_STORE.md, section 3b):
+  screenshots cannot change while the version is in review; they go up
+  with the next version (0.3.1), and give the page the "optimized for
+  iPhone Duo" badge then.
+- **The Duo line in the description** ("closed, the phone layout; opened,
+  the full layout on the inner display"): your word that it matches the
+  Duo. If it does not, it changes with the next version.
+- **Restore purchase on a second device** (the iPad, or the Duo): File →
+  About FoldForm → Restore purchase says "Purchase restored: unlimited
+  projects".
+- **The Duo log:** Files → On My iPhone → FoldForm → Logs →
+  `openshape.log` → Share (the real screen sizes and edges, TD-150).
+- **Featuring nomination** (optional, when you want): the name and text
+  are ready in [APP_STORE.md, section 3b](APP_STORE.md#3b-the-iphone-duo-product-page)
+  (type App Launch; publish date the day it is released).
+
+## After approval
+
+10. If you chose manual release, press **Release**. Send the lead the App
+    Store link: it goes into the README and the GitHub release.
+
+## 0.3.1 on TestFlight (your Duo)
+
+Build 55 (version 0.3.1, from `main`, 2026-11-04): the answers to your
+Duo session. It reaches TestFlight by itself (an email when Apple has
+processed it). Its *What to Test* is the block in
+[APP_STORE.md, "What to Test"](APP_STORE.md#what-to-test-for-the-build-you-add-update-it-with-each-build):
+
+1. Hold a finger on a letter of raised text for half a second: all of the
+   text is selected.
+2. Drag the arrow into the box, or type -1.5: the letters are engraved
+   0.5 mm; Undo brings them back in one step.
+3. Tap a face, then another facing the same way: both stay selected, the
+   tool stays Push/Pull; tap one again to take it out.
+4. With a face selected, pinch and pan: no jumping; the value box sits at
+   the top or bottom edge, not over the part.
+5. Free version only (without the purchase): a project moved into a folder
+   in the Files app still counts as your one project.
+
+Then send `Logs/openshape.log` from the Duo.

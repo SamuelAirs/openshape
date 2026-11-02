@@ -38,10 +38,13 @@ purchase, Free with the availability (all except China mainland and the
 purchase, the share sheet, opening from the Files app: passed, the owner's
 word; Restore on the iPad still owed, not blocking).
 
-What is left is the owner's App Store Connect work in
-[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md): the listing (App
-Information, App Privacy: steps 5 and 6), then **submit build 54 with the
-purchase** (step 9).
+**Submitted (the owner, 2026-11-04):** FoldForm 0.3.0, build 54, with the
+in-app purchase, **waiting for App Review**. Next for the owner: Release
+once approved, and the open items in
+[docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md) (the Duo screenshots
+for the next version, his word on the description's Duo line, Restore on
+a second device, the Duo log; the featuring nomination's text is ready in
+docs/APP_STORE.md, section 3b).
 
 **The owner's answers (2026-10-31):** Apple's standard EULA (docs/EULA.md
 is not used: a custom EULA would publish the address and phone); the EU
@@ -50,13 +53,12 @@ asks, taken by the owner on the iPhone 16 Pro (1206 x 2622; the six scenes
 in docs/APP_STORE.md, section 3), not rendered; the written source offer
 gives ayers177@gmail.com from 0.3.1 (TD-102, "0.3.1" below).
 
-**Not pushed:** `main` is ahead of origin by the three commits of the
-release (5ebed49, which the tag already published, the 0.3.1 bump and a
-status commit) and the audit's docs commits. A push of `main` now starts
-ci.yml and ipad.yml (a TestFlight upload of 0.3.1), because those commits
-change a workflow and `CMakeLists.txt`; it waits for the first 0.3.1 code
-change (CLAUDE.md: GitHub minutes are for compiling). The live privacy
-policy keeps the date "27 September" until then; its content is current.
+**0.3.1 on TestFlight:** `main` was pushed on 2026-11-04 after the
+submission (e6576ff, 18 commits: the release commits, the audit's docs,
+the Duo fixes). All three runs succeeded: CI #64 (Windows and macOS compile, Apple Clang included), iPad #55 (59 MB, iOS 17+, uploaded as build 55: "for internal and external testing, not for App Store review") and Release #12 (the Windows build). TestFlight build **55** (ipad.yml run
+41390634324) is version 0.3.1 for the owner's Duo; its What to Test is the
+marked block in docs/APP_STORE.md. The live privacy policy now has its
+current date.
 
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
 iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
@@ -1042,16 +1044,16 @@ log come first.
 
 ### 0.3.1, in this order
 
-`main` says 0.3.1 (CMakeLists.txt, CHANGELOG.md). Nothing is pushed yet: a
-push of `main` uploads a TestFlight build (ipad.yml), and the coordinator
-waits for the 0.3.0 submission before the first 0.3.1 build. Before the
-push: the headless suite, the real-UI run and
+`main` says 0.3.1 (CMakeLists.txt, CHANGELOG.md). Pushed on 2026-11-04
+(e6576ff): TestFlight build 55. Every push of `main` uploads a
+TestFlight build (ipad.yml). Before each push: the headless suite, the
+real-UI run and
 `scripts/dev/check_lambda_captures.py` (its one report, `Duo.cpp:400`
 capture `st`, is a `std::shared_ptr` kept alive on purpose: Apple Clang does
 not warn about a capture that is not trivially copyable). Tag `v0.3.1` when
 the owner wants it in the store.
 
-**Done on `main` (2026-11-01, local, not pushed):**
+**Done on `main` (2026-11-01, pushed 2026-11-04, TestFlight build 55):**
 
 1. **The project limit's leak (TD-155)**, 10b22a2: projects in the app
    folder's subfolders count too (not `Exports`, the `Inbox`, hidden
