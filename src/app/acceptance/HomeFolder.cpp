@@ -7,11 +7,15 @@
 // shows it, not at the app's sandbox path (/var/mobile/Containers/Data/
 // Application/<id>/Documents), which meant nothing to anyone (and showed
 // in the App Store screenshots). Saved and opened by clicking, as a user.
+// File > Open there is Home, not the system picker (which closed the app on
+// the iPhone Duo, TD-158): a project in a folder made in the Files app is a
+// card of its own and opens from it.
 
 #include "app/AcceptanceRunner.h"
 #include "ui/AppController.h"
 
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtQuick/QQuickItem>
@@ -24,6 +28,7 @@ namespace {
 
 struct HomeFolderState {
     std::unique_ptr<QTemporaryDir> dir;
+    QString bracketCard; // the objectName of the card of the project in Parts/
 };
 
 std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
@@ -82,8 +87,39 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(page && page->mapToScene({0, 0}).y() == 0, "home folder: no inset on the desktop");
             r.check(r.clickItem(QStringLiteral("homeBack")), "home folder: back to the project");
         },
-        [&r] {
+        [&r, s] {
             r.check(!r.app().homeVisible(), "home folder: Home closed");
+            // A folder made in the Files app, with a project moved into it.
+            const QString parts = s->dir->filePath(QStringLiteral("Parts"));
+            r.check(QDir().mkpath(parts) && QFile::copy(s->dir->filePath(QStringLiteral("Key tag.openshape")),
+                                                         parts + QStringLiteral("/Bracket.openshape")),
+                    "home folder: a project in a folder of its own");
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("fileMenuButton")), "home folder: File menu for Open"); },
+        [] {},
+        [&r] { r.check(r.clickItem(QStringLiteral("openMenuItem")), "home folder: File → Open…"); },
+        [] {},
+        [] {},
+        [&r, s] {
+            r.check(r.app().homeVisible(), "home folder: File → Open shows Home, not the system picker");
+            int bracket = -1;
+            for (int i = 0; i < 8 && bracket < 0; ++i) {
+                const QQuickItem* name = r.findItem(QStringLiteral("homeCardName_%1").arg(i));
+                if (name && name->property("text").toString() == QStringLiteral("Bracket"))
+                    bracket = i;
+            }
+            r.check(bracket >= 0, "home folder: the project in the folder is a card");
+            const QQuickItem* folder = r.findItem(QStringLiteral("homeCardFolder_%1").arg(bracket));
+            const QString text = folder ? folder->property("text").toString() : QString();
+            r.check(text == QStringLiteral("FoldForm → Parts (Files app)"), "home folder: its card names the folder", text);
+            s->bracketCard = QStringLiteral("homeCard_%1").arg(bracket);
+        },
+        [&r, s] { r.check(r.clickItem(s->bracketCard), "home folder: tap the folder's project"); },
+        [] {},
+        [&r] {
+            r.check(!r.app().homeVisible(), "home folder: Home closed for the project");
+            r.check(r.app().documentTitle() == QStringLiteral("Bracket"), "home folder: the folder's project is open",
+                    r.app().documentTitle());
             r.app().setAppFolder({});
         },
     };

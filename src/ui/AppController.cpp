@@ -2147,14 +2147,20 @@ void AppController::updateRecentFiles()
         map.insert(QStringLiteral("folder"), info.absoluteDir().dirName());
         list.append(map);
     }
-    // Home: the same files with previews and dates, plus (iPadOS) the
-    // projects in the app's Documents folder, which the Files app shows.
+    // Home: the same files with previews and dates, plus (iPhone / iPad) the
+    // projects in the app's folder, which the Files app shows: also those in
+    // folders made there (the ones the free version counts), newest first.
+    // There File > Open is Home (openProjectChooser in Main.qml).
     std::vector<std::string> folder;
-#if defined(Q_OS_IOS)
-    const QDir documents(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
-    for (const QFileInfo& info : documents.entryInfoList({QStringLiteral("*.openshape")}, QDir::Files, QDir::Time))
-        folder.push_back(info.absoluteFilePath().toStdString());
-#endif
+    if (savesToAppFolder()) {
+        QFileInfoList projects;
+        for (const QString& path : appFolderProjects(appFolder_))
+            projects.append(QFileInfo(path));
+        std::stable_sort(projects.begin(), projects.end(),
+                         [](const QFileInfo& a, const QFileInfo& b) { return a.lastModified() > b.lastModified(); });
+        for (const QFileInfo& info : projects)
+            folder.push_back(info.absoluteFilePath().toStdString());
+    }
     QVariantList home;
     for (const std::string& file : io::homeProjects(recent, folder)) {
         const QFileInfo info(QString::fromStdString(file));

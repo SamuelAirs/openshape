@@ -777,13 +777,15 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
-For the first 0.3.1 build (2026-11-04: the answers to the owner's Duo
-session). Until 2026-11-04 this block held the public beta's general list.
+For the second 0.3.1 build (2026-11-02: File → Open is Home on iOS, after
+it closed the app on the owner's Duo, TD-158; build 55's five checks
+again, which he has not done yet). Before: build 55's five checks alone.
 
-<!-- changed 2026-11-04: re-apply this block -->
+<!-- changed 2026-11-02: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
-FoldForm 0.3.1, first try on iPhone Duo. Please check:
+FoldForm 0.3.1, on iPhone Duo. First: if the View buttons show Pen on (it turns on when the Apple Pencil touches the screen), tap Pen to turn it off; with Pen on, fingers only move the view.
+0. File, Open: Home appears with your projects (also those in folders you made in the Files app), and nothing closes. Tap one to open it. Then, once, Home's Open... button, and say whether the file picker works or closes the app, and how the Duo was held (closed; open flat; open and turned tall).
 1. Raised text on a box: hold a finger on a letter for half a second. All of the text is selected, and a message says how many faces.
 2. Then drag the arrow into the box, or type -1.5: the letters are cut 0.5 mm into the face (engraved). Undo brings them back in one step.
 3. Tap a face, then another face that faces the same way: both stay selected and the tool stays Push/Pull. Tap one of them again to take it out; Clear or a tap on empty space starts again.

@@ -35,6 +35,12 @@ part fills the screen and no spot keeps clear of the selection).
 **The free version's one project** is counted in folders too: a project
 moved into a folder in the Files app still counts.
 
+**File → Open on an iPhone or iPad shows Home**, which lists every project
+in FoldForm's folder, also those in folders made in the Files app (their
+cards say which folder), newest first. On the iPhone Duo, File → Open's
+system file picker closed the app. Home's **Open…** still finds a project
+elsewhere (iCloud Drive) with that picker.
+
 ## 0.3.0 (2026-10-31)
 
 OpenShape is now called FoldForm (the source code and repository keep the name openshape).

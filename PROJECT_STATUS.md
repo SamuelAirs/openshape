@@ -60,6 +60,21 @@ the Duo fixes). All three runs succeeded: CI #64 (Windows and macOS compile, App
 marked block in docs/APP_STORE.md. The live privacy policy now has its
 current date.
 
+**The owner's Duo answers (2026-11-02, his notes on the Duo Apps Run
+Sheet, and his Duo log):** the description's Duo line is right ("Yep");
+Restore has no button on the Duo because it already bought (as designed;
+Restore needs a device that never bought, the iPad); **File → Open closed
+the app on the Duo** (builds 54 and 55; it works on his iPad; no crash
+report found, cause unknown, TD-158), so on iOS File → Open is now Home,
+which lists the projects in the app folder and its folders (on main, for
+build 56). The log: Pen mode was on in build 55 (a Pencil touch turns it
+on; then fingers only move the view), Shell failed five times with an
+invalid shape, and FoldForm's window on both Duo displays is 84 x 34 pt
+smaller than the screen with no safe areas (inner 867x635 of 951x669,
+outer 382x644 of 466x678: black bars at the right and bottom), which
+replaces TD-150's estimates and is not explained yet. Build 55's five
+checks are not done yet.
+
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
 iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
 decide the first 0.3.1 fixes ("Next" below).
@@ -1172,7 +1187,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 4356/4356 checks through the real UI in 51 scenarios
+`acceptance_gui`: 4365/4365 checks through the real UI in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
@@ -1183,7 +1198,7 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 844/844 | ✅ 4356/4356 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 855/855 | ✅ 4365/4365 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |

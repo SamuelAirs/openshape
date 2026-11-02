@@ -20,6 +20,17 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   selecting all of a text, push-to-subtract (faces pushed into another body cut it, one undo
   step), the pinch jitter fixed (the view no longer reveals the selection mid-gesture), the
   value box docked at an edge on the Duo. Sam has not tested 55 yet.
+- **2026-11-02 (the PC's real date; the dates in this file before it ran ahead):** Sam's
+  answers are notes on the Duo Apps Run Sheet artifact
+  (https://claude.ai/artifact/63RCBUKpzLdk2tsEzCcLrF; read with the ArtifactData tool,
+  collections `notes` and `ticks`, FoldForm's ids start with `f-`), and his Duo log came in.
+  **File → Open closed the app on the Duo** (54 and 55; fine on the iPad; cause unknown,
+  TD-158): on iOS File → Open is now Home, which lists the app folder's projects and its
+  folders' (main, for build 56). The log's other findings (pen mode on, Shell failures, the
+  window 84 x 34 pt smaller than both Duo screens) are in `PROJECT_STATUS.md`. The vault's
+  `DuoApps/FoldForm handover.md` keeps the short version.
+  `scripts/dev/check_lambda_captures.py` flags `src/app/acceptance/Duo.cpp:400` (`st`, a
+  `shared_ptr`): Apple Clang doesn't warn for it, and CI #64 compiled it.
 - **Docs and marketing on main:** the independent critique (`docs/CRITIQUE_2026-11-03.md`), the
   marketing plan (`docs/MARKETING_RENDERS.md`, with two recording briefs for Sam), the website
   hero still and the turning-part loop (`docs/marketing/`, rebuilt by
@@ -51,7 +62,7 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   Main is 0.3.1; the next tag is `v0.3.1` when Sam says.
 - Every push of main uploads a TestFlight build (ipad.yml), so push deliberately. Never push
   `[testflight]`-style markers here; the workflow needs none.
-- Run the headless suite (855) and the real-UI suite (4,356 checks, the pointer moves) before a
+- Run the headless suite (855) and the real-UI suite (4,365 checks, the pointer moves) before a
   push; never weaken a test to pass.
 - The written source offer in the Licenses screen gives ayers177@gmail.com from 0.3.1 (two
   tests that treated "@" as a placeholder were changed for it).

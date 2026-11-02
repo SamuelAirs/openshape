@@ -617,10 +617,12 @@ margins (BUILDING.md).
    build; the text pages scroll and fit the screen. About's line "Privacy
    policy: FoldForm collects no data about you" opens the policy in Safari.
 11. File → Save: the first time it asks for a name and saves into FoldForm's
-   folder (Files app → On My iPhone → FoldForm); File → Open shows the
-   system file picker (a project from iCloud Drive opens as a copy in
-   FoldForm's folder); Export STL/3MF/STEP writes into Exports there and
-   opens the share sheet.
+   folder (Files app → On My iPhone → FoldForm); File → Open shows Home,
+   which lists every project in that folder, also in folders made in the
+   Files app (since 0.3.1: the system picker from File → Open closed the app
+   on the iPhone Duo, TD-158); Home's **Open…** shows the system file picker
+   (a project from iCloud Drive opens as a copy in FoldForm's folder);
+   Export STL/3MF/STEP writes into Exports there and opens the share sheet.
    After the next TestFlight update, File → Open Recent still lists those
    projects and opens them. On Home, the project's card says *FoldForm
    (Files app)* under its date (before: a long /var/mobile/… path).

@@ -198,7 +198,7 @@ ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.Open]
         enabled: !window.modalOpen
-        onActivated: window.confirmDiscard(() => openDialog.open())
+        onActivated: window.openProjectChooser()
     }
     Shortcut {
         sequences: [StandardKey.New]
@@ -250,6 +250,18 @@ ApplicationWindow {
     // Opens a file dialog, unless an acceptance run prepared the file it
     // would return (native dialogs cannot be clicked): then `accept` runs
     // with it at once, as the dialog's onAccepted would.
+    // File > Open. On an iPhone or iPad it is Home, which lists every project
+    // in OpenShape's folder (and recent ones); its Open... still finds files
+    // elsewhere with the system picker. That picker closed the app on the
+    // iPhone Duo (the owner, 2026-11-02, TD-158), and projects are saved into
+    // that folder by name anyway. Home asks about unsaved changes when a
+    // project is picked, so nothing is asked here.
+    function openProjectChooser() {
+        if (app.savesToAppFolder)
+            app.homeVisible = true
+        else
+            confirmDiscard(() => openDialog.open())
+    }
     function chooseFile(dialog, accept) {
         const prepared = app.takeNextFileChoice()
         if (prepared.toString() !== "")
@@ -439,7 +451,7 @@ ApplicationWindow {
         MenuItem { objectName: "homeMenuItem"; text: "Home"; onTriggered: window.app.homeVisible = true }
         MenuSeparator {}
         MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.newProject() }
-        MenuItem { objectName: "openMenuItem"; text: "Open…"; onTriggered: window.confirmDiscard(() => openDialog.open()) }
+        MenuItem { objectName: "openMenuItem"; text: "Open…"; onTriggered: window.openProjectChooser() }
         Menu {
             id: recentMenu
             objectName: "openRecentMenu"
