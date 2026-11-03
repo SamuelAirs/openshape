@@ -471,8 +471,8 @@ public:
     bool allowsNegative() const override { return false; }
     doc::FeatureKind featureKind() const override { return kind_; }
 
-    // The fillet surface sits ~0.3r from the original edge for 90-degree
-    // edges; moving the handle at that rate keeps it near the geometry.
+    // The arrow stands out of the edge and moves out at half the radius: a
+    // finger's millimetre is two of radius, and a large one stays near the part.
     double displayOffset(double value) const override { return value * kHandleRatio; }
     double valueFromOffset(double offset) const override { return offset / kHandleRatio; }
 

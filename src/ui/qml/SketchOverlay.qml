@@ -43,6 +43,8 @@ Item {
     // started on a face frames the face there): below the tool bar, above
     // the tool strip (compact) or right of the tool palette (regular).
     readonly property real toolbarBottom: toolbarSlot.y + toolbar.height
+    // (Main.qml: the Model panel goes below it where it would reach the panel.)
+    readonly property Item toolbarItem: toolbar
     readonly property real toolStripTop: toolPanel.y
     readonly property real paletteRight: Theme.compact ? 0 : toolPanel.x + toolPanel.width
 
@@ -401,38 +403,27 @@ Item {
                 }
             }
         }
-        // More tools below (to the right in the strip): a fade at that edge says "scroll".
-        Rectangle {
-            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
-            height: 28
+        // More tools below or above (right or left in the strip): an arrow
+        // at that edge says "scroll", and a tap scrolls.
+        ScrollHint {
+            objectName: "sketchToolScrollMore"
+            flickable: toolScroll
+            horizontal: Theme.compact
             radius: 12
-            visible: !Theme.compact && toolScroll.contentY + toolScroll.height < toolScroll.contentHeight - 1
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#00F9FAFB" }
-                GradientStop { position: 1.0; color: Theme.panel }
-            }
+            anchors { right: parent.right; bottom: parent.bottom; margins: 1 }
+            width: horizontal ? 32 : parent.width - 2
+            height: horizontal ? parent.height - 2 : 28
         }
-        Rectangle {
-            anchors { top: parent.top; bottom: parent.bottom; right: parent.right; margins: 1 }
-            width: 32
-            radius: 12
-            visible: Theme.compact && toolScroll.contentX + toolScroll.width < toolScroll.contentWidth - 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "#00F9FAFB" }
-                GradientStop { position: 1.0; color: Theme.panel }
-            }
-        }
-        Rectangle {
-            anchors { top: parent.top; bottom: parent.bottom; left: parent.left; margins: 1; leftMargin: 1 + toolPanel.pinnedWidth + Theme.panelPadding - 2 }
-            width: 32
-            radius: toolPanel.pinnedWidth > 0 ? 0 : 12
-            visible: Theme.compact && toolScroll.contentX > 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: Theme.panel }
-                GradientStop { position: 1.0; color: "#00F9FAFB" }
-            }
+        ScrollHint {
+            objectName: "sketchToolScrollBack"
+            flickable: toolScroll
+            forward: false
+            horizontal: Theme.compact
+            // In the strip: right of Select and Trim, which stay put.
+            radius: toolPanel.pinnedWidth > 0 && horizontal ? 0 : 12
+            anchors { left: parent.left; top: parent.top; margins: 1; leftMargin: horizontal ? 1 + toolPanel.pinnedWidth + Theme.panelPadding - 2 : 1 }
+            width: horizontal ? 32 : parent.width - 2
+            height: horizontal ? parent.height - 2 : 28
         }
     }
 

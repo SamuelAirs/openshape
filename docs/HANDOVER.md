@@ -55,6 +55,14 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   `docs/marketing/blender/` (stills, the five together, turntables). Committed after
   `ab57b4b`, not pushed: a push of main makes a TestFlight build, so it waits for the next
   app change.
+- **2026-11-03, afternoon (for build 60, not pushed when written):** Sam's round on 59 (his log
+  and 22 screenshots in iCloud Drive/Foldform, which this PC syncs at `~/iCloudDrive`): no crash
+  through about 14 folds; he uses his Apple Pencil on the Duo ("It works great"). Fixed what the
+  shots showed (turned tall, the top bar into the Model panel; the value box over the top bar
+  with the panel open; marks and the view cube over the panel), his "perpendicular to the face
+  going outward" for every face and edge arrow (`geom::edgeOutward`), and his scroll arrow on the
+  palettes (`ScrollHint.qml`). TD-165: the keypad still covers the view buttons turned tall.
+  `docs/APP_STORE.md` 3b: the Duo screenshots for the new samples, two in, four on 60.
 - **Docs and marketing on main:** the independent critique (`docs/CRITIQUE_2026-11-03.md`), the
   marketing plan (`docs/MARKETING_RENDERS.md`, with two recording briefs for Sam), the website
   hero still and the turning-part loop (`docs/marketing/`, rebuilt by

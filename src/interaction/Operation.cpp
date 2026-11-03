@@ -54,6 +54,13 @@ geom::BoundingBox meshBounds(const geom::Mesh& mesh)
     box.valid = true;
     return box;
 }
+
+// Where a face's arrow starts: on the face, where `info.normal` is taken (a
+// flat face's centroid can lie in a hole, a curved face's inside the part).
+Vec3 arrowBaseOnFace(const geom::Shape& shape, int faceIndex, const geom::FaceInfo& info)
+{
+    return info.isPlanar() ? geom::pointOnFace(shape, faceIndex, info.centroid).value_or(info.centroid) : info.point;
+}
 } // namespace
 
 Operation::Operation(Uuid bodyId, LinearManipulator manipulator)
@@ -743,8 +750,9 @@ std::unique_ptr<OffsetFaceOperation> OffsetFaceOperation::create(const doc::Docu
         op->setStoredValue(op->diameter_);
         return op;
     }
-    return std::unique_ptr<OffsetFaceOperation>(new OffsetFaceOperation(
-        bodyId, LinearManipulator(info->centroid, info->normal), doc::FaceRef{faceIndex, *signature}));
+    return std::unique_ptr<OffsetFaceOperation>(
+        new OffsetFaceOperation(bodyId, LinearManipulator(arrowBaseOnFace(body->shape(), faceIndex, *info), info->normal),
+                                doc::FaceRef{faceIndex, *signature}));
 }
 
 std::unique_ptr<doc::Feature> OffsetFaceOperation::makeFeature(double value) const
@@ -1998,8 +2006,10 @@ std::unique_ptr<ShellOperation> ShellOperation::create(const doc::Document& docu
     const auto first = geom::faceInfo(body->shape(), faceIndices.front());
     if (!first)
         return nullptr;
-    return std::unique_ptr<ShellOperation>(
-        new ShellOperation(bodyId, LinearManipulator(first->centroid, first->normal * -1.0), std::move(refs)));
+    // Out of the opened face, like every face's arrow (the owner, 2026-11-03:
+    // "perpendicular to the face going outward"): drawn out, the walls thicken.
+    return std::unique_ptr<ShellOperation>(new ShellOperation(
+        bodyId, LinearManipulator(arrowBaseOnFace(body->shape(), faceIndices.front(), *first), first->normal), std::move(refs)));
 }
 
 std::unique_ptr<doc::Feature> ShellOperation::makeFeature(double value) const
@@ -2028,12 +2038,9 @@ std::unique_ptr<EdgeOperation> EdgeOperation::create(const doc::Document& docume
     const auto first = geom::edgeInfo(body->shape(), edgeIndices.front());
     if (!first)
         return nullptr;
-    // Direction into the material: opposite the sum of the adjacent face normals.
-    Vec3 outward;
-    for (int f : geom::facesOfEdge(body->shape(), edgeIndices.front()))
-        if (const auto info = geom::faceInfo(body->shape(), f))
-            outward += info->normal;
-    Vec3 direction = (outward * -1.0).normalized();
+    // Out of the part, square to the edge (the owner, 2026-11-03: "perpendicular
+    // to the face going outward"): drawn out, the edge rounds more.
+    Vec3 direction = geom::edgeOutward(body->shape(), edgeIndices.front()).value_or(Vec3{});
     if (direction.length() < 0.5) {
         // Degenerate (e.g. seam edge): fall back to any direction perpendicular to the edge.
         direction = first->tangent.cross(Vec3{0, 0, 1}).normalized();

@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <set>
@@ -817,4 +818,56 @@ TEST(Geometry, PushPullKeepingEdgesNeedsRoundedEdges)
     const auto plain = pushPullFaceKeepingEdges(cube, faceWithNormal(cube, {0, 0, 1}), 5.0);
     ASSERT_FALSE(plain.ok());
     EXPECT_EQ(plain.error(), ErrorCode::Unsupported);
+}
+
+// The fillet arrow stands out of the part, square to the edge, wherever the
+// faces along it curve (the owner, 2026-11-03).
+TEST(Geometry, EdgeOutwardStandsOutOfThePart)
+{
+    const double half = std::sqrt(0.5);
+    // A box's corners: the bisector of the two sides.
+    const Shape s = box(10, 20, 30);
+    for (const int e : verticalEdges(s)) {
+        const Vec3 mid = edgeInfo(s, e)->midpoint;
+        const auto out = edgeOutward(s, e);
+        ASSERT_TRUE(out);
+        EXPECT_NEAR(out->x, mid.x > 5 ? half : -half, kTol);
+        EXPECT_NEAR(out->y, mid.y > 10 ? half : -half, kTol);
+        EXPECT_NEAR(out->z, 0, kTol);
+    }
+    // A cylinder's top rim: out and up, at the edge's middle; its seam
+    // (one face on both sides): straight out.
+    const Shape c = makeCylinder({0, 0, 0}, {0, 0, 1}, 10, 20).value();
+    int rims = 0, seams = 0;
+    for (int e = 0; e < c.edgeCount(); ++e) {
+        const auto info = edgeInfo(c, e);
+        const auto out = edgeOutward(c, e);
+        ASSERT_TRUE(info && out);
+        const Vec3 radial = Vec3{info->midpoint.x, info->midpoint.y, 0}.normalized();
+        if (info->kind == CurveKind::Circle && info->midpoint.z > 10) {
+            ++rims;
+            EXPECT_NEAR(out->dot(radial), half, kTol);
+            EXPECT_NEAR(out->z, half, kTol);
+        } else if (info->kind == CurveKind::Line) {
+            ++seams;
+            EXPECT_NEAR(out->dot(radial), 1, kTol);
+        }
+    }
+    EXPECT_EQ(rims, 1);
+    EXPECT_EQ(seams, 1);
+    // An L's inside corner: into the empty corner.
+    const Shape l = booleanOp(box(20, 10, 10), makeBox({0, 0, 0}, {10, 10, 20}).value(), BooleanKind::Union).value();
+    int inside = 0;
+    for (int e = 0; e < l.edgeCount(); ++e) {
+        const auto info = edgeInfo(l, e);
+        if (!info || info->kind != CurveKind::Line || std::abs(info->midpoint.x - 10) > kTol || std::abs(info->midpoint.z - 10) > kTol)
+            continue;
+        ++inside;
+        const auto out = edgeOutward(l, e);
+        ASSERT_TRUE(out);
+        EXPECT_NEAR(out->x, half, kTol);
+        EXPECT_NEAR(out->y, 0, kTol);
+        EXPECT_NEAR(out->z, half, kTol);
+    }
+    EXPECT_EQ(inside, 1);
 }

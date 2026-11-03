@@ -172,6 +172,11 @@ std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex);
 std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex);
 // Indices of the faces adjacent to an edge (1 for seam/boundary, usually 2).
 std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex);
+// Away from the part at the middle of an edge, square to it: the outward
+// normals of the faces along it, taken there, added (a convex edge's
+// corner bisector; a concave edge's points into the empty corner). nullopt
+// where they cancel (a knife edge) or the edge has no face.
+std::optional<Vec3> edgeOutward(const Shape& shape, int edgeIndex);
 
 // A point inside a flat face (not in a hole, not beside an L-shaped outline),
 // preferring `preferred` (e.g. the centroid, which can lie off the face), else the

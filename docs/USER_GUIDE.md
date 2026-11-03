@@ -64,7 +64,7 @@ On a desktop-sized window:
   (Push/Pull, Fillet, Chamfer, Shell, Offset, Hole, Text, Move, Rotate,
   Mirror, Pattern, Align), **Combine** (Union, Subtract, Intersect) and
   **Construct** (Axis, Plane). When the window is short, the palette
-  scrolls.
+  scrolls: a small arrow at its edge shows there is more that way.
 - **Model panel** (right): everything you made, step by step. It appears
   once there is something in the document; **Hide** folds it away (**Show**
   brings it back; on a phone, **Close** slides it away). See
@@ -324,8 +324,9 @@ what is measured).
 ### Fillet and chamfer
 
 Click an edge (`Shift`+click more), then drag the arrow or type the radius
-(**Fillet**) or the size (**Chamfer**) and press `Enter`. Switch between
-the two with the buttons below the value box.
+(**Fillet**) or the size (**Chamfer**) and press `Enter`. The arrow stands
+straight out of the edge, away from the part: pull it out to round more.
+Switch between the two with the buttons below the value box.
 
 ![Rounding an edge: the value box shows the radius](images/fillet.png)
 

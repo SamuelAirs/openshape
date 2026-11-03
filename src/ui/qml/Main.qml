@@ -64,6 +64,8 @@ ApplicationWindow {
     // an edge instead of floating beside the arrow over the part, and the
     // view never moves to make room for it (the owner on his Duo, 2026-11-03).
     readonly property bool dockChipFirst: Theme.touch && !Theme.compact && Math.min(window.width, window.height) < 720
+    // The gap the value box keeps from the controls (interact::kChipPanelGap).
+    readonly property real chipPanelGap: 8
     Item {
         // The window's safe-area margins (SafeArea, Qt 6.9+; zero on the desktop).
         id: safeInsets
@@ -384,6 +386,26 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------------- top bar
+    // A regular window too narrow for the whole top bar beside the Model
+    // panel (the iPhone Duo's inner display turned tall: 669 pt): the bar
+    // drops its title. (Measured with the title, shown or not.)
+    readonly property real topBarFullWidth: topBar.width + (topBarTitle.visible ? 0 : topBarTitle.implicitWidth
+                                                                                  + topBarTitle.Layout.leftMargin
+                                                                                  + topBarTitle.Layout.rightMargin + topRow.spacing)
+    readonly property bool topBarTight: !Theme.compact && historyPanel.visible
+                                        && topBar.x + topBarFullWidth + Theme.margin > historyPanel.x
+    // Where the regular Model panel starts: at the top, or below what still
+    // reaches it on the top row there (the top bar; a sketch's toolbar).
+    readonly property real modelPanelTop: {
+        let top = Theme.insetTop
+        const reaches = (item) => item.visible && item.x + item.width + Theme.margin > historyPanel.x
+        if (reaches(topBar))
+            top = Math.max(top, topBar.y + topBar.height + Theme.margin)
+        if (window.app.sketchMode && reaches(sketchOverlay.toolbarItem))
+            top = Math.max(top, sketchOverlay.toolbarItem.y + sketchOverlay.toolbarItem.height + Theme.margin)
+        return top
+    }
+
     Panel {
         id: topBar
         objectName: "topBar"
@@ -398,7 +420,11 @@ ApplicationWindow {
             spacing: 4
 
             Text {
-                visible: !Theme.compact // a phone needs the room
+                id: topBarTitle
+                objectName: "topBarTitle"
+                // A phone needs the room, and so does a window too narrow
+                // for the whole bar beside the Model panel.
+                visible: !Theme.compact && !window.topBarTight
                 text: "FoldForm"
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
@@ -754,38 +780,26 @@ ApplicationWindow {
             }
         }
         }
-        // More tools below (to the right in the strip): a fade at that edge says "scroll".
-        Rectangle {
-            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 1 }
-            height: 28
+        // More tools below or above (right or left in the strip): an arrow
+        // at that edge says "scroll", and a tap scrolls.
+        ScrollHint {
+            objectName: "createScrollMore"
+            flickable: createScroll
+            horizontal: Theme.compact
             radius: 12
-            visible: !Theme.compact && createScroll.contentY + createScroll.height < createScroll.contentHeight - 1
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#00F9FAFB" }
-                GradientStop { position: 1.0; color: Theme.panel }
-            }
+            anchors { right: parent.right; bottom: parent.bottom; margins: 1 }
+            width: horizontal ? 32 : parent.width - 2
+            height: horizontal ? parent.height - 2 : 28
         }
-        Rectangle {
-            anchors { top: parent.top; bottom: parent.bottom; right: parent.right; margins: 1 }
-            width: 32
+        ScrollHint {
+            objectName: "createScrollBack"
+            flickable: createScroll
+            forward: false
+            horizontal: Theme.compact
             radius: 12
-            visible: Theme.compact && createScroll.contentX + createScroll.width < createScroll.contentWidth - 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "#00F9FAFB" }
-                GradientStop { position: 1.0; color: Theme.panel }
-            }
-        }
-        Rectangle {
-            anchors { top: parent.top; bottom: parent.bottom; left: parent.left; margins: 1 }
-            width: 32
-            radius: 12
-            visible: Theme.compact && createScroll.contentX > 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: Theme.panel }
-                GradientStop { position: 1.0; color: "#00F9FAFB" }
-            }
+            anchors { left: parent.left; top: parent.top; margins: 1 }
+            width: horizontal ? 32 : parent.width - 2
+            height: horizontal ? parent.height - 2 : 28
         }
     }
 
@@ -837,13 +851,19 @@ ApplicationWindow {
         id: historyPanel
         objectName: "historyPanel"
         app: window.app
-        z: Theme.compact ? 3 : 0
+        // A regular window's: over a sketch's size and constraint marks (the
+        // overlay comes later), which would otherwise show through its rows.
+        z: Theme.compact ? 3 : 1
         width: Theme.compact ? Math.min(320, window.width - Theme.insetLeft - Theme.insetRight) : 290
         x: Theme.compact && !window.historyOpen ? window.width + 8 : window.width - Theme.insetRight - width
-        y: Theme.compact ? modelButtonPanel.y + modelButtonPanel.height + 8 : Theme.insetTop
+        y: Theme.compact ? modelButtonPanel.y + modelButtonPanel.height + 8 : window.modelPanelTop
         visible: window.app.history.length > 0 && (!Theme.compact || window.historyOpen || x < window.width)
-        // (Above a phone's keypad while a step's number is typed there.)
-        maximumHeight: Math.min(Theme.compact ? window.bottomStackTop - 8 - y : window.height - Theme.insetTop - Theme.insetBottom - 80,
+        // A regular window's ends above the view cube when the two share the
+        // right edge (a short window: the Duo's inner display), and above a
+        // phone's keypad while a step's number is typed there.
+        readonly property bool overCube: axisTriad.x < x + width && axisTriad.x + axisTriad.width > x
+        maximumHeight: Math.min(Theme.compact ? window.bottomStackTop - 8 - y
+                                              : Math.min(window.height - Theme.insetBottom - 80, overCube ? axisTriad.y - Theme.margin : Infinity) - y,
                                 keypad.visible && keypad.docked ? keypad.y - 8 - y : Infinity)
         keypad: keypad
         onFinished: viewport.forceActiveFocus()
@@ -1241,6 +1261,7 @@ ApplicationWindow {
     // ---------------------------------------------------------------- sketch mode
     SketchOverlay {
         id: sketchOverlay
+        objectName: "sketchOverlay"
         anchors.fill: parent
         app: window.app
         viewportItem: viewport
@@ -1283,8 +1304,15 @@ ApplicationWindow {
                                                  - 8 - (topBar.x + topBar.width + 8)) - 1
         readonly property real singleRowWidth: roomBesideTopBar >= 380 ? roomBesideTopBar
                                              : Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1
+        // A regular window: its actions wrap to the room between the tool
+        // palette and the Model panel, so it never needs to cover either
+        // (the Duo's inner display with the panel open, where the wider chip
+        // found no room and took the top bar's corner).
+        readonly property real columnWidth: Math.floor((historyPanel.visible ? historyPanel.x : window.width - Theme.insetRight)
+                                                       - (createPanel.visible ? createPanel.x + createPanel.width : Theme.insetLeft)
+                                                       - 2 * window.chipPanelGap) - 1
         // Whole pixels, a pixel short: the layout rounds the chip's width up.
-        maximumWidth: !Theme.compact ? window.width - Theme.insetLeft - Theme.insetRight
+        maximumWidth: !Theme.compact ? Math.max(260, columnWidth)
                     : singleRow ? singleRowWidth
                     : Math.max(200, Math.floor(Math.min(viewButtonPanel.x, axisTriad.x) - 8 - Theme.insetLeft) - 1)
         // Where it goes (interact::placeValueChip): never over the selection,

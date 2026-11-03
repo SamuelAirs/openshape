@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <thread>
 
@@ -730,6 +731,37 @@ TEST(Interaction, EdgeSelectionAndFillet)
     ASSERT_EQ(std::sscanf(refusal.c_str(), "The radius is too large for this edge. Try %lf mm or less.", &suggested), 1) << refusal;
     EXPECT_EQ(h.controller.setValueText(std::to_string(suggested)), "") << "the suggested radius works";
     EXPECT_NEAR(geom::volume(h.body().shape()), expected, 1e-3);
+}
+
+// Every arrow on a face or an edge stands out of the part (the owner,
+// 2026-11-03: "perpendicular to the face going outward"), and drawing it out
+// along that way makes the value larger.
+TEST(Interaction, ArrowsStandOutOfThePart)
+{
+    Harness h;
+    ASSERT_TRUE(h.controller.createBox(20).ok()); // (-10,-10,0) .. (10,10,20)
+    h.controller.fitAll(false);
+    const double half = std::sqrt(0.5);
+
+    h.clickAt(h.screen({10, -10, 10})); // the front-right vertical edge
+    ASSERT_NE(h.controller.operation(), nullptr);
+    ASSERT_EQ(h.controller.operation()->title(), "Fillet");
+    const LinearManipulator edge = h.controller.operation()->handle(0);
+    EXPECT_NEAR(edge.direction().x, half, 1e-6);
+    EXPECT_NEAR(edge.direction().y, -half, 1e-6);
+    EXPECT_NEAR(edge.direction().z, 0, 1e-6);
+    EXPECT_NEAR((edge.base() - Vec3{10, -10, 10}).length(), 0, 1e-6) << "on the edge's middle";
+    EXPECT_EQ(h.controller.setValueText("4"), "");
+    EXPECT_GT((h.controller.operation()->anchor() - edge.base()).dot(edge.direction()), 0) << "a larger radius moves it out";
+    h.controller.cancelOperation();
+
+    h.clickAt(h.screen({0, 0, 20})); // the top face (a click replaces the selection)
+    ASSERT_NE(h.controller.operation(), nullptr);
+    ASSERT_TRUE(h.controller.triggerAction("shell").ok());
+    ASSERT_EQ(h.controller.operation()->title(), "Shell");
+    const LinearManipulator shell = h.controller.operation()->handle(0);
+    EXPECT_NEAR(shell.direction().z, 1, 1e-6) << "out of the opened face";
+    EXPECT_NEAR(shell.base().z, 20, 1e-6) << "on it";
 }
 
 TEST(Interaction, ShiftClickAddsEdgesAndChamferSwitch)

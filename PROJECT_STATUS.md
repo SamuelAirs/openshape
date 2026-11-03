@@ -130,6 +130,36 @@ and the vase, in
 `docs/marketing/blender/` (docs/MARKETING_RENDERS.md, piece 8). Committed
 locally; it goes up with the next app change.
 
+**Build 60 (2026-11-03, afternoon), from the owner's round on build 59:**
+his log (three runs on the Duo, about 14 folds and unfolds, no crash,
+every sample open in under 0.7 s, the lamp shade in 0.65 s) and 22
+screenshots (iCloud Drive/Foldform). He draws with his Apple Pencil on the
+Duo ("It works great"). Fixed: turned tall (669 pt), the top bar ran into
+the Model panel: the bar drops its title when it would not fit beside the
+panel, and the panel goes below whatever still reaches it on the top row
+(`modelPanelTop`, a sketch's tool bar included); with the panel open on
+the inner display the value box and its actions were wider than the room
+between the palette and the panel and took the top bar's corner: they wrap
+to that column (`columnWidth`); a long Model panel ran under the view
+cube, and a sketch's marks showed through it: it ends above the cube and
+draws over the sketch overlay. His "perpendicular to the face going
+outward, generally": a fillet or chamfer arrow now stands out of the edge
+(`geom::edgeOutward`: the faces' normals taken at the edge, where before
+the curved faces' own middles counted and the arrow pointed into the
+part), Shell's arrow out of the opened face, and a curved face's arrows
+start on it (`arrowBaseOnFace`; the centroid lay inside the part). His "a
+small arrow to the left side toolbar. I forget sometimes I can scroll":
+`ScrollHint.qml`, a chevron at the palette's edge that has more (both
+palettes, the phone strips too; only a sign, so a tool half under it
+still takes the tap: the construct scenario's Axis button at the
+desktop palette's bottom edge caught that). The Duo scenario uses the
+measured insets, checks that no control of a regular window covers
+another (the keypad not yet, TD-165) and opens the honeycomb with its long
+Model panel, taps a wall and the palette's arrows (340 checks).
+docs/APP_STORE.md 3b lists the Duo screenshots for the new samples: two
+of his are in `docs/appstore/duo/`, four to take on 60. Verified:
+861/861 headless, 4525/4525 real-UI checks (the full run).
+
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
 iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
 decide the first 0.3.1 fixes ("Next" below).

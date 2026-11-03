@@ -2641,6 +2641,40 @@ std::vector<int> facesOfEdge(const Shape& shape, int edgeIndex)
     return result;
 }
 
+std::optional<Vec3> edgeOutward(const Shape& shape, int edgeIndex)
+{
+    const std::vector<int> faces = facesOfEdge(shape, edgeIndex);
+    const auto info = edgeInfo(shape, edgeIndex);
+    if (faces.empty() || !info)
+        return std::nullopt;
+    try {
+        OS_KERNEL_SIGNALS_TO_EXCEPTIONS
+        const TopoDS_Edge edge = edgeAt(shape, edgeIndex);
+        Vec3 sum;
+        for (const int f : faces) {
+            // At the edge itself: a curved face's normal at its own middle
+            // can point anywhere (the far side of a dome).
+            const TopoDS_Face face = faceAt(shape, f);
+            double first = 0, last = 0;
+            const Handle(Geom2d_Curve) onFace = BRep_Tool::CurveOnSurface(edge, face, first, last);
+            if (onFace.IsNull())
+                return std::nullopt;
+            const gp_Pnt2d uv = onFace->Value((first + last) / 2);
+            const auto n = faceNormal(face, uv.X(), uv.Y());
+            if (!n)
+                return std::nullopt;
+            sum += fromDir(*n);
+        }
+        sum = sum - info->tangent * sum.dot(info->tangent);
+        if (sum.length() < 1e-6)
+            return std::nullopt;
+        return sum.normalized();
+    } catch (const Standard_Failure& failure) {
+        OS_LOG(Warning, Kernel) << "edgeOutward(" << edgeIndex << ") failed: " << describeFailure(failure);
+        return std::nullopt;
+    }
+}
+
 std::optional<Vec3> pointOnFace(const Shape& shape, int faceIndex, const Vec3& preferred)
 {
     if (!validIndex(shape, faceIndex, shape.faceCount()))

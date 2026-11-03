@@ -383,7 +383,11 @@ Notes on the description:
   not enabled it there yet) or the screen edges (estimates until the
   owner's log, TD-150). The owner confirms it on his Duo before the
   listing is applied. The Apple Pencil line no longer promises palm
-  rejection, which has not been tried on the iPad yet.
+  rejection, which has not been tried on the iPad yet. **2026-11-03:**
+  the owner draws and selects with his Apple Pencil (USB-C) on his Duo on
+  build 59 ("Yes, I was using my Apple Pencil on the duo. It works
+  great."), so the Duo line may mention the Pencil once he says to; until
+  then the text above stands.
 
 ### Keywords (max 100 bytes, comma-separated, no spaces)
 
@@ -518,48 +522,44 @@ device; that is fine.
 
 The badge ("optimized for iPhone Duo") comes with screenshots in App Store
 Connect's iPhone Duo slot (section 3), so they go into this submission.
-They are taken by the owner on his Duo with build 54; the listing tool
-finds Apple's exact Duo sizes and uploads them in file-name order.
+They are taken by the owner on his Duo; the listing tool finds Apple's
+exact Duo sizes and uploads them in file-name order.
 
-### The captures (the owner, on the Duo, build 54)
+### The captures (the owner, on the Duo)
 
-**First:** TestFlight build 54 installed; File → About FoldForm →
-**Restore purchase** on the Duo (it was bought on the iPhone; this also
-shows that Restore works on a second device), so the sample projects open
-without the sheet; the
-six sample projects on the phone (the `.openshape` files in
-`C:\Users\ayers\OpenShape\build\appstore-screenshots\iphone-6-home\OpenShape\`,
-mailed to yourself or put in iCloud Drive, each opened in FoldForm); Focus
-on (no notifications); Light appearance. Every capture with the phone
-**opened flat or closed**, never half folded (FoldForm does not place
-things around the crease yet, TD-140). Before each one, look along every
-edge and the side bar: if anything is cut off or hidden, skip that capture
-and tell the lead. A capture is the side button and volume up. Save them
-as these files in `docs/appstore/duo/` (the folder the listing tool reads,
-in this order):
+The first list named build 54's sample projects, which build 58 replaced
+with the five on Home, so on build 59 the owner took a range of 22
+(2026-11-03, iCloud Drive/Foldform: "I had some trouble deciphering some
+screenshot requests, unfortunately, so I decided to take a range"). Two
+of them are in `docs/appstore/duo/` as they are; the other four wait for
+build 60, which fixes what the range showed (turned tall, the top bar ran
+into the Model panel; a sketch's marks and the view cube showed over the
+panel). Every capture with the phone **opened flat or closed**, never half
+folded (TD-140); Focus on, Light appearance; a capture is the side button
+and volume up. Before each one, look along every edge and the side bar: if
+anything is cut off or hidden, skip it and tell the lead.
 
-1. `01-inner-project-box.png`: **inner display, opened flat, wide** (the
-   way it opens, side bar along the side). *Project box*, Model panel
-   open, tap the cable hole's wall and type `8.4` on the keypad; do not
-   apply (the value box and its arrow on the part).
-2. `02-inner-sketch.png`: **inner display, opened flat, wide.** *Mounting
-   plate* → Model panel → its sketch → edit: the sizes and constraint
-   glyphs showing, the Select tool on.
-3. `03-inner-tall-holes.png`: **inner display, opened flat, turned tall**
-   (portrait). *Flange plate* → Hole tool, M3 countersunk, the allowance
-   0.2, two holes placed, not applied.
-4. `04-outer-project-box.png`: **outer display, closed, upright**
-   (portrait). Right after capture 1, fold the phone without touching
-   anything else: the same project, the same value still typed.
-5. `05-outer-key-tag.png`: **outer display, closed, upright.** *Key tag*,
-   tap the text: its size and depth showing, with the keypad.
-6. `06-outer-sideways-model.png`: **outer display, closed, sideways**
-   (landscape). *Project box*, nothing selected, the part filling the
-   view.
+1. `01-inner-electronics-box.png` (**in**, IMG_6414, build 59): **inner
+   display, opened flat, wide.** *Electronics box*, the cable hole's wall
+   tapped, `8.4` typed, not applied (the value box and its arrow on the part).
+2. `02-inner-sketch.png` (**to take on 60**): **inner, flat, wide.**
+   *Electronics box* → Model panel open → *Footprint* → Edit sketch: the
+   sizes and constraint marks showing, the Select tool on.
+3. `03-inner-tall-holes.png` (**to take on 60**): **inner, flat, turned
+   tall.** *Electronics box*, the lid's flat top → Hole tool, M3,
+   Countersink, two holes placed, not applied.
+4. `04-outer-holes.png` (**to take on 60**): **outer display, closed,
+   upright.** Right after capture 3, fold without touching anything else:
+   the same holes, the same value still there.
+5. `05-outer-lid-text.png` (**in**, IMG_6407, build 59): **outer, closed,
+   upright.** The lid's raised text tapped: its faces selected with the
+   value box.
+6. `06-outer-sideways-model.png` (**to take on 60**): **outer, closed,
+   sideways.** *Phone stand*, nothing selected, the part filling the view.
 
 Then send **Logs/openshape.log** (Files → On My iPhone → FoldForm →
-Logs): its `window ...` lines give the real screen sizes and insets for
-0.3.1 (TD-150).
+Logs): its `window ...` lines give the real screen sizes and insets
+(TD-150).
 
 ### Captions (for a later, captioned set; the captures above go up plain)
 
@@ -570,7 +570,7 @@ Logs): its `window ...` lines give the real screen sizes and insets for
 5. Raised text for labels and version marks.
 6. Precise CAD that fits in your pocket.
 
-(Caption 4 only once capture 4 shows the same value as capture 1.)
+(Caption 4 only once capture 4 shows the same value as capture 3.)
 
 ### Featuring nomination (App Store Connect → Featuring → Nominations)
 
@@ -777,22 +777,23 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
-For 0.3.1 build 59 (2026-11-03: projects open in the background behind a
-loading card, TD-164; the menus, the tool palette, the top bar and Home's
-cards restyled, TD-9; a restored sample keeps its name; the log says app
-states and screens, TD-163). Build 58's checks passed on the owner's Duo
-("Everything is working!", 2026-11-02). Before: build 58 (the samples, the
-Duo's share card), 56 and 57 (File → Open is Home; the window fills the
-screen).
+For 0.3.1 build 60 (2026-11-03, from the owner's round on 59: the top bar
+and the Model panel side by side when the Duo's inner display is turned
+tall; the value box off the top bar with the panel open; a sketch's marks
+and the view cube no longer over the panel; every face and edge arrow out
+of the part; scroll arrows on the tool palettes). Build 59's checks passed
+on the owner's Duo (his Board ticks and log, 2026-11-03). Before: build 59
+(the loading card, the new look), 58 (the samples, the Duo's share card).
 
 <!-- changed 2026-11-03: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
-FoldForm 0.3.1, on iPhone Duo. First: if the View buttons show Pen on, tap Pen to turn it off; with Pen on, fingers only move the view.
-1. Open the Lamp shade sample on Home (it is the biggest): a card with its picture, its name and a moving bar shows while it opens, and nothing looks frozen. Open a project of yours the same way.
-2. The look: the File menu, Home's ••• menu on a project and the Sketch button's plane menu are white cards with an icon on every row; every tool on the left (or along the bottom) has an icon; Undo, Redo and Help in the top bar are icons. Say what still looks plain or off.
-3. Change a sample, wait a minute, then close FoldForm from the app switcher and open it again: Restore brings the change back under the sample's name, and Save offers that name.
-4. Fold and unfold a few times while FoldForm is open, then send the log: it now says what iOS did at each fold.
+FoldForm 0.3.1, on iPhone Duo.
+1. Open the inner display and turn it tall: the top bar (without the FoldForm title) and the Model panel sit side by side, nothing on top of the other.
+2. Open the Honeycomb organizer sample, show its Model panel, tap a wall: the value box sits beside the tools on the left, below the top bar, never over it.
+3. Tap an edge of the Twisted vase or the Lamp shade's rim: the arrow points straight out of the part. Pull it out: the edge rounds more. A face's arrow points straight out of the face.
+4. The tool palette on the left shows a small arrow at the bottom when more tools are below; scroll it with a finger and an arrow at the top shows there is more above. On the outer display the tool strip shows one at its right end.
+5. Edit a sketch with the Model panel open: the sizes and marks go under the panel, and the panel ends above the view cube.
 Then send the log: Files app, FoldForm, Logs, openshape.log, Share. Screenshots with a note go from TestFlight; crash reports reach us automatically.
 ```
 

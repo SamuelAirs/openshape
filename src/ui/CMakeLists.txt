@@ -64,6 +64,7 @@ qt_add_qml_module(openshape_ui
         qml/AppMenuSeparator.qml
         qml/HomeScreen.qml
         qml/ScrollRow.qml
+        qml/ScrollHint.qml
         qml/SaveNameOverlay.qml
         qml/NumericKeypad.qml
         qml/PurchaseOverlay.qml

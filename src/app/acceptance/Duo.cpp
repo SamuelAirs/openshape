@@ -35,7 +35,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <memory>
+#include <optional>
 
 namespace os::app {
 namespace {
@@ -56,14 +58,16 @@ struct Screen {
     bool compact() const { return width < 600 || height < 500; }
 };
 
-// The Duo's screens (docs/IPAD.md; the insets are estimates until the
-// owner's log tells the real ones).
-const Screen kOuter{QStringLiteral("outer"), 466, 678, {59, 0, 34, 0}};
+// The Duo's screens (docs/IPAD.md). Measured on the owner's Duo (builds 57
+// and 59, TD-150): the outer display, the inner one as it opens and turned
+// tall. The others are estimates: held sideways, the side bar on the left,
+// a Split View half.
+const Screen kOuter{QStringLiteral("outer"), 466, 678, {0, 84, 34, 0}};
 const Screen kOuterSideways{QStringLiteral("outer_sideways"), 678, 466, {0, 59, 21, 59}};
-const Screen kInnerBarRight{QStringLiteral("inner_bar_right"), 951, 669, {0, 84, 20, 0}};
-const Screen kInnerBarLeft{QStringLiteral("inner_bar_left"), 951, 669, {0, 0, 20, 84}};
-const Screen kInnerTurned{QStringLiteral("inner_turned"), 669, 951, {84, 0, 20, 0}};
-const Screen kSplitHalf{QStringLiteral("split_half"), 440, 669, {0, 84, 20, 0}};
+const Screen kInnerBarRight{QStringLiteral("inner_bar_right"), 951, 669, {0, 84, 34, 0}};
+const Screen kInnerBarLeft{QStringLiteral("inner_bar_left"), 951, 669, {0, 0, 34, 84}};
+const Screen kInnerTurned{QStringLiteral("inner_turned"), 669, 951, {82, 0, 34, 0}};
+const Screen kSplitHalf{QStringLiteral("split_half"), 440, 669, {0, 84, 34, 0}};
 
 // Unfold, the bar to the other side, Split View, turned, folded sideways, folded.
 const std::vector<Screen> kFolds{kInnerBarRight, kInnerBarLeft, kSplitHalf, kInnerTurned, kOuterSideways, kOuter};
@@ -119,6 +123,37 @@ double bodyHeight(AcceptanceRunner& r)
     return r.app().bodyCount() == 0 ? -1.0 : geom::boundingBox(r.body(0).shape()).size().z;
 }
 
+// Where a click picks the largest flat face of the first body that faces the
+// view and is in sight there (nullopt: none is). (A click: a finger's tap on
+// a thin wall, the honeycomb's, takes the edge beside it.)
+std::optional<QPointF> faceInSight(AcceptanceRunner& r)
+{
+    if (r.app().bodyCount() == 0)
+        return std::nullopt;
+    const doc::Body& body = r.body(0);
+    const geom::Shape& shape = body.shape();
+    const auto& interaction = r.app().interaction();
+    const Vec3 toViewer = -interaction.camera().forward();
+    const auto mouse = interact::InputProfile::forDevice(interact::PointerDevice::Mouse);
+    std::optional<QPointF> best;
+    double bestArea = 0;
+    for (int f = 0; f < shape.faceCount(); ++f) {
+        const auto info = geom::faceInfo(shape, f);
+        if (!info || !info->isPlanar() || info->normal.dot(toViewer) < 0.3 || info->area <= bestArea)
+            continue;
+        const QPointF p = [&] {
+            const Vec3 on = geom::pointOnFace(shape, f, info->centroid).value_or(info->centroid);
+            return r.screenPoint(on.x, on.y, on.z);
+        }();
+        const sel::PickResult pick = interaction.pickAt({p.x(), p.y()}, mouse);
+        if (pick.kind == sel::PickKind::Face && pick.bodyId == body.id() && pick.index == f) {
+            best = p;
+            bestArea = info->area;
+        }
+    }
+    return best;
+}
+
 void applyScreen(AcceptanceRunner& r, const Screen& s)
 {
     r.resizeWindow(s.width, s.height);
@@ -154,6 +189,31 @@ void checkScreen(AcceptanceRunner& r, const Screen& s, const QString& task)
     }
     r.check(seen > 0 && outside.isEmpty(), where + QStringLiteral(": every control is inside the safe area"),
             outside.isEmpty() ? QStringLiteral("%1 controls").arg(seen) : outside.join(QStringLiteral("; ")));
+    // A regular window's controls never cover one another (the owner's Duo
+    // on build 59: turned tall, the top bar ran into the Model panel; the
+    // panel's rows ran under the view cube; the value box, finding no room
+    // beside the panel, took the top bar's corner). (A phone's Model panel
+    // and View menu open over the rest on purpose. The keypad is not in it
+    // yet: where no spot is clear, it covers the view buttons, TD-165.)
+    if (!s.compact()) {
+        const char* const panels[] = {"topBar",       "createPanel", "historyPanel", "axisTriad",
+                                      "viewPanel",    "valueChip",   "sketchToolbar", "sketchToolPanel"};
+        QStringList covering;
+        for (std::size_t i = 0; i < std::size(panels); ++i)
+            for (std::size_t j = i + 1; j < std::size(panels); ++j) {
+                const QRectF a = sceneRect(r, QString::fromLatin1(panels[i]));
+                const QRectF b = sceneRect(r, QString::fromLatin1(panels[j]));
+                if (!a.isEmpty() && !b.isEmpty() && overlaps(a, b))
+                    covering << QString::fromLatin1(panels[i]) + QLatin1Char(' ') + rectText(a) + QStringLiteral(" / ")
+                                    + QString::fromLatin1(panels[j]) + QLatin1Char(' ') + rectText(b);
+            }
+        r.check(covering.isEmpty(), where + QStringLiteral(": no control covers another"), covering.join(QStringLiteral("; ")));
+        // A sketch's size and constraint marks go under the Model panel.
+        QQuickItem* panel = r.findItem(QStringLiteral("historyPanel"));
+        QQuickItem* sketch = r.findItem(QStringLiteral("sketchOverlay"));
+        if (panel && panel->isVisible() && sketch && sketch->isVisible())
+            r.check(panel->z() > sketch->z(), where + QStringLiteral(": the Model panel is over the sketch's marks"));
+    }
     // The value box never covers the selection, its arrow or the tap.
     if (shown(r, QStringLiteral("valueChip"))) {
         const QRectF chip = sceneRect(r, QStringLiteral("valueChip"));
@@ -369,6 +429,75 @@ Steps steps(AcceptanceRunner& r)
         r.check(!shown(r, QStringLiteral("historyPanel")), "duo Model panel: Close slides it away");
         r.key(Qt::Key_Escape);
     });
+    // ---- (f) A long Model panel shown beside a wall's value box (the owner's
+    // honeycomb on build 59: the value box and its actions found no room
+    // between the tool palette and the panel, and covered the top bar).
+    steps.push_back([&r] {
+        applyScreen(r, kInnerBarRight);
+        r.check(r.app().openSample(QStringLiteral("Honeycomb organizer")), "duo long panel: open the honeycomb");
+    });
+    wait(steps, 8);
+    steps.push_back([&r] {
+        r.check(!r.app().loading() && r.app().documentTitle() == QStringLiteral("Honeycomb organizer") && r.app().history().size() >= 5,
+                "duo long panel: the honeycomb is open, its steps listed", r.app().documentTitle());
+        if (QQuickItem* panel = r.findItem(QStringLiteral("historyPanel")))
+            panel->setProperty("collapsed", false);
+        r.app().setTouchMode(true);
+        r.app().fitAll();
+    });
+    wait(steps, 4);
+    // The tool palette is longer than the inner display is high: an arrow at
+    // the edge that has more says so (the owner: "I forget sometimes I can
+    // scroll"); a finger scrolls it, and the arrows follow.
+    auto paletteDrag = [&r, &steps](double dy) {
+        auto from = std::make_shared<QPointF>();
+        steps.push_back([&r, from] {
+            *from = sceneRect(r, QStringLiteral("createPanel")).center();
+            r.touchPress(*from);
+        });
+        for (int i = 1; i <= 4; ++i)
+            steps.push_back([&r, from, dy, i] { r.touchMove(*from + QPointF(0, dy * i / 4)); });
+        steps.push_back([&r, from, dy] { r.touchRelease(*from + QPointF(0, dy)); });
+        wait(steps, 4); // the flick settles
+    };
+    auto contentY = [&r] {
+        QQuickItem* scroll = r.findItem(QStringLiteral("createScroll"));
+        return scroll ? scroll->property("contentY").toDouble() : -1.0;
+    };
+    steps.push_back([&r] {
+        r.check(shown(r, QStringLiteral("createScrollMore")) && !shown(r, QStringLiteral("createScrollBack")),
+                "duo palette: an arrow at the bottom says more tools are below");
+    });
+    paletteDrag(-400);
+    steps.push_back([&r, contentY] {
+        r.check(contentY() > 20, "duo palette: a finger scrolls the tools up", AcceptanceRunner::num(contentY()));
+        r.check(shown(r, QStringLiteral("createScrollBack")), "duo palette: an arrow at the top now");
+        r.screenshot(QStringLiteral("duo_palette_scrolled"));
+    });
+    paletteDrag(600);
+    steps.push_back([&r, contentY] {
+        r.check(std::abs(contentY()) < 0.5 && !shown(r, QStringLiteral("createScrollBack")) && shown(r, QStringLiteral("createScrollMore")),
+                "duo palette: back at the top, the arrow at the bottom again", AcceptanceRunner::num(contentY()));
+    });
+    steps.push_back([&r] {
+        const auto wall = faceInSight(r);
+        r.check(wall.has_value(), "duo long panel: a wall in sight");
+        if (wall)
+            r.click(*wall);
+    });
+    wait(steps, 3);
+    foldThrough(steps, r, QStringLiteral("longpanel"), [&r](const Screen& s, const QString& where) {
+        const auto& selection = r.app().interaction().selection();
+        r.check(r.app().operationActive() && r.app().operationTitle() == QStringLiteral("Push/Pull") && selection.size() == 1
+                    && selection.items()[0].kind == sel::SelectionKind::Face,
+                where + QStringLiteral(": the wall is still being pushed"), r.app().operationTitle());
+        r.check(shown(r, QStringLiteral("valueChip")), where + QStringLiteral(": its value box is shown"));
+        if (!s.compact())
+            r.check(sceneRect(r, QStringLiteral("historyPanel")).height() > 200, where + QStringLiteral(": the long Model panel is shown"),
+                    rectText(sceneRect(r, QStringLiteral("historyPanel"))));
+    });
+    steps.push_back([&r] { r.key(Qt::Key_Escape); });
+    wait(steps, 1);
     // ---- (e) Home, with projects.
     steps.push_back([&r, st] {
         st->folder = std::make_unique<QTemporaryDir>(QDir::tempPath() + QStringLiteral("/openshape-duo-XXXXXX"));

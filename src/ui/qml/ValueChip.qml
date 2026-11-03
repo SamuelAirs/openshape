@@ -439,7 +439,7 @@ Item {
             Layout.row: column.firstRow + 2
             Layout.column: 0
             Layout.alignment: chip.alignment
-            Layout.preferredWidth: Math.min(actionMeasure.implicitWidth, 460)
+            Layout.preferredWidth: Math.min(actionMeasure.implicitWidth, 460, chip.maximumWidth)
             spacing: 4
             visible: !Theme.compact && chip.app.contextActions.length > 1
             Repeater {
