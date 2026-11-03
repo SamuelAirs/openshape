@@ -11,6 +11,7 @@
 #include "core/Version.h"
 #include "document/Datum.h"
 #include "geometry/Modeling.h"
+#include "samples/Samples.h"
 #include "ui/AppController.h"
 #include "ui/AppSettings.h"
 #include "ui/ThumbnailProvider.h"
@@ -166,6 +167,37 @@ void runEnclosureDemo(os::ui::AppController& app)
     interaction.wheel(hole, -steps);
     interaction.wheel(interaction.camera().project({20, -10, 12.5}), 2);
     interaction.setValueText("10.4");
+}
+
+// --write-samples: every sample project built and saved as <folder>/<name>.openshape
+// (thumbnail included); false, with the step that failed logged, if any fails.
+bool writeSamples(os::ui::AppController& app, const QString& folder)
+{
+    QDir().mkpath(folder);
+    bool ok = true;
+    for (const os::samples::SampleInfo& sample : os::samples::sampleList()) {
+        app.newDocument();
+        const os::Status built = os::samples::buildSample(sample.name, app.document(), app.undoStack());
+        if (!built) {
+            OS_LOG(Error, App) << "sample " << sample.name << ": " << built.developerMessage();
+            ok = false;
+            continue;
+        }
+        app.interaction().setStandardView(os::StandardView::Isometric, false);
+        app.interaction().fitAll(false);
+        const QString file = QDir(folder).filePath(QString::fromStdString(sample.name) + QStringLiteral(".openshape"));
+        if (!app.saveProjectAs(QUrl::fromLocalFile(file))) {
+            ok = false;
+            continue;
+        }
+        double volume = 0;
+        for (const auto& body : app.document().bodies())
+            if (body->isVisible())
+                volume += os::geom::volume(body->shape());
+        OS_LOG(Info, App) << "sample " << sample.name << ": " << app.document().bodies().size() << " bodies, "
+                          << volume << " mm3 shown, saved as " << QDir::toNativeSeparators(file).toStdString();
+    }
+    return ok;
 }
 
 // Scripted demo used for screenshots and smoke tests: builds the Milestone 0
@@ -786,13 +818,20 @@ int main(int argc, char* argv[])
         QStringLiteral("Test: an access violation inside a modeling kernel call must become a failed step, not a crash."));
     parser.addOption(simulateQuitOption);
     parser.addOption(simulateKernelFaultOption);
+    QCommandLineOption writeSamplesOption(
+        QStringLiteral("write-samples"),
+        QStringLiteral("Build the sample projects (samples/Samples.h) and save them, with their thumbnails, into this "
+                       "folder (resources/samples is the one the app ships), then quit."),
+        QStringLiteral("folder"));
+    parser.addOption(writeSamplesOption);
     parser.addPositionalArgument(QStringLiteral("project"), QStringLiteral("Project file to open."), QStringLiteral("[project]"));
     parser.process(application);
 
     // Automated runs (acceptance, demos, screenshots) never touch the user's
     // settings, recent files, window place or recovery copies: they get a
     // throw-away folder, removed when they end.
-    const bool automated = parser.isSet(acceptanceOption) || parser.isSet(demoOption) || parser.isSet(screenshotOption);
+    const bool automated = parser.isSet(acceptanceOption) || parser.isSet(demoOption) || parser.isSet(screenshotOption)
+        || parser.isSet(writeSamplesOption);
     QString dataDir = parser.isSet(dataDirOption) ? QDir(parser.value(dataDirOption)).absolutePath() : QString();
     std::unique_ptr<QTemporaryDir> scratch;
     if (automated && dataDir.isEmpty()) {
@@ -869,6 +908,8 @@ int main(int argc, char* argv[])
 
     os::ui::AppController controller;
     controller.startRecovery(recoveryDir);
+    controller.setSamplesFolder((dataDir.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) : dataDir)
+                                + QStringLiteral("/samples"));
     if (parser.isSet(touchOption))
         controller.setTouchMode(true);
     if (parser.isSet(projectionOption)) {
@@ -885,6 +926,8 @@ int main(int argc, char* argv[])
         controller.setHomeVisible(true);
     if (parser.isSet(appFolderOption))
         controller.setAppFolder(parser.value(appFolderOption));
+    if (parser.isSet(writeSamplesOption))
+        return writeSamples(controller, parser.value(writeSamplesOption)) ? 0 : 1;
     QQmlApplicationEngine engine;
     engine.addImageProvider(QStringLiteral("thumbnail"), new os::ui::ThumbnailProvider); // the engine owns it
     QVariantMap initialProperties{{QStringLiteral("app"), QVariant::fromValue(&controller)}};

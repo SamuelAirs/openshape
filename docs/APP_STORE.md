@@ -777,22 +777,21 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
-For 0.3.1 builds 56 and 57 (2026-11-02: File → Open is Home on iOS, after
-it closed the app on the owner's Duo, TD-158; from 57 the window fills the
-screen, TD-150; build 55's five checks again, which he has not done yet).
-Before: build 55's five checks alone.
+For 0.3.1 build 58 (2026-11-02: the five sample projects on Home; on the
+iPhone Duo, Open... and Import STEP... explain the Files app's Share,
+TD-158; build 57's edges, not tried yet). Build 55's five checks passed on
+the owner's Duo (his Board ticks, 2026-11-02). Before: builds 56 and 57
+(File → Open is Home; the window fills the screen).
 
 <!-- changed 2026-11-02: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
 FoldForm 0.3.1, on iPhone Duo. First: if the View buttons show Pen on (it turns on when the Apple Pencil touches the screen), tap Pen to turn it off; with Pen on, fingers only move the view.
-1. Closed and opened: the model now reaches every edge (no black bar at the right or bottom), and no button or text sits under the clock, the side bar or the home bar. Turn it tall on the inner display too.
-2. File, Open: Home appears with your projects (also those in folders you made in the Files app), and nothing closes. Tap one to open it. Then, once, Home's Open... button, and say whether the file picker works or closes the app, and how the Duo was held (closed; open flat; open and turned tall).
-3. Raised text on a box: hold a finger on a letter for half a second. All of the text is selected, and a message says how many faces.
-4. Then drag the arrow into the box, or type -1.5: the letters are cut 0.5 mm into the face (engraved). Undo brings them back in one step.
-5. Tap a face, then another face that faces the same way: both stay selected and the tool stays Push/Pull. Tap one of them again to take it out; Clear or a tap on empty space starts again.
-6. With a face selected, pinch and pan with two fingers: the part follows your fingers without jumping, and the value box sits at the top or bottom edge, not over the part.
-7. Free version only (without the purchase): a project moved into a folder in the Files app still counts as your one project, so New project offers the purchase.
+1. Closed and opened: the model reaches every edge (no black bar at the right or bottom), and no button or text sits under the clock, the side bar or the home bar. Turn it tall on the inner display too.
+2. Home now has five Samples below your projects: Lamp shade, Twisted vase, Electronics box, Phone stand, Honeycomb organizer. Open each one: it opens named after the sample, with every step in the Model panel. Say whether they look good.
+3. In one sample, change a step in the Model panel (for example the Lamp shade's Shell wall, or a size in its Outline sketch): the part follows. Then go Home and open another sample: FoldForm asks whether to save the changes. The sample itself never changes.
+4. On Home, tap Open...: instead of the file picker (which shows no files on the Duo), a card explains sharing from the Files app. Tap Open Files, touch and hold a project there, tap Share, then FoldForm: it opens in FoldForm. Import STEP... says the same for STEP files.
+5. File, Open: Home appears with your projects, and nothing closes.
 Then send the log: Files app, FoldForm, Logs, openshape.log, Share. Screenshots with a note go from TestFlight; crash reports reach us automatically.
 ```
 

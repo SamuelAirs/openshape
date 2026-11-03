@@ -66,4 +66,11 @@ QString describeWindowMetrics(const WindowMetrics& m, const QStringList& changes
     return line;
 }
 
+bool isIphoneDuoScreen(int width, int height)
+{
+    const int shorter = std::min(width, height);
+    const int longer = std::max(width, height);
+    return (shorter == 466 && longer == 678) || (shorter == 669 && longer == 951);
+}
+
 } // namespace os::ui

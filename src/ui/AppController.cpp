@@ -15,8 +15,10 @@
 #include "io/ProjectFile.h"
 #include "io/ProjectFiles.h"
 #include "io/RecentFiles.h"
+#include "samples/Samples.h"
 #include "ui/RecoverySession.h"
 #include "ui/ThumbnailSource.h"
+#include "ui/WindowMetrics.h"
 
 #include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
@@ -31,9 +33,11 @@
 #include <QtCore/QPointer>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QVariantMap>
+#include <QtGui/QDesktopServices>
 #include <QtGui/QFileOpenEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
+#include <QtGui/QScreen>
 
 #include <algorithm>
 #include <chrono>
@@ -562,7 +566,14 @@ void AppController::orbitView(double dxPixels, double dyPixels)
 
 QString AppController::documentTitle() const
 {
-    return path_.isEmpty() ? QStringLiteral("Untitled") : QFileInfo(path_).completeBaseName();
+    if (path_.isEmpty())
+        return untitledName_.isEmpty() ? QStringLiteral("Untitled") : untitledName_;
+    return QFileInfo(path_).completeBaseName();
+}
+
+QString AppController::saveNameSuggestion() const
+{
+    return path_.isEmpty() ? untitledName_ : documentTitle();
 }
 
 bool AppController::dirty() const { return !undoStack_->isClean(); }
@@ -1064,6 +1075,66 @@ bool AppController::openProjectFile(const QString& file)
     return true;
 }
 
+void AppController::setSamplesFolder(const QString& folder)
+{
+    samplesFolder_ = folder;
+    homeSamples_.clear();
+    QDir().mkpath(folder);
+    for (const samples::SampleInfo& sample : samples::sampleList()) {
+        const QString name = QString::fromStdString(sample.name);
+        const QString file = name + QStringLiteral(".openshape");
+        QFile builtIn(QStringLiteral(":/openshape/samples/") + file);
+        if (!builtIn.open(QIODevice::ReadOnly)) {
+            OS_LOG(Warning, File) << "sample " << sample.name << " is not in this build";
+            continue;
+        }
+        const QByteArray bytes = builtIn.readAll();
+        const QString copy = QDir(folder).filePath(file);
+        QFile current(copy);
+        const bool same = current.open(QIODevice::ReadOnly) && current.readAll() == bytes;
+        current.close();
+        if (!same) {
+            const Status written = io::writeFileAtomically(std::filesystem::path(copy.toStdWString()), bytes.toStdString());
+            if (!written) {
+                OS_LOG(Warning, File) << "sample " << sample.name << ": " << written.developerMessage();
+                continue;
+            }
+        }
+        homeSamples_.append(QVariantMap{
+            {QStringLiteral("name"), name},
+            {QStringLiteral("summary"), QString::fromStdString(sample.summary)},
+            {QStringLiteral("thumbnail"), thumbnailSource(copy, QFileInfo(copy).lastModified().toMSecsSinceEpoch())},
+        });
+    }
+    emit samplesChanged();
+}
+
+bool AppController::openSample(const QString& name)
+{
+    const QString copy = QDir(samplesFolder_).filePath(name + QStringLiteral(".openshape"));
+    auto loaded = samplesFolder_.isEmpty() ? Result<std::unique_ptr<doc::Document>>::failure(ErrorCode::FileNotFound, "")
+                                           : io::loadProject(std::filesystem::path(copy.toStdWString()));
+    if (!loaded) {
+        OS_LOG(Warning, File) << "sample " << name.toStdString() << ": " << loaded.developerMessage();
+        notifyMessage(QStringLiteral("This sample could not be opened."));
+        return false;
+    }
+    loaded.value()->setId(Uuid::generate()); // a copy of its own, not the sample
+    auto stack = std::make_unique<cmd::UndoStack>();
+    interaction_->setDocument(*loaded.value(), *stack);
+    document_ = std::move(loaded.value());
+    undoStack_ = std::move(stack);
+    path_.clear();
+    documentReplaced();
+    untitledName_ = name;
+    setHomeVisible(false);
+    OS_LOG(Info, File) << "opened the sample " << name.toStdString();
+    emit documentChanged();
+    emit stateChanged();
+    emit viewChanged();
+    return true;
+}
+
 bool AppController::saveProject()
 {
     if (path_.isEmpty())
@@ -1211,6 +1282,28 @@ QUrl AppController::takeNextFileChoice()
     QUrl url;
     std::swap(url, nextFileChoice_);
     return url;
+}
+
+bool AppController::filePickerWorks() const
+{
+    bool duo = simulatedDuo_;
+#if defined(Q_OS_IOS)
+    for (const QScreen* screen : QGuiApplication::screens())
+        duo = duo || isIphoneDuoScreen(screen->size().width(), screen->size().height());
+#endif
+    if (duo)
+        OS_LOG(Info, App) << "iPhone Duo: its file picker shows no files, so sharing from the Files app is explained";
+    return !duo;
+}
+
+void AppController::openFilesApp()
+{
+#if defined(Q_OS_IOS)
+    if (!QDesktopServices::openUrl(QUrl(QStringLiteral("shareddocuments://"))))
+        OS_LOG(Warning, App) << "could not switch to the Files app";
+#else
+    OS_LOG(Info, App) << "Open Files: switches to the Files app on iOS";
+#endif
 }
 
 bool AppController::exportStl(const QUrl& url)
@@ -1911,6 +2004,7 @@ void AppController::startRecovery(const QString& directory)
 
 void AppController::documentReplaced()
 {
+    untitledName_.clear();
     stopRecoveryTimers();
     if (recovery_)
         recovery_->removeCopy();

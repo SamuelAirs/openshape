@@ -52,6 +52,13 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
+    <!-- Open Files on the iPhone Duo (ShareFromFilesOverlay) opens the Files
+         app by its URL scheme. Qt's openUrl asks canOpenURL first, which
+         answers only for the schemes listed here. -->
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>shareddocuments</string>
+    </array>
     <!-- What other apps may hand to OpenShape ("Open in OpenShape", sharing
          to it from the Files app or Mail, a project tapped in the Files app):
          projects (OpenShape owns the type) and STEP files (imported as a new

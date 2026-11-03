@@ -8,7 +8,8 @@ import QtQuick.Layouts
 import OpenShape
 
 // The start screen (Home): recent projects as cards with their previews,
-// plus New project, Open... and Import STEP.... Shown at launch without a
+// plus New project, Open... and Import STEP..., and the sample projects
+// that come with the app (each opens as an unsaved copy). Shown at launch without a
 // file and from File -> Home; Esc or Back returns to the open document.
 // Touch-first: whole cards are tap targets, and the ... button, a long press
 // or a right click opens a card's menu: Rename..., Duplicate, Remove from
@@ -24,6 +25,7 @@ Rectangle {
     signal openRequested()
     signal importRequested()
     signal projectRequested(string path)
+    signal sampleRequested(string name)
 
     color: Theme.background
     visible: app.homeVisible
@@ -196,6 +198,108 @@ Rectangle {
                     font.pixelSize: 13
                     color: Theme.mutedText
                     wrapMode: Text.WordWrap
+                }
+            }
+
+            // The samples: every step stays editable (the Model panel), and
+            // the original stays as it is.
+            SectionLabel {
+                text: "Samples"
+                Layout.topMargin: home.short_ ? 8 : 18
+                visible: home.app.homeSamples.length > 0
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: home.app.homeSamples.length > 0 && !home.short_
+                text: "Open one and change any step in the Model panel; the sample itself stays as it is."
+                font.pixelSize: 13
+                color: Theme.mutedText
+                wrapMode: Text.WordWrap
+            }
+            Grid {
+                id: samplesGrid
+                Layout.fillWidth: true
+                visible: home.app.homeSamples.length > 0
+                columns: grid.columns
+                columnSpacing: grid.columnSpacing
+                rowSpacing: grid.rowSpacing
+                Repeater {
+                    model: home.app.homeSamples
+                    delegate: SampleCard {
+                        required property var modelData
+                        required property int index
+                        width: grid.cardWidth
+                        sample: modelData
+                        cardIndex: index
+                    }
+                }
+            }
+        }
+    }
+
+    // A sample: its preview, name and what it shows; a tap opens a copy.
+    component SampleCard: Rectangle {
+        id: sampleCard
+        property var sample: ({})
+        property int cardIndex: 0
+        objectName: "homeSample_" + cardIndex
+        height: samplePreview.height + sampleDetails.implicitHeight + 16
+        radius: 12
+        color: sampleTap.pressed ? Theme.hover : Theme.panel
+        border.color: sampleTap.containsMouse ? Theme.accent : Theme.panelBorder
+        border.width: 1
+
+        MouseArea {
+            id: sampleTap
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: home.sampleRequested(sampleCard.sample.name)
+        }
+        Rectangle {
+            id: samplePreview
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 6 }
+            height: Math.round(width * (home.short_ ? 0.6 : 0.72))
+            radius: 8
+            color: "#F1F3F6"
+            Image {
+                objectName: "homeSampleThumbnail_" + sampleCard.cardIndex
+                anchors { fill: parent; margins: 6 }
+                source: sampleCard.sample.thumbnail || ""
+                sourceSize: Qt.size(256, 256)
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                smooth: true
+                mipmap: true
+            }
+        }
+        Column {
+            id: sampleDetails
+            anchors { left: parent.left; right: parent.right; top: samplePreview.bottom; margins: 10; topMargin: 8 }
+            spacing: 2
+            Text {
+                objectName: "homeSampleName_" + sampleCard.cardIndex
+                width: parent.width
+                text: sampleCard.sample.name || ""
+                textFormat: Text.PlainText
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Theme.text
+                elide: Text.ElideRight
+            }
+            // Two lines whatever it says, so the cards in a row line up.
+            Text {
+                width: parent.width
+                height: Math.ceil(2 * summaryMetrics.lineSpacing) + 2
+                text: sampleCard.sample.summary || ""
+                textFormat: Text.PlainText
+                font.pixelSize: 12
+                color: Theme.mutedText
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+                FontMetrics {
+                    id: summaryMetrics
+                    font.pixelSize: 12
                 }
             }
         }

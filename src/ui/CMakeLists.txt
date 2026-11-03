@@ -56,6 +56,7 @@ qt_add_qml_module(openshape_ui
         qml/PreferencesOverlay.qml
         qml/RecoveryOverlay.qml
         qml/UnsavedOverlay.qml
+        qml/ShareFromFilesOverlay.qml
         qml/HomeScreen.qml
         qml/ScrollRow.qml
         qml/SaveNameOverlay.qml
@@ -69,6 +70,8 @@ qt_add_qml_module(openshape_ui
         Share.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)
+# Home's Samples: their names and what each shows.
+target_link_libraries(openshape_ui PRIVATE openshape_samples)
 target_include_directories(openshape_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_ui)
 

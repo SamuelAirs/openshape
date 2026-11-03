@@ -75,7 +75,23 @@ outer 382x644 of 466x678: black bars at the right and bottom). Cause:
 Qt keeps a maximized window (every window on iOS) inside the safe areas
 unless it has `Qt::ExpandedClientAreaHint`; main.cpp sets it on iOS since
 build 57 (TD-150; the real insets come with the next log). Build 55's five
-checks are not done yet.
+checks then passed (his Board ticks, 2026-11-02).
+
+**Samples and the Duo's Open (2026-11-02, evening, for build 58):** Home's
+Open... still found no files on the Duo, and the owner pointed to
+Dualtop's workaround: on the Duo (told by its screens' sizes) Open... and
+Import STEP... now explain sharing from the Files app, with Open Files
+(TD-158). The owner asked for five complex, good-looking sample projects
+with the app: Lamp shade, Twisted vase, Electronics box, Phone stand and
+Honeycomb organizer, built step by step in `src/samples/Samples.cpp`
+(sized sketches, construction planes, Revolve, Loft, Shell, fillets,
+holes, text, Mirror, patterns, a subtracted window body), shipped as
+`resources/samples/*.openshape` (written by `OpenShape --write-samples`,
+checked by `test_samples` against a fresh build), listed on Home and
+opened as unsaved copies; they never count toward the free project
+(purchase scenario), and Save keeps one under its name. Verified: 858/858
+headless, the `samples`, `purchase` and `homefolder` scenarios; the full
+real-UI run below. Not tried on a device.
 
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
 iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
@@ -1174,7 +1190,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-855/855 headless (`ctest -LE gui`, 2026-11-01, `main` at 0.3.1 with the Duo fixes; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+858/858 headless (`ctest -LE gui`, 2026-11-02, `main` at 0.3.1 with the samples; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1200,7 +1216,7 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 855/855 | ✅ 4365/4365 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 858/858 | ✅ 4365/4365 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |

@@ -91,6 +91,11 @@ Two rules learned the hard way:
   OCCT's shell, defeaturing and per-face offset can all report success with
   an unchanged or wrong solid.
 
+The sample projects (`resources/samples`) are built files: when a change
+makes a step rebuild differently or changes what a project file holds,
+write them again (`OpenShape --write-samples resources/samples`, BUILDING.md)
+and look at Home; `test_samples` fails until then.
+
 Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON` (CI does). A new enum value
 without its `switch` cases (`-Wswitch`) or a struct initializer missing a
 field (`-Wmissing-field-initializers`) fails CI.

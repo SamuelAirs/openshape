@@ -13,13 +13,24 @@ qt_add_executable(openshape WIN32 MACOSX_BUNDLE
     ${OPENSHAPE_ACCEPTANCE_SCENARIOS}
 )
 # GuiPrivate: QWindowSystemInterface for realistic input injection in --acceptance.
-target_link_libraries(openshape PRIVATE openshape_ui openshape_uiplugin Qt6::Quick Qt6::QuickControls2 Qt6::GuiPrivate)
+target_link_libraries(openshape PRIVATE openshape_ui openshape_uiplugin openshape_samples Qt6::Quick Qt6::QuickControls2 Qt6::GuiPrivate)
 openshape_set_warnings(openshape)
 qt_add_resources(openshape "openshape_icons"
     PREFIX "/openshape"
     BASE ${PROJECT_SOURCE_DIR}/resources
     FILES ${PROJECT_SOURCE_DIR}/resources/icons/openshape.svg
 )
+# The sample projects Home offers (resources/samples, written by
+# OpenShape --write-samples from samples/Samples.cpp; copied out by
+# AppController::setSamplesFolder).
+file(GLOB OPENSHAPE_SAMPLE_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/resources/samples/*.openshape)
+if(OPENSHAPE_SAMPLE_FILES)
+    qt_add_resources(openshape "openshape_samples"
+        PREFIX "/openshape"
+        BASE ${PROJECT_SOURCE_DIR}/resources
+        FILES ${OPENSHAPE_SAMPLE_FILES}
+    )
+endif()
 # The Text tool's font, Noto Sans (SIL Open Font License 1.1; see
 # resources/fonts/README.md and THIRD_PARTY.md), built into the executable:
 # AppController registers it with the geometry layer at startup. Without it

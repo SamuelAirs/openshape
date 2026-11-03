@@ -625,8 +625,15 @@ margins (BUILDING.md).
    which lists every project in that folder, also in folders made in the
    Files app (since 0.3.1: the system picker from File → Open closed the app
    on the iPhone Duo, TD-158); Home's **Open…** shows the system file picker
-   (a project from iCloud Drive opens as a copy in FoldForm's folder);
+   (a project from iCloud Drive opens as a copy in FoldForm's folder), except
+   on the iPhone Duo, where that picker shows no files: there Open… and
+   Import STEP… explain the Files app's Share (touch and hold the file,
+   Share, FoldForm) and Open Files switches to the Files app;
    Export STL/3MF/STEP writes into Exports there and opens the share sheet.
+   Home's **Samples** (five) open as unsaved copies named after them; a
+   changed one is asked about before another opens, and Save keeps it as
+   a project of your own (the free version's one project: samples do not
+   count, a saved one does).
    After the next TestFlight update, File → Open Recent still lists those
    projects and opens them. On Home, the project's card says *FoldForm
    (Files app)* under its date (before: a long /var/mobile/… path).

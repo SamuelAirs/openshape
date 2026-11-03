@@ -74,6 +74,7 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 | `openshape_selection` | document | no | picking, selection sets |
 | `openshape_interaction` | commands, selection | no | controller, manipulators, operations |
 | `openshape_io` | document, libzip (private) | no | project files, recovery store, recent-files list |
+| `openshape_samples` | commands | no | the sample projects' build steps (`OpenShape --write-samples` writes `resources/samples`, which the app ships; Home lists them) |
 | `openshape_render` | interaction, Qt Gui/GuiPrivate/Quick | yes | QRhi renderer + shaders |
 | `openshape_uistate` | io, Qt Core | yes | settings (`AppSettings`), recovery sessions (`RecoverySession`), the built-in license texts (`Licenses`, `:/openshape/licenses`) |
 | `openshape_ui` | render, io, uistate, Qt Quick/Controls | yes | QML module `OpenShape` |

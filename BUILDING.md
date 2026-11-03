@@ -99,7 +99,9 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario appfolder,share,openin   # iPhone / iPad files: saving by name, the share sheet (stub), Open in OpenShape
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario purchase   # the free version's one project and the purchase sheet with a stand-in App Store: every gated action, buy / restore / fail / Ask to Buy / offline, phone, iPad, Split View and iPhone Duo sizes, the desktop without a store
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario samples   # Home's five samples: their cards and previews, each opened by a tap (an unsaved copy, every step rebuilt), a changed one asked about, Save offering its name; the purchase scenario checks they never count toward the free project
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
+./build/msys2-ucrt64/bin/OpenShape.exe --write-samples resources/samples   # rebuild the sample projects the app ships (src/samples/Samples.cpp), thumbnails included; then build again to embed them
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir   # settings, recovery copies and log in some-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --data-dir some-dir --simulate-crash   # then start with --data-dir some-dir: it offers the box
@@ -129,6 +131,14 @@ sizes): `help`, `about`, `licenses` (About → Licenses), `preferences`, `savena
 and `viewmenu` (the compact View menu open on `combine`). Without
 `--screenshot` the window stays open. A normal start without a file opens on Home; automated runs
 (`--acceptance`, `--demo`, `--screenshot`) start in an empty document.
+
+**Sample projects.** The five samples on Home are built step by step in
+`src/samples/Samples.cpp` and shipped as `resources/samples/*.openshape`
+(a Qt resource of the app, copied out to the app's data folder at start).
+After changing a sample's steps, or anything that changes how a step
+rebuilds or how a project is saved, run `--write-samples resources/samples`
+and build again: `test_samples` fails while the shipped files and a fresh
+build differ (bodies, steps, volumes) or a file has no thumbnail.
 
 **Camera for screenshots.** `--view` looks at a demo scene from a standard
 view (`iso`, `front`, `back`, `left`, `right`, `top`, `bottom`) or from

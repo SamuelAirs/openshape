@@ -45,4 +45,12 @@ QStringList windowMetricsChanges(const WindowMetrics& before, const WindowMetric
 // " (changed: size, safe area)".
 QString describeWindowMetrics(const WindowMetrics& metrics, const QStringList& changes = {});
 
+// A screen of the iPhone Duo, by its size in points (either way round): the
+// outer display (466 x 678) or the inner one (951 x 669), from the owner's
+// log (2026-11-02). No other iPhone or iPad has either size. The outer
+// display is the main screen, folded or not, so it is always among the
+// screens. Qt has no hinge API to ask instead (Dualtop, in Swift, asks
+// UIHingeInteraction).
+bool isIphoneDuoScreen(int width, int height);
+
 } // namespace os::ui

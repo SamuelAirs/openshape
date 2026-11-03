@@ -1012,3 +1012,17 @@ TEST(WindowMetrics, LineSaysSizesInsetsAndWhatChanged)
     EXPECT_TRUE(describeWindowMetrics(desk).contains(QStringLiteral("at 1.25x (583x848 px), simulated safe area top 59.5")))
         << describeWindowMetrics(desk).toStdString();
 }
+
+// The iPhone Duo is told by its screens' sizes in points (the owner's log,
+// 2026-11-02): there Open... explains the Files app's Share (TD-158).
+TEST(WindowMetrics, TellsTheIphoneDuoByItsScreens)
+{
+    EXPECT_TRUE(isIphoneDuoScreen(466, 678)); // outer display, upright
+    EXPECT_TRUE(isIphoneDuoScreen(678, 466)); // turned
+    EXPECT_TRUE(isIphoneDuoScreen(951, 669)); // inner display, wide
+    EXPECT_TRUE(isIphoneDuoScreen(669, 951));
+    EXPECT_FALSE(isIphoneDuoScreen(402, 874));  // iPhone 16 Pro
+    EXPECT_FALSE(isIphoneDuoScreen(440, 956));  // iPhone 16 Pro Max
+    EXPECT_FALSE(isIphoneDuoScreen(1032, 1376)); // iPad Pro 13-inch
+    EXPECT_FALSE(isIphoneDuoScreen(1920, 1080));
+}

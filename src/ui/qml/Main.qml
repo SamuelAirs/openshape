@@ -237,7 +237,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [purchaseOverlay, saveNamePrompt, unsavedDialog, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, homeScreen]
+        const panels = [purchaseOverlay, saveNamePrompt, unsavedDialog, shareFromFiles, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, homeScreen]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -262,10 +262,14 @@ ApplicationWindow {
         else
             confirmDiscard(() => openDialog.open())
     }
+    // On the iPhone Duo, whose file picker shows no files, it explains
+    // sharing the file from the Files app instead (TD-158).
     function chooseFile(dialog, accept) {
         const prepared = app.takeNextFileChoice()
         if (prepared.toString() !== "")
             accept(prepared)
+        else if (!app.filePickerWorks())
+            shareFromFiles.open(dialog === importDialog ? "step" : "project")
         else
             dialog.open()
     }
@@ -291,7 +295,7 @@ ApplicationWindow {
     // a name (the project goes into OpenShape's folder: iOS has no save dialog).
     function saveAs() {
         if (app.savesToAppFolder)
-            saveNamePrompt.open(app.hasProjectPath() ? app.documentTitle : "")
+            saveNamePrompt.open(app.saveNameSuggestion())
         else
             saveDialog.open()
     }
@@ -1433,6 +1437,7 @@ ApplicationWindow {
         onOpenRequested: window.confirmDiscard(() => window.chooseFile(openDialog, (url) => window.app.openProject(url)))
         onImportRequested: window.importNewProject()
         onProjectRequested: (path) => window.confirmDiscard(() => window.app.openRecent(path))
+        onSampleRequested: (name) => window.confirmDiscard(() => window.app.openSample(name))
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 
@@ -1499,6 +1504,17 @@ ApplicationWindow {
                 window.saveAs()
             }
         }
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // iPhone Duo: Open... and Import STEP... explain the Files app's Share
+    // (chooseFile). Above Home, where both buttons are.
+    ShareFromFilesOverlay {
+        id: shareFromFiles
+        objectName: "shareFromFiles"
+        app: window.app
+        anchors.fill: parent
+        z: 122
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
 

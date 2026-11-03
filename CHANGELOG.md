@@ -45,7 +45,25 @@ edges (above and below the app on other iPhones).
 in FoldForm's folder, also those in folders made in the Files app (their
 cards say which folder), newest first. On the iPhone Duo, File → Open's
 system file picker closed the app. Home's **Open…** still finds a project
-elsewhere (iCloud Drive) with that picker.
+elsewhere (iCloud Drive) with that picker, except on the Duo (below).
+
+**On the iPhone Duo, Open… and Import STEP… explain the Files app's
+Share** instead of opening the system file picker, which shows no files
+there (Apple's picker, in every app: Dualtop found the same). In the Files
+app, touch and hold the file, tap Share, then FoldForm; **Open Files**
+switches there. A project opens and is kept in FoldForm's folder; a STEP
+file opens as a new project.
+
+**Five sample projects on Home**: a lamp shade (a revolved, shelled
+outline with 16 windows patterned around it), a twisted vase (a loft
+through four turned hexagons), an electronics box with standoffs, M3
+countersunk holes, vents, a USB-C opening and its lid, a phone stand (a
+fully sized side sketch, rounded, mirrored, with the name engraved) and a
+honeycomb pen holder (seven cells from sketch patterns, all pockets in one
+cut). Each opens as an unsaved copy with every step in the Model panel, to
+change and learn from; the sample itself stays as it is. Samples do not
+count toward the free version's one project; saving a changed one keeps it
+as a project of your own.
 
 ## 0.3.0 (2026-10-31)
 

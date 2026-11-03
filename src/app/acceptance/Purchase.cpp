@@ -368,6 +368,33 @@ Steps steps(AcceptanceRunner& r)
                 say(QStringLiteral("Not now: no new project")), r.app().documentTitle());
     });
 
+    // ---- A sample with the one project used: it opens (a sample is not a
+    // project of the user's); keeping it under a name of its own would be one.
+    append(steps, home(r));
+    steps.push_back([&r] {
+        r.check(itemText(r, QStringLiteral("homeSampleName_0")) == QStringLiteral("Lamp shade"), say(QStringLiteral("Home: the samples")),
+                itemText(r, QStringLiteral("homeSampleName_0")));
+        r.check(r.clickItem(QStringLiteral("homeSample_0")), say(QStringLiteral("Home: the Lamp shade sample")));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        r.check(!shown(r, QStringLiteral("purchaseOverlay")) && r.app().documentTitle() == QStringLiteral("Lamp shade") && !r.app().dirty(),
+                say(QStringLiteral("a sample opens with the one project used")), r.app().documentTitle());
+        r.check(projectCount(s) == 1, say(QStringLiteral("and it is no project of the user's")), QString::number(projectCount(s)));
+    });
+    append(steps, fileMenu(r, QStringLiteral("saveMenuItem"), QStringLiteral("File → Save the sample")));
+    steps.push_back([&r] {
+        r.check(itemText(r, QStringLiteral("saveNameField")) == QStringLiteral("Lamp shade"), say(QStringLiteral("Save offers the sample's name")),
+                itemText(r, QStringLiteral("saveNameField")));
+        r.check(r.clickItem(QStringLiteral("saveNameSave")), say(QStringLiteral("Save Lamp shade")));
+    });
+    steps.push_back([&r, s] {
+        expectSheet(r, QStringLiteral("Save a sample"));
+        r.check(!QFileInfo::exists(s->folder + QStringLiteral("/Lamp shade.openshape")), say(QStringLiteral("the sample is not saved")));
+    });
+    append(steps, notNow(r, s, QStringLiteral("Save a sample"), 1));
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("saveNameCancel")), say(QStringLiteral("the name prompt: Cancel"))); });
+
     // ---- Home → New project → Unlock: bought, and the new project opens.
     append(steps, home(r));
     steps.push_back([&r] {

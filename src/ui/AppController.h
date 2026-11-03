@@ -147,6 +147,9 @@ class AppController : public QObject {
     // projects in the app's Documents folder. deletable: Delete... is
     // offered (see deleteProject).
     Q_PROPERTY(QVariantList homeProjects READ homeProjects NOTIFY recentFilesChanged)
+    // Home's Samples: {name, summary, thumbnail (image source)}, the sample
+    // projects that come with the app (samples/Samples.h, setSamplesFolder).
+    Q_PROPERTY(QVariantList homeSamples READ homeSamples NOTIFY samplesChanged)
     // Where Home's Delete... puts a project: "the Recycle Bin" (Windows),
     // "the Trash" (macOS), "Recently Deleted in the Files app" (iPhone /
     // iPad: QFile::moveToTrash moves it to Documents/.Trash there), "the trash".
@@ -196,6 +199,7 @@ public:
 
     interact::InteractionController& interaction() { return *interaction_; }
     doc::Document& document() { return *document_; }
+    cmd::UndoStack& undoStack() { return *undoStack_; }
 
     bool canUndo() const;
     bool canRedo() const;
@@ -267,6 +271,21 @@ public:
     bool homeVisible() const { return homeVisible_; }
     void setHomeVisible(bool visible);
     QVariantList homeProjects() const { return homeProjects_; }
+    QVariantList homeSamples() const { return homeSamples_; }
+    // The samples are built into the app (:/openshape/samples, from
+    // resources/samples) and copied into `folder` here, once per version of
+    // each, for their thumbnails and opening. The folder is the app's own
+    // data, not its Documents folder: samples are not the user's projects,
+    // the Files app does not list them and they never count toward the free
+    // app's one project.
+    void setSamplesFolder(const QString& folder);
+    QString samplesFolder() const { return samplesFolder_; }
+    // A sample opens as an unsaved copy named after it (nothing is written
+    // to the copy in the samples folder): Save asks for a name, and keeping
+    // it is one more project, like any other. False if it cannot be read.
+    Q_INVOKABLE bool openSample(const QString& name);
+    // The name Save offers: the project's own, a sample's, else none.
+    Q_INVOKABLE QString saveNameSuggestion() const;
     QString defaultUnit() const;
     void setDefaultUnit(const QString& symbol);
     bool sketchGridSnap() const { return preferences_.sketchGridSnap; }
@@ -386,6 +405,15 @@ public:
     // opening the dialog (then the usual onAccepted code runs).
     Q_INVOKABLE void setNextFileChoice(const QUrl& url) { nextFileChoice_ = url; }
     Q_INVOKABLE QUrl takeNextFileChoice();
+    // False on the iPhone Duo (one of the screens is the Duo's,
+    // isIphoneDuoScreen), where Apple's file picker shows no files: Open...
+    // and Import STEP... explain sharing the file from the Files app instead
+    // (ShareFromFilesOverlay; TD-158). simulateIphoneDuo makes the desktop
+    // answer as the Duo does (the acceptance run).
+    Q_INVOKABLE bool filePickerWorks() const;
+    Q_INVOKABLE void simulateIphoneDuo(bool on) { simulatedDuo_ = on; }
+    // Switches to the Files app (iOS); elsewhere only logged.
+    Q_INVOKABLE void openFilesApp();
     Q_INVOKABLE bool exportStl(const QUrl& url);
     Q_INVOKABLE bool export3mf(const QUrl& url);
 
@@ -632,6 +660,7 @@ signals:
     void touchModeChanged();
     void recoveryChanged();
     void recentFilesChanged();
+    void samplesChanged();
     void homeChanged();
     void preferencesChanged();
     void appFolderChanged();
@@ -724,8 +753,12 @@ private:
     double lastDragLongestMs_ = 0;
     double lastDragAverageMs_ = 0;
     QVariantList homeProjects_;
+    QVariantList homeSamples_;
+    QString samplesFolder_;
+    QString untitledName_; // an unsaved document's name (an open sample's), else "Untitled"
     bool homeVisible_ = false;
     QUrl nextFileChoice_;
+    bool simulatedDuo_ = false;
     QString appFolder_; // see savesToAppFolder
     ShareHandler shareHandler_;
     std::shared_ptr<Store> store_;

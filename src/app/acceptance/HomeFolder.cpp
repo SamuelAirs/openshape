@@ -9,7 +9,8 @@
 // in the App Store screenshots). Saved and opened by clicking, as a user.
 // File > Open there is Home, not the system picker (which closed the app on
 // the iPhone Duo, TD-158): a project in a folder made in the Files app is a
-// card of its own and opens from it.
+// card of its own and opens from it. On the Duo (simulated) Home's Open...
+// and Import STEP... explain sharing from the Files app instead.
 
 #include "app/AcceptanceRunner.h"
 #include "ui/AppController.h"
@@ -120,6 +121,42 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             r.check(!r.app().homeVisible(), "home folder: Home closed for the project");
             r.check(r.app().documentTitle() == QStringLiteral("Bracket"), "home folder: the folder's project is open",
                     r.app().documentTitle());
+            // The iPhone Duo: Home's Open... and Import STEP... explain the
+            // Files app's Share instead of the picker that shows no files.
+            r.check(r.app().filePickerWorks(), "home folder: the picker is used off the Duo");
+            r.app().simulateIphoneDuo(true);
+            r.app().setHomeVisible(true);
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("homeOpen")), "home folder: Open… on the Duo"); },
+        [] {},
+        [&r] {
+            QQuickItem* card = r.findItem(QStringLiteral("shareFromFiles"));
+            QQuickItem* text = r.findItem(QStringLiteral("shareFromFilesText"));
+            r.check(card && card->isVisible(), "home folder: the Duo explains sharing from the Files app");
+            r.check(text && text->property("text").toString().contains(QStringLiteral("touch and hold the project")),
+                    "home folder: how to share a project", text ? text->property("text").toString() : QString());
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("shareFromFilesCancel")), "home folder: Cancel"); },
+        [] {},
+        [&r] {
+            QQuickItem* card = r.findItem(QStringLiteral("shareFromFiles"));
+            r.check(card && !card->isVisible(), "home folder: Cancel closes it");
+            r.check(r.app().homeVisible(), "home folder: Home is still there");
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("homeImport")), "home folder: Import STEP… on the Duo"); },
+        [] {},
+        [&r] {
+            QQuickItem* text = r.findItem(QStringLiteral("shareFromFilesText"));
+            r.check(text && text->isVisible() && text->property("text").toString().contains(QStringLiteral("STEP file")),
+                    "home folder: how to share a STEP file", text ? text->property("text").toString() : QString());
+        },
+        [&r] { r.check(r.clickItem(QStringLiteral("shareFromFilesOpen")), "home folder: Open Files"); },
+        [] {},
+        [&r] {
+            QQuickItem* card = r.findItem(QStringLiteral("shareFromFiles"));
+            r.check(card && !card->isVisible(), "home folder: Open Files closes it (and switches to Files on iOS)");
+            r.app().simulateIphoneDuo(false);
+            r.app().setHomeVisible(false);
             r.app().setAppFolder({});
         },
     };

@@ -32,6 +32,12 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   `DuoApps/FoldForm handover.md` keeps the short version.
   `scripts/dev/check_lambda_captures.py` flags `src/app/acceptance/Duo.cpp:400` (`st`, a
   `shared_ptr`): Apple Clang doesn't warn for it, and CI #64 compiled it.
+- **2026-11-02, evening (for build 58, not pushed when written):** build 55's five checks
+  passed (Sam's Board ticks); Home's Open… still found no files on the Duo, so there Open… and
+  Import STEP… explain the Files app's Share, as Dualtop does (TD-158). Five sample projects on
+  Home, at Sam's request ("complex, aesthetic, and a good intro"): `src/samples/Samples.cpp`
+  builds them, `OpenShape --write-samples resources/samples` writes the shipped files,
+  `test_samples` fails when the two differ. They never count toward the free project.
 - **Docs and marketing on main:** the independent critique (`docs/CRITIQUE_2026-11-03.md`), the
   marketing plan (`docs/MARKETING_RENDERS.md`, with two recording briefs for Sam), the website
   hero still and the turning-part loop (`docs/marketing/`, rebuilt by
@@ -63,7 +69,7 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   Main is 0.3.1; the next tag is `v0.3.1` when Sam says.
 - Every push of main uploads a TestFlight build (ipad.yml), so push deliberately. Never push
   `[testflight]`-style markers here; the workflow needs none.
-- Run the headless suite (855) and the real-UI suite (4,365 checks, the pointer moves) before a
+- Run the headless suite (858) and the real-UI suite (4,365 checks, the pointer moves) before a
   push; never weaken a test to pass.
 - The written source offer in the Licenses screen gives ayers177@gmail.com from 0.3.1 (two
   tests that treated "@" as a placeholder were changed for it).

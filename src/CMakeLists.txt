@@ -14,6 +14,7 @@ add_subdirectory(commands)
 add_subdirectory(selection)
 add_subdirectory(interaction)
 add_subdirectory(io)
+add_subdirectory(samples)
 
 if(OPENSHAPE_BUILD_APP)
     add_subdirectory(render)

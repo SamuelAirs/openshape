@@ -55,6 +55,11 @@ target_compile_definitions(test_interaction PRIVATE OPENSHAPE_SOURCE_DIR="${PROJ
 # Time limits (also the preview worker's), fuzzy booleans, repairs, blends.
 target_sources(test_interaction PRIVATE test_kernel_hardening.cpp)
 
+# The sample projects the app ships (resources/samples) against their build steps.
+openshape_add_test(test_samples test_samples.cpp)
+target_link_libraries(test_samples PRIVATE openshape_samples openshape_io)
+target_compile_definitions(test_samples PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 openshape_add_test(test_sketch test_sketch.cpp test_sketch_drag.cpp)
 target_link_libraries(test_sketch PRIVATE openshape_sketch)
 
