@@ -9,8 +9,11 @@
 #include <QtCore/QEvent>
 #include <QtCore/QMetaProperty>
 #include <QtCore/QVariantList>
+#include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 #include <QtQuick/QQuickWindow>
+
+#include <string>
 
 namespace os::ui {
 namespace {
@@ -28,6 +31,25 @@ void watchProperty(QObject* object, const char* name, QObject* receiver, const c
     const int slotIndex = receiver->metaObject()->indexOfSlot(slot);
     if (slotIndex >= 0)
         QObject::connect(object, property.notifySignal(), receiver, receiver->metaObject()->method(slotIndex));
+}
+
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+const char* stateName(Qt::ApplicationState state)
+{
+    switch (state) {
+    case Qt::ApplicationSuspended: return "suspended";
+    case Qt::ApplicationHidden: return "hidden";
+    case Qt::ApplicationInactive: return "inactive";
+    case Qt::ApplicationActive: return "active";
+    }
+    return "unknown";
+}
+#endif
+
+std::string describeScreen(const QScreen* screen)
+{
+    return "\"" + screen->name().toStdString() + "\" " + std::to_string(screen->size().width()) + "x"
+        + std::to_string(screen->size().height()) + " pt";
 }
 
 } // namespace
@@ -52,6 +74,20 @@ WindowMetricsLog::WindowMetricsLog(QQuickWindow* window) : QObject(window), wind
     window->installEventFilter(this); // the device pixel ratio
     watchScreen(window->screen());
     schedule();
+
+    // What the system does to the app around a fold: the owner's logs show
+    // some runs ending ("exits normally") right after a display change and
+    // others moving between the displays (TD-163). Whether iOS ended the app
+    // or its last window closed is then in the log.
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    connect(qGuiApp, &QGuiApplication::applicationStateChanged, this,
+            [](Qt::ApplicationState state) { OS_LOG(Info, App) << "app state: " << stateName(state); });
+#endif
+    connect(qGuiApp, &QGuiApplication::screenAdded, this,
+            [](QScreen* screen) { OS_LOG(Info, App) << "screen added: " << describeScreen(screen); });
+    connect(qGuiApp, &QGuiApplication::screenRemoved, this,
+            [](QScreen* screen) { OS_LOG(Info, App) << "screen removed: " << describeScreen(screen); });
+    connect(qGuiApp, &QGuiApplication::lastWindowClosed, this, [] { OS_LOG(Info, App) << "the last window closed"; });
 }
 
 void WindowMetricsLog::watchScreen(QScreen* screen)
