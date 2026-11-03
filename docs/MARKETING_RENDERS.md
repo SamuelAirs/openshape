@@ -26,7 +26,8 @@ Contents: [what this PC has](#what-this-pc-has-checked-2026-11-01),
 | `scripts/dev/drive.py` | in the repo | drives the real window (mouse, keys, taps by coordinates) for scripted screen recordings |
 | `scripts/dev/appstore_screenshots.sh`, `doc_screenshots.sh` | in the repo | the store and README stills (rendered, then checked) |
 | Noto Sans Regular and Bold (`resources/fonts`, SIL OFL) | in the repo | the captions' and cards' type (free to use in marketing) |
-| Blender, OBS Studio, ImageMagick, Inkscape, a video editor (DaVinci Resolve, Shotcut), gifski | **not installed** | named below where a piece would need one |
+| Blender 4.5 LTS (`~/Tools/blender-4.5.15-windows-x64`, portable) | installed (the owner's word, 2026-11-03) | piece 8: `scripts/dev/marketing_blender.py`, Cycles on the RX 7800 XT (HIP) |
+| OBS Studio, ImageMagick, Inkscape, a video editor (DaVinci Resolve, Shotcut), gifski | **not installed** | named below where a piece would need one |
 | Apple's device frames (Apple Design Resources, "Product Bezels") | **not downloaded** | device mockups for the website and press (Apple's own terms for using them apply) |
 
 What the app's renderer can and cannot do today: it draws the CAD view
@@ -274,11 +275,10 @@ says so.
   - **The app's renderer** (now): large stills from any angle with
     `--demo ... --view ... --screenshot`, cropped. True to the app,
     flat CAD shading.
-  - **Blender** (**not installed**; a free download of a few hundred MB,
-    the owner's approval): export STL or 3MF from FoldForm, import, a
-    PLA-like material, studio light (an HDRI from Poly Haven, CC0, another
-    download), Cycles on the RX 7800 XT (AMD HIP). Stills at 3000 x 2000;
-    a 10 s turntable at 1080p (300 frames, roughly an hour of GPU time).
+  - **Blender** (installed 2026-11-03): each body as STL
+    (`tools/export_bodies`), a PLA-like material, softbox light and a
+    seamless backdrop built by the script (no HDRI download), Cycles on
+    the RX 7800 XT (AMD HIP).
 - **Hours:** app renderer 1; Blender 2 to set up, then about 1 per still
   and 2 per turntable.
 - **Made (2026-11-03), the app's renderer route**, from the five sample
@@ -292,10 +292,14 @@ says so.
   for Reels/Shorts/TikTok: a title card, each sample turning with its name
   and what it shows, the end card with the platforms and "Open source · no
   account · no tracking"). Silent: a track is the owner's decision (2).
-  The owner's note in the vault (2026-11-02, night) said to download
-  Blender or other tools; not installed by the FoldForm chat, as a download
-  needs his word in the chat (Blender would give piece 8's plastic-in-light
-  look).
+- **Made (2026-11-03), the Blender route**, by
+  `scripts/dev/marketing_blender.py` (`--preview` for small test renders
+  in seconds; `--only "<sample>"`): in `docs/marketing/blender/`, per
+  sample a still (`<sample>.png`, 1800 x 1800) in a printing colour on a
+  seamless backdrop (the lamp shade dark, lit by a warm bulb inside whose
+  light falls through its 16 windows), and `samples-family.png` (2400 x
+  1350, the five side by side). Colours: the lid in the app's accent blue,
+  the rest chosen for the set. About a minute per still on the GPU.
 
 ### Later, code that would make all of this easier (not now)
 
@@ -458,7 +462,7 @@ them for 0.3.0** (changing them would only delay the submission).
 2. **Sound in the preview:** silent (simplest, no license) or a licensed
    track (a royalty-free library with a written license for App Store
    use).
-3. **Installs** (each a separate yes): Blender (piece 8), Apple Design
+3. **Installs** (each a separate yes): Blender (piece 8; done, 2026-11-03), Apple Design
    Resources bezels (piece 5a), OBS Studio (only if recording the Windows
    app by hand is wanted; ffmpeg already does it by script).
 4. **A 3D printer** for request 19?

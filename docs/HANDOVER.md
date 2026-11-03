@@ -48,6 +48,13 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   buttons and cards restyled with an original line-icon set (TD-9); `--hide-ui` and
   `scripts/dev/marketing_samples.py` (`docs/marketing/samples/`). The lifecycle logging for
   TD-163 (`2d69a58`) goes up with it.
+- **2026-11-03, morning:** pushed on Sam's word (main `ab57b4b`); CI 68 and iPad run 59
+  passed, **build 59 is on TestFlight**, untested on a device (a Board task in the vault asks
+  Sam to try it). Blender 4.5 is in `~/Tools` (installed by the Inkfold chat; Sam: "It's
+  already installed"): `tools/export_bodies` and `scripts/dev/marketing_blender.py` made
+  `docs/marketing/blender/` (stills, the five together, turntables). Committed after
+  `ab57b4b`, not pushed: a push of main makes a TestFlight build, so it waits for the next
+  app change.
 - **Docs and marketing on main:** the independent critique (`docs/CRITIQUE_2026-11-03.md`), the
   marketing plan (`docs/MARKETING_RENDERS.md`, with two recording briefs for Sam), the website
   hero still and the turning-part loop (`docs/marketing/`, rebuilt by

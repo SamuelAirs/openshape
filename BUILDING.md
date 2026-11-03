@@ -78,6 +78,8 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo rounded --view=-135,35 --face-contrast --screenshot s.png   # log how different adjacent faces look
 ./build/msys2-ucrt64/bin/OpenShape.exe "resources/samples/Lamp shade.openshape" --demo empty --hide-ui --view 330,25 --size 1000x1000 --dpr 2 --screenshot s.png   # the model alone, no panels (marketing); a project named first opens in the background, the scene and picture wait for it
 python scripts/dev/marketing_samples.py   # the five samples turning (MP4), stills, a showcase picture and a vertical reel in docs/marketing/samples/ (a window opens for about a minute per sample)
+python scripts/dev/marketing_blender.py   # studio renders of the samples in Blender (OPENSHAPE_BLENDER or ~/Tools/blender-*): docs/marketing/blender/; --preview for small fast ones, --only "<sample>"
+./build/msys2-ucrt64/bin/export_bodies.exe "resources/samples/Lamp shade.openshape" out/   # each visible body as its own STL (OPENSHAPE_BUILD_TOOLS=ON), for other renderers
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch   # the tablet layout (bigger controls, Pen switch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 820x1180 --demo combine --screenshot ipad.png   # iPad portrait layout
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo bracket --screenshot phone.png   # iPhone 16 Pro, portrait

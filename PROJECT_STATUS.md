@@ -117,8 +117,17 @@ buttons; panels and Home's cards on soft shadows (`Theme.qml` tokens).
 showcase picture and a vertical reel in `docs/marketing/samples/`). On a
 phone the sketch tools are icons alone (six and more in sight beside Select
 and Trim). Verified: 859/859 headless, 4452 real-UI checks (the full run,
-then the phone scenarios again after the sketch strip's icons). Not tried
-on a device.
+then the phone scenarios again after the sketch strip's icons). Pushed on
+the owner's word (main `ab57b4b`): CI 68 compiled Windows and macOS, iPad
+run 59 uploaded build 59 to TestFlight with QtQuick.Effects and
+QtQuick.Shapes linked. Not tried on a device yet.
+
+**Blender renders (2026-11-03, after build 59):** `tools/export_bodies`
+writes each body of a project as STL; `scripts/dev/marketing_blender.py`
+renders the five samples in Blender 4.5 (Cycles on the RX 7800 XT through
+HIP): a still each, the five together, and turntables, in
+`docs/marketing/blender/` (docs/MARKETING_RENDERS.md, piece 8). Committed
+locally; it goes up with the next app change.
 
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
 iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
