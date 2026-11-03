@@ -281,6 +281,21 @@ says so.
     a 10 s turntable at 1080p (300 frames, roughly an hour of GPU time).
 - **Hours:** app renderer 1; Blender 2 to set up, then about 1 per still
   and 2 per turntable.
+- **Made (2026-11-03), the app's renderer route**, from the five sample
+  projects, by `scripts/dev/marketing_samples.py` (nothing installed; the
+  new `--hide-ui` draws the model's view alone, no panels or view cube):
+  in `docs/marketing/samples/`, per sample a seamless 6 s turn
+  (`<sample>-loop.mp4`, 1080 x 1080, 30 fps, H.264, no audio) and a still
+  (`<sample>.png`, 1800 x 1800, three-quarter view); `samples-showcase.png`
+  (1920 x 1080: "Five sample projects, ready to change", the five on white
+  cards with what each shows); `samples-reel.mp4` (1080 x 1920, about 17 s,
+  for Reels/Shorts/TikTok: a title card, each sample turning with its name
+  and what it shows, the end card with the platforms and "Open source · no
+  account · no tracking"). Silent: a track is the owner's decision (2).
+  The owner's note in the vault (2026-11-02, night) said to download
+  Blender or other tools; not installed by the FoldForm chat, as a download
+  needs his word in the chat (Blender would give piece 8's plastic-in-light
+  look).
 
 ### Later, code that would make all of this easier (not now)
 
