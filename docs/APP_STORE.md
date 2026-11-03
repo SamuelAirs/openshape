@@ -277,8 +277,8 @@ listing tool on this PC reads the same marked blocks (`<!-- appstore:...
 
 **Changed on 2026-11-03** (each marked `changed 2026-11-03` above its
 block; re-apply them): the subtitle (new block below), the description
-(the iPhone and iPad header, the Apple Pencil line and the iPhone Duo
-line), the keywords, What's New (one real sentence instead of the
+(the iPhone and iPad header, the Apple Pencil line, now naming iPhone Duo
+on the owner's word, and the iPhone Duo line), the keywords, What's New (one real sentence instead of the
 examples) and the featuring nomination (new blocks, section 3b). Why: the
 outside critique (docs/CRITIQUE_2026-11-03.md, section 4, items 1, 2 and
 10): "Made for iPhone Duo" is the wording of Apple's own badge, the palm
@@ -348,7 +348,7 @@ YOUR FILES
 ON IPHONE AND IPAD
 • One app for iPhone and iPad. On iPhone the tools sit along the bottom and the value box docks where it covers nothing you selected; on iPad the full layout, also in Split View and Stage Manager.
 • One finger orbits, two fingers pan and zoom, a two-finger tap undoes and a three-finger tap redoes. A view cube shows how the view is turned; tap it to look from a side.
-• Apple Pencil on iPad: pen mode lets the Pencil draw and select while your fingers only move the view.
+• Apple Pencil on iPad and iPhone Duo: pen mode lets the Pencil draw and select while your fingers only move the view.
 • On iPhone Duo: closed, the phone layout; opened, the full layout on the inner display, with a larger canvas for your model.
 
 FREE TO START
@@ -379,15 +379,13 @@ Notes on the description:
 - The iPhone Duo line says only what the layout does (the phone layout on
   the outer display, the regular one on the inner display), not Apple's
   badge wording "Made for iPhone Duo" (the badge comes from the Duo
-  screenshots), and nothing about the Apple Pencil on the Duo (Apple has
-  not enabled it there yet) or the screen edges (estimates until the
-  owner's log, TD-150). The owner confirms it on his Duo before the
-  listing is applied. The Apple Pencil line no longer promises palm
-  rejection, which has not been tried on the iPad yet. **2026-11-03:**
-  the owner draws and selects with his Apple Pencil (USB-C) on his Duo on
-  build 59 ("Yes, I was using my Apple Pencil on the duo. It works
-  great."), so the Duo line may mention the Pencil once he says to; until
-  then the text above stands.
+  screenshots), and nothing about the screen edges. The owner confirms
+  it on his Duo before the listing is applied. The Apple Pencil line no
+  longer promises palm rejection, which has not been tried on the iPad
+  yet. **2026-11-03:** it names iPhone Duo too: the owner draws and
+  selects with his Apple Pencil (USB-C) on his Duo on build 59 ("Yes, I
+  was using my Apple Pencil on the duo. It works great.", then "It does
+  support Apple Pencil on the iPhone duo").
 
 ### Keywords (max 100 bytes, comma-separated, no spaces)
 
@@ -589,7 +587,7 @@ FoldForm: precise CAD for 3D printing on iPhone Duo
 <!-- changed 2026-11-03: re-apply this block -->
 <!-- appstore:nomination-description max-chars=1000 -->
 ```text
-FoldForm is new: precise, open-source CAD by touch for people who design parts for their 3D printers, with the phone layout on iPhone Duo's outer display, the full layout on its inner display, no account, no data collected and every tool free for one project.
+FoldForm is new: precise, open-source CAD by touch for people who design parts for their 3D printers, with the phone layout on iPhone Duo's outer display, the full layout on its inner display and Apple Pencil support, no account, no data collected and every tool free for one project.
 ```
 
 ---

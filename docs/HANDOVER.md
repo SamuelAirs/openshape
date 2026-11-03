@@ -98,5 +98,6 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   push; never weaken a test to pass.
 - The written source offer in the Licenses screen gives ayers177@gmail.com from 0.3.1 (two
   tests that treated "@" as a placeholder were changed for it).
-- No Pencil claims in the listing until Apple enables the Pencil on the Duo; no "Made for
-  iPhone Duo" wording (that is Apple's badge).
+- The Apple Pencil works on the Duo (Sam, 2026-11-03: "It does support Apple Pencil on the iPhone
+  duo"), so the listing names it there since 0.3.1's texts; no "Made for iPhone Duo" wording (that
+  is Apple's badge).
