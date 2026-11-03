@@ -300,6 +300,13 @@ says so.
   light falls through its 16 windows), and `samples-family.png` (2400 x
   1350, the five side by side). Colours: the lid in the app's accent blue,
   the rest chosen for the set. About a minute per still on the GPU.
+  `--turntable` made `lamp-shade-turn.mp4` and `twisted-vase-turn.mp4`
+  (8 s seamless turns, 1080 x 1080, 30 fps, H.264, no audio; 160 samples
+  and a fixed noise seed, so nothing flickers). About 10 s a frame: 45
+  minutes for the lamp shade, 37 for the vase. The other three samples
+  have no Blender turn yet (their app-renderer loops are in `samples/`);
+  a stopped run picks up from the frames it already wrote in
+  `build/marketing/blender/frames/`.
 
 ### Later, code that would make all of this easier (not now)
 

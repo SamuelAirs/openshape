@@ -125,7 +125,8 @@ QtQuick.Shapes linked. Not tried on a device yet.
 **Blender renders (2026-11-03, after build 59):** `tools/export_bodies`
 writes each body of a project as STL; `scripts/dev/marketing_blender.py`
 renders the five samples in Blender 4.5 (Cycles on the RX 7800 XT through
-HIP): a still each, the five together, and turntables, in
+HIP): a still each, the five together, and 8 s turns of the lamp shade
+and the vase, in
 `docs/marketing/blender/` (docs/MARKETING_RENDERS.md, piece 8). Committed
 locally; it goes up with the next app change.
 
