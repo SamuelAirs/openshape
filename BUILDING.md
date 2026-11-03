@@ -76,6 +76,8 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo enclosure --view 150,25 --screenshot back.png   # from any angle, framed (see below)
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --projection orthographic --screenshot ortho.png   # start in this projection (not remembered)
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo rounded --view=-135,35 --face-contrast --screenshot s.png   # log how different adjacent faces look
+./build/msys2-ucrt64/bin/OpenShape.exe "resources/samples/Lamp shade.openshape" --demo empty --hide-ui --view 330,25 --size 1000x1000 --dpr 2 --screenshot s.png   # the model alone, no panels (marketing); a project named first opens in the background, the scene and picture wait for it
+python scripts/dev/marketing_samples.py   # the five samples turning (MP4), stills, a showcase picture and a vertical reel in docs/marketing/samples/ (a window opens for about a minute per sample)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch   # the tablet layout (bigger controls, Pen switch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 820x1180 --demo combine --screenshot ipad.png   # iPad portrait layout
 ./build/msys2-ucrt64/bin/OpenShape.exe --touch --size 402x874 --safe-area 62,0,34,0 --demo bracket --screenshot phone.png   # iPhone 16 Pro, portrait
@@ -99,7 +101,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario construct,alignorigin   # construction axes and planes, Align onto the origin
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario appfolder,share,openin   # iPhone / iPad files: saving by name, the share sheet (stub), Open in OpenShape
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario purchase   # the free version's one project and the purchase sheet with a stand-in App Store: every gated action, buy / restore / fail / Ask to Buy / offline, phone, iPad, Split View and iPhone Duo sizes, the desktop without a store
-./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario samples   # Home's five samples: their cards and previews, each opened by a tap (an unsaved copy, every step rebuilt), a changed one asked about, Save offering its name; the purchase scenario checks they never count toward the free project
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario samples   # Home's five samples: their cards and previews, each opened by a tap (an unsaved copy, every step rebuilt; one made slow to check the loading card and that the window keeps drawing: samples_loading.png), a changed one asked about, Save offering its name; the purchase scenario checks they never count toward the free project
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --size 1024x653     # at the CI Mac's window size
 ./build/msys2-ucrt64/bin/OpenShape.exe --write-samples resources/samples   # rebuild the sample projects the app ships (src/samples/Samples.cpp), thumbnails included; then build again to embed them
 OPENSHAPE_LOG=debug ./build/msys2-ucrt64/bin/OpenShape.exe

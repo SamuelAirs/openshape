@@ -93,6 +93,33 @@ opened as unsaved copies; they never count toward the free project
 headless, the `samples`, `purchase` and `homefolder` scenarios; the full
 real-UI run below. Not tried on a device.
 
+**Loading card and the first polish pass (2026-11-03, for build 59):**
+build 58 passed on the owner's Duo ("Everything is working!"). He asked
+for a loading screen ("Sometimes projects take a while to load ... it
+looks like it freezes") and a polish pass ("especially the file menu ...
+This should look premium"). Opening a project, a sample or a recovery copy
+and reading a STEP file now run on a worker thread
+(`AppController::runInBackground`, TD-164) while `LoadingOverlay.qml`
+shows the project's preview, its name and a sweeping bar; the loader adds
+bodies in the order they use each other and the display meshes are made
+on the worker too. Measured on the PC (`OPENSHAPE_LOG=debug`): the lamp
+shade took 17 s to open, 15 s of it one boolean (16 windows cut from a
+shelled wall, whose inside is an offset surface); it is now its sized
+wall revolved (two arcs about one center) with the windows as one wedge
+patterned in a sketch on a construction plane, and opens in 2.3 s. A
+restored sample keeps its name. The look: `AppMenu`/`AppMenuItem` (white
+cards, soft shadow, an icon per row, shortcuts, Delete... in red) for the
+File, Open Recent, plane and Home card menus; an original line-icon set
+(`LineIcon.qml`, TD-9) on every palette tool, Undo, Redo, Help and Home's
+buttons; panels and Home's cards on soft shadows (`Theme.qml` tokens).
+`--hide-ui` renders the model alone for marketing
+(`scripts/dev/marketing_samples.py`: the five samples turning, stills, a
+showcase picture and a vertical reel in `docs/marketing/samples/`). On a
+phone the sketch tools are icons alone (six and more in sight beside Select
+and Trim). Verified: 859/859 headless, 4452 real-UI checks (the full run,
+then the phone scenarios again after the sketch strip's icons). Not tried
+on a device.
+
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The
 iPhone Duo", 7: selecting in a sketch; 8: send Logs/openshape.log), which
 decide the first 0.3.1 fixes ("Next" below).
@@ -1190,7 +1217,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-858/858 headless (`ctest -LE gui`, 2026-11-02, `main` at 0.3.1 with the samples; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+859/859 headless (`ctest -LE gui`, 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1205,7 +1232,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 4365/4365 checks through the real UI in 51 scenarios
+`acceptance_gui`: 4452/4452 checks through the real UI in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
@@ -1216,7 +1243,7 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 858/858 | ✅ 4365/4365 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 859/859 | ✅ 4452/4452 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |

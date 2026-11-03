@@ -313,6 +313,8 @@ Item {
                     required property var modelData
                     objectName: "tool_" + modelData.id
                     text: modelData.label
+                    iconName: "sketch_" + modelData.id
+                    iconOnly: true // (a phone only: see the column's buttons)
                     checked: overlay.app.sketchTool === modelData.id
                     onClicked: overlay.app.setSketchTool(modelData.id)
                 }
@@ -382,6 +384,10 @@ Item {
                         ActionButton {
                             objectName: "tool_" + modelData.id
                             text: modelData.label
+                            iconName: "sketch_" + modelData.id
+                            alignLeft: !Theme.compact
+                            // A phone: the shapes alone, so six and more fit beside Select and Trim.
+                            iconOnly: Theme.compact
                             Layout.fillWidth: !Theme.compact
                             checked: overlay.app.sketchTool === modelData.id
                             onCheckedChanged: if (checked) Qt.callLater(toolScroll.reveal, this)

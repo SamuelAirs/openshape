@@ -107,9 +107,12 @@ Steps steps(AcceptanceRunner& r)
         r.check(app.bodyCount() == 0, "starts empty");
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu");
     });
-    steps.push_back([&r, &app, s, num] {
+    steps.push_back([&r, &app, s] {
         app.setNextFileChoice(QUrl::fromLocalFile(s->step));
         r.check(r.clickItem(QStringLiteral("importStepMenuItem")), "File → Import STEP…");
+    });
+    // (The file is read in the background, as a project opens: the next step waits for it.)
+    steps.push_back([&r, &app, s, num] {
         r.check(app.bodyCount() == 2, "each solid becomes a body", QString::number(app.bodyCount()));
         r.check(r.body(0).name() == "Bracket" && r.body(1).name() == "Pin", "named after the STEP products",
                 QString::fromStdString(r.body(0).name() + ", " + r.body(1).name()));
@@ -148,6 +151,7 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app, s] {
         app.setNextFileChoice(QUrl::fromLocalFile(s->step));
         r.key(Qt::Key_I, Qt::ControlModifier);
+        r.waitForOpen();
         r.check(app.bodyCount() == 4, "Ctrl+I imports too", QString::number(app.bodyCount()));
         r.check(app.bodyCount() == 4 && r.body(2).name() == "Bracket 2" && r.body(3).name() == "Pin 2",
                 "names stay unique", app.bodyCount() == 4 ? QString::fromStdString(r.body(2).name()) : QString());
@@ -156,7 +160,7 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app, s] {
         s->messages.clear();
         app.setNextFileChoice(QUrl::fromLocalFile(s->garbage));
-        r.check(r.clickItem(QStringLiteral("importStepMenuItem")), "Import STEP… with a damaged file");
+        r.check(r.clickItem(QStringLiteral("importStepMenuItem")) && r.waitForOpen(), "Import STEP… with a damaged file");
         r.check(app.bodyCount() == 4, "nothing is added", QString::number(app.bodyCount()));
         r.check(!s->messages.isEmpty() && s->messages.last().contains(QStringLiteral("STEP")), "a plain message says why",
                 s->messages.isEmpty() ? QString() : s->messages.last());
@@ -183,7 +187,7 @@ Steps steps(AcceptanceRunner& r)
                     QString::number(opaque) + QStringLiteral(" opaque samples"));
         }
         app.newDocument();
-        r.check(app.openProject(QUrl::fromLocalFile(s->project)), "reopen it");
+        r.check(app.openProject(QUrl::fromLocalFile(s->project)) && r.waitForOpen(), "reopen it");
         r.check(app.bodyCount() == 4, "four bodies again", QString::number(app.bodyCount()));
         r.check(std::abs(volumeOf(r, 0) - pushed) < 1e-6 && std::abs(volumeOf(r, 1) - 3000.0) < 1e-6,
                 "with the same geometry", num(volumeOf(r, 0)));
@@ -200,7 +204,7 @@ Steps steps(AcceptanceRunner& r)
         QFile::remove(s->projectB);
         // Only this scenario's projects in the list (others ran before it).
         app.clearRecentFiles();
-        r.check(app.openProject(QUrl::fromLocalFile(s->project)), "open the imported project again (recent: A)");
+        r.check(app.openProject(QUrl::fromLocalFile(s->project)) && r.waitForOpen(), "open the imported project again (recent: A)");
         app.newDocument();
         r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b"));
         r.check(app.saveProjectAs(QUrl::fromLocalFile(s->projectB)), "save a second project (B)");
@@ -255,7 +259,7 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r, &app] {
         r.check(app.homeVisible(), "Esc closes only the menu");
-        r.check(r.clickItem(QStringLiteral("homeCard_0")), "tap a project card");
+        r.check(r.clickItem(QStringLiteral("homeCard_0")) && r.waitForOpen(), "tap a project card");
         r.check(!app.homeVisible() && app.documentTitle() == kNameB, "it opens, and Home closes",
                 app.documentTitle());
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Home again)");
@@ -274,7 +278,7 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r, &app, s] {
         app.setNextFileChoice(QUrl::fromLocalFile(s->project));
-        r.check(r.clickItem(QStringLiteral("homeOpen")), "Open… button");
+        r.check(r.clickItem(QStringLiteral("homeOpen")) && r.waitForOpen(), "Open… button");
         r.check(!app.homeVisible() && app.documentTitle() == QStringLiteral("files_imported") && app.bodyCount() == 4,
                 "it opens the chosen project", app.documentTitle());
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Import from Home)");
@@ -283,7 +287,7 @@ Steps steps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r, &app, s] {
         app.setNextFileChoice(QUrl::fromLocalFile(s->step));
-        r.check(r.clickItem(QStringLiteral("homeImport")), "Import STEP… button");
+        r.check(r.clickItem(QStringLiteral("homeImport")) && r.waitForOpen(), "Import STEP… button");
         r.check(!app.homeVisible() && app.documentTitle() == QStringLiteral("Untitled") && app.bodyCount() == 2,
                 "a new document with the imported bodies", QString::number(app.bodyCount()));
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (Back)");
@@ -366,7 +370,7 @@ Steps steps(AcceptanceRunner& r)
         s->messages.clear();
         s->listening = QObject::connect(&app, &ui::AppController::message, &app, [s](const QString& t) { s->messages << t; });
         app.setNextFileChoice(QUrl::fromLocalFile(s->garbage));
-        r.check(r.clickItem(QStringLiteral("homeImport")), "Import STEP… on Home with a damaged file");
+        r.check(r.clickItem(QStringLiteral("homeImport")) && r.waitForOpen(), "Import STEP… on Home with a damaged file");
         r.check(app.homeVisible() && app.bodyCount() == 0, "Home stays");
         r.check(!s->messages.isEmpty() && s->messages.last().contains(QStringLiteral("STEP")), "a message says why",
                 s->messages.isEmpty() ? QString() : s->messages.last());
@@ -392,7 +396,7 @@ Steps steps(AcceptanceRunner& r)
     steps.push_back([&r, &app, s] {
         s->messages.clear();
         app.setNextFileChoice(QUrl::fromLocalFile(s->mixed));
-        r.check(r.clickItem(QStringLiteral("homeImport")), "Import STEP… on Home with a solid and a surface");
+        r.check(r.clickItem(QStringLiteral("homeImport")) && r.waitForOpen(), "Import STEP… on Home with a solid and a surface");
         r.check(!app.homeVisible() && app.bodyCount() == 1, "the solid becomes a new project's body",
                 QString::number(app.bodyCount()));
         r.check(app.bodyCount() == 1 && r.body(0).name() == "<b>Block</b>", "named as in the file",

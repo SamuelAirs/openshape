@@ -258,7 +258,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             QFile::remove(path);
             r.check(r.app().saveProjectAs(QUrl::fromLocalFile(path)), "text: the project saves");
             r.app().newDocument();
-            r.check(r.app().openProject(QUrl::fromLocalFile(path)), "text: and reopens");
+            r.check(r.app().openProject(QUrl::fromLocalFile(path)) && r.waitForOpen(), "text: and reopens");
             r.check(r.app().bodyCount() == 1 && std::abs(r.bodyVolume() - volume) < 1e-6, "text: the same text after reopening",
                     AcceptanceRunner::num(r.bodyVolume()));
             const auto* reopened = dynamic_cast<const doc::TextFeature*>(r.body(0).features().back().get());

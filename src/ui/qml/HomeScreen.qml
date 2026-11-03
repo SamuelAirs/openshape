@@ -4,6 +4,7 @@
 
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Effects
 import QtQuick.Layouts
 import OpenShape
 
@@ -110,18 +111,21 @@ Rectangle {
                 ActionButton {
                     objectName: "homeNew"
                     text: "New project"
+                    iconName: "new"
                     accent: true
                     onClicked: home.newRequested()
                 }
                 ActionButton {
                     objectName: "homeOpen"
                     text: "Open…"
+                    iconName: "open"
                     outlined: true
                     onClicked: home.openRequested()
                 }
                 ActionButton {
                     objectName: "homeImport"
                     text: "Import STEP…"
+                    iconName: "import"
                     outlined: true
                     onClicked: home.importRequested()
                 }
@@ -238,16 +242,30 @@ Rectangle {
     }
 
     // A sample: its preview, name and what it shows; a tap opens a copy.
+    // A card's soft shadow, a little deeper under the pointer.
+    component CardShadow: RectangularShadow {
+        property bool lifted: false
+        z: -1 // beneath the card's own surface
+        anchors.fill: parent
+        radius: parent.radius
+        offset.y: lifted ? 6 : 3
+        blur: lifted ? 24 : 14
+        spread: -3
+        color: lifted ? Theme.shadow : Theme.panelShadow
+        Behavior on blur { NumberAnimation { duration: 120 } }
+    }
+
     component SampleCard: Rectangle {
         id: sampleCard
         property var sample: ({})
         property int cardIndex: 0
         objectName: "homeSample_" + cardIndex
         height: samplePreview.height + sampleDetails.implicitHeight + 16
-        radius: 12
-        color: sampleTap.pressed ? Theme.hover : Theme.panel
-        border.color: sampleTap.containsMouse ? Theme.accent : Theme.panelBorder
+        radius: 14
+        color: sampleTap.pressed ? Theme.hover : Theme.card
+        border.color: sampleTap.containsMouse ? Theme.accent : Theme.cardBorder
         border.width: 1
+        CardShadow { lifted: sampleTap.containsMouse }
 
         MouseArea {
             id: sampleTap
@@ -311,10 +329,11 @@ Rectangle {
         property int cardIndex: 0
         objectName: "homeCard_" + cardIndex
         height: preview.height + details.implicitHeight + 16
-        radius: 12
-        color: tap.pressed ? Theme.hover : Theme.panel
-        border.color: tap.containsMouse ? Theme.accent : Theme.panelBorder
+        radius: 14
+        color: tap.pressed ? Theme.hover : Theme.card
+        border.color: tap.containsMouse ? Theme.accent : Theme.cardBorder
         border.width: 1
+        CardShadow { lifted: tap.containsMouse }
 
         function openMenu(x, y) {
             cardMenu.popup(card, x, y)
@@ -409,18 +428,21 @@ Rectangle {
         }
 
         // Each action runs after the menu has closed: most rebuild the cards.
-        Menu {
+        AppMenu {
             id: cardMenu
-            CardMenuItem {
+            minWidth: Theme.touch ? 240 : 210
+            AppMenuItem {
                 objectName: "homeRename_" + card.cardIndex
+                iconName: "rename"
                 text: "Rename…"
                 onTriggered: {
                     const project = card.project
                     Qt.callLater(() => home.askRename(project.path, project.name))
                 }
             }
-            CardMenuItem {
+            AppMenuItem {
                 objectName: "homeDuplicate_" + card.cardIndex
+                iconName: "duplicate"
                 text: "Duplicate"
                 onTriggered: {
                     const path = card.project.path
@@ -428,8 +450,9 @@ Rectangle {
                     Qt.callLater(() => app.duplicateProject(path))
                 }
             }
-            CardMenuItem {
+            AppMenuItem {
                 objectName: "homeRemove_" + card.cardIndex
+                iconName: "remove"
                 text: "Remove from list"
                 enabled: card.project.removable === true
                 onTriggered: {
@@ -440,8 +463,13 @@ Rectangle {
             }
             // Only for projects in OpenShape's folder and, on the desktop,
             // recent ones (through the Recycle Bin); see deleteProject.
-            CardMenuItem {
+            AppMenuSeparator {
+                visible: card.project.deletable === true
+                height: visible ? implicitHeight : 0
+            }
+            AppMenuItem {
                 objectName: "homeDelete_" + card.cardIndex
+                iconName: "delete"
                 text: "Delete…"
                 visible: card.project.deletable === true
                 height: visible ? implicitHeight : 0
@@ -451,22 +479,6 @@ Rectangle {
                     Qt.callLater(() => home.askDelete(project.path, project.name))
                 }
             }
-        }
-    }
-
-    // Touch-sized menu entries (44 px on touch); Delete... in red.
-    component CardMenuItem: MenuItem {
-        id: item
-        property bool destructive: false
-        implicitHeight: Theme.touch ? 44 : 34
-        contentItem: Text {
-            leftPadding: item.leftPadding
-            text: item.text
-            font.pixelSize: 14
-            color: item.destructive ? Theme.error : Theme.text
-            opacity: item.enabled ? 1 : 0.4
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
         }
     }
 

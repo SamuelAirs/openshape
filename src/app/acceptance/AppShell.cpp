@@ -103,6 +103,7 @@ struct RecoveryState {
     std::string crashed;  // the simulated crash's session
     std::string original; // a crashed copy that had been saved before
     std::string first, second, third, later;
+    std::string sample; // a sample's unsaved copy
     std::unique_ptr<QLockFile> liveLock; // "another running OpenShape"
     std::string live;
 };
@@ -321,6 +322,22 @@ Steps recoverySteps(AcceptanceRunner& r)
         s->liveLock.reset();
         if (recovery)
             (void)recovery->store().remove(s->live);
+        // A sample's unsaved copy (Sam's lamp shade came back as "Untitled", build 58).
+        if (recovery)
+            s->sample = crashedCopy(*recovery, 9, "", "Lamp shade");
+        app.checkForRecovery();
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s] {
+        r.check(r.clickItem(QStringLiteral("recoveryRestore_") + QString::fromStdString(s->sample)), "Restore (a sample's copy)");
+    });
+    wait(steps, 2);
+    steps.push_back([&r, &app] {
+        r.check(!app.hasProjectPath() && app.dirty() && app.documentTitle() == QStringLiteral("Lamp shade")
+                    && app.saveNameSuggestion() == QStringLiteral("Lamp shade"),
+                "a sample's copy comes back under its name, which Save offers", app.documentTitle());
+        app.discardUnsavedWork();
+        app.newDocument();
     });
 #if QT_CONFIG(process)
     // The app is ended with unsaved work the user never discarded (iPadOS
@@ -490,7 +507,7 @@ Steps recentSteps(AcceptanceRunner& r)
         app.newDocument();
         r.check(app.saveProjectAs(QUrl::fromLocalFile(s->b)), "save B again");
         app.newDocument();
-        r.check(app.openProject(QUrl::fromLocalFile(s->a)), "open A as from the command line");
+        r.check(app.openProject(QUrl::fromLocalFile(s->a)) && r.waitForOpen(), "open A as from the command line");
         r.check(app.recentFiles().value(0).toMap()[QStringLiteral("name")] == QStringLiteral("recent_a"), "it is listed first");
         r.check(r.clickItem(QStringLiteral("fileMenuButton")), "File menu (clear)");
     });

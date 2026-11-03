@@ -78,7 +78,9 @@ public:
     InteractionController& operator=(const InteractionController&) = delete;
 
     // Replaces the document (new/open). Resets selection and operations.
-    void setDocument(doc::Document& document, cmd::UndoStack& undoStack);
+    // `scene`: its display meshes, if already made (an open builds them on
+    // its worker thread, AppController::runInBackground); else made here.
+    void setDocument(doc::Document& document, cmd::UndoStack& undoStack, SceneCache scene = {});
     doc::Document& document() { return *document_; }
     cmd::UndoStack& undoStack() { return *undoStack_; }
 

@@ -759,6 +759,9 @@ int main(int argc, char* argv[])
     QCommandLineOption faceContrastOption(QStringLiteral("face-contrast"),
                                           QStringLiteral("With --demo and --screenshot: clear the selection first and log how "
                                                          "different the shades of faces meeting at an edge are."));
+    QCommandLineOption hideUiOption(QStringLiteral("hide-ui"),
+                                    QStringLiteral("With --screenshot: only the model's view, without the panels, buttons, "
+                                                   "view cube and hints (marketing renders)."));
     QCommandLineOption projectionOption(QStringLiteral("projection"),
                                         QStringLiteral("Start in this projection: perspective or orthographic (not remembered)."),
                                         QStringLiteral("kind"));
@@ -810,6 +813,7 @@ int main(int argc, char* argv[])
     parser.addOption(viewOption);
     parser.addOption(projectionOption);
     parser.addOption(faceContrastOption);
+    parser.addOption(hideUiOption);
     parser.addOption(screenshotOption);
     parser.addOption(dataDirOption);
     parser.addOption(simulateCrashOption);
@@ -1039,8 +1043,14 @@ int main(int argc, char* argv[])
         const QString view = views.isEmpty() ? QString() : views.front();
         const bool faceContrast = parser.isSet(faceContrastOption);
         auto demoDone = std::make_shared<bool>(false); // the scene is built (App Store screenshots wait for it)
-        // Wait for the first frames so the viewport knows its size.
-        QTimer::singleShot(600, &controller, [&controller, window, demo, view, dataDir, faceContrast, demoDone] {
+        // Wait for the first frames so the viewport knows its size, and for a
+        // project named on the command line, which opens in the background.
+        auto buildScene = std::make_shared<std::function<void()>>();
+        *buildScene = [&controller, window, demo, view, dataDir, faceContrast, demoDone, self = std::weak_ptr(buildScene)] {
+            if (controller.loading()) {
+                QTimer::singleShot(100, &controller, [again = self.lock()] { (*again)(); });
+                return;
+            }
             const auto done = qScopeGuard([demoDone] { *demoDone = true; }); // after --view (declared first: runs last)
             if (demo.isEmpty())
                 return;
@@ -1089,12 +1099,14 @@ int main(int argc, char* argv[])
             }
             else
                 window->setProperty(panel->second, true); // the compact layout's switches (Main.qml)
-        });
+        };
+        QTimer::singleShot(600, &controller, [buildScene] { (*buildScene)(); });
         if (!shot.isEmpty()) {
             // One screenshot per view (<file>-<view>.png when there are
             // several), each after the next view has been drawn.
             auto next = std::make_shared<std::function<void(int)>>();
-            *next = [&controller, window, shot, views, faceContrast, storeScreenshot, self = std::weak_ptr(next)](int i) {
+            const bool hideUi = parser.isSet(hideUiOption);
+            *next = [&controller, window, shot, views, faceContrast, storeScreenshot, hideUi, self = std::weak_ptr(next)](int i) {
                 QString file = shot;
                 if (views.size() > 1) {
                     const QFileInfo info(shot);
@@ -1107,6 +1119,15 @@ int main(int argc, char* argv[])
                 if (storeScreenshot)
                     if (auto* toast = window->findChild<QQuickItem*>(QStringLiteral("toast")))
                         toast->setVisible(false);
+                // Only the model's view: everything beside it, at each level up
+                // to the window (the rest may have come back since the last picture).
+                if (hideUi)
+                    if (auto* viewport = window->findChild<QQuickItem*>(QStringLiteral("viewport")))
+                        for (QQuickItem* item = viewport; item && item != window->contentItem(); item = item->parentItem())
+                            if (QQuickItem* parent = item->parentItem())
+                                for (QQuickItem* sibling : parent->childItems())
+                                    if (sibling != item)
+                                        sibling->setVisible(false);
                 const QImage image = window->grabWindow();
                 // App Store Connect refuses pictures with an alpha channel.
                 const bool ok = storeScreenshot ? image.convertToFormat(QImage::Format_RGB888).save(file) : image.save(file);
@@ -1150,7 +1171,16 @@ int main(int argc, char* argv[])
                     std::_Exit(4);
                 }).detach();
             } else {
-                QTimer::singleShot(1600, window, [next] { (*next)(0); });
+                // After the scene (and a project named on the command line,
+                // which opens in the background first).
+                auto whenOpen = std::make_shared<std::function<void()>>();
+                *whenOpen = [&controller, window, next, demoDone, self = std::weak_ptr(whenOpen)] {
+                    if (controller.loading() || !*demoDone)
+                        QTimer::singleShot(200, window, [again = self.lock()] { (*again)(); });
+                    else
+                        (*next)(0);
+                };
+                QTimer::singleShot(1600, window, [whenOpen] { (*whenOpen)(); });
             }
         }
     }

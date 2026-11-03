@@ -54,8 +54,8 @@ app, touch and hold the file, tap Share, then FoldForm; **Open Files**
 switches there. A project opens and is kept in FoldForm's folder; a STEP
 file opens as a new project.
 
-**Five sample projects on Home**: a lamp shade (a revolved, shelled
-outline with 16 windows patterned around it), a twisted vase (a loft
+**Five sample projects on Home**: a lamp shade (a fully sized wall
+revolved, with 16 windows patterned around it in one sketch), a twisted vase (a loft
 through four turned hexagons), an electronics box with standoffs, M3
 countersunk holes, vents, a USB-C opening and its lid, a phone stand (a
 fully sized side sketch, rounded, mirrored, with the name engraved) and a
@@ -64,6 +64,20 @@ cut). Each opens as an unsaved copy with every step in the Model panel, to
 change and learn from; the sample itself stays as it is. Samples do not
 count toward the free version's one project; saving a changed one keeps it
 as a project of your own.
+
+**Opening a project no longer looks frozen.** A project is read and
+rebuilt in the background while a card shows its preview, its name and a
+moving bar; the rest of the app waits for it. The lamp shade sample, which
+took 17 seconds to open on a PC (its windows were cut out of a shelled
+wall), is built so that it opens in about 2. A sample's unsaved copy that
+comes back after FoldForm closed keeps its name (Save offers it).
+
+**A more finished look.** Menus are white cards with a soft shadow, an
+icon on every row and the keyboard shortcut at the right (none on touch);
+Delete… is red. Each tool has its own icon (on a phone the sketch tools
+show the icon alone, so more of them fit beside Select and Trim), Undo,
+Redo and Help are icons, and the panels and Home's cards float above the
+model on a soft shadow.
 
 ## 0.3.0 (2026-10-31)
 

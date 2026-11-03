@@ -484,7 +484,7 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
             const QString path = s->outside->filePath(QStringLiteral("Elsewhere.openshape"));
             r.check(QFile::copy(file(wall), path), say(QStringLiteral("a project outside the app folder")));
             r.app().setAppFolder({});
-            r.check(r.app().openRecent(path), say(QStringLiteral("opened, so it is a recent project")));
+            r.check(r.app().openRecent(path) && r.waitForOpen(), say(QStringLiteral("opened, so it is a recent project")));
             r.app().setHomeVisible(true);
         });
         steps.push_back([] {});
@@ -507,7 +507,7 @@ void addPass(std::vector<AcceptanceRunner::Step>& steps, AcceptanceRunner& r, co
             // Back to the app folder's project for the next part.
             r.app().removeRecentFile(path);
             r.app().setAppFolder(s->folder->path());
-            r.check(r.app().openRecent(file(wall)), say(QStringLiteral("reopen the app folder's project")));
+            r.check(r.app().openRecent(file(wall)) && r.waitForOpen(), say(QStringLiteral("reopen the app folder's project")));
             r.app().setHomeVisible(true);
         });
         steps.push_back([] {});

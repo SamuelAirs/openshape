@@ -30,6 +30,7 @@
 #include <QtCore/QLocale>
 #include <QtCore/QSettings>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QThread>
 #include <QtCore/QPointer>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QVariantMap>
@@ -186,6 +187,8 @@ AppController::AppController(QObject* parent)
 
 AppController::~AppController()
 {
+    if (backgroundThread_)
+        backgroundThread_->wait(); // an open still running as the app ends
     endRecovery(); // exits that skip aboutToQuit (iPadOS unwinds out of exec())
 }
 
@@ -1006,6 +1009,11 @@ void AppController::newDocument()
 
 bool AppController::openProject(const QUrl& url)
 {
+    return openProjectThen(url, {});
+}
+
+bool AppController::openProjectThen(const QUrl& url, std::function<void(bool)> then)
+{
     // iPhone / iPad: a project picked outside OpenShape's folder (iCloud
     // Drive, On My iPad) is copied in first: the project reader cannot read
     // it there (it lies outside the app's sandbox), and Save must be able to
@@ -1022,21 +1030,26 @@ bool AppController::openProject(const QUrl& url)
         if (staged.path.isEmpty()) {
             OS_LOG(Warning, File) << "open: " << localPath(url).toStdString() << ": " << staged.error.toStdString();
             notifyMessage(staged.error);
+            if (then)
+                then(false);
             return false;
         }
         if (staged.copied) {
             OS_LOG(Info, File) << "open: " << localPath(url).toStdString() << " copied into the app folder as "
                                << staged.path.toStdString();
         }
-        if (!openProjectFile(staged.path)) {
+        openProjectFile(staged.path, [this, staged, then = std::move(then)](bool opened) {
             // A damaged project, or one from a newer OpenShape: its copy
             // would only sit in OpenShape's folder failing every time.
-            discardStagedFile(staged);
-            return false;
-        }
+            if (!opened)
+                discardStagedFile(staged);
+            if (then)
+                then(opened);
+        });
         return true;
     }
-    return openProjectFile(localPath(url));
+    openProjectFile(localPath(url), std::move(then));
+    return true;
 }
 
 void AppController::discardStagedFile(const StagedFile& staged) const
@@ -1047,20 +1060,117 @@ void AppController::discardStagedFile(const StagedFile& staged) const
     QFile::remove(staged.path);
 }
 
-bool AppController::openProjectFile(const QString& file)
-{
-    const auto path = std::filesystem::path(file.toStdWString());
-    auto loaded = io::loadProject(path);
-    if (!loaded) {
-        OS_LOG(Warning, File) << loaded.developerMessage();
-        notifyMessage(q(loaded.userMessage()));
+// ---- Opening in the background -------------------------------------------------------
+
+struct AppController::LoadedProject {
+    std::optional<Result<std::unique_ptr<doc::Document>>> document;
+    interact::SceneCache scene;
+
+    // On the worker thread: every step rebuilt, then the display meshes.
+    void read(const std::filesystem::path& path)
+    {
+        document.emplace(io::loadProject(path));
+        if (*document)
+            scene.update(*document->value());
+    }
+    // Whether it opened; else logs why and returns the message to show.
+    bool ok(QString* why) const
+    {
+        if (document && *document)
+            return true;
+        if (document) {
+            OS_LOG(Warning, File) << document->developerMessage();
+            *why = QString::fromStdString(document->userMessage());
+        } else {
+            *why = QStringLiteral("This project could not be opened.");
+        }
         return false;
     }
+};
+
+void AppController::runInBackground(const QString& label, const QString& name, const QString& thumbnail,
+                                    std::function<void()> work, std::function<void()> done)
+{
+    if (loading_) {
+        waitingJobs_.push_back({label, name, thumbnail, std::move(work), std::move(done)});
+        return;
+    }
+    loading_ = true;
+    loadingLabel_ = label;
+    loadingName_ = name;
+    loadingThumbnail_ = thumbnail;
+    backgroundDone_ = std::move(done);
+    loadingTime_.start();
+    emit loadingChanged();
+    const int delayMs = simulatedLoadDelayMs_;
+    backgroundThread_.reset(QThread::create([work = std::move(work), delayMs] {
+        setThreadLogPrefix("[opening] ");
+        if (delayMs > 0)
+            QThread::msleep(static_cast<unsigned long>(delayMs));
+        try {
+            work();
+        } catch (const std::exception& e) {
+            OS_LOG(Error, File) << "opening failed: " << e.what();
+        } catch (...) {
+            OS_LOG(Error, File) << "opening failed: an unknown exception";
+        }
+    }));
+    // Modeling steps recurse deeply (booleans, fillets): a main thread's
+    // stack, not a secondary thread's 512 KB (iOS, macOS).
+    backgroundThread_->setStackSize(8u << 20);
+    connect(backgroundThread_.get(), &QThread::finished, this, &AppController::finishBackground, Qt::QueuedConnection);
+    backgroundThread_->start();
+}
+
+void AppController::finishBackground()
+{
+    if (!backgroundThread_)
+        return;
+    backgroundThread_->wait();
+    backgroundThread_.reset();
+    OS_LOG(Info, File) << loadingLabel_.toLower().toStdString() << " " << loadingName_.toStdString() << " took "
+                       << loadingTime_.elapsed() << " ms (in the background)";
+    // The card stays up while the document is swapped in.
+    if (auto done = std::exchange(backgroundDone_, nullptr))
+        done();
+    loading_ = false;
+    if (!waitingJobs_.empty()) {
+        BackgroundJob next = std::move(waitingJobs_.front());
+        waitingJobs_.pop_front();
+        runInBackground(next.label, next.name, next.thumbnail, std::move(next.work), std::move(next.done));
+        return;
+    }
+    emit loadingChanged();
+}
+
+void AppController::openProjectFile(const QString& file, std::function<void(bool)> then)
+{
+    const auto path = std::filesystem::path(file.toStdWString());
+    auto loaded = std::make_shared<LoadedProject>();
+    const QFileInfo info(file);
+    runInBackground(
+        QStringLiteral("Opening"), info.completeBaseName(), thumbnailSource(file, info.lastModified().toMSecsSinceEpoch()),
+        [loaded, path] { loaded->read(path); },
+        [this, loaded, file, then = std::move(then)] {
+            const bool opened = adoptProject(*loaded, file);
+            if (then)
+                then(opened);
+        });
+}
+
+bool AppController::adoptProject(LoadedProject& loaded, const QString& file)
+{
+    QString why;
+    if (!loaded.ok(&why)) {
+        notifyMessage(why);
+        return false;
+    }
+    auto document = std::move(loaded.document->value());
     auto stack = std::make_unique<cmd::UndoStack>();
-    interaction_->setDocument(*loaded.value(), *stack);
-    document_ = std::move(loaded.value());
+    interaction_->setDocument(*document, *stack, std::move(loaded.scene));
+    document_ = std::move(document);
     undoStack_ = std::move(stack);
-    path_ = QString::fromStdWString(path.wstring());
+    path_ = file;
     documentReplaced();
     setHomeVisible(false);
     rememberRecentFile(path_);
@@ -1111,27 +1221,37 @@ void AppController::setSamplesFolder(const QString& folder)
 
 bool AppController::openSample(const QString& name)
 {
-    const QString copy = QDir(samplesFolder_).filePath(name + QStringLiteral(".openshape"));
-    auto loaded = samplesFolder_.isEmpty() ? Result<std::unique_ptr<doc::Document>>::failure(ErrorCode::FileNotFound, "")
-                                           : io::loadProject(std::filesystem::path(copy.toStdWString()));
-    if (!loaded) {
-        OS_LOG(Warning, File) << "sample " << name.toStdString() << ": " << loaded.developerMessage();
+    if (samplesFolder_.isEmpty()) {
         notifyMessage(QStringLiteral("This sample could not be opened."));
         return false;
     }
-    loaded.value()->setId(Uuid::generate()); // a copy of its own, not the sample
-    auto stack = std::make_unique<cmd::UndoStack>();
-    interaction_->setDocument(*loaded.value(), *stack);
-    document_ = std::move(loaded.value());
-    undoStack_ = std::move(stack);
-    path_.clear();
-    documentReplaced();
-    untitledName_ = name;
-    setHomeVisible(false);
-    OS_LOG(Info, File) << "opened the sample " << name.toStdString();
-    emit documentChanged();
-    emit stateChanged();
-    emit viewChanged();
+    const QString copy = QDir(samplesFolder_).filePath(name + QStringLiteral(".openshape"));
+    auto loaded = std::make_shared<LoadedProject>();
+    runInBackground(
+        QStringLiteral("Opening"), name, thumbnailSource(copy, QFileInfo(copy).lastModified().toMSecsSinceEpoch()),
+        [loaded, path = std::filesystem::path(copy.toStdWString())] { loaded->read(path); },
+        [this, loaded, name] {
+            QString why;
+            if (!loaded->ok(&why)) {
+                OS_LOG(Warning, File) << "sample " << name.toStdString() << " could not be opened";
+                notifyMessage(QStringLiteral("This sample could not be opened."));
+                return;
+            }
+            auto document = std::move(loaded->document->value());
+            document->setId(Uuid::generate()); // a copy of its own, not the sample
+            auto stack = std::make_unique<cmd::UndoStack>();
+            interaction_->setDocument(*document, *stack, std::move(loaded->scene));
+            document_ = std::move(document);
+            undoStack_ = std::move(stack);
+            path_.clear();
+            documentReplaced();
+            untitledName_ = name;
+            setHomeVisible(false);
+            OS_LOG(Info, File) << "opened the sample " << name.toStdString();
+            emit documentChanged();
+            emit stateChanged();
+            emit viewChanged();
+        });
     return true;
 }
 
@@ -1241,8 +1361,10 @@ bool AppController::importStepFrom(const QUrl& url, bool asProject)
         return false;
     const QString original = localPath(url);
     const QString name = QFileInfo(original).fileName();
-    if (!savesToAppFolder())
-        return importStepFile(original, name, asProject);
+    if (!savesToAppFolder()) {
+        importStepFile(original, name, asProject);
+        return true;
+    }
     // iPhone / iPad: the picker's file may lie outside the sandbox, where
     // OpenCASCADE cannot open it: it reads a scratch copy.
     const StagedFile staged = stageIncomingFile(original, incomingPlaces(), IncomingKind::Step);
@@ -1251,30 +1373,42 @@ bool AppController::importStepFrom(const QUrl& url, bool asProject)
         notifyMessage(staged.error);
         return false;
     }
-    const auto removeCopy = qScopeGuard([&staged] {
+    importStepFile(staged.path, name, asProject, [staged](bool) {
         if (staged.temporary)
             QFile::remove(staged.path);
     });
-    return importStepFile(staged.path, name, asProject);
+    return true;
 }
 
-bool AppController::importStepFile(const QString& file, const QString& sourceName, bool asProject)
+void AppController::importStepFile(const QString& file, const QString& sourceName, bool asProject, std::function<void(bool)> then)
 {
     // Read the file first: a file that cannot be imported leaves the current
     // document alone (also when importing as a new project).
-    auto imported = geom::importStep(std::filesystem::path(file.toStdWString()));
-    if (!imported) {
-        OS_LOG(Warning, File) << "import failed: " << imported.developerMessage();
-        notifyMessage(q(imported.userMessage()));
-        return false;
-    }
-    if (asProject)
-        newDocument();
-    const Status status = interaction_->importBodies(imported.value(), sourceName.toStdString());
-    if (!status)
-        return false; // the controller said why
-    notifyMessage(importMessage(imported.value(), imported.warnings(), *document_));
-    return true;
+    using Imported = Result<std::vector<geom::NamedShape>>;
+    auto imported = std::make_shared<std::optional<Imported>>();
+    runInBackground(
+        QStringLiteral("Importing"), QFileInfo(sourceName).completeBaseName(), QString(),
+        [imported, path = std::filesystem::path(file.toStdWString())] { imported->emplace(geom::importStep(path)); },
+        [this, imported, sourceName, asProject, then = std::move(then)] {
+            const auto finish = [&then](bool done) {
+                if (then)
+                    then(done);
+            };
+            if (!*imported || !**imported) {
+                if (*imported)
+                    OS_LOG(Warning, File) << "import failed: " << (*imported)->developerMessage();
+                notifyMessage(*imported ? q((*imported)->userMessage()) : QStringLiteral("This STEP file could not be read."));
+                return finish(false);
+            }
+            const Imported& shapes = **imported;
+            if (asProject)
+                newDocument();
+            const Status status = interaction_->importBodies(shapes.value(), sourceName.toStdString());
+            if (!status)
+                return finish(false); // the controller said why
+            notifyMessage(importMessage(shapes.value(), shapes.warnings(), *document_));
+            finish(true);
+        });
 }
 
 QUrl AppController::takeNextFileChoice()
@@ -1747,18 +1881,18 @@ bool AppController::openPendingIncomingFile()
     pendingIncoming_.reset();
     pendingIncomingName_.clear();
     if (staged.kind == IncomingKind::Step) {
-        const auto removeCopy = qScopeGuard([&staged] {
+        importStepFile(staged.path, name, true, [staged](bool) {
             if (staged.temporary)
                 QFile::remove(staged.path);
         });
-        return importStepFile(staged.path, name, true);
+        return true;
     }
-    if (!openProjectFile(staged.path)) {
-        discardStagedFile(staged);
-        return false;
-    }
-    if (staged.copied)
-        notifyMessage(QStringLiteral("Opened \u201c%1\u201d, a copy in FoldForm\u2019s folder").arg(QFileInfo(staged.path).completeBaseName()));
+    openProjectFile(staged.path, [this, staged](bool opened) {
+        if (!opened)
+            discardStagedFile(staged);
+        else if (staged.copied)
+            notifyMessage(QStringLiteral("Opened \u201c%1\u201d, a copy in FoldForm\u2019s folder").arg(QFileInfo(staged.path).completeBaseName()));
+    });
     return true;
 }
 
@@ -2126,22 +2260,40 @@ bool AppController::restoreRecovery(const QString& sessionText)
     const auto it = std::find_if(orphans_.begin(), orphans_.end(), [&](const io::RecoveryEntry& e) { return e.session == session; });
     if (!recovery_ || it == orphans_.end())
         return false;
-    auto loaded = io::loadProject(it->projectFile);
-    if (!loaded) {
-        OS_LOG(Warning, File) << "restoring " << session << ": " << loaded.developerMessage();
-        notifyMessage(QStringLiteral("This recovery copy could not be opened. ") + q(loaded.userMessage()));
-        return false;
-    }
     const io::RecoveryEntry entry = *it;
-    orphans_.erase(it);
+    QString title = QString::fromStdString(entry.info.title);
+    if (title.isEmpty())
+        title = QStringLiteral("Untitled");
+    auto loaded = std::make_shared<LoadedProject>();
+    runInBackground(
+        QStringLiteral("Restoring"), title, QString(), [loaded, path = entry.projectFile] { loaded->read(path); },
+        [this, loaded, entry] { adoptRecovery(*loaded, entry); });
+    return true;
+}
+
+void AppController::adoptRecovery(LoadedProject& loaded, const io::RecoveryEntry& entry)
+{
+    const std::string& session = entry.session;
+    if (!loaded.document || !*loaded.document) {
+        const std::string why = loaded.document ? loaded.document->developerMessage() : "no result";
+        OS_LOG(Warning, File) << "restoring " << session << ": " << why;
+        notifyMessage(QStringLiteral("This recovery copy could not be opened. ")
+                      + (loaded.document ? q(loaded.document->userMessage()) : QString()));
+        return;
+    }
+    std::erase_if(orphans_, [&](const io::RecoveryEntry& e) { return e.session == session; });
+    auto document = std::move(loaded.document->value());
     auto stack = std::make_unique<cmd::UndoStack>();
     stack->setModified(); // not saved anywhere yet
-    interaction_->setDocument(*loaded.value(), *stack);
-    document_ = std::move(loaded.value());
+    interaction_->setDocument(*document, *stack, std::move(loaded.scene));
+    document_ = std::move(document);
     undoStack_ = std::move(stack);
     // (Where the project is now: on iOS the app's folder moves with updates.)
     path_ = currentLocation(entry.info.originalPath);
     documentReplaced();
+    // A sample's unsaved copy comes back under the sample's name, which Save offers.
+    if (path_.isEmpty() && !entry.info.title.empty() && entry.info.title != "Untitled")
+        untitledName_ = QString::fromStdString(entry.info.title);
     setHomeVisible(false);
     // The copy stays (now as this run's) until the document is saved or discarded.
     if (const Status adopted = recovery_->adopt(session, entry.info); adopted) {
@@ -2156,7 +2308,6 @@ bool AppController::restoreRecovery(const QString& sessionText)
     emit documentChanged();
     emit stateChanged();
     emit viewChanged();
-    return true;
 }
 
 void AppController::discardRecovery(const QString& sessionText)
@@ -2318,10 +2469,10 @@ void AppController::rememberRecentFile(const QString& path)
 
 bool AppController::openRecent(const QString& path)
 {
-    const bool opened = openProject(QUrl::fromLocalFile(path));
-    if (!opened)
-        updateRecentFiles(); // a file that is gone drops out of the list
-    return opened;
+    return openProjectThen(QUrl::fromLocalFile(path), [this](bool opened) {
+        if (!opened)
+            updateRecentFiles(); // a file that is gone drops out of the list
+    });
 }
 
 void AppController::clearRecentFiles()

@@ -38,6 +38,16 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   Home, at Sam's request ("complex, aesthetic, and a good intro"): `src/samples/Samples.cpp`
   builds them, `OpenShape --write-samples resources/samples` writes the shipped files,
   `test_samples` fails when the two differ. They never count toward the free project.
+- **2026-11-03, night (for build 59, not pushed when written):** build 58 passed on Sam's Duo
+  ("Everything is working!"). He asked for a loading screen and a polish pass ("especially
+  the file menu ... This should look premium"), and, in the vault Inbox before going to bed,
+  to keep going and make marketing material ("Download blender or whatever tools you need":
+  not installed, since downloads need his word in the chat). Done: opens run in the background
+  behind a loading card (TD-164); the lamp shade sample rebuilt so it opens in 2.3 s instead
+  of 17 s on the PC (its window cut met an offset surface); menus, palette, top bar, Home's
+  buttons and cards restyled with an original line-icon set (TD-9); `--hide-ui` and
+  `scripts/dev/marketing_samples.py` (`docs/marketing/samples/`). The lifecycle logging for
+  TD-163 (`2d69a58`) goes up with it.
 - **Docs and marketing on main:** the independent critique (`docs/CRITIQUE_2026-11-03.md`), the
   marketing plan (`docs/MARKETING_RENDERS.md`, with two recording briefs for Sam), the website
   hero still and the turning-part loop (`docs/marketing/`, rebuilt by

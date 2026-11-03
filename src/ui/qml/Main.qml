@@ -47,7 +47,9 @@ ApplicationWindow {
     property bool importAsProject: false // the import dialog makes a new document (from Home)
     // A question the user must answer first: the window's shortcuts wait
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
+    // So do they while a project opens (the loading card).
     readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible || saveNamePrompt.visible || purchaseOverlay.visible
+                                      || app.loading
 
     // ---------------------------------------------------------------- layout
     // The window's size and safe areas drive the layout (Theme.compact,
@@ -404,11 +406,19 @@ ApplicationWindow {
                 Layout.leftMargin: 6
                 Layout.rightMargin: 8
             }
-            ActionButton { id: fileButton; objectName: "fileMenuButton"; text: "File"; onClicked: fileMenu.popup(this, 0, height + 6) }
+            ActionButton {
+                id: fileButton
+                objectName: "fileMenuButton"
+                text: "File"
+                trailingIconName: "chevronDown"
+                onClicked: fileMenu.popup(this, 0, height + 6)
+            }
             Separator {}
             ActionButton {
                 objectName: "undoButton"
                 text: "Undo"
+                iconName: "undo"
+                iconOnly: Theme.compact // a phone needs the room
                 enabled: window.app.canUndo
                 // Touch has no tooltip: a message says what was undone.
                 onClicked: Theme.touch ? window.app.undoWithFeedback() : window.app.undo()
@@ -419,6 +429,8 @@ ApplicationWindow {
             ActionButton {
                 objectName: "redoButton"
                 text: "Redo"
+                iconName: "redo"
+                iconOnly: Theme.compact
                 enabled: window.app.canRedo
                 onClicked: Theme.touch ? window.app.redoWithFeedback() : window.app.redo()
                 ToolTip.visible: hovered && window.app.canRedo && !Theme.touch
@@ -428,7 +440,9 @@ ApplicationWindow {
             Separator {}
             ActionButton {
                 objectName: "helpButton"
-                text: "?"
+                text: "Help"
+                iconName: "help"
+                iconOnly: true
                 implicitWidth: Theme.controlHeight
                 onClicked: helpOverlay.toggle()
                 ToolTip.visible: hovered && !Theme.touch
@@ -438,27 +452,46 @@ ApplicationWindow {
         }
     }
 
-    Menu {
+    AppMenu {
         id: planeMenu
-        MenuItem { objectName: "planeTop"; text: "Top (XY) — ground"; onTriggered: window.app.startSketch("top") }
-        MenuItem { objectName: "planeFront"; text: "Front (XZ)"; onTriggered: window.app.startSketch("front") }
-        MenuItem { objectName: "planeRight"; text: "Right (YZ)"; onTriggered: window.app.startSketch("right") }
+        AppMenuItem { objectName: "planeTop"; iconName: "plane"; text: "Top (XY) — ground"; onTriggered: window.app.startSketch("top") }
+        AppMenuItem { objectName: "planeFront"; iconName: "plane"; text: "Front (XZ)"; onTriggered: window.app.startSketch("front") }
+        AppMenuItem { objectName: "planeRight"; iconName: "plane"; text: "Right (YZ)"; onTriggered: window.app.startSketch("right") }
     }
 
-    Menu {
+    // A shortcut as this platform writes it, for a menu row (none on touch).
+    function shortcutLabel(mac, other) {
+        return Qt.platform.os === "osx" || Qt.platform.os === "ios" ? mac : other
+    }
+
+    AppMenu {
         id: fileMenu
         objectName: "fileMenu"
         onAboutToShow: window.app.refreshRecentFiles() // a file deleted meanwhile drops out
         onClosed: window.focusViewUnlessPanel()
         // Sub-menu entries are made by this delegate: name them for the acceptance run.
-        delegate: MenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
-        MenuItem { objectName: "homeMenuItem"; text: "Home"; onTriggered: window.app.homeVisible = true }
-        MenuSeparator {}
-        MenuItem { objectName: "newMenuItem"; text: "New"; onTriggered: window.newProject() }
-        MenuItem { objectName: "openMenuItem"; text: "Open…"; onTriggered: window.openProjectChooser() }
-        Menu {
+        delegate: AppMenuItem { objectName: subMenu ? subMenu.objectName + "Item" : ""; enabled: !subMenu || subMenu.enabled }
+        AppMenuItem { objectName: "homeMenuItem"; iconName: "home"; text: "Home"; onTriggered: window.app.homeVisible = true }
+        AppMenuSeparator {}
+        AppMenuItem {
+            objectName: "newMenuItem"
+            iconName: "new"
+            text: "New"
+            shortcutText: window.shortcutLabel("⌘N", "Ctrl+N")
+            onTriggered: window.newProject()
+        }
+        AppMenuItem {
+            objectName: "openMenuItem"
+            iconName: "open"
+            text: "Open…"
+            shortcutText: window.shortcutLabel("⌘O", "Ctrl+O")
+            onTriggered: window.openProjectChooser()
+        }
+        AppMenu {
             id: recentMenu
             objectName: "openRecentMenu"
+            iconName: "recent"
+            minWidth: 340 // room for the folders
             // Only when the File menu closes too: Esc on this sub-menu goes
             // back to the File menu, whose own Esc must still reach it.
             onClosed: if (!fileMenu.opened) window.focusViewUnlessPanel()
@@ -466,21 +499,14 @@ ApplicationWindow {
             enabled: window.app.recentFiles.length > 0
             Instantiator {
                 model: window.app.recentFiles
-                delegate: MenuItem {
-                    id: recentItem
+                delegate: AppMenuItem {
                     required property var modelData
                     required property int index
                     objectName: "recentFile_" + index
-                    text: modelData.name + "  —  " + modelData.folder
-                    // A file name is shown as it is (never as HTML).
-                    contentItem: Text {
-                        text: recentItem.text
-                        textFormat: Text.PlainText
-                        font: recentItem.font
-                        color: recentItem.palette.windowText
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideMiddle
-                    }
+                    iconName: "file"
+                    // (A file name is shown as it is, never as HTML: AppMenuItem.)
+                    text: modelData.name
+                    detail: modelData.folder
                     onTriggered: {
                         // After the menu has closed: opening rebuilds this list,
                         // and a menu whose item vanishes mid-click stays open.
@@ -491,51 +517,75 @@ ApplicationWindow {
                 onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
                 onObjectRemoved: (index, object) => recentMenu.removeItem(object)
             }
-            MenuSeparator {}
-            MenuItem { objectName: "clearRecentFiles"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
+            AppMenuSeparator {}
+            AppMenuItem { objectName: "clearRecentFiles"; iconName: "clear"; text: "Clear Recent"; onTriggered: Qt.callLater(window.app.clearRecentFiles) }
         }
-        MenuItem {
+        AppMenuItem {
             objectName: "importStepMenuItem"
+            iconName: "import"
             text: "Import STEP…"
+            shortcutText: window.shortcutLabel("⌘I", "Ctrl+I")
             onTriggered: window.chooseImportFile(false)
         }
-        MenuSeparator {}
-        MenuItem { objectName: "saveMenuItem"; text: "Save"; onTriggered: window.save() }
-        MenuItem { objectName: "saveAsMenuItem"; text: "Save As…"; onTriggered: window.saveAs() }
+        AppMenuSeparator {}
+        AppMenuItem {
+            objectName: "saveMenuItem"
+            iconName: "save"
+            text: "Save"
+            shortcutText: window.shortcutLabel("⌘S", "Ctrl+S")
+            onTriggered: window.save()
+        }
+        AppMenuItem {
+            objectName: "saveAsMenuItem"
+            iconName: "saveAs"
+            text: "Save As…"
+            shortcutText: window.shortcutLabel("⇧⌘S", "Ctrl+Shift+S")
+            onTriggered: window.saveAs()
+        }
         // iPhone / iPad: the project file to AirDrop, Mail, the Files app...
         // (no share sheet on the desktop: no gap either).
-        MenuItem {
+        AppMenuItem {
             objectName: "shareProjectMenuItem"
             readonly property bool available: window.app.canShare && window.app.savesToAppFolder
+            iconName: "share"
             text: "Share Project…"
             visible: available
             enabled: available // the arrow keys skip it where it is hidden
             height: available ? implicitHeight : 0
             onTriggered: window.shareProject()
         }
-        MenuSeparator {}
+        AppMenuSeparator {}
         // (No "…" on an iPhone or iPad: the file goes straight into Exports.)
-        MenuItem {
+        AppMenuItem {
             objectName: "exportStepMenuItem"
+            iconName: "export"
             text: window.app.savesToAppFolder ? "Export STEP" : "Export STEP…"
             enabled: window.app.bodyCount > 0
             onTriggered: window.exportAs("step", stepDialog)
         }
-        MenuItem {
+        AppMenuItem {
             objectName: "exportStlMenuItem"
+            iconName: "export"
             text: window.app.savesToAppFolder ? "Export STL" : "Export STL…"
             enabled: window.app.bodyCount > 0
             onTriggered: window.exportAs("stl", stlDialog)
         }
-        MenuItem {
+        AppMenuItem {
             objectName: "export3mfMenuItem"
+            iconName: "export"
             text: window.app.savesToAppFolder ? "Export 3MF" : "Export 3MF…"
             enabled: window.app.bodyCount > 0
             onTriggered: window.exportAs("3mf", threeMfDialog)
         }
-        MenuSeparator {}
-        MenuItem { objectName: "preferencesMenuItem"; text: "Preferences…"; onTriggered: preferencesOverlay.open() }
-        MenuItem { objectName: "aboutMenuItem"; text: "About FoldForm"; onTriggered: aboutOverlay.open() }
+        AppMenuSeparator {}
+        AppMenuItem {
+            objectName: "preferencesMenuItem"
+            iconName: "preferences"
+            text: "Preferences…"
+            shortcutText: window.shortcutLabel("⌘,", "Ctrl+,")
+            onTriggered: preferencesOverlay.open()
+        }
+        AppMenuItem { objectName: "aboutMenuItem"; iconName: "about"; text: "About FoldForm"; onTriggered: aboutOverlay.open() }
     }
 
     // ---------------------------------------------------------------- create palette
@@ -581,6 +631,8 @@ ApplicationWindow {
             ActionButton {
                 objectName: "tool_box"
                 text: "Box"
+                iconName: "box"
+                alignLeft: !Theme.compact
                 Layout.fillWidth: !Theme.compact
                 onClicked: window.app.createBox(20)
                 ToolTip.visible: hovered && !Theme.touch
@@ -591,6 +643,8 @@ ApplicationWindow {
                 id: sketchButton
                 objectName: "sketchButton"
                 text: "Sketch"
+                iconName: "sketch"
+                alignLeft: !Theme.compact
                 Layout.fillWidth: !Theme.compact
                 enabled: window.app.canStartSketch
                 // On a selected face: sketch right there. Otherwise pick an
@@ -610,6 +664,8 @@ ApplicationWindow {
             ActionButton {
                 objectName: "tool_loft"
                 text: "Loft"
+                iconName: "loft"
+                alignLeft: !Theme.compact
                 Layout.fillWidth: !Theme.compact
                 // With profiles on different planes selected: loft them;
                 // otherwise it says what to select (runTool).
@@ -642,6 +698,8 @@ ApplicationWindow {
                     required property var modelData
                     objectName: "tool_" + modelData.id
                     text: modelData.label
+                    iconName: modelData.id
+                    alignLeft: !Theme.compact
                     Layout.fillWidth: !Theme.compact
                     onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
                     // Touch has no hover: tapped without a fitting selection, a
@@ -663,6 +721,8 @@ ApplicationWindow {
                     required property var modelData
                     objectName: "tool_" + modelData.id
                     text: modelData.label
+                    iconName: modelData.id
+                    alignLeft: !Theme.compact
                     Layout.fillWidth: !Theme.compact
                     onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
                     ToolTip.visible: hovered && !Theme.touch
@@ -683,6 +743,8 @@ ApplicationWindow {
                     required property var modelData
                     objectName: "tool_" + modelData.id
                     text: modelData.label
+                    iconName: modelData.id
+                    alignLeft: !Theme.compact
                     Layout.fillWidth: !Theme.compact
                     onClicked: { window.app.runTool(modelData.id); viewport.forceActiveFocus() }
                     ToolTip.visible: hovered && !Theme.touch
@@ -1539,6 +1601,17 @@ ApplicationWindow {
         anchors.fill: parent
         z: 128
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // A project opening in the background: above every dialog and Home,
+    // below the toast (a project that cannot be opened says so there).
+    LoadingOverlay {
+        id: loadingOverlay
+        objectName: "loadingOverlay"
+        app: window.app
+        anchors.fill: parent
+        z: 129
+        onActiveChanged: if (!active) window.focusViewUnlessPanel()
     }
 
     // After a crash: restore or discard the work that was not saved.

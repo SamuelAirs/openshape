@@ -11,6 +11,7 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
+#include <QtCore/QEventLoop>
 #include <QtCore/QFileInfo>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -261,6 +262,20 @@ void polishTree(QQuickItem* root)
         polishTree(child);
 }
 } // namespace
+
+bool AcceptanceRunner::waitForOpen()
+{
+    if (!app_->loading())
+        return true;
+    QEventLoop loop;
+    QObject::connect(app_, &ui::AppController::loadingChanged, &loop, [this, &loop] {
+        if (!app_->loading())
+            loop.quit();
+    });
+    QTimer::singleShot(60000, &loop, &QEventLoop::quit);
+    loop.exec();
+    return !app_->loading();
+}
 
 bool AcceptanceRunner::clickItem(const QString& objectName, Qt::KeyboardModifiers mods)
 {
@@ -604,7 +619,7 @@ std::vector<AcceptanceRunner::Step> AcceptanceRunner::coreScenario()
             check(app_->saveProjectAs(QUrl::fromLocalFile(project)), "project saves");
             app_->newDocument();
             check(app_->bodyCount() == 0, "new document is empty");
-            check(app_->openProject(QUrl::fromLocalFile(project)), "project reopens");
+            check(app_->openProject(QUrl::fromLocalFile(project)) && waitForOpen(), "project reopens");
             check(app_->bodyCount() == 1 && std::abs(bodyVolume() - volume) < 1e-6, "reopened model is identical",
                   num(bodyVolume()));
             const QString step = outputDir_ + QStringLiteral("/acceptance.step");
@@ -1283,18 +1298,24 @@ void AcceptanceRunner::runNext()
     // step before it typed or dragged. A value typed key by key is previewed
     // once typing pauses (0.7 s): that is waited for too, as a user pausing
     // would. The event loop runs meanwhile: the result arrives as the app
-    // would get it.
+    // would get it. A project opening (read and rebuilt on a worker thread)
+    // is waited for too (up to 60 s): the step after a tap on a project sees
+    // it open, as the user does once the loading card goes.
     const bool animating = app_->interaction().isAnimating() && animationWaitMs_ < 3000;
     const bool previewing = (app_->interaction().previewBusy() || app_->interaction().typingPending()) && previewWaitMs_ < 30000;
-    if (animating || previewing) {
-        (animating ? animationWaitMs_ : previewWaitMs_) += 10;
+    const bool opening = app_->loading() && loadWaitMs_ < 60000;
+    if (animating || previewing || opening) {
+        (opening ? loadWaitMs_ : animating ? animationWaitMs_ : previewWaitMs_) += 10;
         QTimer::singleShot(10, this, &AcceptanceRunner::runNext);
         return;
     }
     if (previewWaitMs_ >= 30000)
         check(false, QStringLiteral("previews finish within 30 s"));
+    if (loadWaitMs_ >= 60000)
+        check(false, QStringLiteral("a project opens within 60 s"));
     animationWaitMs_ = 0;
     previewWaitMs_ = 0;
+    loadWaitMs_ = 0;
     if (next_ < steps_.size()) {
         try {
             steps_[next_++]();

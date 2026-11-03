@@ -8,6 +8,8 @@
 #include "document/SketchProfiles.h"
 #include "geometry/Tessellation.h"
 
+#include <atomic>
+
 namespace os::interact {
 
 bool SceneCache::update(const doc::Document& document)
@@ -31,7 +33,8 @@ bool SceneCache::update(const doc::Document& document)
         changed = true;
     entries_ = std::move(next);
 
-    static std::uint64_t regionKeys = 1ull << 60;
+    // Atomic: an open fills a cache on its worker thread.
+    static std::atomic<std::uint64_t> regionKeys = 1ull << 60;
     std::unordered_map<Uuid, SketchEntry> nextSketches;
     for (const auto& sketch : document.sketches()) {
         const std::uint64_t revision = document.sketchRevision(sketch->id());

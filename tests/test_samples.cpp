@@ -11,6 +11,7 @@
 #include "TestFonts.h"
 
 #include "commands/Command.h"
+#include "core/Log.h"
 #include "document/Document.h"
 #include "document/Feature.h"
 #include "geometry/Modeling.h"
@@ -118,5 +119,32 @@ TEST_F(Samples, ShippedFilesMatchAFreshBuild)
         EXPECT_NEAR(a.volume, b.volume, 1e-6 * a.volume) << sample.name << ": the file is older than the build steps";
         const auto thumbnail = io::readProjectThumbnail(file);
         EXPECT_TRUE(thumbnail.ok() && !thumbnail.value().empty()) << sample.name << ": no thumbnail";
+    }
+}
+
+// Opening adds the bodies in the order they use each other, whatever their
+// order in the file: the lamp shade's Combine uses its Windows body, listed
+// after it, and failed on a first pass until that body arrived (Sam's build
+// 58 log, "Combine: tool body ... missing"). The bodies keep the file's order.
+TEST_F(Samples, OpenWithoutAFailedFirstPass)
+{
+    for (const samples::SampleInfo& sample : samples::sampleList()) {
+        std::vector<std::string> warnings;
+        setLogSink([&warnings](LogLevel level, LogCategory category, const std::string& text) {
+            if (level >= LogLevel::Warning && category == LogCategory::Document)
+                warnings.push_back(text);
+        });
+        auto loaded = io::loadProject(shippedFile(sample.name));
+        setLogSink({});
+        ASSERT_TRUE(loaded.ok()) << sample.name << ": " << loaded.developerMessage();
+        EXPECT_TRUE(warnings.empty()) << sample.name << ": " << (warnings.empty() ? std::string() : warnings.front());
+        doc::Document fresh;
+        cmd::UndoStack stack;
+        ASSERT_TRUE(samples::buildSample(sample.name, fresh, stack).ok()) << sample.name;
+        ASSERT_EQ(fresh.bodies().size(), loaded.value()->bodies().size()) << sample.name;
+        for (std::size_t i = 0; i < fresh.bodies().size(); ++i)
+            EXPECT_EQ(fresh.bodies()[i]->name(), loaded.value()->bodies()[i]->name()) << sample.name << ": body " << i;
+        const Measured m = measure(*loaded.value(), sample.name + " (opened)");
+        EXPECT_GT(m.volume, 0) << sample.name;
     }
 }

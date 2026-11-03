@@ -134,7 +134,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             }
             state->messages.clear();
             const double before = r.bodyVolume();
-            r.check(!r.app().openProject(QUrl::fromLocalFile(path)), "a half-written project does not open");
+            r.app().openProject(QUrl::fromLocalFile(path));
+            r.check(r.waitForOpen(), "a half-written project: the open ends (and fails, below)");
             r.check(r.app().bodyCount() == 1 && std::abs(r.bodyVolume() - before) < 1e-9, "the open model is untouched");
             r.check(!state->messages.isEmpty() && state->messages.back().contains(QStringLiteral("damaged")),
                     "the user is told the file is damaged", state->messages.isEmpty() ? QString() : state->messages.back());

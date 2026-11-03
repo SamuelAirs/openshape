@@ -280,43 +280,48 @@ std::function<bool(const geom::EdgeInfo&)> alongXAt(double y, double z)
 }
 
 // ---------------------------------------------------------------- Lamp shade
-// A table-lamp shade: a fully sized outline (radius 70 at the foot, 32 at
-// the top, 120 high, its side an arc of 150) revolved, shelled open at both
-// ends, a ring for an E27 lamp holder joined at the top, and 16 windows: one
-// slot cut by a body of its own, patterned around the axis and subtracted.
+// A table-lamp shade: a fully sized outline of its 1.6 mm wall (radius 70
+// at the foot, 32 at the top, 120 high, its sides arcs of 150 and 148.4
+// about one center) revolved, a ring for an E27 lamp holder joined at the
+// top, and 16 windows: one wedge sketched on a construction plane,
+// patterned around the axis in its sketch and cut up through the side.
 Status lampShade(Build& b)
 {
-    const double foot = 70, top = 32, height = 120, side = 150;
+    const double foot = 70, top = 32, height = 120, side = 150, wall = 1.6;
     sketch::Sketch sk(Uuid::generate(), frontPlane());
     const Vec2 A{foot, 0}, B{top, height};
     const Vec2 chord = B - A;
     const double half = chord.length() / 2;
     const Vec2 left = Vec2{-chord.y, chord.x} * (1 / chord.length());
     const Vec2 center = (A + B) * 0.5 + left * std::sqrt(side * side - half * half); // a counterclockwise arc A -> B, bulging out
+    // Where the inside of the wall (radius side - wall, the same center) is at a height.
+    const auto inside = [&](double z) { return Vec2{center.x + std::sqrt(std::pow(side - wall, 2) - std::pow(z - center.y, 2)), z}; };
     const EntityId origin = sketch::kOriginId;
-    const EntityId a = sk.addPoint(A), t = sk.addPoint(B), c = sk.addPoint({0, height});
+    const EntityId a = sk.addPoint(A), t = sk.addPoint(B), ia = sk.addPoint(inside(0)), it = sk.addPoint(inside(height));
     const EntityId m = sk.addPoint(center);
-    const EntityId base = sk.addLine(origin, a);
+    const EntityId base = sk.addLine(ia, a);
     const EntityId arc = sk.addArc(m, a, t);
-    const EntityId cap = sk.addLine(t, c);
-    const EntityId axis = sk.addLine(c, origin);
+    const EntityId cap = sk.addLine(t, it);
+    const EntityId insideArc = sk.addArc(m, ia, it);
+    const EntityId ground = sk.addLine(origin, a, true); // construction: the foot on the ground
     constrain(sk, ConstraintKind::Horizontal, base);
     constrain(sk, ConstraintKind::Horizontal, cap);
-    constrain(sk, ConstraintKind::Vertical, axis);
+    constrain(sk, ConstraintKind::Horizontal, ground);
     constrain(sk, ConstraintKind::HorizontalDistance, origin, a, foot);
-    constrain(sk, ConstraintKind::VerticalDistance, origin, c, height);
-    constrain(sk, ConstraintKind::HorizontalDistance, c, t, top);
+    constrain(sk, ConstraintKind::VerticalDistance, origin, t, height);
+    constrain(sk, ConstraintKind::HorizontalDistance, origin, t, top);
     constrain(sk, ConstraintKind::Radius, arc, sketch::kNoEntity, side);
+    constrain(sk, ConstraintKind::Radius, insideArc, sketch::kNoEntity, side - wall);
     const Uuid outlineSketch = b.sketch(std::move(sk), "Outline");
 
+    // The wall revolved (open at both ends): both its sides stay surfaces of
+    // revolution, which the window cut below meets quickly (a shelled solid's
+    // inside is an offset surface: the cut took 14 s to open, TD-164).
     auto revolve = std::make_unique<doc::RevolveFeature>();
     revolve->sketchId = outlineSketch;
-    revolve->profiles = {b.profile(outlineSketch, {30, 60})};
+    revolve->profiles = {b.profile(outlineSketch, inside(60) + Vec2{wall / 2, 0})};
     revolve->axis = doc::SketchAxis::Y;
     const Uuid shade = b.body("Shade", std::move(revolve));
-
-    b.add(shade, shell({b.flatFace(shade, {0, 0, 1}, {0, 0, height}), b.flatFace(shade, {0, 0, -1}, {0, 0, 0})}, 1.6),
-          "the shell");
 
     // The lamp holder's ring: 42 mm across its hole, 3 mm thick, under the top.
     const Uuid topPlane = b.plane(2, height);
@@ -328,24 +333,27 @@ Status lampShade(Build& b)
     const Uuid ringSketch = b.sketch(std::move(ring), "Holder ring");
     b.add(shade, extrude(ringSketch, {b.profile(ringSketch, {26, 0})}, -3, doc::ExtrudeMode::Join), "the holder ring");
 
-    // One window as a body: a slot on the front plane, 90 mm towards the
-    // front (-Y), through the shade's side.
-    sketch::Sketch slot(Uuid::generate(), frontPlane());
-    const auto s = sketch::addSlot(slot, {0, 24}, {0, 86}, 5);
-    constrain(slot, ConstraintKind::Vertical, slot.addLine(s.centers[0], s.centers[1], true));
-    const Uuid slotSketch = b.sketch(std::move(slot), "Window");
-    const Uuid windows = b.body("Windows", extrude(slotSketch, {b.profile(slotSketch, {0, 55})}, 90, doc::ExtrudeMode::NewBody));
-    auto pattern = std::make_unique<doc::PatternFeature>();
-    pattern->layout = doc::PatternFeature::Layout::Circular;
-    pattern->count = 16;
-    pattern->axis = {0, 0, 1};
-    b.add(windows, std::move(pattern), "the window pattern");
-
-    auto cut = std::make_unique<doc::CombineFeature>();
-    cut->toolBody = windows;
-    cut->mode = doc::CombineMode::Subtract;
-    b.add(shade, std::move(cut), "the windows cut");
-    b.hide(windows);
+    // The windows: one wedge on a construction plane 24 mm up (two sides
+    // along radii, 9 degrees apart), patterned 16 times around the axis in
+    // its sketch and cut up through the side, 62 mm. Every face of the cut
+    // meets the shade's curved wall in a circle (a plane through the axis,
+    // or across it), which keeps the cut quick: slots there took 15 s.
+    const double inner = 35, outer = 90, spread = 4.5 * kDegree, front = -90 * kDegree;
+    const auto polar = [](double radius, double angle) { return Vec2{std::cos(angle), std::sin(angle)} * radius; };
+    const Uuid windowPlane = b.plane(2, 24);
+    sketch::Sketch wedge = b.sketchOn(windowPlane);
+    const EntityId p1 = wedge.addPoint(polar(inner, front - spread)), p2 = wedge.addPoint(polar(outer, front - spread));
+    const EntityId p3 = wedge.addPoint(polar(outer, front + spread)), p4 = wedge.addPoint(polar(inner, front + spread));
+    const std::vector<EntityId> sides{wedge.addLine(p1, p2), wedge.addLine(p2, p3), wedge.addLine(p3, p4), wedge.addLine(p4, p1)};
+    sketch::PatternLayout around;
+    around.circular = true;
+    around.count = 16;
+    (void)sketch::patternCurves(wedge, sides, around);
+    const Uuid windowSketch = b.sketch(std::move(wedge), "Windows");
+    std::vector<Vec2> insides;
+    for (int k = 0; k < 16; ++k)
+        insides.push_back(polar(60, front + k * 2 * kPi / 16));
+    b.add(shade, extrude(windowSketch, b.profiles(windowSketch, insides), 62, doc::ExtrudeMode::Cut), "the windows");
     return b.status();
 }
 
@@ -613,7 +621,7 @@ struct Entry {
 const std::vector<Entry>& entries()
 {
     static const std::vector<Entry> list{
-        {{"Lamp shade", "Revolve, Shell, a pattern of windows"}, lampShade},
+        {{"Lamp shade", "A sized wall revolved, a sketch pattern of windows"}, lampShade},
         {{"Twisted vase", "Loft through four turned hexagons, Shell"}, twistedVase},
         {{"Electronics box", "Shell, standoffs, M3 countersunk holes, vents, a lid"}, electronicsBox},
         {{"Phone stand", "A fully sized sketch, fillets, Mirror, engraved text"}, phoneStand},

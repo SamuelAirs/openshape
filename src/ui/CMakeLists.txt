@@ -57,6 +57,11 @@ qt_add_qml_module(openshape_ui
         qml/RecoveryOverlay.qml
         qml/UnsavedOverlay.qml
         qml/ShareFromFilesOverlay.qml
+        qml/LoadingOverlay.qml
+        qml/LineIcon.qml
+        qml/AppMenu.qml
+        qml/AppMenuItem.qml
+        qml/AppMenuSeparator.qml
         qml/HomeScreen.qml
         qml/ScrollRow.qml
         qml/SaveNameOverlay.qml

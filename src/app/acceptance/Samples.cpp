@@ -16,7 +16,9 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QTimer>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 
 #include <memory>
 
@@ -28,7 +30,7 @@ struct Expected {
     int bodies;
 };
 constexpr Expected kSamples[] = {
-    {"Lamp shade", 2}, {"Twisted vase", 1}, {"Electronics box", 2}, {"Phone stand", 1}, {"Honeycomb organizer", 1}};
+    {"Lamp shade", 1}, {"Twisted vase", 1}, {"Electronics box", 2}, {"Phone stand", 1}, {"Honeycomb organizer", 1}};
 
 struct SamplesState {
     std::unique_ptr<QTemporaryDir> dir;
@@ -49,6 +51,30 @@ bool copyUntouched(AcceptanceRunner& r, const QString& name)
     QFile builtIn(QStringLiteral(":/openshape/samples/") + file);
     QFile copy(QDir(r.app().samplesFolder()).filePath(file));
     return builtIn.open(QIODevice::ReadOnly) && copy.open(QIODevice::ReadOnly) && builtIn.readAll() == copy.readAll();
+}
+
+// Opening builds the model on a worker thread, and the window keeps drawing
+// a card that names what opens (Sam on build 58: "it looks like it
+// freezes"). The next open is made slow to see it: checked halfway through.
+void watchSlowOpen(AcceptanceRunner& r, const QString& name)
+{
+    r.app().setSimulatedLoadDelay(1500);
+    auto frames = std::make_shared<int>(0);
+    auto counting = std::make_shared<QMetaObject::Connection>(
+        QObject::connect(r.window(), &QQuickWindow::frameSwapped, r.window(), [frames] { ++*frames; }));
+    QTimer::singleShot(600, &r.app(), [frames] { *frames = 0; });
+    QTimer::singleShot(1100, &r.app(), [&r, name, frames, counting] {
+        QObject::disconnect(*counting);
+        QQuickItem* card = r.findItem(QStringLiteral("loadingCard"));
+        QQuickItem* label = r.findItem(QStringLiteral("loadingName"));
+        r.check(r.app().loading() && card && card->isVisible() && card->opacity() > 0.9,
+                "samples: a card shows while a project opens");
+        r.check(label && label->property("text").toString() == name, "samples: it names the project",
+                label ? label->property("text").toString() : QString());
+        r.check(*frames >= 5, "samples: the window keeps drawing meanwhile", QString::number(*frames));
+        r.screenshot(QStringLiteral("samples_loading"));
+        r.app().setSimulatedLoadDelay(0);
+    });
 }
 
 std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
@@ -81,6 +107,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         out.push_back([&r, s, i, name] {
             r.app().setHomeVisible(true);
             s->messages.clear();
+            if (i == 2)
+                watchSlowOpen(r, name);
             r.check(r.clickItem(QStringLiteral("homeSample_%1").arg(i)), QStringLiteral("samples: tap %1").arg(name));
         });
         out.push_back([] {});
@@ -109,7 +137,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             out.push_back([&r] { r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b")); });
             out.push_back([] {});
             out.push_back([&r] {
-                r.check(r.app().dirty() && r.app().bodyCount() == 3 && r.app().documentTitle() == QStringLiteral("Lamp shade"),
+                r.check(r.app().dirty() && r.app().bodyCount() == 2 && r.app().documentTitle() == QStringLiteral("Lamp shade"),
                         "samples: the copy changed (a box added), still named Lamp shade");
             });
         }

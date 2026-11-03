@@ -88,6 +88,10 @@ public:
     // Flickable around it (the tool palette in a short window) so it is on
     // screen, as a user would; false if not found/visible.
     bool clickItem(const QString& objectName, Qt::KeyboardModifiers mods = Qt::NoModifier);
+    // After an open called directly in a step (not by a click, which the
+    // next step waits for): waits until the project has opened in the
+    // background (AppController::loading), up to 60 s. True if it finished.
+    bool waitForOpen();
     // The same with one finger (the touch layout stays on; a click would
     // switch to the mouse layout).
     bool tapItem(const QString& objectName);
@@ -153,6 +157,7 @@ private:
     QStringList summary_;
     int animationWaitMs_ = 0; // for a camera animation to end before the next step
     int previewWaitMs_ = 0;   // for previews (computed on the worker) to be shown
+    int loadWaitMs_ = 0;      // for a project opening in the background (AppController::loading)
     QSize initialSize_;
     QSize initialMinimum_;
     bool startedInPerspective_ = false;

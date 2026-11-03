@@ -21,6 +21,27 @@ QtObject {
     readonly property color error: "#D93F42"
     readonly property color toast: "#2A2F36"
 
+    // Raised surfaces (menus, cards, sheets): white, a hairline edge and a
+    // soft shadow beneath (QtQuick.Effects RectangularShadow).
+    readonly property color card: "#FFFFFF"
+    readonly property color cardBorder: "#1A1F2937"
+    readonly property color shadow: "#38101828"
+    readonly property color panelShadow: "#24101828"
+    readonly property color scrim: "#40101418"
+    readonly property color previewWell: "#F1F3F6"
+    readonly property color track: "#E4E8EE"
+    readonly property color menuHighlight: "#EEF3FD"
+    readonly property color menuPressed: "#DEE8FB"
+    readonly property color destructiveHighlight: "#FDEEEE"
+    readonly property color destructivePressed: "#F9DCDD"
+    readonly property color shortcutText: "#8A919B"
+    readonly property color iconColor: "#5B636E"
+    readonly property color disabledIcon: "#C3C8CF"
+    readonly property color disabledText: "#A7ADB5"
+    readonly property color hairline: "#E6E9EE"
+    readonly property int cardRadius: 16
+    readonly property int menuRadius: 12
+
     readonly property int margin: compact ? 10 : 16
     readonly property int panelPadding: 6
     // Set while the app is used by touch (Main.qml binds it to app.touchMode):

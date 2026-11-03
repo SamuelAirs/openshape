@@ -293,7 +293,7 @@ std::vector<AcceptanceRunner::Step> toolSteps(AcceptanceRunner& r)
             QFile::remove(path);
             r.check(r.app().saveProjectAs(QUrl::fromLocalFile(path)), "hole tool: the project saves");
             r.app().newDocument();
-            r.check(r.app().openProject(QUrl::fromLocalFile(path)), "hole tool: and reopens");
+            r.check(r.app().openProject(QUrl::fromLocalFile(path)) && r.waitForOpen(), "hole tool: and reopens");
             r.check(r.app().bodyCount() == 1 && std::abs(r.bodyVolume() - volume) < 1e-6, "hole tool: the same holes after reopening",
                     AcceptanceRunner::num(r.bodyVolume()));
             QFile::remove(path);

@@ -777,21 +777,22 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
-For 0.3.1 build 58 (2026-11-02: the five sample projects on Home; on the
-iPhone Duo, Open... and Import STEP... explain the Files app's Share,
-TD-158; build 57's edges, not tried yet). Build 55's five checks passed on
-the owner's Duo (his Board ticks, 2026-11-02). Before: builds 56 and 57
-(File → Open is Home; the window fills the screen).
+For 0.3.1 build 59 (2026-11-03: projects open in the background behind a
+loading card, TD-164; the menus, the tool palette, the top bar and Home's
+cards restyled, TD-9; a restored sample keeps its name; the log says app
+states and screens, TD-163). Build 58's checks passed on the owner's Duo
+("Everything is working!", 2026-11-02). Before: build 58 (the samples, the
+Duo's share card), 56 and 57 (File → Open is Home; the window fills the
+screen).
 
-<!-- changed 2026-11-02: re-apply this block -->
+<!-- changed 2026-11-03: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
-FoldForm 0.3.1, on iPhone Duo. First: if the View buttons show Pen on (it turns on when the Apple Pencil touches the screen), tap Pen to turn it off; with Pen on, fingers only move the view.
-1. Closed and opened: the model reaches every edge (no black bar at the right or bottom), and no button or text sits under the clock, the side bar or the home bar. Turn it tall on the inner display too.
-2. Home now has five Samples below your projects: Lamp shade, Twisted vase, Electronics box, Phone stand, Honeycomb organizer. Open each one: it opens named after the sample, with every step in the Model panel. Say whether they look good.
-3. In one sample, change a step in the Model panel (for example the Lamp shade's Shell wall, or a size in its Outline sketch): the part follows. Then go Home and open another sample: FoldForm asks whether to save the changes. The sample itself never changes.
-4. On Home, tap Open...: instead of the file picker (which shows no files on the Duo), a card explains sharing from the Files app. Tap Open Files, touch and hold a project there, tap Share, then FoldForm: it opens in FoldForm. Import STEP... says the same for STEP files.
-5. File, Open: Home appears with your projects, and nothing closes.
+FoldForm 0.3.1, on iPhone Duo. First: if the View buttons show Pen on, tap Pen to turn it off; with Pen on, fingers only move the view.
+1. Open the Lamp shade sample on Home (it is the biggest): a card with its picture, its name and a moving bar shows while it opens, and nothing looks frozen. Open a project of yours the same way.
+2. The look: the File menu, Home's ••• menu on a project and the Sketch button's plane menu are white cards with an icon on every row; every tool on the left (or along the bottom) has an icon; Undo, Redo and Help in the top bar are icons. Say what still looks plain or off.
+3. Change a sample, wait a minute, then close FoldForm from the app switcher and open it again: Restore brings the change back under the sample's name, and Save offers that name.
+4. Fold and unfold a few times while FoldForm is open, then send the log: it now says what iOS did at each fold.
 Then send the log: Files app, FoldForm, Logs, openshape.log, Share. Screenshots with a note go from TestFlight; crash reports reach us automatically.
 ```
 

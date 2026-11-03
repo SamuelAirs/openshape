@@ -1589,6 +1589,37 @@ cannot be read). Native file dialogs cannot be clicked by the acceptance
 run: `AppController::setNextFileChoice` hands it the file, and
 `window.chooseFile(dialog, accept)` runs the dialog's accept code with it.
 
+**Opening in the background** (TD-164): opening a project, a sample or a
+recovery copy, and reading a STEP file, run through
+`AppController::runInBackground(label, name, thumbnail, work, done)`:
+`work` on a `QThread` (8 MB stack), `done` back on the GUI thread through a
+queued `finished`. A project's work is `LoadedProject::read`: `io::loadProject`
+(bodies added in the order they use each other,
+`addBodiesInDependencyOrder`, so a Combine whose tool body is listed later
+does not fail first) and a `SceneCache` filled with its display meshes,
+which `InteractionController::setDocument` adopts. While it runs
+`loading` is true: `LoadingOverlay.qml` (z 129) takes input at once and
+shows its card (preview, "Opening", the name, a sweeping bar) after
+160 ms; `Main.qml`'s `modalOpen` holds the shortcuts. A second open waits
+in `waitingJobs_`. The open functions return once started; `then`
+callbacks (`openProjectThen`, `openProjectFile`, `importStepFile`) carry
+the outcome to callers that need it (staged copies removed on failure,
+Open Recent's list). The log says "opening <name> took N ms (in the
+background)". The acceptance runner waits while `loading`, and
+`AcceptanceRunner::waitForOpen` waits after an open called inside a step.
+
+**Menus and icons** (TD-9): `AppMenu.qml` (a white card, hairline edge,
+`RectangularShadow`, fading in; only opacity animates, so rows are where
+the acceptance run clicks them), `AppMenuItem.qml` (a `LineIcon`, the
+label as plain text, a muted `detail`, the shortcut text or a sub-menu
+chevron, `destructive` in red) and `AppMenuSeparator.qml`. `LineIcon.qml`
+holds the original icon set as 24-unit SVG paths, stroked by a
+`QtQuick.Shapes` `Shape` with the curve renderer (sharp at any scale);
+`ActionButton.iconName` (with `alignLeft` in the palette column) puts one
+before a button's label. Colours and radii are `Theme.qml` tokens (card,
+cardBorder, shadow, panelShadow, menuHighlight, iconColor, ...); `Panel`
+draws a soft `RectangularShadow` beneath itself (`elevated`).
+
 **Home** (the start screen, `HomeScreen.qml`, z 90: over the model and
 its panels, under dialogs and the restore prompt): `AppController::homeVisible`
 is set by `main.cpp` at launch without a file (never in automated runs; the

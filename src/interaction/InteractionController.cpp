@@ -268,7 +268,7 @@ void InteractionController::receivePreview(const PreviewOutcome& outcome)
     notifyView();
 }
 
-void InteractionController::setDocument(doc::Document& document, cmd::UndoStack& undoStack)
+void InteractionController::setDocument(doc::Document& document, cmd::UndoStack& undoStack, SceneCache scene)
 {
     document_ = &document;
     undoStack_ = &undoStack;
@@ -286,7 +286,7 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
     hover_ = {};
     drag_ = {};
     historyHighlight_.reset();
-    scene_.clear();
+    scene_ = std::move(scene);
     afterDocumentEdit();
     fitAll(false);
 }

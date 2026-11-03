@@ -15,6 +15,7 @@
 #include "ui/Share.h"
 #include "ui/Store.h"
 
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
 #include <QtCore/QRectF>
@@ -25,11 +26,14 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
+
+class QThread;
 
 namespace os::ui {
 
@@ -150,6 +154,15 @@ class AppController : public QObject {
     // Home's Samples: {name, summary, thumbnail (image source)}, the sample
     // projects that come with the app (samples/Samples.h, setSamplesFolder).
     Q_PROPERTY(QVariantList homeSamples READ homeSamples NOTIFY samplesChanged)
+    // A project (or STEP file) opening: read and rebuilt on a worker thread
+    // while the window keeps drawing (Main.qml's loading card; Sam on build
+    // 58: "it looks like it freezes"). loadingLabel says what is happening
+    // ("Opening", "Importing", "Restoring"), loadingName to what, and
+    // loadingThumbnail is its preview (an image source, or empty).
+    Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    Q_PROPERTY(QString loadingLabel READ loadingLabel NOTIFY loadingChanged)
+    Q_PROPERTY(QString loadingName READ loadingName NOTIFY loadingChanged)
+    Q_PROPERTY(QString loadingThumbnail READ loadingThumbnail NOTIFY loadingChanged)
     // Where Home's Delete... puts a project: "the Recycle Bin" (Windows),
     // "the Trash" (macOS), "Recently Deleted in the Files app" (iPhone /
     // iPad: QFile::moveToTrash moves it to Documents/.Trash there), "the trash".
@@ -282,8 +295,15 @@ public:
     QString samplesFolder() const { return samplesFolder_; }
     // A sample opens as an unsaved copy named after it (nothing is written
     // to the copy in the samples folder): Save asks for a name, and keeping
-    // it is one more project, like any other. False if it cannot be read.
+    // it is one more project, like any other. It opens in the background
+    // (loading); false if there are no samples.
     Q_INVOKABLE bool openSample(const QString& name);
+    bool loading() const { return loading_; }
+    QString loadingLabel() const { return loadingLabel_; }
+    QString loadingName() const { return loadingName_; }
+    QString loadingThumbnail() const { return loadingThumbnail_; }
+    // The acceptance run's slow open: the worker waits this long first.
+    void setSimulatedLoadDelay(int ms) { simulatedLoadDelayMs_ = ms; }
     // The name Save offers: the project's own, a sample's, else none.
     Q_INVOKABLE QString saveNameSuggestion() const;
     QString defaultUnit() const;
@@ -661,6 +681,7 @@ signals:
     void recoveryChanged();
     void recentFilesChanged();
     void samplesChanged();
+    void loadingChanged();
     void homeChanged();
     void preferencesChanged();
     void appFolderChanged();
@@ -705,10 +726,38 @@ private:
     // through a scratch copy when it is outside the folder (the picker's
     // files lie outside the sandbox on iOS).
     bool importStepFrom(const QUrl& url, bool asProject);
-    // Reads `path` (named `sourceName` in the step) into this document or a new one.
-    bool importStepFile(const QString& path, const QString& sourceName, bool asProject);
-    // Opens a project file as it is (no staging).
-    bool openProjectFile(const QString& path);
+    // Reads `path` (named `sourceName` in the step) into this document or a
+    // new one, in the background; `then` gets whether it was imported.
+    void importStepFile(const QString& path, const QString& sourceName, bool asProject, std::function<void(bool)> then = {});
+    // Opens a project file as it is (no staging), in the background; `then`
+    // gets whether it opened.
+    void openProjectFile(const QString& path, std::function<void(bool)> then = {});
+    // openProject, with `then` for a project that cannot be opened (false)
+    // or has opened (true); not called while the purchase sheet asks first.
+    bool openProjectThen(const QUrl& url, std::function<void(bool)> then);
+    // A project read and rebuilt on the worker thread, with its display meshes.
+    struct LoadedProject;
+    // Swaps in a project read in the background (the second half of an open).
+    bool adoptProject(LoadedProject& loaded, const QString& path);
+    // The second half of restoreRecovery.
+    void adoptRecovery(LoadedProject& loaded, const io::RecoveryEntry& entry);
+    // Runs `work` on a worker thread, then `done` on this one (where an open
+    // swaps the document in). One at a time: another waits for it. Meanwhile
+    // `loading` is true with the label, name and preview the card shows.
+    void runInBackground(const QString& label, const QString& name, const QString& thumbnail, std::function<void()> work,
+                         std::function<void()> done);
+    void finishBackground();
+    struct BackgroundJob {
+        QString label, name, thumbnail;
+        std::function<void()> work, done;
+    };
+    std::deque<BackgroundJob> waitingJobs_;
+    std::unique_ptr<QThread> backgroundThread_;
+    std::function<void()> backgroundDone_;
+    QElapsedTimer loadingTime_;
+    bool loading_ = false;
+    QString loadingLabel_, loadingName_, loadingThumbnail_;
+    int simulatedLoadDelayMs_ = 0;
     // Removes what stageIncomingFile made for a file that is not used after
     // all: a new copy in the app folder, or a scratch copy (never the open
     // project's file).

@@ -235,6 +235,38 @@ Status loadImportedGeometry(doc::ImportedFeature& feature, const EntryReader& re
     return okStatus();
 }
 
+// Adds the file's bodies so that each comes after the bodies its steps use
+// (a Combine's tool, a Pattern's or Mirror's source), each at its place in
+// the file's order. Added in the file's order, a step using a body listed
+// later fails first (and logs it) until that body arrives. A file can
+// describe a cycle: then the first body left goes next.
+void addBodiesInDependencyOrder(doc::Document& document, std::vector<std::unique_ptr<doc::Body>> bodies)
+{
+    const std::size_t count = bodies.size();
+    std::map<Uuid, std::size_t> position;
+    for (std::size_t i = 0; i < count; ++i)
+        position.emplace(bodies[i]->id(), i);
+    std::vector<std::vector<std::size_t>> uses(count);
+    for (std::size_t i = 0; i < count; ++i)
+        for (const auto& feature : bodies[i]->features())
+            for (const Uuid& id : feature->dependencies())
+                if (const auto it = position.find(id); it != position.end() && it->second != i)
+                    uses[i].push_back(it->second);
+
+    std::vector<bool> added(count, false);
+    for (std::size_t done = 0; done < count; ++done) {
+        std::size_t next = count;
+        for (std::size_t i = 0; i < count && next == count; ++i)
+            if (!added[i] && std::all_of(uses[i].begin(), uses[i].end(), [&](std::size_t used) { return added[used]; }))
+                next = i;
+        if (next == count)
+            next = static_cast<std::size_t>(std::find(added.begin(), added.end(), false) - added.begin());
+        const auto index = std::count(added.begin(), added.begin() + static_cast<std::ptrdiff_t>(next), true);
+        added[next] = true;
+        document.addBody(std::move(bodies[next]), static_cast<int>(index));
+    }
+}
+
 } // namespace
 
 Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const EntryReader& readEntry)
@@ -309,6 +341,7 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
         }
     }
 
+    std::vector<std::unique_ptr<doc::Body>> bodies;
     for (const auto& b : root["bodies"]) {
         if (!b.is_object() || !b.contains("id") || !b["id"].is_string() || !b.contains("features") || !b["features"].is_array())
             return R::failureFrom(formatError("malformed body entry"));
@@ -348,8 +381,9 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
                 return R::failureFrom(formatError("first feature of a body must be a base feature"));
             body->insertFeature(std::move(feature), index++);
         }
-        document->addBody(std::move(body));
+        bodies.push_back(std::move(body));
     }
+    addBodiesInDependencyOrder(*document, std::move(bodies));
     return R::success(std::move(document));
 }
 
