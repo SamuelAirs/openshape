@@ -55,7 +55,8 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   `docs/marketing/blender/` (stills, the five together, turntables). Committed after
   `ab57b4b`, not pushed: a push of main makes a TestFlight build, so it waits for the next
   app change.
-- **2026-11-03, afternoon (for build 60, not pushed when written):** Sam's round on 59 (his log
+- **2026-11-03, afternoon (build 60: pushed on Sam's word, main `1be3626`; CI 69 and iPad run 60
+  passed, on TestFlight):** Sam's round on 59 (his log
   and 22 screenshots in iCloud Drive/Foldform, which this PC syncs at `~/iCloudDrive`): no crash
   through about 14 folds; he uses his Apple Pencil on the Duo ("It works great"). Fixed what the
   shots showed (turned tall, the top bar into the Model panel; the value box over the top bar
