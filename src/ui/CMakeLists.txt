@@ -68,6 +68,19 @@ qt_add_qml_module(openshape_ui
         qml/SaveNameOverlay.qml
         qml/NumericKeypad.qml
         qml/PurchaseOverlay.qml
+        # Measure (docs/MEASURE.md): the workspace and its instruments.
+        qml/MeasureScreen.qml
+        qml/MeasureRuler.qml
+        qml/CardCalibration.qml
+        qml/MeasureFold.qml
+        qml/MeasureLevel.qml
+        qml/MeasurePhoto.qml
+        qml/MeasureCamera.qml
+        qml/MeasureTray.qml
+        qml/MeasureCard.qml
+        qml/MeasureSegmented.qml
+        qml/MeasureNotice.qml
+        qml/MeasureHoldPill.qml
     SOURCES
         AppController.cpp AppController.h
         ThumbnailProvider.cpp ThumbnailProvider.h
@@ -75,6 +88,7 @@ qt_add_qml_module(openshape_ui
         WindowMetricsLog.cpp WindowMetricsLog.h
         Share.h
         MeasureDevices.cpp MeasureDevices.h
+        MeasureController.cpp MeasureController.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)
 # The Measure tools' math (src/measure, docs/MEASURE.md).

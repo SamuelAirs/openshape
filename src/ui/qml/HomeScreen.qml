@@ -27,6 +27,8 @@ Rectangle {
     signal importRequested()
     signal projectRequested(string path)
     signal sampleRequested(string name)
+    // Measure (docs/MEASURE.md): the measuring instruments.
+    signal measureRequested()
 
     color: Theme.background
     visible: app.homeVisible
@@ -128,6 +130,13 @@ Rectangle {
                     iconName: "import"
                     outlined: true
                     onClicked: home.importRequested()
+                }
+                ActionButton {
+                    objectName: "homeMeasure"
+                    text: "Measure"
+                    iconName: "ruler"
+                    outlined: true
+                    onClicked: home.measureRequested()
                 }
             }
 

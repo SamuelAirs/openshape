@@ -1,0 +1,382 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+#pragma once
+
+#include "measure/Fold.h"
+#include "measure/Level.h"
+#include "measure/Measurement.h"
+#include "ui/MeasureDevices.h"
+
+#include <QtCore/QElapsedTimer>
+#include <QtCore/QObject>
+#include <QtCore/QPointF>
+#include <QtCore/QPointer>
+#include <QtCore/QRectF>
+#include <QtCore/QSizeF>
+#include <QtCore/QString>
+#include <QtCore/QUrl>
+#include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
+#include <QtQml/qqmlregistration.h>
+#include <QtQuick/QQuickWindow>
+
+#include <array>
+#include <functional>
+#include <optional>
+#include <vector>
+
+class QScreen;
+class QThread;
+
+namespace os::ui {
+
+class AppController;
+
+// The Measure workspace's state for QML (app.measure; docs/MEASURE.md):
+// the screen's true scale and its card calibration, the sensors (the
+// iPhone Duo's hinge, gravity; started only while the workspace is open),
+// a photo straightened onto a reference rectangle, the camera's AR
+// results, the kept measurements, and the geometry made from them (through
+// AppController's design hooks). The hardware comes as MeasureDevices
+// (empty functions where there is none); the acceptance run puts stand-ins
+// in (setDevices) and drives them.
+class MeasureController : public QObject {
+    Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("Provided by AppController (app.measure)")
+
+    // ---- The screen's scale
+    Q_PROPERTY(double pointsPerMm READ pointsPerMm NOTIFY scaleChanged)
+    Q_PROPERTY(bool scaleCalibrated READ scaleCalibrated NOTIFY scaleChanged)
+    // Where the scale comes from, in words ("iPhone, 3x display (estimate)",
+    // "checked with a card").
+    Q_PROPERTY(QString scaleNote READ scaleNote NOTIFY scaleChanged)
+    Q_PROPERTY(QString screenKey READ screenKey NOTIFY scaleChanged)
+    // "phone", "tablet" or "desktop".
+    Q_PROPERTY(QString deviceKind READ deviceKind NOTIFY scaleChanged)
+    // The ruler's and the labels' unit: "in" when the display unit is
+    // inches, else "mm".
+    Q_PROPERTY(QString unit READ unit NOTIFY unitChanged)
+
+    // ---- Sensors (while startSensors() .. stopSensors())
+    Q_PROPERTY(bool sensorsRunning READ sensorsRunning NOTIFY sensorsChanged)
+    Q_PROPERTY(bool hingeAvailable READ hingeAvailable NOTIFY sensorsChanged)
+    Q_PROPERTY(bool gravityAvailable READ gravityAvailable NOTIFY sensorsChanged)
+    Q_PROPERTY(double foldAngle READ foldAngle NOTIFY foldChanged)
+    Q_PROPERTY(double foldBend READ foldBend NOTIFY foldChanged)
+    Q_PROPERTY(bool foldSteady READ foldSteady NOTIFY foldChanged)
+    Q_PROPERTY(double foldHeld READ foldHeld NOTIFY foldChanged) // NaN when none
+    Q_PROPERTY(bool foldHasHold READ foldHasHold NOTIFY foldChanged)
+    // The caliper: the gap between the free edges (mm), 2 L sin(angle / 2).
+    Q_PROPERTY(double caliperArmMm READ caliperArmMm NOTIFY foldChanged)
+    Q_PROPERTY(bool caliperCalibrated READ caliperCalibrated NOTIFY foldChanged)
+    Q_PROPERTY(double caliperGapMm READ caliperGapMm NOTIFY foldChanged)
+    Q_PROPERTY(double caliperHeldGapMm READ caliperHeldGapMm NOTIFY foldChanged) // NaN when no hold
+    Q_PROPERTY(double caliperMmPerDegree READ caliperMmPerDegree NOTIFY foldChanged)
+    Q_PROPERTY(bool levelLying READ levelLying NOTIFY levelChanged)
+    Q_PROPERTY(double levelSlope READ levelSlope NOTIFY levelChanged)
+    Q_PROPERTY(double levelEdge READ levelEdge NOTIFY levelChanged)
+    Q_PROPERTY(double bubbleX READ bubbleX NOTIFY levelChanged)
+    Q_PROPERTY(double bubbleY READ bubbleY NOTIFY levelChanged)
+    // What the level shows now (the angle to the kept reference, else the
+    // slope lying or the edge's angle standing), smoothed, and its hold.
+    Q_PROPERTY(double levelValue READ levelValue NOTIFY levelChanged)
+    Q_PROPERTY(bool levelSteady READ levelSteady NOTIFY levelChanged)
+    Q_PROPERTY(double levelHeld READ levelHeld NOTIFY levelChanged) // NaN when none
+    Q_PROPERTY(bool levelHasHold READ levelHasHold NOTIFY levelChanged)
+    Q_PROPERTY(bool hasLevelReference READ hasLevelReference NOTIFY levelChanged)
+    Q_PROPERTY(double relativeAngle READ relativeAngle NOTIFY levelChanged)
+
+    // ---- Photo
+    Q_PROPERTY(bool cameraAvailable READ cameraAvailable NOTIFY sensorsChanged)
+    // The system's photo picker is there (iOS); elsewhere a file dialog (loadPhoto).
+    Q_PROPERTY(bool canPickPhoto READ canPickPhoto NOTIFY sensorsChanged)
+    Q_PROPERTY(bool photoBusy READ photoBusy NOTIFY photoChanged)
+    Q_PROPERTY(QUrl photoUrl READ photoUrl NOTIFY photoChanged)
+    Q_PROPERTY(QSizeF photoSize READ photoSize NOTIFY photoChanged)
+    Q_PROPERTY(QVariantList corners READ corners NOTIFY photoChanged) // 4 QPointF, image px
+    Q_PROPERTY(bool cornersDetected READ cornersDetected NOTIFY photoChanged)
+    Q_PROPERTY(QString referenceKind READ referenceKind NOTIFY photoChanged) // card, a4, letter, rectangle
+    Q_PROPERTY(double referenceSideA READ referenceSideA NOTIFY photoChanged)
+    Q_PROPERTY(double referenceSideB READ referenceSideB NOTIFY photoChanged)
+    Q_PROPERTY(QString referenceName READ referenceName NOTIFY photoChanged)
+    Q_PROPERTY(QUrl straightUrl READ straightUrl NOTIFY straightChanged)
+    Q_PROPERTY(QSizeF straightSize READ straightSize NOTIFY straightChanged)
+    Q_PROPERTY(double straightMmPerPixel READ straightMmPerPixel NOTIFY straightChanged)
+    Q_PROPERTY(QPointF straightOriginMm READ straightOriginMm NOTIFY straightChanged)
+    // The reference's corners in the straightened view (px), in order.
+    Q_PROPERTY(QVariantList straightReference READ straightReference NOTIFY straightChanged)
+    Q_PROPERTY(QString photoError READ photoError NOTIFY photoChanged)
+
+    // ---- Camera (AR)
+    Q_PROPERTY(bool arAvailable READ arAvailable NOTIFY sensorsChanged)
+    Q_PROPERTY(bool lidar READ lidar NOTIFY sensorsChanged)
+    Q_PROPERTY(bool arBusy READ arBusy NOTIFY arChanged)
+    // The last result: {outcome ("done", "cancelled", "failed"), mode
+    // ("distance", "outline", "box"), error, distances [mm], total, outline
+    // [{x, y} mm], sides [mm], perimeter, area, width, depth, height}.
+    Q_PROPERTY(QVariantMap arResult READ arResult NOTIFY arChanged)
+
+    // ---- Kept measurements: {id, name, quantity ("length", "angle",
+    // "area"), value, text (to read), valueText (to type), source}, newest first.
+    Q_PROPERTY(QVariantList measurements READ measurements NOTIFY measurementsChanged)
+
+public:
+    explicit MeasureController(AppController* app);
+    ~MeasureController() override;
+
+    // The window the hardware is asked about (the hinge of the device it is
+    // on, the picker shown over it); its screen gives the scale. MeasureScreen
+    // attaches its window; until then the first Qt Quick window is used.
+    Q_INVOKABLE void attachWindow(QQuickWindow* window);
+
+    // ---- The screen's scale
+    double pointsPerMm() const { return pointsPerMm_; }
+    bool scaleCalibrated() const { return scaleCalibrated_; }
+    QString scaleNote() const { return scaleNote_; }
+    QString screenKey() const { return screenKey_; }
+    QString deviceKind() const { return deviceKind_; }
+    QString unit() const;
+    // A span of `spanPt` points on the screen matched `mm` of a real thing
+    // (Check with a card: the card's long side). Kept for this screen;
+    // false (and nothing changes) when the scale would be implausible.
+    Q_INVOKABLE bool calibrate(double spanPt, double mm);
+    Q_INVOKABLE void resetCalibration();
+    // Re-reads the screen (the window moved, resized, the Duo folded).
+    Q_INVOKABLE void updateScale();
+
+    // ---- Sensors
+    Q_INVOKABLE void startSensors();
+    Q_INVOKABLE void stopSensors();
+    bool sensorsRunning() const { return sensorsRunning_; }
+    bool hingeAvailable() const { return hingeAvailable_; }
+    bool gravityAvailable() const { return gravityAvailable_; }
+    double foldAngle() const { return foldAngle_; }
+    double foldBend() const { return 180.0 - foldAngle_; }
+    bool foldSteady() const { return foldSteady_; }
+    double foldHeld() const;
+    bool foldHasHold() const { return fold_.held().has_value(); }
+    double caliperArmMm() const { return caliperArmMm_; }
+    bool caliperCalibrated() const { return caliperCalibrated_; }
+    double caliperGapMm() const;
+    double caliperHeldGapMm() const;
+    double caliperMmPerDegree() const;
+    // The arm length from a gap of known size pinched at the current angle
+    // (a card's side); kept. False when the angle is too small to tell.
+    Q_INVOKABLE bool calibrateCaliper(double knownGapMm);
+    Q_INVOKABLE void resetCaliper();
+    bool levelLying() const { return tilt_.lying; }
+    double levelSlope() const { return tilt_.slopeDeg; }
+    double levelEdge() const { return tilt_.edgeDeg; }
+    double bubbleX() const { return tilt_.bubble.x; }
+    double bubbleY() const { return tilt_.bubble.y; }
+    double levelValue() const { return levelValue_; }
+    bool levelSteady() const { return levelSteady_; }
+    double levelHeld() const;
+    bool levelHasHold() const { return level_.held().has_value(); }
+    bool hasLevelReference() const { return levelReference_.has_value(); }
+    double relativeAngle() const;
+    // Keeps the current resting position: the level then reads the angle
+    // between it and the next one.
+    Q_INVOKABLE void keepLevelReference();
+    Q_INVOKABLE void clearLevelReference();
+    // Drops the fold's and the level's holds (a new measurement starts).
+    Q_INVOKABLE void clearHold();
+
+    // ---- Photo
+    bool cameraAvailable() const;
+    bool canPickPhoto() const { return bool(devices_.pickPhoto); }
+    bool photoBusy() const { return photoBusy_; }
+    QUrl photoUrl() const { return photoUrl_; }
+    QSizeF photoSize() const { return photoSize_; }
+    QVariantList corners() const;
+    bool cornersDetected() const { return cornersDetected_; }
+    QString referenceKind() const { return referenceKind_; }
+    double referenceSideA() const { return referenceSideA_; }
+    double referenceSideB() const { return referenceSideB_; }
+    QString referenceName() const;
+    QUrl straightUrl() const { return straightUrl_; }
+    QSizeF straightSize() const { return straightSize_; }
+    double straightMmPerPixel() const { return straightMmPerPixel_; }
+    QPointF straightOriginMm() const { return straightOriginMm_; }
+    QVariantList straightReference() const { return straightReference_; }
+    QString photoError() const { return photoError_; }
+    // The camera / the photo library over the window (devices.pickPhoto);
+    // `anchor`: the button that asked (an iPad's popover).
+    Q_INVOKABLE void takePhoto(const QRectF& anchor = QRectF());
+    Q_INVOKABLE void choosePhoto(const QRectF& anchor = QRectF());
+    // An image file (the desktop's file dialog; tests).
+    Q_INVOKABLE void loadPhoto(const QUrl& url);
+    Q_INVOKABLE void setCorner(int index, double x, double y);
+    // "card", "a4", "letter", or "rectangle" with its two sides (mm). False
+    // for a rectangle whose sides are not positive.
+    Q_INVOKABLE bool setReference(const QString& kind, double sideA = 0, double sideB = 0);
+    // Straightens the photo on the reference (in the background): false
+    // when the corners make no convex quadrilateral (photoError says so).
+    Q_INVOKABLE bool straighten();
+    // Back to the corners (the straightened view is dropped).
+    Q_INVOKABLE void unstraighten();
+    Q_INVOKABLE void clearPhoto();
+    // Measuring on the straightened view (its pixel coordinates).
+    Q_INVOKABLE double distanceMm(const QPointF& a, const QPointF& b) const;
+    // {sides [mm], perimeter, area (closed), corners [degrees], width, height}.
+    Q_INVOKABLE QVariantMap outlineReport(const QVariantList& points, bool closed) const;
+    // {valid, center (px), radius (px), diameter (mm)}.
+    Q_INVOKABLE QVariantMap circleFrom3(const QPointF& a, const QPointF& b, const QPointF& c) const;
+    // The points in millimeters on the surface (x right, y down the view).
+    Q_INVOKABLE QVariantList straightToMm(const QVariantList& points) const;
+
+    // ---- Camera (AR)
+    bool arAvailable() const { return ar_.available && bool(devices_.startAr); }
+    bool lidar() const { return ar_.lidar; }
+    bool arBusy() const { return arBusy_; }
+    QVariantMap arResult() const { return arResult_; }
+    // "distance", "outline" or "box": ARKit's view until Done or Cancel.
+    Q_INVOKABLE bool startAr(const QString& mode);
+    Q_INVOKABLE void clearArResult();
+
+    // ---- Kept measurements
+    QVariantList measurements() const;
+    // quantity: "length", "angle", "area" (any case). Returns the new id ("" if refused).
+    Q_INVOKABLE QString addMeasurement(const QString& quantity, double value, const QString& source,
+                                       const QString& name = QString());
+    Q_INVOKABLE bool renameMeasurement(const QString& id, const QString& name);
+    Q_INVOKABLE bool removeMeasurement(const QString& id);
+    // One of them as in `measurements`, or an empty map.
+    Q_INVOKABLE QVariantMap measurement(const QString& id) const;
+    // In the display unit: "42.3 mm", "37.5°" (to read) and "42.3mm" (to type).
+    Q_INVOKABLE QString formatValue(const QString& quantity, double value) const;
+    Q_INVOKABLE QString valueText(const QString& quantity, double value) const;
+    // formatValue in two parts for a big readout: the number ("42.3"; an
+    // angle with its degree sign, "37.5°") and the unit as written for that
+    // value ("mm", "cm²"; "" for an angle).
+    Q_INVOKABLE QString formatNumber(const QString& quantity, double value) const;
+    Q_INVOKABLE QString unitText(const QString& quantity, double value) const;
+    // The unit's symbol for a quantity in the display unit ("mm", "in", "°").
+    Q_INVOKABLE QString unitSymbol(const QString& quantity) const;
+
+    // ---- Making geometry (AppController's design hooks): true when made.
+    // pointsMm: QPointF or {x, y}, on a surface; centered on the origin.
+    Q_INVOKABLE bool makeOutlineSketch(const QVariantList& pointsMm, bool flipY);
+    Q_INVOKABLE bool makeCircleSketch(double diameterMm);
+    Q_INVOKABLE bool makeBox(double widthMm, double depthMm, double heightMm);
+
+    // ---- For tests (the acceptance run)
+    // The hardware (platformMeasureDevices() until set). Sensors running
+    // restart on the new ones.
+    void setDevices(MeasureDevices devices);
+    const MeasureDevices& devices() const { return devices_; }
+    // The steady clock (seconds) the holds are timed with (a test's own).
+    void setClock(std::function<double()> clock);
+    // What was asked of the design hooks: "outline n", "circle d", "box w d h".
+    const QStringList& madeLog() const { return madeLog_; }
+    // The points of the last outline handed over (mm, as passed on).
+    const QVariantList& lastOutlinePoints() const { return lastOutlinePoints_; }
+    // Waits (processing events) until no photo work runs, up to `ms`.
+    bool waitForPhoto(int ms);
+
+signals:
+    void scaleChanged();
+    void unitChanged();
+    void sensorsChanged();
+    void foldChanged();
+    void levelChanged();
+    void photoChanged();
+    void straightChanged();
+    void arChanged();
+    void arFinished();
+    void measurementsChanged();
+    // A new hold (the fold's or the level's): the workspace's short animation.
+    void held(const QString& what);
+
+private:
+    QQuickWindow* window() const;
+    void watchWindow(QQuickWindow* window);
+    void setScale(double pointsPerMm, bool calibrated, const QString& note);
+    void onHinge(const HingeReading& reading);
+    void onGravity(const GravityReading& reading);
+    void feedLevel();
+    double now() const;
+    void loadCaliper();
+    double defaultCaliperArm() const;
+    void saveMeasurements() const;
+    void loadMeasurements();
+    void checkUnit();
+    QString photoFolder() const;
+    // Runs `work` on a worker thread, then `done` here (unless the photo
+    // changed meanwhile: generation).
+    void runPhotoWork(std::function<void()> work, std::function<void()> done);
+    void adoptPickedFile(const QString& file);
+    void setPhotoError(const QString& error);
+    void forgetFile(const QString& file);
+
+    AppController* app_;
+    QPointer<QQuickWindow> window_;
+    QPointer<QScreen> screen_;
+    QList<QMetaObject::Connection> windowConnections_;
+    QList<QMetaObject::Connection> screenConnections_;
+    MeasureDevices devices_;
+    std::function<double()> clock_;
+    QElapsedTimer elapsed_;
+
+    double pointsPerMm_ = 96.0 / 25.4;
+    bool scaleCalibrated_ = false;
+    QString scaleNote_;
+    QString screenKey_;
+    QString deviceKind_ = QStringLiteral("desktop");
+    double screenWidthPt_ = 0;
+    double screenHeightPt_ = 0;
+    QString lastUnit_;
+
+    bool sensorsRunning_ = false;
+    StopWatching stopHinge_;
+    StopWatching stopGravity_;
+    bool hingeAvailable_ = false;
+    bool gravityAvailable_ = false;
+    measure::SteadyReading fold_;
+    double foldAngle_ = 0;
+    double foldRadians_ = 0;
+    bool foldSteady_ = false;
+    double caliperArmMm_ = 0;
+    bool caliperCalibrated_ = false;
+    measure::SteadyReading level_;
+    measure::Gravity gravity_;
+    measure::Tilt tilt_;
+    std::optional<measure::Gravity> levelReference_;
+    int levelTrack_ = -1; // 0 slope, 1 edge, 2 relative: a change resets the hold
+    double levelValue_ = 0;
+    bool levelSteady_ = false;
+
+    bool photoBusy_ = false;
+    int photoGeneration_ = 0;
+    std::vector<QThread*> workers_;
+    QString photoFile_; // the upright photo measured (in photoFolder)
+    QUrl photoUrl_;
+    QSizeF photoSize_;
+    std::array<QPointF, 4> corners_{};
+    bool cornersDetected_ = false;
+    QString referenceKind_ = QStringLiteral("card");
+    double referenceSideA_ = 0;
+    double referenceSideB_ = 0;
+    QString straightFile_;
+    QUrl straightUrl_;
+    QSizeF straightSize_;
+    double straightMmPerPixel_ = 0;
+    QPointF straightOriginMm_;
+    QVariantList straightReference_;
+    QString photoError_;
+    QStringList madeFiles_; // files this run wrote into photoFolder (removed at the end)
+    int fileCounter_ = 0;
+
+    ArCapabilities ar_;
+    bool arBusy_ = false;
+    QVariantMap arResult_;
+
+    measure::MeasurementLog log_;
+    QStringList madeLog_;
+    QVariantList lastOutlinePoints_;
+};
+
+} // namespace os::ui
