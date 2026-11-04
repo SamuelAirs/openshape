@@ -144,6 +144,11 @@ class AppController : public QObject {
     Q_PROPERTY(bool canStartSketch READ canStartSketch NOTIFY stateChanged)
     Q_PROPERTY(int sketchCount READ sketchCount NOTIFY stateChanged)
     Q_PROPERTY(QVariantList history READ history NOTIFY historyChanged)
+    // The measurements kept in the project (docs/MEASURE.md, "Measurements in
+    // the project"), in the order they were added: {name, quantity: "length" |
+    // "angle", value (mm or degrees), text (in the display unit: "243.0 mm"),
+    // typed (for a value box: "243mm"), note}.
+    Q_PROPERTY(QVariantList projectMeasurements READ projectMeasurements NOTIFY projectMeasurementsChanged)
     // Recovery copies left by a crashed run, offered for restoring
     // ({session, title, detail, time}); empty once each is restored or discarded.
     Q_PROPERTY(QVariantList recoveryItems READ recoveryItems NOTIFY recoveryChanged)
@@ -291,6 +296,7 @@ public:
     bool canStartSketch() const;
     int sketchCount() const { return int(document_->sketches().size()); }
     QVariantList history() const { return historyList_; }
+    QVariantList projectMeasurements() const { return projectMeasurementsList_; }
     QVariantList recoveryItems() const;
     QVariantList recentFiles() const { return recentFiles_; }
     bool homeVisible() const { return homeVisible_; }
@@ -604,6 +610,8 @@ public:
     Q_INVOKABLE QVariantList keypadRows(const QString& mode, bool hasNext, bool wide = false) const;
     Q_INVOKABLE QVariantMap keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const;
     Q_INVOKABLE QVariantMap keypadType(const QString& text, bool replacing, const QString& characters) const;
+    // A project measurement's key above the keypad: its name added (interact::insertKeypadName).
+    Q_INVOKABLE QVariantMap keypadInsertName(const QString& text, bool replacing, const QString& name) const;
     // Where the keypad goes (interact::placeKeypad): `layout` has area,
     // size, target (the value box), avoid (controls), keepClear and compact;
     // returns {x, y, docked, clear}.
@@ -685,6 +693,25 @@ public:
         return swallow;
     }
 
+    // ---- Measurements kept in the project (each change one undo step) ----
+    // Adds one: `name` is kept when it is a value name already ("wall"), a
+    // display name is made one ("Length 3", "Shelf depth": identifierFor makes
+    // length_3, shelf_depth; empty: length_<n> or angle_<n>), a taken name
+    // gets _2, _3...; `quantity` "length" (value in
+    // mm) or "angle" (degrees). Returns the name used, empty on refusal.
+    Q_INVOKABLE QString addProjectMeasurement(const QString& name, const QString& quantity, double value,
+                                              const QString& note = QString());
+    // The Model panel's "+": the value typed with units (and names) as in
+    // any value box. Returns {name (used, empty on refusal), error}.
+    Q_INVOKABLE QVariantMap addProjectMeasurementTyped(const QString& name, const QString& quantity, const QString& text);
+    // A new name (a value name as typed, else identifierFor's): error text or "".
+    Q_INVOKABLE QString renameProjectMeasurement(const QString& name, const QString& newName);
+    // A new value typed with units, as in a value box: error text or "".
+    Q_INVOKABLE QString setProjectMeasurementValue(const QString& name, const QString& text);
+    Q_INVOKABLE void removeProjectMeasurement(const QString& name);
+    // "Length 3" -> "length_3" (core/Units valueNameFor).
+    Q_INVOKABLE QString identifierFor(const QString& displayName) const;
+
     // History panel. Ids are UUID strings. Edits return an error message or "".
     Q_INVOKABLE QString setFeatureParameter(const QString& featureId, const QString& key, const QString& text);
     Q_INVOKABLE void setFeatureSuppressed(const QString& featureId, bool suppressed);
@@ -711,6 +738,7 @@ signals:
     void stateChanged();
     void contextActionsChanged();
     void historyChanged();
+    void projectMeasurementsChanged();
     void viewChanged();
     void documentChanged();
     void message(const QString& text);
@@ -830,6 +858,9 @@ private:
     QVariantList recentFiles_;
     std::vector<interact::HistoryRow> historyRows_;
     QVariantList historyList_;
+    QVariantList projectMeasurementsList_;
+    // The list for QML from the document (refreshLists).
+    QVariantList projectMeasurementsFromDocument() const;
     std::vector<interact::ContextAction> contextActions_;
     QVariantList contextActionsList_;
     int dragMoves_ = 0;

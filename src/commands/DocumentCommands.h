@@ -9,6 +9,7 @@
 #include "document/Body.h"
 #include "document/Datum.h"
 #include "document/Feature.h"
+#include "document/ProjectMeasurement.h"
 #include "sketch/Sketch.h"
 
 #include <cstdint>
@@ -297,6 +298,22 @@ private:
     Uuid datumId_;
     std::unique_ptr<doc::Datum> removed_;
     int index_ = -1;
+};
+
+// Replaces the project's measurements (add, rename, a new value, delete: the
+// list before and after, so undo and redo never depend on names).
+class SetProjectMeasurementsCommand final : public Command {
+public:
+    SetProjectMeasurementsCommand(std::vector<doc::ProjectMeasurement> after, std::string label)
+        : after_(std::move(after)), label_(std::move(label)) {}
+    std::string label() const override { return label_; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    std::vector<doc::ProjectMeasurement> after_;
+    std::vector<doc::ProjectMeasurement> before_;
+    std::string label_;
 };
 
 } // namespace os::cmd

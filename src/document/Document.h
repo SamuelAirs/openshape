@@ -9,6 +9,7 @@
 #include "core/Uuid.h"
 #include "document/Body.h"
 #include "document/Datum.h"
+#include "document/ProjectMeasurement.h"
 #include "sketch/Sketch.h"
 
 #include <cstdint>
@@ -99,6 +100,17 @@ public:
     std::uint64_t importedGeometryLimit() const { return importedGeometryLimit_; }
     void setImportedGeometryLimit(std::uint64_t bytes) { importedGeometryLimit_ = bytes; }
 
+    // ---- Measurements kept in the project (typed by name in value boxes) ----
+    const std::vector<ProjectMeasurement>& measurements() const { return measurements_; }
+    // By name, ignoring case; null if there is none.
+    const ProjectMeasurement* measurement(std::string_view name) const;
+    // Replaces the list (SetProjectMeasurementsCommand checks it first).
+    void setMeasurements(std::vector<ProjectMeasurement> measurements);
+    // What the typed-value parsers take (core/Units): the measurements by
+    // name. Empty (no names at all) while the project has none, so a stray
+    // letter reads "Unexpected 'x'" as before. Valid while this document is.
+    NameResolver valueNames() const;
+
     EvalContext context() const { return EvalContext{this}; }
 
     // A copy another thread may read while this one keeps changing: every
@@ -139,6 +151,7 @@ private:
     std::vector<std::unique_ptr<Body>> bodies_;
     std::vector<std::unique_ptr<sketch::Sketch>> sketches_;
     std::vector<std::unique_ptr<Datum>> datums_;
+    std::vector<ProjectMeasurement> measurements_;
     std::uint64_t datumRevision_ = 0;
     std::vector<std::pair<Uuid, std::uint64_t>> sketchRevisions_;
     std::uint64_t revision_ = 0;

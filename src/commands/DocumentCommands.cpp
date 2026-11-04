@@ -825,4 +825,19 @@ void DeleteDatumCommand::undo(doc::Document& document)
         document.addDatum(std::move(removed_), index_);
 }
 
+Status SetProjectMeasurementsCommand::execute(doc::Document& document)
+{
+    // Never a list the project file could not read back.
+    if (std::string error = doc::checkProjectMeasurements(after_); !error.empty())
+        return Status::failure(ErrorCode::InvalidArgument, error, "SetProjectMeasurements: " + error);
+    before_ = document.measurements();
+    document.setMeasurements(after_);
+    return okStatus();
+}
+
+void SetProjectMeasurementsCommand::undo(doc::Document& document)
+{
+    document.setMeasurements(before_);
+}
+
 } // namespace os::cmd

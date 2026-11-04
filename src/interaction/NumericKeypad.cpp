@@ -39,6 +39,23 @@ std::size_t trailingUnitStart(const std::string& text)
     return start;
 }
 
+bool isNameCharacter(char c) { return isDigit(c) || isLetter(c) || c == '_'; }
+
+// Where the name the text ends with starts ("wall - shelf_depth" -> 7), or
+// npos when it ends with none of `names` (a number, an operator, a unit after
+// a number, a word that is no measurement's: "loft" loses one letter).
+std::size_t trailingNameStart(const std::string& text, const std::vector<std::string>& names)
+{
+    std::size_t start = text.size();
+    while (start > 0 && isNameCharacter(text[start - 1]))
+        --start;
+    if (start == text.size() || isDigit(text[start]))
+        return std::string::npos; // nothing, or a number ("25", "25mm" ends with a unit)
+    const std::string_view word = std::string_view(text).substr(start);
+    const bool known = std::any_of(names.begin(), names.end(), [&](const std::string& n) { return sameValueName(n, word); });
+    return known && trailingUnitStart(text) == std::string::npos ? start : std::string::npos;
+}
+
 // The last character (a whole UTF-8 sequence).
 void popCharacter(std::string& text)
 {
@@ -187,7 +204,7 @@ std::vector<std::vector<KeypadKey>> keypadLayout(KeypadMode mode, bool hasNext, 
     return rows;
 }
 
-KeypadResult pressKeypadKey(const KeypadState& state, std::string_view id, KeypadMode mode)
+KeypadResult pressKeypadKey(const KeypadState& state, std::string_view id, KeypadMode mode, const std::vector<std::string>& names)
 {
     if (!keyAllowed(id, mode))
         return {state, KeypadAction::None};
@@ -203,6 +220,8 @@ KeypadResult pressKeypadKey(const KeypadState& state, std::string_view id, Keypa
         std::string text = state.text;
         if (const std::size_t unit = trailingUnitStart(text); unit != std::string::npos)
             text.erase(unit);
+        else if (const std::size_t name = trailingNameStart(text, names); name != std::string::npos)
+            text.erase(name);
         else
             popCharacter(text);
         trimTrailingSpaces(text);
@@ -211,6 +230,8 @@ KeypadResult pressKeypadKey(const KeypadState& state, std::string_view id, Keypa
     if (id == "mm" || id == "cm" || id == "in" || id == "deg") {
         // Keeps the number shown (20.00 mm, then in: 20.00 in).
         std::string text = state.text;
+        if (!state.replacing && trailingNameStart(text, names) != std::string::npos)
+            return {state, KeypadAction::None}; // a name has its unit
         if (const std::size_t unit = trailingUnitStart(text); unit != std::string::npos)
             text.erase(unit);
         if (text.empty())
@@ -251,13 +272,27 @@ KeypadResult typeIntoKeypad(const KeypadState& state, std::string_view character
     return edited((state.replacing ? std::string() : state.text) + typed);
 }
 
-LengthParseResult keypadValue(std::string_view text, KeypadMode mode, LengthUnit unit)
+KeypadResult insertKeypadName(const KeypadState& state, std::string_view name)
+{
+    if (name.empty())
+        return {state, KeypadAction::None};
+    std::string text = state.replacing ? std::string() : state.text;
+    if (!text.empty()) {
+        const char last = text.back();
+        if (isNameCharacter(last) || last == '.' || last == ')' || last == '"')
+            text += ' '; // "2 " then the name: the parser asks for the operator
+    }
+    text += name;
+    return edited(std::move(text));
+}
+
+LengthParseResult keypadValue(std::string_view text, KeypadMode mode, LengthUnit unit, const NameResolver& names)
 {
     switch (mode) {
     case KeypadMode::Length:
-        return parseLength(text, unit);
+        return parseLength(text, unit, names);
     case KeypadMode::Angle:
-        return parseAngle(text);
+        return parseAngle(text, names);
     case KeypadMode::Count: {
         const std::string s(text);
         char* rest = nullptr;

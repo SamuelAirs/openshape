@@ -203,6 +203,13 @@ json documentToJson(const doc::Document& document)
     // older builds wrote them.
     if (!datums.empty())
         out["datums"] = datums;
+    // The same for the measurements kept in the project.
+    if (!document.measurements().empty()) {
+        json measurements = json::array();
+        for (const auto& m : document.measurements())
+            measurements.push_back(doc::toJson(m));
+        out["measurements"] = measurements;
+    }
     return out;
 }
 
@@ -305,6 +312,31 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
 
     if (!root.contains("bodies") || !root["bodies"].is_array())
         return R::failureFrom(formatError("missing 'bodies' array"));
+
+    // Measurements kept in the project: not part of the model, so an entry
+    // that is not valid (or a name taken twice) is left out, with a warning,
+    // rather than refusing the file.
+    if (root.contains("measurements")) {
+        if (!root["measurements"].is_array())
+            return R::failureFrom(formatError("'measurements' is not an array"));
+        std::vector<doc::ProjectMeasurement> measurements;
+        for (const auto& m : root["measurements"]) {
+            auto measurement = doc::projectMeasurementFromJson(m);
+            if (!measurement || measurements.size() >= doc::kMaxProjectMeasurements) {
+                OS_LOG(Warning, File) << "a measurement in the project was left out (not valid, or past "
+                                      << doc::kMaxProjectMeasurements << ")";
+                continue;
+            }
+            const bool taken = std::any_of(measurements.begin(), measurements.end(),
+                                           [&](const doc::ProjectMeasurement& other) { return sameValueName(other.name, measurement->name); });
+            if (taken) {
+                OS_LOG(Warning, File) << "a measurement in the project was left out (its name is taken)";
+                continue;
+            }
+            measurements.push_back(std::move(*measurement));
+        }
+        document->setMeasurements(std::move(measurements));
+    }
 
     std::vector<Uuid> seenIds;
     auto checkUnique = [&](const Uuid& id) {

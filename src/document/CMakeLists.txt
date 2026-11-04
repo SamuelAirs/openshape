@@ -9,6 +9,7 @@ add_library(openshape_document STATIC
     Fasteners.cpp Fasteners.h
     Feature.cpp Feature.h
     JsonHelpers.cpp JsonHelpers.h
+    ProjectMeasurement.cpp ProjectMeasurement.h
     SketchProfiles.cpp SketchProfiles.h
 )
 target_link_libraries(openshape_document PUBLIC openshape_geometry openshape_sketch nlohmann_json::nlohmann_json)

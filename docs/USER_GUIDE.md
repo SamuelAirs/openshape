@@ -825,6 +825,16 @@ large at the side with **Keep**.
   and so on, listed beside the instrument (chips along the bottom on a
   phone). Tap one to use it in the value box that asked, rename it or
   delete it. They stay on the device between projects.
+- **Measurements in the project**: the Model panel's **Measurements**
+  (below the steps) are saved with the project, each under a name such as
+  `shelf_depth`. Type the name in any value box, alone or in arithmetic:
+  `shelf_depth - 2`, `2 * wall`, `corner_angle / 2` (a length's name in a
+  length, an angle's in an angle; capitals don't matter). On a touch screen
+  the keypad shows them as keys above its digits. **+ Measurement** at the
+  top of the Model panel (**+** once there are some) adds one by hand (a
+  name, Length or Angle, a value); tap one to rename it, give it a new
+  value or delete it. The value is copied when you type it: changing a
+  measurement later does not change what was already built with it.
 - Everything stays on your device: photos are kept in FoldForm's temporary
   folder while you measure, and iOS asks once before FoldForm may use the
   camera.

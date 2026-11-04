@@ -1788,7 +1788,8 @@ InteractionController::TypedValue InteractionController::parseTypedValue(const s
 {
     if (!operation_)
         return {std::nullopt, "Select a face or an edge first."};
-    const auto parsed = operation_->isAngle() ? parseAngle(text) : parseLength(text, document_->displayUnit());
+    const auto names = document_->valueNames();
+    const auto parsed = operation_->isAngle() ? parseAngle(text, names) : parseLength(text, document_->displayUnit(), names);
     if (!parsed.millimeters)
         return {std::nullopt, parsed.error};
     // Angle operations keep their value in degrees.
@@ -5167,7 +5168,8 @@ Status InteractionController::setFeatureParameter(const Uuid& featureId, const s
         bool angle = false;
         for (const auto& p : datum->parameters())
             angle = angle || (p.key == key && p.kind == doc::ParameterKind::Angle);
-        const auto parsed = angle ? parseAngle(text) : parseLength(text, document_->displayUnit());
+        const auto names = document_->valueNames();
+        const auto parsed = angle ? parseAngle(text, names) : parseLength(text, document_->displayUnit(), names);
         if (!parsed.millimeters)
             return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
         doc::Datum edited = *datum;
@@ -5209,7 +5211,8 @@ Status InteractionController::setFeatureParameter(const Uuid& featureId, const s
             return Status::failure(ErrorCode::InvalidArgument, "Enter a whole number.", "setFeatureParameter: bad count");
         value = double(n);
     } else {
-        const auto parsed = isAngle ? parseAngle(text) : parseLength(text, document_->displayUnit());
+        const auto names = document_->valueNames();
+        const auto parsed = isAngle ? parseAngle(text, names) : parseLength(text, document_->displayUnit(), names);
         if (!parsed.millimeters)
             return Status::failure(ErrorCode::InvalidArgument, parsed.error, "setFeatureParameter: parse error");
         value = *parsed.millimeters;
@@ -5232,6 +5235,16 @@ Status InteractionController::setFeatureSuppressed(const Uuid& featureId, bool s
         operation_.reset();
         afterDocumentEdit();
     }
+    return status;
+}
+
+Status InteractionController::setProjectMeasurements(std::vector<doc::ProjectMeasurement> measurements, const std::string& label)
+{
+    if (measurements == document_->measurements())
+        return okStatus(); // nothing to change, nothing to undo
+    Status status = undoStack_->push(std::make_unique<cmd::SetProjectMeasurementsCommand>(std::move(measurements), label), *document_);
+    if (status)
+        notifyState();
     return status;
 }
 

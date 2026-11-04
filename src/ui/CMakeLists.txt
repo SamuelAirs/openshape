@@ -68,6 +68,7 @@ qt_add_qml_module(openshape_ui
         qml/SaveNameOverlay.qml
         qml/NumericKeypad.qml
         qml/PurchaseOverlay.qml
+        qml/ProjectMeasurementsSection.qml
         # Measure (docs/MEASURE.md): the workspace and its instruments.
         qml/MeasureScreen.qml
         qml/MeasureRuler.qml
@@ -83,6 +84,7 @@ qt_add_qml_module(openshape_ui
         qml/MeasureHoldPill.qml
     SOURCES
         AppController.cpp AppController.h
+        AppControllerMeasurements.cpp
         ThumbnailProvider.cpp ThumbnailProvider.h
         ViewportItem.cpp ViewportItem.h
         WindowMetricsLog.cpp WindowMetricsLog.h

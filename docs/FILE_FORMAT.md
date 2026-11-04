@@ -144,6 +144,22 @@ Rules:
   refs name the copy's body and steps. Builds before construction geometry
   (2026-09-26) ignore `datums` and `datumPlane`: such a sketch stays where
   it was saved.
+- `measurements` (optional, FoldForm 0.4; absent when there are none, so such
+  files are exactly what older builds wrote): the measurements kept in the
+  project (docs/MEASURE.md, "Measurements in the project"), in the order
+  added: `[ { "name": "shelf_depth", "quantity": "length", "value": 243.0,
+  "note": "Ruler" }, { "name": "corner_angle", "quantity": "angle", "value":
+  0.6545 } ]`. `name` is a value name (a letter or `_`, then letters, digits
+  and `_`, at most 64 characters, not a unit word such as `mm`, `in`, `deg`,
+  `ft`), unique ignoring case; `quantity` is `"length"` (`value` in mm) or
+  `"angle"` (`value` in radians, as every angle in the file); |value| ≤ 10^7
+  mm (or degrees); `note` (optional, at most 200 bytes) says where it came
+  from. They are not part of the model: an entry that breaks a rule is left
+  out with a warning and the file opens (a `measurements` that is not an
+  array makes it invalid). Steps store numbers, never a measurement's name
+  (a name typed in a value box is evaluated then). Builds before 0.4
+  (0.3.x) ignore the key: they open such a project, and saving it there
+  drops the measurements.
 - Datums are loaded first, then sketches, then bodies: a sketch may lie on a
   construction plane, and extrusions look sketches up during the initial
   recompute.
@@ -297,7 +313,7 @@ Rules:
 Version 1 is frozen since 0.1.0 (the first public release, 2026-09-26):
 later builds add only optional fields, feature types and datum methods.
 Builds that do not know them either ignore them (`datums`, `datumPlane`:
-such a sketch stays where it was saved) or refuse the file with a "newer
+such a sketch stays where it was saved; `measurements`) or refuse the file with a "newer
 version" or "invalid" message (`Text`, `Loft`, unknown datum methods, a
 Mirror with a nested `plane`).
 

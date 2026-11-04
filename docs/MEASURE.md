@@ -103,6 +103,50 @@ Plus, in the design itself:
   removed.
 - `valueText` writes what the value boxes' parsers read back ("42.3mm", "37.5°").
 
+### Measurements in the project
+
+The log above lives on the device; a project keeps its own list, saved with it, whose names
+any value box reads.
+
+- **What**: `doc::ProjectMeasurement` {name, quantity (length mm / angle degrees), value,
+  note ("Ruler", "Photo"...)} in `Document::measurements()`, in the order added. Names are
+  value names (`core/Units` `isValueName`): a letter or `_`, then letters, digits, `_`, at most
+  64, unique ignoring case, never a unit word ("mm", "in", "deg", "ft"...: "2 in" must stay two
+  inches). `valueNameFor` makes one from a display name: "Length 3" -> `length_3`, "Shelf
+  depth" -> `shelf_depth`, accents dropped, a unit word gets `_value`.
+- **Typed by name**: `parseLength` / `parseAngle` take a `NameResolver`; every typed-value path
+  passes `Document::valueNames()` (the value box for every operation, sketch live values and
+  dimensions, the Model panel's step values, the keypad's text). `shelf_depth - 2`, `2 * wall`,
+  `(width + 0.4) / 2`, `corner_angle / 2`. A length's name counts in mm and a bare number
+  beside it stays in the display unit (`wall + 2` in inches = wall + 50.8 mm); an angle's name
+  counts in degrees; the wrong kind is refused ("This is a length, and corner_angle is an
+  angle."), as are an unknown name ("No measurement called 'x' in this project"), a number
+  right before a name ("Put an operator before wall: 2 * wall, 2 + wall") and a unit after
+  one. While a project has none, the resolver is empty and stray letters read as before
+  ("Unexpected 'x'").
+- **A copy, not a link**: a name is evaluated when the value is typed; the step stores the
+  number. Changing a measurement later changes nothing already built (the Model panel's
+  footnote says so). A live link (a step's value as an expression that follows the
+  measurement) is future work.
+- **Undo**: every add, rename, new value and delete is one `SetProjectMeasurementsCommand`
+  (the whole list before and after).
+- **File**: `document.json`'s optional `measurements` (docs/FILE_FORMAT.md); written only when
+  there are some, so a project without any is byte-for-byte what 0.3 wrote. 0.3.x ignores
+  the key: it opens such a project and drops the measurements if it saves it again.
+- **UI**: the Model panel's **Measurements** section (`ProjectMeasurementsSection.qml`, the
+  list view's footer): rows "shelf_depth = 243.0 mm", a tap or click opens one (name, value
+  with the keypad on touch, Delete), **+** adds one by hand, a hint "Type a name in any value
+  box, e.g. shelf_depth - 2". The keypad shows the measurements of its kind as keys above the
+  digits (`insertKeypadName`; backspace takes a name whole). The Model panel shows when the
+  project has steps or measurements. A project without any shows no section, only **+
+  Measurement** in the panel's header, so its panel keeps the height it had (the iPhone Duo's
+  layouts are tight).
+- **For the Measure workspace** (AppController): `projectMeasurements` ({name, quantity, value,
+  text, typed, note}), `addProjectMeasurement(name, quantity, value, note)` (returns the name
+  used: a display name is made a value name, a taken one gets `_2`), `renameProjectMeasurement`,
+  `setProjectMeasurementValue` (typed with units), `removeProjectMeasurement`, `identifierFor`.
+  Acceptance: `projectmeasurements`.
+
 ## How the code is laid out
 
 - `src/measure/` (`openshape_measure`, Qt-free, `tests/test_measure.cpp`): ScreenScale,
@@ -143,4 +187,5 @@ need none.
 - Object Capture (a full 3D scan) needs RealityKit's Swift-only API; ARKit's LiDAR mesh as a
   reference body is the nearer step.
 - A photo kept as a sketch's backdrop to trace over in the design itself.
-- Measurements saved in a project and referenced by name in typed values.
+- A live link from a step's value to a project measurement (today a name is copied as a
+  number when typed: "Measurements in the project").
