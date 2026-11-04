@@ -26,6 +26,12 @@ Item {
     // Where the mode and scale card goes when not over the instrument (a
     // column beside it: MeasureScreen), or null.
     property Item controlsHost: null
+    // The scale's outer side (the left of a tall ruler, the top of a wide
+    // one) is the screen's edge (Sam: "the ruler should be as close to the
+    // bevel as possible", to measure things that don't fit on the phone):
+    // the ticks start at that edge, the numbers inside them, and the jaws'
+    // lines reach the edge so a part beside the phone lines up with them.
+    property bool atEdge: false
     readonly property real controlsHeight: controls.height
 
     // "length" (the jaws) or "circle" (the ring).
@@ -106,7 +112,7 @@ Item {
         y: 0
         width: ruler.vertical ? ruler.stripThickness : ruler.width
         height: ruler.vertical ? ruler.height : ruler.stripThickness
-        radius: 10
+        radius: ruler.atEdge ? 0 : 10
 
         Repeater {
             model: {
@@ -127,8 +133,8 @@ Item {
                     color: Theme.text
                     opacity: tick.level === 0 ? 0.9 : 0.62
                     readonly property real thick: tick.level === 0 ? 1.5 : 1
-                    x: ruler.vertical ? strip.width - tick.len : tick.pos - thick / 2
-                    y: ruler.vertical ? tick.pos - thick / 2 : strip.height - tick.len
+                    x: ruler.vertical ? (ruler.atEdge ? 0 : strip.width - tick.len) : tick.pos - thick / 2
+                    y: ruler.vertical ? tick.pos - thick / 2 : (ruler.atEdge ? 0 : strip.height - tick.len)
                     width: ruler.vertical ? tick.len : thick
                     height: ruler.vertical ? thick : tick.len
                 }
@@ -139,14 +145,14 @@ Item {
                     font.weight: Font.Medium
                     font.features: ({ "tnum": 1 })
                     color: Theme.text
-                    x: ruler.vertical ? strip.width - tick.len - 6 - width : tick.pos - width / 2
-                    y: ruler.vertical ? tick.pos - height / 2 : strip.height - tick.len - 4 - height
+                    x: ruler.vertical ? (ruler.atEdge ? tick.len + 6 : strip.width - tick.len - 6 - width) : tick.pos - width / 2
+                    y: ruler.vertical ? tick.pos - height / 2 : (ruler.atEdge ? tick.len + 4 : strip.height - tick.len - 4 - height)
                 }
             }
         }
         Text {
-            x: ruler.vertical ? 8 : ruler.along(ruler.inches ? 25.4 * 0.5 : 5) - width / 2
-            y: ruler.vertical ? ruler.along(ruler.inches ? 25.4 * 0.5 : 5) - height / 2 : 6
+            x: ruler.vertical ? (ruler.atEdge ? strip.width - width - 6 : 8) : ruler.along(ruler.inches ? 25.4 * 0.5 : 5) - width / 2
+            y: ruler.vertical ? ruler.along(ruler.inches ? 25.4 * 0.5 : 5) - height / 2 : (ruler.atEdge ? strip.height - height - 5 : 6)
             text: ruler.inches ? "in" : "cm"
             font.pixelSize: 11
             color: Theme.mutedText
@@ -411,9 +417,10 @@ Item {
         readonly property real pos: ruler.along(mm)
         anchors.fill: parent
 
-        // The line, from the ticks (the numbers stay readable) across.
+        // The line, from the ticks (the numbers stay readable) across; at the
+        // screen's edge, from the edge itself.
         Rectangle {
-            readonly property real start: (ruler.vertical ? strip.width : strip.height) - 30
+            readonly property real start: ruler.atEdge ? 0 : (ruler.vertical ? strip.width : strip.height) - 30
             x: ruler.vertical ? start : jaw.pos - 1
             y: ruler.vertical ? jaw.pos - 1 : start
             width: ruler.vertical ? ruler.width - start : 2

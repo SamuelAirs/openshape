@@ -123,7 +123,8 @@ ui::MeasureDevices standIns(const StatePtr& st)
 {
     ui::MeasureDevices d;
     d.cameraAvailable = [] { return true; };
-    d.pickPhoto = [st](QWindow*, ui::PhotoOrigin, const QString& folder, const QRectF&, std::function<void(const ui::PhotoResult&)> finished) {
+    d.pickPhoto = [st](QWindow*, ui::PhotoOrigin, const ui::CameraOptions&, const QString& folder, const QRectF&,
+                       std::function<void(const ui::PhotoResult&)> finished) {
         ++st->picks;
         QDir().mkpath(folder);
         const QString out = folder + QStringLiteral("/bracket_%1.png").arg(st->picks);
@@ -280,6 +281,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(text(r, QStringLiteral("measureReadoutCaption")).startsWith(QStringLiteral("Width")), say("the width read out"),
                 text(r, QStringLiteral("measureReadoutCaption")));
         r.check(shown(r, QStringLiteral("measureAction_outlineSketch")), say("Make sketch is offered"));
+        r.check(prop(r, QStringLiteral("measurePhoto"), "dims").toList().size() == 1 && shown(r, QStringLiteral("photoDim_0")),
+                say("the found outline is a dimension, listed under the photo"));
         r.screenshot(QStringLiteral("measure_autooutline_found_phone"));
     });
     // A point dragged: the outline stays the found one (its holes and arcs).
@@ -306,6 +309,10 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     wait(steps, 2);
     steps.push_back([&r] {
         checkFound(r, QStringLiteral("again"));
+        const QVariantList dims = prop(r, QStringLiteral("measurePhoto"), "dims").toList();
+        r.check(dims.size() == 1 && dims[0].toMap().value(QStringLiteral("kind")).toString() == QStringLiteral("outline")
+                    && dims[0].toMap().value(QStringLiteral("closed")).toBool(),
+                say("one closed outline dimension (Find outline again replaces it)"), QString::number(dims.size()));
         r.check(r.tapItem(QStringLiteral("measureAction_outlineSketch")), say("tap Make sketch"));
     });
     wait(steps, 1);

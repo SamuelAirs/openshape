@@ -221,6 +221,45 @@ void checkRulerLongSide(AcceptanceRunner& r, const Size& s)
     r.check(over.isEmpty(), say(s.name + QStringLiteral(": nothing lies over the ruler")), over.join(QStringLiteral(", ")));
 }
 
+// The scale against the screen's edge (the safe area's): the left of a tall
+// ruler, the top (and the left) of a wide one, so a part too long for the
+// phone can lie beside it. The ticks start at that edge.
+void checkRulerAtEdge(AcceptanceRunner& r, const Size& s)
+{
+    QQuickItem* ruler = item(r, QStringLiteral("measureRuler"));
+    QQuickItem* strip = item(r, QStringLiteral("rulerStrip"));
+    if (!ruler || !strip) {
+        r.check(false, say(s.name + QStringLiteral(": the ruler's scale")));
+        return;
+    }
+    const bool vertical = ruler->property("vertical").toBool();
+    const QRectF stripRect = sceneRect(strip);
+    const bool atLeft = std::abs(stripRect.left() - s.safe[3]) < 0.5; // safe: top, right, bottom, left
+    const bool atTop = std::abs(stripRect.top() - s.safe[0]) < 0.5;
+    const bool atRight = std::abs(stripRect.right() - (s.width - s.safe[1])) < 0.5;
+    // Across a wide window the scale is at the top edge (the header at the
+    // bottom); across a narrow one (the Duo's outer display: too narrow for
+    // the readout beside a scale down its long side) it runs edge to edge
+    // below the header.
+    const bool across = prop(r, QStringLiteral("measureScreen"), "rulerAcross").toBool();
+    const bool placed = vertical ? atLeft : across ? atLeft && atTop : atLeft && atRight;
+    r.check(ruler->property("atEdge").toBool() && placed,
+            say(s.name + QStringLiteral(": the scale lies against the screen's edge")),
+            QStringLiteral("strip at %1, %2; the safe area's edge %3, %4")
+                .arg(AcceptanceRunner::num(stripRect.left()), AcceptanceRunner::num(stripRect.top()))
+                .arg(s.safe[3])
+                .arg(s.safe[0]));
+    // Nothing of the workspace (the header, the readout, the kept
+    // measurements) lies over the scale.
+    QStringList over;
+    for (const char* name : {"measureHeader", "measureReadout", "measureTray"}) {
+        QQuickItem* i = item(r, QString::fromLatin1(name));
+        if (i && i->isVisible() && sceneRect(i).intersects(stripRect.adjusted(1, 1, -1, -1)))
+            over << QString::fromLatin1(name);
+    }
+    r.check(over.isEmpty(), say(s.name + QStringLiteral(": nothing covers the scale")), over.join(QStringLiteral(", ")));
+}
+
 // ---------------------------------------------------------------- the stand-ins
 
 void pushHinge(const StatePtr& st, double degrees)
@@ -256,7 +295,8 @@ ui::MeasureDevices standIns(const StatePtr& st)
     };
     d.haptic = [st](int) { ++st->haptics; };
     d.cameraAvailable = [] { return true; };
-    d.pickPhoto = [st](QWindow*, ui::PhotoOrigin, const QString& folder, const QRectF&, std::function<void(const ui::PhotoResult&)> finished) {
+    d.pickPhoto = [st](QWindow*, ui::PhotoOrigin, const ui::CameraOptions&, const QString& folder, const QRectF&,
+                       std::function<void(const ui::PhotoResult&)> finished) {
         ++st->picks;
         QDir().mkpath(folder);
         const QString out = folder + QStringLiteral("/picked_%1.jpg").arg(st->picks);
@@ -1529,6 +1569,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                 checkLayout(r, *s, s->name + QLatin1Char(' ') + key);
                 if (key == QStringLiteral("ruler") && s != &kPhone && s != &kDuoOuter)
                     checkRulerLongSide(r, *s);
+                if (key == QStringLiteral("ruler"))
+                    checkRulerAtEdge(r, *s);
                 r.screenshot(QStringLiteral("measure_%1_%2").arg(key, s->name));
             });
             if (key == QStringLiteral("ruler") && unfolded)
@@ -1549,6 +1591,28 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                 r.check(r.tapItem(QStringLiteral("cardCancel")), say("ipad: Cancel"));
             });
         }
+        // A kept measurement's card, and the guide, inside the safe area (the
+        // Duo's system bar takes a side).
+        steps.push_back([&r, s] { r.check(press(r, *s, QStringLiteral("measureChip_0")), say(s->name + QStringLiteral(": a kept measurement"))); });
+        wait(steps, 1);
+        steps.push_back([&r, s] {
+            checkLayout(r, *s, s->name + QStringLiteral(" kept measurement's card"));
+            const QRectF safe = QRectF(s->safe[3], s->safe[0], s->width - s->safe[3] - s->safe[1], s->height - s->safe[0] - s->safe[2])
+                                    .adjusted(-0.5, -0.5, 0.5, 0.5);
+            const QRectF panel = sceneRect(item(r, QStringLiteral("measureChipPanel")));
+            r.check(!panel.isEmpty() && safe.contains(panel), say(s->name + QStringLiteral(": the card is inside the safe area")));
+            QMetaObject::invokeMethod(item(r, QStringLiteral("measureScreen")), "openGuide");
+        });
+        wait(steps, 1);
+        steps.push_back([&r, s] {
+            const QRectF safe = QRectF(s->safe[3], s->safe[0], s->width - s->safe[3] - s->safe[1], s->height - s->safe[0] - s->safe[2])
+                                    .adjusted(-0.5, -0.5, 0.5, 0.5);
+            const QRectF panel = sceneRect(item(r, QStringLiteral("measureGuidePanel")));
+            r.check(!panel.isEmpty() && safe.contains(panel), say(s->name + QStringLiteral(": the guide is inside the safe area")));
+            r.screenshot(QStringLiteral("measure_guide_%1").arg(s->name));
+            r.check(press(r, *s, QStringLiteral("measureGuideClose")), say(s->name + QStringLiteral(": close the guide")));
+        });
+        wait(steps, 1);
         steps.push_back([&r, s] {
             r.check(press(r, *s, QStringLiteral("measureClose")), say(s->name + QStringLiteral(": close")));
             measureOf(r).setAssumeFoldingDisplay(false);

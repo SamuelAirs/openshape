@@ -183,8 +183,11 @@ void MeasureController::scanTakePhoto(const QRectF& anchor)
     if (!devices_.pickPhoto || int(scanPhotos_.size()) >= kMaxScanPhotos)
         return;
     QDir().mkpath(photoFolder());
+    // The camera screen shows the angle from straight down against Scan's band.
+    CameraOptions camera;
+    camera.purpose = CameraOptions::Purpose::Scan;
     QPointer<MeasureController> self(this);
-    devices_.pickPhoto(window(), PhotoOrigin::Camera, photoFolder(), anchor, [self](const PhotoResult& r) {
+    devices_.pickPhoto(window(), PhotoOrigin::Camera, camera, photoFolder(), anchor, [self](const PhotoResult& r) {
         if (self)
             self->scanPickedPhoto(r);
     });
@@ -212,7 +215,7 @@ void MeasureController::scanChoosePhotos(const QRectF& anchor)
                 self->addScanFilesFrom(files, true, focals);
         });
     } else if (devices_.pickPhoto) {
-        devices_.pickPhoto(window(), PhotoOrigin::Library, photoFolder(), anchor, [self](const PhotoResult& r) {
+        devices_.pickPhoto(window(), PhotoOrigin::Library, CameraOptions{}, photoFolder(), anchor, [self](const PhotoResult& r) {
             if (self)
                 self->scanPickedPhoto(r);
         });

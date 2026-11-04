@@ -624,14 +624,22 @@ void MeasureController::takePhoto(const QRectF& anchor)
     if (!devices_.pickPhoto)
         return setPhotoError(QStringLiteral("This device has no camera FoldForm can use."));
     QDir().mkpath(photoFolder());
+    // The camera screen offers the previous photo taken here as a faint
+    // overlay (docs/MEASURE.md, Photo).
+    CameraOptions camera;
+    camera.purpose = CameraOptions::Purpose::Photo;
+    if (!lastCameraPhoto_.isEmpty() && QFileInfo::exists(lastCameraPhoto_))
+        camera.overlayFile = lastCameraPhoto_;
     QPointer<MeasureController> self(this);
-    devices_.pickPhoto(window(), PhotoOrigin::Camera, photoFolder(), anchor, [self](const PhotoResult& r) {
+    devices_.pickPhoto(window(), PhotoOrigin::Camera, camera, photoFolder(), anchor, [self](const PhotoResult& r) {
         if (!self)
             return;
-        if (r.outcome == PhotoResult::Outcome::Picked)
+        if (r.outcome == PhotoResult::Outcome::Picked) {
+            self->keepCameraPhoto(r.file);
             self->adoptPickedFile(r.file);
-        else if (r.outcome == PhotoResult::Outcome::Failed)
+        } else if (r.outcome == PhotoResult::Outcome::Failed) {
             self->setPhotoError(r.error.isEmpty() ? QStringLiteral("The photo couldn't be taken.") : r.error);
+        }
     });
 }
 
@@ -641,7 +649,7 @@ void MeasureController::choosePhoto(const QRectF& anchor)
         return setPhotoError(QStringLiteral("There is no photo library here: open an image file instead."));
     QDir().mkpath(photoFolder());
     QPointer<MeasureController> self(this);
-    devices_.pickPhoto(window(), PhotoOrigin::Library, photoFolder(), anchor, [self](const PhotoResult& r) {
+    devices_.pickPhoto(window(), PhotoOrigin::Library, CameraOptions{}, photoFolder(), anchor, [self](const PhotoResult& r) {
         if (!self)
             return;
         if (r.outcome == PhotoResult::Outcome::Picked)
@@ -661,10 +669,21 @@ void MeasureController::loadPhoto(const QUrl& url)
 
 void MeasureController::forgetFile(const QString& file)
 {
-    if (file.isEmpty() || !madeFiles_.contains(file))
+    // A view of the set still shows it; the last photo from the camera stays
+    // for the next one's overlay (removed when a newer one replaces it, or
+    // at the end).
+    if (file.isEmpty() || !madeFiles_.contains(file) || fileInViews(file) || file == lastCameraPhoto_)
         return;
     madeFiles_.removeAll(file);
     QFile::remove(file);
+}
+
+void MeasureController::keepCameraPhoto(const QString& file)
+{
+    const QString previous = std::exchange(lastCameraPhoto_, file);
+    // The one shown now is removed when it is replaced (adoptPickedFile).
+    if (previous != file && previous != photoFile_)
+        forgetFile(previous);
 }
 
 void MeasureController::runPhotoWork(std::function<void()> work, std::function<void()> done)
@@ -694,6 +713,11 @@ void MeasureController::runPhotoWork(std::function<void()> work, std::function<v
 void MeasureController::adoptPickedFile(const QString& file)
 {
     ++photoGeneration_;
+    if (photoViewIndex_ >= 0) {
+        // A new photo is a new view (the one of the set stays as it was kept).
+        photoViewIndex_ = -1;
+        emit photoViewsChanged();
+    }
     const QString folder = photoFolder();
     QDir().mkpath(folder);
     photoBusy_ = true;
@@ -901,6 +925,10 @@ void MeasureController::unstraighten()
 void MeasureController::clearPhoto()
 {
     ++photoGeneration_;
+    if (photoViewIndex_ >= 0) {
+        photoViewIndex_ = -1;
+        emit photoViewsChanged();
+    }
     photoBusy_ = false;
     photoError_.clear();
     unstraighten();
@@ -923,6 +951,223 @@ QString MeasureController::keepStraightImage()
         return {};
     }
     return copy;
+}
+
+// ---------------------------------------------------------------- photo views
+
+bool MeasureController::fileInViews(const QString& file) const
+{
+    return std::any_of(photoViews_.begin(), photoViews_.end(),
+                       [&file](const PhotoView& v) { return v.photoFile == file || v.straightFile == file; });
+}
+
+QVariantList MeasureController::photoViews() const
+{
+    QVariantList list;
+    for (const PhotoView& v : photoViews_)
+        list.append(QVariantMap{{QStringLiteral("name"), v.name},
+                                {QStringLiteral("plane"), v.plane},
+                                {QStringLiteral("straightUrl"), QUrl::fromLocalFile(v.straightFile)},
+                                {QStringLiteral("width"), v.straightSize.width()},
+                                {QStringLiteral("height"), v.straightSize.height()},
+                                {QStringLiteral("mmPerPixel"), v.mmPerPixel},
+                                {QStringLiteral("state"), v.state}});
+    return list;
+}
+
+int MeasureController::savePhotoView(const QString& name, const QString& plane, const QVariantMap& state)
+{
+    if (straightFile_.isEmpty() || photoBusy_)
+        return -1;
+    const QString p = plane.trimmed().toUpper();
+    PhotoView view;
+    view.name = name.trimmed().isEmpty() ? QStringLiteral("View %1").arg(photoViews_.size() + 1) : name.trimmed().left(40);
+    view.plane = p == QLatin1String("XZ") || p == QLatin1String("YZ") ? p : QStringLiteral("XY");
+    view.photoFile = photoFile_;
+    view.photoSize = photoSize_;
+    view.corners = corners_;
+    view.cornersDetected = cornersDetected_;
+    view.referenceKind = referenceKind_;
+    view.referenceSideA = referenceSideA_;
+    view.referenceSideB = referenceSideB_;
+    view.straightFile = straightFile_;
+    view.straightSize = straightSize_;
+    view.mmPerPixel = straightMmPerPixel_;
+    view.originMm = straightOriginMm_;
+    view.straightReference = straightReference_;
+    view.state = state;
+    if (photoViewIndex_ >= 0 && photoViewIndex_ < int(photoViews_.size())) {
+        // The entry's files it no longer shows (straightened again) go.
+        const PhotoView old = std::exchange(photoViews_[std::size_t(photoViewIndex_)], view);
+        for (const QString& file : {old.photoFile, old.straightFile})
+            if (file != photoFile_ && file != straightFile_)
+                forgetFile(file);
+    } else {
+        photoViews_.push_back(view);
+        photoViewIndex_ = int(photoViews_.size()) - 1;
+    }
+    OS_LOG(Info, App) << "measure: view " << view.name.toStdString() << " (" << view.plane.toStdString() << ") kept, "
+                      << photoViews_.size() << " in the set";
+    emit photoViewsChanged();
+    return photoViewIndex_;
+}
+
+bool MeasureController::openPhotoView(int index)
+{
+    if (index < 0 || index >= int(photoViews_.size()) || photoBusy_)
+        return false;
+    ++photoGeneration_;
+    const PhotoView view = photoViews_[std::size_t(index)];
+    if (photoViewIndex_ < 0) {
+        // The photo measured was not kept: its files go (unless a view shows them).
+        forgetFile(std::exchange(straightFile_, QString()));
+        forgetFile(std::exchange(photoFile_, QString()));
+    }
+    photoFile_ = view.photoFile;
+    photoUrl_ = QUrl::fromLocalFile(view.photoFile);
+    photoSize_ = view.photoSize;
+    corners_ = view.corners;
+    cornersDetected_ = view.cornersDetected;
+    referenceKind_ = view.referenceKind;
+    referenceSideA_ = view.referenceSideA;
+    referenceSideB_ = view.referenceSideB;
+    straightFile_ = view.straightFile;
+    straightUrl_ = QUrl::fromLocalFile(view.straightFile);
+    straightSize_ = view.straightSize;
+    straightMmPerPixel_ = view.mmPerPixel;
+    straightOriginMm_ = view.originMm;
+    straightReference_ = view.straightReference;
+    photoError_.clear();
+    photoViewIndex_ = index;
+    // A found outline belongs to the photo it was found in.
+    foundOutline_.clear();
+    emit foundOutlineChanged();
+    emit photoChanged();
+    emit straightChanged();
+    emit photoViewsChanged();
+    return true;
+}
+
+void MeasureController::newPhotoView()
+{
+    clearPhoto();
+}
+
+bool MeasureController::removePhotoView(int index)
+{
+    if (index < 0 || index >= int(photoViews_.size()))
+        return false;
+    const PhotoView old = photoViews_[std::size_t(index)];
+    photoViews_.erase(photoViews_.begin() + index);
+    if (photoViewIndex_ == index)
+        photoViewIndex_ = -1; // still measured, no longer in the set
+    else if (photoViewIndex_ > index)
+        --photoViewIndex_;
+    for (const QString& file : {old.photoFile, old.straightFile})
+        if (file != photoFile_ && file != straightFile_)
+            forgetFile(file);
+    emit photoViewsChanged();
+    return true;
+}
+
+void MeasureController::clearPhotoViews()
+{
+    const std::vector<PhotoView> old = std::exchange(photoViews_, {});
+    photoViewIndex_ = -1;
+    for (const PhotoView& v : old)
+        for (const QString& file : {v.photoFile, v.straightFile})
+            if (file != photoFile_ && file != straightFile_)
+                forgetFile(file);
+    emit photoViewsChanged();
+}
+
+QPointF MeasureController::photoViewAnchor(const PhotoView& view) const
+{
+    if (const auto origin = pointOf(view.state.value(QStringLiteral("origin"))))
+        return {origin->x, origin->y};
+    // The middle of its closed outlines, else of the photo.
+    double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
+    bool any = false;
+    for (const QVariant& d : view.state.value(QStringLiteral("dims")).toList()) {
+        const QVariantMap dim = d.toMap();
+        if (dim.value(QStringLiteral("kind")).toString() != QLatin1String("outline") || !dim.value(QStringLiteral("closed")).toBool())
+            continue;
+        for (const Vec2 p : pointsOf(dim.value(QStringLiteral("points")).toList())) {
+            minX = std::min(minX, p.x);
+            maxX = std::max(maxX, p.x);
+            minY = std::min(minY, p.y);
+            maxY = std::max(maxY, p.y);
+            any = true;
+        }
+    }
+    if (any)
+        return {(minX + maxX) / 2, (minY + maxY) / 2};
+    return {view.straightSize.width() / 2, view.straightSize.height() / 2};
+}
+
+QPointF MeasureController::photoViewPlanePoint(int index, const QPointF& pixel) const
+{
+    if (index < 0 || index >= int(photoViews_.size()))
+        return {};
+    const PhotoView& view = photoViews_[std::size_t(index)];
+    const QPointF anchor = photoViewAnchor(view);
+    // The straightened photo's y runs down the picture, the plane's up.
+    return {(pixel.x() - anchor.x()) * view.mmPerPixel, (anchor.y() - pixel.y()) * view.mmPerPixel};
+}
+
+int MeasureController::placePhotoViews(bool sketches)
+{
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/measure");
+    QDir().mkpath(folder);
+    int placed = 0;
+    for (int i = 0; i < int(photoViews_.size()); ++i) {
+        const PhotoView view = photoViews_[std::size_t(i)];
+        if (view.straightFile.isEmpty() || !QFileInfo::exists(view.straightFile) || view.mmPerPixel <= 0)
+            continue;
+        const QString copy = folder + QStringLiteral("/reference_%1_%2.png").arg(QDateTime::currentMSecsSinceEpoch()).arg(i);
+        if (!QFile::copy(view.straightFile, copy))
+            continue;
+        const QPointF center = photoViewPlanePoint(i, QPointF(view.straightSize.width() / 2, view.straightSize.height() / 2));
+        if (!app_->addReferenceImage(copy, view.mmPerPixel, view.plane, center.x(), center.y()))
+            continue;
+        ++placed;
+        madeLog_ << QStringLiteral("view %1 %2 %3 %4").arg(view.name, view.plane).arg(center.x(), 0, 'f', 2).arg(center.y(), 0, 'f', 2);
+        if (!sketches)
+            continue;
+        for (const QVariant& d : view.state.value(QStringLiteral("dims")).toList()) {
+            const QVariantMap dim = d.toMap();
+            if (dim.value(QStringLiteral("kind")).toString() != QLatin1String("outline") || !dim.value(QStringLiteral("closed")).toBool())
+                continue;
+            QVariantList mm;
+            for (const Vec2 p : pointsOf(dim.value(QStringLiteral("points")).toList()))
+                mm.append(photoViewPlanePoint(i, QPointF(p.x, p.y)));
+            if (mm.size() < 3)
+                continue;
+            // A found outline (Find outline): its arcs and holes too.
+            const QVariantMap found = dim.value(QStringLiteral("found")).toMap();
+            const QVariantList through = found.value(QStringLiteral("through")).toList();
+            if (through.size() == mm.size()) {
+                QVariantList loops{QVariantMap{{QStringLiteral("points"), mm}, {QStringLiteral("through"), through}}};
+                for (const QVariant& h : found.value(QStringLiteral("holes")).toList()) {
+                    const QVariantMap hole = h.toMap();
+                    QVariantList holeMm;
+                    for (const Vec2 p : pointsOf(hole.value(QStringLiteral("points")).toList()))
+                        holeMm.append(photoViewPlanePoint(i, QPointF(p.x, p.y)));
+                    loops.append(QVariantMap{{QStringLiteral("points"), holeMm}, {QStringLiteral("through"), hole.value(QStringLiteral("through"))}});
+                }
+                lastProfileLoops_ = loops;
+                madeLog_ << QStringLiteral("profile %1 %2").arg(loops.size()).arg(view.plane);
+                app_->createProfileSketch(loops, view.plane);
+                continue;
+            }
+            lastOutlinePoints_ = mm;
+            madeLog_ << QStringLiteral("outline %1 %2").arg(mm.size()).arg(view.plane);
+            app_->createOutlineSketch(mm, true, view.plane);
+        }
+    }
+    OS_LOG(Info, App) << "measure: " << placed << " of " << photoViews_.size() << " views placed in the design"
+                      << (sketches ? ", outlines as sketches" : "");
+    return placed;
 }
 
 bool MeasureController::findOutline(double tapX, double tapY)
@@ -1398,6 +1643,8 @@ void MeasureController::setDevices(MeasureDevices devices)
     stopSensors();
     devices_ = std::move(devices);
     ar_ = devices_.arCapabilities ? devices_.arCapabilities() : ArCapabilities{};
+    // Another camera: no overlay from the last one.
+    keepCameraPhoto(QString());
     hingeAvailable_ = false;
     gravityAvailable_ = false;
     fold_.reset();

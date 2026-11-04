@@ -868,6 +868,58 @@ normally and forced, and asserts.
   not "bank card"), and grep every file type after a wording change. TD-176
   keeps the tolerance question; a real ruler along the screen checks it.
 
+## 2026-11-04 — Photo after build 63: guides, dimensions that stay, views
+
+- The owner liked Photo best and asked for guides ("see if you are measuring
+  in a straight line"), several measurements at once and side views for a
+  drawing. Straight means straight on the straightened photo, whose axes are
+  the reference's edges, so the angle and the snap need no extra input; it
+  holds only when the card lies square to the part, which the hint words as
+  "to the playing card's edges".
+- The angle is folded to 0..90 (a line sloping down reads 4.6°, not
+  175.4°): the first draft measured 0..180 counter-clockwise and a nearly
+  straight line read 175°, which says nothing to someone checking an edge.
+- Several dimensions without breaking the one-measurement flow (and the
+  outline-finding track): Photo keeps `points` and `closed` as the selected
+  dimension's, writable as before, and a sync puts them into `dims`
+  (writing points with none selected starts a dimension of the current
+  mode). The existing `measure` scenario's checks on `points` held unchanged.
+- A tap used to be ignored once the finger moved 8 px; now a press, slide
+  and lift places the point where the finger lifts, with the magnifier and
+  the live angle: on a phone the second end of a distance can be placed by
+  sight, not only by aim.
+- Placing a view on the Front plane needed no new frame: reference photos
+  and sketches share the origin planes' frames (`referencePlaneFrame`), so
+  the straightened photo's pixel (x, y) is (x - origin) * mm/px across and
+  (origin - y) * mm/px up on any of them, and the outline sketch lies on its
+  photo (the scenario reads both back: 0..80 x 0..40 mm on Front).
+- The sheets (a dimension, a view, placing views) first centered on the
+  window: on the Duo's outer display (an 84 pt side bar at the right) they
+  overflowed it; centered in the safe area now. The Measure screen's own
+  cards (a kept measurement, the guide) did the same; the lead centered
+  them in the safe area too, with a check at every size.
+## 2026-11-04 — Measure: FoldForm's own camera screen
+
+- Sam asked for "the level bubble inside our own camera screen"; the system
+  camera (UIImagePickerController) cannot draw on its preview, so Take photo
+  now opens `CameraScreenIos.mm` (AVFoundation), with the system camera kept
+  behind `kOwnCameraScreen`. Written on Windows for the Mac CI: TD-180 lists
+  what only the device can confirm.
+- Gravity was turned into the window's frame by the Qt view's scene. A
+  full-screen presentation takes the presenting view out of the window, so
+  over the camera screen its scene is nil and every reading would be taken
+  as portrait: the camera screen watches gravity through its own view
+  (`measureios::watchGravityIn`).
+- The overlay matches the preview only because both are computed, not
+  guessed: the preview shows the whole 4:3 frame (resize aspect) and the
+  overlay is drawn in `AVMakeRectWithAspectRatioInsideRect` of the same
+  size and rotation; the photo is turned by the interface orientation (not
+  the device's), so it is upright as the preview shows it even lying flat.
+- With a digital zoom, whether EXIF's FocalLenIn35mmFilm counts it is not
+  documented; the camera screen keeps whichever of the value and the value
+  times the zoom is nearer the lens's field of view at that zoom (Scan's
+  focal length), and logs all three.
+
 ## 2026-11-04 — Find outline: a part on contrasting paper, traced
 
 - Sam, after build 63: could a part on high-contrast paper, photographed

@@ -108,7 +108,7 @@ Picture readPicture(const QString& path)
 
 } // namespace
 
-bool AppController::addReferenceImage(const QString& imageFile, double mmPerPixel, const QString& plane)
+bool AppController::addReferenceImage(const QString& imageFile, double mmPerPixel, const QString& plane, double centerX, double centerY)
 {
     doc::ReferenceImage reference;
     const QString p = plane.trimmed();
@@ -143,6 +143,8 @@ bool AppController::addReferenceImage(const QString& imageFile, double mmPerPixe
     }
     reference.image = data.value();
     reference.name = document_->nextReferenceName();
+    if (std::isfinite(centerX) && std::isfinite(centerY))
+        reference.center = {centerX, centerY};
     if (mmPerPixel > 0 && std::isfinite(mmPerPixel)) {
         reference.width = picture.sourceWidth * mmPerPixel;
         reference.unscaled = false;

@@ -114,10 +114,10 @@ openshape_set_warnings(openshape_ui)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(OPENSHAPE_IOS_SOURCES
         ios/ShareSheet.mm ios/StoreKitStore.mm
-        ios/MeasureIos.h ios/MeasureDevicesIos.mm ios/PhotoPickerIos.mm ios/ArMeasureIos.mm)
+        ios/MeasureIos.h ios/MeasureDevicesIos.mm ios/PhotoPickerIos.mm ios/CameraScreenIos.mm ios/ArMeasureIos.mm)
     target_sources(openshape_ui PRIVATE ${OPENSHAPE_IOS_SOURCES})
     set_source_files_properties(ios/ShareSheet.mm ios/StoreKitStore.mm
-        ios/MeasureDevicesIos.mm ios/PhotoPickerIos.mm ios/ArMeasureIos.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        ios/MeasureDevicesIos.mm ios/PhotoPickerIos.mm ios/CameraScreenIos.mm ios/ArMeasureIos.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(openshape_ui PRIVATE "-framework UIKit" "-framework StoreKit"
         "-framework AVFoundation" "-framework CoreMotion" "-framework CoreGraphics" "-framework CoreVideo"
         "-framework ImageIO" "-framework Photos" "-framework PhotosUI" "-framework Vision"

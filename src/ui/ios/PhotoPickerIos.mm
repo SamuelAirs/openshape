@@ -3,8 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // Photos for the Measure tools (MeasureDevices::pickPhoto and pickPhotos,
-// docs/MEASURE.md): the camera (UIImagePickerController, after asking for
-// the camera where iOS has not yet) or the photo library
+// docs/MEASURE.md): the camera (FoldForm's own camera screen,
+// CameraScreenIos.mm, or UIImagePickerController behind kOwnCameraScreen;
+// after asking for the camera where iOS has not yet) or the photo library
 // (PHPickerViewController, iOS 14, which runs outside the app and needs no
 // permission; one photo, or several for a scan). Each photo is drawn
 // upright at most 4096 px on its long side and written as a JPEG into the
@@ -35,9 +36,16 @@
 #error "PhotoPickerIos.mm is written for ARC (-fobjc-arc, see src/ui/CMakeLists.txt)"
 #endif
 
+using os::ui::CameraOptions;
 using os::ui::PhotoResult;
 
 namespace {
+
+// Take photo shows FoldForm's own camera screen (CameraScreenIos.mm: the
+// level, Scan's angle, the last photo as an overlay, 1x / 2x). false: the
+// system camera (UIImagePickerController), as up to build 63, should the
+// own screen misbehave on a device.
+constexpr bool kOwnCameraScreen = true;
 
 constexpr CGFloat kMaxPixels = 4096;
 
@@ -125,14 +133,14 @@ PhotoResult writeUpright(UIImage* image, NSString* folder, NSString* suffix, dou
     return result;
 }
 
-// A photo file (HEIC, JPEG, ...) read with ImageIO: its 35 mm focal length
-// from the original's properties, and the image already turned upright and
-// at most kMaxPixels on its long side (without decoding it at full size
-// into a UIImage first). Nil when ImageIO cannot read it.
-UIImage* uprightImageFromFile(NSURL* url, double* focalLength35mm)
+// A photo (HEIC, JPEG, ...) read with ImageIO from `source` (released
+// here): its 35 mm focal length from the original's properties, and the
+// image already turned upright and at most kMaxPixels on its long side
+// (without decoding it at full size into a UIImage first). Nil when ImageIO
+// cannot read it.
+UIImage* uprightImageFromSource(CGImageSourceRef source, double* focalLength35mm)
 {
     *focalLength35mm = 0;
-    CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
     if (!source)
         return nil;
     NSDictionary* properties = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source, 0, NULL));
@@ -149,6 +157,18 @@ UIImage* uprightImageFromFile(NSURL* url, double* focalLength35mm)
     UIImage* image = [UIImage imageWithCGImage:cgImage];
     CGImageRelease(cgImage);
     return image;
+}
+
+UIImage* uprightImageFromFile(NSURL* url, double* focalLength35mm)
+{
+    return uprightImageFromSource(CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL), focalLength35mm);
+}
+
+// The camera screen's photo: its encoded data, turned by its EXIF orientation.
+UIImage* uprightImageFromData(NSData* data, double* focalLength35mm)
+{
+    CGImageSourceRef source = data.length > 0 ? CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL) : NULL;
+    return uprightImageFromSource(source, focalLength35mm);
 }
 
 // The library's photo as a UIImage, when its file could not be had (no
@@ -231,6 +251,7 @@ const char* outcomeName(PhotoResult::Outcome outcome)
 - (void)addResult:(const PhotoResult&)result;
 - (void)finishMany;
 - (void)loadFrom:(NSArray<NSItemProvider*>*)providers index:(NSUInteger)index;
+- (void)writeCameraPhoto:(NSData*)data focalLength:(double)focal;
 @end
 
 namespace {
@@ -341,6 +362,24 @@ NSMutableSet<OSMeasurePhotoPicker*>* activePickers()
     });
 }
 
+// The camera screen's photo, written like the system camera's (called on
+// the main thread; written on a background queue). Its focal length is the
+// camera screen's (the zoom considered); the data's own only when that is 0.
+- (void)writeCameraPhoto:(NSData*)data focalLength:(double)focal
+{
+    NSString* folder = _folder;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        PhotoResult result;
+        @autoreleasepool {
+            double readFocal = 0;
+            UIImage* image = uprightImageFromData(data, &readFocal);
+            result = image ? writeUpright(image, folder, @"", focal > 0 ? focal : readFocal)
+                           : failed(@"The camera's photo could not be read.");
+        }
+        [self finishOne:result];
+    });
+}
+
 // ---- UIImagePickerControllerDelegate (the camera; main thread)
 
 - (void)imagePickerController:(UIImagePickerController*)picker
@@ -404,11 +443,27 @@ namespace os::ui::measureios {
 
 namespace {
 
-void presentCamera(UIView* view, OSMeasurePhotoPicker* delegate)
+void presentCamera(UIView* view, const CameraOptions& options, OSMeasurePhotoPicker* delegate)
 {
     UIViewController* presenter = presenterFor(view);
     if (!presenter) {
         [delegate finishOne:failed(@"There is no window to show the camera in.")];
+        return;
+    }
+    if (kOwnCameraScreen) {
+        presentCameraScreen(presenter, options, [delegate](NSData* photo, double focal, NSString* error) {
+            if (photo) {
+                [delegate writeCameraPhoto:photo focalLength:focal];
+                return;
+            }
+            if (error) {
+                [delegate finishOne:failed(error)];
+                return;
+            }
+            PhotoResult cancelled;
+            cancelled.outcome = PhotoResult::Outcome::Cancelled;
+            [delegate finishOne:cancelled];
+        });
         return;
     }
     UIImagePickerController* picker = [[UIImagePickerController alloc] init];
@@ -448,7 +503,7 @@ void presentLibrary(UIView* view, const QRectF& anchor, NSInteger limit, OSMeasu
     [presenter presentViewController:picker animated:YES completion:nil];
 }
 
-void presentCameraAfterAsking(UIView* view, OSMeasurePhotoPicker* delegate)
+void presentCameraAfterAsking(UIView* view, const CameraOptions& options, OSMeasurePhotoPicker* delegate)
 {
     if (![UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]) {
         [delegate finishOne:failed(@"This device has no camera to take a photo with.")];
@@ -463,23 +518,24 @@ void presentCameraAfterAsking(UIView* view, OSMeasurePhotoPicker* delegate)
     if (status == AVAuthorizationStatusNotDetermined) {
         // iOS asks once (NSCameraUsageDescription); the answer comes on
         // any queue.
+        const CameraOptions optionsCopy = options;
         [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
                                  completionHandler:^(BOOL granted) {
                                      dispatch_async(dispatch_get_main_queue(), ^{
                                          qInfo("Measure: camera permission %s", granted ? "granted" : "refused");
                                          if (granted)
-                                             presentCamera(view, delegate);
+                                             presentCamera(view, optionsCopy, delegate);
                                          else
                                              [delegate finishOne:failed(cameraDeniedMessage().toNSString())];
                                      });
                                  }];
         return;
     }
-    presentCamera(view, delegate);
+    presentCamera(view, options, delegate);
 }
 
-void present(QWindow* window, PhotoOrigin origin, const QString& folder, const QRectF& anchor,
-             const std::function<void(const PhotoResult&)>& finished)
+void present(QWindow* window, PhotoOrigin origin, const CameraOptions& camera, const QString& folder,
+             const QRectF& anchor, const std::function<void(const PhotoResult&)>& finished)
 {
     OSMeasurePhotoPicker* delegate = [[OSMeasurePhotoPicker alloc] initWithFolder:folder.toNSString()];
     [delegate setFinishedOne:finished];
@@ -492,7 +548,7 @@ void present(QWindow* window, PhotoOrigin origin, const QString& folder, const Q
     if (origin == PhotoOrigin::Library)
         presentLibrary(view, anchor, 1, delegate);
     else
-        presentCameraAfterAsking(view, delegate);
+        presentCameraAfterAsking(view, camera, delegate);
 }
 
 void presentMany(QWindow* window, int maxCount, const QString& folder, const QRectF& anchor,
@@ -512,19 +568,20 @@ void presentMany(QWindow* window, int maxCount, const QString& folder, const QRe
 
 } // namespace
 
-void pickPhoto(QWindow* window, PhotoOrigin origin, const QString& folder, const QRectF& anchor,
-               std::function<void(const PhotoResult&)> finished)
+void pickPhoto(QWindow* window, PhotoOrigin origin, const CameraOptions& camera, const QString& folder,
+               const QRectF& anchor, std::function<void(const PhotoResult&)> finished)
 {
     // UIKit only on the main thread (Qt's GUI thread on iOS; to be sure).
     if ([NSThread isMainThread]) {
-        present(window, origin, folder, anchor, finished);
+        present(window, origin, camera, folder, anchor, finished);
         return;
     }
+    const CameraOptions cameraCopy = camera;
     const QString folderCopy = folder;
     const QRectF anchorCopy = anchor;
     const std::function<void(const PhotoResult&)> finishedCopy = std::move(finished);
     dispatch_async(dispatch_get_main_queue(), ^{
-        present(window, origin, folderCopy, anchorCopy, finishedCopy);
+        present(window, origin, cameraCopy, folderCopy, anchorCopy, finishedCopy);
     });
 }
 

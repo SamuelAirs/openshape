@@ -17,9 +17,10 @@ things").
   card** matches it to a poker-size playing card (a Bicycle card, 63.5 x
   88.9 mm: nothing to photograph that you'd rather keep private), and is
   kept for each screen (the iPhone Duo's two displays each get their own). It runs along the window's
-  long side: on the Duo unfolded, about 134 mm across the whole inner
-  display, its fold marked, with **Open flat** when a length crosses the
-  fold while the phone is bent.
+  long side, against the screen's edge so a part too long for the phone
+  can lie beside it: on the Duo unfolded, 141 mm along the top edge of the
+  inner display, its fold marked, with **Open flat** when a length crosses
+  the fold while the phone is bent.
 - **Fold** (iPhone Duo): the angle between the two halves from the hinge,
   and the bend; held once the phone is still for a second, with a tap you
   feel, so it can be read after measuring over an edge. HELD or LIVE over
@@ -34,11 +35,28 @@ things").
   circles, in millimeters. Make sketch puts the outline or the circle on the
   ground plane at real size. The reference is found automatically on iPhone
   and iPad (Vision); four handles with a magnifier fix its corners.
+  Guides on the straightened photo: millimeter rulers along its top and left
+  that follow zoom and pan, a grid (10 mm, finer zoomed in), and a
+  distance's angle to the card's edges while it is placed and once placed:
+  within 1.5° of straight it snaps straight and turns green (Snap off for a
+  slanted line). Every distance, outline and circle stays on the photo as a
+  dimension (A, B, C...), listed under it, to select, rename, delete, or
+  **Keep all** ("Top A"). **Views**: + View keeps a photo and its
+  dimensions in a set (Top, Front, Side) and starts the next; **Place
+  views** puts each straightened photo at true size on its plane with a
+  tapped origin point at the design's origin, and its outlines as sketches
+  on that plane.
   **Find outline**: a part lying on paper of a contrasting colour beside the
-  card is traced for you, its edge as straight sides, arcs and circles and
+  card is traced for you as an outline dimension, its edge as straight sides, arcs and circles and
   its holes as inner loops (each point can still be dragged); the readout
-  gives its width x height, area, holes and sides, and Make sketch draws it
+  gives its width x height, area, holes and sides, and Make sketch (and Place views) draw it
   at real size, holes included, ready to extrude into the part.
+- **FoldForm's own camera** for Take photo: a straight-down level (two
+  crosses that meet and turn green within 1°, "0.6° off"), and for Scan the
+  camera's angle against the 35–55° band; **Last photo** shows the previous
+  photo faintly over the view (keep the card still, move the part, match
+  it); 1×, 2× and the telephoto; the flash off. The photo that comes out is
+  the same upright JPEG with its focal length (the zoom counted).
 - **Camera** (ARKit): distances in the room, an outline on a surface, or a
   box's width, depth and height, to keep, sketch or make into a box.
 - **Into any value box**: a ruler button in the value box (and beside a

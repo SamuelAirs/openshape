@@ -47,10 +47,20 @@ Plus, in the design itself:
   the long side when the Duo is opened): across a wide window (the Duo unfolded, an iPad or
   the desktop held wide) the scale spans the whole width, and the readout and the kept measurements sit in a row below it; down a
   tall window with room beside it (the Duo unfolded and turned, an iPad held tall) it spans the
-  whole height, and they and the Ruler's card sit in a column at its right. The header keeps its
-  place, so the tabs don't move. On the open Duo the scale grows from about 85 mm (down the short
-  side, the readout's column beside it) to about 134 mm (113 mm turned). A phone (and the Duo's
-  outer display) keeps the stacked layout, with the scale along its longer free side.
+  whole height, and they and the Ruler's card sit in a column at its right. On the open Duo the
+  scale grows from about 85 mm (down the short side, the readout's column beside it) to 141 mm
+  (113 mm turned). A phone (and the Duo's outer display) keeps the stacked layout, with the scale
+  along its longer free side.
+- **At the screen's edge** (Sam, after build 63: "the ruler should be as close to the bevel as
+  possible. This will help measure things that don't fit on the phone"): the scale lies against
+  the safe area's edge (`MeasureRuler.atEdge`): the top edge of a wide window (the open Duo's top
+  has no system bar: the scale runs from its left edge to the system bar on the right, 867 pt),
+  the left edge of a tall one (the phone, the Duo turned), with the ticks starting at that edge,
+  the numbers inside them and the jaws' lines reaching the edge, so a part lying beside the phone
+  lines up with the ticks. Across a wide window the header (the tabs, Close) goes to the bottom,
+  under the readout. The Duo's outer display (466 pt wide) keeps its scale across, edge to edge
+  below the header: it is too narrow for the readout beside a scale down its long side. Zero is
+  14 pt in from the edge; a display's rounded corner may clip the top of its tick.
 - **The fold**: on the Duo's inner display, whole (`MeasureController.foldCrease`: the window is
   951 x 669 points, not a Split View half), the scale crosses the hinge at the middle of the
   long side. The crease is marked on the scale ("Fold"); while the hinge reports the halves
@@ -129,12 +139,103 @@ Plus, in the design itself:
 - Only points on the reference's surface measure true; a reference's error scales everything
   (a card gives about 0.5 % from the corners' placement, a sheet of paper better).
 
+Sam, after build 63: "Photo is really good and my favorite so far, but you should be able to
+measure and see if you are measuring in a straight line or not ... Maybe a ruler or guides to
+help measure the object, not just the card. Additionally, building multiple measurements in one
+bunch would help so we can get side views and what not in order to help construct a drawing."
+So the measuring step has guides, keeps every dimension, and a photo can be one view of a set:
+
+- **Rulers**: millimetre scales along the straightened view's top and left (`PhotoRuler` in
+  `MeasurePhoto.qml`), drawn from the view's own scale (`pxPerMm` = the view's fit / mm per
+  pixel), so they follow zoom and pan. Zero is the reference's first corner, or the view's
+  origin point once one is tapped; right and up count positive, as on the design's planes.
+  Numbers every 5 to 1000 mm, whichever leaves 46 px between them; ticks no closer than 6 px.
+- **Grid** (a toggle under the photo): 10 mm lines from the same zero, 1 or 5 mm lines between
+  them once those are 8 px apart (zoomed in), 50 and 100 mm when the photo is small on screen.
+  Drawn over the photo only.
+- **Straight or not**: a distance shows its angle to the reference's edges (0 across, 90 up and
+  down, whichever way it slopes) while its second end is placed (a finger can press, slide and
+  lift: the magnifier and the angle follow it; the mouse shows it while hovering) and on its
+  label once placed. Within 1.5 degrees of 0 or 90 the second end **snaps straight** (it moves
+  onto the line through the first end: the length along it is kept); the line turns green, the
+  tag says "Straight · 0°" while placing and the label "✓ straight". Dashed guides through the
+  first end (across and down the photo) show while the second is placed. **Snap** (under the
+  photo, on by default) turns snapping off for a deliberately slanted line near straight; the
+  hint while placing says so. A dragged end snaps the same way.
+- **Several dimensions**: every distance, circle and outline stays on the photo as a dimension
+  lettered A, B, C... with its value (a distance's angle too); they are listed under the photo
+  (the hint's place once there is one). A tap on a label or in the list selects one (the
+  readout shows it, Use takes it when Measure was opened for a value box, Keep keeps it); a tap
+  on the selected one opens it: rename (kept as "Top width"), Keep, Delete. **Keep all** keeps
+  every finished one as a kept measurement named after the view and its letter or name ("Top
+  A", "Top Width"): a distance's length, a circle's diameter, an outline's area. Undo takes
+  back the last point (of the selected one, else the last dimension); Clear takes them all.
+  A tap on any dimension's point measures from exactly that point; a drag moves it. Back to
+  corners and a new photo clear them (the straightened pixels change).
+- **Views** (a set of photos of one part: top, front, side): the strip beside the modes shows
+  the set and the photo being measured; **+ View** keeps the straightened photo (its photo,
+  corners, reference, straightened view, dimensions and origin point) in the set under its
+  name and starts the next photo (Top, then Front, then Side, then "View 4"). A tap on another
+  view measures it again (the one being measured is kept first); a tap on the current one
+  opens it: its name (Top, Front, Side or typed) and plane (Ground, Front, Right: Top goes on
+  the ground, Front on the Front plane, Side on the Right plane), Clear origin, Back to corners
+  (on a phone it lives there), Remove view. The set lasts for the app session
+  (`MeasureController::photoViews`, TD-177).
+- **Origin** (under the photo): the next tap marks the point that goes to the design's origin
+  (e.g. the part's bottom-left corner); a red cross shows it, the rulers count from it.
+- **Place views** (the readout's action once there is a set; **Place in design** for a single
+  photo, which now also honours the origin point and the view's plane): a sheet lists the
+  views, each with its plane and what goes to the origin; **Photos and N outlines as
+  sketches** or **Photos only**. Each straightened photo becomes a reference photo at true size
+  on its plane (`AppController::addReferenceImage` with the photo's center in the plane's
+  frame), placed so its origin point sits at the plane's origin, without one the middle of its
+  closed outlines, else the photo's middle; each closed outline becomes a sketch on that plane
+  (`createOutlineSketch` with the plane: the frames reference photos use, so the sketch lies on
+  the photo). The design then shows them from the iso view, framed. One undo step per photo
+  and per sketch (the undo stack has no grouping).
+**The camera screen** (Sam: "the level bubble inside our own camera screen would actually be
+elite"). Take photo opens FoldForm's own camera (`src/ui/ios/CameraScreenIos.mm`, AVFoundation)
+instead of the system's:
+
+- **A straight-down level**: a white cross marks the frame's middle, a yellow one the spot
+  straight below the lens (from CoreMotion's gravity: the angle between the camera's axis and
+  straight down, 8 points per degree toward gravity's part in the screen's plane). They meet
+  and turn green, with a tap felt, within 1 degree ("0.6° off"). The line under it says why:
+  "Hold it flat above the card". A photo taken at a tilt and from close up measures parts that
+  stand above the card less truly.
+- **Scan** (Take photos): the same screen shows the angle from straight down against Scan's
+  band, 35 to 55 degrees in green, and 70 to 80 degrees ("a low photo", docs/SCAN.md) fainter.
+- **Last photo** (Sam's idea: keep the card still, move the object, match the angle and the
+  height): a toggle, offered from the second photo, draws the previous photo taken here at 40 %
+  over the preview. The preview shows the whole 4:3 frame (`AVLayerVideoGravityResizeAspect`),
+  and the overlay is drawn in the same rectangle, computed from the photo's size and the
+  rotation (`AVMakeRectWithAspectRatioInsideRect`), so the two match. The toggle is remembered
+  while the app runs. MeasureController keeps the camera's last photo file for it
+  (`CameraOptions::overlayFile`) until a newer one replaces it or the devices change.
+- **1x and 2x** (digital zoom on the wide lens, or the telephoto where it is 2x) and the
+  telephoto at its own factor (3x, 5x) where there is one: zooming in from further away cuts
+  the perspective error. A shutter, Cancel, the flash off. Portrait and landscape (the buttons
+  along the bottom of a tall screen, down the side of a wide one), inside the safe area.
+- **What comes out is unchanged**: the photo is turned as the preview is shown (the screen's
+  interface orientation sets the connection's `videoRotationAngle`, iOS 17), drawn upright at
+  most 4096 px and written as a JPEG with its 35 mm focal length, as before. With a digital zoom
+  EXIF's FocalLenIn35mmFilm may or may not count it: of the value and the value times the zoom,
+  the one nearer the lens's field of view at that zoom is kept (Scan uses it).
+- The permission is asked as before; refused, the same message. The log has a line per session
+  (`Measure: camera: showing ...`, `session running ...`, `zoom 2.0x on the wide lens`) and one
+  per photo: `Measure: camera: captured at 1.2° from straight down, 2× (photo), 35 mm focal
+  length 52 (EXIF ..., digital zoom ...)`.
+- The system camera is one switch away (`kOwnCameraScreen` in `PhotoPickerIos.mm`), should the
+  own screen misbehave on a device. It is checked only on a device (TD-180); the acceptance
+  scenario `measurecamerascreen` checks what the Qt side asks it for.
+
 #### Find outline
 
 Sam, after build 63: "If we could place the object on high contrast paper then photograph it
 next to a playing card or a ruler, could we then use tools to perfectly outline it and then
 generate a sketch in the modeling software from the figures?" Yes: in **Outline**, **Find
-outline** finds the part in the straightened photo and draws its edge as the outline's points,
+outline** finds the part in the straightened photo and makes it one closed outline dimension
+(lettered like the others) whose points are its edge,
 fitted with lines, arcs and circles; holes (a washer's, a bracket's) are found too. The points
 can still be dragged; the readout gives the width x height (along the part's own longest side),
 the area (holes taken out), each hole's diameter and each side (a rounded side's radius); **Make
@@ -185,6 +286,12 @@ it is one undo step.
   drawn smaller), the others corners joined by lines; a circle is two half arcs. The report,
   the drawn path and the sketch are made from those points, so a drag shows in all three. Undo,
   Clear or a new tapped outline drop the found outline (the points stay a plain outline).
+- **Among the dimensions**: the found data (which points are arc middles, the holes) stays
+  with that dimension, so selecting another and coming back keeps it, Find outline again
+  replaces it while it is selected, and the set of views keeps it: Keep all keeps its area,
+  and **Place views** with sketches makes it a sketch with its arcs and holes on the view's
+  plane (`createProfileSketch` on that plane). Opening another view clears the controller's
+  last result (`foundOutline`): it belongs to the photo it was found in.
 - **The sketch** (`AppController::createProfileSketch`, then
   `InteractionController::createProfileSketch`, one `CreateSketchCommand`): lines and arcs
   sharing their end points, a loop of arcs on one circle as a circle with its diameter set;
@@ -308,12 +415,15 @@ any value box reads.
   (its points, report and pieces) and OutlineSynthetic (test photos of parts beside a card).
 - `src/ui/MeasureDevices.h`: the platform's hardware as functions, empty where there is none;
   `src/ui/ios/*.mm` fill them in (hinge, gravity, haptics, camera and photos, Vision, ARKit).
+  `pickPhoto` takes `CameraOptions` (the camera screen's purpose, Photo or Scan, and the last
+  photo for the overlay; the photo library ignores them).
 - `src/ui/MeasureController.*`: the Measure workspace's state for QML (`app.measure`): the
   scale and its calibration, the sensors (started while the workspace is open), the photo
   session, the measurements, and the stand-ins the acceptance run drives.
 - `src/ui/qml/MeasureScreen.qml` and its parts: the workspace.
-- AppController: `createOutlineSketch`, `createCircleSketch`, `createSizedBox` (one undo step
-  each), the 1:1 view, the value boxes' ruler button; SketchSession: the Trace tool.
+- AppController: `createOutlineSketch` (on the ground, Front or Right), `createCircleSketch`,
+  `createSizedBox` (one undo step each), the 1:1 view, the value boxes' ruler button;
+  SketchSession: the Trace tool.
   - 1:1 lives in InteractionController (`setScreenScale`, `setActualSize`): orthographic,
     `orthoHeight` = viewport height / points per mm, same direction and center. Anything that
     zooms (wheel, pinch, Fit, a framing view, revealing the selection for the keypad, choosing
@@ -327,7 +437,7 @@ any value box reads.
   - The ruler: the value chip's (`valueChipMeasure`, whenever an operation's chip shows) and a
     sketch dimension editor's (`dimensionMeasure`) ask Main.qml's `openMeasure(kind, target)`;
     `useMeasuredValue(text)` puts the result into the box that asked, previewed, for ✓ or Enter.
-- Reference photos: `AppController::addReferenceImage(file, mmPerPixel, plane)` (below).
+- Reference photos: `AppController::addReferenceImage(file, mmPerPixel, plane, centerX, centerY)` (below).
 
 ## Reference photos in the design
 
@@ -339,7 +449,9 @@ sketch tools, check a design against the real object. Saved in the project
 
 - **From the Measure workspace**: the straightened photo, whose scale in mm per pixel is exact:
   `addReferenceImage(imageFile, mmPerPixel, "XY")` puts it on the ground at its real size,
-  centred on the origin, frames the view on it (Top view) and is one undo step.
+  centred on the origin (or with the view's origin point there, on the view's plane), frames
+  the view on it (Top view) and is one undo step. A set of views goes in with **Place views**
+  (Photo, above): each on its plane, their origin points at the origin.
 - **File → Add Reference Photo…** (desktop; on an iPhone or iPad photos come from the Measure
   workspace, the file picker being unreliable on the iPhone Duo, TD-158): any picture, at an
   unknown scale (200 mm wide); its row says the scale is not set.
@@ -355,8 +467,9 @@ sketch tools, check a design against the real object. Saved in the project
 ## Privacy
 
 The camera, the photo library and the motion sensors are used on the device only. Photos are
-kept in the app's temporary folder while measuring and never sent anywhere; FoldForm still
-collects no data (docs/PRIVACY.md). iOS asks once for the camera (`NSCameraUsageDescription`);
+kept in the app's temporary folder while measuring and never sent anywhere (the camera's last
+photo stays there for the camera screen's overlay until the next photo replaces it or FoldForm
+quits); FoldForm still collects no data (docs/PRIVACY.md). iOS asks once for the camera (`NSCameraUsageDescription`);
 the photo library is read through the system picker, which needs no permission; motion sensors
 need none.
 

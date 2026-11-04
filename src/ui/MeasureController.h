@@ -135,6 +135,16 @@ class MeasureController : public QObject {
     // points [px], through [bool: an arc's middle], holes [{points,
     // through}], maxError (mm), tolerance (mm)}; empty after Back or a new photo.
     Q_PROPERTY(QVariantMap foundOutline READ foundOutline NOTIFY foundOutlineChanged)
+    // A set of views (docs/MEASURE.md, "Views": a top, a front and a side
+    // photo of one part): each a whole photo session (the photo, its
+    // corners and reference, the straightened view) under a name, on a
+    // plane ("XY", "XZ", "YZ"), with what Photo drew on it (`state`, kept
+    // as QML gives it: its dimensions and its origin point). For the app
+    // session only (TD-177). [{name, plane, straightUrl, width, height,
+    // mmPerPixel, state}]
+    Q_PROPERTY(QVariantList photoViews READ photoViews NOTIFY photoViewsChanged)
+    // Which of them the photo being measured is (-1: not in the set yet).
+    Q_PROPERTY(int photoViewIndex READ photoViewIndex NOTIFY photoViewsChanged)
 
     // ---- Camera (AR)
     Q_PROPERTY(bool arAvailable READ arAvailable NOTIFY sensorsChanged)
@@ -307,6 +317,29 @@ public:
     // (along the part's longest side), holes [{circle, diameter, width,
     // height, center}], items [{label, quantity, value}] for the readout}.
     Q_INVOKABLE QVariantMap profileReport(const QVariantList& points, const QVariantMap& found) const;
+    // ---- Photo views (the set)
+    QVariantList photoViews() const;
+    int photoViewIndex() const { return photoViewIndex_; }
+    // Keeps the straightened photo being measured in the set (or updates
+    // its entry): the index, -1 when nothing is straightened.
+    Q_INVOKABLE int savePhotoView(const QString& name, const QString& plane, const QVariantMap& state);
+    // Measures one of the set again (its photo, corners and straightened
+    // view come back). A photo not in the set is dropped: save it first.
+    Q_INVOKABLE bool openPhotoView(int index);
+    // A new photo for the next view (the set stays).
+    Q_INVOKABLE void newPhotoView();
+    Q_INVOKABLE bool removePhotoView(int index);
+    Q_INVOKABLE void clearPhotoViews();
+    // Every view's straightened photo as a reference photo at true size on
+    // its plane, its origin point (state.origin, straightened-image px; else
+    // the middle of its closed outlines, else of the photo) at the plane's
+    // origin; with `sketches`, each closed outline (state.dims) as a sketch
+    // on that plane too. One undo step per photo and per sketch. Returns
+    // how many photos were placed.
+    Q_INVOKABLE int placePhotoViews(bool sketches);
+    // Where a point of a view's straightened photo lands on its plane (mm,
+    // y up), the view's origin rule applied: the acceptance run checks it.
+    Q_INVOKABLE QPointF photoViewPlanePoint(int index, const QPointF& pixel) const;
     // A length typed for a reference side ("120", "4.5in", "12cm"), in mm
     // (a number alone in the display unit); 0 when it is not a length.
     Q_INVOKABLE double parseLengthMm(const QString& text) const;
@@ -421,6 +454,7 @@ signals:
     void foundOutlineChanged();
     // Find outline finished (foundOutline: found or why not).
     void outlineFound();
+    void photoViewsChanged();
     void arChanged();
     void arFinished();
     void measurementsChanged();
@@ -453,6 +487,8 @@ private:
     void adoptPickedFile(const QString& file);
     void setPhotoError(const QString& error);
     void forgetFile(const QString& file);
+    // The camera's latest photo is kept for the next one's overlay ("": none).
+    void keepCameraPhoto(const QString& file);
 
     AppController* app_;
     QPointer<QQuickWindow> window_;
@@ -504,6 +540,7 @@ private:
     int photoGeneration_ = 0;
     std::vector<QThread*> workers_;
     QString photoFile_; // the upright photo measured (in photoFolder)
+    QString lastCameraPhoto_; // the camera's latest photo: the next one's overlay (CameraOptions)
     QUrl photoUrl_;
     QSizeF photoSize_;
     std::array<QPointF, 4> corners_{};
@@ -520,6 +557,28 @@ private:
     QString photoError_;
     QVariantMap foundOutline_;
     QStringList madeFiles_; // files this run wrote into photoFolder (removed at the end)
+    struct PhotoView {
+        QString name;
+        QString plane;
+        QString photoFile;
+        QSizeF photoSize;
+        std::array<QPointF, 4> corners{};
+        bool cornersDetected = false;
+        QString referenceKind;
+        double referenceSideA = 0;
+        double referenceSideB = 0;
+        QString straightFile;
+        QSizeF straightSize;
+        double mmPerPixel = 0;
+        QPointF originMm;
+        QVariantList straightReference;
+        QVariantMap state;
+    };
+    std::vector<PhotoView> photoViews_;
+    int photoViewIndex_ = -1;
+    bool fileInViews(const QString& file) const;
+    // The point of a view's photo put at its plane's origin (px).
+    QPointF photoViewAnchor(const PhotoView& view) const;
     int fileCounter_ = 0;
 
     ArCapabilities ar_;

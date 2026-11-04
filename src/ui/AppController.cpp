@@ -2309,8 +2309,23 @@ std::optional<Vec2> pointFromVariant(const QVariant& value)
 
 } // namespace
 
-bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed)
+namespace {
+
+// The origin planes in the frames reference photos use (doc::referencePlaneFrame).
+sketch::Plane measuredPlaneFrame(const QString& plane)
 {
+    if (plane.compare(QLatin1String("XZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("front"), Qt::CaseInsensitive) == 0)
+        return sketch::Plane{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}};
+    if (plane.compare(QLatin1String("YZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("right"), Qt::CaseInsensitive) == 0)
+        return sketch::Plane{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    return sketch::Plane::xy();
+}
+
+} // namespace
+
+bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed, const QString& plane)
+{
+    const sketch::Plane frame = measuredPlaneFrame(plane);
     std::vector<Vec2> points;
     points.reserve(std::size_t(pointsMm.size()));
     for (const QVariant& value : pointsMm) {
@@ -2321,10 +2336,10 @@ bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool close
         }
         points.push_back(*p);
     }
-    return interaction_->createOutlineSketch(points, closed).ok();
+    return interaction_->createOutlineSketch(points, closed, frame).ok();
 }
 
-bool AppController::createProfileSketch(const QVariantList& loopsMm)
+bool AppController::createProfileSketch(const QVariantList& loopsMm, const QString& plane)
 {
     std::vector<measure::ProfileLoop> loops;
     for (const QVariant& value : loopsMm) {
@@ -2343,7 +2358,7 @@ bool AppController::createProfileSketch(const QVariantList& loopsMm)
         }
         loops.push_back(std::move(loop));
     }
-    return interaction_->createProfileSketch(loops).ok();
+    return interaction_->createProfileSketch(loops, measuredPlaneFrame(plane)).ok();
 }
 
 bool AppController::createCircleSketch(double centerXmm, double centerYmm, double diameterMm)

@@ -80,7 +80,44 @@ motion sensors, Vision and ARKit reported.
     the marks? Under half a millimeter means the playing card is a good
     reference; tell me the gap either way. The Fold's Gap calibration and
     Photo's Card now mean the playing card too.
-15. **Find outline (next build; your idea).** Lay a flat part with a hole
+15. **The ruler at the screen's edge (the build after 63; your request).**
+    Ruler on the Duo unfolded: the scale runs along the top edge, its ticks
+    starting at the edge, the tabs at the bottom. Lay the phone beside
+    something longer than it, read the ticks where its end is, and check
+    the zero tick at the top-left corner isn't cut off by the screen's
+    rounded corner. On the iPhone and the Duo turned tall, the scale runs
+    down the left edge.
+16. **Photo: guides, several dimensions, views (next build; your request).**
+    Photo → a part and a playing card on a table → Straighten. Rulers run
+    along the photo's top and left: zoom in with two fingers, they follow.
+    Tap **Grid**: 10 mm squares (finer zoomed in). Distance: tap one end,
+    then press the other and slide: the angle shows by your finger, and near
+    0° or 90° the line snaps straight and turns green ("Straight · 0°"). A
+    slanted edge keeps its angle; with **Snap** off a nearly straight one
+    stays as you placed it. Measure three things: each stays on the photo as
+    A, B, C and in the list under it; tap B, tap it again, rename it, then
+    **Keep all** (kept as "Top A", "Top Width"...). Then **+ View**, photograph
+    the part from the front (the card flat on the same table), straighten,
+    outline its side, tap **Origin** and its bottom-left corner. Tap Top in
+    the strip and back: the dimensions come back. **Place 2 views** →
+    **Photos and outlines as sketches**: the top photo lies on the ground,
+    the front one stands on the Front plane, the outlines on them at real
+    size; Undo four times takes it back. Does the snap feel right (1.5°), is
+    the list under the photo enough, and do the views line up in the design?
+17. **FoldForm's own camera (next build; your idea).** Measure → Photo →
+    Take photo: FoldForm's camera opens, not the system's (no "Retake / Use
+    Photo" step). Hold the phone over a playing card on a table: the yellow
+    cross moves as you tilt; flat above the card it meets the white cross,
+    both turn green ("0.6° off") and you feel a tap. Try 1× and 2× (and 5×
+    on the 16 Pro), turn the phone sideways (the buttons move to the side),
+    and on the Duo both displays. Take the photo: the corners step opens as
+    before. New photo → Take photo again: tap **Last photo**; the first
+    photo shows faintly, exactly over the view (does the card line up with
+    its ghost when the phone is where it was?). Then Scan → Take photos:
+    the gauge shows the angle, green between 35° and 55°. Cancel works
+    everywhere. Send the log: its `Measure: camera:` lines give the tilt,
+    the zoom and the focal length of each photo.
+18. **Find outline (next build; your idea).** Lay a flat part with a hole
     (a bracket, a washer, a gasket) on plain paper of a contrasting colour
     (white paper for a dark part, black or blue for a light one), the
     playing card beside it on the same paper, a finger's width apart. Take
