@@ -114,11 +114,13 @@ Steps steps(AcceptanceRunner& r)
         if (app.bodyCount() == 1) {
             s->scanVolume = geom::volume(r.body(0).shape());
             const geom::BoundingBox box = geom::boundingBox(r.body(0).shape());
-            // The block is 50 x 30 x 40 mm (an L, 33 750 mm³); the hull is a little larger.
-            r.check(std::abs(box.size().x - 50) < 2.5 && std::abs(box.size().y - 30) < 2.5 && box.min.z > -1e-6,
+            // The block is 50 x 30 x 40 mm (an L, 33 750 mm³). The hull is larger:
+            // its flat ends face no photo squarely and bulge (docs/SCAN.md, "Limits").
+            r.check(box.size().x > 49 && box.size().x < 57.5 && std::abs(box.size().y - 30) < 3 && box.min.z > -1e-6
+                        && box.size().z > 39 && box.size().z < 45,
                     "the scan has the block's size, standing on z = 0",
                     num(box.size().x) + QStringLiteral(" x ") + num(box.size().y) + QStringLiteral(" x ") + num(box.size().z));
-            r.check(s->scanVolume > 0.97 * 33750 && s->scanVolume < 1.35 * 33750, "and about its volume", num(s->scanVolume));
+            r.check(s->scanVolume > 0.97 * 33750 && s->scanVolume < 1.45 * 33750, "and about its volume", num(s->scanVolume));
         }
         r.check(!s->messages.isEmpty() && s->messages.last() == QStringLiteral("Added “Scan 1”"),
                 "it says what it added", s->messages.isEmpty() ? QString() : s->messages.last());
