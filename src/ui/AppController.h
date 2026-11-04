@@ -675,6 +675,11 @@ public:
     Q_INVOKABLE bool createOutlineSketch(const QVariantList& pointsMm, bool closed);
     // The same with a circle, its diameter dimension set.
     Q_INVOKABLE bool createCircleSketch(double centerXmm, double centerYmm, double diameterMm);
+    // A sketch of loops ({points: [QPointF or {x, y}], through: [bool]},
+    // mm; the first the outer edge, the others holes): lines, and an arc
+    // through each `through` point and its neighbours; a loop of arcs on one
+    // circle is a circle. One undo step (InteractionController::createProfileSketch).
+    Q_INVOKABLE bool createProfileSketch(const QVariantList& loopsMm);
     // A box body (X, Y, Z sizes in mm), selected and framed.
     Q_INVOKABLE bool createSizedBox(double widthMm, double depthMm, double heightMm);
     Q_INVOKABLE void setDisplayUnit(const QString& symbol);

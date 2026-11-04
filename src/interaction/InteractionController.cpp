@@ -13,6 +13,7 @@
 #include "geometry/Text.h"
 #include "interaction/TouchWording.h"
 #include "interaction/ViewCube.h"
+#include "measure/OutlineProfile.h"
 
 #include <algorithm>
 #include <cmath>
@@ -2582,6 +2583,65 @@ Status InteractionController::createOutlineSketch(const std::vector<Vec2>& input
         s.addLine(ids[i], ids[(i + 1) % ids.size()]);
     OS_LOG(Info, Interaction) << "outline sketch from measurements: " << points.size() << " points"
                               << (closed ? ", closed" : ", open");
+    return addMeasuredSketch(std::move(s));
+}
+
+Status InteractionController::createProfileSketch(const std::vector<measure::ProfileLoop>& loops)
+{
+    auto refuse = [this](const std::string& text, const char* detail) {
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, detail);
+    };
+    if (loops.empty())
+        return refuse("There is no outline to sketch.", "createProfileSketch: no loops");
+    sketch::Sketch s(Uuid::generate(), sketch::Plane::xy());
+    std::size_t pieces = 0, circles = 0;
+    for (const measure::ProfileLoop& loop : loops) {
+        if (loop.points.size() < 3 || loop.through.size() != loop.points.size())
+            return refuse("An outline needs at least three points.", "createProfileSketch: fewer than 3 points");
+        for (const Vec2& p : loop.points)
+            if (!usableCoordinate(p.x) || !usableCoordinate(p.y))
+                return refuse("The outline has a point that is not a usable position.", "createProfileSketch: bad coordinate");
+        double span = 0;
+        for (const Vec2& p : loop.points)
+            span = std::max(span, (p - loop.points.front()).length());
+        if (std::abs(measure::profileSignedArea(loop)) <= 1e-6 * std::max(1.0, span * span))
+            return refuse("A closed outline needs at least three points that do not lie on one line.", "createProfileSketch: no area");
+        measure::Circle circle;
+        if (measure::profileIsCircle(loop, 0.05, &circle)) {
+            if (!usableSize(2 * circle.radius))
+                return refuse("The circle needs a diameter above zero.", "createProfileSketch: bad circle");
+            const sketch::EntityId id = s.addCircle(s.addPoint(circle.center), circle.radius);
+            s.addConstraint({sketch::ConstraintKind::Diameter, id, sketch::kNoEntity, 2 * circle.radius});
+            ++circles;
+            continue;
+        }
+        const std::vector<measure::FittedSegment> segments = measure::profileSegments(loop);
+        if (segments.size() < 2)
+            return refuse("An outline needs at least three points.", "createProfileSketch: fewer than 2 pieces");
+        // Pieces share their end points; the last ends on the first's start.
+        const sketch::EntityId first = s.addPoint(segments.front().start);
+        sketch::EntityId previous = first;
+        for (std::size_t i = 0; i < segments.size(); ++i) {
+            const auto& seg = segments[i];
+            const sketch::EntityId end = i + 1 == segments.size() ? first : s.addPoint(seg.end);
+            sketch::EntityId id = sketch::kNoEntity;
+            if (seg.arc) {
+                const sketch::EntityId center = s.addPoint(seg.center);
+                // Sketch arcs run counterclockwise from start to end.
+                const Vec2 u = seg.through - seg.start, v = seg.end - seg.through;
+                id = u.x * v.y - u.y * v.x > 0 ? s.addArc(center, previous, end) : s.addArc(center, end, previous);
+            } else {
+                id = s.addLine(previous, end);
+            }
+            if (id == sketch::kNoEntity)
+                return refuse("Unable to make a sketch of these measurements.", "createProfileSketch: bad piece");
+            previous = end;
+        }
+        pieces += segments.size();
+    }
+    OS_LOG(Info, Interaction) << "profile sketch from measurements: " << loops.size() << " loops, " << pieces << " pieces, "
+                              << circles << " circles";
     return addMeasuredSketch(std::move(s));
 }
 

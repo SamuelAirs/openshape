@@ -18,6 +18,7 @@
 #include "io/ProjectFile.h"
 #include "io/ProjectFiles.h"
 #include "io/RecentFiles.h"
+#include "measure/OutlineProfile.h"
 #include "measure/ScreenScale.h"
 #include "samples/Samples.h"
 #include "ui/RecoverySession.h"
@@ -2321,6 +2322,28 @@ bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool close
         points.push_back(*p);
     }
     return interaction_->createOutlineSketch(points, closed).ok();
+}
+
+bool AppController::createProfileSketch(const QVariantList& loopsMm)
+{
+    std::vector<measure::ProfileLoop> loops;
+    for (const QVariant& value : loopsMm) {
+        const QVariantMap map = value.toMap();
+        const QVariantList points = map.value(QStringLiteral("points")).toList();
+        const QVariantList through = map.value(QStringLiteral("through")).toList();
+        measure::ProfileLoop loop;
+        for (int i = 0; i < points.size(); ++i) {
+            const auto p = pointFromVariant(points[i]);
+            if (!p) {
+                notifyMessage(QStringLiteral("The outline has a point that is not a usable position."));
+                return false;
+            }
+            loop.points.push_back(*p);
+            loop.through.push_back(i < through.size() && through[i].toBool());
+        }
+        loops.push_back(std::move(loop));
+    }
+    return interaction_->createProfileSketch(loops).ok();
 }
 
 bool AppController::createCircleSketch(double centerXmm, double centerYmm, double diameterMm)

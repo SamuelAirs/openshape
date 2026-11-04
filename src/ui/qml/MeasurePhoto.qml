@@ -32,6 +32,10 @@ Item {
     // Tapped points, in the straightened photo's pixels (Qt.point).
     property var points: []
     property bool closed: false
+    // Find outline's result while `points` are its outer edge (dragging
+    // keeps it; a new outline, Undo or Clear drop it): which points are an
+    // arc's middle, and the holes (MeasureController.foundOutline).
+    property var found: null
     readonly property bool narrow: width < 560
 
     onModeChanged: clearPoints()
@@ -44,8 +48,10 @@ Item {
     function clearPoints() {
         points = []
         closed = false
+        found = null
     }
     function undoPoint() {
+        found = null
         if (closed)
             closed = false
         else
@@ -61,6 +67,7 @@ Item {
             if (closed) {
                 points = [p]
                 closed = false
+                found = null
             } else {
                 points = points.concat([p])
             }
@@ -71,7 +78,8 @@ Item {
             closed = true
     }
 
-    readonly property var outline: m && mode === "outline" && points.length >= 2 ? m.outlineReport(points, closed) : null
+    readonly property var outline: m && mode === "outline" && points.length >= 2
+                                   ? (found ? m.profileReport(points, found) : m.outlineReport(points, closed)) : null
     readonly property var circle: m && mode === "circle" && points.length === 3 ? m.circleFrom3(points[0], points[1], points[2]) : null
     readonly property string surface: m ? "on the " + m.referenceName.toLowerCase() + "'s surface" : ""
 
@@ -86,6 +94,8 @@ Item {
             return { valid: true, caption: surface, source: "Photo",
                      items: [{ label: "Diameter", quantity: "length", value: circle.diameter },
                              { label: "Radius", quantity: "length", value: circle.diameter / 2 }] }
+        if (mode === "outline" && outline && outline.items)
+            return { valid: true, caption: surface, source: "Photo", items: outline.items }
         if (mode === "outline" && outline) {
             const items = closed ? [{ label: "Area", quantity: "area", value: outline.area },
                                     { label: "Perimeter", quantity: "length", value: outline.perimeter }]
@@ -122,7 +132,7 @@ Item {
         }
         let made = false
         if (key === "outlineSketch")
-            made = m.makeOutlineSketch(m.straightToMm(points), true)
+            made = found ? m.makeProfileSketch(points, found) : m.makeOutlineSketch(m.straightToMm(points), true)
         else if (key === "circleSketch" && circle && circle.valid)
             made = m.makeCircleSketch(circle.diameter)
         if (made)
@@ -134,6 +144,8 @@ Item {
     readonly property string hintText: mode === "distance" ? (points.length < 2 ? "Tap the two ends of what to measure" : "Tap again to measure another")
         : mode === "circle" ? (points.length < 3 ? "Tap three points on the rim (" + points.length + " of 3)" : "Tap again for another circle")
         : closed ? "Closed. Tap to start another outline"
+        : found ? "Drag a point to adjust the outline"
+        : points.length === 0 ? "Find outline, or tap the shape's corners one after another"
         : points.length < 3 ? "Tap the corners of the shape, one after another"
         : "Tap the first point (or Close) to close the outline"
 
@@ -147,6 +159,23 @@ Item {
     function anchorOf(item) {
         const p = item.mapToItem(null, 0, 0)
         return Qt.rect(p.x, p.y, item.width, item.height)
+    }
+
+    // ---- Find outline: its result becomes the outline's points (closed).
+    Connections {
+        target: photo.m
+        function onOutlineFound() {
+            const f = photo.m.foundOutline
+            if (!f.valid) {
+                if (photo.screen && f.message)
+                    photo.screen.toast(f.message, true)
+                return
+            }
+            photo.mode = "outline"
+            photo.found = f
+            photo.points = f.points
+            photo.closed = true
+        }
     }
 
     FileDialog {
@@ -448,8 +477,35 @@ Item {
                         path: {
                             if (photo.mode === "circle")
                                 return []
+                            if (photo.found) {
+                                const path = photo.m.profilePath(photo.points, photo.found.through).map(p => straightView.toView(p))
+                                return path.length > 0 ? path.concat([path[0]]) : []
+                            }
                             const pts = photo.points.map(p => straightView.toView(p))
                             return photo.closed && pts.length > 0 ? pts.concat([pts[0]]) : pts
+                        }
+                    }
+                }
+            }
+            // ---- Find outline: the holes found (drawn; the sketch gets them).
+            Repeater {
+                model: photo.found ? photo.found.holes : []
+                delegate: Shape {
+                    required property var modelData
+                    required property int index
+                    objectName: "photoHole_" + index
+                    anchors.fill: parent
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        strokeColor: Theme.accent
+                        strokeWidth: 2.5
+                        fillColor: Qt.rgba(1, 1, 1, 0.35)
+                        joinStyle: ShapePath.RoundJoin
+                        PathPolyline {
+                            path: {
+                                const pts = photo.m.profilePath(modelData.points, modelData.through).map(p => straightView.toView(p))
+                                return pts.length > 0 ? pts.concat([pts[0]]) : []
+                            }
                         }
                     }
                 }
@@ -479,10 +535,20 @@ Item {
                         labels.push({ x: (v[0].x + v[1].x) / 2, y: (v[0].y + v[1].y) / 2,
                                       text: photo.m.formatValue("length", photo.m.distanceMm(photo.points[0], photo.points[1])) })
                     if (photo.mode === "outline" && photo.outline) {
-                        const n = photo.outline.sides.length
+                        // A found outline on a phone: its sides are in the readout (labels would crowd it).
+                        const n = photo.found && photo.narrow ? 0 : photo.outline.sides.length
                         for (let i = 0; i < n; ++i) {
                             const a = v[i], b = v[(i + 1) % v.length]
-                            labels.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, text: photo.m.formatValue("length", photo.outline.sides[i]) })
+                            const at = photo.outline.labelAt ? straightView.toView(photo.outline.labelAt[i]) : Qt.point((a.x + b.x) / 2, (a.y + b.y) / 2)
+                            const arc = photo.outline.arcs && photo.outline.arcs[i]
+                            labels.push({ x: at.x, y: at.y, text: arc ? "R " + photo.m.formatValue("length", photo.outline.radii[i])
+                                                                      : photo.m.formatValue("length", photo.outline.sides[i]) })
+                        }
+                        for (const hole of photo.outline.holes || []) {
+                            if (!hole.circle)
+                                continue
+                            const c = straightView.toView(hole.center)
+                            labels.push({ x: c.x, y: c.y, text: "Ø " + photo.m.formatValue("length", hole.diameter) })
                         }
                     }
                     if (photo.mode === "circle" && photo.circle && photo.circle.valid) {
@@ -520,10 +586,11 @@ Item {
                     required property int index
                     readonly property point at: straightView.toView(modelData)
                     readonly property bool first: index === 0 && photo.mode === "outline" && !photo.closed && photo.points.length >= 3
+                    readonly property bool arcMiddle: photo.found !== null && photo.found.through[index] === true
                     objectName: "photoPoint_" + index
                     x: at.x - width / 2
                     y: at.y - height / 2
-                    width: first ? 20 : 14
+                    width: first ? 20 : arcMiddle ? 11 : 14
                     height: width
                     radius: width / 2
                     color: first ? Theme.accent : "white"
@@ -594,6 +661,25 @@ Item {
                 view: straightView
                 visible: false
             }
+            // ---- Find outline: what gives the best result.
+            Rectangle {
+                objectName: "photoOutlineTip"
+                visible: photo.mode === "outline" && photo.points.length === 0
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 8 }
+                height: tipText.implicitHeight + 12
+                radius: 10
+                color: Theme.toast
+                opacity: 0.92
+                Text {
+                    id: tipText
+                    anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Best: the part on plain paper of a contrasting colour, the card beside it, the photo from straight above"
+                    color: "white"
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
+            }
         }
 
         RowLayout {
@@ -609,6 +695,17 @@ Item {
                 color: Theme.mutedText
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
+            }
+            // ---- Find outline (on the worker thread: photoBusy).
+            ActionButton {
+                objectName: "photoFindOutline"
+                visible: photo.mode === "outline"
+                text: "Find outline"
+                iconName: "sketch_trace"
+                accent: photo.points.length === 0
+                outlined: photo.points.length > 0
+                enabled: photo.m && !photo.m.photoBusy
+                onClicked: photo.m.findOutline()
             }
             ActionButton {
                 objectName: "photoClose"
@@ -660,7 +757,7 @@ Item {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: photo.stage === "corners" ? "Straightening…" : "Reading the photo…"
+                    text: photo.stage === "corners" ? "Straightening…" : photo.stage === "measure" ? "Finding the outline…" : "Reading the photo…"
                     font.pixelSize: 15
                     color: Theme.text
                 }

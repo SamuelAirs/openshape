@@ -131,6 +131,10 @@ class MeasureController : public QObject {
     // The reference's corners in the straightened view (px), in order.
     Q_PROPERTY(QVariantList straightReference READ straightReference NOTIFY straightChanged)
     Q_PROPERTY(QString photoError READ photoError NOTIFY photoChanged)
+    // Find outline (docs/MEASURE.md): the last result, {valid, message,
+    // points [px], through [bool: an arc's middle], holes [{points,
+    // through}], maxError (mm), tolerance (mm)}; empty after Back or a new photo.
+    Q_PROPERTY(QVariantMap foundOutline READ foundOutline NOTIFY foundOutlineChanged)
 
     // ---- Camera (AR)
     Q_PROPERTY(bool arAvailable READ arAvailable NOTIFY sensorsChanged)
@@ -262,6 +266,7 @@ public:
     QPointF straightOriginMm() const { return straightOriginMm_; }
     QVariantList straightReference() const { return straightReference_; }
     QString photoError() const { return photoError_; }
+    QVariantMap foundOutline() const { return foundOutline_; }
     // The camera / the photo library over the window (devices.pickPhoto);
     // `anchor`: the button that asked (an iPad's popover).
     Q_INVOKABLE void takePhoto(const QRectF& anchor = QRectF());
@@ -290,6 +295,18 @@ public:
     // session's own files are removed when it ends): for placing it in the
     // design (AppController::addReferenceImage). "" when there is none.
     Q_INVOKABLE QString keepStraightImage();
+    // Find outline: the part lying on contrasting paper beside the card,
+    // found in the straightened photo (in the background, photoBusy);
+    // outlineFound() when done (foundOutline says what). A tap (px) picks
+    // the part where there are several; (-1, -1) takes the largest.
+    Q_INVOKABLE bool findOutline(double tapX = -1, double tapY = -1);
+    // A found outline's points as the path to draw (arcs as short chords, px).
+    Q_INVOKABLE QVariantList profilePath(const QVariantList& points, const QVariantList& through) const;
+    // The found outline (its points perhaps dragged; holes from `found`):
+    // {sides [mm], labelAt [px], perimeter, area (holes out), width, height
+    // (along the part's longest side), holes [{circle, diameter, width,
+    // height, center}], items [{label, quantity, value}] for the readout}.
+    Q_INVOKABLE QVariantMap profileReport(const QVariantList& points, const QVariantMap& found) const;
     // A length typed for a reference side ("120", "4.5in", "12cm"), in mm
     // (a number alone in the display unit); 0 when it is not a length.
     Q_INVOKABLE double parseLengthMm(const QString& text) const;
@@ -326,6 +343,10 @@ public:
     // ---- Making geometry (AppController's design hooks): true when made.
     // pointsMm: QPointF or {x, y}, on a surface; centered on the origin.
     Q_INVOKABLE bool makeOutlineSketch(const QVariantList& pointsMm, bool flipY);
+    // The found outline (points in the straightened photo's px, holes from
+    // `found`) as a sketch of lines, arcs and circles at true size, its
+    // longest side along X, centered on the origin (AppController::createProfileSketch).
+    Q_INVOKABLE bool makeProfileSketch(const QVariantList& points, const QVariantMap& found);
     Q_INVOKABLE bool makeCircleSketch(double diameterMm);
     Q_INVOKABLE bool makeBox(double widthMm, double depthMm, double heightMm);
 
@@ -384,6 +405,8 @@ public:
     const QStringList& madeLog() const { return madeLog_; }
     // The points of the last outline handed over (mm, as passed on).
     const QVariantList& lastOutlinePoints() const { return lastOutlinePoints_; }
+    // The loops of the last profile sketch handed over ({points, through}, mm).
+    const QVariantList& lastProfileLoops() const { return lastProfileLoops_; }
     // Waits (processing events) until no photo work runs, up to `ms`.
     bool waitForPhoto(int ms);
 
@@ -395,6 +418,9 @@ signals:
     void levelChanged();
     void photoChanged();
     void straightChanged();
+    void foundOutlineChanged();
+    // Find outline finished (foundOutline: found or why not).
+    void outlineFound();
     void arChanged();
     void arFinished();
     void measurementsChanged();
@@ -492,6 +518,7 @@ private:
     QPointF straightOriginMm_;
     QVariantList straightReference_;
     QString photoError_;
+    QVariantMap foundOutline_;
     QStringList madeFiles_; // files this run wrote into photoFolder (removed at the end)
     int fileCounter_ = 0;
 
@@ -502,6 +529,7 @@ private:
     measure::MeasurementLog log_;
     QStringList madeLog_;
     QVariantList lastOutlinePoints_;
+    QVariantList lastProfileLoops_;
 
     // ---- Scan
     struct ScanPhotoEntry {
