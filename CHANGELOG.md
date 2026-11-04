@@ -17,9 +17,10 @@ things").
   card** matches it to a poker-size playing card (a Bicycle card, 63.5 x
   88.9 mm: nothing to photograph that you'd rather keep private), and is
   kept for each screen (the iPhone Duo's two displays each get their own). It runs along the window's
-  long side: on the Duo unfolded, about 134 mm across the whole inner
-  display, its fold marked, with **Open flat** when a length crosses the
-  fold while the phone is bent.
+  long side, against the screen's edge so a part too long for the phone
+  can lie beside it: on the Duo unfolded, 141 mm along the top edge of the
+  inner display, its fold marked, with **Open flat** when a length crosses
+  the fold while the phone is bent.
 - **Fold** (iPhone Duo): the angle between the two halves from the hinge,
   and the bend; held once the phone is still for a second, with a tap you
   feel, so it can be read after measuring over an edge. HELD or LIVE over

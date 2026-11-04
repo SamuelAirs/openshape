@@ -80,6 +80,13 @@ motion sensors, Vision and ARKit reported.
     the marks? Under half a millimeter means the playing card is a good
     reference; tell me the gap either way. The Fold's Gap calibration and
     Photo's Card now mean the playing card too.
+15. **The ruler at the screen's edge (the build after 63; your request).**
+    Ruler on the Duo unfolded: the scale runs along the top edge, its ticks
+    starting at the edge, the tabs at the bottom. Lay the phone beside
+    something longer than it, read the ticks where its end is, and check
+    the zero tick at the top-left corner isn't cut off by the screen's
+    rounded corner. On the iPhone and the Duo turned tall, the scale runs
+    down the left edge.
 
 ## On Windows (the desktop shortcut)
 

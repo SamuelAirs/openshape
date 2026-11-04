@@ -248,7 +248,10 @@ Rectangle {
     // The Ruler takes the window's long side: across a wide window, the
     // readout and the kept measurements in a row below it; down a tall one
     // with room beside it (the Duo unfolded and turned, an iPad held tall),
-    // they and the Ruler's own card in a column at its right.
+    // they and the Ruler's own card in a column at its right. Its scale
+    // lies against the screen's edge (the safe area's: the top of a wide
+    // window, the left of a tall one), so a part too long for the phone can
+    // lie beside it; across a wide window the header goes to the bottom.
     readonly property bool wide: width >= 760 && width >= height * 1.1
     // The Ruler's width down a tall window: its scale, the jaws' handles
     // and the distance between them.
@@ -271,9 +274,12 @@ Rectangle {
         anchors.margins: screen.pad
         anchors.topMargin: Theme.safeTop > 0 ? 6 : screen.pad
 
-        // ---- header: title, the instruments, close
+        // ---- header: title, the instruments, close (at the bottom while the
+        // Ruler runs across the top edge)
         Item {
             id: header
+            objectName: "measureHeader"
+            y: screen.rulerAcross ? parent.height - height : 0
             width: parent.width
             height: screen.wide ? Math.max(segments.height, closeButton.height)
                                 : closeButton.height + 10 + segments.height
@@ -281,6 +287,7 @@ Rectangle {
             Text {
                 id: title
                 objectName: "measureTitle"
+                visible: !screen.rulerAcross
                 anchors.left: parent.left
                 y: (closeButton.height - height) / 2
                 text: "Measure"
@@ -292,7 +299,7 @@ Rectangle {
                 anchors.left: title.right
                 anchors.leftMargin: 10
                 anchors.baseline: title.baseline
-                visible: screen.forKind !== "" && (!screen.wide || parent.width > 1000)
+                visible: title.visible && screen.forKind !== "" && (!screen.wide || parent.width > 1000)
                 text: screen.forKind === "angle" ? "an angle for the value box" : "a length for the value box"
                 font.pixelSize: 14
                 color: Theme.mutedText
@@ -303,7 +310,7 @@ Rectangle {
                 namePrefix: "measureTab_"
                 model: screen.instruments
                 current: screen.current
-                x: screen.wide ? Math.max(title.width + 24, (parent.width - width) / 2) : 0
+                x: screen.wide ? Math.max(title.visible ? title.width + 24 : 0, (parent.width - width) / 2) : 0
                 y: screen.wide ? (closeButton.height - height) / 2 : closeButton.height + 10
                 width: screen.wide ? Math.min(screen.instruments.length * 112, parent.width - title.width - closeButton.width - 64)
                                    : parent.width
@@ -337,8 +344,8 @@ Rectangle {
             id: instrumentArea
             objectName: "measureInstrumentArea"
             anchors {
-                top: header.bottom
-                topMargin: screen.wide ? 16 : 12
+                top: screen.rulerAcross ? parent.top : header.bottom
+                topMargin: screen.rulerAcross ? 0 : screen.wide ? 16 : 12
                 left: parent.left
                 right: screen.side ? sideColumn.left : parent.right
                 rightMargin: screen.side ? 20 : 0
@@ -349,19 +356,31 @@ Rectangle {
             MeasureRuler {
                 id: ruler
                 objectName: "measureRuler"
-                anchors.fill: parent
+                // Out to the safe area's edge: its left (a tall ruler) and,
+                // across a wide window, its top and right too.
+                readonly property real edgeX: Theme.safeLeft - content.x - instrumentArea.x
+                readonly property real edgeY: Theme.safeTop - content.y - instrumentArea.y
+                x: edgeX
+                y: screen.rulerAcross ? edgeY : 0
+                // Across (a wide window, or a narrow one whose instrument is
+                // wider than tall: the Duo's outer display): edge to edge.
+                width: screen.rulerAcross || parent.width > parent.height ? screen.width - Theme.safeLeft - Theme.safeRight
+                                                                          : parent.width - edgeX
+                height: screen.rulerAcross ? parent.height - edgeY : parent.height
+                atEdge: true
                 m: screen.m
                 screen: screen
                 visible: screen.current === "ruler"
                 controlsHost: screen.rulerDown ? rulerControlsHost : null
                 // A folding phone's inner display, whole: the crease crosses
-                // the middle of the window's long side.
+                // the middle of the window's long side (from the ruler's
+                // start, which is the safe area's edge).
                 crease: {
                     if (!screen.m.foldCrease)
                         return NaN
                     if (vertical)
-                        return screen.height > screen.width ? screen.height / 2 - content.y - instrumentArea.y : NaN
-                    return screen.width > screen.height ? screen.width / 2 - content.x - instrumentArea.x : NaN
+                        return screen.height > screen.width ? screen.height / 2 - content.y - instrumentArea.y - y : NaN
+                    return screen.width > screen.height ? screen.width / 2 - Theme.safeLeft : NaN
                 }
             }
             MeasureFold {
@@ -435,9 +454,10 @@ Rectangle {
             objectName: "measureReadout"
             visible: screen.side || screen.forKind !== "" || (screen.reading !== null && (screen.reading.valid || screen.reading.caption !== ""))
             x: screen.side ? sideColumn.x : 0
-            // Across: at the bottom, the kept measurements beside it.
+            // Across: at the bottom above the header, the kept measurements
+            // beside it.
             y: screen.side ? sideColumn.y
-               : screen.rulerAcross ? content.height - height
+               : screen.rulerAcross ? header.y - 12 - height
                : (tray.visible ? tray.y - 12 : content.height) - height
             width: screen.side ? sideColumn.width
                    : screen.rulerAcross && tray.visible ? Math.min(420, Math.max(300, content.width * 0.36))
@@ -662,8 +682,10 @@ Rectangle {
         MeasureCard {
             objectName: "measureChipPanel"
             lifted: true
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 32, 380)
+            // Centred in the safe area (the Duo's system bar takes a side).
+            x: Theme.safeLeft + (parent.width - Theme.safeLeft - Theme.safeRight - width) / 2
+            y: Theme.safeTop + Math.max(0, (parent.height - Theme.safeTop - Theme.safeBottom - height) / 2)
+            width: Math.min(parent.width - Theme.safeLeft - Theme.safeRight - 32, 380)
             height: cardColumn.implicitHeight + 40
             MouseArea { anchors.fill: parent } // taps on the card stay on it
             ColumnLayout {
@@ -910,8 +932,9 @@ Rectangle {
         MeasureCard {
             objectName: "measureGuidePanel"
             lifted: true
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 32, 440)
+            x: Theme.safeLeft + (parent.width - Theme.safeLeft - Theme.safeRight - width) / 2
+            y: Theme.safeTop + Math.max(0, (parent.height - Theme.safeTop - Theme.safeBottom - height) / 2)
+            width: Math.min(parent.width - Theme.safeLeft - Theme.safeRight - 32, 440)
             height: Math.min(parent.height - 32 - Theme.safeTop - Theme.safeBottom, guideColumn.implicitHeight + 40)
             clip: true
             MouseArea { anchors.fill: parent } // taps on the card stay on it

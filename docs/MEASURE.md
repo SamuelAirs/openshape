@@ -47,10 +47,20 @@ Plus, in the design itself:
   the long side when the Duo is opened): across a wide window (the Duo unfolded, an iPad or
   the desktop held wide) the scale spans the whole width, and the readout and the kept measurements sit in a row below it; down a
   tall window with room beside it (the Duo unfolded and turned, an iPad held tall) it spans the
-  whole height, and they and the Ruler's card sit in a column at its right. The header keeps its
-  place, so the tabs don't move. On the open Duo the scale grows from about 85 mm (down the short
-  side, the readout's column beside it) to about 134 mm (113 mm turned). A phone (and the Duo's
-  outer display) keeps the stacked layout, with the scale along its longer free side.
+  whole height, and they and the Ruler's card sit in a column at its right. On the open Duo the
+  scale grows from about 85 mm (down the short side, the readout's column beside it) to 141 mm
+  (113 mm turned). A phone (and the Duo's outer display) keeps the stacked layout, with the scale
+  along its longer free side.
+- **At the screen's edge** (Sam, after build 63: "the ruler should be as close to the bevel as
+  possible. This will help measure things that don't fit on the phone"): the scale lies against
+  the safe area's edge (`MeasureRuler.atEdge`): the top edge of a wide window (the open Duo's top
+  has no system bar: the scale runs from its left edge to the system bar on the right, 867 pt),
+  the left edge of a tall one (the phone, the Duo turned), with the ticks starting at that edge,
+  the numbers inside them and the jaws' lines reaching the edge, so a part lying beside the phone
+  lines up with the ticks. Across a wide window the header (the tabs, Close) goes to the bottom,
+  under the readout. The Duo's outer display (466 pt wide) keeps its scale across, edge to edge
+  below the header: it is too narrow for the readout beside a scale down its long side. Zero is
+  14 pt in from the edge; a display's rounded corner may clip the top of its tick.
 - **The fold**: on the Duo's inner display, whole (`MeasureController.foldCrease`: the window is
   951 x 669 points, not a Split View half), the scale crosses the hinge at the middle of the
   long side. The crease is marked on the scale ("Fold"); while the hinge reports the halves
