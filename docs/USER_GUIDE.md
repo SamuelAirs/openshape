@@ -822,6 +822,29 @@ large at the side with **Keep**.
   ground plane at its real size, ready to extrude. Only things lying on the
   reference's surface measure true; a card gives about half a millimeter
   over a hand's width, a sheet of paper better.
+  - **Guides**: millimeter rulers run along the straightened photo's top
+    and left (they follow zoom and pan); **Grid** under the photo lays
+    10 mm lines over it (finer when zoomed in). A distance shows its angle
+    to the card's edges while you place it (press, slide, lift: the
+    magnifier follows) and on its label. Near 0° or 90° (within 1.5°) it
+    snaps straight and turns green ("straight"); turn **Snap** off to place
+    a slanted line close to straight.
+  - **Several dimensions**: each distance, outline and circle stays on the
+    photo, lettered A, B, C with its value, and listed under it. Tap one to
+    select it (the readout shows it; **Use** takes it into a value box), tap
+    it again to rename, keep or delete it. **Keep all** keeps them all,
+    named after the view: "Top A", "Top Width".
+  - **Views** (a top, a front and a side photo of one part): **+ View**
+    keeps this photo with its dimensions and starts the next (Top, then
+    Front, then Side). The strip beside the modes switches between them;
+    tap the current one to rename it, choose its plane, go back to its
+    corners or remove it. **Origin** under the photo: tap the point that
+    should sit at the design's origin (the part's bottom-left corner, say).
+    **Place views** puts every photo at its true size on its plane (Top on
+    the ground, Front on the Front plane, Side on the Right plane), its
+    origin point at the origin, and, if you like, each closed outline as a
+    sketch on that plane, ready to extrude. The set lasts until FoldForm
+    closes.
 - **Camera** (iPhone and iPad with ARKit): measure in the room through the
   camera. **Distance** (points in space), **Outline** (corners on one
   surface) or **Box** (three corners of a box's base, then its top). The
@@ -864,7 +887,8 @@ large at the side with **Keep**.
   and hollows the camera cannot see into, come out filled or slightly
   larger.
 - **Reference photos**: Photo → Straighten → **Place in design** puts the
-  straightened photo on the ground at its real size, under the model, to
+  straightened photo on the ground at its real size (with several views,
+  **Place views** puts each on its plane), under the model, to
   sketch over (on a computer also File → Add Reference Photo…). In the
   Model panel: its width, opacity, rotation, position and plane, Hide,
   Delete, and **Set scale** (two points a known distance apart, then type

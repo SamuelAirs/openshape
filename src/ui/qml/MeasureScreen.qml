@@ -140,7 +140,7 @@ Rectangle {
         fold.mode = "angle"
         fold.calibrating = false
         photo.mode = "distance"
-        photo.clearPoints()
+        photo.resetForTest()
         camera.mode = "distance"
         scanInstrument.reviewIndex = -1
         measureKeypad.close()

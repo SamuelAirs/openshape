@@ -139,6 +139,61 @@ Plus, in the design itself:
 - Only points on the reference's surface measure true; a reference's error scales everything
   (a card gives about 0.5 % from the corners' placement, a sheet of paper better).
 
+Sam, after build 63: "Photo is really good and my favorite so far, but you should be able to
+measure and see if you are measuring in a straight line or not ... Maybe a ruler or guides to
+help measure the object, not just the card. Additionally, building multiple measurements in one
+bunch would help so we can get side views and what not in order to help construct a drawing."
+So the measuring step has guides, keeps every dimension, and a photo can be one view of a set:
+
+- **Rulers**: millimetre scales along the straightened view's top and left (`PhotoRuler` in
+  `MeasurePhoto.qml`), drawn from the view's own scale (`pxPerMm` = the view's fit / mm per
+  pixel), so they follow zoom and pan. Zero is the reference's first corner, or the view's
+  origin point once one is tapped; right and up count positive, as on the design's planes.
+  Numbers every 5 to 1000 mm, whichever leaves 46 px between them; ticks no closer than 6 px.
+- **Grid** (a toggle under the photo): 10 mm lines from the same zero, 1 or 5 mm lines between
+  them once those are 8 px apart (zoomed in), 50 and 100 mm when the photo is small on screen.
+  Drawn over the photo only.
+- **Straight or not**: a distance shows its angle to the reference's edges (0 across, 90 up and
+  down, whichever way it slopes) while its second end is placed (a finger can press, slide and
+  lift: the magnifier and the angle follow it; the mouse shows it while hovering) and on its
+  label once placed. Within 1.5 degrees of 0 or 90 the second end **snaps straight** (it moves
+  onto the line through the first end: the length along it is kept); the line turns green, the
+  tag says "Straight · 0°" while placing and the label "✓ straight". Dashed guides through the
+  first end (across and down the photo) show while the second is placed. **Snap** (under the
+  photo, on by default) turns snapping off for a deliberately slanted line near straight; the
+  hint while placing says so. A dragged end snaps the same way.
+- **Several dimensions**: every distance, circle and outline stays on the photo as a dimension
+  lettered A, B, C... with its value (a distance's angle too); they are listed under the photo
+  (the hint's place once there is one). A tap on a label or in the list selects one (the
+  readout shows it, Use takes it when Measure was opened for a value box, Keep keeps it); a tap
+  on the selected one opens it: rename (kept as "Top width"), Keep, Delete. **Keep all** keeps
+  every finished one as a kept measurement named after the view and its letter or name ("Top
+  A", "Top Width"): a distance's length, a circle's diameter, an outline's area. Undo takes
+  back the last point (of the selected one, else the last dimension); Clear takes them all.
+  A tap on any dimension's point measures from exactly that point; a drag moves it. Back to
+  corners and a new photo clear them (the straightened pixels change).
+- **Views** (a set of photos of one part: top, front, side): the strip beside the modes shows
+  the set and the photo being measured; **+ View** keeps the straightened photo (its photo,
+  corners, reference, straightened view, dimensions and origin point) in the set under its
+  name and starts the next photo (Top, then Front, then Side, then "View 4"). A tap on another
+  view measures it again (the one being measured is kept first); a tap on the current one
+  opens it: its name (Top, Front, Side or typed) and plane (Ground, Front, Right: Top goes on
+  the ground, Front on the Front plane, Side on the Right plane), Clear origin, Back to corners
+  (on a phone it lives there), Remove view. The set lasts for the app session
+  (`MeasureController::photoViews`, TD-177).
+- **Origin** (under the photo): the next tap marks the point that goes to the design's origin
+  (e.g. the part's bottom-left corner); a red cross shows it, the rulers count from it.
+- **Place views** (the readout's action once there is a set; **Place in design** for a single
+  photo, which now also honours the origin point and the view's plane): a sheet lists the
+  views, each with its plane and what goes to the origin; **Photos and N outlines as
+  sketches** or **Photos only**. Each straightened photo becomes a reference photo at true size
+  on its plane (`AppController::addReferenceImage` with the photo's center in the plane's
+  frame), placed so its origin point sits at the plane's origin, without one the middle of its
+  closed outlines, else the photo's middle; each closed outline becomes a sketch on that plane
+  (`createOutlineSketch` with the plane: the frames reference photos use, so the sketch lies on
+  the photo). The design then shows them from the iso view, framed. One undo step per photo
+  and per sketch (the undo stack has no grouping).
+
 ### Camera (AR)
 
 - ARKit's camera view with a crosshair; **Add point** places a point where the crosshair meets
@@ -233,8 +288,9 @@ any value box reads.
   scale and its calibration, the sensors (started while the workspace is open), the photo
   session, the measurements, and the stand-ins the acceptance run drives.
 - `src/ui/qml/MeasureScreen.qml` and its parts: the workspace.
-- AppController: `createOutlineSketch`, `createCircleSketch`, `createSizedBox` (one undo step
-  each), the 1:1 view, the value boxes' ruler button; SketchSession: the Trace tool.
+- AppController: `createOutlineSketch` (on the ground, Front or Right), `createCircleSketch`,
+  `createSizedBox` (one undo step each), the 1:1 view, the value boxes' ruler button;
+  SketchSession: the Trace tool.
   - 1:1 lives in InteractionController (`setScreenScale`, `setActualSize`): orthographic,
     `orthoHeight` = viewport height / points per mm, same direction and center. Anything that
     zooms (wheel, pinch, Fit, a framing view, revealing the selection for the keypad, choosing
@@ -248,7 +304,7 @@ any value box reads.
   - The ruler: the value chip's (`valueChipMeasure`, whenever an operation's chip shows) and a
     sketch dimension editor's (`dimensionMeasure`) ask Main.qml's `openMeasure(kind, target)`;
     `useMeasuredValue(text)` puts the result into the box that asked, previewed, for ✓ or Enter.
-- Reference photos: `AppController::addReferenceImage(file, mmPerPixel, plane)` (below).
+- Reference photos: `AppController::addReferenceImage(file, mmPerPixel, plane, centerX, centerY)` (below).
 
 ## Reference photos in the design
 
@@ -260,7 +316,9 @@ sketch tools, check a design against the real object. Saved in the project
 
 - **From the Measure workspace**: the straightened photo, whose scale in mm per pixel is exact:
   `addReferenceImage(imageFile, mmPerPixel, "XY")` puts it on the ground at its real size,
-  centred on the origin, frames the view on it (Top view) and is one undo step.
+  centred on the origin (or with the view's origin point there, on the view's plane), frames
+  the view on it (Top view) and is one undo step. A set of views goes in with **Place views**
+  (Photo, above): each on its plane, their origin points at the origin.
 - **File → Add Reference Photo…** (desktop; on an iPhone or iPad photos come from the Measure
   workspace, the file picker being unreliable on the iPhone Duo, TD-158): any picture, at an
   unknown scale (200 mm wide); its row says the scale is not set.

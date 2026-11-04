@@ -2545,7 +2545,7 @@ Status InteractionController::addMeasuredSketch(sketch::Sketch s)
     return status;
 }
 
-Status InteractionController::createOutlineSketch(const std::vector<Vec2>& input, bool closed)
+Status InteractionController::createOutlineSketch(const std::vector<Vec2>& input, bool closed, const sketch::Plane& plane)
 {
     auto refuse = [this](const std::string& text, const char* detail) {
         message(text);
@@ -2573,7 +2573,7 @@ Status InteractionController::createOutlineSketch(const std::vector<Vec2>& input
             return refuse("A closed outline needs at least three points that do not lie on one line.",
                           "createOutlineSketch: no area");
     }
-    sketch::Sketch s(Uuid::generate(), sketch::Plane::xy());
+    sketch::Sketch s(Uuid::generate(), plane);
     std::vector<sketch::EntityId> ids;
     for (const Vec2& p : points)
         ids.push_back(s.addPoint(p));

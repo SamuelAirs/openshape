@@ -301,12 +301,14 @@ public:
     // ---- Actions ----
     Status createBox(double size);
     // ---- Geometry from measurements (the Measure workspace; one undo step each) ----
-    // A new sketch on the ground plane (XY): the points (mm) joined by lines
+    // A new sketch on `plane` (the ground, XY, unless given; the Measure
+    // workspace's photo views put a side view's outline on Front or Right):
+    // the points (mm, in the plane's frame) joined by lines
     // end to end (closed: the last back to the first), opened for editing
     // with the view facing and framing it, Select tool (a tap inside a
     // closed outline offers Extrude). Refused, with a message, for fewer
     // than two distinct points, or a closed outline with no area.
-    Status createOutlineSketch(const std::vector<Vec2>& points, bool closed);
+    Status createOutlineSketch(const std::vector<Vec2>& points, bool closed, const sketch::Plane& plane = sketch::Plane::xy());
     // The same with one circle, its diameter dimension set (it was measured).
     Status createCircleSketch(Vec2 center, double diameter);
     // A box body (width along X, depth along Y, height along Z), placed as
