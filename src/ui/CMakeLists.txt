@@ -84,11 +84,19 @@ target_link_libraries(openshape_ui PRIVATE openshape_samples)
 target_include_directories(openshape_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_ui)
 
-# The share sheet (UIActivityViewController, ui/Share.h) and the App
-# Store purchase (StoreKit, ui/Store.h): Objective-C++, iOS only, with ARC
-# (other platforms have neither).
+# The share sheet (UIActivityViewController, ui/Share.h), the App Store
+# purchase (StoreKit, ui/Store.h) and the Measure tools' hardware (hinge,
+# motion, camera and photos, Vision, ARKit: ui/MeasureDevices.h):
+# Objective-C++, iOS only, with ARC (other platforms have none of them).
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    target_sources(openshape_ui PRIVATE ios/ShareSheet.mm ios/StoreKitStore.mm)
-    set_source_files_properties(ios/ShareSheet.mm ios/StoreKitStore.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(openshape_ui PRIVATE "-framework UIKit" "-framework StoreKit")
+    set(OPENSHAPE_IOS_SOURCES
+        ios/ShareSheet.mm ios/StoreKitStore.mm
+        ios/MeasureIos.h ios/MeasureDevicesIos.mm ios/PhotoPickerIos.mm ios/ArMeasureIos.mm)
+    target_sources(openshape_ui PRIVATE ${OPENSHAPE_IOS_SOURCES})
+    set_source_files_properties(ios/ShareSheet.mm ios/StoreKitStore.mm
+        ios/MeasureDevicesIos.mm ios/PhotoPickerIos.mm ios/ArMeasureIos.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(openshape_ui PRIVATE "-framework UIKit" "-framework StoreKit"
+        "-framework AVFoundation" "-framework CoreMotion" "-framework CoreGraphics" "-framework CoreVideo"
+        "-framework ImageIO" "-framework Photos" "-framework PhotosUI" "-framework Vision"
+        "-framework ARKit" "-framework SceneKit" "-framework QuartzCore")
 endif()

@@ -577,7 +577,36 @@ What to try:
 
 Not done: placement aware of the fold (TD-140: keep the value box, the
 keypad and dialogs off the crease when the phone is half folded; the iOS
-27.1 SDK's hinge API is not used yet).
+27.1 SDK's hinge API is not used yet for layout; Measure's Fold reads it, see
+below).
+
+## Measure on iOS
+
+The Measure tools (docs/MEASURE.md) use the device's own hardware through
+native code in `src/ui/ios/` (Objective-C++, compiled only by the Mac CI):
+`MeasureDevicesIos.mm` (the Duo's hinge through `UIHingeInteraction`, iOS
+27.1 only; gravity from CoreMotion at 30 Hz turned into the window's frame;
+taps felt in the hand; Vision's rectangle finder and subject mask),
+`PhotoPickerIos.mm` (the camera, asking for it once with
+`NSCameraUsageDescription`, and the system photo picker `PHPickerViewController`,
+which needs no permission, for one photo or a scan's several) and
+`ArMeasureIos.mm` (a full-screen ARKit view with a crosshair, Add point,
+Undo, Done and Cancel; LiDAR depth where there is one). The desktop has none
+of these (`MeasureDevices.cpp` returns empty functions). Every step logs a
+`Measure:` line into Logs/openshape.log; what to look for there:
+
+- `Measure: gravity in <orientation>: device (...) -> window (...)`, once per
+  watch: lying face up the window value should be about (0, 0, -1); standing
+  the phone on its bottom edge in portrait about (0, 1, 0). A wrong sign in
+  a landscape orientation shows here first.
+- `Measure: hinge present, status N, angle ...` on the Duo, at the start and
+  at each change of status (none on other phones: "absent").
+- `Measure: showing the photo library picker` then `returned N result(s)`:
+  whether the photo picker works on the Duo, where the document picker shows
+  no files (TD-158). `photo written: ... 35 mm focal length F` gives the size
+  and the EXIF focal length read before re-encoding.
+- `Measure: rectangle found` / `subject mask written`, and `AR session
+  started`, `AR crosshair met a surface`, `AR tracking state`, `AR finished`.
 
 ## What to test on the iPhone
 
