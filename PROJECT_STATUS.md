@@ -318,6 +318,14 @@ now has the chip row; fixed), then `measure` and `projectmeasurements`
 again after the fixes: 639/639, no QML warnings; the lambda check (only the
 known `Duo.cpp:529`).
 
+**Third TestFlight build.** The owner, 09:58: "Once you're ready, compile,
+send to TestFlight". The full local run on `f502d3e` (the long-side ruler,
+the hold, the design guide, the playing card): 959/959 headless, the whole
+real-UI run 5484/5484 checks, the lambda check (only `Duo.cpp:529`). Pushed
+`measure` with `[testflight]`: the expected build number is 63 (the v0.3.1
+tag's build is then 64 or later). docs/MANUAL_TESTS.md items 11 to 14 are
+this build's.
+
 ### Session report (2026-10-31): FoldForm 0.3.0 for the App Store
 
 **In one paragraph:** the owner chose to launch today as **FoldForm**, free
