@@ -6,6 +6,7 @@
 
 #include <deque>
 #include <optional>
+#include <utility>
 
 // The iPhone Duo's fold as a measuring tool (docs/MEASURE.md, "Fold"). UIKit
 // reports the hinge's angle (UIHinge.angle: radians, 0 closed, pi flat), so
