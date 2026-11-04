@@ -23,6 +23,9 @@ target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJE
 # The measuring tools' math (src/measure).
 openshape_add_test(test_measure test_measure.cpp)
 target_link_libraries(test_measure PRIVATE openshape_measure)
+# Scan's multi-view stereo on synthetic photos (src/measure/ScanStereo).
+openshape_add_test(test_scan_mvs test_scan_mvs.cpp)
+target_link_libraries(test_scan_mvs PRIVATE openshape_measure)
 
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_build.cpp test_draft.cpp test_step.cpp
     test_text_geometry.cpp test_kernel_threads.cpp test_loft_geometry.cpp

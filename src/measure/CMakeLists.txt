@@ -13,9 +13,12 @@ add_library(openshape_measure STATIC
     Level.cpp Level.h
     Measurement.cpp Measurement.h
     Outline.cpp Outline.h
+    ScanStereo.cpp ScanStereo.h
+    ScanTypes.cpp ScanTypes.h
     ScreenScale.cpp ScreenScale.h
     StrokeFit.cpp StrokeFit.h
 )
-target_link_libraries(openshape_measure PUBLIC openshape_core PRIVATE nlohmann_json::nlohmann_json)
+find_package(Threads REQUIRED)
+target_link_libraries(openshape_measure PUBLIC openshape_core Threads::Threads PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(openshape_measure PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_measure)
