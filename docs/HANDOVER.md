@@ -28,7 +28,7 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
        release with the iOS sources (BUILDING.md, "Before tagging a release").
     3. The tag build's number goes to the App Store chat (vault Inbox), which fills 0.3.1's
        page and submits it on Sam's word.
-  - **Not pushed:** `36b08ad` and `d275beb`, docs and screenshots only, so no build. They go up
+  - **Not pushed:** the commits after `1be3626`, docs and screenshots only, so no build. They go up
     with the tag.
   - **The vault:** `DuoApps/Board.md` has Sam's tasks, and `DuoApps/FoldForm handover.md` keeps
     the short version.
