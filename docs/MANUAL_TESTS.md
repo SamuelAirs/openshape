@@ -5,6 +5,40 @@ odd: a screenshot and a sentence is plenty. Starting the app with
 `OPENSHAPE_LOG=debug` lets Claude read the log afterwards
 (`%LOCALAPPDATA%\OpenShape\OpenShape\logs\openshape.log`).
 
+## FoldForm 0.4.0: Measure, on the iPhone Duo and the iPhone 16 Pro
+
+Only a real device can check these (the PC runs every screen with stand-ins
+for the sensors and the camera). After the round, send the log (Files app,
+FoldForm, Logs, openshape.log): its `Measure:` lines say what the hinge, the
+motion sensors, Vision and ARKit reported.
+
+1. **Ruler and the card check.** Measure (the ruler at the top) → Ruler →
+   Check with a card: lay a bank card on the outline and stretch it to the
+   card's edges, Done. Then measure the card's short side with the jaws:
+   53.98 mm should read 53.9–54.1. Do it on the Duo's outer display and on
+   the inner one (each keeps its own scale); say how far the estimate was off
+   (the percentage the card check showed).
+2. **Fold (the Duo).** Fold tab: open and close the phone slowly; the angle
+   follows. Rest it on a box's corner (over the edge, screens on the faces),
+   keep still until you feel the tap, lift and read: about 90°. Gap: Calibrate
+   with a card, then pinch the card's other side and something you know.
+3. **Level.** Lay the phone on a table (the bubble near the middle), on a
+   book propped up (the slope), stand it on its edge.
+4. **Photo.** Choose photo, and Take photo: a card (or a sheet of A4 or
+   Letter paper) flat on a table beside a part. Did the four corners land on
+   the card by themselves? Straighten, then Outline the part (tap the
+   corners, then the first one again) and compare with a ruler. Make sketch:
+   the outline opens as a sketch; tap inside it and extrude.
+5. **Camera (AR).** Distance between two corners of a table; Box around a
+   box (three base corners, then the top); Make box. On the Duo: does the AR
+   view open at all, and does it fill the screen?
+6. **Into a value box.** Push a box's top face, tap the ruler in the value
+   box, measure something, Use: the value lands in the box; ✓.
+7. **1:1 and Trace.** View → Actual size: lay a coin on the screen over a
+   20 mm circle sketch. In a sketch, Trace (the pen-on-a-wave tool): draw
+   around a coin or a key lying on the screen with the Pencil; it should
+   become a circle or a few lines and arcs.
+
 ## On Windows (the desktop shortcut)
 
 1. **Sizes instead of distances.** Add a box, click its top face: the value
