@@ -244,3 +244,173 @@ TEST(Units, AnAngleUnitIsRefusedOnALengthAndALengthUnitOnAnAngle)
     EXPECT_NEAR(*parseAngle("90 - 1 rad").millimeters, kPiForTests / 2 - 1.0, 1e-12);
     EXPECT_FALSE(parseAngle("45\xC2\xB0 * 2\xC2\xB0").millimeters.has_value()) << "two angles do not multiply";
 }
+
+// ---- Named values: a project's measurements typed by name (docs/MEASURE.md) ----------
+
+namespace {
+
+// shelf_depth 243 mm, wall 3 mm, width 40 mm, corner_angle 90 degrees, Length_3 12.5 mm.
+std::optional<NamedValue> testNames(std::string_view name)
+{
+    struct Entry {
+        const char* name;
+        ValueKind kind;
+        double value;
+    };
+    static constexpr Entry kEntries[] = {{"shelf_depth", ValueKind::Length, 243.0}, {"wall", ValueKind::Length, 3.0},
+                                         {"width", ValueKind::Length, 40.0},        {"corner_angle", ValueKind::Angle, 90.0},
+                                         {"Length_3", ValueKind::Length, 12.5},     {"_gap2", ValueKind::Length, 0.4}};
+    for (const Entry& e : kEntries)
+        if (sameValueName(e.name, name))
+            return NamedValue{e.kind, e.value};
+    return std::nullopt;
+}
+
+double named(std::string_view text, LengthUnit unit = LengthUnit::Millimeter)
+{
+    const auto r = parseLength(text, unit, testNames);
+    EXPECT_TRUE(r.millimeters.has_value()) << "input '" << text << "' error: " << r.error;
+    return r.millimeters.value_or(-12345.0);
+}
+
+double namedDegrees(std::string_view text)
+{
+    const auto r = parseAngle(text, testNames);
+    EXPECT_TRUE(r.millimeters.has_value()) << "input '" << text << "' error: " << r.error;
+    return r.millimeters.value_or(-12345.0) * 180.0 / kPiForTests;
+}
+
+std::string namedError(std::string_view text, bool angle = false)
+{
+    const auto r = angle ? parseAngle(text, testNames) : parseLength(text, LengthUnit::Millimeter, testNames);
+    EXPECT_FALSE(r.millimeters.has_value()) << text;
+    return r.error;
+}
+
+} // namespace
+
+TEST(Units, ANameIsAValue)
+{
+    EXPECT_DOUBLE_EQ(named("shelf_depth"), 243.0);
+    EXPECT_DOUBLE_EQ(named("shelf_depth - 2"), 241.0);
+    EXPECT_DOUBLE_EQ(named("2 * wall"), 6.0);
+    EXPECT_DOUBLE_EQ(named("wall*2"), 6.0);
+    EXPECT_DOUBLE_EQ(named("(width + 0.4) / 2"), 20.2);
+    EXPECT_DOUBLE_EQ(named("width - 2 * wall"), 34.0) << "times before minus";
+    EXPECT_DOUBLE_EQ(named("(width - 2) * 2"), 76.0);
+    EXPECT_DOUBLE_EQ(named("-wall"), -3.0);
+    EXPECT_DOUBLE_EQ(named("= shelf_depth"), 243.0);
+    EXPECT_DOUBLE_EQ(named("_gap2 + 1"), 1.4) << "a name may start with _ and hold digits";
+    EXPECT_DOUBLE_EQ(named("shelf_depth \xE2\x88\x92 2 \xC3\x97 wall"), 237.0) << "the keypad's signs";
+    EXPECT_DOUBLE_EQ(named("width/4"), 10.0);
+}
+
+TEST(Units, NamesMatchIgnoringCase)
+{
+    EXPECT_DOUBLE_EQ(named("SHELF_DEPTH"), 243.0);
+    EXPECT_DOUBLE_EQ(named("Wall + 1"), 4.0);
+    EXPECT_DOUBLE_EQ(named("length_3"), 12.5);
+    EXPECT_TRUE(sameValueName("Shelf_Depth", "shelf_depth"));
+    EXPECT_FALSE(sameValueName("shelf", "shelf_depth"));
+}
+
+TEST(Units, ANameCountsInMillimetersABareNumberBesideItInTheDisplayUnit)
+{
+    // wall is 3 mm; the 2 is in the document's unit, as a number alone is.
+    EXPECT_NEAR(named("wall + 2", LengthUnit::Inch), 3.0 + 50.8, 1e-12);
+    EXPECT_NEAR(named("wall + 2", LengthUnit::Centimeter), 23.0, 1e-12);
+    EXPECT_NEAR(named("wall + 2 mm", LengthUnit::Inch), 5.0, 1e-12);
+    EXPECT_NEAR(named("2 * wall", LengthUnit::Inch), 6.0, 1e-12) << "a factor has no unit";
+    EXPECT_NEAR(named("shelf_depth", LengthUnit::Meter), 243.0, 1e-12) << "never converted";
+    EXPECT_NEAR(named("wall + 1in"), 28.4, 1e-12);
+    EXPECT_NEAR(named("wall + 1' 2\""), 358.6, 1e-9);
+}
+
+TEST(Units, AnAngleNameInAnAngle)
+{
+    EXPECT_NEAR(namedDegrees("corner_angle"), 90.0, 1e-12);
+    EXPECT_NEAR(namedDegrees("corner_angle / 2"), 45.0, 1e-12);
+    EXPECT_NEAR(namedDegrees("180 - corner_angle"), 90.0, 1e-12);
+    EXPECT_NEAR(namedDegrees("corner_angle + 15deg"), 105.0, 1e-12);
+    EXPECT_NEAR(namedDegrees("Corner_Angle*1.5"), 135.0, 1e-12);
+}
+
+TEST(Units, TheWrongKindOfNameIsRefused)
+{
+    EXPECT_EQ(namedError("corner_angle"), "This is a length, and corner_angle is an angle.");
+    EXPECT_EQ(namedError("wall + corner_angle"), "This is a length, and corner_angle is an angle.");
+    EXPECT_EQ(namedError("wall", true), "This is an angle, and wall is a length.");
+    EXPECT_EQ(namedError("corner_angle / wall", true), "This is an angle, and wall is a length.");
+    // Two lengths still do not multiply, and nothing divides by a length.
+    EXPECT_EQ(namedError("wall * width"), "Cannot multiply or divide two lengths");
+    EXPECT_EQ(namedError("10 / wall"), "Cannot divide by a length");
+    EXPECT_EQ(namedError("wall * 2mm"), "Cannot multiply or divide two lengths");
+}
+
+TEST(Units, AnUnknownNameIsSaidPlainly)
+{
+    EXPECT_EQ(namedError("shelf"), "No measurement called 'shelf' in this project");
+    EXPECT_EQ(namedError("shelf_depth - x"), "No measurement called 'x' in this project");
+    EXPECT_EQ(namedError("depth", true), "No measurement called 'depth' in this project");
+    // An operator forgotten between a number and a name.
+    EXPECT_EQ(namedError("2 wall"), "Put an operator before wall: 2 * wall, 2 + wall");
+    EXPECT_EQ(namedError("2wall"), "Put an operator before wall: 2 * wall, 2 + wall");
+    EXPECT_EQ(namedError("2 shelf_depth"), "Put an operator before shelf_depth: 2 * shelf_depth, 2 + shelf_depth");
+    // A unit after a name: the name has its own.
+    EXPECT_EQ(namedError("wall mm"), "No unit after a name: wall is a length already.");
+    EXPECT_EQ(namedError("corner_angle deg", true), "No unit after a name: corner_angle is an angle already.");
+    EXPECT_EQ(namedError("corner_angle\xC2\xB0", true), "No unit after a name: corner_angle is an angle already.");
+    // Units still read as units beside names.
+    EXPECT_DOUBLE_EQ(named("2 mm + wall"), 5.0);
+    EXPECT_NEAR(named("2in - wall"), 47.8, 1e-12);
+    // Bad input around names.
+    EXPECT_FALSE(parseLength("wall +", LengthUnit::Millimeter, testNames).millimeters.has_value());
+    EXPECT_FALSE(parseLength("(wall", LengthUnit::Millimeter, testNames).millimeters.has_value());
+    EXPECT_FALSE(parseLength("wall wall", LengthUnit::Millimeter, testNames).millimeters.has_value());
+}
+
+TEST(Units, WithoutNamesLettersAreRefusedAsBefore)
+{
+    EXPECT_EQ(parseLength("x", LengthUnit::Millimeter).error, "Unexpected 'x'");
+    EXPECT_EQ(parseLength("shelf_depth - 2", LengthUnit::Millimeter).error, "Unexpected 's'");
+    EXPECT_EQ(parseAngle("x").error, "Unexpected 'x'");
+    // A resolver that knows nothing: every name is unknown.
+    const NameResolver none = [](std::string_view) { return std::optional<NamedValue>(); };
+    EXPECT_EQ(parseLength("wall", LengthUnit::Millimeter, none).error, "No measurement called 'wall' in this project");
+    EXPECT_DOUBLE_EQ(*parseLength("2 in", LengthUnit::Millimeter, none).millimeters, 50.8);
+    EXPECT_EQ(parseLength("5 furlongs", LengthUnit::Millimeter, none).error, "Unknown unit 'furlongs'");
+}
+
+TEST(Units, ValueNames)
+{
+    for (const char* good : {"shelf_depth", "w", "_x", "Length_3", "a1", "wall2"})
+        EXPECT_TRUE(isValueName(good)) << good;
+    for (const char* bad : {"", "3d", "shelf depth", "x-y", "mm", "in", "Deg", "ft", "rad", "inches", "m", "\xC3\xA9t\xC3\xA9"})
+        EXPECT_FALSE(isValueName(bad)) << bad;
+    EXPECT_FALSE(isValueName(std::string(kMaxValueNameLength + 1, 'a')));
+    EXPECT_TRUE(isValueName(std::string(kMaxValueNameLength, 'a')));
+    EXPECT_EQ(valueNameError("mm"), "'mm' is a unit: choose another name.");
+    EXPECT_EQ(valueNameError("shelf depth"), "Names start with a letter and use letters, digits and _ (shelf_depth).");
+    EXPECT_EQ(valueNameError(""), "Give it a name.");
+    EXPECT_TRUE(isUnitWord("Inch"));
+    EXPECT_FALSE(isUnitWord("wall"));
+}
+
+TEST(Units, DisplayNamesBecomeValueNames)
+{
+    EXPECT_EQ(valueNameFor("Length 3"), "length_3");
+    EXPECT_EQ(valueNameFor("Shelf depth"), "shelf_depth");
+    EXPECT_EQ(valueNameFor("  Shelf -- depth (left)  "), "shelf_depth_left");
+    EXPECT_EQ(valueNameFor("3 mm gap"), "_3_mm_gap");
+    EXPECT_EQ(valueNameFor("mm"), "mm_value");
+    EXPECT_EQ(valueNameFor("Deg"), "deg_value");
+    EXPECT_EQ(valueNameFor(""), "measurement");
+    EXPECT_EQ(valueNameFor("+++"), "measurement");
+    EXPECT_EQ(valueNameFor("H\xC3\xB6he"), "hohe") << "accents dropped";
+    EXPECT_EQ(valueNameFor("Fu\xC3\x9F" "breite"), "fussbreite");
+    EXPECT_EQ(valueNameFor("Tisch \xE2\x80\x93 Tiefe"), "tisch_tiefe") << "an en dash separates";
+    EXPECT_EQ(valueNameFor("already_fine"), "already_fine");
+    EXPECT_LE(valueNameFor(std::string(200, 'x')).size(), kMaxValueNameLength - 6);
+    for (const char* display : {"Length 3", "Angle 12", "3 mm gap", "mm", "", "H\xC3\xB6he", "Caliper (fold)"})
+        EXPECT_TRUE(isValueName(valueNameFor(display))) << display;
+}

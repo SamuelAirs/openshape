@@ -16,7 +16,7 @@ import OpenShape
 // beside the value box on an iPad (and the value chip keeps off it).
 //
 // It types into a client, a JavaScript object:
-//   name        what it is ("valueChip", "sketchInput", "dimension", "parameter")
+//   name        what it is ("valueChip", "sketchInput", "dimension", "parameter", "measurement")
 //   mode()      "length", "angle" or "count": which keys it has
 //   hasNext()   there is a next value (a rectangle's height after its width): a Next key
 //   text(), replacing()   the text shown, and whether the next key replaces it
@@ -34,6 +34,9 @@ import OpenShape
 //               keypad closes when the focus goes elsewhere (a tap in the view)
 // A text field client stays focused and read-only on touch (no system
 // keyboard); its hardware keys come through hardwareKey().
+// Above the keys, the project's measurements of the client's kind (lengths
+// for a length, angles for an angle), one key each: a tap adds the name
+// ("shelf_depth"), which the value box reads as its value (docs/MEASURE.md).
 FocusScope {
     id: keypad
 
@@ -55,6 +58,11 @@ FocusScope {
     readonly property string displayText: client && client.display ? client.display() : ""
     readonly property string displayName: client && client.displayName ? client.displayName() : ""
     readonly property int displayHeight: displayText.length > 0 ? 34 + spacing : 0
+    // The project's measurements this value can take by name.
+    readonly property var names: open && mode !== "count"
+                                 ? app.projectMeasurements.filter(m => m.quantity === mode) : []
+    readonly property int nameKeyHeight: 44
+    readonly property int namesHeight: names.length > 0 ? nameKeyHeight + spacing : 0
 
     // The first row's spans (every row is full).
     readonly property int columns: rows.length > 0 ? rows[0].reduce((sum, key) => sum + key.span, 0) : 5
@@ -72,7 +80,7 @@ FocusScope {
 
     visible: open
     implicitWidth: columns * looseKeyWidth + (columns - 1) * spacing + 2 * padding
-    implicitHeight: displayHeight + rows.length * keyHeight + Math.max(0, rows.length - 1) * spacing + 2 * padding
+    implicitHeight: namesHeight + displayHeight + rows.length * keyHeight + Math.max(0, rows.length - 1) * spacing + 2 * padding
     height: implicitHeight
 
     function attach(c) {
@@ -99,6 +107,15 @@ FocusScope {
             c.next()
         else if (result.action === "done")
             c.done()
+    }
+    // A measurement's key: its name added (after a space when a number comes before).
+    function insertName(name) {
+        if (!client)
+            return
+        const c = client
+        const result = app.keypadInsertName(c.text(), c.replacing(), name)
+        if (result.action === "edited")
+            c.setText(result.text, result.replacing)
     }
     // A hardware keyboard while a text field client has the focus (read-only
     // on touch): characters are added as typed, Backspace takes one (or the
@@ -138,6 +155,41 @@ FocusScope {
         x: keypad.padding
         y: keypad.padding
         spacing: keypad.spacing
+        // The project's measurements, by name (scrolls sideways when they are many).
+        ScrollRow {
+            objectName: "keypadNames"
+            visible: keypad.names.length > 0
+            width: keypad.width - 2 * keypad.padding
+            maximumWidth: width
+            spacing: keypad.spacing
+            Repeater {
+                model: keypad.names
+                delegate: Rectangle {
+                    id: nameKey
+                    required property var modelData
+                    objectName: "keypadName_" + modelData.name
+                    width: Math.max(keypad.nameKeyHeight, nameLabel.implicitWidth + 24)
+                    height: keypad.nameKeyHeight
+                    radius: 10
+                    color: nameTap.pressed ? Theme.pressed : Theme.checked
+                    border.color: Theme.panelBorder
+                    Text {
+                        id: nameLabel
+                        anchors.centerIn: parent
+                        text: nameKey.modelData.name
+                        textFormat: Text.PlainText
+                        font.pixelSize: 15
+                        color: Theme.accent
+                    }
+                    // Takes no focus: the field keeps it (and with it the keypad).
+                    MouseArea {
+                        id: nameTap
+                        anchors.fill: parent
+                        onClicked: keypad.insertName(nameKey.modelData.name)
+                    }
+                }
+            }
+        }
         // What is typed, when the value itself may be out of sight.
         Rectangle {
             objectName: "keypadDisplay"

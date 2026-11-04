@@ -40,7 +40,7 @@ if(OPENSHAPE_OWN_OCCT)
 endif()
 
 openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_reference_images.cpp test_sketch_features.cpp test_attachment.cpp test_datums.cpp test_3mf.cpp test_recovery.cpp test_holes.cpp test_extrude_draft.cpp test_import.cpp test_project_thumbnail.cpp test_home.cpp
-    test_text.cpp test_loft.cpp)
+    test_text.cpp test_loft.cpp test_project_measurements.cpp)
 target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)
 target_compile_definitions(test_document PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 

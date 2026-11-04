@@ -97,7 +97,13 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   `°`, `rad`) as its units: a length unit on an angle, or an angle unit on a
   length, is refused with a message (cases from OpenShape3D's keypad tests:
   `tests/test_units.cpp`, `tests/test_typed_values.cpp`). There is no feet
-  display unit (TD-135). Saved files state `"lengthUnit": "mm"`.
+  display unit (TD-135). Saved files state `"lengthUnit": "mm"`. With a
+  `NameResolver` both parsers read names as values (`shelf_depth - 2`): the
+  project's measurements, which every typed-value path passes through
+  `Document::valueNames()` (`doc::ProjectMeasurement`, one undoable
+  `SetProjectMeasurementsCommand`, the file's `measurements`; a name is
+  evaluated when typed, steps store numbers: docs/MEASURE.md,
+  "Measurements in the project").
 - `Camera` (`core/Camera.h`): Z-up turntable, perspective by default (35
   degree vertical field of view: depth cues, so a box cannot flip in the
   viewer's mind), orthographic optional (the View buttons' toggle, remembered

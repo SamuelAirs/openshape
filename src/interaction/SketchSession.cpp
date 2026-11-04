@@ -2218,7 +2218,7 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
         if (key == "angle") {
             // Degrees (with the arithmetic the value box takes: 90+90); a
             // whole turn spaces the copies evenly.
-            const auto parsed = parseAngle(text);
+            const auto parsed = parseAngle(text, document_.valueNames());
             if (!parsed.millimeters) {
                 in.locked = false;
                 return parsed.error;
@@ -2234,7 +2234,7 @@ std::string SketchSession::setInput(const std::string& key, const std::string& t
             updatePatternPreview();
             return {};
         }
-        const auto parsed = parseLength(text, document_.displayUnit());
+        const auto parsed = parseLength(text, document_.displayUnit(), document_.valueNames());
         if (!parsed.millimeters)
             return parsed.error;
         if (*parsed.millimeters <= 0)
@@ -2380,7 +2380,7 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
 {
     if (working_.line(constraintId) || working_.isRound(constraintId)) {
         // A size label: the curve gets its length, diameter or radius.
-        const auto parsed = parseLength(text, document_.displayUnit());
+        const auto parsed = parseLength(text, document_.displayUnit(), document_.valueNames());
         if (!parsed.millimeters)
             return parsed.error;
         if (*parsed.millimeters <= 0)
@@ -2392,7 +2392,7 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
         return "That dimension no longer exists.";
     if (c->kind == sketch::ConstraintKind::Angle) {
         // Degrees, as shown (with the arithmetic the value box takes: 45*2).
-        const auto parsed = parseAngle(text);
+        const auto parsed = parseAngle(text, document_.valueNames());
         if (!parsed.millimeters)
             return parsed.error;
         const double degrees = *parsed.millimeters * 180.0 / kPi;
@@ -2407,7 +2407,7 @@ std::string SketchSession::setDimension(sketch::EntityId constraintId, const std
             return "The sketch cannot take that angle.";
         return {};
     }
-    const auto parsed = parseLength(text, document_.displayUnit());
+    const auto parsed = parseLength(text, document_.displayUnit(), document_.valueNames());
     if (!parsed.millimeters)
         return parsed.error;
     if (*parsed.millimeters <= 0)

@@ -12,7 +12,8 @@ import OpenShape
 // a row highlights its geometry in the view (so does an expanded row: touch
 // has no hover); clicking a body selects it (Shift, or any tap in the touch
 // layout, adds another, e.g. to combine); clicking a step edits its values.
-// Failures and warnings are shown in place with an explanation.
+// Failures and warnings are shown in place with an explanation. Below the
+// steps, the measurements kept in the project (ProjectMeasurementsSection).
 Panel {
     id: panel
 
@@ -44,6 +45,20 @@ Panel {
             Layout.fillWidth: true
             SectionLabel { text: "Model" }
             Item { Layout.fillWidth: true }
+            // The first measurement kept in the project (then the section
+            // below the steps has its own "+").
+            ActionButton {
+                objectName: "measurementAddFirst"
+                compact: true
+                visible: !panel.folded && panel.app.projectMeasurements.length === 0
+                         && !(list.footerItem && list.footerItem.adding)
+                text: "+ Measurement"
+                onClicked: {
+                    if (list.footerItem)
+                        list.footerItem.openAdd()
+                    Qt.callLater(() => list.positionViewAtEnd())
+                }
+            }
             ActionButton {
                 objectName: "historyPanelHide"
                 compact: true
@@ -67,6 +82,17 @@ Panel {
             boundsBehavior: Flickable.StopAtBounds
             model: panel.app.history
             ScrollBar.vertical: ScrollBar { policy: list.contentHeight > list.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+
+            // Below the steps: the measurements kept in the project, typed by name.
+            footer: ProjectMeasurementsSection {
+                width: list.width
+                app: panel.app
+                keypad: panel.keypad
+                host: panel
+                onFinished: panel.finished()
+                // In sight above a phone's keypad (the list is shorter while it is up).
+                onRevealRequested: Qt.callLater(() => list.positionViewAtEnd())
+            }
 
             delegate: Rectangle {
                 id: row

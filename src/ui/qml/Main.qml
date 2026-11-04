@@ -114,7 +114,7 @@ ApplicationWindow {
     // A new, empty document closes the Model panel. (Not the Model button
     // going away: unfolding a folding phone hides it, and folding again
     // brings the panel back as it was.)
-    readonly property bool hasHistory: app.history.length > 0
+    readonly property bool hasHistory: app.history.length > 0 || app.projectMeasurements.length > 0
     onHasHistoryChanged: if (!hasHistory) historyOpen = false
     onHistoryOpenChanged: if (historyOpen) viewMenuOpen = false
     onViewMenuOpenChanged: {
@@ -843,7 +843,7 @@ ApplicationWindow {
     Panel {
         id: modelButtonPanel
         objectName: "modelButtonPanel"
-        visible: Theme.compact && window.app.history.length > 0
+        visible: Theme.compact && window.hasHistory
         x: window.width - Theme.insetRight - width
         y: window.rightColumnY
         width: modelButton.implicitWidth + 2 * Theme.panelPadding
@@ -889,7 +889,7 @@ ApplicationWindow {
         width: Theme.compact ? Math.min(320, window.width - Theme.insetLeft - Theme.insetRight) : 290
         x: Theme.compact && !window.historyOpen ? window.width + 8 : window.width - Theme.insetRight - width
         y: Theme.compact ? modelButtonPanel.y + modelButtonPanel.height + 8 : window.modelPanelTop
-        visible: window.app.history.length > 0 && (!Theme.compact || window.historyOpen || x < window.width)
+        visible: window.hasHistory && (!Theme.compact || window.historyOpen || x < window.width)
         // A regular window's ends above the view cube when the two share the
         // right edge (a short window: the Duo's inner display), and above a
         // phone's keypad while a step's number is typed there.
@@ -1522,7 +1522,7 @@ ApplicationWindow {
         // keeps off the buttons of the top row and down the right side.)
         const avoid = keypad.wide ? [topBar, viewPanel, axisTriad, modelButtonPanel, viewButtonPanel]
                                   : [topBar, createPanel, viewPanel, axisTriad, statusColumn, modelButtonPanel, viewButtonPanel]
-        if (client.name !== "parameter")
+        if (client.name !== "parameter" && client.name !== "measurement")
             avoid.push(historyPanel)
         if (client.name !== "valueChip")
             avoid.push(valueChip)

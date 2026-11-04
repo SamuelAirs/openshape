@@ -165,6 +165,7 @@ std::shared_ptr<const Document> Document::snapshot() const
     for (const auto& r : references_)
         copy->references_.push_back(std::make_unique<ReferenceImage>(*r));
     copy->referenceRevision_ = referenceRevision_;
+    copy->measurements_ = measurements_;
     copy->sketchRevisions_ = sketchRevisions_;
     copy->revision_ = revision_;
     return copy;
@@ -610,6 +611,33 @@ void Document::syncSketchAttachments()
         if (!moved)
             return;
     }
+}
+
+const ProjectMeasurement* Document::measurement(std::string_view name) const
+{
+    for (const auto& m : measurements_)
+        if (sameValueName(m.name, name))
+            return &m;
+    return nullptr;
+}
+
+void Document::setMeasurements(std::vector<ProjectMeasurement> measurements)
+{
+    if (measurements == measurements_)
+        return;
+    measurements_ = std::move(measurements);
+    changed();
+}
+
+NameResolver Document::valueNames() const
+{
+    if (measurements_.empty())
+        return {};
+    return [this](std::string_view name) -> std::optional<NamedValue> {
+        if (const ProjectMeasurement* m = measurement(name))
+            return NamedValue{m->quantity, m->value};
+        return std::nullopt;
+    };
 }
 
 void Document::changed()

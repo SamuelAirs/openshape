@@ -372,6 +372,10 @@ public:
     // shown, and undo restores the previous value).
     Status setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text);
     Status setFeatureSuppressed(const Uuid& featureId, bool suppressed);
+    // The project's measurements, replaced as one undo step (`label`: "Add
+    // measurement"...). An operation in progress keeps its value; the model
+    // does not change (names are read when a value is typed).
+    Status setProjectMeasurements(std::vector<doc::ProjectMeasurement> measurements, const std::string& label);
     Status deleteFeature(const Uuid& featureId);
     Status setBodyVisible(const Uuid& bodyId, bool visible);
     // Like deleteSelectedBodies for one body; fails (without a message) when

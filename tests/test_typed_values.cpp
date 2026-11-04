@@ -482,3 +482,142 @@ TEST(TypedValues, TheValueBoxTakesUnitsArithmeticAndTheKeypadsSigns)
     ASSERT_TRUE(h.controller.commitOperation().ok());
     EXPECT_NEAR(h.height(), 40.0, 1e-9);
 }
+
+// ---- Measurements kept in the project, typed by name (docs/MEASURE.md) ------------------
+
+namespace {
+
+void keepMeasurements(doc::Document& document)
+{
+    document.setMeasurements({doc::ProjectMeasurement{"shelf_depth", ValueKind::Length, 30.0, "Ruler"},
+                              doc::ProjectMeasurement{"wall", ValueKind::Length, 2.5, {}},
+                              doc::ProjectMeasurement{"corner_angle", ValueKind::Angle, 60.0, "Fold"}});
+}
+
+} // namespace
+
+TEST(TypedValues, AMeasurementsNameInThePushPullsValueBox)
+{
+    BoxHarness h;
+    keepMeasurements(h.document);
+    ASSERT_NE(h.selectTop(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("shelf_depth - 2"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.height(), 28.0, 1e-9);
+    EXPECT_NEAR(geom::volume(h.document.bodies().front()->shape()), 20.0 * 20.0 * 28.0, 1e-6);
+    // In inches shown, a bare number beside a name is inches; the name stays mm.
+    h.document.setDisplayUnit(LengthUnit::Inch);
+    ASSERT_NE(h.controller.operation(), nullptr); // the pushed face stays selected
+    EXPECT_EQ(h.controller.setValueText("Shelf_Depth + 1"), "") << "any case";
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.height(), 55.4, 1e-9);
+    // Refusals keep the value: an unknown name, an angle's name for a length.
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("shelf - 2"), "No measurement called 'shelf' in this project");
+    EXPECT_EQ(h.controller.setValueText("corner_angle"), "This is a length, and corner_angle is an angle.");
+    EXPECT_NEAR(h.controller.operation()->value(), 55.4, 1e-9);
+    // The value is copied: changing the measurement later leaves the box as built.
+    h.document.setMeasurements({doc::ProjectMeasurement{"shelf_depth", ValueKind::Length, 99.0, {}}});
+    h.controller.cancelOperation();
+    EXPECT_NEAR(h.height(), 55.4, 1e-9);
+}
+
+TEST(TypedValues, AMeasurementsNameInASketchDimension)
+{
+    Harness h;
+    keepMeasurements(h.document);
+    const sketch::EntityId line = h.line();
+    EXPECT_EQ(h.session().setDimension(line, "shelf_depth - 2 * wall"), "");
+    EXPECT_NEAR(h.lengthOf(line), 25.0, 1e-9);
+    const sketch::EntityId dimension = h.onlyDimension();
+    EXPECT_EQ(h.session().setDimension(dimension, "(shelf_depth + wall) / 2"), "");
+    EXPECT_NEAR(h.lengthOf(line), 16.25, 1e-9);
+    EXPECT_EQ(h.session().setDimension(dimension, "corner_angle"), "This is a length, and corner_angle is an angle.");
+    EXPECT_NEAR(h.lengthOf(line), 16.25, 1e-9);
+    // A live value while drawing (a rectangle's width) too.
+    h.controller.setSketchTool(SketchTool::Rectangle);
+    h.click({0, 20});
+    h.move({10, 30});
+    ASSERT_TRUE(h.session().focusInput("width"));
+    EXPECT_EQ(h.session().setInput("width", "wall * 4"), "");
+    EXPECT_EQ(h.session().setInput("height", "shelf_depth"), "");
+    ASSERT_TRUE(h.controller.keyPress(Key::Enter));
+    double left = 1e9, right = -1e9, bottom = 1e9, top = -1e9;
+    for (const auto& [id, p] : h.sketch().points()) {
+        if (p.position.y < 19.999)
+            continue; // the first line's points
+        left = std::min(left, p.position.x);
+        right = std::max(right, p.position.x);
+        bottom = std::min(bottom, p.position.y);
+        top = std::max(top, p.position.y);
+    }
+    EXPECT_NEAR(right - left, 10.0, 1e-9);
+    EXPECT_NEAR(top - bottom, 30.0, 1e-9);
+}
+
+TEST(TypedValues, AnAngleMeasurementsNameInARotation)
+{
+    BoxHarness h;
+    keepMeasurements(h.document);
+    ASSERT_TRUE(h.controller.selectBody(h.document.bodies().front()->id(), false).ok());
+    ASSERT_TRUE(h.controller.runTool("rotate").ok());
+    ASSERT_NE(h.controller.operation(), nullptr);
+    ASSERT_TRUE(h.controller.operation()->isAngle());
+    const_cast<Operation*>(h.controller.operation())->setActiveHandle(2); // about Z
+    EXPECT_EQ(h.controller.setValueText("wall"), "This is an angle, and wall is a length.");
+    EXPECT_EQ(h.controller.setValueText("corner_angle / 2"), "");
+    EXPECT_NEAR(h.controller.operation()->value(), 30.0, 1e-9);
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    // A 20 x 20 square turned 30 degrees: 20 (cos 30 + sin 30) wide.
+    const auto bb = geom::boundingBox(h.document.bodies().front()->shape());
+    EXPECT_NEAR(bb.size().x, 20.0 * (std::cos(kPi / 6) + std::sin(kPi / 6)), 1e-6);
+    EXPECT_NEAR(bb.size().z, 20.0, 1e-6);
+}
+
+TEST(TypedValues, AMeasurementsNameInTheModelPanelAndTheKeypad)
+{
+    BoxHarness h;
+    keepMeasurements(h.document);
+    ASSERT_NE(h.selectTop(), nullptr);
+    EXPECT_EQ(h.controller.setValueText("25"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    // The push/pull's distance, edited in the Model panel.
+    const doc::Feature& pushPull = *h.document.bodies().front()->features().back();
+    const Uuid pushPullId = pushPull.id();
+    std::string key;
+    for (const auto& p : pushPull.parameters())
+        if (p.kind == doc::ParameterKind::Length)
+            key = p.key;
+    ASSERT_FALSE(key.empty());
+    EXPECT_TRUE(h.controller.setFeatureParameter(pushPullId, key, "wall * 4").ok()); // the distance pushed: 10
+    EXPECT_NEAR(h.height(), 30.0, 1e-9);
+    const Status refused = h.controller.setFeatureParameter(pushPullId, key, "depth");
+    EXPECT_FALSE(refused.ok());
+    EXPECT_EQ(refused.userMessage(), "No measurement called 'depth' in this project");
+
+    // The keypad: a name's key adds it whole, after a space when a number
+    // comes before; backspace takes it whole; a unit after it does nothing.
+    KeypadState state{"20.00 mm", true};
+    state = insertKeypadName(state, "shelf_depth").state;
+    EXPECT_EQ(state.text, "shelf_depth") << "over the value shown";
+    for (const char* k : {"-", "2"})
+        state = pressKeypadKey(state, k, KeypadMode::Length).state;
+    EXPECT_EQ(state.text, "shelf_depth-2");
+    EXPECT_DOUBLE_EQ(*keypadValue(state.text, KeypadMode::Length, LengthUnit::Millimeter, h.document.valueNames()).millimeters, 28.0);
+    EXPECT_EQ(insertKeypadName(state, "wall").state.text, "shelf_depth-2 wall") << "the parser asks for the operator";
+    const std::vector<std::string> names{"shelf_depth", "wall", "corner_angle"};
+    state = pressKeypadKey(state, "*", KeypadMode::Length).state;
+    state = insertKeypadName(state, "wall").state;
+    EXPECT_EQ(state.text, "shelf_depth-2*wall");
+    EXPECT_EQ(pressKeypadKey(state, "mm", KeypadMode::Length, names).action, KeypadAction::None);
+    state = pressKeypadKey(state, "back", KeypadMode::Length, names).state;
+    EXPECT_EQ(state.text, "shelf_depth-2*");
+    EXPECT_EQ(pressKeypadKey({"length_3", false}, "back", KeypadMode::Length, {"Length_3"}).state.text, "") << "digits in a name, any case";
+    EXPECT_EQ(pressKeypadKey({"loft", false}, "back", KeypadMode::Length, names).state.text, "lof") << "not a name: one letter";
+    EXPECT_EQ(pressKeypadKey({"wall", false}, "mm", KeypadMode::Length).action, KeypadAction::Edited) << "without names, as before";
+    EXPECT_EQ(pressKeypadKey({"25mm", false}, "back", KeypadMode::Length, names).state.text, "25") << "a unit as before";
+    EXPECT_EQ(pressKeypadKey({"25", false}, "back", KeypadMode::Length).state.text, "2");
+    EXPECT_EQ(insertKeypadName({"(2", false}, "wall").state.text, "(2 wall");
+    EXPECT_EQ(insertKeypadName({"2*", false}, "wall").state.text, "2*wall");
+    EXPECT_NEAR(*keypadValue("corner_angle/2", KeypadMode::Angle, LengthUnit::Millimeter, h.document.valueNames()).millimeters, kPi / 6, 1e-12);
+}

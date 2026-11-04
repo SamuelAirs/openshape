@@ -278,6 +278,10 @@ void AppController::refreshLists()
         historyList_ = historyListFrom(historyRows_);
         emit historyChanged();
     }
+    if (QVariantList measurements = projectMeasurementsFromDocument(); measurements != projectMeasurementsList_) {
+        projectMeasurementsList_ = std::move(measurements);
+        emit projectMeasurementsChanged();
+    }
 }
 
 bool AppController::operationActive() const { return interaction_->operation() != nullptr; }
@@ -2019,12 +2023,21 @@ QVariantList AppController::keypadRows(const QString& mode, bool hasNext, bool w
 QVariantMap AppController::keypadPress(const QString& text, bool replacing, const QString& key, const QString& mode) const
 {
     const auto keypadMode = interact::keypadModeFromString(mode.toStdString()).value_or(interact::KeypadMode::Length);
-    return keypadResultMap(interact::pressKeypadKey({text.toStdString(), replacing}, key.toStdString(), keypadMode));
+    // The project's measurements: backspace takes one of their names whole.
+    std::vector<std::string> names;
+    for (const auto& m : document_->measurements())
+        names.push_back(m.name);
+    return keypadResultMap(interact::pressKeypadKey({text.toStdString(), replacing}, key.toStdString(), keypadMode, names));
 }
 
 QVariantMap AppController::keypadType(const QString& text, bool replacing, const QString& characters) const
 {
     return keypadResultMap(interact::typeIntoKeypad({text.toStdString(), replacing}, characters.toStdString()));
+}
+
+QVariantMap AppController::keypadInsertName(const QString& text, bool replacing, const QString& name) const
+{
+    return keypadResultMap(interact::insertKeypadName({text.toStdString(), replacing}, name.toStdString()));
 }
 
 QVariantMap AppController::placeKeypad(const QVariantMap& layout) const
