@@ -219,14 +219,38 @@ run 4958/4958 checks (new scenarios `measure`, `measuredesign`); the
 lambda-capture check (only the known `Duo.cpp:529`). Nothing tried on a
 device yet; docs/MANUAL_TESTS.md has the owner's 0.4.0 round.
 
-**Still running tonight** (agents, merged only when they pass the same
-tests): Scan (our own photogrammetry: an object on a sheet of paper, 6 to
-16 photos, the paper gives each camera; silhouette carving, Surface Nets,
-decimation, the mesh as a body) with a multi-view stereo stage (depth maps,
-consistency filtering, TSDF fusion inside the hull), reference photos in the
-design (a textured quad per photo, saved in the project, Set scale by two
-points), measurements kept in the project and typed by name
-(`shelf_depth - 2`).
+**First TestFlight build:** pushed at `a96d959` with `[testflight]` (the
+iPad workflow uploads a branch build only then): CI 70 and iPad run 61
+passed, **build 61** (0.4.0) uploaded at 01:49. The iOS code compiled on the
+first try.
+
+**Then merged, for the second build** (head after `e5484b2`):
+- **Scan** (docs/SCAN.md), our own photogrammetry: an object on a sheet of
+  A4 or Letter paper, 8 to 16 photos; the paper's homography gives each
+  camera (the focal length from EXIF, or estimated by Zhang's constraints),
+  the corner labelling is chosen by silhouette consistency, masks from
+  Vision or the paper's colour, coarse-to-fine carving, **multi-view stereo**
+  (PatchMatch depth maps scored by ZNCC, consistency checks, TSDF fusion
+  inside the hull), Surface Nets, decimation, a closed mesh; synthetic
+  12-photo ring: the U-channel +6.7 % volume (hull alone +51 %), a textured
+  box +5.2 % (hull +30.9 %), stereo 0.5 s at 4 threads. The mesh becomes a
+  body (`geom::solidFromMesh`, `AppController::addMeshBody`); bodies made
+  from meshes hide their facet edges. The Scan screen: photos from the
+  camera, the library or files, a review strip for the paper's corners,
+  Build with progress and Cancel, a turning preview, Add to design.
+  File → Import STL… comes with it.
+- **Reference photos** in the design (`document/ReferenceImage`, a textured
+  quad per photo, depth-tested, saved in the project, Set scale by two
+  points; Place in design from Measure's straightened photo).
+- **Measurements kept in the project** and typed by name in any value box
+  (`core/Units` name resolver, `doc::ProjectMeasurement`, the Model panel's
+  Measurements, the keypad's name keys, Add to project from a kept reading).
+
+**Verified on the PC** (head `1399b77`, the Help rows after it checked on
+their own): 958/958 headless; the full real-UI run 5440/5440 checks (new
+scenarios `measurescan`, `scan`, `referencephoto`, `projectmeasurements`);
+the lambda-capture check (only the known `Duo.cpp:529`). Nothing new tried
+on a device yet: docs/MANUAL_TESTS.md, "FoldForm 0.4.0", items 1 to 10.
 
 **The shared PC:** since 23:15 heavy runs go through one lock in FoldForm's
 booked slots (the vault's `Shared/PC schedule.md`), `-j 10`, one at a time.
