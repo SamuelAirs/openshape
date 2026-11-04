@@ -251,6 +251,22 @@ Rectangle {
                         ]
                     }
                     HelpSection {
+                        title: "Measure"
+                        rows: [
+                            ["Open Measure", "The ruler button at the top, or Measure on Home: instruments that measure real things, for the design"],
+                            ["Ruler", "Lay a thing on the screen and drag the two jaws to its ends · Circle: drag the ring's handle until it fits a coin, a washer or a cap (Make sketch draws it)"],
+                            ["Card check", "Ruler → Check with a card: lay a bank card on the outline and stretch it to the card's edges; the scale is kept for this screen"],
+                            ["Fold", "iPhone Duo: rest the two halves on two faces (inside a corner or over an edge); the angle is held once steady · Gap: pinch a part between the free edges (Calibrate with a card first)"],
+                            ["Level", "Lie the phone on a surface for its slope, stand it on an edge for the edge's angle · Keep as reference: the next position gives the angle between the two surfaces"],
+                            ["Photo", "Photograph the thing with a bank card or a sheet of paper flat beside it, check the four corners, Straighten, then click two ends (Distance), the corners (Outline) or three points on a rim (Circle)",
+                             "Photograph the thing with a bank card or a sheet of paper flat beside it, check the four corners, Straighten, then tap two ends (Distance), the corners (Outline) or three points on a rim (Circle)"],
+                            ["Camera", "iPhone or iPad: Distance, Outline or Box in the camera's view (AR); Make sketch or Make box from the result"],
+                            ["Into a value box", "The ruler button in a value box opens Measure for it; Use (e.g. Use 42.3 mm) types the value there"],
+                            ["Kept measurements", "Keep saves a reading (Length 3, Angle 1, …); click one in the list to use, rename or delete it",
+                             "Keep saves a reading (Length 3, Angle 1, …); tap one in the list to use, rename or delete it"]
+                        ]
+                    }
+                    HelpSection {
                         title: "History"
                         rows: [
                             ["Change any step", "Model panel → click the step → edit", "Model panel (the Model button on a phone) → tap the step → edit"],

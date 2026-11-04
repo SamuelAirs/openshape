@@ -49,7 +49,7 @@ ApplicationWindow {
     // (Ctrl+N behind "Save changes?" would replace what it is asking about).
     // So do they while a project opens (the loading card).
     readonly property bool modalOpen: unsavedDialog.visible || recoveryOverlay.visible || saveNamePrompt.visible || purchaseOverlay.visible
-                                      || app.loading
+                                      || app.loading || measureScreen.active
 
     // ---------------------------------------------------------------- layout
     // The window's size and safe areas drive the layout (Theme.compact,
@@ -241,7 +241,7 @@ ApplicationWindow {
     // Qt leaves them nowhere after a sub-menu), unless the menu opened a
     // panel that takes them.
     function focusViewUnlessPanel() {
-        const panels = [purchaseOverlay, saveNamePrompt, unsavedDialog, shareFromFiles, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, homeScreen]
+        const panels = [purchaseOverlay, saveNamePrompt, unsavedDialog, shareFromFiles, recoveryOverlay, preferencesOverlay, licensesOverlay, aboutOverlay, helpOverlay, measureScreen, homeScreen]
         for (const panel of panels) {
             if (panel.visible) {
                 panel.forceActiveFocus()
@@ -464,6 +464,17 @@ ApplicationWindow {
                 ToolTip.delay: 500
             }
             Separator {}
+            ActionButton {
+                objectName: "measureButton"
+                text: "Measure"
+                iconName: "ruler"
+                iconOnly: true
+                implicitWidth: Theme.controlHeight
+                onClicked: measureScreen.open()
+                ToolTip.visible: hovered && !Theme.touch
+                ToolTip.text: "Measure real things"
+                ToolTip.delay: 500
+            }
             ActionButton {
                 objectName: "helpButton"
                 text: "Help"
@@ -1528,7 +1539,25 @@ ApplicationWindow {
         onImportRequested: window.importNewProject()
         onProjectRequested: (path) => window.confirmDiscard(() => window.app.openRecent(path))
         onSampleRequested: (name) => window.confirmDiscard(() => window.app.openSample(name))
+        onMeasureRequested: measureScreen.open()
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+
+    // ---------------------------------------------------------------- measure
+    // Measure (docs/MEASURE.md): the instruments, over the design and Home,
+    // below Help, the dialogs and the toast.
+    MeasureScreen {
+        id: measureScreen
+        objectName: "measureScreen"
+        app: window.app
+        anchors.fill: parent
+        z: 95
+        onUseValue: (text) => window.useMeasuredValue(text)
+        onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
+    }
+    // A value measured for a value box goes into it. The design hooks replace this.
+    function useMeasuredValue(text) {
+        window.app.typeValueText(text)
     }
 
     // ---------------------------------------------------------------- help

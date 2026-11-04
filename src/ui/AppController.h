@@ -11,6 +11,7 @@
 #include "ui/AppSettings.h"
 #include "ui/Licenses.h"
 #include "ui/IncomingFiles.h"
+#include "ui/MeasureController.h"
 #include "ui/Purchase.h"
 #include "ui/Share.h"
 #include "ui/Store.h"
@@ -205,6 +206,8 @@ class AppController : public QObject {
     Q_PROPERTY(QString purchasePrice READ purchasePrice NOTIFY purchaseChanged)
     Q_PROPERTY(QString purchaseMessage READ purchaseMessage NOTIFY purchaseChanged)
     Q_PROPERTY(bool purchaseCanBuy READ purchaseCanBuy NOTIFY purchaseChanged)
+    // ---- Measure (docs/MEASURE.md): the Measure workspace's state.
+    Q_PROPERTY(os::ui::MeasureController* measure READ measure CONSTANT)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -520,6 +523,18 @@ public:
     Q_INVOKABLE void restorePurchase();
     Q_INVOKABLE void closePurchase();
 
+    // ---- Measure (docs/MEASURE.md; ui/MeasureController)
+    MeasureController* measure() const { return measure_; }
+    // The screen's true scale, whenever it changes (MeasureController).
+    // The 1:1 view (design hooks) replaces this.
+    void setScreenScale(double pointsPerMm, bool calibrated);
+    // Geometry made from measurements (mm, on the ground plane, y up):
+    // an outline sketch (each point a QPointF or {x, y}), a circle sketch,
+    // a box of a size. True when made. Design hooks replace these stubs.
+    Q_INVOKABLE bool createOutlineSketch(const QVariantList& pointsMm, bool closed);
+    Q_INVOKABLE bool createCircleSketch(double centerXmm, double centerYmm, double diameterMm);
+    Q_INVOKABLE bool createSizedBox(double widthMm, double depthMm, double heightMm);
+
     // ---- Files from other apps ("Open in OpenShape"; ui/IncomingFiles.h)
     // A file another app handed to OpenShape: on iOS, "Open in OpenShape" or
     // sharing to OpenShape from the Files app or Mail, or a project tapped
@@ -822,6 +837,7 @@ private:
     };
     std::optional<PendingProject> pendingProject_;
     TrashHandler trashHandler_;
+    MeasureController* measure_ = nullptr; // a child (the Measure workspace)
     // A file from another app, brought in and waiting for "Save changes?".
     std::optional<StagedFile> pendingIncoming_;
     QString pendingIncomingName_; // its name as it came (the STEP step's source)
