@@ -335,16 +335,19 @@ bool makePhoto(const StatePtr& st)
     p.setPen(QPen(QColor(0x9C, 0x74, 0x4C, 70), 3));
     for (double y = -15; y < 205; y += 13)
         p.drawPolyline(mapped(*h, {{-25, y}, {80, y + 2}, {170, y - 1}, {265, y + 1}}));
-    // The card, its stripe and chip.
+    // The playing card (lying long side across), its shadow and red pips.
+    const double cardW = measure::kPlayingCard.longMm, cardH = measure::kPlayingCard.shortMm;
     p.setPen(Qt::NoPen);
     p.setBrush(QColor(0, 0, 0, 40));
-    p.drawPolygon(mapped(*h, rectangle(kCardX + 1.2, kCardY + 1.8, kCardX + 86.8, kCardY + 55.8)));
+    p.drawPolygon(mapped(*h, rectangle(kCardX + 1.2, kCardY + 1.8, kCardX + cardW + 1.2, kCardY + cardH + 1.8)));
     p.setBrush(QColor(0xFA, 0xFB, 0xFD));
-    p.drawPolygon(mapped(*h, rectangle(kCardX, kCardY, kCardX + measure::kCardWidthMm, kCardY + measure::kCardHeightMm)));
-    p.setBrush(QColor(0x2F, 0x5D, 0xA8));
-    p.drawPolygon(mapped(*h, rectangle(kCardX, kCardY + 9, kCardX + measure::kCardWidthMm, kCardY + 19)));
-    p.setBrush(QColor(0xD9, 0xB4, 0x4A));
-    p.drawPolygon(mapped(*h, rectangle(kCardX + 9, kCardY + 26, kCardX + 21, kCardY + 35)));
+    p.drawPolygon(mapped(*h, rectangle(kCardX, kCardY, kCardX + cardW, kCardY + cardH)));
+    p.setBrush(QColor(0xC8, 0x2A, 0x2A));
+    const std::array<std::pair<Vec2, double>, 3> pips{{{Vec2{kCardX + 8, kCardY + 9}, 4.0},
+                                                       {Vec2{kCardX + cardW / 2, kCardY + cardH / 2}, 9.0},
+                                                       {Vec2{kCardX + cardW - 8, kCardY + cardH - 9}, 4.0}}};
+    for (const auto& [pip, size] : pips)
+        p.drawPolygon(mapped(*h, {Vec2{pip.x, pip.y - size}, Vec2{pip.x + size * 0.7, pip.y}, Vec2{pip.x, pip.y + size}, Vec2{pip.x - size * 0.7, pip.y}}));
     // The bar, the plate and the washer.
     p.setBrush(QColor(0x2A, 0x2F, 0x36));
     p.drawPolygon(mapped(*h, rectangle(kBarA.x, kBarA.y - 3, kBarB.x, kBarB.y + 3)));
@@ -359,9 +362,8 @@ bool makePhoto(const StatePtr& st)
     p.setBrush(QColor(0x8C, 0x94, 0x9E));
     p.drawPath(washer);
     p.end();
-    const std::array<Vec2, 4> card{Vec2{kCardX, kCardY}, Vec2{kCardX + measure::kCardWidthMm, kCardY},
-                                   Vec2{kCardX + measure::kCardWidthMm, kCardY + measure::kCardHeightMm},
-                                   Vec2{kCardX, kCardY + measure::kCardHeightMm}};
+    const std::array<Vec2, 4> card{Vec2{kCardX, kCardY}, Vec2{kCardX + cardW, kCardY}, Vec2{kCardX + cardW, kCardY + cardH},
+                                   Vec2{kCardX, kCardY + cardH}};
     for (std::size_t i = 0; i < 4; ++i) {
         const Vec2 q = h->map(card[i]);
         st->cardCorners[i] = QPointF(q.x, q.y);
@@ -639,8 +641,9 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(list.size() == 1 && list[0].toMap().value(QStringLiteral("source")).toString() == QStringLiteral("Ruler"),
                 say("Keep adds the length"), QString::number(list.size()));
         const QString name = list.isEmpty() ? QString() : list[0].toMap().value(QStringLiteral("name")).toString();
-        r.check(text(r, QStringLiteral("measureToastText")) == QStringLiteral("Kept as ") + name && shown(r, QStringLiteral("measureToast")),
-                say("a toast says what it was kept as"), text(r, QStringLiteral("measureToastText")));
+        r.check(text(r, QStringLiteral("measureToastText")) == QStringLiteral("Kept as ") + name + QStringLiteral(" · tap it to use it")
+                    && shown(r, QStringLiteral("measureToast")),
+                say("a toast says what it was kept as, and what next"), text(r, QStringLiteral("measureToastText")));
         r.check(shown(r, QStringLiteral("measureTray")) && shown(r, QStringLiteral("measureChip_0")), say("the tray shows it"));
         checkLayout(r, kPhone, QStringLiteral("phone ruler with the tray"));
     });
@@ -651,7 +654,27 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     steps.push_back([&r, st] {
         r.check(shown(r, QStringLiteral("cardCalibration")), say("card: the outline is shown"));
         st->before = prop(r, QStringLiteral("cardCalibration"), "spanPt").toDouble();
-        r.check(std::abs(st->before - measure::kCardWidthMm * st->ppm) < 0.01, say("card: drawn at the current scale"));
+        r.check(measureOf(r).cardKind() == QStringLiteral("playing") && std::abs(st->before - measure::kPlayingCard.longMm * st->ppm) < 0.01,
+                say("card: a playing card's outline, drawn at the current scale"), AcceptanceRunner::num(st->before));
+        r.check(text(r, QStringLiteral("cardInstructions")).contains(QStringLiteral("playing card"))
+                    && text(r, QStringLiteral("cardSizeText")) == QStringLiteral("63.5 \u00D7 88.9 mm"),
+                say("card: it says which card, and its size"), text(r, QStringLiteral("cardSizeText")));
+        r.check(r.tapItem(QStringLiteral("cardKind_bank")), say("card: pick Bank card"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        const double span = prop(r, QStringLiteral("cardCalibration"), "spanPt").toDouble();
+        r.check(measureOf(r).cardKind() == QStringLiteral("bank") && std::abs(span - measure::kBankCard.longMm * st->ppm) < 0.01
+                    && text(r, QStringLiteral("cardSizeText")) == QStringLiteral("53.98 \u00D7 85.60 mm"),
+                say("card: the bank card's outline at the same scale"), AcceptanceRunner::num(span));
+        r.check(QSettings().value(QStringLiteral("measure/card")).toString() == QStringLiteral("bank"), say("card: the choice is kept"));
+        r.check(r.tapItem(QStringLiteral("cardKind_playing")), say("card: back to Playing card"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        r.check(measureOf(r).cardKind() == QStringLiteral("playing")
+                    && std::abs(prop(r, QStringLiteral("cardCalibration"), "spanPt").toDouble() - st->before) < 0.01,
+                say("card: the playing card again, as drawn before"));
         QQuickItem* outline = item(r, QStringLiteral("cardOutline"));
         r.check(outline && std::abs(outline->height() - st->before) < 0.01, say("card: along the phone's long side"),
                 outline ? AcceptanceRunner::num(outline->height()) : QString());
@@ -672,15 +695,15 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     steps.push_back([&r, st] {
         auto& m = measureOf(r);
         r.check(!shown(r, QStringLiteral("cardCalibration")), say("card: closes"));
-        r.check(m.scaleCalibrated() && std::abs(m.pointsPerMm() - st->before / measure::kCardWidthMm) < 1e-6,
-                say("card: the scale is the card's"), AcceptanceRunner::num(m.pointsPerMm()));
+        r.check(m.scaleCalibrated() && std::abs(m.pointsPerMm() - st->before / measure::kPlayingCard.longMm) < 1e-6,
+                say("card: the scale is the playing card's"), AcceptanceRunner::num(m.pointsPerMm()));
         QSettings settings;
         r.check(std::abs(settings.value(QStringLiteral("measure/scale/") + m.screenKey()).toDouble() - m.pointsPerMm()) < 1e-9,
                 say("card: kept for this screen"), m.screenKey());
         m.updateScale();
-        r.check(m.scaleCalibrated() && std::abs(m.pointsPerMm() - st->before / measure::kCardWidthMm) < 1e-6, say("card: read back"));
+        r.check(m.scaleCalibrated() && std::abs(m.pointsPerMm() - st->before / measure::kPlayingCard.longMm) < 1e-6, say("card: read back"));
         r.check(text(r, QStringLiteral("rulerScaleNote")) == QStringLiteral("Scale checked with a card"), say("card: the ruler says so"));
-        r.check(!m.calibrate(10, measure::kCardWidthMm), say("card: an implausible scale is refused"));
+        r.check(!m.calibrate(10, measure::kPlayingCard.longMm), say("card: an implausible scale is refused"));
         st->ppm = m.pointsPerMm();
         // The jaws keep their millimeters: the reading still matches the screen.
         const double onScreen = center(r, QStringLiteral("rulerJawBHandle")).y() - center(r, QStringLiteral("rulerJawAHandle")).y();
@@ -745,9 +768,31 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         steps.push_back([st, i] { pushHinge(st, 100 + 8 * i); });
     steps.push_back([&r, st] {
         r.check(!measureOf(r).foldHasHold() && !measureOf(r).foldSteady(), say("fold: moving, nothing held"));
+        r.check(text(r, QStringLiteral("foldHoldTagText")) == QStringLiteral("LIVE"), say("fold: the number is marked live"));
+        r.check(text(r, QStringLiteral("foldHoldHint")).contains(QStringLiteral("held after a second")), say("fold: a line says when it holds"),
+                text(r, QStringLiteral("foldHoldHint")));
         st->count = st->haptics;
-        for (int i = 0; i < 25; ++i)
-            pushHinge(st, 90);
+        // The Duo's hinge reports only changes: one reading at 90, then
+        // nothing while time passes (the sensor tick feeds it again).
+        pushHinge(st, 90);
+        for (int i = 0; i < 11; ++i) {
+            st->clock += 0.1;
+            measureOf(r).tickSensors();
+        }
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        auto& m = measureOf(r);
+        QQuickItem* fill = item(r, QStringLiteral("foldHoldFill"));
+        r.check(!m.foldHasHold() && m.foldProgress() > 0.2 && m.foldProgress() < 1 && fill && fill->width() > 10
+                    && text(r, QStringLiteral("foldHoldText")) == QStringLiteral("Hold still\u2026"),
+                say("fold: keeping still, the pill fills toward the hold"),
+                QStringLiteral("progress %1, fill %2").arg(m.foldProgress()).arg(fill ? fill->width() : -1));
+        r.screenshot(QStringLiteral("measure_fold_filling_phone"));
+        for (int i = 0; i < 12; ++i) {
+            st->clock += 0.1;
+            m.tickSensors();
+        }
     });
     wait(steps, 1);
     steps.push_back([&r, st] {
@@ -755,12 +800,32 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(m.foldHasHold() && std::abs(m.foldHeld() - 90) < 0.4, say("fold: still, the angle is held"), AcceptanceRunner::num(m.foldHeld()));
         r.check(st->haptics == st->count + 1, say("fold: a tap is felt once"), QString::number(st->haptics - st->count));
         r.check(text(r, QStringLiteral("foldHoldText")).startsWith(QStringLiteral("Held")), say("fold: the pill says held"), text(r, QStringLiteral("foldHoldText")));
+        r.check(text(r, QStringLiteral("foldHoldTagText")) == QStringLiteral("HELD") && text(r, QStringLiteral("foldHoldHint")).startsWith(QStringLiteral("Held:")),
+                say("fold: HELD over the number, and how to measure again"), text(r, QStringLiteral("foldHoldHint")));
         r.check(text(r, QStringLiteral("foldValue")) == QString::number(m.foldHeld(), 'f', 1), say("fold: the angle, huge"), text(r, QStringLiteral("foldValue")));
         r.check(std::abs(readoutNumber(r) - m.foldHeld()) < 0.06 && !shown(r, QStringLiteral("measureReadoutValue"))
                     && text(r, QStringLiteral("measureReadoutCaption")) == QStringLiteral("Angle · held"),
                 say("fold: the readout keeps the held angle without repeating its number on a phone"), text(r, QStringLiteral("measureReadoutCaption")));
         checkLayout(r, kPhone, QStringLiteral("phone fold"));
         r.screenshot(QStringLiteral("measure_fold_phone"));
+        // Measure again while the phone lies still: no hold at once.
+        r.check(r.tapItem(QStringLiteral("foldMeasureAgain")), say("fold: Measure again"));
+        for (int i = 0; i < 3; ++i) {
+            st->clock += 0.1;
+            m.tickSensors();
+        }
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        auto& m = measureOf(r);
+        r.check(!m.foldHasHold() && text(r, QStringLiteral("foldHoldTagText")) == QStringLiteral("LIVE"),
+                say("fold: Measure again waits the whole second again, even lying still"), AcceptanceRunner::num(m.foldProgress()));
+        st->count = st->haptics;
+        for (int i = 0; i < 9; ++i) {
+            st->clock += 0.1;
+            m.tickSensors();
+        }
+        r.check(m.foldHasHold() && st->haptics == st->count + 1, say("fold: then held again, with a tap"));
         // Moving on: the hold stays until the next steady stretch.
         for (int i = 0; i < 3; ++i)
             pushHinge(st, 95 + 5 * i);
@@ -781,12 +846,16 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     });
     steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("caliperCalibrate")), say("caliper: Calibrate with a card")); });
     wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(text(r, QStringLiteral("caliperSide_short")).contains(QStringLiteral("63.5")), say("caliper: the playing card's short side"),
+                text(r, QStringLiteral("caliperSide_short")));
+    });
     steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("caliperCalibrateDone")), say("caliper: Calibrate (the short side)")); });
     wait(steps, 1);
     steps.push_back([&r] {
         auto& m = measureOf(r);
-        r.check(m.caliperCalibrated() && std::abs(m.caliperHeldGapMm() - measure::kCardHeightMm) < 0.01,
-                say("caliper: calibrated, the card's side reads 53.98 mm"), AcceptanceRunner::num(m.caliperHeldGapMm()));
+        r.check(m.caliperCalibrated() && std::abs(m.caliperHeldGapMm() - measure::kPlayingCard.shortMm) < 0.01,
+                say("caliper: calibrated, the playing card's side reads 63.5 mm"), AcceptanceRunner::num(m.caliperHeldGapMm()));
         QSettings settings;
         r.check(std::abs(settings.value(QStringLiteral("measure/caliperArm")).toDouble() - m.caliperArmMm()) < 1e-9, say("caliper: the arm is kept"));
         m.resetCaliper();
@@ -813,6 +882,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(vial && bubble && sceneRect(bubble).center().x() < sceneRect(vial).center().x() - 10, say("level: drawn left of center"));
         r.check(m.levelHasHold() && text(r, QStringLiteral("levelValue")) == QStringLiteral("3.0"), say("level: held, 3.0°"),
                 text(r, QStringLiteral("levelValue")));
+        r.check(text(r, QStringLiteral("levelHoldTagText")) == QStringLiteral("HELD") && text(r, QStringLiteral("levelHoldHint")).startsWith(QStringLiteral("Held:")),
+                say("level: HELD over the number, and how to measure again"), text(r, QStringLiteral("levelHoldHint")));
         r.screenshot(QStringLiteral("measure_level_phone"));
     });
     steps.push_back([st] {
@@ -925,8 +996,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         const QVariantList ref = m.straightReference();
         const double longSide = ref.size() == 4 ? QLineF(ref[0].toPointF(), ref[1].toPointF()).length() * m.straightMmPerPixel() : 0;
         const double shortSide = ref.size() == 4 ? QLineF(ref[1].toPointF(), ref[2].toPointF()).length() * m.straightMmPerPixel() : 0;
-        r.check(std::abs(longSide - measure::kCardWidthMm) < 0.05 && std::abs(shortSide - measure::kCardHeightMm) < 0.05,
-                say("photo: the card is square and true in the straightened view"), QStringLiteral("%1 x %2").arg(longSide).arg(shortSide));
+        r.check(std::abs(longSide - measure::kPlayingCard.longMm) < 0.05 && std::abs(shortSide - measure::kPlayingCard.shortMm) < 0.05,
+                say("photo: the playing card is square and true in the straightened view"), QStringLiteral("%1 x %2").arg(longSide).arg(shortSide));
         checkLayout(r, kPhone, QStringLiteral("phone photo straightened"));
     });
     steps.push_back([&r, st] { r.check(tapTable(r, st, kBarA) , say("photo (phone): tap the bar's end")); });
@@ -1396,9 +1467,43 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     && std::abs(first.value(QStringLiteral("value")).toDouble() - expected) < 1e-9,
                 say("tray: in the project as shelf_depth, at the kept value"),
                 kept.isEmpty() ? QStringLiteral("none") : first.value(QStringLiteral("name")).toString());
-        r.check(!shown(r, QStringLiteral("measureChipCard")), say("tray: the card closed"));
+        // The card stays and says how to use it; the list marks it.
+        r.check(shown(r, QStringLiteral("measureChipCard")) && !shown(r, QStringLiteral("measureChipToProject"))
+                    && text(r, QStringLiteral("measureChipDesignText")).startsWith(QStringLiteral("In the project as shelf_depth. Type shelf_depth")),
+                say("tray: the card says its name in the project and how to type it"), text(r, QStringLiteral("measureChipDesignText")));
+        // A chip in a row gets a check; a row in the side list, the name.
+        const QString marked = text(r, QStringLiteral("measureChipInProject_0"));
+        r.check(shown(r, QStringLiteral("measureChipInProject_0")) && (marked.isEmpty() || marked == QStringLiteral("shelf_depth")),
+                say("tray: the kept measurement is marked as in the project"), marked);
+        r.screenshot(QStringLiteral("measure_chip_in_project_desktop"));
+        r.check(r.clickItem(QStringLiteral("measureChipClose")), say("tray: close the card"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
         r.app().undo(); // the project as it was
-        r.check(r.app().property("projectMeasurements").toList().isEmpty(), say("tray: one undo takes it out of the project"));
+        r.check(r.app().property("projectMeasurements").toList().isEmpty() && !shown(r, QStringLiteral("measureChipInProject_0")),
+                say("tray: one undo takes it out of the project (and off the list)"));
+        // How measurements reach the design.
+        r.check(r.clickItem(QStringLiteral("measureTrayHelp")), say("guide: the ? beside the kept measurements"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        QQuickItem* guide = item(r, QStringLiteral("measureGuide"));
+        const int waiting = guide ? int(guide->property("notInProject").toList().size()) : -1;
+        r.check(shown(r, QStringLiteral("measureGuide")) && shown(r, QStringLiteral("measureGuideAddAll")) && waiting > 0,
+                say("guide: three ways, and Add all to the project"), QString::number(waiting));
+        r.screenshot(QStringLiteral("measure_guide_desktop"));
+        st->count = waiting;
+        r.check(r.clickItem(QStringLiteral("measureGuideAddAll")), say("guide: Add all"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        const int inProject = int(r.app().property("projectMeasurements").toList().size());
+        r.check(inProject == st->count && !shown(r, QStringLiteral("measureGuide")) && shown(r, QStringLiteral("measureChipInProject_0")),
+                say("guide: every kept length and angle is in the project"), QStringLiteral("%1 of %2").arg(inProject).arg(st->count));
+        for (int i = 0; i < inProject; ++i)
+            r.app().undo();
+        r.check(r.app().property("projectMeasurements").toList().isEmpty(), say("guide: undone, one step each"));
         r.check(r.tapItem(QStringLiteral("measureChip_0")), say("tray: the kept length again"));
     });
     wait(steps, 1);

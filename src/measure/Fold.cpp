@@ -63,6 +63,7 @@ SteadyReading::State SteadyReading::feed(double value, double seconds)
     if (!std::isfinite(value)) {
         state.value = smoothed_.value_or(0);
         state.held = held_;
+        state.armed = armed_;
         return state;
     }
     if (!smoothed_) {
@@ -93,6 +94,20 @@ SteadyReading::State SteadyReading::feed(double value, double seconds)
             break;
         }
     state.steady = covered && hi - lo <= steadyRange_;
+    // How long it has kept in range: back from the newest value while the
+    // values seen so far stay within the steady range of each other.
+    double stillSince = seconds;
+    double tailLo = *smoothed_, tailHi = *smoothed_;
+    for (auto it = window_.rbegin(); it != window_.rend(); ++it) {
+        tailLo = std::min(tailLo, it->second);
+        tailHi = std::max(tailHi, it->second);
+        if (tailHi - tailLo > steadyRange_)
+            break;
+        stillSince = it->first;
+    }
+    state.progress = state.steady ? 1.0
+                     : steadySeconds_ > 0 ? std::clamp((seconds - stillSince) / steadySeconds_, 0.0, 0.99)
+                                         : 0.0;
 
     // A move away from the hold re-arms it; the next steady stretch holds.
     if (held_ && std::abs(*smoothed_ - *held_) > 3 * steadyRange_)
@@ -104,6 +119,7 @@ SteadyReading::State SteadyReading::feed(double value, double seconds)
     }
     state.value = *smoothed_;
     state.held = held_;
+    state.armed = armed_;
     return state;
 }
 

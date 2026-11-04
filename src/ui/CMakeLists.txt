@@ -82,6 +82,7 @@ qt_add_qml_module(openshape_ui
         qml/MeasureSegmented.qml
         qml/MeasureNotice.qml
         qml/MeasureHoldPill.qml
+        qml/MeasureHoldTag.qml
         qml/MeasureScan.qml
         qml/MeasurePhotoView.qml
         qml/MeasureLoupe.qml

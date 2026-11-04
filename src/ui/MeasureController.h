@@ -8,6 +8,7 @@
 #include "measure/Level.h"
 #include "measure/Measurement.h"
 #include "measure/ScanTypes.h"
+#include "measure/ScreenScale.h"
 #include "ui/MeasureDevices.h"
 
 #include <QtCore/QElapsedTimer>
@@ -17,6 +18,7 @@
 #include <QtCore/QRectF>
 #include <QtCore/QSizeF>
 #include <QtCore/QString>
+#include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QVariantList>
 #include <QtCore/QVariantMap>
@@ -66,6 +68,15 @@ class MeasureController : public QObject {
     // The ruler's and the labels' unit: "in" when the display unit is
     // inches, else "mm".
     Q_PROPERTY(QString unit READ unit NOTIFY unitChanged)
+    // The card of known size the scale check, the caliper and the photo's
+    // "Card" use: "playing" (a poker-size playing card, 63.5 x 88.9 mm, the
+    // default) or "bank" (ISO/IEC 7810 ID-1, 53.98 x 85.60 mm). Kept.
+    Q_PROPERTY(QString cardKind READ cardKind WRITE setCardKind NOTIFY cardChanged)
+    Q_PROPERTY(QString cardName READ cardName NOTIFY cardChanged)          // "Playing card"
+    Q_PROPERTY(double cardLongMm READ cardLongMm NOTIFY cardChanged)
+    Q_PROPERTY(double cardShortMm READ cardShortMm NOTIFY cardChanged)
+    Q_PROPERTY(double cardCornerMm READ cardCornerMm NOTIFY cardChanged)
+    Q_PROPERTY(QString cardSizeText READ cardSizeText NOTIFY cardChanged)  // "63.5 × 88.9 mm"
 
     // ---- Sensors (while startSensors() .. stopSensors())
     Q_PROPERTY(bool sensorsRunning READ sensorsRunning NOTIFY sensorsChanged)
@@ -76,6 +87,10 @@ class MeasureController : public QObject {
     Q_PROPERTY(bool foldSteady READ foldSteady NOTIFY foldChanged)
     Q_PROPERTY(double foldHeld READ foldHeld NOTIFY foldChanged) // NaN when none
     Q_PROPERTY(bool foldHasHold READ foldHasHold NOTIFY foldChanged)
+    // How far the next hold has come (0 moving .. 1 held), and whether the
+    // next steady stretch makes one (none yet, or moved away since).
+    Q_PROPERTY(double foldProgress READ foldProgress NOTIFY foldChanged)
+    Q_PROPERTY(bool foldArmed READ foldArmed NOTIFY foldChanged)
     // The caliper: the gap between the free edges (mm), 2 L sin(angle / 2).
     Q_PROPERTY(double caliperArmMm READ caliperArmMm NOTIFY foldChanged)
     Q_PROPERTY(bool caliperCalibrated READ caliperCalibrated NOTIFY foldChanged)
@@ -93,6 +108,8 @@ class MeasureController : public QObject {
     Q_PROPERTY(bool levelSteady READ levelSteady NOTIFY levelChanged)
     Q_PROPERTY(double levelHeld READ levelHeld NOTIFY levelChanged) // NaN when none
     Q_PROPERTY(bool levelHasHold READ levelHasHold NOTIFY levelChanged)
+    Q_PROPERTY(double levelProgress READ levelProgress NOTIFY levelChanged)
+    Q_PROPERTY(bool levelArmed READ levelArmed NOTIFY levelChanged)
     Q_PROPERTY(bool hasLevelReference READ hasLevelReference NOTIFY levelChanged)
     Q_PROPERTY(double relativeAngle READ relativeAngle NOTIFY levelChanged)
 
@@ -168,6 +185,14 @@ public:
     QString deviceKind() const { return deviceKind_; }
     bool foldCrease() const { return foldCrease_; }
     QString unit() const;
+    QString cardKind() const { return cardKind_; }
+    void setCardKind(const QString& kind);
+    QString cardName() const;
+    double cardLongMm() const { return card().longMm; }
+    double cardShortMm() const { return card().shortMm; }
+    double cardCornerMm() const { return card().cornerRadiusMm; }
+    QString cardSizeText() const;
+    const measure::CardSize& card() const;
     // A span of `spanPt` points on the screen matched `mm` of a real thing
     // (Check with a card: the card's long side). Kept for this screen;
     // false (and nothing changes) when the scale would be implausible.
@@ -187,6 +212,8 @@ public:
     bool foldSteady() const { return foldSteady_; }
     double foldHeld() const;
     bool foldHasHold() const { return fold_.held().has_value(); }
+    double foldProgress() const { return foldProgress_; }
+    bool foldArmed() const { return foldArmed_; }
     double caliperArmMm() const { return caliperArmMm_; }
     bool caliperCalibrated() const { return caliperCalibrated_; }
     double caliperGapMm() const;
@@ -205,6 +232,8 @@ public:
     bool levelSteady() const { return levelSteady_; }
     double levelHeld() const;
     bool levelHasHold() const { return level_.held().has_value(); }
+    double levelProgress() const { return levelProgress_; }
+    bool levelArmed() const { return levelArmed_; }
     bool hasLevelReference() const { return levelReference_.has_value(); }
     double relativeAngle() const;
     // Keeps the current resting position: the level then reads the angle
@@ -213,6 +242,11 @@ public:
     Q_INVOKABLE void clearLevelReference();
     // Drops the fold's and the level's holds (a new measurement starts).
     Q_INVOKABLE void clearHold();
+    // Time passing while the sensors run (a timer, ten times a second): the
+    // Duo's hinge reports only changes, so its last angle is fed again while
+    // it keeps still, or a still fold would never be held. The acceptance
+    // run calls it with its own clock.
+    void tickSensors();
 
     // ---- Photo
     bool cameraAvailable() const;
@@ -360,6 +394,7 @@ public:
 signals:
     void scaleChanged();
     void unitChanged();
+    void cardChanged();
     void sensorsChanged();
     void foldChanged();
     void levelChanged();
@@ -380,6 +415,8 @@ private:
     void watchWindow(QQuickWindow* window);
     void setScale(double pointsPerMm, bool calibrated, const QString& note);
     void onHinge(const HingeReading& reading);
+    // Feeds the fold's steady reading (true when what QML shows changed).
+    bool feedFold(double degrees);
     void onGravity(const GravityReading& reading);
     void feedLevel();
     double now() const;
@@ -421,10 +458,15 @@ private:
     StopWatching stopGravity_;
     bool hingeAvailable_ = false;
     bool gravityAvailable_ = false;
+    QTimer* sensorTick_ = nullptr;
     measure::SteadyReading fold_;
     double foldAngle_ = 0;
     double foldRadians_ = 0;
     bool foldSteady_ = false;
+    double foldProgress_ = 0;
+    bool foldArmed_ = true;
+    double lastHingeDegrees_ = 0;
+    double lastHingeFeed_ = -1; // now() of the last hinge feed; < 0 before any
     double caliperArmMm_ = 0;
     bool caliperCalibrated_ = false;
     measure::SteadyReading level_;
@@ -434,6 +476,9 @@ private:
     int levelTrack_ = -1; // 0 slope, 1 edge, 2 relative: a change resets the hold
     double levelValue_ = 0;
     bool levelSteady_ = false;
+    double levelProgress_ = 0;
+    bool levelArmed_ = true;
+    QString cardKind_ = QStringLiteral("playing");
 
     bool photoBusy_ = false;
     int photoGeneration_ = 0;

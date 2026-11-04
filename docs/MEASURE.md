@@ -60,10 +60,22 @@ Plus, in the design itself:
 - **Scale**: iOS doesn't say how big its screens are, so FoldForm knows the iPhones' and iPads'
   pixel densities (`measure/ScreenScale`: 460 ppi 3x iPhones, 458 for the Duo's displays (an
   estimate from the diagonals), 264 iPads, 326 iPad mini) and offers **Check with a card**: a
-  bank card's outline (ISO/IEC 7810 ID-1, 85.60 x 53.98 mm) drawn at the current scale; lay a
-  real card on it and stretch the outline until they match. The calibration is kept per screen
-  (`screenKey`: "951x669@3"; the Duo's two displays get one each). Until then the readout says
-  the scale is estimated.
+  card's outline drawn at the current scale; lay a real card on it and stretch the outline
+  until they match. The calibration is kept per screen (`screenKey`: "951x669@3"; the Duo's
+  two displays get one each). Until then the readout says the scale is estimated.
+- **The card** (Sam, 2026-11-04: measurements "built around a bicycle playing card instead of"
+  the bank card): a poker-size playing card, 63.5 x 88.9 mm (2.5 x 3.5 in,
+  `measure::kPlayingCard`), is the card of the scale check, the Fold's caliper and the photo's
+  **Card** reference. It is in most homes and carries nothing to keep out of a photo. A bank
+  card (ISO/IEC 7810 ID-1, 53.98 x 85.60 mm, `kBankCard`) stays a second choice in the card
+  check (**Playing card / Bank card**, `MeasureController.cardKind`, kept in the settings as
+  `measure/card`; the caliper and the photo follow it). Bank cards are cut to an ISO tolerance
+  of about a tenth of a millimetre; playing cards have no published standard: makers cut 2.5 x
+  3.5 in, cards of one maker are alike, and the sizes quoted differ by up to half a millimetre
+  (63 x 88 to 64 x 89 mm), about 0.6 %. To pin the Bicycle size down: check the scale with a
+  bank card, then measure a Bicycle card on the Ruler (docs/MANUAL_TESTS.md); if it is not 88.9
+  mm, `kPlayingCard` takes the measured size. Calibrations already kept stay valid (a scale is
+  a scale, whatever card found it).
 
 ### Fold (iPhone Duo)
 
@@ -73,6 +85,19 @@ Plus, in the design itself:
 - **Inside a corner** (the backs on the faces) or **over an edge** (the screens on the faces:
   the reading can't be seen while measuring), so readings are smoothed and **held when steady**
   (`measure/SteadyReading`: still within 0.4 degrees for 0.8 s), with a tap felt in the hand.
+- **The hold, shown** (Sam, after build 62: "I'm not sure at what point a measurement is
+  held"): a tag over the number says **HELD** (green) or **LIVE**; the pill under it fills
+  while the phone keeps still (`foldProgress`, 0 to 1 over the 0.8 s) and turns green, "Held ·
+  92.5°", with the tap; a line under it says the rule ("Rest the halves on the part and keep
+  still: the angle is held after a second, with a tap" / "Held: lift the phone and read it.
+  Keep still at a new angle to measure again"). Moved more than 1.2 degrees from a hold, the
+  next still second replaces it (the pill fills again; "Now 120.3°" under the number shows the
+  live angle meanwhile). **Measure again** drops the hold and waits the whole second again,
+  even with the phone lying still.
+- **A still hinge**: `UIHingeInteraction` reports only changes, so a fold that stops moving
+  sent nothing more and the 0.8 s never passed: build 62 could hold late or not at all.
+  `MeasureController::tickSensors` (a 100 ms timer while the sensors run) feeds the last angle
+  again as time passes; the acceptance run drives it with its own clock.
 - **Gap** (caliper): something pinched between the two free edges is 2 L sin(angle / 2) wide,
   L being a half's length from the hinge to its edge (estimated from the screen, then
   calibrated by pinching a card's side). The readout shows how far one degree moves it.
@@ -83,12 +108,17 @@ Plus, in the design itself:
 
 - Lying down: a bubble and the surface's slope. Standing on an edge: the edge's angle from
   level. **Keep** stores the current position; then the angle between it and the next resting
-  position is the angle between the two surfaces. Held when steady, like the fold.
+  position is the angle between the two surfaces. Held when steady, like the fold, and shown
+  the same way (the HELD / LIVE tag, the filling pill, the line, "Now" beside a hold). Gravity
+  streams at a steady rate, so the level needs no tick. A hand that keeps the phone within 0.4
+  degrees for 0.8 s after a hold would replace it; what the Duo's sensors give in a hand is
+  for Sam's log to say (TD-166).
 
 ### Photo
 
 1. **Take** or **choose** a photo (the desktop: open an image file) with a reference lying flat
-   on the surface: a bank card, A4 or Letter paper, or any rectangle whose sides are typed.
+   on the surface: a playing card (or a bank card, as picked in the card check), A4 or Letter
+   paper, or any rectangle whose sides are typed.
 2. **Corners**: Vision finds the reference where it can (`VNDetectRectanglesRequest`); four
    handles (with a magnifier while dragged) fix it.
 3. **Straighten**: `measure/PlaneRectifier` computes the photo-to-surface map and
@@ -116,6 +146,27 @@ Plus, in the design itself:
   (`measure/measurements`). Shown in the Measure workspace's tray; each can be used, renamed,
   removed.
 - `valueText` writes what the value boxes' parsers read back ("42.3mm", "37.5°").
+
+### Into the design
+
+Sam, after build 62: "can we make it more clear how to implement measurements into builds?"
+The three ways were all there but scattered; now the workspace says them where a measurement
+is:
+- **Keep** says "Kept as Length 2 · tap it to use it" (just "Kept as Length 2" when a value box
+  asked: its Use is right there).
+- **A kept measurement's card** has an **In the design** part: **Add to project** (the main
+  button unless a value box asked), and once added the card stays and says "In the project as
+  length_2. Type length_2 in any value box (length_2 - 2 works too); on the keypad it's a key".
+  From Home (no design open) it says to open a design first. A kept measurement in the project
+  is marked: a green check on its chip, its project name in the list.
+- **"?" beside Kept** (and **How measurements reach the design** on a card) opens
+  **Measurements in the design**: 1. straight into a value box (its Measure button, then Use),
+  2. by name (Add to project, then type the name; the keypad's keys; the Model panel's
+  Measurements), 3. as a shape (Make sketch, Make box, a placed photo). **Add all N kept to the
+  project** adds every kept length and angle not yet there (one undo step each).
+- Whether a kept measurement is in the project is read from the project: one of its
+  measurements of the same kind and value (`MeasureScreen.projectNameFor`), so it holds across
+  sessions and after renames in the Model panel.
 
 ### Measurements in the project
 

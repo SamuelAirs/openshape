@@ -14,18 +14,21 @@ things").
 - **Ruler**: a scale at true size along the screen, two jaws for a thing
   laid on the glass, and a ring for round things (Make sketch draws that
   circle). The scale comes from a table of iPhones and iPads; **Check with a
-  card** matches it to any bank card, and is kept for each screen (the
-  iPhone Duo's two displays each get their own). It runs along the window's
+  card** matches it to a poker-size playing card (a Bicycle card, 63.5 x
+  88.9 mm; a bank card is the second choice), and is kept for each screen
+  (the iPhone Duo's two displays each get their own). It runs along the window's
   long side: on the Duo unfolded, about 134 mm across the whole inner
   display, its fold marked, with **Open flat** when a length crosses the
   fold while the phone is bent.
 - **Fold** (iPhone Duo): the angle between the two halves from the hinge,
-  and the bend; held once the phone is still, with a tap you feel, so it
-  can be read after measuring over an edge. **Gap**: something pinched
-  between the free edges, calibrated with a card's side.
+  and the bend; held once the phone is still for a second, with a tap you
+  feel, so it can be read after measuring over an edge. HELD or LIVE over
+  the number, a pill that fills while you keep still, and a line that says
+  the rule show when it holds. **Gap**: something pinched between the free
+  edges, calibrated with a playing card's side.
 - **Level**: a bubble and the slope lying down, an edge's angle standing
-  up, and the angle between two surfaces.
-- **Photo**: a bank card or a sheet of A4 or Letter paper (or any
+  up, and the angle between two surfaces; held like the fold.
+- **Photo**: a playing card or a sheet of A4 or Letter paper (or any
   rectangle) lying flat beside a part straightens the photo, as if seen from
   straight above; then distances, outlines with their sides and area, and
   circles, in millimeters. Make sketch puts the outline or the circle on the
@@ -36,7 +39,9 @@ things").
 - **Into any value box**: a ruler button in the value box (and beside a
   sketch dimension) opens Measure for that value; **Use 42.3 mm** types the
   measurement there. **Keep** saves readings as named measurements, listed
-  beside the instruments, to use, rename or delete later.
+  beside the instruments, to use, rename or delete later. **?** beside them
+  shows the three ways a measurement reaches the design (into a value box,
+  by name, as a shape), with **Add all to the project**.
 - **1:1**: the View buttons' Actual size shows the model at the screen's
   true scale: lay a real part on the glass to compare it with its model.
 - **Trace** sketch tool (D): draw freehand with the Pencil or a finger and
@@ -66,7 +71,8 @@ things").
   Measurements (or **Add to project** on a kept measurement) gives a value a
   name, and any value box takes it: `shelf_depth - 2`, `2 * wall`,
   `corner_angle / 2`. The keypad shows the names as keys. A name is turned
-  into its number when typed (no live link yet).
+  into its number when typed (no live link yet). A kept measurement in the
+  project is marked, and its card says the name to type.
 - Everything stays on the device: iOS asks once for the camera; the photo
   library is read through the system picker; FoldForm still collects no
   data (docs/PRIVACY.md).

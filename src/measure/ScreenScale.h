@@ -10,14 +10,26 @@
 // the ruler drawn at true size, the design shown at 1:1, a stroke traced
 // around a part lying on the glass. iOS does not say how big its screens
 // are, so FoldForm keeps a small table of devices (by their size in points
-// and pixel ratio) and lets the owner check it against a bank card, the one
-// object of a standard size (ISO/IEC 7810 ID-1) nearly everyone carries.
+// and pixel ratio) and lets the owner check it against a card of known size.
 namespace os::measure {
 
-// ISO/IEC 7810 ID-1: bank, credit and ID cards.
-inline constexpr double kCardWidthMm = 85.60;
-inline constexpr double kCardHeightMm = 53.98;
-inline constexpr double kCardCornerRadiusMm = 3.18;
+// A card of known size: the scale check, the fold's caliper and the photo's
+// reference are built around one.
+struct CardSize {
+    double longMm;
+    double shortMm;
+    double cornerRadiusMm;
+    const char* name;
+};
+// A poker-size playing card (Bicycle and the like), the card FoldForm is
+// built around (the owner's choice, 2026-11-04): in most homes, and nothing
+// on it to keep out of a photo. Makers cut 2.5 x 3.5 in; no standard fixes a
+// tolerance the way ISO does for bank cards, and quoted sizes differ by up to
+// half a millimetre (docs/MEASURE.md, "Scale"). The corner radius only draws
+// the outline.
+inline constexpr CardSize kPlayingCard{88.9, 63.5, 3.5, "Playing card"};
+// ISO/IEC 7810 ID-1: bank, credit and ID cards, the second choice.
+inline constexpr CardSize kBankCard{85.60, 53.98, 3.18, "Bank card"};
 
 enum class DeviceKind { Phone, Tablet, Desktop };
 

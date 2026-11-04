@@ -791,20 +791,27 @@ large at the side with **Keep**.
   until it fits a coin, a washer or a cap; **Make sketch** draws that circle.
   iOS doesn't say how big its screens are, so FoldForm starts from its
   table of iPhones and iPads (the line under the ruler says "estimated"):
-  tap **Check with a card**, lay any bank or ID card on the outline and
-  stretch the outline until it matches the card's edges. The scale is kept
-  for that screen (the iPhone Duo's two displays each get their own).
+  tap **Check with a card**, lay a playing card (a Bicycle or any other
+  poker-size card, 63.5 × 88.9 mm) on the outline and stretch the outline
+  until it matches the card's edges; **Bank card** above the outline
+  switches to a bank or ID card instead (and the Fold and Photo then use it
+  too). The scale is kept for that screen (the iPhone Duo's two displays
+  each get their own).
 - **Fold** (iPhone Duo): the angle between the two halves. Rest the halves
-  on two faces, inside a corner or over an edge; once the phone is still the
-  reading is held (you feel a tap), so you can lift it to read even when the
-  screen faced the part. **Bend** is how far from flat (180° minus the
-  angle). **Gap**: pinch a part between the two free edges; calibrate it
-  once by pinching a card's short or long side. The reading shows how much
-  one degree moves it.
+  on two faces, inside a corner or over an edge, and keep still: the pill
+  under the number fills for about a second, then turns green ("Held ·
+  90.0°") and you feel a tap. The number now says **HELD**, so you can lift
+  the phone to read it even when the screen faced the part; while it says
+  **LIVE** it follows the hinge. Keep still at a new angle and the new
+  reading replaces it; **Measure again** starts over. **Bend** is how far
+  from flat (180° minus the angle). **Gap**: pinch a part between the two
+  free edges; calibrate it once by pinching a playing card's short or long
+  side. The reading shows how much one degree moves it.
 - **Level**: lying down, a bubble and the surface's slope; standing on an
   edge, the edge's angle from level. **Keep as reference**, then lay the
   phone on a second surface the same way round: the angle between the two.
-- **Photo**: photograph a flat thing with a bank card, a sheet of A4 or
+  Held like the fold: set it down, keep still, and it says HELD.
+- **Photo**: photograph a flat thing with a playing card, a sheet of A4 or
   Letter paper, or any rectangle whose sides you type, lying flat beside it.
   FoldForm finds the reference's corners where it can; drag the four
   handles onto its corners (a magnifier shows the spot), then **Straighten**:
@@ -826,8 +833,14 @@ large at the side with **Keep**.
   value; **Use 42.3 mm** types the measurement into the box.
 - **Kept measurements**: **Keep** saves a reading as "Length 3", "Angle 1"
   and so on, listed beside the instrument (chips along the bottom on a
-  phone). Tap one to use it in the value box that asked, rename it or
-  delete it. They stay on the device between projects.
+  phone). Tap one to use it in the value box that asked, add it to the
+  project, rename it or delete it. They stay on the device between projects.
+- **Into the design, three ways** (the **?** beside the kept measurements
+  shows them): straight into a value box (its ruler button, then **Use**);
+  by name (a kept measurement's **Add to project**, then type its name in
+  any value box, e.g. `length_1 - 2`, or tap its key on the keypad; a kept
+  measurement in the project shows a green check); or as a shape (**Make
+  sketch**, **Make box**, or a straightened photo placed in the design).
 - **Measurements in the project**: the Model panel's **Measurements**
   (below the steps) are saved with the project, each under a name such as
   `shelf_depth`. Type the name in any value box, alone or in arithmetic:

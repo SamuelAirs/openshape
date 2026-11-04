@@ -44,7 +44,10 @@ double caliperMmPerDegree(double hingeRadians, double armMm);
 // level) and says when it has been steady: a reading that moves less than
 // `steadyRange` over `steadySeconds` is steady, and the first steady value
 // after a move is the hold (the value shown once the phone is lifted to be
-// read).
+// read). `progress` says how far a hold has come (0 moving, 1 steady), for a
+// bar that fills while the owner keeps still. A source that reports only
+// changes (the Duo's hinge) is fed its last value again as time passes
+// (MeasureController::tickSensors), or a still reading would never hold.
 class SteadyReading {
 public:
     explicit SteadyReading(double steadyRange = 0.4, double steadySeconds = 0.8, double smoothingSeconds = 0.15);
@@ -54,14 +57,27 @@ public:
         bool steady = false;
         bool newHold = false; // this reading made a new hold
         std::optional<double> held;
+        // How long the reading has kept within the steady range, as a part of
+        // the steady time (1 once steady).
+        double progress = 0;
+        // The next steady stretch makes a hold: none yet, or the reading has
+        // moved away from the last one (or Measure again).
+        bool armed = true;
     };
 
     // `seconds`: a steady clock (any origin), increasing.
     State feed(double value, double seconds);
     void reset();
-    // Drops the hold (a new measurement starts).
-    void clearHold() { held_.reset(); armed_ = true; }
+    // Drops the hold: a new measurement starts, and waits the whole steady
+    // time again (a phone lying still is not held at once).
+    void clearHold()
+    {
+        held_.reset();
+        armed_ = true;
+        window_.clear();
+    }
     const std::optional<double>& held() const { return held_; }
+    bool armed() const { return armed_; }
 
 private:
     double steadyRange_;

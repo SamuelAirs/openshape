@@ -56,6 +56,28 @@ motion sensors, Vision and ARKit reported.
     the fold with the phone half open: the distance turns amber and the tag
     says "Open flat"; open it flat and the warning goes. Turn the open
     phone tall: the scale runs down the long side, the readout beside it.
+12. **When the fold holds (next build; your question).** Fold tab, phone in
+    your hands: the number says LIVE. Rest it on a box's edge and keep still:
+    the pill fills for about a second, then turns green ("Held · 90.0°"),
+    the tag says HELD and you feel the tap. Lift it: the number stays. Fold
+    it to another angle and keep still: the pill fills again and the new
+    angle replaces the old. Measure again with the phone lying still: it
+    waits a full second again. Same on the Level, and say whether holding
+    the phone in your hand after a hold ever replaces it.
+13. **Measurements into the design (next build; your question).** In a
+    design, Measure → Ruler → Keep: the message says "tap it to use it". Tap
+    the kept chip: its card has "In the design" with Add to project; tap it:
+    the card says the name to type and the chip gets a green check. Close,
+    push a face and type that name (or tap its key). Also try the "?" beside
+    KEPT: is the three-step guide clear, and does Add all work?
+14. **The playing card (next build; your request).** Ruler → Check with a
+    card: the outline is a playing card (63.5 × 88.9 mm); lay a Bicycle card
+    on it, stretch, Done. Then, to pin down the Bicycle size: pick Bank card,
+    check again with a bank card (the ISO size, exact), and measure a
+    Bicycle card's long side with the jaws: tell me the reading (88.9 mm is
+    what FoldForm assumes; if yours reads otherwise, the app takes your
+    deck's size). Pick Playing card again afterwards. The Fold's Gap
+    calibration and Photo's Card now mean the playing card too.
 
 ## On Windows (the desktop shortcut)
 

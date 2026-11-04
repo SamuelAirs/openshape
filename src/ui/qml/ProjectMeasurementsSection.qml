@@ -392,12 +392,18 @@ ColumnLayout {
                                 owner.finished()
                                 return
                             }
+                            // The new value rebuilds the rows (this field
+                            // goes): let go of the keypad through what was
+                            // captured, not through the field.
+                            const keypad = owner.keypad
+                            const client = keypadClient
                             const error = owner.app.setProjectMeasurementValue(row.modelData.name, text)
                             if (error.length > 0) {
                                 rowError.text = error
                                 return
                             }
-                            release()
+                            if (keypad)
+                                keypad.detach(client)
                             owner.finished()
                         }
                         Keys.onEscapePressed: {

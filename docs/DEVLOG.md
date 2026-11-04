@@ -836,3 +836,28 @@ normally and forced, and asserts.
   0.2 ms on an offset fillet where the default rule took 8 ms, but on a C0
   face it was off by 3% (664 mm^2 for 644; 1e-3 and 1e-5 were off too);
   the default rule is used on C0 surfaces (0.05%).
+
+## 2026-11-04 — Measure after build 62: a hinge that reports only changes
+
+- The owner, on build 62: "I'm not sure at what point a measurement is
+  held." Reading `SteadyReading` and the hinge together showed more than a
+  missing cue: `UIHingeInteraction` calls its handler when the angle
+  changes, and a reading counts as steady only once a sample at least 0.8 s
+  old exists with everything since within 0.4 degrees. A fold that stops
+  moving sends no more samples, so the steady test never ran again: a hold
+  came late (with the next twitch of the hinge) or not at all. The motion
+  sensors stream at a fixed rate, which is why the Level never showed it,
+  and the acceptance run's stand-in pushed 25 readings in a row, which is
+  why no test did. Fixed with `MeasureController::tickSensors` (a 100 ms
+  timer feeding the last angle again while it keeps still); the scenario
+  now pushes one hinge reading and lets time pass. Lesson: an event-driven
+  sensor needs time fed in; a stand-in should report the way the device
+  does, not the way that is easiest to drive.
+- The hold is now shown, not only felt: HELD / LIVE over the number, a pill
+  that fills over the 0.8 s (`SteadyReading::State::progress`), a line with
+  the rule. **Measure again** used to re-hold at once on a still phone (the
+  window kept its old samples); `clearHold` now clears them, so it waits
+  the whole second again.
+- The card became a Bicycle-size playing card (the owner's choice); its
+  size has no published tolerance, so the bank card stays as a second choice
+  and the means of measuring a real Bicycle card against it (TD-176).

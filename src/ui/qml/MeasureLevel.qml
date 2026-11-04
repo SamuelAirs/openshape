@@ -60,6 +60,11 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             y: 4
             spacing: 2
+            MeasureHoldTag {
+                objectName: "levelHoldTag"
+                anchors.horizontalCenter: parent.horizontalCenter
+                held: level.hasHold
+            }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 Text {
@@ -86,6 +91,16 @@ Item {
                     : level.lying ? "Slope of the surface" : "Edge from level" + (level.shown > 0.05 ? " · right end up" : level.shown < -0.05 ? " · left end up" : "")
                 font.pixelSize: 16
                 color: Theme.mutedText
+            }
+            // Held, and the phone has moved since: what it reads now.
+            Text {
+                objectName: "levelNow"
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: level.hasHold && level.m && Math.abs(Math.abs(level.m.levelValue) - Math.abs(level.shown)) > 0.5
+                text: level.m ? "Now " + Math.abs(level.m.levelValue).toFixed(1) + "°" : ""
+                font.pixelSize: 13
+                font.features: ({ "tnum": 1 })
+                color: Theme.shortcutText
             }
         }
 
@@ -189,6 +204,8 @@ Item {
                     id: holdPill
                     objectName: "levelHold"
                     steady: level.m ? level.m.levelSteady : false
+                    progress: level.m ? level.m.levelProgress : 0
+                    armed: level.m ? level.m.levelArmed : true
                     held: level.hasHold
                     heldText: level.hasHold ? Math.abs(level.m.levelHeld).toFixed(1) + "°" : ""
                 }
@@ -199,6 +216,17 @@ Item {
                     outlined: true
                     onClicked: level.m.clearHold()
                 }
+            }
+            Text {
+                objectName: "levelHoldHint"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: Math.min(level.width, 440)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                text: level.hasHold ? "Held: pick the phone up and read it. Set it down somewhere new to measure again."
+                                    : "Set it down and keep still: the angle is held after a second, with a tap."
+                font.pixelSize: 13
+                color: Theme.mutedText
             }
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter

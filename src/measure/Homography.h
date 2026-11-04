@@ -5,6 +5,7 @@
 #pragma once
 
 #include "core/Math.h"
+#include "measure/ScreenScale.h"
 
 #include <array>
 #include <cstdint>
@@ -13,7 +14,7 @@
 #include <vector>
 
 // Measuring in a photo (docs/MEASURE.md, "Photo"): a rectangle of known size
-// lying in the photo (a bank card, a sheet of A4 or Letter paper, or any
+// lying in the photo (a playing card, a sheet of A4 or Letter paper, or any
 // rectangle whose sides the owner types) fixes the projective map between
 // the photo and that flat surface. Everything else on the same surface can
 // then be measured in millimeters, whatever angle the photo was taken from,
@@ -43,10 +44,11 @@ struct Reference {
     Kind kind = Kind::Card;
     double widthMm = 0;  // the long side
     double heightMm = 0; // the short side
-    std::string name;    // "Bank card", "A4 paper", ...
+    std::string name;    // "Playing card", "A4 paper", ...
 };
 
-Reference cardReference();
+// A card lying in the photo: a playing card unless another is named.
+Reference cardReference(const CardSize& card = kPlayingCard);
 Reference a4Reference();
 Reference letterReference();
 // Any rectangle; the sides are sorted (long first). Refused (nullopt) when a

@@ -282,6 +282,42 @@ warning cut short by the readout's width ("not flat across the f…"), so it
 became "fold not flat" with a check that it fits; `measure` again: 379/379.
 The full real-UI run waits for the push after the owner's round.
 
+**Later that morning: three more from the owner's first look at 62.**
+- "I'm not sure at what point a measurement is held": the Fold and the
+  Level now show it (a HELD / LIVE tag over the number, a pill that fills
+  over the 0.8 s, `SteadyReading::State::progress`, a line with the rule,
+  "Now" beside a hold). Reading the code found a real bug under it:
+  `UIHingeInteraction` reports only changes, so a still fold sent no more
+  samples and the steady test never ran again (late holds or none);
+  `MeasureController::tickSensors` (100 ms timer) feeds the last angle
+  while it keeps still. **Measure again** now waits the whole second again
+  (`clearHold` clears the window). docs/DEVLOG.md, 2026-11-04.
+- "make it more clear how to implement measurements into builds": Keep says
+  "tap it to use it"; a kept measurement's card has an **In the design**
+  part (Add to project as its main button; once added it stays and says the
+  name to type); kept ones in the project are marked; **?** beside Kept
+  opens "Measurements in the design" (value box, by name, as a shape) with
+  **Add all to the project**. The empty tray's text no longer says a kept
+  reading types into a value box by itself (it never did).
+- "built around a bicycle playing card instead of a business card": the
+  card is a poker-size playing card, 63.5 x 88.9 mm (`kPlayingCard`), for
+  the scale check, the caliper and the photo's Card; the bank card stays a
+  second choice in the card check (`cardKind`, kept). Playing cards have no
+  published tolerance (quoted sizes differ by up to 0.5 mm): TD-176, and
+  docs/MANUAL_TESTS.md 14 asks the owner to measure a Bicycle card on a
+  bank-card-checked Ruler.
+- Found by the run: `ProjectMeasurementsSection`'s value field called
+  `release()` after the rows were rebuilt (a TypeError, and `finished()`
+  never ran); it now lets go of the keypad through what it captured.
+
+**Verified on the PC** (working tree on `dc3baf7`): 959/959 headless (new:
+the hold's progress, the playing card reference); real-UI `measure`,
+`measuredesign`, `measurescan`, `projectmeasurements`, `userguide`, `files`
+920/921 (the one: a check that assumed the side list on the desktop, which
+now has the chip row; fixed), then `measure` and `projectmeasurements`
+again after the fixes: 639/639, no QML warnings; the lambda check (only the
+known `Duo.cpp:529`).
+
 ### Session report (2026-10-31): FoldForm 0.3.0 for the App Store
 
 **In one paragraph:** the owner chose to launch today as **FoldForm**, free

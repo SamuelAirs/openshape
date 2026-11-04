@@ -74,12 +74,41 @@ Rectangle {
     function openCalibration() {
         calibration.open()
     }
-    // Keeps a value; says what it was kept as. Returns the new id.
+    // Keeps a value; says what it was kept as (and, unless a value box is
+    // waiting for one, where it goes next). Returns the new id.
     function keep(quantity, value, source) {
         const id = m.addMeasurement(quantity, value, source)
         if (id !== "")
-            toast("Kept as " + m.measurement(id).name)
+            toast("Kept as " + m.measurement(id).name + (forKind === "" ? " · tap it to use it" : ""))
         return id
+    }
+    // A design is open (not Home): measurements can be added to its project.
+    readonly property bool projectOpen: !app.homeVisible && typeof app.addProjectMeasurement === "function"
+    // The name a kept measurement has in the open project ("" when none):
+    // one of the project's measurements of its kind and value.
+    function projectNameFor(entry) {
+        if (!entry || !projectOpen)
+            return ""
+        const list = app.projectMeasurements
+        for (let i = 0; i < list.length; ++i) {
+            const p = list[i]
+            if (p.quantity === entry.quantity && Math.abs(p.value - entry.value) < 1e-9)
+                return p.name
+        }
+        return ""
+    }
+    // Adds a kept measurement to the open project; returns the name it got.
+    function addToProject(entry) {
+        if (!entry || !projectOpen || (entry.quantity !== "length" && entry.quantity !== "angle"))
+            return ""
+        const existing = projectNameFor(entry)
+        if (existing !== "")
+            return existing
+        return app.addProjectMeasurement(entry.name, entry.quantity, entry.value, entry.source)
+    }
+    function openGuide() {
+        chipCard.close()
+        guide.visible = true
     }
     function quantityFits(quantity) {
         return forKind === "" || quantity === forKind
@@ -556,7 +585,9 @@ Rectangle {
                : content.height - height
             width: screen.side ? sideColumn.width : content.width - x
             height: screen.side ? Math.max(0, (screen.rulerDown ? rulerControlsHost.y - 16 : content.height) - y) : implicitHeight
+            projectName: (entry) => screen.projectNameFor(entry)
             onPicked: (id) => chipCard.open(id)
+            onHelpRequested: screen.openGuide()
         }
     }
 
@@ -780,28 +811,221 @@ Rectangle {
                         }
                     }
                 }
-                // A length or an angle kept in the open project, under a name
-                // any value box takes (docs/MEASURE.md, "Measurements in the
-                // project"): "shelf_depth - 2".
-                ActionButton {
-                    objectName: "measureChipToProject"
+                // ---- in the design (docs/MEASURE.md, "Into the design"): a
+                // length or an angle kept in the open project, under a name
+                // any value box takes: "shelf_depth - 2".
+                Rectangle {
                     Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    visible: designBlock.visible
+                    height: 1
+                    color: Theme.hairline
+                }
+                ColumnLayout {
+                    id: designBlock
+                    objectName: "measureChipDesign"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
                     visible: !chipCard.renaming && chipCard.entry !== null
                              && (chipCard.entry.quantity === "length" || chipCard.entry.quantity === "angle")
-                             && typeof screen.app.addProjectMeasurement === "function"
-                    outlined: true
-                    text: "Add to project"
-                    iconName: "plus"
-                    onClicked: {
-                        const e = chipCard.entry
-                        const name = screen.app.addProjectMeasurement(e.name, e.quantity, e.value, e.source)
-                        chipCard.close()
-                        if (name !== "")
-                            screen.toast("In the project as " + name + ": type it in any value box")
-                        else
-                            screen.toast("It couldn't be added to the project", true)
+                    readonly property string projectName: chipCard.entry ? screen.projectNameFor(chipCard.entry) : ""
+                    spacing: 8
+                    Text {
+                        text: "In the design"
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 0.6
+                        color: Theme.shortcutText
+                    }
+                    Text {
+                        objectName: "measureChipDesignText"
+                        Layout.fillWidth: true
+                        text: designBlock.projectName !== ""
+                              ? "In the project as " + designBlock.projectName + ". Type " + designBlock.projectName
+                                + " in any value box (" + designBlock.projectName + " - 2 works too); on the keypad it's a key."
+                              : screen.projectOpen
+                                ? "Add it to the project, then type its name in any value box: pushing a face, a sketch's dimension, a fillet."
+                                : "Open a design, then add it to its project: its name works in any value box."
+                        textFormat: Text.PlainText
+                        font.pixelSize: 13
+                        color: designBlock.projectName !== "" ? Theme.text : Theme.mutedText
+                        wrapMode: Text.WordWrap
+                    }
+                    ActionButton {
+                        objectName: "measureChipToProject"
+                        Layout.fillWidth: true
+                        visible: designBlock.projectName === "" && screen.projectOpen
+                        accent: screen.forKind === ""
+                        outlined: screen.forKind !== ""
+                        text: "Add to project"
+                        iconName: "plus"
+                        onClicked: {
+                            const name = screen.addToProject(chipCard.entry)
+                            if (name !== "")
+                                screen.toast("In the project as " + name + ": type it in any value box")
+                            else
+                                screen.toast("It couldn't be added to the project", true)
+                        }
                     }
                 }
+                ActionButton {
+                    objectName: "measureChipHowTo"
+                    Layout.fillWidth: true
+                    visible: !chipCard.renaming
+                    text: "How measurements reach the design"
+                    iconName: "help"
+                    onClicked: screen.openGuide()
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- the guide
+    // "Measurements in the design": the three ways a measurement reaches the
+    // design, and every kept one into the project at once.
+    Rectangle {
+        id: guide
+        objectName: "measureGuide"
+        anchors.fill: parent
+        z: 10
+        visible: false
+        color: Theme.scrim
+        // Kept measurements of a kind a value box takes, not yet in the project.
+        readonly property var notInProject: {
+            const list = []
+            const kept = screen.m.measurements
+            for (let i = 0; i < kept.length; ++i) {
+                const e = kept[i]
+                if ((e.quantity === "length" || e.quantity === "angle") && screen.projectNameFor(e) === "")
+                    list.push(e)
+            }
+            return list
+        }
+        MouseArea {
+            anchors.fill: parent
+            onClicked: guide.visible = false
+            onWheel: (wheel) => wheel.accepted = true
+        }
+        MeasureCard {
+            objectName: "measureGuidePanel"
+            lifted: true
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 32, 440)
+            height: Math.min(parent.height - 32 - Theme.safeTop - Theme.safeBottom, guideColumn.implicitHeight + 40)
+            clip: true
+            MouseArea { anchors.fill: parent } // taps on the card stay on it
+            Flickable {
+                anchors.fill: parent
+                contentHeight: guideColumn.implicitHeight + 40
+                boundsBehavior: Flickable.StopAtBounds
+                clip: true
+                ColumnLayout {
+                    id: guideColumn
+                    x: 20
+                    y: 20
+                    width: parent.width - 40
+                    spacing: 14
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Measurements in the design"
+                            font.pixelSize: 17
+                            font.weight: Font.DemiBold
+                            color: Theme.text
+                            wrapMode: Text.WordWrap
+                        }
+                        AbstractButton {
+                            objectName: "measureGuideClose"
+                            implicitWidth: 44
+                            implicitHeight: 44
+                            focusPolicy: Qt.NoFocus
+                            onClicked: guide.visible = false
+                            contentItem: Item { LineIcon { anchors.centerIn: parent; name: "close"; size: 16 } }
+                            background: Rectangle { radius: 22; color: parent.pressed ? Theme.pressed : "transparent" }
+                        }
+                    }
+                    GuideStep {
+                        number: 1
+                        iconName: "ruler"
+                        title: "Straight into a value box"
+                        body: "Pushing a face or sizing a sketch? Tap Measure in its value box, measure the real thing, then Use: the number lands in the box."
+                    }
+                    GuideStep {
+                        number: 2
+                        iconName: "keep"
+                        title: "By name, any time"
+                        body: "Keep a reading, tap it, Add to project. Then type its name in any value box (shelf_depth, or shelf_depth - 2). The keypad shows the names as keys; the Model panel lists them under Measurements."
+                    }
+                    GuideStep {
+                        number: 3
+                        iconName: "sketch"
+                        title: "As a shape"
+                        body: "The ring's circle, a photo's outline or circle and the camera's outline or box become a sketch or a box at real size: Make sketch, Make box. A straightened photo can be placed in the design to trace."
+                    }
+                    ActionButton {
+                        objectName: "measureGuideAddAll"
+                        Layout.fillWidth: true
+                        visible: screen.projectOpen && guide.notInProject.length > 0
+                        accent: true
+                        iconName: "plus"
+                        text: guide.notInProject.length === 1 ? "Add the kept measurement to the project"
+                                                              : "Add all " + guide.notInProject.length + " kept to the project"
+                        onClicked: {
+                            const names = []
+                            const list = guide.notInProject
+                            for (let i = 0; i < list.length; ++i) {
+                                const name = screen.addToProject(list[i])
+                                if (name !== "")
+                                    names.push(name)
+                            }
+                            guide.visible = false
+                            if (names.length > 0)
+                                screen.toast(names.length === 1 ? "In the project as " + names[0] + ": type it in any value box"
+                                                                : names.length + " in the project: type a name in any value box")
+                            else
+                                screen.toast("They couldn't be added to the project", true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    component GuideStep: RowLayout {
+        id: step
+        property int number: 1
+        property string iconName
+        property string title
+        property string body
+        Layout.fillWidth: true
+        spacing: 12
+        Rectangle {
+            Layout.alignment: Qt.AlignTop
+            implicitWidth: 34
+            implicitHeight: 34
+            radius: 17
+            color: Theme.menuHighlight
+            LineIcon { anchors.centerIn: parent; name: step.iconName; size: 18; color: Theme.accent }
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            Text {
+                Layout.fillWidth: true
+                text: step.number + ". " + step.title
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Theme.text
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                text: step.body
+                font.pixelSize: 13
+                color: Theme.mutedText
+                wrapMode: Text.WordWrap
             }
         }
     }

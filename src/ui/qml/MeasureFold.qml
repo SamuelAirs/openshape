@@ -13,7 +13,9 @@ import OpenShape
 // the phone seen from the side at that angle. Gap: the distance between the
 // free edges, 2 L sin(angle / 2), with how far one degree moves it, and a
 // card to calibrate L. The reading is held once steady (with a tap felt in
-// the hand), so it can be read after the phone is lifted off the part.
+// the hand), so it can be read after the phone is lifted off the part: a
+// tag over the number says Held or Live, the pill fills while the phone
+// keeps still, and a line says the rule (docs/MEASURE.md, "The hold").
 Item {
     id: fold
 
@@ -96,6 +98,11 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: Math.max(0, (parent.height - height - 12 - stage.drawingHeight) * 0.3)
                 spacing: 2
+                MeasureHoldTag {
+                    objectName: "foldHoldTag"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    held: fold.hasHold
+                }
                 Row {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: 4
@@ -225,7 +232,8 @@ Item {
                     spacing: 10
                     Text {
                         Layout.fillWidth: true
-                        text: "Pinch a bank card between the free edges, its side square to the hinge, and hold still."
+                        text: "Pinch a " + (fold.m && fold.m.cardKind === "bank" ? "bank card" : "playing card")
+                              + " between the free edges, its side square to the hinge, and hold still."
                         font.pixelSize: 14
                         color: Theme.text
                         wrapMode: Text.WordWrap
@@ -234,7 +242,9 @@ Item {
                         Layout.fillWidth: true
                         namePrefix: "caliperSide_"
                         showIcons: false
-                        model: [{ key: "short", label: "Short side 53.98" }, { key: "long", label: "Long side 85.60" }]
+                        readonly property int decimals: fold.m && fold.m.cardKind === "bank" ? 2 : 1
+                        model: !fold.m ? [] : [{ key: "short", label: "Short side " + fold.m.cardShortMm.toFixed(decimals) },
+                                               { key: "long", label: "Long side " + fold.m.cardLongMm.toFixed(decimals) }]
                         current: fold.calibrationSide
                         onPicked: (key) => fold.calibrationSide = key
                     }
@@ -254,7 +264,7 @@ Item {
                             text: "Calibrate"
                             accent: true
                             onClicked: {
-                                if (fold.m.calibrateCaliper(fold.calibrationSide === "long" ? 85.60 : 53.98)) {
+                                if (fold.m.calibrateCaliper(fold.calibrationSide === "long" ? fold.m.cardLongMm : fold.m.cardShortMm)) {
                                     fold.calibrating = false
                                     fold.screen.toast("Caliper calibrated")
                                 } else {
@@ -279,6 +289,8 @@ Item {
                     id: holdPill
                     objectName: "foldHold"
                     steady: fold.m ? fold.m.foldSteady : false
+                    progress: fold.m ? fold.m.foldProgress : 0
+                    armed: fold.m ? fold.m.foldArmed : true
                     held: fold.hasHold
                     heldText: fold.hasHold ? (fold.mode === "gap" ? fold.m.formatValue("length", fold.m.caliperHeldGapMm)
                                                                   : fold.m.foldHeld.toFixed(1) + "°") : ""
@@ -290,6 +302,22 @@ Item {
                     outlined: true
                     onClicked: fold.m.clearHold()
                 }
+            }
+            // When it holds, in words.
+            Text {
+                objectName: "foldHoldHint"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: Math.min(fold.width, 440)
+                visible: !fold.calibrating
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                text: fold.hasHold
+                      ? (fold.mode === "gap" ? "Held: take the phone off and read it. Keep still at a new gap to measure again."
+                                             : "Held: lift the phone and read it. Keep still at a new angle to measure again.")
+                      : (fold.mode === "gap" ? "Pinch the part and keep still: the gap is held after a second, with a tap."
+                                             : "Rest the halves on the part and keep still: the angle is held after a second, with a tap.")
+                font.pixelSize: 13
+                color: Theme.mutedText
             }
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
