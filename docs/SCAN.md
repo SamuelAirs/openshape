@@ -51,9 +51,9 @@ cancel (the stage then fails with "Cancelled.").
    is a plane per channel fitted robustly to a band just inside the sheet's edge; a pixel of the
    paper's chromaticity at 35 % of its brightness or more is paper (shadows included), anything
    else object. Off the paper, and on the sheet's last 3 mm, only a subject mask decides
-   (unknown without one). With a subject mask: it decides off the paper; on it, lit paper
-   overrides a bleeding mask and colour that is not paper's where the mask says background is
-   unknown. An opening, a closing and small enclosed holes filled (highlights) clean it up.
+   (unknown without one). With a subject mask: it decides off the paper and where it says
+   object (a white object's top looks like lit paper); where it says background, colour that is
+   not the paper's is unknown (a part the mask missed, or a mark). An opening, a closing and small enclosed holes filled (highlights) clean it up.
 4. **Carving**. A coarse pass (4 mm) over the sheet finds the object (the largest connected
    part), a fine pass (0.5 mm, at most 200 cells along its longest side) carves a box around it.
    A voxel goes when its center lands on background in one photo at least 2 px from anything
@@ -86,6 +86,17 @@ focal estimate resting on fewer than 3 photos.
   50 000 triangles): each closed piece becomes a body named after the file.
 - `AppController::addDemoScan` (and `--demo scan`) runs the whole pipeline on synthetic photos
   (`measure/ScanSynthetic`: the renderer the tests use) and adds the result.
+
+## Real photos on the desktop
+
+`measure::detectPaper` (`measure/PaperDetect.h`) finds the sheet without Vision: the largest
+bright colourless region, its convex hull (an object hiding part of the edge does not matter),
+the best four-sided fit, each side refitted to the edge pixels. `tools/scan_photos`
+(OPENSHAPE_BUILD_TOOLS) runs the stages on a folder of PPM photos and writes `scan.stl`, the
+masks as PGMs and a line per photo; `scripts/dev/scan_photos.py <photos> <work>` (Windows
+Python, Pillow; put `%USERPROFILE%\msys64\ucrt64\bin` on PATH) makes the PPMs from JPEGs with
+the EXIF orientation applied and lists their 35 mm focal lengths in `photos.txt`, where
+corners can be fixed by hand (eight numbers after the focal length).
 
 ## Limits (what to tell Sam)
 

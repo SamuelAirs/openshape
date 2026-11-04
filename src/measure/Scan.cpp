@@ -342,8 +342,9 @@ Result<ScanCalibration> calibrate(const std::vector<ScanPhoto>& photos, const Sc
         if (w.image.width == 0)
             return;
         w.scale = double(w.image.width) / p.width;
+        const double scaleY = double(w.image.height) / p.height;
         for (int k = 0; k < 4; ++k)
-            w.corners.corners[k] = p.paperCorners[k] * w.scale;
+            w.corners.corners[k] = {p.paperCorners[k].x * w.scale, p.paperCorners[k].y * scaleY};
         w.corners.width = w.image.width;
         w.corners.height = w.image.height;
         if (p.subjectMask && p.maskWidth > 0 && p.maskHeight > 0)

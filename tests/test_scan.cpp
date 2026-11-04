@@ -7,6 +7,7 @@
 // (measure/ScanSynthetic) of known objects.
 
 #include "measure/MeshTools.h"
+#include "measure/PaperDetect.h"
 #include "measure/Scan.h"
 #include "measure/ScanMask.h"
 #include "measure/ScanPose.h"
@@ -283,6 +284,41 @@ TEST(ScanMask, PaperShadowsAndTheObjectApart)
     EXPECT_LT(double(carvedObject) / truePositive, 0.01);
 }
 
+TEST(ScanMask, FindsThePaperWithoutVision)
+{
+    // The desktop's stand-in for Apple Vision's rectangle: the corners
+    // within a couple of pixels, also with an object hiding part of an edge.
+    Scene scene;
+    scene.object = boxObject({30, 20, 60}, {0, 95}); // tall, at the sheet's far edge
+    std::vector<CameraSpec> specs;
+    for (double az : {-90.0, 20.0, 150.0}) {
+        CameraSpec c;
+        c.azimuthDeg = az;
+        c.elevationDeg = 42;
+        specs.push_back(c);
+    }
+    const auto photos = render(scene, specs, 23, 0.0);
+    for (const Photo& p : photos) {
+        RgbImage img;
+        img.width = p.width;
+        img.height = p.height;
+        for (std::size_t i = 0; i < p.rgba.size(); i += 4)
+            img.rgb.insert(img.rgb.end(), {p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]});
+        const auto found = detectPaper(img);
+        ASSERT_TRUE(found);
+        double worst = 0;
+        for (const Vec2& truth : p.corners) {
+            double nearest = 1e9;
+            for (const Vec2& c : *found)
+                nearest = std::min(nearest, (c - truth).length());
+            worst = std::max(worst, nearest);
+        }
+        std::printf("[scan] paper found, worst corner %.2f px\n", worst);
+        EXPECT_LT(worst, 2.5);
+        EXPECT_TRUE(PlaneRectifier::create(*found, scene.paper).has_value());
+    }
+}
+
 // ------------------------------------------------------------- whole scans
 
 TEST(Scan, BoxWithSubjectMasks)
@@ -469,6 +505,38 @@ TEST(Scan, RefusesWhatItCannotUse)
     empty.object = boxObject({0.001, 0.001, 0.001}, {500, 500});
     auto blank = render(empty, ring(6, 40, 50), 20);
     EXPECT_FALSE(runScan(asScanPhotos(blank, false, true)));
+}
+
+TEST(Scan, QuarterResolutionSubjectMasks)
+{
+    // Vision's foreground masks are coarser than the photo: a quarter here.
+    Scene scene;
+    scene.object = cylinderObject(40, 50, {20, -10});
+    scene.albedo = {0.85, 0.85, 0.85}; // white-ish: the mask alone tells it from the paper's shadows
+    auto cameras = ring(10, 30, 50, 15);
+    for (const CameraSpec& low : ring(5, 12, 12, 50, 360, 560))
+        cameras.push_back(low);
+    const auto photos = render(scene, cameras, 22);
+    std::vector<std::vector<std::uint8_t>> small(photos.size());
+    auto input = asScanPhotos(photos, false, true);
+    for (std::size_t i = 0; i < photos.size(); ++i) {
+        const int w = photos[i].width / 4, h = photos[i].height / 4;
+        small[i].resize(std::size_t(w) * h);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+                small[i][std::size_t(y) * w + x] = photos[i].mask[std::size_t(4 * y + 2) * photos[i].width + 4 * x + 2];
+        input[i].subjectMask = small[i].data();
+        input[i].maskWidth = w;
+        input[i].maskHeight = h;
+        input[i].maskStride = w;
+    }
+    auto r = runScan(input);
+    ASSERT_TRUE(r) << r.userMessage();
+    std::printf("[scan] cylinder, quarter masks: volume %.0f (true %.0f, %+.1f %%), height %.1f\n", r->surface.volumeMm3,
+                scene.object.volume, 100.0 * (r->surface.volumeMm3 / scene.object.volume - 1), r->surface.boundsMax.z);
+    expectClosed(r->surface.mesh);
+    EXPECT_NEAR(r->surface.volumeMm3, scene.object.volume, 0.12 * scene.object.volume);
+    EXPECT_NEAR(r->surface.boundsMax.x - r->surface.boundsMin.x, 40.0, 3.0);
 }
 
 TEST(Scan, ShrinkingATwelveMegapixelPhoto)

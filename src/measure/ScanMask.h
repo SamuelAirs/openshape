@@ -46,8 +46,10 @@ struct MaskOptions {
     // and table.
     double edgeMm = 3;
     // Pixels a subject mask calls object but whose colour is clearly lit
-    // paper are background (the mask's edges bleed).
-    bool trustLitPaperOverMask = true;
+    // paper are background (for masks whose edges bleed). Off by default: a
+    // white object's lit top looks just like lit paper, and the mask is what
+    // tells them apart.
+    bool trustLitPaperOverMask = false;
 };
 
 // The paper's colour as a smooth function of its position (a plane per

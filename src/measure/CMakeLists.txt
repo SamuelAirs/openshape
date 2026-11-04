@@ -20,6 +20,7 @@ add_library(openshape_measure STATIC
 # sheet of paper: cameras from the paper, masks, carving, the surface.
 target_sources(openshape_measure PRIVATE
     MeshTools.cpp MeshTools.h
+    PaperDetect.cpp PaperDetect.h
     Scan.cpp Scan.h
     ScanMask.cpp ScanMask.h
     ScanMath.h

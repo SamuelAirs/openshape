@@ -32,6 +32,9 @@
 namespace os::measure {
 
 // One photo as the app has it. Pixels and mask are borrowed for the call.
+// Pixels, corners and mask must share one frame: the photo as shown (EXIF
+// orientation applied), uncropped (the principal point is taken to be the
+// image's center).
 struct ScanPhoto {
     const std::uint8_t* pixels = nullptr;
     int width = 0;
