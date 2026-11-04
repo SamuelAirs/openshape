@@ -125,6 +125,47 @@ Plus, in the design itself:
   degrees for 0.8 s after a hold would replace it; what the Duo's sensors give in a hand is
   for Sam's log to say (TD-166).
 
+#### Level: calibrating and checking
+
+Sam, after build 63: "it's very difficult to test/calibrate level". A phone's motion sensors
+read a little off true level, and a reference surface known to be level is rare. The
+**end-for-end (flip) method** needs none: on any steady surface, keep a reading, turn the
+phone half a turn in the same spot and keep another. The surface's slope turns over with the
+phone and the sensor's offset does not, so the offset is half the sum of the two readings and
+the slope half their difference (on a 2° slope with a 0.5° offset the readings are 2.5° and
+-1.5°: offset 0.5°, slope 2°).
+
+- **Math** (`measure/Level`, Qt-free): lying, the reading as two angles, atan(x / |z|) and
+  atan(y / |z|) (`lyingAngles`), each flipped on its own (`lyingFlip`); standing, the edge
+  angle (`edgeFlip`). `correctedLying` takes the offset off the two angles and rebuilds
+  gravity; the edge's offset is subtracted. Exact for a turn about one axis, within 0.01°
+  for 0.6° and 0.25° offsets together on a 1.5° slope (tests/test_measure.cpp).
+- **Calibrate**: step 1 holds the first reading (the hold of "The hold, shown": still within
+  0.4° for 0.8 s); step 2 says to turn it end for end, and the next hold is the second
+  reading: after **Turned** (which waits a whole steady second again, needed when the
+  surface is level, as turning then changes nothing) or after the phone moved more than
+  1.2° (lifting it to turn it). Each reading is the mean of the raw gravity over the steady
+  second. The result says the offset and the surface's slope; over 5° it is refused ("turn
+  it in the same spot"). A second hold in the other posture (lying vs standing) or on
+  another edge is ignored with a line saying so.
+- **Kept**: QSettings `measure/levelOffset/<screen>/lyingX|lyingY` and `.../edge<turn>`,
+  per screen like the ruler's scale (the Duo's displays apart). The offset belongs to the
+  device, but gravity arrives turned into the window's frame, so `GravityReading::turn`
+  (MeasureDevicesIos.mm: 0 upright, 1 landscape right, 2 upside down, 3 landscape left)
+  turns the lying offset with the window (`windowToUpright` / `uprightToWindow`); standing
+  on another edge is another calibration (`edge<turn>`). Applied to the slope, the bubble
+  and the edge; the angle to a kept position uses the corrected gravity too (an offset
+  nearly cancels there anyway). **Reset** (in Calibrate's place once calibrated) forgets the posture shown. "Calibrated: 0.6°
+  taken off lying" under the buttons says it is on.
+- **Check**: the same two readings with the kept offset taken off; it reports both sizes and
+  "off by" half their vector sum ("2.1° and 0.9°: off by 0.6°. Calibrate to correct it.";
+  within 0.1° "The level reads true."). Two readings of the same size, opposite in sign,
+  mean a true level; half the sum and not the difference of the sizes is reported because on
+  a level surface an offset gives two equal sizes.
+- The `measurelevelcal` acceptance scenario: a sensor 0.6° off on a 1.5° slope, Calibrate by
+  taps (found within 0.05°), a level surface then reads 0.0 (also in landscape), Check
+  agrees, standing calibrated apart (0.4° on a 1.5° shelf), Reset, and Check reports 0.6°.
+
 ### Photo
 
 1. **Take** or **choose** a photo (the desktop: open an image file) with a reference lying flat

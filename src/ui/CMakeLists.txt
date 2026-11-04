@@ -96,7 +96,7 @@ qt_add_qml_module(openshape_ui
         WindowMetricsLog.cpp WindowMetricsLog.h
         Share.h
         MeasureDevices.cpp MeasureDevices.h
-        MeasureController.cpp MeasureController.h MeasureScan.cpp
+        MeasureController.cpp MeasureController.h MeasureLevelCalibration.cpp MeasureScan.cpp
         ScanPreview.cpp ScanPreview.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)

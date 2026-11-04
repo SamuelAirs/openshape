@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <random>
+#include <utility>
 
 using namespace os;
 using namespace os::measure;
@@ -328,7 +329,163 @@ TEST(ScanMask, FindsThePaperWithoutVision)
     }
 }
 
+namespace {
+
+RgbImage rgbOf(const Photo& p)
+{
+    RgbImage img;
+    img.width = p.width;
+    img.height = p.height;
+    img.rgb.reserve(std::size_t(p.width) * p.height * 3);
+    for (std::size_t i = 0; i < p.rgba.size(); i += 4)
+        img.rgb.insert(img.rgb.end(), {p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]});
+    return img;
+}
+
+// The worst distance from a true corner to the nearest found one (px), or
+// a large number when nothing was found.
+double worstCorner(const Photo& p)
+{
+    const auto found = detectPaper(rgbOf(p));
+    if (!found)
+        return 1e9;
+    double worst = 0;
+    for (const Vec2& truth : p.corners) {
+        double nearest = 1e9;
+        for (const Vec2& c : *found)
+            nearest = std::min(nearest, (c - truth).length());
+        worst = std::max(worst, nearest);
+    }
+    return worst;
+}
+
+// A yellow legal pad's sheet (torn off) with blue lines 8.7 mm apart and
+// the red margin line, on a wooden table.
+Scene legalPadScene()
+{
+    Scene scene;
+    scene.paper = legalReference();
+    scene.paperColour = {0.98, 0.92, 0.52};
+    scene.ruleSpacingMm = 8.7;
+    scene.marginMm = 32;
+    scene.table = {0.50, 0.33, 0.19};
+    return scene;
+}
+
+std::vector<CameraSpec> slantedViews(double distanceMm)
+{
+    std::vector<CameraSpec> specs;
+    const std::pair<double, double> views[] = {{20.0, 38.0}, {110.0, 50.0}, {200.0, 42.0}, {290.0, 60.0}};
+    for (const auto& [az, el] : views) {
+        CameraSpec c;
+        c.azimuthDeg = az;
+        c.elevationDeg = el;
+        c.distanceMm = distanceMm;
+        specs.push_back(c);
+    }
+    return specs;
+}
+
+} // namespace
+
+TEST(ScanMask, FindsLetterLegalAndAYellowLinedPad)
+{
+    // White Letter on a dark table, white A4 on a light (beige) one, and a
+    // yellow lined legal pad on wood, each seen at a slant from four sides
+    // with a box standing on the sheet.
+    struct Case {
+        const char* name;
+        Scene scene;
+        double distance;
+    };
+    std::vector<Case> cases;
+    {
+        Scene s;
+        s.paper = letterReference();
+        cases.push_back({"white Letter, dark table", s, 480});
+    }
+    {
+        Scene s;
+        s.table = {0.62, 0.58, 0.52};
+        cases.push_back({"white A4, light table", s, 480});
+    }
+    {
+        Scene s;
+        s.paper = legalReference();
+        cases.push_back({"white Legal, dark table", s, 560});
+    }
+    cases.push_back({"yellow lined Legal pad, wood", legalPadScene(), 560});
+    for (Case& c : cases) {
+        c.scene.object = boxObject({40, 30, 30}, {20, 10}, 15);
+        const auto photos = render(c.scene, slantedViews(c.distance), 31, 0.0);
+        for (std::size_t i = 0; i < photos.size(); ++i) {
+            ASSERT_TRUE(photos[i].paperInView) << c.name << " " << i;
+            const double worst = worstCorner(photos[i]);
+            std::printf("[scan] %s, view %zu: worst corner %.2f px\n", c.name, i, worst);
+            EXPECT_LT(worst, 3.0) << c.name << ", view " << i;
+        }
+    }
+}
+
+TEST(ScanMask, PaleYellowIsPaperAndWoodIsNot)
+{
+    // The pad's yellow passes as paper; browns, oranges and a saturated
+    // yellow do not (a wooden table, a cardboard box, a yellow object).
+    auto paper = [](std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+        Photo p;
+        p.width = 64;
+        p.height = 64;
+        p.rgba.assign(std::size_t(64) * 64 * 4, 255);
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < 64; ++x) {
+                const bool sheet = x >= 16 && x < 48 && y >= 12 && y < 52;
+                std::uint8_t* q = &p.rgba[(std::size_t(y) * 64 + x) * 4];
+                q[0] = sheet ? r : 40;
+                q[1] = sheet ? g : 30;
+                q[2] = sheet ? b : 25;
+            }
+        return detectPaper(rgbOf(p)).has_value();
+    };
+    EXPECT_TRUE(paper(240, 240, 235));  // white
+    EXPECT_TRUE(paper(250, 236, 140));  // a legal pad's yellow
+    EXPECT_TRUE(paper(245, 238, 190));  // a paler one
+    EXPECT_FALSE(paper(200, 140, 80));  // light wood
+    EXPECT_FALSE(paper(190, 120, 60));  // cardboard
+    EXPECT_FALSE(paper(250, 220, 20));  // a saturated yellow
+}
+
 // ------------------------------------------------------------- whole scans
+
+TEST(Scan, BoxOnAYellowLinedLegalPad)
+{
+    // Legal's proportions (1.65 : 1) through the corners' labelling and the
+    // focal length, and ruled lines on a yellow sheet: with subject masks
+    // (the phone's) and by colour alone (the desktop's).
+    Scene scene = legalPadScene();
+    scene.object = boxObject({50, 40, 25}, {30, -10}, 10);
+    scene.albedo = {0.30, 0.55, 0.35}; // green
+    const auto photos = render(scene, ring(12, 35, 55, 10, 360, 600), 17);
+    for (const bool masks : {true, false}) {
+        ScanOptions options;
+        options.paper = legalReference();
+        const Outcome o = scan(photos, masks, false, options);
+        ASSERT_TRUE(o.ok) << o.error;
+        printSummary(masks ? "box on a legal pad, masks" : "box on a legal pad, colour", o, scene.object);
+        expectClosed(o.result.surface.mesh);
+        EXPECT_TRUE(o.labellingConsistent);
+        expectFootprint(o, scene.object, 2.5);
+        // The silhouettes' roof over a flat top (no stereo here, no low
+        // photos, docs/SCAN.md "Limits"): about 15 mm over this 50 x 40 box.
+        EXPECT_GT(o.max.z, scene.object.max.z - 1.0);
+        EXPECT_LT(o.max.z, scene.object.max.z + 17.0);
+        EXPECT_GT(o.result.surface.volumeMm3, 0.95 * scene.object.volume);
+        EXPECT_LT(o.result.surface.volumeMm3, 1.45 * scene.object.volume);
+        EXPECT_TRUE(o.result.focalEstimated);
+        EXPECT_NEAR(o.result.focal35mm, 26.0, 1.5);
+        for (const ScanPhotoReport& r : o.result.photos)
+            EXPECT_TRUE(r.used) << r.problem;
+    }
+}
 
 TEST(Scan, BoxWithSubjectMasks)
 {

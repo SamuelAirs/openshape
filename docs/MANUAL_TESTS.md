@@ -117,6 +117,24 @@ motion sensors, Vision and ARKit reported.
     the gauge shows the angle, green between 35° and 55°. Cancel works
     everywhere. Send the log: its `Measure: camera:` lines give the tilt,
     the zoom and the focal length of each photo.
+19. **Calibrating the Level (next build; your request).** Level, phone lying
+    on a table (any table: it needn't be level). Check: keep still until it
+    holds, turn the phone end for end in the same spot (rotate it half a
+    turn flat on the table, top where the bottom was), tap Turned, keep
+    still: it says the two readings and how far off the level is. Then
+    Calibrate the same way: it says the offset it found ("It read 0.4° off
+    lying down") and the surface's slope. Check again: now "off by" should
+    be 0.1° or less. Tell me the offset, and whether the two Checks agree
+    with the Calibrate. Same standing on the long edge (Check, then
+    Calibrate). Reset brings back the raw reading. A pencil line around
+    the phone helps put it back in the same spot.
+20. **Scan on Legal paper and on your pad (next build; your report).**
+    Measure → Scan, pick Legal paper: a small box on a sheet torn off your
+    yellow legal pad (the pad's glued top hides part of the sheet, and
+    Legal means the whole 8.5 × 14 in), on a darker table. 10 to 12 photos
+    around it. Are the paper's corners right in every photo (open a few)?
+    Build: do W × D × H match a ruler? If you can, the same box on plain
+    white paper, to compare how often the corners were found.
 
 ## On Windows (the desktop shortcut)
 

@@ -41,6 +41,10 @@ struct GravityReading {
     double x = 0;
     double y = 0;
     double z = -1;
+    // The window's quarter turns from the device held upright (0 upright,
+    // 1 landscape right, 2 upside down, 3 landscape left): the level's
+    // calibration belongs to the device and turns with the window.
+    int turn = 0;
 };
 
 enum class PhotoOrigin { Camera, Library };

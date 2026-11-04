@@ -11,13 +11,16 @@
 // tolerance, Add to design (a body of that size), undo; Build cancelled;
 // photos from one side only warned about. The phone: Take photos (the
 // camera stand-in) and Choose more (the library, several at once), Build.
-// Every stage at phone, iPhone Duo outer and inner and desktop sizes:
-// pictures measurescan_<stage>_<size>.png.
+// Legal paper picked, and twelve photos of the box on a yellow lined legal
+// pad on a wooden table found by FoldForm's own paper finder (no Vision)
+// and built. Every stage at phone, iPhone Duo outer and inner and desktop
+// sizes: pictures measurescan_<stage>_<size>.png.
 
 #include "app/AcceptanceRunner.h"
 #include "core/Math.h"
 #include "document/Body.h"
 #include "geometry/Modeling.h"
+#include "measure/Homography.h"
 #include "measure/ScanSynthetic.h"
 #include "ui/AppController.h"
 #include "ui/MeasureController.h"
@@ -31,6 +34,7 @@
 #include <QtCore/QMap>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
+#include <QtCore/QUrl>
 #include <QtGui/QImage>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
@@ -66,8 +70,10 @@ struct State {
     std::unique_ptr<QTemporaryDir> dir;
     QStringList allRound; // twelve photos all around
     QStringList oneSide;  // six from one side
+    QStringList legal;    // twelve on a yellow lined legal pad (no Vision: the paper finder)
     QMap<QString, ui::RectangleCorners> corners; // by file stem ("allround_03")
     QMap<QString, QImage> masks;
+    QMap<QString, ui::RectangleCorners> truth; // every photo's corners
     int picked = 0;
     double maxProgress = 0;
     bool sawProgress = false;
@@ -144,9 +150,11 @@ void checkLayout(AcceptanceRunner& r, const Size& s, const QString& where)
 }
 
 // Renders photos of the box and writes them as PNG files named `<stem>_NN.png`.
-QStringList writePhotos(const StatePtr& st, const std::vector<synth::CameraSpec>& cameras, unsigned seed, const QString& stem)
+// `scene` defaults to white A4 on a dark table; Vision's stand-in finds the
+// paper when `vision`.
+QStringList writePhotos(const StatePtr& st, const std::vector<synth::CameraSpec>& cameras, unsigned seed, const QString& stem,
+                        synth::Scene scene = {}, bool vision = true)
 {
-    synth::Scene scene;
     scene.object = synth::boxObject(kBox);
     scene.textureStrength = 0.2;
     const auto photos = synth::render(scene, cameras, seed);
@@ -159,7 +167,9 @@ QStringList writePhotos(const StatePtr& st, const std::vector<synth::CameraSpec>
         ui::RectangleCorners c;
         for (std::size_t k = 0; k < 4; ++k)
             c[k] = QPointF(p.corners[k].x, p.corners[k].y);
-        st->corners.insert(key, c);
+        if (vision)
+            st->corners.insert(key, c);
+        st->truth.insert(key, c);
         st->masks.insert(key, QImage(p.mask.data(), p.width, p.height, p.width, QImage::Format_Grayscale8).copy());
         files << file;
     }
@@ -168,7 +178,7 @@ QStringList writePhotos(const StatePtr& st, const std::vector<synth::CameraSpec>
 
 QString keyOf(const StatePtr& st, const QString& file)
 {
-    for (auto it = st->corners.constBegin(); it != st->corners.constEnd(); ++it)
+    for (auto it = st->masks.constBegin(); it != st->masks.constEnd(); ++it)
         if (file.contains(it.key()))
             return it.key();
     return {};
@@ -181,7 +191,7 @@ ui::MeasureDevices standIns(const StatePtr& st, bool pickers)
     ui::MeasureDevices d;
     d.detectRectangle = [st](const QString& file) -> std::optional<ui::RectangleCorners> {
         const QString key = keyOf(st, file);
-        if (key.isEmpty())
+        if (key.isEmpty() || !st->corners.contains(key))
             return std::nullopt;
         return st->corners.value(key);
     };
@@ -228,7 +238,14 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         // worked out from the papers: no EXIF here).
         st->allRound = writePhotos(st, synth::ring(12, 35, 55, 0, 360, 480, 28), 14, QStringLiteral("allround"));
         st->oneSide = writePhotos(st, synth::ring(6, 35, 50, -40, 110), 17, QStringLiteral("oneside"));
-        r.check(st->allRound.size() == 12 && st->oneSide.size() == 6 && QFileInfo::exists(st->allRound.last()),
+        synth::Scene pad;
+        pad.paper = measure::legalReference();
+        pad.paperColour = {0.98, 0.92, 0.52};
+        pad.ruleSpacingMm = 8.7;
+        pad.marginMm = 32;
+        pad.table = {0.50, 0.33, 0.19};
+        st->legal = writePhotos(st, synth::ring(12, 35, 55, 0, 360, 600, 28), 19, QStringLiteral("legal"), pad, false);
+        r.check(st->allRound.size() == 12 && st->oneSide.size() == 6 && st->legal.size() == 12 && QFileInfo::exists(st->allRound.last()),
                 say("the synthetic photos are written"));
         auto& m = measureOf(r);
         m.setDevices(standIns(st, false)); // a desktop: files, Vision stood in for
@@ -459,9 +476,72 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         wait(steps, 2);
     }
 
+    // ---- Legal: a yellow lined pad, found by FoldForm's own paper finder
+    steps.push_back([&r, st] {
+        measureOf(r).scanClear();
+        measureOf(r).setDevices(standIns(st, false));
+        applySize(r, kDesktop);
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        r.check(shown(r, QStringLiteral("scanIntro")) && shown(r, QStringLiteral("scanIntroTips")), say("legal: the how-to, with what works best"),
+                text(r, QStringLiteral("scanIntroTips")));
+        r.check(r.clickItem(QStringLiteral("scanPaper_legal")), say("legal: pick Legal paper"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        r.check(measureOf(r).scanPaper() == QStringLiteral("legal") && text(r, QStringLiteral("scanIntro")).contains(QStringLiteral("Legal")),
+                say("legal: picked, and the how-to says so"));
+        checkLayout(r, kDesktop, QStringLiteral("legal intro"));
+        r.screenshot(QStringLiteral("measurescan_intro_legal_desktop"));
+        measureOf(r).setNextScanFiles(st->legal);
+        r.check(r.clickItem(QStringLiteral("scanOpen")), say("legal: open twelve photos of the pad"));
+    });
+    steps.push_back([&r] { r.check(measureOf(r).waitForScan(60000), say("legal: read")); });
+    wait(steps, 2);
+    steps.push_back([&r, st] {
+        const QVariantList photos = measureOf(r).scanPhotos();
+        int detected = 0;
+        double worst = 0;
+        for (const QVariant& v : photos) {
+            const QVariantMap p = v.toMap();
+            if (p.value(QStringLiteral("source")).toString() != QStringLiteral("detected"))
+                continue;
+            ++detected;
+            const ui::RectangleCorners truth = st->truth.value(keyOf(st, p.value(QStringLiteral("url")).toUrl().toLocalFile()));
+            for (const QVariant& c : p.value(QStringLiteral("corners")).toList()) {
+                double nearest = 1e9;
+                for (const QPointF& t : truth)
+                    nearest = std::min(nearest, QLineF(c.toPointF(), t).length());
+                worst = std::max(worst, nearest);
+            }
+        }
+        r.check(photos.size() == 12 && detected == 12 && worst < 4, say("legal: the paper finder found every pad (corners within 4 px)"),
+                QStringLiteral("%1 photos, %2 found, worst corner %3 px").arg(photos.size()).arg(detected).arg(AcceptanceRunner::num(worst)));
+        r.screenshot(QStringLiteral("measurescan_photos_legal_desktop"));
+        r.check(r.clickItem(QStringLiteral("scanBuild")), say("legal: Build"));
+    });
+    steps.push_back([&r] { r.check(measureOf(r).waitForScan(180000), say("legal: built")); });
+    wait(steps, 2);
+    steps.push_back([&r, st] {
+        const QVariantMap res = measureOf(r).scanResult();
+        const double w = res.value(QStringLiteral("width")).toDouble(), d = res.value(QStringLiteral("depth")).toDouble(),
+                     h = res.value(QStringLiteral("height")).toDouble();
+        // The same box from the same ring (a little farther: the sheet is
+        // longer) as on A4: the hull's bulge on its flat sides is the same, the
+        // paper adds nothing.
+        r.check(res.value(QStringLiteral("valid")).toBool() && std::abs(w - st->w) < 2 && std::abs(d - st->d) < 2 && std::abs(h - st->h) < 2
+                    && std::abs(w - kBox.x) < 5 && std::abs(d - kBox.y) < 5 && std::abs(h - kBox.z) < 5,
+                say("legal: the box's size as on A4 (within 2 mm), and within 5 mm of the truth"),
+                QStringLiteral("%1 x %2 x %3 (on A4 %4 x %5 x %6)").arg(w).arg(d).arg(h).arg(st->w).arg(st->d).arg(st->h));
+        checkLayout(r, kDesktop, QStringLiteral("legal result"));
+        r.screenshot(QStringLiteral("measurescan_result_legal_desktop"));
+    });
+
     // ---- clean up for the next scenarios
     steps.push_back([&r, st] {
         auto& m = measureOf(r);
+        m.setScanPaper(QStringLiteral("a4"));
         if (QQuickItem* screen = r.findItem(QStringLiteral("measureScreen")))
             QMetaObject::invokeMethod(screen, "close");
         QObject::disconnect(st->progressWatch);

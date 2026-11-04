@@ -811,6 +811,13 @@ large at the side with **Keep**.
   edge, the edge's angle from level. **Keep as reference**, then lay the
   phone on a second surface the same way round: the angle between the two.
   Held like the fold: set it down, keep still, and it says HELD.
+  **Calibrate** takes the motion sensors' small offset off, with no level
+  surface needed: set the phone down on any steady surface and keep still,
+  then turn it end for end in the same spot (tap **Turned**) and keep still
+  again. It shows the offset it found and keeps it (lying down and standing
+  on each edge apart); **Reset** forgets it. **Check** takes the same two
+  readings and only says how far apart they are: a level that reads true
+  gives the same size both ways round.
 - **Photo**: photograph a flat thing with a playing card, a sheet of A4 or
   Letter paper, or any rectangle whose sides you type, lying flat beside it.
   FoldForm finds the reference's corners where it can; drag the four
@@ -882,8 +889,8 @@ large at the side with **Keep**.
   name, Length or Angle, a value); tap one to rename it, give it a new
   value or delete it. The value is copied when you type it: changing a
   measurement later does not change what was already built with it.
-- **Scan**: a 3D shape from photos. Stand the object on a sheet of A4 or
-  Letter paper on a plain table and take 8 to 16 photos walking around it
+- **Scan**: a 3D shape from photos. Stand the object on a sheet of A4,
+  Letter or Legal paper on a plain table and take 8 to 16 photos walking around it
   from about 45 degrees above, all four paper corners in every photo (Take
   photos, Choose photos, or Open photos on a computer; Take photos shows the
   camera's angle, green from 35° to 55° from straight down, and the low
@@ -895,7 +902,10 @@ large at the side with **Keep**.
   around. The outside shape comes out within a millimeter or two for a
   hand-sized object with some texture; plain, shiny or very dark surfaces,
   and hollows the camera cannot see into, come out filled or slightly
-  larger.
+  larger. Plain white paper on a darker, plain surface works best; a yellow
+  or lined pad works, less reliably (tear the sheet off: the pad's glued top
+  hides part of it). Lines or marks on the object help; lines on the paper
+  don't.
 - **Reference photos**: Photo → Straighten → **Place in design** puts the
   straightened photo on the ground at its real size (with several views,
   **Place views** puts each on its plane), under the model, to

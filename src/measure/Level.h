@@ -43,4 +43,44 @@ double angleBetween(const Gravity& a, const Gravity& b);
 // The edge angle relative to a kept one, in -180..180 (degrees).
 double relativeEdgeAngle(double edgeDeg, double referenceEdgeDeg);
 
+// ---- Calibration: the end-for-end (flip) method (docs/MEASURE.md, "Level:
+// calibrating and checking"). A phone's motion sensors read a little off
+// true level. Lay it on any steady surface and keep the reading, turn it half
+// a turn in the same spot and keep it again: the surface's slope turns over
+// with the phone and the sensor's offset does not, so the offset is half the
+// sum of the two readings and the slope half their difference (on a 2° slope
+// with a 0.5° offset the readings are 2.5° and -1.5°: offset 0.5°, slope 2°).
+// No level surface is needed.
+
+// Lying: the tilt as two angles (degrees): about the screen's y axis (the x
+// component, atan(x / |z|)) and about its x axis (the y component).
+Vec2 lyingAngles(const Gravity& g);
+// The unit gravity with those angles; `faceDown` puts it out of the glass.
+Gravity fromLyingAngles(Vec2 anglesDeg, bool faceDown = false);
+
+struct FlipResult {
+    Vec2 offsetDeg; // lying: both components; standing: x only
+    Vec2 slopeDeg;  // the surface under the first reading
+    double offsetSize() const { return offsetDeg.length(); }
+    double slopeSize() const { return slopeDeg.length(); }
+};
+// Two lying readings, the second turned half a turn about the surface's
+// normal from the first.
+FlipResult lyingFlip(const Gravity& first, const Gravity& second);
+// Two edge readings (degrees), the second with the phone turned end for end
+// on the same edge.
+FlipResult edgeFlip(double firstEdgeDeg, double secondEdgeDeg);
+
+// A lying reading with an offset (lyingFlip's) taken off.
+Gravity correctedLying(const Gravity& g, Vec2 offsetDeg);
+
+// Gravity in the window's frame (Gravity's, turned with the interface) and in
+// the device's own upright frame (the same axes, as when held upright): an
+// offset belongs to the device, so it is kept in the upright frame and turned
+// with the window. `turn` counts the window's quarter turns: 0 upright, 1
+// landscape right (the device's bottom on the right), 2 upside down, 3
+// landscape left.
+Gravity windowToUpright(const Gravity& g, int turn);
+Gravity uprightToWindow(const Gravity& g, int turn);
+
 } // namespace os::measure

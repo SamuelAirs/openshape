@@ -466,8 +466,7 @@ void MeasureController::onGravity(const GravityReading& reading)
         gravityAvailable_ = true;
         emit sensorsChanged();
     }
-    gravity_ = {reading.x, reading.y, reading.z};
-    tilt_ = measure::tiltFrom(gravity_);
+    correctGravity(reading);
     feedLevel();
     emit levelChanged();
 }
@@ -489,6 +488,8 @@ void MeasureController::feedLevel()
         if (devices_.haptic)
             devices_.haptic(2);
         emit held(QStringLiteral("level"));
+        if (levelCal_.step == 1 || levelCal_.step == 2)
+            levelCalHold();
     }
 }
 
@@ -1379,6 +1380,10 @@ void MeasureController::setDevices(MeasureDevices devices)
     level_.reset();
     levelReference_.reset();
     levelTrack_ = -1;
+    levelCal_.mode.clear();
+    levelCal_.step = 0;
+    levelCal_.loaded = false; // read again (a test may have changed the settings)
+    recentGravity_.clear();
     foldAngle_ = 0;
     foldSteady_ = false;
     foldProgress_ = 0;

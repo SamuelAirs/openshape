@@ -218,6 +218,7 @@ Homography Homography::then(const Homography& next) const
 Reference cardReference() { return {Reference::Kind::Card, kPlayingCard.longMm, kPlayingCard.shortMm, kPlayingCard.name}; }
 Reference a4Reference() { return {Reference::Kind::A4, 297.0, 210.0, "A4 paper"}; }
 Reference letterReference() { return {Reference::Kind::Letter, 279.4, 215.9, "Letter paper"}; }
+Reference legalReference() { return {Reference::Kind::Legal, 355.6, 215.9, "Legal paper"}; }
 
 std::optional<Reference> rectangleReference(double sideA, double sideB)
 {

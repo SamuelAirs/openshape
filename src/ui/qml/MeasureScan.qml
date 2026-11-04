@@ -9,8 +9,8 @@ import QtQuick.Layouts
 import QtQuick.Shapes
 import OpenShape
 
-// Scan (docs/SCAN.md): photos around an object standing on a sheet of A4 or
-// Letter paper become a mesh and a body. 1. A short how-to and the photos
+// Scan (docs/SCAN.md): photos around an object standing on a sheet of A4,
+// Letter or Legal paper become a mesh and a body. 1. A short how-to and the photos
 // (the camera again and again, the library several at once, files on the
 // desktop). 2. Each photo's paper corners (Vision or FoldForm's own finder),
 // a strip to review them; a photo whose corners look wrong is fixed with the
@@ -82,14 +82,24 @@ Item {
         visible: scan.stage === "intro"
         iconName: "scan"
         title: "Scan an object"
-        text: "Stand it on a sheet of " + (scan.m && scan.m.scanPaper === "letter" ? "Letter" : "A4")
+        text: "Stand it on a sheet of " + (scan.m && scan.m.scanPaper === "letter" ? "Letter" : scan.m && scan.m.scanPaper === "legal" ? "Legal" : "A4")
               + " paper on a plain table. Walk around it and take 8 to 12 photos from about 45° above, "
               + "each with all four corners of the paper, in even light."
+        Text {
+            objectName: "scanIntroTips"
+            Layout.fillWidth: true
+            text: "Best: plain white paper on a darker, plain surface (a yellow or lined pad works, less reliably). "
+                  + "Lines or marks on the object help; lines on the paper don't."
+            color: Theme.mutedText
+            font.pixelSize: 13
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+        }
         MeasureSegmented {
             Layout.fillWidth: true
             namePrefix: "scanPaper_"
             showIcons: false
-            model: [{ key: "a4", label: "A4 paper" }, { key: "letter", label: "Letter paper" }]
+            model: [{ key: "a4", label: "A4 paper" }, { key: "letter", label: "Letter paper" }, { key: "legal", label: "Legal paper" }]
             current: scan.m ? scan.m.scanPaper : "a4"
             onPicked: (key) => scan.m.setScanPaper(key)
         }
@@ -148,7 +158,7 @@ Item {
                 Layout.preferredWidth: Math.min(260, parent.width * 0.55)
                 namePrefix: "scanPaper_"
                 showIcons: false
-                model: [{ key: "a4", label: "A4" }, { key: "letter", label: "Letter" }]
+                model: [{ key: "a4", label: "A4" }, { key: "letter", label: "Letter" }, { key: "legal", label: "Legal" }]
                 current: scan.m ? scan.m.scanPaper : "a4"
                 onPicked: (key) => scan.m.setScanPaper(key)
             }

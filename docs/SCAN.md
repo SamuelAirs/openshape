@@ -1,13 +1,17 @@
 # Scan: FoldForm's own photogrammetry
 
 Sam's ask (2026-11-03): photogrammetry built by us (not Apple's Object Capture), very polished.
-Scan turns 6 to 16 photos of an object standing on a sheet of A4 or Letter paper into a closed
+Scan turns 6 to 16 photos of an object standing on a sheet of A4, Letter or Legal paper into a closed
 mesh in millimeters, and the mesh into a body. It all runs on the device, in plain C++
 (`src/measure`, no Qt, no kernel), in about a second for twelve photos.
 
 ## Taking the photos
 
-- Stand the object on a sheet of white A4 or Letter paper, on a table darker than the paper.
+- Stand the object on a sheet of white A4, Letter or Legal paper (8.5 x 14 in, 215.9 x 355.6
+  mm), on a table darker than the paper. A yellow or lined pad works, less reliably; tear the
+  sheet off (a legal pad's glued top hides part of it, and Legal means the whole sheet).
+  Lines or marks on the object help stereo; lines on the paper don't (see "Paper that is not
+  plain white").
 - Walk around it: 8 to 16 photos, the whole sheet in every photo, about 30 to 60 degrees above
   the table. **Add 3 to 5 photos from low down (10 to 20 degrees)**: only they see over a flat
   top (see "Limits").
@@ -97,13 +101,47 @@ focal estimate resting on fewer than 3 photos.
 ## Real photos on the desktop
 
 `measure::detectPaper` (`measure/PaperDetect.h`) finds the sheet without Vision: the largest
-bright colourless region, its convex hull (an object hiding part of the edge does not matter),
+bright colourless (or pale yellow) region, closed over ruled lines, its convex hull (an object hiding part of the edge does not matter),
 the best four-sided fit, each side refitted to the edge pixels. `tools/scan_photos`
 (OPENSHAPE_BUILD_TOOLS) runs the stages on a folder of PPM photos and writes `scan.stl`, the
 masks as PGMs and a line per photo; `scripts/dev/scan_photos.py <photos> <work>` (Windows
 Python, Pillow; put `%USERPROFILE%\msys64\ucrt64\bin` on PATH) makes the PPMs from JPEGs with
 the EXIF orientation applied and lists their 35 mm focal lengths in `photos.txt`, where
 corners can be fixed by hand (eight numbers after the focal length).
+
+## Paper that is not plain white
+
+Sam, after build 63: "Scan an object kind of struggled to find the paper each time, but that
+may have been my fault. I used a lined legal pad." Three things were against it: Scan knew
+only A4 and Letter (a legal sheet is 1.65 : 1, A4 1.41 : 1: the corners fit neither, and the
+focal estimate and the scale went wrong with them), the paper finder wanted bright pixels with
+a saturation under 0.3 (a pad's yellow is about 0.4 to 0.5), and ruled lines cut the bright
+region into strips.
+
+- **Legal** is a third paper (`measure::legalReference`, the picker's third choice). Nothing in
+  the engine assumes A4's proportions: the corners' labelling, the focal estimate and the
+  carving height take the sheet's sides from the `Reference`.
+- **Apple Vision** (`MeasureDevicesIos.mm`, `VNDetectRectanglesRequest`) looks first, as for
+  A4: any aspect ratio from 0.3 to 1, so Legal goes through it unchanged. Seen side-on from
+  low down, a sheet looks narrower than 0.3 (Legal from 20 degrees up: 0.61 x sin 20° = 0.21;
+  A4 0.24) and Vision passes; FoldForm's own finder then takes over.
+- **FoldForm's finder** (`measure::detectPaper`) also takes pale yellow as paper: blue the
+  lowest channel, a hue of 38 to 75 degrees, saturation under 0.7 (wood, cardboard and
+  oranges lie below 38 degrees; a deep yellow is over 0.7), above Otsu's brightness threshold
+  like white. Then a closing (a 5 x 5 square at the 800 px working size) joins the strips
+  between ruled lines and over a margin line before the largest region is taken.
+- **Masks**: the paper's colour model is fitted to the sheet itself, so yellow is fine. A
+  ruled line is a thin non-paper mark: by colour alone the opening drops it; with a subject
+  mask it is "unknown" (never carves).
+- **Measured** on synthetic photos (`ScanSynthetic`'s `paperColour`, `ruleSpacingMm`,
+  `marginMm`): a yellow (0.98, 0.92, 0.52) legal sheet with blue lines 8.7 mm apart and a
+  red margin 32 mm in, on wood (0.50, 0.33, 0.19), seen from four sides at 38 to 60
+  degrees: the old finder found no sheet in any view; now every corner within 1.4 px (white
+  Letter on a dark table, white A4 on a light beige one and white Legal within 1.5 px too).
+  A 50 x 40 x 25 box on the pad, twelve photos, the lens unknown: the focal length within
+  0.1 mm, the footprint within 2 mm, by subject masks and by colour alone alike (the hull's
+  roof as on white paper). Through the app (`measurescan`): all twelve pads found by
+  FoldForm's finder (corners within 1.8 px), built to within 2 mm of the same box on A4.
 
 ## Limits (what to tell Sam)
 

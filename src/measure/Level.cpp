@@ -56,4 +56,62 @@ double relativeEdgeAngle(double edgeDeg, double referenceEdgeDeg)
     return d;
 }
 
+Vec2 lyingAngles(const Gravity& g)
+{
+    const double z = std::max(std::abs(g.z), 1e-9);
+    return {std::atan2(g.x, z) * kDeg, std::atan2(g.y, z) * kDeg};
+}
+
+Gravity fromLyingAngles(Vec2 anglesDeg, bool faceDown)
+{
+    const Vec3 v = Vec3{std::tan(anglesDeg.x / kDeg), std::tan(anglesDeg.y / kDeg), faceDown ? 1.0 : -1.0}.normalized();
+    return {v.x, v.y, v.z};
+}
+
+FlipResult lyingFlip(const Gravity& first, const Gravity& second)
+{
+    const Vec2 a = lyingAngles(first), b = lyingAngles(second);
+    return {(a + b) * 0.5, (a - b) * 0.5};
+}
+
+FlipResult edgeFlip(double firstEdgeDeg, double secondEdgeDeg)
+{
+    return {{0.5 * (firstEdgeDeg + secondEdgeDeg), 0}, {relativeEdgeAngle(firstEdgeDeg, secondEdgeDeg) * 0.5, 0}};
+}
+
+Gravity correctedLying(const Gravity& g, Vec2 offsetDeg)
+{
+    const double len = Vec3{g.x, g.y, g.z}.length();
+    if (!(len > 1e-6))
+        return g;
+    const Gravity c = fromLyingAngles(lyingAngles(g) - offsetDeg, g.z > 0);
+    return {c.x * len, c.y * len, c.z * len};
+}
+
+namespace {
+int quarter(int turn) { return ((turn % 4) + 4) % 4; }
+} // namespace
+
+Gravity windowToUpright(const Gravity& g, int turn)
+{
+    // MeasureDevicesIos.mm's toWindowFrame, undone: upright, the window's
+    // axes are the device's (y down the screen).
+    switch (quarter(turn)) {
+    case 1: return {-g.y, g.x, g.z};
+    case 2: return {-g.x, -g.y, g.z};
+    case 3: return {g.y, -g.x, g.z};
+    default: return g;
+    }
+}
+
+Gravity uprightToWindow(const Gravity& g, int turn)
+{
+    switch (quarter(turn)) {
+    case 1: return {g.y, -g.x, g.z};
+    case 2: return {-g.x, -g.y, g.z};
+    case 3: return {-g.y, g.x, g.z};
+    default: return g;
+    }
+}
+
 } // namespace os::measure
