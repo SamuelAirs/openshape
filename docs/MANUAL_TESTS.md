@@ -13,9 +13,10 @@ FoldForm, Logs, openshape.log): its `Measure:` lines say what the hinge, the
 motion sensors, Vision and ARKit reported.
 
 1. **Ruler and the card check.** Measure (the ruler at the top) → Ruler →
-   Check with a card: lay a bank card on the outline and stretch it to the
-   card's edges, Done. Then measure the card's short side with the jaws:
-   53.98 mm should read 53.9–54.1. Do it on the Duo's outer display and on
+   Check with a card: lay a playing card on the outline (build 63 on; 62
+   drew a debit/credit card) and stretch it to the card's edges, Done. Then
+   measure the card's short side with the jaws: 63.5 mm should read
+   63.4–63.6. Do it on the Duo's outer display and on
    the inner one (each keeps its own scale); say how far the estimate was off
    (the percentage the card check showed).
 2. **Fold (the Duo).** Fold tab: open and close the phone slowly; the angle
@@ -24,9 +25,9 @@ motion sensors, Vision and ARKit reported.
    with a card, then pinch the card's other side and something you know.
 3. **Level.** Lay the phone on a table (the bubble near the middle), on a
    book propped up (the slope), stand it on its edge.
-4. **Photo.** Choose photo, and Take photo: a card (or a sheet of A4 or
-   Letter paper) flat on a table beside a part. Did the four corners land on
-   the card by themselves? Straighten, then Outline the part (tap the
+4. **Photo.** Choose photo, and Take photo: a playing card (or a sheet of
+   A4 or Letter paper) flat on a table beside a part. Did the four corners
+   land on the card by themselves? Straighten, then Outline the part (tap the
    corners, then the first one again) and compare with a ruler. Make sketch:
    the outline opens as a sketch; tap inside it and extrude.
 5. **Camera (AR).** Distance between two corners of a table; Box around a
