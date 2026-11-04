@@ -34,6 +34,17 @@ things").
   circles, in millimeters. Make sketch puts the outline or the circle on the
   ground plane at real size. The reference is found automatically on iPhone
   and iPad (Vision); four handles with a magnifier fix its corners.
+  Guides on the straightened photo: millimeter rulers along its top and left
+  that follow zoom and pan, a grid (10 mm, finer zoomed in), and a
+  distance's angle to the card's edges while it is placed and once placed:
+  within 1.5° of straight it snaps straight and turns green (Snap off for a
+  slanted line). Every distance, outline and circle stays on the photo as a
+  dimension (A, B, C...), listed under it, to select, rename, delete, or
+  **Keep all** ("Top A"). **Views**: + View keeps a photo and its
+  dimensions in a set (Top, Front, Side) and starts the next; **Place
+  views** puts each straightened photo at true size on its plane with a
+  tapped origin point at the design's origin, and its outlines as sketches
+  on that plane.
 - **Camera** (ARKit): distances in the room, an outline on a surface, or a
   box's width, depth and height, to keep, sketch or make into a box.
 - **Into any value box**: a ruler button in the value box (and beside a

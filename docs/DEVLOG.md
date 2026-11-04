@@ -867,3 +867,33 @@ normally and forced, and asserts.
   missed it). Lessons: name things as people say them (debit or credit card,
   not "bank card"), and grep every file type after a wording change. TD-176
   keeps the tolerance question; a real ruler along the screen checks it.
+
+## 2026-11-04 — Photo after build 63: guides, dimensions that stay, views
+
+- The owner liked Photo best and asked for guides ("see if you are measuring
+  in a straight line"), several measurements at once and side views for a
+  drawing. Straight means straight on the straightened photo, whose axes are
+  the reference's edges, so the angle and the snap need no extra input; it
+  holds only when the card lies square to the part, which the hint words as
+  "to the playing card's edges".
+- The angle is folded to 0..90 (a line sloping down reads 4.6°, not
+  175.4°): the first draft measured 0..180 counter-clockwise and a nearly
+  straight line read 175°, which says nothing to someone checking an edge.
+- Several dimensions without breaking the one-measurement flow (and the
+  outline-finding track): Photo keeps `points` and `closed` as the selected
+  dimension's, writable as before, and a sync puts them into `dims`
+  (writing points with none selected starts a dimension of the current
+  mode). The existing `measure` scenario's checks on `points` held unchanged.
+- A tap used to be ignored once the finger moved 8 px; now a press, slide
+  and lift places the point where the finger lifts, with the magnifier and
+  the live angle: on a phone the second end of a distance can be placed by
+  sight, not only by aim.
+- Placing a view on the Front plane needed no new frame: reference photos
+  and sketches share the origin planes' frames (`referencePlaneFrame`), so
+  the straightened photo's pixel (x, y) is (x - origin) * mm/px across and
+  (origin - y) * mm/px up on any of them, and the outline sketch lies on its
+  photo (the scenario reads both back: 0..80 x 0..40 mm on Front).
+- The sheets (a dimension, a view, placing views) first centered on the
+  window: on the Duo's outer display (an 84 pt side bar at the right) they
+  overflowed it; centered in the safe area now. The Measure screen's own
+  cards (a kept measurement, the guide) still center on the window.

@@ -80,6 +80,23 @@ motion sensors, Vision and ARKit reported.
     the marks? Under half a millimeter means the playing card is a good
     reference; tell me the gap either way. The Fold's Gap calibration and
     Photo's Card now mean the playing card too.
+15. **Photo: guides, several dimensions, views (next build; your request).**
+    Photo → a part and a playing card on a table → Straighten. Rulers run
+    along the photo's top and left: zoom in with two fingers, they follow.
+    Tap **Grid**: 10 mm squares (finer zoomed in). Distance: tap one end,
+    then press the other and slide: the angle shows by your finger, and near
+    0° or 90° the line snaps straight and turns green ("Straight · 0°"). A
+    slanted edge keeps its angle; with **Snap** off a nearly straight one
+    stays as you placed it. Measure three things: each stays on the photo as
+    A, B, C and in the list under it; tap B, tap it again, rename it, then
+    **Keep all** (kept as "Top A", "Top Width"...). Then **+ View**, photograph
+    the part from the front (the card flat on the same table), straighten,
+    outline its side, tap **Origin** and its bottom-left corner. Tap Top in
+    the strip and back: the dimensions come back. **Place 2 views** →
+    **Photos and outlines as sketches**: the top photo lies on the ground,
+    the front one stands on the Front plane, the outlines on them at real
+    size; Undo four times takes it back. Does the snap feel right (1.5°), is
+    the list under the photo enough, and do the views line up in the design?
 
 ## On Windows (the desktop shortcut)
 
