@@ -10,7 +10,7 @@
 // each photo's mask as a PGM (white object, black background, grey unknown),
 // and prints what became of each photo.
 //
-//   scan_photos <folder> [--letter] [--out scan.stl] [--height mm]
+//   scan_photos <folder> [--letter | --legal] [--out scan.stl] [--height mm]
 
 #include "measure/PaperDetect.h"
 #include "measure/Scan.h"
@@ -84,7 +84,7 @@ void writeStl(const std::filesystem::path& path, const ScanMesh& mesh)
 int main(int argc, char** argv)
 {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: scan_photos <folder> [--letter] [--out scan.stl] [--height mm]\n");
+        std::fprintf(stderr, "usage: scan_photos <folder> [--letter | --legal] [--out scan.stl] [--height mm]\n");
         return 2;
     }
     const std::filesystem::path folder = argv[1];
@@ -94,6 +94,8 @@ int main(int argc, char** argv)
         const std::string arg = argv[i];
         if (arg == "--letter")
             options.paper = letterReference();
+        else if (arg == "--legal")
+            options.paper = legalReference();
         else if (arg == "--out" && i + 1 < argc)
             outPath = argv[++i];
         else if (arg == "--height" && i + 1 < argc)

@@ -84,6 +84,41 @@ bool intersect(const Line& a, const Line& b, Vec2& out)
     return true;
 }
 
+// A pale, warm yellow (a legal pad's sheet): blue the lowest channel, a hue
+// of 38 to 75 degrees, and not deeply coloured.
+bool paleYellow(int r, int g, int b)
+{
+    const int mx = std::max({r, g, b}), mn = std::min({r, g, b});
+    if (mx <= 0 || mn != b || mx == mn)
+        return false;
+    const double sat = double(mx - mn) / mx;
+    const double hue = mx == r ? 60.0 * (g - b) / (mx - mn) : 60.0 * (2.0 + double(b - r) / (mx - mn));
+    return hue >= 38 && hue <= 75 && sat < 0.7;
+}
+
+// A square of side 2 r + 1 as the structuring element, separably (out of
+// the image counts as neither: the max and min look only at pixels inside).
+std::vector<std::uint8_t> closeMask(const std::vector<std::uint8_t>& mask, int w, int h, int r)
+{
+    auto pass = [w, h, r](const std::vector<std::uint8_t>& in, bool dilate, bool horizontal) {
+        std::vector<std::uint8_t> out(in.size());
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                std::uint8_t v = dilate ? 0 : 1;
+                for (int k = -r; k <= r; ++k) {
+                    const int xx = horizontal ? x + k : x, yy = horizontal ? y : y + k;
+                    if (xx < 0 || yy < 0 || xx >= w || yy >= h)
+                        continue;
+                    const std::uint8_t s = in[std::size_t(yy) * w + xx];
+                    v = dilate ? std::max(v, s) : std::min(v, s);
+                }
+                out[std::size_t(y) * w + x] = v;
+            }
+        return out;
+    };
+    return pass(pass(pass(pass(mask, true, true), true, false), false, true), false, false);
+}
+
 } // namespace
 
 std::optional<std::array<Vec2, 4>> detectPaper(const RgbImage& image)
@@ -94,7 +129,9 @@ std::optional<std::array<Vec2, 4>> detectPaper(const RgbImage& image)
     const int w = work.width, h = work.height;
     const double sx = double(image.width) / w, sy = double(image.height) / h;
 
-    // Bright and colourless: Otsu's threshold on brightness.
+    // Bright and paper-coloured: Otsu's threshold on brightness; colourless,
+    // or the pale yellow of a legal pad (a hue between orange and green,
+    // where a wooden table's browns and oranges lie below 38 degrees).
     std::vector<int> lum(std::size_t(w) * h);
     std::vector<std::uint8_t> grey(lum.size());
     long histogram[256] = {};
@@ -102,7 +139,7 @@ std::optional<std::array<Vec2, 4>> detectPaper(const RgbImage& image)
         const std::uint8_t* p = &work.rgb[i * 3];
         const int mx = std::max({p[0], p[1], p[2]}), mn = std::min({p[0], p[1], p[2]});
         lum[i] = (p[0] + p[1] + p[2]) / 3;
-        grey[i] = mx > 0 && double(mx - mn) / mx < 0.3;
+        grey[i] = mx > 0 && (double(mx - mn) / mx < 0.3 || paleYellow(p[0], p[1], p[2]));
         ++histogram[lum[i]];
     }
     const double total = double(lum.size());
@@ -128,6 +165,9 @@ std::optional<std::array<Vec2, 4>> detectPaper(const RgbImage& image)
     std::vector<std::uint8_t> bright(lum.size());
     for (std::size_t i = 0; i < lum.size(); ++i)
         bright[i] = lum[i] > threshold && grey[i];
+    // Ruled lines (a legal pad's blue lines, its red margin) cut the sheet
+    // into strips a pixel or two apart: a closing joins them again.
+    bright = closeMask(bright, w, h, 2);
 
     // The largest bright region (one touching the image's edge counts less).
     std::vector<int> label(lum.size(), -1);

@@ -57,6 +57,14 @@ struct Scene {
     Vec3 albedo{0.75, 0.42, 0.28};    // the object's colour (linear, 0..1)
     double textureStrength = 0;       // object: albedo * (1 +- strength) from solid noise
     double textureScaleMm = 4;
+    Vec3 paperColour{0.92, 0.91, 0.88}; // a yellow legal pad: about (0.98, 0.93, 0.55)
+    // Ruled lines across the sheet (parallel to its short side) this far
+    // apart, as on a legal pad (8.7 mm); 0 for none. A margin line this far
+    // in from a long side (a legal pad's red one: about 32 mm); 0 for none.
+    double ruleSpacingMm = 0;
+    Vec3 ruleColour{0.42, 0.58, 0.85};
+    double marginMm = 0;
+    Vec3 marginColour{0.85, 0.30, 0.32};
     double paperGrain = 0.015;        // the paper's faint texture
     double paperGradient = 0.12;      // the light falling off across the sheet
     Vec3 table{0.16, 0.12, 0.10};

@@ -357,7 +357,8 @@ void MeasureController::scanSetCorner(int photo, int corner, double x, double y)
 
 void MeasureController::setScanPaper(const QString& kind)
 {
-    const QString k = kind.trimmed().toLower() == QLatin1String("letter") ? QStringLiteral("letter") : QStringLiteral("a4");
+    const QString t = kind.trimmed().toLower();
+    const QString k = t == QLatin1String("letter") || t == QLatin1String("legal") ? t : QStringLiteral("a4");
     if (k == scanPaper_)
         return;
     scanPaper_ = k;
@@ -386,7 +387,9 @@ bool MeasureController::scanBuild()
 
     std::vector<ScanPhotoEntry> photos = scanPhotos_;
     measure::ScanOptions options;
-    options.paper = scanPaper_ == QLatin1String("letter") ? measure::letterReference() : measure::a4Reference();
+    options.paper = scanPaper_ == QLatin1String("letter") ? measure::letterReference()
+                    : scanPaper_ == QLatin1String("legal")  ? measure::legalReference()
+                                                            : measure::a4Reference();
     // The stages one by one (measure::runScan's), with multi-view stereo
     // (refineWithStereo) between the carving and the surface when asked.
     const bool stereo = scanDetailFromStereo_;

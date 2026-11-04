@@ -40,7 +40,7 @@ struct Homography {
 
 // The rectangle of known size in the photo.
 struct Reference {
-    enum class Kind { Card, A4, Letter, Rectangle };
+    enum class Kind { Card, A4, Letter, Legal, Rectangle };
     Kind kind = Kind::Card;
     double widthMm = 0;  // the long side
     double heightMm = 0; // the short side
@@ -51,6 +51,8 @@ struct Reference {
 Reference cardReference();
 Reference a4Reference();
 Reference letterReference();
+// US Legal, 8.5 x 14 in (a legal pad's sheet).
+Reference legalReference();
 // Any rectangle; the sides are sorted (long first). Refused (nullopt) when a
 // side is not positive.
 std::optional<Reference> rectangleReference(double sideA, double sideB);

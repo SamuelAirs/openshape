@@ -365,7 +365,25 @@ Photo renderOne(const Scene& scene, const CameraSpec& spec, unsigned seed, doubl
                 if (onPaper) {
                     const double fall = 1 - scene.paperGradient * (p.x / W + 0.5) - 0.3 * scene.paperGradient * (p.y / H + 0.5);
                     const double grain = 1 + scene.paperGrain * (2 * fractalNoise(p / 1.2, 3) - 1);
-                    albedo = Vec3{0.92, 0.91, 0.88} * (fall * grain);
+                    albedo = scene.paperColour;
+                    // Ruled lines and a margin line, box-filtered over the
+                    // pixel's footprint on the table (about tGround / fx).
+                    const double foot = std::max(1e-3, tGround / cam.fx);
+                    auto coverage = [foot](double d, double halfWidth) {
+                        const double overlap = std::min(halfWidth, d + foot / 2) - std::max(-halfWidth, d - foot / 2);
+                        return std::clamp(overlap / foot, 0.0, 1.0);
+                    };
+                    if (scene.ruleSpacingMm > 0) {
+                        const double along = std::fmod(p.x + W / 2, scene.ruleSpacingMm);
+                        const double d = std::min(along, scene.ruleSpacingMm - along);
+                        const double k = coverage(d, 0.2);
+                        albedo = albedo * (1 - k) + scene.ruleColour * k;
+                    }
+                    if (scene.marginMm > 0) {
+                        const double k = coverage(std::abs(p.y - (-H / 2 + scene.marginMm)), 0.3);
+                        albedo = albedo * (1 - k) + scene.marginColour * k;
+                    }
+                    albedo = albedo * (fall * grain);
                 } else {
                     albedo = scene.table * (1 + 0.35 * (2 * fractalNoise(p / 15.0, 5) - 1));
                 }
