@@ -7,6 +7,7 @@
 #   io -> document
 # Everything below render/ui/app is Qt-free and unit tested headlessly.
 add_subdirectory(core)
+add_subdirectory(measure)
 add_subdirectory(geometry)
 add_subdirectory(sketch)
 add_subdirectory(document)

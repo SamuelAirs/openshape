@@ -20,6 +20,10 @@ openshape_add_test(test_core test_units.cpp test_uuid.cpp test_math.cpp test_ver
 target_link_libraries(test_core PRIVATE openshape_core)
 target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJECT_VERSION}")
 
+# The measuring tools' math (src/measure).
+openshape_add_test(test_measure test_measure.cpp)
+target_link_libraries(test_measure PRIVATE openshape_measure)
+
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_build.cpp test_draft.cpp test_step.cpp
     test_text_geometry.cpp test_kernel_threads.cpp test_loft_geometry.cpp
     test_plane_references.cpp)

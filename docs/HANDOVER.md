@@ -30,7 +30,7 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
        page and submits it on Sam's word.
   - **Not pushed:** the commits after `1be3626`, docs and screenshots only, so no build. They go up
     with the tag.
-  - **The vault:** `DuoApps/Board.md` has Sam's tasks, and `DuoApps/FoldForm handover.md` keeps
+  - **The vault:** `DuoApps/Board.md` has Sam's tasks, and `DuoApps/FoldForm/FoldForm handover.md` keeps
     the short version.
 - **Earlier (the dates from here to 2026-11-02 came from a wrong clock):**
   - **TestFlight build 55** was 0.3.1 from main `e6576ff`:
@@ -48,7 +48,7 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   folders' (build 56). The black bars on the Duo: Qt kept the maximized window inside the safe
   areas; main.cpp sets `Qt::ExpandedClientAreaHint` on iOS (build 57, TD-150). The log's other
   findings (pen mode on, Shell failures) are in `PROJECT_STATUS.md`. The vault's
-  `DuoApps/FoldForm handover.md` keeps the short version.
+  `DuoApps/FoldForm/FoldForm handover.md` keeps the short version.
   `scripts/dev/check_lambda_captures.py` flags `src/app/acceptance/Duo.cpp:400` (`st`, a
   `shared_ptr`): Apple Clang doesn't warn for it, and CI #64 compiled it.
 - **2026-11-02, evening (for build 58, not pushed when written):** build 55's five checks
