@@ -572,14 +572,22 @@ void MeasureController::takePhoto(const QRectF& anchor)
     if (!devices_.pickPhoto)
         return setPhotoError(QStringLiteral("This device has no camera FoldForm can use."));
     QDir().mkpath(photoFolder());
+    // The camera screen offers the previous photo taken here as a faint
+    // overlay (docs/MEASURE.md, Photo).
+    CameraOptions camera;
+    camera.purpose = CameraOptions::Purpose::Photo;
+    if (!lastCameraPhoto_.isEmpty() && QFileInfo::exists(lastCameraPhoto_))
+        camera.overlayFile = lastCameraPhoto_;
     QPointer<MeasureController> self(this);
-    devices_.pickPhoto(window(), PhotoOrigin::Camera, photoFolder(), anchor, [self](const PhotoResult& r) {
+    devices_.pickPhoto(window(), PhotoOrigin::Camera, camera, photoFolder(), anchor, [self](const PhotoResult& r) {
         if (!self)
             return;
-        if (r.outcome == PhotoResult::Outcome::Picked)
+        if (r.outcome == PhotoResult::Outcome::Picked) {
+            self->keepCameraPhoto(r.file);
             self->adoptPickedFile(r.file);
-        else if (r.outcome == PhotoResult::Outcome::Failed)
+        } else if (r.outcome == PhotoResult::Outcome::Failed) {
             self->setPhotoError(r.error.isEmpty() ? QStringLiteral("The photo couldn't be taken.") : r.error);
+        }
     });
 }
 
@@ -589,7 +597,7 @@ void MeasureController::choosePhoto(const QRectF& anchor)
         return setPhotoError(QStringLiteral("There is no photo library here: open an image file instead."));
     QDir().mkpath(photoFolder());
     QPointer<MeasureController> self(this);
-    devices_.pickPhoto(window(), PhotoOrigin::Library, photoFolder(), anchor, [self](const PhotoResult& r) {
+    devices_.pickPhoto(window(), PhotoOrigin::Library, CameraOptions{}, photoFolder(), anchor, [self](const PhotoResult& r) {
         if (!self)
             return;
         if (r.outcome == PhotoResult::Outcome::Picked)
@@ -609,10 +617,20 @@ void MeasureController::loadPhoto(const QUrl& url)
 
 void MeasureController::forgetFile(const QString& file)
 {
-    if (file.isEmpty() || !madeFiles_.contains(file))
+    // The last photo from the camera stays for the next one's overlay
+    // (removed when a newer one replaces it, or at the end).
+    if (file.isEmpty() || !madeFiles_.contains(file) || file == lastCameraPhoto_)
         return;
     madeFiles_.removeAll(file);
     QFile::remove(file);
+}
+
+void MeasureController::keepCameraPhoto(const QString& file)
+{
+    const QString previous = std::exchange(lastCameraPhoto_, file);
+    // The one shown now is removed when it is replaced (adoptPickedFile).
+    if (previous != file && previous != photoFile_)
+        forgetFile(previous);
 }
 
 void MeasureController::runPhotoWork(std::function<void()> work, std::function<void()> done)
@@ -1146,6 +1164,8 @@ void MeasureController::setDevices(MeasureDevices devices)
     stopSensors();
     devices_ = std::move(devices);
     ar_ = devices_.arCapabilities ? devices_.arCapabilities() : ArCapabilities{};
+    // Another camera: no overlay from the last one.
+    keepCameraPhoto(QString());
     hingeAvailable_ = false;
     gravityAvailable_ = false;
     fold_.reset();

@@ -45,6 +45,19 @@ struct GravityReading {
 
 enum class PhotoOrigin { Camera, Library };
 
+// What Take photo's camera screen shows (pickPhoto from the camera; the
+// photo library ignores it).
+struct CameraOptions {
+    enum class Purpose {
+        Photo, // a level for a photo from straight above the card
+        Scan   // the camera's angle from straight down against Scan's band (about 45 degrees)
+    };
+    Purpose purpose = Purpose::Photo;
+    // The session's previous photo, offered as a faint overlay on the
+    // preview (keep the card still, move the object, match the view); "": none.
+    QString overlayFile;
+};
+
 struct PhotoResult {
     enum class Outcome { Picked, Cancelled, Failed };
     Outcome outcome = Outcome::Failed;
@@ -97,11 +110,12 @@ struct MeasureDevices {
     std::function<void(int strength)> haptic;
     // Whether this device has a camera to take a photo with.
     std::function<bool()> cameraAvailable;
-    // Shows the camera or the photo library over `window`; the chosen photo
-    // is written as an upright JPEG into `folder` (at most 4096 px on its
-    // long side). `anchor`: the control that asked (an iPad's popover).
-    std::function<void(QWindow* window, PhotoOrigin origin, const QString& folder, const QRectF& anchor,
-                       std::function<void(const PhotoResult&)> finished)>
+    // Shows the camera (FoldForm's own camera screen, set up by `camera`) or
+    // the photo library over `window`; the chosen photo is written as an
+    // upright JPEG into `folder` (at most 4096 px on its long side).
+    // `anchor`: the control that asked (an iPad's popover).
+    std::function<void(QWindow* window, PhotoOrigin origin, const CameraOptions& camera, const QString& folder,
+                       const QRectF& anchor, std::function<void(const PhotoResult&)> finished)>
         pickPhoto;
     // The photo library, up to `maxCount` photos at once (a scan's photos); each written
     // like pickPhoto's. `finished` gets one result per photo chosen (empty: cancelled).

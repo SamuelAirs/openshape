@@ -200,7 +200,7 @@ ui::MeasureDevices standIns(const StatePtr& st, bool pickers)
             result.file = out;
             return result;
         };
-        d.pickPhoto = [copy](QWindow*, ui::PhotoOrigin, const QString& folder, const QRectF&,
+        d.pickPhoto = [copy](QWindow*, ui::PhotoOrigin, const ui::CameraOptions&, const QString& folder, const QRectF&,
                              std::function<void(const ui::PhotoResult&)> finished) {
             const ui::PhotoResult result = copy(folder);
             QTimer::singleShot(0, QCoreApplication::instance(), [finished, result] { finished(result); });
