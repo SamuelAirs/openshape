@@ -50,14 +50,31 @@ private:
         std::unordered_map<int, std::pair<quint32, quint32>> edgeRanges;
     };
 
+    // A reference photo's picture on the GPU: uploaded once per picture
+    // (its key), with mipmaps; released when the photo goes away.
+    struct GpuPhoto {
+        std::uint64_t key = 0;
+        std::unique_ptr<QRhiTexture> texture;
+        // The uniform buffer and this texture (rebuilt when the uniform buffer grows).
+        std::unique_ptr<QRhiShaderResourceBindings> srb;
+        QRhiBuffer* srbUniforms = nullptr;
+    };
+
     struct Draw;
     // Vertex layouts: body meshes (positions + normals), screen-space line
-    // quads, quads on the ground (positions only: grid, contact shadows).
-    enum class Layout { Mesh, Line, Ground };
+    // quads, quads on the ground (positions only: grid, contact shadows),
+    // textured quads (positions + texture coordinates: reference photos).
+    enum class Layout { Mesh, Line, Ground, Photo };
 
     void createPipelines();
     std::unique_ptr<QRhiGraphicsPipeline> makePipeline(const QShader& vs, const QShader& fs, Layout vertices, bool depthTest,
-                                                      bool depthWrite, bool blend, QRhiGraphicsPipeline::CompareOp op);
+                                                      bool depthWrite, bool blend, QRhiGraphicsPipeline::CompareOp op,
+                                                      QRhiShaderResourceBindings* bindings = nullptr);
+    // Brings the photos' textures in line with the scene (decoding and
+    // uploading new pictures, dropping those gone).
+    void syncPhotos(QRhiResourceUpdateBatch* u);
+    // The photo's bindings for the current uniform buffer (made or remade).
+    QRhiShaderResourceBindings* photoBindings(GpuPhoto& photo);
     void uploadBody(GpuBody& gpu, const geom::Mesh& mesh, QRhiResourceUpdateBatch* u, bool castsShadow);
     void ensureDynamicBuffer(std::unique_ptr<QRhiBuffer>& buffer, quint32 size, QRhiBuffer::UsageFlags usage);
 
@@ -78,6 +95,13 @@ private:
     std::unique_ptr<QRhiGraphicsPipeline> overlayLinePipeline_;
     std::unique_ptr<QRhiGraphicsPipeline> gridPipeline_;
     std::unique_ptr<QRhiGraphicsPipeline> shadowPipeline_;
+    std::unique_ptr<QRhiGraphicsPipeline> photoPipeline_;
+    std::unique_ptr<QRhiSampler> photoSampler_;
+    std::unique_ptr<QRhiTexture> photoLayoutTexture_; // 1 x 1: only for the bindings' layout
+    std::unique_ptr<QRhiShaderResourceBindings> photoLayout_;
+    std::unordered_map<Uuid, GpuPhoto> photos_;
+    std::unique_ptr<QRhiBuffer> photoVertices_;
+    std::unique_ptr<QRhiBuffer> photoOutline_;
 
     std::unordered_map<Uuid, GpuBody> bodies_;
     // Sketch profile fills, keyed by mesh key.

@@ -22,4 +22,6 @@ qt_add_shaders(openshape_render "openshape_shaders"
         shaders/grid.frag
         shaders/shadow.vert
         shaders/shadow.frag
+        shaders/photo.vert
+        shaders/photo.frag
 )

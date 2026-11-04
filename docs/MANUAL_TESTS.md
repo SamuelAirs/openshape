@@ -199,6 +199,15 @@ odd: a screenshot and a sentence is plenty. Starting the app with
     there, even with the Rectangle tool; with the field open, a drag that
     starts on a side moves nothing. On the iPad keypad, tap a value, then
     **×** **2** **✓**: it doubles.
+21. **A reference photo to model over (0.4).** File → **Add Reference
+    Photo…**, pick a photo of a part lying flat next to a ruler: it lies on
+    the ground, half see-through, 200 mm wide, and the view looks down on
+    it. In the Model panel open **Photo 1**, **Set scale**: click both ends
+    of 100 mm on the ruler, type `100`, **Set scale**. Draw a box over part
+    of it: the box hides the photo where it stands. Start a sketch (K) and
+    trace the part's outline over the photo. Try Opacity, Rotation, X / Y
+    and the Plane buttons, Hide, Delete and undo; save, reopen: the photo
+    is still there. On the phone, photos come from the Measure workspace.
 
 ## The Windows installer (optional)
 

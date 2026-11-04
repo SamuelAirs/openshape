@@ -58,6 +58,8 @@ private:
     // goes no further then, nor do its moves and its release (swallowing_).
     bool focusForPress();
     bool swallowing_ = false;
+    // A press Set scale on a reference photo took (its moves and release go there too).
+    bool scalePicking_ = false;
 
     QPointer<AppController> controller_;
     QTimer animationTimer_;

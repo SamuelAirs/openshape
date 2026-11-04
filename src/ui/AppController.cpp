@@ -140,6 +140,9 @@ AppController::AppController(QObject* parent)
     // Every path that changes the document ends in stateChanged. The lists
     // are refreshed first (connected before QML), then QML re-reads.
     connect(this, &AppController::stateChanged, this, &AppController::refreshLists);
+    // Set scale's points follow the view and end with their photo.
+    connect(this, &AppController::stateChanged, this, &AppController::refreshReferenceScale);
+    connect(this, &AppController::viewChanged, this, &AppController::refreshReferenceScale);
     connect(this, &AppController::stateChanged, this, &AppController::noteEdits);
     // Leaving the app (another window, the iPad home screen, which may end the
     // app without warning): copy unsaved work now rather than in a few seconds.
@@ -840,6 +843,7 @@ QVariantList historyListFrom(const std::vector<interact::HistoryRow>& rows)
         map.insert(QStringLiteral("kind"), row.kind == interact::HistoryRow::Kind::Sketch  ? QStringLiteral("sketch")
                                            : row.kind == interact::HistoryRow::Kind::Body  ? QStringLiteral("body")
                                            : row.kind == interact::HistoryRow::Kind::Datum ? QStringLiteral("datum")
+                                           : row.kind == interact::HistoryRow::Kind::Reference ? QStringLiteral("reference")
                                                                                            : QStringLiteral("feature"));
         map.insert(QStringLiteral("id"), q(row.id.toString()));
         map.insert(QStringLiteral("name"), q(row.name));
@@ -920,6 +924,8 @@ void AppController::deleteHistoryItem(const QString& kind, const QString& idText
         status = interaction_->deleteSketch(*id);
     else if (kind == QLatin1String("datum"))
         status = interaction_->deleteDatum(*id);
+    else if (kind == QLatin1String("reference"))
+        status = interaction_->deleteReference(*id);
     if (!status)
         notifyMessage(q(status.userMessage()));
 }
@@ -929,9 +935,10 @@ void AppController::setHistoryItemVisible(const QString& kind, const QString& id
     const auto id = uuidOf(idText);
     if (!id)
         return;
-    const Status status = kind == QLatin1String("sketch") ? interaction_->setSketchVisible(*id, visible)
-                        : kind == QLatin1String("datum")  ? interaction_->setDatumVisible(*id, visible)
-                                                          : interaction_->setBodyVisible(*id, visible);
+    const Status status = kind == QLatin1String("sketch")      ? interaction_->setSketchVisible(*id, visible)
+                        : kind == QLatin1String("datum")       ? interaction_->setDatumVisible(*id, visible)
+                        : kind == QLatin1String("reference")   ? interaction_->setReferenceVisible(*id, visible)
+                                                               : interaction_->setBodyVisible(*id, visible);
     if (!status)
         notifyMessage(q(status.userMessage()));
 }
@@ -2117,6 +2124,11 @@ void AppController::setDisplayUnit(const QString& symbol)
 
 bool AppController::handleKey(int key)
 {
+    // Esc ends Set scale on a photo first.
+    if (key == Qt::Key_Escape && referenceScale_) {
+        cancelReferenceScale();
+        return true;
+    }
     switch (key) {
     case Qt::Key_Escape: return interaction_->keyPress(interact::Key::Escape);
     case Qt::Key_Return:

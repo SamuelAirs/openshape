@@ -77,7 +77,7 @@ struct ZipArchive {
     }
 };
 
-Status addEntry(zip_t* archive, const std::string& name, const std::string& data)
+Status addEntry(zip_t* archive, const std::string& name, const std::string& data, bool store = false)
 {
     // libzip copies nothing until zip_close, so the buffer must be owned by libzip.
     void* copy = std::malloc(data.size() ? data.size() : 1);
@@ -89,11 +89,14 @@ Status addEntry(zip_t* archive, const std::string& name, const std::string& data
         std::free(copy);
         return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.", "zip_source_buffer failed");
     }
-    if (zip_file_add(archive, name.c_str(), source, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8) < 0) {
+    const zip_int64_t index = zip_file_add(archive, name.c_str(), source, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8);
+    if (index < 0) {
         zip_source_free(source);
         return Status::failure(ErrorCode::FileWriteError, "Unable to save the project.",
                                std::string("zip_file_add failed: ") + zip_strerror(archive));
     }
+    if (store)
+        zip_set_file_compression(archive, static_cast<zip_uint64_t>(index), ZIP_CM_STORE, 0);
     return okStatus();
 }
 
@@ -190,6 +193,9 @@ json documentToJson(const doc::Document& document)
     json datums = json::array();
     for (const auto& datum : document.datums())
         datums.push_back(datum->toJson());
+    json references = json::array();
+    for (const auto& reference : document.references())
+        references.push_back(reference->toJson());
     json out{{"format", kProjectFormatName},
             {"version", kProjectFormatVersion},
             // Stored lengths are always millimeters, independent of display unit.
@@ -203,6 +209,8 @@ json documentToJson(const doc::Document& document)
     // older builds wrote them.
     if (!datums.empty())
         out["datums"] = datums;
+    if (!references.empty())
+        out["references"] = references;
     return out;
 }
 
@@ -233,6 +241,31 @@ Status loadImportedGeometry(doc::ImportedFeature& feature, const EntryReader& re
                            + ", recorded " + std::to_string(recorded));
     feature.setLoadedShape(shape.value(), text.value());
     return okStatus();
+}
+
+// A reference photo's picture, from the archive. Never fails the file: a
+// picture that is missing, does not match its hash or is not a PNG / JPEG of
+// the recorded size leaves the photo without one (logged; the Model panel
+// says so), since a photo is only a backdrop.
+void loadReferencePicture(doc::ReferenceImage& reference, const EntryReader& readEntry)
+{
+    if (reference.loadedEntry().empty())
+        return;
+    auto warn = [&](const std::string& why) {
+        OS_LOG(Warning, File) << "reference photo '" << reference.name << "': " << why << "; it opens without its picture";
+    };
+    if (!readEntry)
+        return warn("no archive to read " + reference.loadedEntry() + " from");
+    auto bytes = readEntry(reference.loadedEntry());
+    if (!bytes)
+        return warn(reference.loadedEntry() + ": " + bytes.developerMessage());
+    if (doc::referenceHash(bytes.value()) != reference.loadedHash())
+        return warn(reference.loadedEntry() + " does not match its hash");
+    auto data = doc::makeReferenceImageData(std::move(bytes.value()), reference.loadedPixelWidth(), reference.loadedPixelHeight(),
+                                            reference.loadedFormat());
+    if (!data)
+        return warn(reference.loadedEntry() + ": " + data.developerMessage());
+    reference.image = data.value();
 }
 
 // Adds the file's bodies so that each comes after the bodies its steps use
@@ -328,6 +361,28 @@ Result<std::unique_ptr<doc::Document>> documentFromJson(const json& input, const
             document->addDatum(std::make_unique<doc::Datum>(std::move(datum.value())));
         }
     }
+    // Reference photos (after the planes they may lie on).
+    if (root.contains("references")) {
+        if (!root["references"].is_array())
+            return R::failureFrom(formatError("'references' is not an array"));
+        for (const auto& r : root["references"]) {
+            auto reference = doc::ReferenceImage::fromJson(r);
+            if (!reference)
+                return R::failureFrom(reference);
+            if (!checkUnique(reference.value().id()))
+                return R::failureFrom(formatError("duplicate reference id"));
+            const doc::Datum* datum = reference.value().plane == doc::ReferencePlane::Datum
+                                        ? document->datum(reference.value().datum) : nullptr;
+            if (reference.value().plane == doc::ReferencePlane::Datum && (!datum || datum->kind() != doc::DatumKind::Plane)) {
+                // As if its plane had been deleted (DeleteDatumCommand): on the ground.
+                OS_LOG(Warning, File) << "reference photo on a missing construction plane: placed on the ground";
+                reference.value().plane = doc::ReferencePlane::XY;
+                reference.value().datum = {};
+            }
+            loadReferencePicture(reference.value(), readEntry);
+            document->addReference(std::make_unique<doc::ReferenceImage>(std::move(reference.value())));
+        }
+    }
     if (root.contains("sketches")) {
         if (!root["sketches"].is_array())
             return R::failureFrom(formatError("'sketches' is not an array"));
@@ -403,6 +458,10 @@ ProjectData serializeProject(const doc::Document& document, const SaveOptions& o
         for (const auto& feature : body->features())
             if (const auto* imported = dynamic_cast<const doc::ImportedFeature*>(feature.get()))
                 data.imports.emplace_back(imported->entryName(), imported->brepText());
+    // So are reference photos' pictures.
+    for (const auto& reference : document.references())
+        if (reference->hasImage())
+            data.references.emplace_back(reference->entryName(), reference->image);
     if (options.includeGeometryCache) {
         for (const auto& body : document.bodies())
             if (!body->shape().isNull())
@@ -435,12 +494,29 @@ Status checkImportedGeometrySize(const ProjectData& data)
     return okStatus();
 }
 
+// The same for reference photos' pictures (doc::kMaxReferenceImageBytes each,
+// doc::kMaxReferenceImagesBytes together: what the loader reads).
+Status checkReferencePicturesSize(const ProjectData& data)
+{
+    std::uint64_t total = 0;
+    for (const auto& [entry, picture] : data.references) {
+        total += picture->bytes.size();
+        if (picture->bytes.size() > doc::kMaxReferenceImageBytes || total > doc::kMaxReferenceImagesBytes)
+            return Status::failure(ErrorCode::FileWriteError,
+                                   "The reference photos are too large to keep in one project. Delete some of them and save again.",
+                                   "reference pictures too large: " + entry + ", " + std::to_string(total) + " bytes so far");
+    }
+    return okStatus();
+}
+
 } // namespace
 
 Result<std::string> buildProjectArchive(const ProjectData& data)
 {
     using R = Result<std::string>;
     if (Status s = checkImportedGeometrySize(data); !s)
+        return R::failureFrom(s);
+    if (Status s = checkReferencePicturesSize(data); !s)
         return R::failureFrom(s);
     int errorCode = 0;
     zip_source_t* memory = zip_source_buffer_create(nullptr, 0, 0, nullptr);
@@ -471,6 +547,10 @@ Result<std::string> buildProjectArchive(const ProjectData& data)
         return fail(s);
     for (const auto& [entry, brep] : data.imports)
         if (Status s = addEntry(archive, entry, brep); !s)
+            return fail(s);
+    // Pictures are compressed already: stored as they are (deflate would only cost time).
+    for (const auto& [entry, picture] : data.references)
+        if (Status s = addEntry(archive, entry, picture->bytes, /*store=*/true); !s)
             return fail(s);
     for (const auto& [bodyId, brep] : data.geometry)
         if (Status s = addEntry(archive, "geometry/" + bodyId + ".brep", brep); !s)
@@ -586,6 +666,7 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
 
     zip_int64_t documentIndex = -1;
     std::map<std::string, zip_int64_t> importEntries;
+    std::map<std::string, zip_int64_t> referenceEntries;
     for (zip_int64_t i = 0; i < count; ++i) {
         const char* name = zip_get_name(archive.archive, static_cast<zip_uint64_t>(i), ZIP_FL_ENC_GUESS);
         if (!name || !isSafeArchiveEntryName(name))
@@ -595,6 +676,8 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
             documentIndex = i;
         else if (entry.rfind("imports/", 0) == 0)
             importEntries.emplace(entry, i);
+        else if (entry.rfind("references/", 0) == 0)
+            referenceEntries.emplace(entry, i);
     }
     if (documentIndex < 0)
         return R::failureFrom(formatError("document.json missing"));
@@ -614,7 +697,23 @@ Result<std::unique_ptr<doc::Document>> loadProject(const std::filesystem::path& 
     // no more than the budget for imported geometry in all.
     std::set<std::string> importsRead;
     std::uint64_t importBytes = 0;
+    // Reference photos' pictures likewise: each entry once, within their budget.
+    std::set<std::string> picturesRead;
+    std::uint64_t pictureBytes = 0;
     const EntryReader readImport = [&](const std::string& name) -> Result<std::string> {
+        if (name.rfind("references/", 0) == 0) {
+            const auto it = referenceEntries.find(name);
+            if (it == referenceEntries.end())
+                return Result<std::string>::failure(ErrorCode::FileFormatError, "Missing picture.", "no entry " + name);
+            if (!picturesRead.insert(name).second)
+                return Result<std::string>::failure(ErrorCode::FileFormatError, "Missing picture.",
+                                                    name + " is named by more than one photo");
+            const std::uint64_t left = doc::kMaxReferenceImagesBytes - std::min(pictureBytes, doc::kMaxReferenceImagesBytes);
+            auto picture = readEntry(archive.archive, it->second, std::min(doc::kMaxReferenceImageBytes, left));
+            if (picture)
+                pictureBytes += picture.value().size();
+            return picture;
+        }
         const auto it = importEntries.find(name);
         if (it == importEntries.end())
             return Result<std::string>::failure(ErrorCode::FileFormatError, "Missing geometry.", "no entry " + name);

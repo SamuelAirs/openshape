@@ -161,6 +161,10 @@ std::shared_ptr<const Document> Document::snapshot() const
     for (const auto& d : datums_)
         copy->datums_.push_back(std::make_unique<Datum>(*d));
     copy->datumRevision_ = datumRevision_;
+    copy->references_.reserve(references_.size());
+    for (const auto& r : references_)
+        copy->references_.push_back(std::make_unique<ReferenceImage>(*r));
+    copy->referenceRevision_ = referenceRevision_;
     copy->sketchRevisions_ = sketchRevisions_;
     copy->revision_ = revision_;
     return copy;
@@ -305,6 +309,73 @@ std::string Document::nextDatumName(DatumKind kind) const
     for (int n = 1;; ++n) {
         const std::string candidate = base + std::to_string(n);
         const bool taken = std::any_of(datums_.begin(), datums_.end(), [&](const auto& d) { return d->name() == candidate; });
+        if (!taken)
+            return candidate;
+    }
+}
+
+ReferenceImage* Document::reference(const Uuid& id) const
+{
+    for (const auto& r : references_)
+        if (r->id() == id)
+            return r.get();
+    return nullptr;
+}
+
+void Document::addReference(std::unique_ptr<ReferenceImage> reference, int index)
+{
+    if (index < 0 || index > static_cast<int>(references_.size()))
+        index = static_cast<int>(references_.size());
+    references_.insert(references_.begin() + index, std::move(reference));
+    ++referenceRevision_;
+    changed();
+}
+
+std::unique_ptr<ReferenceImage> Document::removeReference(const Uuid& id, int* removedIndex)
+{
+    for (std::size_t i = 0; i < references_.size(); ++i) {
+        if (references_[i]->id() != id)
+            continue;
+        auto removed = std::move(references_[i]);
+        references_.erase(references_.begin() + static_cast<long>(i));
+        if (removedIndex)
+            *removedIndex = static_cast<int>(i);
+        ++referenceRevision_;
+        changed();
+        return removed;
+    }
+    if (removedIndex)
+        *removedIndex = -1;
+    return nullptr;
+}
+
+void Document::replaceReference(const ReferenceImage& replacement)
+{
+    for (auto& r : references_) {
+        if (r->id() != replacement.id())
+            continue;
+        *r = replacement;
+        ++referenceRevision_;
+        changed();
+        return;
+    }
+}
+
+std::vector<Uuid> Document::referencesOn(const Uuid& datumId) const
+{
+    std::vector<Uuid> out;
+    for (const auto& r : references_)
+        if (r->plane == ReferencePlane::Datum && r->datum == datumId)
+            out.push_back(r->id());
+    return out;
+}
+
+std::string Document::nextReferenceName() const
+{
+    for (int n = 1;; ++n) {
+        const std::string candidate = "Photo " + std::to_string(n);
+        const bool taken =
+            std::any_of(references_.begin(), references_.end(), [&](const auto& r) { return r->name == candidate; });
         if (!taken)
             return candidate;
     }

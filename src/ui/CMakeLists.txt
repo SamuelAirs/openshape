@@ -68,8 +68,10 @@ qt_add_qml_module(openshape_ui
         qml/SaveNameOverlay.qml
         qml/NumericKeypad.qml
         qml/PurchaseOverlay.qml
+        qml/ReferenceScaleOverlay.qml
     SOURCES
         AppController.cpp AppController.h
+        AppControllerReferences.cpp
         ThumbnailProvider.cpp ThumbnailProvider.h
         ViewportItem.cpp ViewportItem.h
         WindowMetricsLog.cpp WindowMetricsLog.h

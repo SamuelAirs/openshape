@@ -205,6 +205,12 @@ class AppController : public QObject {
     Q_PROPERTY(QString purchasePrice READ purchasePrice NOTIFY purchaseChanged)
     Q_PROPERTY(QString purchaseMessage READ purchaseMessage NOTIFY purchaseChanged)
     Q_PROPERTY(bool purchaseCanBuy READ purchaseCanBuy NOTIFY purchaseChanged)
+    // Set scale on a reference photo (startReferenceScale): {active, id, name,
+    // step (points placed: 0, 1, 2), hint, points [{x, y}] (window px, the
+    // one being placed included), measured (the distance between the two, as
+    // text), loupe {visible, x, y (its center), sx, sy (the point it
+    // magnifies)}}. {active: false} otherwise.
+    Q_PROPERTY(QVariantMap referenceScale READ referenceScale NOTIFY referenceScaleChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -664,6 +670,33 @@ public:
     Q_INVOKABLE void addBodyToSelection(const QString& bodyId);
     // Selects a construction axis or plane from its row (its actions appear).
     Q_INVOKABLE void selectDatum(const QString& datumId);
+    // ---- Reference photos (AppControllerReferences.cpp, doc::ReferenceImage) ----
+    // Adds the picture in `imageFile` (a path or a file URL; JPEG, PNG or
+    // whatever Qt reads, re-encoded as JPEG or PNG when it is neither, is
+    // turned by its EXIF orientation or is larger than
+    // doc::kMaxReferenceImageSide) as a photo on `plane` ("XY" the ground,
+    // "XZ" Front, "YZ" Right, or a construction plane's id), centred on its
+    // origin, `mmPerPixel` millimeters per pixel of the file as it is (<= 0:
+    // not known: 200 mm wide, and its row offers Set scale). One undo step;
+    // the view frames it. False, with a message, when the picture cannot be read.
+    Q_INVOKABLE bool addReferenceImage(const QString& imageFile, double mmPerPixel, const QString& plane = QStringLiteral("XY"));
+    // Set scale: the owner taps two points on the photo in the view (the
+    // left button, a finger or the pen; the view still orbits, pans and
+    // zooms), then types their real distance (applyReferenceScale: the photo
+    // is scaled about its center, one undo step; returns the error or "").
+    // Esc or cancelReferenceScale ends it without a change.
+    Q_INVOKABLE void startReferenceScale(const QString& referenceId);
+    Q_INVOKABLE QString applyReferenceScale(const QString& distanceText);
+    Q_INVOKABLE void cancelReferenceScale();
+    // Takes back the last point placed (the distance box's Back).
+    Q_INVOKABLE void undoReferenceScalePoint();
+    QVariantMap referenceScale() const;
+    bool referenceScaleActive() const { return referenceScale_.has_value(); }
+    // The viewport's pointer while Set scale runs (left button, one finger,
+    // the pen): `phase` press, move, release, hover (no button) or cancel.
+    // True when it took the event (otherwise it goes to the view as usual).
+    enum class ScalePointer { Press, Move, Release, Hover, Cancel };
+    bool referenceScalePointer(ScalePointer phase, QPointF position, bool touch);
     // Model panel row actions for a body.
     Q_INVOKABLE void duplicateBody(const QString& bodyId);
     Q_INVOKABLE void splitBody(const QString& bodyId);
@@ -691,6 +724,7 @@ signals:
     void purchaseChanged();
     // Unlimited projects were unlocked while `action` waited for it (gateProject).
     void projectAllowed(const QString& action, const QVariant& argument);
+    void referenceScaleChanged();
 
 private:
     bool swallowViewPress_ = false; // swallowViewPress
@@ -822,6 +856,20 @@ private:
     };
     std::optional<PendingProject> pendingProject_;
     TrashHandler trashHandler_;
+    // Set scale on a reference photo (startReferenceScale): the points in
+    // the photo's own coordinates (they stay on it while the view moves).
+    struct ReferenceScaleState {
+        Uuid id;
+        std::vector<Vec2> points;    // placed (0 to 2)
+        std::optional<Vec2> pending; // being placed (pressed, not released)
+        std::optional<Vec2> hover;   // under the mouse
+        bool touch = false;          // the pending point is a finger's (the loupe shows)
+        QPointF finger;              // where that finger is (window px)
+    };
+    std::optional<ReferenceScaleState> referenceScale_;
+    // Ends Set scale when its photo is gone (undo, a new document); says the
+    // view moved otherwise.
+    void refreshReferenceScale();
     // A file from another app, brought in and waiting for "Save changes?".
     std::optional<StagedFile> pendingIncoming_;
     QString pendingIncomingName_; // its name as it came (the STEP step's source)

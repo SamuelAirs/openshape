@@ -210,6 +210,9 @@ void ViewportItem::mousePressEvent(QMouseEvent* event)
         controller_->setTouchMode(false);
     if (swallow)
         swallowing_ = true;
+    else if (controller_ && event->button() == Qt::LeftButton
+             && controller_->referenceScalePointer(AppController::ScalePointer::Press, event->position(), false))
+        scalePicking_ = true; // Set scale on a photo takes the left button
     else if (controller_)
         controller_->interaction().pointerPress(toPointer(event, event->button()));
     event->accept();
@@ -222,6 +225,11 @@ void ViewportItem::mouseMoveEvent(QMouseEvent* event)
         return;
     }
     swallowing_ = false;
+    if (scalePicking_ && controller_ && event->buttons().testFlag(Qt::LeftButton)) {
+        controller_->referenceScalePointer(AppController::ScalePointer::Move, event->position(), false);
+        event->accept();
+        return;
+    }
     if (controller_) {
         const Qt::MouseButton held = event->buttons().testFlag(Qt::LeftButton) ? Qt::LeftButton
             : event->buttons().testFlag(Qt::RightButton)                      ? Qt::RightButton
@@ -242,6 +250,13 @@ void ViewportItem::mouseReleaseEvent(QMouseEvent* event)
         penUp();
     if (swallowing_) {
         swallowing_ = false;
+        event->accept();
+        return;
+    }
+    if (scalePicking_ && event->button() == Qt::LeftButton) {
+        scalePicking_ = false;
+        if (controller_)
+            controller_->referenceScalePointer(AppController::ScalePointer::Release, event->position(), false);
         event->accept();
         return;
     }
@@ -270,6 +285,8 @@ void ViewportItem::hoverMoveEvent(QHoverEvent* event)
     // never the mouse's).
     if (penHoverAt_ && (event->scenePosition() - *penHoverAt_).manhattanLength() < 0.5)
         e.device = interact::PointerDevice::Pen;
+    if (controller_->referenceScalePointer(AppController::ScalePointer::Hover, event->position(), false))
+        return;
     controller_->interaction().pointerMove(e);
 }
 
@@ -341,12 +358,18 @@ void ViewportItem::dispatchTouch(const std::vector<interact::TouchIntent>& inten
             // A finger that closes the dimension editor only closes it.
             if (focusForPress())
                 swallowing_ = true;
+            else if (controller_->referenceScalePointer(AppController::ScalePointer::Press, {e.position.x, e.position.y}, true))
+                scalePicking_ = true; // Set scale on a photo takes the finger
             else
                 interaction.pointerPress(e);
             break;
         case Kind::PointerMove: {
             if (swallowing_)
                 break;
+            if (scalePicking_) {
+                controller_->referenceScalePointer(AppController::ScalePointer::Move, {e.position.x, e.position.y}, true);
+                break;
+            }
             const auto start = std::chrono::steady_clock::now();
             interaction.pointerMove(e);
             controller_->notePointerMove(millisecondsSince(start), true);
@@ -357,11 +380,20 @@ void ViewportItem::dispatchTouch(const std::vector<interact::TouchIntent>& inten
                 swallowing_ = false;
                 break;
             }
+            if (scalePicking_) {
+                scalePicking_ = false;
+                controller_->referenceScalePointer(AppController::ScalePointer::Release, {e.position.x, e.position.y}, true);
+                break;
+            }
             interaction.pointerRelease(e);
             controller_->notePointerRelease();
             break;
         case Kind::PointerCancel:
             swallowing_ = false;
+            if (scalePicking_) {
+                scalePicking_ = false;
+                controller_->referenceScalePointer(AppController::ScalePointer::Cancel, {}, true);
+            }
             interaction.cancelPointer(interact::PointerDevice::Touch);
             break;
         case Kind::DoubleTap:

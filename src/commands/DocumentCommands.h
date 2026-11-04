@@ -9,6 +9,7 @@
 #include "document/Body.h"
 #include "document/Datum.h"
 #include "document/Feature.h"
+#include "document/ReferenceImage.h"
 #include "sketch/Sketch.h"
 
 #include <cstdint>
@@ -285,17 +286,65 @@ private:
 };
 
 // Deletes a datum. Sketches placed on it stay where they are (and follow it
-// again when undo brings it back).
+// again when undo brings it back). Reference photos on it move to the ground
+// (keeping their size, offsets and turn on the plane); undo puts them back.
 class DeleteDatumCommand final : public Command {
 public:
     explicit DeleteDatumCommand(Uuid datumId) : datumId_(datumId) {}
     std::string label() const override { return "Delete"; }
     Status execute(doc::Document& document) override;
     void undo(doc::Document& document) override;
+    // The photos the last execute moved to the ground.
+    std::size_t movedReferences() const { return movedReferences_.size(); }
 
 private:
     Uuid datumId_;
     std::unique_ptr<doc::Datum> removed_;
+    int index_ = -1;
+    std::vector<doc::ReferenceImage> movedReferences_; // as they were
+};
+
+// ---- Reference photos ----
+
+// Adds a reference photo. Refused when its values could not be read back
+// from a file, or it has no picture.
+class AddReferenceImageCommand final : public Command {
+public:
+    explicit AddReferenceImageCommand(doc::ReferenceImage reference) : reference_(std::move(reference)) {}
+    std::string label() const override { return "Add photo"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+    const Uuid& referenceId() const { return reference_.id(); }
+
+private:
+    doc::ReferenceImage reference_;
+};
+
+// Changes a photo (any property: placement, opacity, visibility, name) with
+// before/after snapshots (the picture itself is shared, not copied).
+class EditReferenceImageCommand final : public Command {
+public:
+    EditReferenceImageCommand(doc::ReferenceImage after, std::string label) : after_(std::move(after)), label_(std::move(label)) {}
+    std::string label() const override { return label_; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    doc::ReferenceImage after_;
+    std::optional<doc::ReferenceImage> before_;
+    std::string label_;
+};
+
+class DeleteReferenceImageCommand final : public Command {
+public:
+    explicit DeleteReferenceImageCommand(Uuid referenceId) : referenceId_(referenceId) {}
+    std::string label() const override { return "Delete photo"; }
+    Status execute(doc::Document& document) override;
+    void undo(doc::Document& document) override;
+
+private:
+    Uuid referenceId_;
+    std::unique_ptr<doc::ReferenceImage> removed_;
     int index_ = -1;
 };
 

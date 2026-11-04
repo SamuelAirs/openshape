@@ -814,15 +814,81 @@ void EditDatumCommand::undo(doc::Document& document)
 
 Status DeleteDatumCommand::execute(doc::Document& document)
 {
+    if (!document.datum(datumId_))
+        return Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "DeleteDatum: unknown");
+    movedReferences_.clear();
+    for (const Uuid& id : document.referencesOn(datumId_)) {
+        const doc::ReferenceImage* photo = document.reference(id);
+        movedReferences_.push_back(*photo);
+        doc::ReferenceImage grounded = *photo;
+        grounded.plane = doc::ReferencePlane::XY;
+        grounded.datum = {};
+        document.replaceReference(grounded);
+    }
     removed_ = document.removeDatum(datumId_, &index_);
-    return removed_ ? okStatus()
-                    : Status::failure(ErrorCode::InvalidReference, "That axis or plane no longer exists.", "DeleteDatum: unknown");
+    return okStatus();
 }
 
 void DeleteDatumCommand::undo(doc::Document& document)
 {
     if (removed_)
         document.addDatum(std::move(removed_), index_);
+    for (const auto& photo : movedReferences_)
+        document.replaceReference(photo);
+}
+
+Status AddReferenceImageCommand::execute(doc::Document& document)
+{
+    if (document.reference(reference_.id()))
+        return Status::failure(ErrorCode::InvalidArgument, "Unable to add this photo.", "reference id already exists");
+    if (!reference_.hasImage())
+        return Status::failure(ErrorCode::InvalidArgument, "Unable to add this photo.", "reference without a picture");
+    if (Status status = doc::checkReferenceValues(reference_); !status)
+        return status;
+    document.addReference(std::make_unique<doc::ReferenceImage>(reference_));
+    return okStatus();
+}
+
+void AddReferenceImageCommand::undo(doc::Document& document)
+{
+    document.removeReference(reference_.id());
+}
+
+Status EditReferenceImageCommand::execute(doc::Document& document)
+{
+    const doc::ReferenceImage* current = document.reference(after_.id());
+    if (!current)
+        return Status::failure(ErrorCode::InvalidReference, "That photo no longer exists.", "EditReference: unknown");
+    if (Status status = doc::checkReferenceValues(after_); !status)
+        return status;
+    if (after_.plane == doc::ReferencePlane::Datum) {
+        const doc::Datum* datum = document.datum(after_.datum);
+        if (!datum || datum->kind() != doc::DatumKind::Plane)
+            return Status::failure(ErrorCode::InvalidReference, "That construction plane no longer exists.",
+                                   "EditReference: not a plane");
+    }
+    before_ = *current;
+    document.replaceReference(after_);
+    return okStatus();
+}
+
+void EditReferenceImageCommand::undo(doc::Document& document)
+{
+    if (before_)
+        document.replaceReference(*before_);
+}
+
+Status DeleteReferenceImageCommand::execute(doc::Document& document)
+{
+    removed_ = document.removeReference(referenceId_, &index_);
+    return removed_ ? okStatus()
+                    : Status::failure(ErrorCode::InvalidReference, "That photo no longer exists.", "DeleteReference: unknown");
+}
+
+void DeleteReferenceImageCommand::undo(doc::Document& document)
+{
+    if (removed_)
+        document.addReference(std::move(removed_), index_);
 }
 
 } // namespace os::cmd
