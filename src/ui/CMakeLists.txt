@@ -81,6 +81,9 @@ qt_add_qml_module(openshape_ui
         qml/MeasureSegmented.qml
         qml/MeasureNotice.qml
         qml/MeasureHoldPill.qml
+        qml/MeasureScan.qml
+        qml/MeasurePhotoView.qml
+        qml/MeasureLoupe.qml
         qml/ReferenceScaleOverlay.qml
     SOURCES
         AppController.cpp AppController.h
@@ -90,7 +93,8 @@ qt_add_qml_module(openshape_ui
         WindowMetricsLog.cpp WindowMetricsLog.h
         Share.h
         MeasureDevices.cpp MeasureDevices.h
-        MeasureController.cpp MeasureController.h
+        MeasureController.cpp MeasureController.h MeasureScan.cpp
+        ScanPreview.cpp ScanPreview.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)
 # The Measure tools' math (src/measure, docs/MEASURE.md).

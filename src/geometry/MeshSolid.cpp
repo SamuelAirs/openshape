@@ -302,7 +302,7 @@ Result<Shape> solidFromMesh(const std::vector<Vec3>& vertices, const std::vector
                                  "solidFromMesh: self-intersecting"));
 
     // The solid: shared vertices and edges, one planar face per triangle.
-    return finish(guarded("solidFromMesh", "The mesh could not be made into a solid.", [&]() -> R {
+    return finish(detail::guarded("solidFromMesh", "The mesh could not be made into a solid.", [&]() -> R {
         BRep_Builder builder;
         std::vector<TopoDS_Vertex> vs(pts.size());
         for (std::size_t i = 0; i < pts.size(); ++i)

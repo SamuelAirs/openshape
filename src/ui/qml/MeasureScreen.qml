@@ -113,6 +113,7 @@ Rectangle {
         photo.mode = "distance"
         photo.clearPoints()
         camera.mode = "distance"
+        scanInstrument.reviewIndex = -1
         measureKeypad.close()
     }
     // The app's numeric keypad for a field of the workspace (a reference's
@@ -180,6 +181,7 @@ Rectangle {
         list.push({ key: "photo", label: "Photo", icon: "photo" })
         if (m.arAvailable)
             list.push({ key: "camera", label: "Camera", icon: "ar" })
+        list.push({ key: "scan", label: "Scan", icon: "scan" })
         return list
     }
     onInstrumentsChanged: {
@@ -188,7 +190,8 @@ Rectangle {
     }
 
     readonly property Item currentInstrument: current === "fold" ? fold : current === "level" ? level
-                                            : current === "photo" ? photo : current === "camera" ? camera : ruler
+                                            : current === "photo" ? photo : current === "camera" ? camera
+                                            : current === "scan" ? scanInstrument : ruler
     readonly property var reading: currentInstrument ? currentInstrument.reading : null
     readonly property var readingItems: reading && reading.valid ? reading.items : []
     readonly property var item: readingItems.length > 0 ? readingItems[Math.min(chosen, readingItems.length - 1)] : null
@@ -342,6 +345,14 @@ Rectangle {
                 m: screen.m
                 screen: screen
                 visible: screen.current === "camera"
+            }
+            MeasureScan {
+                id: scanInstrument
+                objectName: "measureScan"
+                anchors.fill: parent
+                m: screen.m
+                screen: screen
+                visible: screen.current === "scan"
             }
         }
 
