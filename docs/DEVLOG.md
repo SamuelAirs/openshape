@@ -938,3 +938,29 @@ normally and forced, and asserts.
   sheet seen side-on from low down falls through to FoldForm's finder (TD-179).
 - The base commit did not compile (`cardReference(card)` after the card's parameter went);
   fixed as the lead did. Lesson: build before the commit, even for a one-line wording change.
+
+## 2026-11-04 — Find outline: a part on contrasting paper, traced
+
+- Sam, after build 63: could a part on high-contrast paper, photographed
+  beside a playing card, be outlined perfectly and made into a sketch?
+  `measure/ObjectOutline` does it on the straightened photo (docs/MEASURE.md,
+  "Find outline"); the acceptance run's `measureautooutline` drives it.
+- Shadows were the trap, twice. First the edge: placing it where the part's
+  share of the colour is one half put it inside a soft shadow (a 35 %
+  shadow beside a dark-grey part reads as 0.47 of the way to the part), 0.35
+  mm out on the shadowed sides. Halfway between the levels just outside and
+  just inside the edge fixed that, until the mask took in some shadow: then
+  the "inside" window sat on the edge itself. The edge is now the rise along
+  the normal that climbs into the part's own colour (a shadow's edge only
+  climbs to the shadow's level), the one nearest the crack, and then the
+  halfway point between the levels around that rise. Second the threshold:
+  Otsu's threshold on a photo of a large sheet with a soft shadow came out
+  at 0.30, under the shadow's 0.35; the table around the paper defeated a
+  "half the median of what stands out" rule (the table outnumbers the part),
+  so the threshold is now raised to half the chosen part's own median and
+  the part picked again.
+- The synthetic photos say: within 0.07 mm of the truth seen through the
+  same straightening (sub-pixel at 0.23 mm per pixel); the sizes in mm are
+  0.3 % large, all of it the card's corners placed 0.3 px off on purpose.
+  The reference is the limit, not the tracing: Vision's corners on a real
+  photo will be off by more than that (TD-176 for the card's own size).

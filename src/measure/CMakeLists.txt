@@ -12,7 +12,10 @@ add_library(openshape_measure STATIC
     Homography.cpp Homography.h
     Level.cpp Level.h
     Measurement.cpp Measurement.h
+    ObjectOutline.cpp ObjectOutline.h
     Outline.cpp Outline.h
+    OutlineProfile.cpp OutlineProfile.h
+    OutlineSynthetic.cpp OutlineSynthetic.h
     ScreenScale.cpp ScreenScale.h
     StrokeFit.cpp StrokeFit.h
 )

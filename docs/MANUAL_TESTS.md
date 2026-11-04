@@ -117,6 +117,17 @@ motion sensors, Vision and ARKit reported.
     the gauge shows the angle, green between 35° and 55°. Cancel works
     everywhere. Send the log: its `Measure: camera:` lines give the tilt,
     the zoom and the focal length of each photo.
+18. **Find outline (next build; your idea).** Lay a flat part with a hole
+    (a bracket, a washer, a gasket) on plain paper of a contrasting colour
+    (white paper for a dark part, black or blue for a light one), the
+    playing card beside it on the same paper, a finger's width apart. Take
+    the photo from straight above (then once from an angle), Straighten,
+    Outline, **Find outline**. Does the outline sit on the part's edge, with
+    its hole? Compare the width x height and the hole's diameter in the
+    readout with your calipers, and tell me how far off they are. Drag one
+    point and see it follow; then Make sketch, push the shape up a few
+    millimetres and check the hole goes through. Try it once in harsh light
+    (one lamp low to the side) and tell me whether the shadow got in.
 19. **Calibrating the Level (next build; your request).** Level, phone lying
     on a table (any table: it needn't be level). Check: keep still until it
     holds, turn the phone end for end in the same spot (rotate it half a

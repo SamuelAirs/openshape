@@ -272,6 +272,101 @@ instead of the system's:
   own screen misbehave on a device. It is checked only on a device (TD-180); the acceptance
   scenario `measurecamerascreen` checks what the Qt side asks it for.
 
+#### Find outline
+
+Sam, after build 63: "If we could place the object on high contrast paper then photograph it
+next to a playing card or a ruler, could we then use tools to perfectly outline it and then
+generate a sketch in the modeling software from the figures?" Yes: in **Outline**, **Find
+outline** finds the part in the straightened photo and makes it one closed outline dimension
+(lettered like the others) whose points are its edge,
+fitted with lines, arcs and circles; holes (a washer's, a bracket's) are found too. The points
+can still be dragged; the readout gives the width x height (along the part's own longest side),
+the area (holes taken out), each hole's diameter and each side (a rounded side's radius); **Make
+sketch** makes a sketch of those lines, arcs and circles, holes as inner loops, on the ground
+plane at true size with the longest side along X: it extrudes into the part with its holes, and
+it is one undo step.
+
+- **Best result** (a line on the photo says it until there is an outline): the part on plain
+  paper of a contrasting colour (a dark part on white paper, a light one on dark paper), the
+  card beside it on the same paper, the photo from straight above, soft light. Leave a margin of
+  paper around the part and a gap between it and the card.
+- **How** (`measure/ObjectOutline`, Qt-free; on the photo worker thread behind a "Finding the
+  outline" overlay; `MeasureController::findOutline`): the straightened photo (its transparent
+  corners left out) and its mm per pixel; the card's rectangle with a 2.5 mm margin is left out
+  (a sheet of A4 or Letter as the reference is instead where to look: the part lies on it).
+  1. The paper's colour: the most common colour in a ring around the card (it lies on the
+     paper), then the photo's other common colours if that finds nothing. Fitted as a plane per
+     channel over the photo (the light falls off across a sheet), twice, each time from pixels
+     near the last fit (not the part, not its shadow).
+  2. Each pixel's difference from the paper there: how much darker (shading: 0 for the paper, 1
+     for black), how much lighter (1 - 1/s), and twice the change of colour that shading can't
+     explain. Smoothed once, then Otsu's threshold (at least 0.18).
+  3. Morphology: a 3 x 3 opening drops specks, a closing of about 0.25 mm joins small gaps.
+     Pieces (8-connected): the largest that doesn't touch the photo's edge (or the sheet's, a
+     sheet as the reference) and is at least 25 mm² is the part (a point can pick one instead:
+     `findOutline(x, y)`, not yet offered on screen). Holes under 3 mm² are filled (glints,
+     dust).
+  4. The edge: the part's pixel cracks as closed loops (the outer edge one way, holes the other),
+     each point moved along its normal to where the part's share of the colour (projected on
+     the line from the paper's colour to the part's median colour) is one half: sub-pixel.
+  5. Fitting (`fitClosedEdge`, tolerance 0.2 mm): one circle if it fits; else Douglas-Peucker,
+     then arcs over runs of its vertices that one circle fits (`fitCircle` from StrokeFit),
+     lines elsewhere; each refitted by least squares away from its blurred ends; arcs tighter
+     than three tolerances between lines become corners, neighbours that one piece fits merge,
+     pieces under two tolerances go; neighbouring lines meet at their intersection (sharp
+     corners), a line meets an arc where it touches it. The fitting error is the farthest edge
+     point from the pieces.
+- **Shadows** are the usual trap. A soft shadow only darkens the paper; the difference counts
+  darkening for itself, so a shadow a third darker counts a third as much as black would, and
+  Otsu's threshold sits above it; the edge is placed half way from the local, shadowed paper to
+  the part. A hard shadow darker than about half the paper's brightness beside a dark part joins
+  it (the outline grows by the shadow): light from above or diffuse light (daylight, a ceiling
+  light, several lamps), not one low lamp; or a light part on dark paper, where a shadow hardly
+  shows. A change of colour (a red part on white) counts twice, so coloured parts stand out even
+  when their brightness is close to the paper's.
+- **As points to drag** (`measure/OutlineProfile`): a loop of points where a point marked
+  `through` is an arc's middle (three points fix an arc, so a dragged point keeps a clean arc;
+  drawn smaller), the others corners joined by lines; a circle is two half arcs. The report,
+  the drawn path and the sketch are made from those points, so a drag shows in all three. Undo,
+  Clear or a new tapped outline drop the found outline (the points stay a plain outline).
+- **Among the dimensions**: the found data (which points are arc middles, the holes) stays
+  with that dimension, so selecting another and coming back keeps it, Find outline again
+  replaces it while it is selected, and the set of views keeps it: Keep all keeps its area,
+  and **Place views** with sketches makes it a sketch with its arcs and holes on the view's
+  plane (`createProfileSketch` on that plane). Opening another view clears the controller's
+  last result (`foundOutline`): it belongs to the photo it was found in.
+- **The sketch** (`AppController::createProfileSketch`, then
+  `InteractionController::createProfileSketch`, one `CreateSketchCommand`): lines and arcs
+  sharing their end points, a loop of arcs on one circle as a circle with its diameter set;
+  opened facing it with Select, as Make sketch for a tapped outline.
+- **Measured** on synthetic photos (a drawn scene through a perspective map, then straightened
+  as the app does; a soft shadow, light falling off by 12 %, 0.7 px blur, noise; the card's
+  corners 0.3 px off), about 0.23 mm per pixel (`tests/test_measure.cpp`, FindOutline): an L bracket's
+  corners within 0.07 mm of the truth seen through the same straightening, its sides within
+  0.25 mm of their true size (all but 0.05 mm of it the card's corners, 0.3 % large), its 10
+  mm hole 9.99 mm; a washer 50.09 / 20.05 mm on dark paper; a rounded rectangle at 20 degrees
+  to the card within 0.11 mm of the truth seen, its 8 mm corners 8.0 to 8.2 mm. Shadows a
+  third darker than the paper, soft or sharp, and half as dark when soft (2.5 mm) keep the
+  corners within 0.2 mm; half as dark with a sharp edge (1 mm) joins the part (TD-178).
+  The acceptance run (`measureautooutline`: a 2000 x 1500 photo at a slant, the card turned
+  12 degrees, the card's corners exact): sides 80.00, 19.99, 60.00, 40.01, 20.01, 59.99 mm,
+  80.02 x 60.01 mm, the hole 9.99 mm, fitted within 0.04 mm, in about 0.22 s on the desktop;
+  extruded 5 mm, 11609.6 mm³ against 11607.3. A real photo adds lens
+  distortion (not corrected: the straightening is projective), a card cut a little off its
+  nominal size (TD-176), the part's thickness (its top edge stands above the paper, so seen
+  from an angle its outline shifts; from straight above it doesn't) and real shadows.
+- **Limits** (TD-178): the straightened view reaches about 1.5 card sizes around the card (13
+  cm or so beside it): a bigger part needs a sheet of A4 or Letter as the reference, the part
+  on it. A part touching the card's margin, the photo's edge or the paper's edge is cut or not
+  found. Fillets under about 0.6 mm come out as sharp corners; parts under about 0.5 mm wide
+  are dropped as specks; a shiny part's glints larger than 3 mm² read as holes; a part the
+  colour of its paper is not found (it says so).
+- **A ruler instead of a card**: Sam asked about photographing beside a ruler. A ruler gives
+  the scale but not the photo's angle: it measures true only in a photo taken straight down,
+  and only along it. The card's four corners give both the scale and the correction for an
+  angled photo, so the card stays the reference. A ruler (its marks read off the photo, the
+  photo taken from straight above) is a possible addition.
+
 ### Camera (AR)
 
 - ARKit's camera view with a crosshair; **Add point** places a point where the crosshair meets
@@ -359,7 +454,8 @@ any value box reads.
 
 - `src/measure/` (`openshape_measure`, Qt-free, `tests/test_measure.cpp`): ScreenScale,
   Homography (PlaneRectifier, the straightened view and the warp), StrokeFit, Fold
-  (SteadyReading), Level, Outline, Measurement.
+  (SteadyReading), Level, Outline, Measurement, ObjectOutline (Find outline), OutlineProfile
+  (its points, report and pieces) and OutlineSynthetic (test photos of parts beside a card).
 - `src/ui/MeasureDevices.h`: the platform's hardware as functions, empty where there is none;
   `src/ui/ios/*.mm` fill them in (hinge, gravity, haptics, camera and photos, Vision, ARKit).
   `pickPhoto` takes `CameraOptions` (the camera screen's purpose, Photo or Scan, and the last
@@ -426,3 +522,6 @@ need none.
   number when typed: "Measurements in the project").
 - Apple's Object Capture (RealityKit, Swift only) or ARKit's LiDAR mesh as other routes to a 3D
   scan; FoldForm's own **Scan** (docs/SCAN.md) is the one built.
+- Find outline: a tap to choose the part when there are several (the code takes a point,
+  `findOutline(x, y)`; the screen offers none yet), dragging a found hole's points, a ruler as
+  the reference for a photo from straight above, and lens distortion correction.

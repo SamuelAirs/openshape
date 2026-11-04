@@ -11,13 +11,20 @@
 #include "measure/Homography.h"
 #include "measure/Level.h"
 #include "measure/Measurement.h"
+#include "measure/ObjectOutline.h"
 #include "measure/Outline.h"
+#include "measure/OutlineProfile.h"
+#include "measure/OutlineSynthetic.h"
 #include "measure/ScreenScale.h"
 #include "measure/StrokeFit.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <optional>
+#include <string>
 #include <random>
 
 using namespace os;
@@ -568,6 +575,295 @@ TEST(Outline, SidesCornersAreaAndCentering)
     EXPECT_NEAR(path.perimeter, 5, 1e-12);
     EXPECT_TRUE(path.cornerAngles.empty());
     EXPECT_EQ(path.area, 0);
+}
+
+// ---------------------------------------------------------------- find outline
+
+namespace {
+
+// A synthetic photo of a scene (parts beside a playing card on paper, on a
+// table) through a perspective map, straightened on the card as Photo does,
+// ready for findObjectOutline.
+struct OutlinePhoto {
+    Homography surfaceToImage;
+    PlaneRectifier rect;
+    RectifiedView view;
+    RgbImage image;
+    std::vector<std::uint8_t> valid;
+    std::array<Vec2, 4> cardPx{};
+    // A surface point (mm) in the straightened photo (pixels).
+    Vec2 toView(Vec2 mm) const { return view.toPixel(rect.toPlane(surfaceToImage.map(mm))); }
+    double mm(double px) const { return px * view.mmPerPixel; }
+};
+
+std::optional<OutlinePhoto> photograph(const SyntheticScene& scene)
+{
+    constexpr int kW = 1600, kH = 1200;
+    const std::array<Vec2, 4> surface{Vec2{-60, -80}, Vec2{250, -80}, Vec2{250, 150}, Vec2{-60, 150}};
+    const std::array<Vec2, 4> image{Vec2{170, 120}, Vec2{1470, 70}, Vec2{1580, 1150}, Vec2{40, 1080}};
+    const auto h = Homography::fromQuads(surface, image);
+    if (!h)
+        return std::nullopt;
+    const std::vector<std::uint8_t> photo = renderSyntheticPhoto(scene, *h, kW, kH);
+    std::array<Vec2, 4> corners;
+    for (std::size_t i = 0; i < 4; ++i) // placed by hand or by Vision: a little off
+        corners[i] = h->map(scene.card[i]) + Vec2{0.3 * std::cos(2.0 * double(i)), 0.3 * std::sin(3.0 * double(i))};
+    const auto rect = PlaneRectifier::create(corners, cardReference());
+    if (!rect)
+        return std::nullopt;
+    OutlinePhoto out{*h, *rect, planRectifiedView(*rect, kW, kH), {}, {}, {}};
+    std::vector<std::uint8_t> straight(std::size_t(out.view.width) * std::size_t(out.view.height) * 4);
+    warpToView(ImageBuffer{kW, kH, kW * 4, photo.data()}, *rect, out.view, straight.data(), out.view.width * 4);
+    out.image = rgbFromRgba(straight.data(), out.view.width, out.view.height, out.view.width * 4, false, &out.valid);
+    const double w = rect->referenceWidthMm(), hh = rect->referenceHeightMm();
+    const std::array<Vec2, 4> plane{Vec2{0, 0}, Vec2{w, 0}, Vec2{w, hh}, Vec2{0, hh}};
+    for (std::size_t i = 0; i < 4; ++i)
+        out.cardPx[i] = out.view.toPixel(plane[i]);
+    return out;
+}
+
+ObjectOutline findIn(const OutlinePhoto& photo, std::optional<Vec2> seed = std::nullopt)
+{
+    ObjectOutlineOptions options;
+    options.mmPerPixel = photo.view.mmPerPixel;
+    options.exclude = {photo.cardPx};
+    options.seed = seed;
+    return findObjectOutline(photo.image, photo.valid, options);
+}
+
+double segmentLength(const FittedSegment& s) { return (s.end - s.start).length(); }
+
+// The pieces, for a failure's message (mm).
+std::string describe(const OutlineLoop& loop, double mmPerPixel)
+{
+    std::string out;
+    char buf[160];
+    for (const auto& s : loop.segments) {
+        std::snprintf(buf, sizeof buf, "\n  %s (%.2f, %.2f) to (%.2f, %.2f), %.2f mm, r %.2f", s.arc ? "arc " : "line",
+                      s.start.x * mmPerPixel, s.start.y * mmPerPixel, s.end.x * mmPerPixel, s.end.y * mmPerPixel,
+                      segmentLength(s) * mmPerPixel, s.arc ? s.radius * mmPerPixel : 0.0);
+        out += buf;
+    }
+    return out;
+}
+
+double turnDegrees(const FittedSegment& a, const FittedSegment& b)
+{
+    const Vec2 u = a.end - a.start, v = b.end - b.start;
+    return std::abs(std::atan2(u.x * v.y - u.y * v.x, u.dot(v))) / kDeg;
+}
+
+// The nearest corner (a segment's start) to p, in pixels.
+double nearestCorner(const OutlineLoop& loop, Vec2 p)
+{
+    double best = 1e18;
+    for (const auto& s : loop.segments)
+        best = std::min(best, (s.start - p).length());
+    return best;
+}
+
+// An L bracket (80 x 60 mm, arms 20 mm wide) with a 10 mm hole, dark on white paper.
+const Vec2 kHole{160, 10};
+double bracket(Vec2 p)
+{
+    return subtract(unite(boxDistance(p, {150, 10}, {40, 10}), boxDistance(p, {120, 30}, {10, 30})), circleDistance(p, kHole, 5));
+}
+
+} // namespace
+
+TEST(FindOutline, AnLBracketWithAHoleBesideACard)
+{
+    SyntheticScene scene;
+    scene.parts.push_back({bracket, {55, 58, 64}});
+    const auto photo = photograph(scene);
+    ASSERT_TRUE(photo.has_value());
+    EXPECT_LT(photo->view.mmPerPixel, 0.25);
+    const ObjectOutline found = findIn(*photo);
+    ASSERT_TRUE(found.found) << found.message;
+    ASSERT_EQ(found.loops.size(), 2u) << "the outer edge and the hole";
+    const OutlineLoop& outer = found.loops[0];
+    EXPECT_FALSE(outer.hole);
+    ASSERT_EQ(outer.segments.size(), 6u) << "six straight sides" << describe(outer, photo->view.mmPerPixel);
+    std::vector<double> sides;
+    for (std::size_t i = 0; i < 6; ++i) {
+        EXPECT_FALSE(outer.segments[i].arc);
+        sides.push_back(photo->mm(segmentLength(outer.segments[i])));
+        EXPECT_NEAR(turnDegrees(outer.segments[i], outer.segments[(i + 1) % 6]), 90, 1.0) << "square corners";
+    }
+    std::sort(sides.begin(), sides.end());
+    const double expected[6] = {20, 20, 40, 60, 60, 80};
+    for (std::size_t i = 0; i < 6; ++i)
+        EXPECT_NEAR(sides[i], expected[i], 0.3) << "side " << i;
+    // Each corner where it is on the surface.
+    // (Through the same straightening: the card's corners placed 0.3 px off
+    // scale everything by about 0.3 %, which the sides above include.)
+    double cornerOff = 0;
+    for (const Vec2 corner : {Vec2{110, 0}, Vec2{190, 0}, Vec2{190, 20}, Vec2{130, 20}, Vec2{130, 60}, Vec2{110, 60}}) {
+        cornerOff = std::max(cornerOff, photo->mm(nearestCorner(outer, photo->toView(corner))));
+        EXPECT_LT(photo->mm(nearestCorner(outer, photo->toView(corner))), 0.15) << corner.x << ", " << corner.y;
+    }
+    const OutlineLoop& hole = found.loops[1];
+    EXPECT_TRUE(hole.hole);
+    ASSERT_TRUE(hole.circle) << "the hole is one circle";
+    EXPECT_NEAR(photo->mm(2 * hole.circleShape.radius), 10, 0.3);
+    EXPECT_LT(photo->mm((hole.circleShape.center - photo->toView(kHole)).length()), 0.3);
+    EXPECT_LT(outer.maxErrorMm, 0.3);
+    EXPECT_NEAR(found.areaMm2, 1600 + 800 - kPi * 25, 0.01 * 2321.5);
+
+    // As points to drag, and the report.
+    const double mmpp = photo->view.mmPerPixel;
+    const ProfileReport report = describeProfile(profileLoopOf(outer), {profileLoopOf(hole)}, mmpp, 0.1 / mmpp);
+    EXPECT_NEAR(report.width, 80, 0.3);
+    EXPECT_NEAR(report.height, 60, 0.3);
+    ASSERT_EQ(report.holes.size(), 1u);
+    EXPECT_TRUE(report.holes[0].circle);
+    EXPECT_NEAR(report.holes[0].diameter, 10, 0.3);
+    EXPECT_NEAR(report.area, 1600 + 800 - kPi * 25, 0.01 * 2321.5);
+    std::printf("[ L bracket ] %.3f mm/px; sides %.2f %.2f %.2f %.2f %.2f %.2f; hole %.3f; %.2f x %.2f; corners %.3f mm from the truth "
+                "seen through the same straightening; fit error %.3f mm\n",
+                mmpp, sides[0], sides[1], sides[2], sides[3], sides[4], sides[5], report.holes[0].diameter, report.width, report.height,
+                cornerOff, outer.maxErrorMm);
+}
+
+TEST(FindOutline, ARoundedRectangleAtAnAngleToTheCard)
+{
+    SyntheticScene scene;
+    // The card turned 20 degrees on the paper: the part is at an angle in the straightened photo.
+    const Vec2 c{44.45, 31.75};
+    const double a = -20 * kDeg;
+    const std::array<Vec2, 4> flat{Vec2{0, 0}, Vec2{88.9, 0}, Vec2{88.9, 63.5}, Vec2{0, 63.5}};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const Vec2 d = flat[i] - c;
+        scene.card[i] = c + Vec2{std::cos(a) * d.x - std::sin(a) * d.y, std::sin(a) * d.x + std::cos(a) * d.y};
+    }
+    scene.parts.push_back({[](Vec2 p) { return boxDistance(p, {155, 35}, {35, 20}, 0, 8); }, {70, 92, 128}});
+    const auto photo = photograph(scene);
+    ASSERT_TRUE(photo.has_value());
+    const ObjectOutline found = findIn(*photo);
+    ASSERT_TRUE(found.found) << found.message;
+    ASSERT_EQ(found.loops.size(), 1u);
+    const OutlineLoop& outer = found.loops[0];
+    ASSERT_EQ(outer.segments.size(), 8u) << "four sides and four rounded corners" << describe(outer, photo->view.mmPerPixel);
+    std::vector<double> lines;
+    int arcs = 0;
+    for (const auto& s : outer.segments) {
+        if (s.arc) {
+            ++arcs;
+            EXPECT_NEAR(photo->mm(s.radius), 8, 0.4) << "the corner's radius";
+        } else {
+            lines.push_back(photo->mm(segmentLength(s)));
+        }
+    }
+    EXPECT_EQ(arcs, 4);
+    ASSERT_EQ(lines.size(), 4u);
+    std::sort(lines.begin(), lines.end());
+    // The truth seen through the same straightening (the card's corners
+    // placed 0.3 px off make it about 0.3 % large), and the true sizes.
+    const double mmpp = photo->view.mmPerPixel;
+    auto seen = [&](Vec2 from, Vec2 to) { return photo->mm((photo->toView(from) - photo->toView(to)).length()); };
+    const double shortSeen = seen({190, 23}, {190, 47}), longSeen = seen({128, 15}, {182, 15});
+    const double widthSeen = seen({120, 35}, {190, 35}), heightSeen = seen({155, 15}, {155, 55});
+    EXPECT_NEAR(lines[0], shortSeen, 0.35);
+    EXPECT_NEAR(lines[1], shortSeen, 0.35);
+    EXPECT_NEAR(lines[2], longSeen, 0.3);
+    EXPECT_NEAR(lines[3], longSeen, 0.3);
+    const ProfileReport report = describeProfile(profileLoopOf(outer), {}, mmpp, 0.1 / mmpp);
+    EXPECT_NEAR(report.width, widthSeen, 0.2) << "along the part's own long side";
+    EXPECT_NEAR(report.height, heightSeen, 0.2);
+    EXPECT_NEAR(report.width, 70, 0.4);
+    EXPECT_NEAR(report.height, 40, 0.4);
+    EXPECT_NEAR(std::abs(report.angle), 20 * kDeg, 0.5 * kDeg);
+    EXPECT_NEAR(report.area, 2800 - (4 - kPi) * 64, 0.01 * 2745);
+    std::printf("[ rounded rectangle ] sides %.2f %.2f %.2f %.2f (seen %.2f, %.2f); %.2f x %.2f (seen %.2f x %.2f); fit error %.3f mm\n",
+                lines[0], lines[1], lines[2], lines[3], shortSeen, longSeen, report.width, report.height, widthSeen, heightSeen,
+                outer.maxErrorMm);
+}
+
+TEST(FindOutline, ALightWasherOnDarkPaper)
+{
+    SyntheticScene scene;
+    scene.paper = {35, 45, 95};
+    scene.parts.push_back({[](Vec2 p) { return subtract(circleDistance(p, {150, 30}, 25), circleDistance(p, {150, 30}, 10)); },
+                           {226, 224, 216}});
+    const auto photo = photograph(scene);
+    ASSERT_TRUE(photo.has_value());
+    const ObjectOutline found = findIn(*photo);
+    ASSERT_TRUE(found.found) << found.message;
+    ASSERT_EQ(found.loops.size(), 2u);
+    ASSERT_TRUE(found.loops[0].circle && found.loops[1].circle && found.loops[1].hole);
+    EXPECT_NEAR(photo->mm(2 * found.loops[0].circleShape.radius), 50, 0.3);
+    EXPECT_NEAR(photo->mm(2 * found.loops[1].circleShape.radius), 20, 0.3);
+    EXPECT_LT(photo->mm((found.loops[0].circleShape.center - found.loops[1].circleShape.center).length()), 0.3);
+    EXPECT_LT(photo->mm((found.loops[0].circleShape.center - photo->toView({150, 30})).length()), 0.3);
+    std::printf("[ washer ] %.3f / %.3f mm\n", photo->mm(2 * found.loops[0].circleShape.radius),
+                photo->mm(2 * found.loops[1].circleShape.radius));
+}
+
+TEST(FindOutline, NothingOnThePaperAndATappedPart)
+{
+    SyntheticScene empty;
+    const auto blank = photograph(empty);
+    ASSERT_TRUE(blank.has_value());
+    const ObjectOutline none = findIn(*blank);
+    EXPECT_FALSE(none.found);
+    EXPECT_FALSE(none.message.empty());
+
+    SyntheticScene two;
+    two.parts.push_back({bracket, {55, 58, 64}});
+    two.parts.push_back({[](Vec2 p) { return boxDistance(p, {150, 100}, {10, 6}); }, {120, 40, 40}});
+    const auto photo = photograph(two);
+    ASSERT_TRUE(photo.has_value());
+    const ObjectOutline biggest = findIn(*photo);
+    ASSERT_TRUE(biggest.found) << biggest.message;
+    EXPECT_NEAR(biggest.areaMm2, 2321.5, 25) << "the larger part without a tap";
+    const ObjectOutline tapped = findIn(*photo, photo->toView({150, 100}));
+    ASSERT_TRUE(tapped.found) << tapped.message;
+    EXPECT_NEAR(tapped.areaMm2, 240, 5) << "the tapped one";
+    ASSERT_EQ(tapped.loops.size(), 1u);
+    EXPECT_EQ(tapped.loops[0].segments.size(), 4u) << describe(tapped.loops[0], photo->view.mmPerPixel);
+}
+
+TEST(FindOutline, ProfilesAsPointsToDrag)
+{
+    // A slot: two lines and two half circles, as points (a `through` point is an arc's middle).
+    ProfileLoop slot;
+    slot.points = {{0, 0}, {30, 0}, {35, 5}, {30, 10}, {0, 10}, {-5, 5}};
+    slot.through = {false, false, true, false, false, true};
+    const auto segments = profileSegments(slot);
+    ASSERT_EQ(segments.size(), 4u);
+    EXPECT_FALSE(segments[0].arc);
+    EXPECT_TRUE(segments[1].arc);
+    EXPECT_NEAR(segments[1].radius, 5, 1e-9);
+    EXPECT_NEAR(std::abs(profileSignedArea(slot)), 300 + kPi * 25, 1e-9);
+    const ProfileReport r = describeProfile(slot, {}, 1.0, 0.01);
+    EXPECT_NEAR(r.width, 40, 1e-3);
+    EXPECT_NEAR(r.height, 10, 1e-3);
+    EXPECT_NEAR(r.perimeter, 60 + 10 * kPi, 1e-9);
+    ASSERT_EQ(r.sides.size(), 4u);
+    EXPECT_TRUE(r.sides[1].arc);
+    EXPECT_NEAR(r.sides[1].length, 5 * kPi, 1e-9);
+    EXPECT_FALSE(profileIsCircle(slot, 0.01));
+    // A circle is two half arcs; with a hole the area is the ring's.
+    OutlineLoop disc;
+    disc.circle = true;
+    disc.circleShape = {{3, 4}, 12};
+    OutlineLoop hole = disc;
+    hole.circleShape.radius = 5;
+    const ProfileLoop dp = profileLoopOf(disc);
+    EXPECT_EQ(dp.points.size(), 4u);
+    Circle c;
+    ASSERT_TRUE(profileIsCircle(dp, 1e-6, &c));
+    EXPECT_NEAR(c.radius, 12, 1e-9);
+    const ProfileReport ring = describeProfile(dp, {profileLoopOf(hole)}, 2.0, 1e-6);
+    EXPECT_TRUE(ring.circle);
+    EXPECT_NEAR(ring.diameter, 48, 1e-9);
+    ASSERT_EQ(ring.holes.size(), 1u);
+    EXPECT_NEAR(ring.holes[0].diameter, 20, 1e-9);
+    EXPECT_NEAR(ring.area, kPi * (24 * 24 - 10 * 10), 1e-6);
+    // A dragged arc middle in line with its ends: two lines.
+    ProfileLoop flat = slot;
+    flat.points[2] = {30, 5};
+    EXPECT_EQ(profileSegments(flat).size(), 5u);
 }
 
 // ---------------------------------------------------------------- measurements

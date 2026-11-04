@@ -7,7 +7,9 @@
 #include "core/Log.h"
 #include "core/Units.h"
 #include "measure/Homography.h"
+#include "measure/ObjectOutline.h"
 #include "measure/Outline.h"
+#include "measure/OutlineProfile.h"
 #include "measure/ScreenScale.h"
 #include "measure/StrokeFit.h"
 #include "ui/AppController.h"
@@ -15,6 +17,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QSettings>
@@ -89,6 +92,55 @@ std::vector<Vec2> pointsOf(const QVariantList& list)
         if (const auto p = pointOf(v))
             points.push_back(*p);
     return points;
+}
+
+// A found outline's loop from QML: points and their `through` marks (an
+// arc's middle). Empty when they don't pair up.
+measure::ProfileLoop profileOf(const QVariantList& points, const QVariantList& through)
+{
+    measure::ProfileLoop loop;
+    if (points.size() != through.size())
+        return loop;
+    for (int i = 0; i < points.size(); ++i) {
+        const auto p = pointOf(points[i]);
+        if (!p)
+            return {};
+        loop.points.push_back(*p);
+        loop.through.push_back(through[i].toBool());
+    }
+    return loop;
+}
+
+QVariantMap loopMap(const measure::ProfileLoop& loop)
+{
+    QVariantList points, through;
+    for (std::size_t i = 0; i < loop.points.size(); ++i) {
+        points.append(QPointF(loop.points[i].x, loop.points[i].y));
+        through.append(bool(loop.through[i]));
+    }
+    return {{QStringLiteral("points"), points}, {QStringLiteral("through"), through}};
+}
+
+// The outer loop (`points` as dragged, with found's marks) and found's holes.
+std::vector<measure::ProfileLoop> foundLoops(const QVariantList& points, const QVariantMap& found)
+{
+    std::vector<measure::ProfileLoop> loops;
+    measure::ProfileLoop outer = profileOf(points, found.value(QStringLiteral("through")).toList());
+    if (outer.points.size() < 3)
+        return loops;
+    loops.push_back(std::move(outer));
+    for (const QVariant& h : found.value(QStringLiteral("holes")).toList()) {
+        const QVariantMap hole = h.toMap();
+        measure::ProfileLoop loop = profileOf(hole.value(QStringLiteral("points")).toList(), hole.value(QStringLiteral("through")).toList());
+        if (loop.points.size() >= 3)
+            loops.push_back(std::move(loop));
+    }
+    return loops;
+}
+
+QVariantMap readoutItem(const QString& label, const QString& quantity, double value)
+{
+    return {{QStringLiteral("label"), label}, {QStringLiteral("quantity"), quantity}, {QStringLiteral("value"), value}};
 }
 
 QVariantList doubles(const std::vector<double>& values)
@@ -678,8 +730,10 @@ void MeasureController::adoptPickedFile(const QString& file)
     straightSize_ = {};
     straightReference_.clear();
     forgetFile(std::exchange(straightFile_, QString()));
+    foundOutline_.clear();
     emit photoChanged();
     emit straightChanged();
+    emit foundOutlineChanged();
 
     struct Result {
         QString file;
@@ -864,7 +918,9 @@ void MeasureController::unstraighten()
     straightSize_ = {};
     straightReference_.clear();
     forgetFile(std::exchange(straightFile_, QString()));
+    foundOutline_.clear();
     emit straightChanged();
+    emit foundOutlineChanged();
 }
 
 void MeasureController::clearPhoto()
@@ -984,6 +1040,9 @@ bool MeasureController::openPhotoView(int index)
     straightReference_ = view.straightReference;
     photoError_.clear();
     photoViewIndex_ = index;
+    // A found outline belongs to the photo it was found in.
+    foundOutline_.clear();
+    emit foundOutlineChanged();
     emit photoChanged();
     emit straightChanged();
     emit photoViewsChanged();
@@ -1085,6 +1144,23 @@ int MeasureController::placePhotoViews(bool sketches)
                 mm.append(photoViewPlanePoint(i, QPointF(p.x, p.y)));
             if (mm.size() < 3)
                 continue;
+            // A found outline (Find outline): its arcs and holes too.
+            const QVariantMap found = dim.value(QStringLiteral("found")).toMap();
+            const QVariantList through = found.value(QStringLiteral("through")).toList();
+            if (through.size() == mm.size()) {
+                QVariantList loops{QVariantMap{{QStringLiteral("points"), mm}, {QStringLiteral("through"), through}}};
+                for (const QVariant& h : found.value(QStringLiteral("holes")).toList()) {
+                    const QVariantMap hole = h.toMap();
+                    QVariantList holeMm;
+                    for (const Vec2 p : pointsOf(hole.value(QStringLiteral("points")).toList()))
+                        holeMm.append(photoViewPlanePoint(i, QPointF(p.x, p.y)));
+                    loops.append(QVariantMap{{QStringLiteral("points"), holeMm}, {QStringLiteral("through"), hole.value(QStringLiteral("through"))}});
+                }
+                lastProfileLoops_ = loops;
+                madeLog_ << QStringLiteral("profile %1 %2").arg(loops.size()).arg(view.plane);
+                app_->createProfileSketch(loops, view.plane);
+                continue;
+            }
             lastOutlinePoints_ = mm;
             madeLog_ << QStringLiteral("outline %1 %2").arg(mm.size()).arg(view.plane);
             app_->createOutlineSketch(mm, true, view.plane);
@@ -1093,6 +1169,162 @@ int MeasureController::placePhotoViews(bool sketches)
     OS_LOG(Info, App) << "measure: " << placed << " of " << photoViews_.size() << " views placed in the design"
                       << (sketches ? ", outlines as sketches" : "");
     return placed;
+}
+
+bool MeasureController::findOutline(double tapX, double tapY)
+{
+    if (straightFile_.isEmpty() || photoBusy_ || straightMmPerPixel_ <= 0) {
+        if (!photoBusy_)
+            setPhotoError(QStringLiteral("Straighten the photo first."));
+        return false;
+    }
+    measure::ObjectOutlineOptions options;
+    options.mmPerPixel = straightMmPerPixel_;
+    if (straightReference_.size() == 4) {
+        std::array<Vec2, 4> quad;
+        for (int i = 0; i < 4; ++i)
+            quad[std::size_t(i)] = {straightReference_[i].toPointF().x(), straightReference_[i].toPointF().y()};
+        // A sheet of paper as the reference: the part lies on it. A card
+        // (or a typed rectangle) lies beside the part: leave it out.
+        if (referenceKind_ == QLatin1String("a4") || referenceKind_ == QLatin1String("letter"))
+            options.searchArea = quad;
+        else
+            options.exclude.push_back(quad);
+    }
+    if (tapX >= 0 && tapY >= 0)
+        options.seed = Vec2{tapX, tapY};
+    photoBusy_ = true;
+    photoError_.clear();
+    emit photoChanged();
+
+    struct Result {
+        QString error;
+        measure::ObjectOutline outline;
+        qint64 ms = 0;
+    };
+    auto result = std::make_shared<Result>();
+    const QString file = straightFile_;
+    runPhotoWork(
+        [result, file, options] {
+            QElapsedTimer timer;
+            timer.start();
+            QImage straight(file);
+            if (straight.isNull()) {
+                result->error = QStringLiteral("The straightened photo couldn't be read again.");
+                return;
+            }
+            straight = straight.convertToFormat(QImage::Format_RGBA8888);
+            std::vector<std::uint8_t> valid;
+            const measure::RgbImage rgb = measure::rgbFromRgba(straight.constBits(), straight.width(), straight.height(),
+                                                               int(straight.bytesPerLine()), false, &valid);
+            result->outline = measure::findObjectOutline(rgb, valid, options);
+            result->ms = timer.elapsed();
+        },
+        [this, result] {
+            photoBusy_ = false;
+            const measure::ObjectOutline& o = result->outline;
+            QVariantMap map;
+            if (!result->error.isEmpty() || !o.found) {
+                map = {{QStringLiteral("valid"), false},
+                       {QStringLiteral("message"), result->error.isEmpty() ? q(o.message) : result->error}};
+                OS_LOG(Info, App) << "measure: find outline: nothing (" << map.value(QStringLiteral("message")).toString().toStdString()
+                                  << "), " << result->ms << " ms";
+            } else {
+                const measure::ProfileLoop outer = measure::profileLoopOf(o.loops.front());
+                map = loopMap(outer);
+                QVariantList holes;
+                double worst = o.loops.front().maxErrorMm;
+                int pieces = 0;
+                for (const auto& loop : o.loops) {
+                    pieces += loop.circle ? 1 : int(loop.segments.size());
+                    if (loop.hole) {
+                        holes.append(loopMap(measure::profileLoopOf(loop)));
+                        worst = std::max(worst, loop.maxErrorMm);
+                    }
+                }
+                map.insert(QStringLiteral("valid"), true);
+                map.insert(QStringLiteral("holes"), holes);
+                map.insert(QStringLiteral("maxError"), worst);
+                map.insert(QStringLiteral("tolerance"), 0.2);
+                OS_LOG(Info, App) << "measure: find outline: " << o.loops.size() << " loops (" << holes.size() << " holes), " << pieces
+                                  << " pieces, area " << o.areaMm2 << " mm2, fit error " << worst << " mm, paper (" << int(o.paper[0])
+                                  << ", " << int(o.paper[1]) << ", " << int(o.paper[2]) << "), part (" << int(o.object[0]) << ", "
+                                  << int(o.object[1]) << ", " << int(o.object[2]) << "), threshold " << o.threshold << ", "
+                                  << result->ms << " ms";
+            }
+            foundOutline_ = map;
+            emit photoChanged();
+            emit foundOutlineChanged();
+            emit outlineFound();
+        });
+    return true;
+}
+
+QVariantList MeasureController::profilePath(const QVariantList& points, const QVariantList& through) const
+{
+    QVariantList list;
+    for (const Vec2 p : measure::profilePolyline(profileOf(points, through), 3))
+        list.append(QPointF(p.x, p.y));
+    return list;
+}
+
+QVariantMap MeasureController::profileReport(const QVariantList& points, const QVariantMap& found) const
+{
+    const auto loops = foundLoops(points, found);
+    if (loops.empty() || straightMmPerPixel_ <= 0)
+        return {};
+    const double mmpp = straightMmPerPixel_;
+    const std::vector<measure::ProfileLoop> holes(loops.begin() + 1, loops.end());
+    // Circles to within 0.05 mm (a found circle's two half arcs, undragged).
+    const measure::ProfileReport r = measure::describeProfile(loops.front(), holes, mmpp, 0.05 / mmpp);
+    QVariantList sides, labelAt, holeList;
+    QVariantList items{readoutItem(QStringLiteral("Width"), QStringLiteral("length"), r.width),
+                       readoutItem(QStringLiteral("Height"), QStringLiteral("length"), r.height),
+                       readoutItem(QStringLiteral("Area"), QStringLiteral("area"), r.area)};
+    if (r.circle)
+        items.insert(0, readoutItem(QStringLiteral("Diameter"), QStringLiteral("length"), r.diameter));
+    for (std::size_t i = 0; i < r.holes.size(); ++i) {
+        const auto& h = r.holes[i];
+        holeList.append(QVariantMap{{QStringLiteral("circle"), h.circle},
+                                    {QStringLiteral("diameter"), h.diameter},
+                                    {QStringLiteral("width"), h.width},
+                                    {QStringLiteral("height"), h.height},
+                                    {QStringLiteral("center"), QPointF(h.center.x, h.center.y)}});
+        const QString name = r.holes.size() == 1 ? QStringLiteral("Hole") : QStringLiteral("Hole %1").arg(i + 1);
+        if (h.circle)
+            items.append(readoutItem(name + QStringLiteral(" Ø"), QStringLiteral("length"), h.diameter));
+        else {
+            items.append(readoutItem(name + QStringLiteral(" width"), QStringLiteral("length"), h.width));
+            items.append(readoutItem(name + QStringLiteral(" height"), QStringLiteral("length"), h.height));
+        }
+    }
+    for (std::size_t i = 0; i < r.sides.size(); ++i) {
+        const auto& side = r.sides[i];
+        sides.append(side.length);
+        labelAt.append(QPointF(side.middle.x, side.middle.y));
+        if (side.arc)
+            items.append(readoutItem(QStringLiteral("Side %1 radius").arg(i + 1), QStringLiteral("length"), side.radius));
+        else
+            items.append(readoutItem(QStringLiteral("Side %1").arg(i + 1), QStringLiteral("length"), side.length));
+    }
+    items.append(readoutItem(QStringLiteral("Perimeter"), QStringLiteral("length"), r.perimeter));
+    QVariantList arcs, radii;
+    for (const auto& side : r.sides) {
+        arcs.append(side.arc);
+        radii.append(side.radius);
+    }
+    return {{QStringLiteral("sides"), sides},
+            {QStringLiteral("arcs"), arcs},
+            {QStringLiteral("radii"), radii},
+            {QStringLiteral("labelAt"), labelAt},
+            {QStringLiteral("perimeter"), r.perimeter},
+            {QStringLiteral("area"), r.area},
+            {QStringLiteral("width"), r.width},
+            {QStringLiteral("height"), r.height},
+            {QStringLiteral("circle"), r.circle},
+            {QStringLiteral("diameter"), r.diameter},
+            {QStringLiteral("holes"), holeList},
+            {QStringLiteral("items"), items}};
 }
 
 double MeasureController::parseLengthMm(const QString& text) const
@@ -1344,6 +1576,46 @@ bool MeasureController::makeOutlineSketch(const QVariantList& pointsMm, bool fli
     madeLog_ << QStringLiteral("outline %1").arg(list.size());
     OS_LOG(Info, App) << "measure: an outline sketch of " << list.size() << " points";
     return app_->createOutlineSketch(list, true);
+}
+
+bool MeasureController::makeProfileSketch(const QVariantList& points, const QVariantMap& found)
+{
+    std::vector<measure::ProfileLoop> loops = foundLoops(points, found);
+    if (loops.empty() || straightMmPerPixel_ <= 0)
+        return false;
+    // Millimetres on the surface, turned so the longest side lies along x,
+    // centered on the origin, y up.
+    const double angle = measure::profileAlignment(loops.front());
+    const double c = std::cos(angle), s = std::sin(angle);
+    auto toMm = [&](Vec2 p) {
+        const Vec2 mm{straightOriginMm_.x() + p.x * straightMmPerPixel_, straightOriginMm_.y() + p.y * straightMmPerPixel_};
+        return Vec2{c * mm.x - s * mm.y, s * mm.x + c * mm.y};
+    };
+    for (auto& loop : loops)
+        for (Vec2& p : loop.points)
+            p = toMm(p);
+    const std::vector<Vec2> path = measure::profilePolyline(loops.front(), 1);
+    if (path.empty())
+        return false;
+    Vec2 lo = path.front(), hi = path.front();
+    for (const Vec2& p : path) {
+        lo = {std::min(lo.x, p.x), std::min(lo.y, p.y)};
+        hi = {std::max(hi.x, p.x), std::max(hi.y, p.y)};
+    }
+    const Vec2 mid = (lo + hi) * 0.5;
+    QVariantList list;
+    int pieces = 0;
+    for (auto& loop : loops) {
+        for (Vec2& p : loop.points)
+            p = {p.x - mid.x, mid.y - p.y};
+        pieces += int(measure::profileSegments(loop).size());
+        list.append(loopMap(loop));
+    }
+    lastProfileLoops_ = list;
+    madeLog_ << QStringLiteral("profile %1 %2").arg(list.size()).arg(pieces);
+    OS_LOG(Info, App) << "measure: a profile sketch of " << list.size() << " loops, " << pieces << " pieces, " << (hi.x - lo.x)
+                      << " x " << (hi.y - lo.y) << " mm";
+    return app_->createProfileSketch(list);
 }
 
 bool MeasureController::makeCircleSketch(double diameterMm)

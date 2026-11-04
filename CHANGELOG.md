@@ -51,6 +51,11 @@ things").
   views** puts each straightened photo at true size on its plane with a
   tapped origin point at the design's origin, and its outlines as sketches
   on that plane.
+  **Find outline**: a part lying on paper of a contrasting colour beside the
+  card is traced for you as an outline dimension, its edge as straight sides, arcs and circles and
+  its holes as inner loops (each point can still be dragged); the readout
+  gives its width x height, area, holes and sides, and Make sketch (and Place views) draw it
+  at real size, holes included, ready to extrude into the part.
 - **FoldForm's own camera** for Take photo: a straight-down level (two
   crosses that meet and turn green within 1°, "0.6° off"), and for Scan the
   camera's angle against the 35–55° band; **Last photo** shows the previous

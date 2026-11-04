@@ -30,6 +30,10 @@
 #include <string_view>
 #include <vector>
 
+namespace os::measure {
+struct ProfileLoop;
+}
+
 namespace os::interact {
 
 // One row of the model tree shown in the history panel.
@@ -311,6 +315,13 @@ public:
     Status createOutlineSketch(const std::vector<Vec2>& points, bool closed, const sketch::Plane& plane = sketch::Plane::xy());
     // The same with one circle, its diameter dimension set (it was measured).
     Status createCircleSketch(Vec2 center, double diameter);
+    // A sketch of measured loops (the Measure workspace's Find outline): the
+    // first the outer edge, the others holes. In each loop a point marked
+    // `through` is the middle of an arc from the point before it to the one
+    // after; the others are joined by lines. A loop of arcs on one circle
+    // becomes a circle with its diameter set. Refused, with a message, for a
+    // loop with fewer than three points or no area.
+    Status createProfileSketch(const std::vector<measure::ProfileLoop>& loops, const sketch::Plane& plane = sketch::Plane::xy());
     // A box body (width along X, depth along Y, height along Z), placed as
     // createBox places one, then selected and framed.
     Status createSizedBox(double width, double depth, double height);

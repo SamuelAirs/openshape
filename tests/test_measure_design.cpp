@@ -10,6 +10,7 @@
 #include "document/Document.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
+#include "measure/OutlineProfile.h"
 
 #include <gtest/gtest.h>
 
@@ -437,6 +438,42 @@ TEST(MeasuredGeometry, ACircleSketchHasItsMeasuredDiameter)
     h.controller.finishSketch();
     EXPECT_TRUE(h.controller.undo());
     EXPECT_TRUE(h.document.sketches().empty());
+}
+
+TEST(MeasuredGeometry, AFoundOutlineWithAnArcAndAHoleIsOneSketch)
+{
+    Harness h;
+    // A 40 x 20 plate with a round right end (an arc through (50, 10)) and a
+    // 6 mm hole, as Find outline hands it over.
+    measure::ProfileLoop plate;
+    plate.points = {{0, 0}, {40, 0}, {50, 10}, {40, 20}, {0, 20}};
+    plate.through = {false, false, true, false, false};
+    measure::ProfileLoop hole;
+    for (int i = 0; i < 4; ++i) {
+        const double a = i * kPi / 2;
+        hole.points.push_back(Vec2{10, 10} + Vec2{std::cos(a), std::sin(a)} * 3.0);
+        hole.through.push_back(i % 2 == 1);
+    }
+    const std::size_t steps = h.stack.index();
+    ASSERT_TRUE(h.controller.createProfileSketch({plate, hole}).ok());
+    EXPECT_EQ(h.stack.index(), steps + 1) << "one undo step";
+    ASSERT_EQ(h.controller.mode(), InteractionController::Mode::Sketch);
+    const auto& s = h.sketch();
+    EXPECT_EQ(s.lines().size(), 3u);
+    EXPECT_EQ(s.arcs().size(), 1u);
+    ASSERT_EQ(s.circles().size(), 1u) << "the hole's two half arcs are one circle";
+    EXPECT_NEAR(s.circles().begin()->second.radius, 3, 1e-9);
+    EXPECT_EQ(h.constraints(sketch::ConstraintKind::Diameter), 1u);
+    // The plate with its hole is a region (and the hole's disc another).
+    ASSERT_EQ(h.session().regions().size(), 2u);
+    const double plateArea = 40 * 20 + kPi * 10 * 10 / 2 - kPi * 9;
+    EXPECT_NEAR(h.session().regions()[0].area, plateArea, 1e-6);
+    EXPECT_FALSE(h.controller.createProfileSketch({}).ok());
+    measure::ProfileLoop line;
+    line.points = {{0, 0}, {10, 0}, {20, 0}};
+    line.through = {false, false, false};
+    EXPECT_FALSE(h.controller.createProfileSketch({line}).ok()) << "no area";
+    EXPECT_EQ(h.stack.index(), steps + 1);
 }
 
 TEST(MeasuredGeometry, ASizedBoxIsSelectedAndOneUndoStep)

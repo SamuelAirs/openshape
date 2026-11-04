@@ -18,6 +18,7 @@
 #include "io/ProjectFile.h"
 #include "io/ProjectFiles.h"
 #include "io/RecentFiles.h"
+#include "measure/OutlineProfile.h"
 #include "measure/ScreenScale.h"
 #include "samples/Samples.h"
 #include "ui/RecoverySession.h"
@@ -2308,14 +2309,23 @@ std::optional<Vec2> pointFromVariant(const QVariant& value)
 
 } // namespace
 
+namespace {
+
+// The origin planes in the frames reference photos use (doc::referencePlaneFrame).
+sketch::Plane measuredPlaneFrame(const QString& plane)
+{
+    if (plane.compare(QLatin1String("XZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("front"), Qt::CaseInsensitive) == 0)
+        return sketch::Plane{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}};
+    if (plane.compare(QLatin1String("YZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("right"), Qt::CaseInsensitive) == 0)
+        return sketch::Plane{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    return sketch::Plane::xy();
+}
+
+} // namespace
+
 bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed, const QString& plane)
 {
-    // The origin planes in the frames reference photos use (doc::referencePlaneFrame).
-    sketch::Plane frame = sketch::Plane::xy();
-    if (plane.compare(QLatin1String("XZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("front"), Qt::CaseInsensitive) == 0)
-        frame = sketch::Plane{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}};
-    else if (plane.compare(QLatin1String("YZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("right"), Qt::CaseInsensitive) == 0)
-        frame = sketch::Plane{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const sketch::Plane frame = measuredPlaneFrame(plane);
     std::vector<Vec2> points;
     points.reserve(std::size_t(pointsMm.size()));
     for (const QVariant& value : pointsMm) {
@@ -2327,6 +2337,28 @@ bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool close
         points.push_back(*p);
     }
     return interaction_->createOutlineSketch(points, closed, frame).ok();
+}
+
+bool AppController::createProfileSketch(const QVariantList& loopsMm, const QString& plane)
+{
+    std::vector<measure::ProfileLoop> loops;
+    for (const QVariant& value : loopsMm) {
+        const QVariantMap map = value.toMap();
+        const QVariantList points = map.value(QStringLiteral("points")).toList();
+        const QVariantList through = map.value(QStringLiteral("through")).toList();
+        measure::ProfileLoop loop;
+        for (int i = 0; i < points.size(); ++i) {
+            const auto p = pointFromVariant(points[i]);
+            if (!p) {
+                notifyMessage(QStringLiteral("The outline has a point that is not a usable position."));
+                return false;
+            }
+            loop.points.push_back(*p);
+            loop.through.push_back(i < through.size() && through[i].toBool());
+        }
+        loops.push_back(std::move(loop));
+    }
+    return interaction_->createProfileSketch(loops, measuredPlaneFrame(plane)).ok();
 }
 
 bool AppController::createCircleSketch(double centerXmm, double centerYmm, double diameterMm)

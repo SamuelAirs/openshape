@@ -860,6 +860,17 @@ large at the side with **Keep**.
     origin point at the origin, and, if you like, each closed outline as a
     sketch on that plane, ready to extrude. The set lasts until FoldForm
     closes.
+  - **Find outline** (in Outline) traces a flat part for you: lay it on plain
+    paper of a contrasting colour (a dark part on white paper, a light one on
+    dark paper), the playing card beside it on the same paper, and take the
+    photo from straight above in soft light. FoldForm finds the part's edge
+    and its holes, as straight sides, arcs and circles; drag any point to
+    adjust it (the small points are the middles of arcs). The readout gives
+    the width and height along the part's longest side, the area, each hole's
+    diameter and each side; **Make sketch** draws it all on the ground plane
+    at real size, holes included, so extruding it makes the part with its
+    holes. A hard shadow next to a dark part can be taken for part of it: use
+    light from above.
 - **Camera** (iPhone and iPad with ARKit): measure in the room through the
   camera. **Distance** (points in space), **Outline** (corners on one
   surface) or **Box** (three corners of a box's base, then its top). The

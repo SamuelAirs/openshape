@@ -22,6 +22,8 @@ import OpenShape
 // side and the area) or Circle (three on the rim). Every one stays on the
 // photo as a dimension (A, B, C...), listed under it; Keep all keeps them.
 // Make sketch puts an outline or a circle on the ground plane at real size.
+// Find outline (in Outline) finds a part lying on contrasting paper and
+// makes it an outline dimension of lines, arcs and holes.
 // A set of views ("Views": a top, a front and a side photo of one part):
 // + View keeps the photo measured and starts the next; Place views puts
 // each on its plane in the design, its origin point at the plane's origin.
@@ -40,8 +42,11 @@ Item {
     // closed. Writing them changes that dimension (or starts one of `mode`).
     property var points: []
     property bool closed: false
-    // Every dimension on this photo: [{kind, points, closed, letter, name}],
-    // and which one `points` is (-1: none).
+    // Every dimension on this photo: [{kind, points, closed, letter, name,
+    // found}], and which one `points` is (-1: none). `found` (Find outline,
+    // MeasureController.foundOutline) marks an outline that was found: which
+    // of its points are an arc's middle (through) and its holes; dragging
+    // keeps it, a change in the number of points (Undo) drops it.
     property var dims: []
     property int active: -1
     property int letterCount: 0
@@ -86,6 +91,24 @@ Item {
 
     // ---- the dimensions
     readonly property var activeDim: active >= 0 && active < dims.length ? dims[active] : null
+    readonly property var found: activeDim && activeDim.found ? activeDim.found : null
+    // Find outline's result: the selected found outline takes it (Find
+    // outline again), else it is a new closed outline dimension.
+    function setFoundOutline(f) {
+        if (!(activeDim && activeDim.found))
+            setOutlinePoints(f.points)
+        const list = dims.slice()
+        const d = Object.assign({}, list[active])
+        d.points = f.points.slice()
+        d.closed = true
+        d.found = f
+        list[active] = d
+        loading = true
+        points = d.points
+        closed = true
+        dims = list
+        loading = false
+    }
     function isComplete(d) {
         return d.kind === "distance" ? d.points.length === 2 : d.kind === "circle" ? d.points.length === 3
                                      : d.closed && d.points.length >= 3
@@ -135,6 +158,8 @@ Item {
         const d = Object.assign({}, list[active])
         d.points = points
         d.closed = closed
+        if (d.found && (!closed || d.found.through.length !== points.length))
+            delete d.found
         list[active] = d
         dims = list
     }
@@ -303,7 +328,7 @@ Item {
             return c.valid ? { quantity: "length", value: c.diameter, prefix: "Ø " } : null
         }
         if (d.kind === "outline" && d.points.length >= 2) {
-            const r = m.outlineReport(d.points, d.closed)
+            const r = d.found ? m.profileReport(d.points, d.found) : m.outlineReport(d.points, d.closed)
             return d.closed ? { quantity: "area", value: r.area, prefix: "" } : { quantity: "length", value: r.perimeter, prefix: "" }
         }
         return null
@@ -313,7 +338,8 @@ Item {
         return v ? v.prefix + m.formatValue(v.quantity, v.value) : ""
     }
 
-    readonly property var outline: m && mode === "outline" && points.length >= 2 ? m.outlineReport(points, closed) : null
+    readonly property var outline: m && mode === "outline" && points.length >= 2
+                                   ? (found ? m.profileReport(points, found) : m.outlineReport(points, closed)) : null
     readonly property var circle: m && mode === "circle" && points.length === 3 ? m.circleFrom3(points[0], points[1], points[2]) : null
     readonly property string surface: m ? "on the " + m.referenceName.toLowerCase() + "'s surface" : ""
     readonly property string activeName: activeDim ? displayName(activeDim) + " · " : ""
@@ -331,6 +357,8 @@ Item {
             return { valid: true, caption: activeName + surface, source: "Photo",
                      items: [{ label: "Diameter", quantity: "length", value: circle.diameter },
                              { label: "Radius", quantity: "length", value: circle.diameter / 2 }] }
+        if (mode === "outline" && outline && outline.items)
+            return { valid: true, caption: activeName + surface, source: "Photo", items: outline.items }
         if (mode === "outline" && outline) {
             const items = closed ? [{ label: "Area", quantity: "area", value: outline.area },
                                     { label: "Perimeter", quantity: "length", value: outline.perimeter }]
@@ -380,7 +408,7 @@ Item {
         }
         let made = false
         if (key === "outlineSketch")
-            made = m.makeOutlineSketch(m.straightToMm(points), true)
+            made = found ? m.makeProfileSketch(points, found) : m.makeOutlineSketch(m.straightToMm(points), true)
         else if (key === "circleSketch" && circle && circle.valid)
             made = m.makeCircleSketch(circle.diameter)
         if (made)
@@ -414,7 +442,9 @@ Item {
                                                                    : placeAngle.toFixed(1) + "° to " + edgesName)
                                  : snap ? "Tap the other end. Near 0° or 90° it snaps straight" : "Tap the other end")
         : mode === "circle" ? (points.length < 3 ? "Tap three points on the rim (" + points.length + " of 3)" : "Tap again for another circle")
+        : found ? "Drag a point to adjust the found outline"
         : closed ? "Closed. Tap to start another outline"
+        : points.length === 0 ? "Find outline, or tap the shape's corners one after another"
         : points.length < 3 ? "Tap the corners of the shape, one after another"
         : "Tap the first point (or Close) to close the outline"
 
@@ -442,7 +472,8 @@ Item {
         for (let i = 0; i < dims.length; ++i) {
             const d = dims[i]
             if (isComplete(d))
-                kept.push({ kind: d.kind, points: d.points.map(p => Qt.point(p.x, p.y)), closed: d.closed, letter: d.letter, name: d.name })
+                kept.push(Object.assign({ kind: d.kind, points: d.points.map(p => Qt.point(p.x, p.y)), closed: d.closed, letter: d.letter, name: d.name },
+                                        d.found ? { found: d.found } : {}))
         }
         return { dims: kept, letterCount: letterCount, origin: origin ? Qt.point(origin.x, origin.y) : null }
     }
@@ -455,7 +486,10 @@ Item {
             const pts = []
             for (let k = 0; k < d.points.length; ++k)
                 pts.push(Qt.point(d.points[k].x, d.points[k].y))
-            list.push({ kind: d.kind, points: pts, closed: d.closed === true, letter: d.letter, name: d.name || "" })
+            const item = { kind: d.kind, points: pts, closed: d.closed === true, letter: d.letter, name: d.name || "" }
+            if (d.found && d.found.through && d.found.through.length === pts.length)
+                item.found = d.found
+            list.push(item)
         }
         dims = list
         active = -1
@@ -548,6 +582,20 @@ Item {
     function anchorOf(item) {
         const p = item.mapToItem(null, 0, 0)
         return Qt.rect(p.x, p.y, item.width, item.height)
+    }
+
+    // ---- Find outline: its result becomes a closed outline dimension.
+    Connections {
+        target: photo.m
+        function onOutlineFound() {
+            const f = photo.m.foundOutline
+            if (!f.valid) {
+                if (photo.screen && f.message)
+                    photo.screen.toast(f.message, true)
+                return
+            }
+            photo.setFoundOutline(f)
+        }
     }
 
     FileDialog {
@@ -982,8 +1030,36 @@ Item {
                                 capStyle: ShapePath.RoundCap
                                 PathPolyline {
                                     path: {
-                                        const pts = dimItem.modelData.points.map(p => straightView.toView(p))
-                                        return dimItem.modelData.closed && pts.length > 0 ? pts.concat([pts[0]]) : pts
+                                        const d = dimItem.modelData
+                                        if (d.found && photo.m) {
+                                            const path = photo.m.profilePath(d.points, d.found.through).map(p => straightView.toView(p))
+                                            return path.length > 0 ? path.concat([path[0]]) : []
+                                        }
+                                        const pts = d.points.map(p => straightView.toView(p))
+                                        return d.closed && pts.length > 0 ? pts.concat([pts[0]]) : pts
+                                    }
+                                }
+                            }
+                        }
+                        // Find outline: the holes found (drawn; the sketch gets them).
+                        Repeater {
+                            model: dimItem.modelData.found ? dimItem.modelData.found.holes : []
+                            delegate: Shape {
+                                required property var modelData
+                                required property int index
+                                objectName: dimItem.selected ? "photoHole_" + index : "photoHole_" + dimItem.index + "_" + index
+                                anchors.fill: parent
+                                preferredRendererType: Shape.CurveRenderer
+                                ShapePath {
+                                    strokeColor: dimItem.stroke
+                                    strokeWidth: dimItem.selected ? 2.5 : 2
+                                    fillColor: Qt.rgba(1, 1, 1, 0.35)
+                                    joinStyle: ShapePath.RoundJoin
+                                    PathPolyline {
+                                        path: {
+                                            const pts = photo.m.profilePath(modelData.points, modelData.through).map(p => straightView.toView(p))
+                                            return pts.length > 0 ? pts.concat([pts[0]]) : []
+                                        }
                                     }
                                 }
                             }
@@ -1082,10 +1158,11 @@ Item {
                         required property int index
                         readonly property point at: straightView.toView(modelData)
                         readonly property bool first: index === 0 && photo.mode === "outline" && !photo.closed && photo.points.length >= 3
+                        readonly property bool arcMiddle: photo.found !== null && photo.found.through[index] === true
                         objectName: "photoPoint_" + index
                         x: at.x - width / 2
                         y: at.y - height / 2
-                        width: first ? 20 : 14
+                        width: first ? 20 : arcMiddle ? 11 : 14
                         height: width
                         radius: width / 2
                         color: first ? Theme.accent : "white"
@@ -1288,10 +1365,20 @@ Item {
                             return []
                         const labels = []
                         const v = photo.points.map(p => straightView.toView(p))
-                        const n = photo.outline.sides.length
+                        // A found outline on a phone: its sides are in the readout (labels would crowd it).
+                        const n = photo.found && photo.narrow ? 0 : photo.outline.sides.length
                         for (let i = 0; i < n; ++i) {
                             const a = v[i], b = v[(i + 1) % v.length]
-                            labels.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, text: photo.m.formatValue("length", photo.outline.sides[i]) })
+                            const at = photo.outline.labelAt ? straightView.toView(photo.outline.labelAt[i]) : Qt.point((a.x + b.x) / 2, (a.y + b.y) / 2)
+                            const arc = photo.outline.arcs && photo.outline.arcs[i]
+                            labels.push({ x: at.x, y: at.y, text: arc ? "R " + photo.m.formatValue("length", photo.outline.radii[i])
+                                                                      : photo.m.formatValue("length", photo.outline.sides[i]) })
+                        }
+                        for (const hole of photo.outline.holes || []) {
+                            if (!hole.circle)
+                                continue
+                            const c = straightView.toView(hole.center)
+                            labels.push({ x: c.x, y: c.y, text: "Ø " + photo.m.formatValue("length", hole.diameter) })
                         }
                         return labels
                     }
@@ -1380,6 +1467,26 @@ Item {
                     id: pointLoupe
                     view: straightView
                     visible: false
+                }
+                // ---- Find outline: what gives the best result.
+                Rectangle {
+                    objectName: "photoOutlineTip"
+                    visible: photo.mode === "outline" && photo.points.length === 0 && !photo.dims.some(d => d.found)
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 8 }
+                    height: tipText.implicitHeight + 12
+                    radius: 10
+                    color: Theme.toast
+                    opacity: 0.92
+                    z: 6
+                    Text {
+                        id: tipText
+                        anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
+                        verticalAlignment: Text.AlignVCenter
+                        text: "Best: the part on plain paper of a contrasting colour, the card beside it, the photo from straight above"
+                        color: "white"
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
         }
@@ -1478,6 +1585,17 @@ Item {
                     }
                 }
             }
+            // ---- Find outline (on the worker thread: photoBusy).
+            ActionButton {
+                objectName: "photoFindOutline"
+                visible: photo.mode === "outline"
+                text: photo.narrow && photo.dims.length > 0 ? "Find" : "Find outline"
+                iconName: "sketch_trace"
+                accent: photo.points.length === 0 && !photo.dims.some(d => d.found)
+                outlined: !accent
+                enabled: photo.m && !photo.m.photoBusy
+                onClicked: photo.m.findOutline()
+            }
             ActionButton {
                 objectName: "photoClose"
                 visible: photo.mode === "outline" && !photo.closed && photo.points.length >= 3
@@ -1528,7 +1646,7 @@ Item {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: photo.stage === "corners" ? "Straightening…" : "Reading the photo…"
+                    text: photo.stage === "corners" ? "Straightening…" : photo.stage === "measure" ? "Finding the outline…" : "Reading the photo…"
                     font.pixelSize: 15
                     color: Theme.text
                 }
