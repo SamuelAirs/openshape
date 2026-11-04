@@ -27,7 +27,9 @@
 
 #include <array>
 #include <atomic>
+#include <deque>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -110,6 +112,16 @@ class MeasureController : public QObject {
     Q_PROPERTY(bool levelArmed READ levelArmed NOTIFY levelChanged)
     Q_PROPERTY(bool hasLevelReference READ hasLevelReference NOTIFY levelChanged)
     Q_PROPERTY(double relativeAngle READ relativeAngle NOTIFY levelChanged)
+    // Calibrating and checking the level, end for end (docs/MEASURE.md):
+    // "" (none), "calibrate" or "check"; the step (1 the first reading, 2
+    // turned, 3 the result); the result in words; the offset found (degrees).
+    Q_PROPERTY(QString levelCalMode READ levelCalMode NOTIFY levelChanged)
+    Q_PROPERTY(int levelCalStep READ levelCalStep NOTIFY levelChanged)
+    Q_PROPERTY(QString levelCalResult READ levelCalResult NOTIFY levelChanged)
+    Q_PROPERTY(double levelCalFound READ levelCalFound NOTIFY levelChanged)
+    // The posture shown (lying or standing) has a kept offset, and its size.
+    Q_PROPERTY(bool levelCalibrated READ levelCalibrated NOTIFY levelChanged)
+    Q_PROPERTY(double levelOffset READ levelOffset NOTIFY levelChanged)
 
     // ---- Photo
     Q_PROPERTY(bool cameraAvailable READ cameraAvailable NOTIFY sensorsChanged)
@@ -148,7 +160,7 @@ class MeasureController : public QObject {
     // owner to fix), source ("vision", "detected", "hand", ""), mask (a
     // subject mask is there), used / problem (after a build)}.
     Q_PROPERTY(QVariantList scanPhotos READ scanPhotos NOTIFY scanChanged)
-    Q_PROPERTY(QString scanPaper READ scanPaper NOTIFY scanChanged) // "a4" or "letter"
+    Q_PROPERTY(QString scanPaper READ scanPaper NOTIFY scanChanged) // "a4", "letter" or "legal"
     Q_PROPERTY(bool scanBusy READ scanBusy NOTIFY scanChanged)      // photos being read
     Q_PROPERTY(bool scanBuilding READ scanBuilding NOTIFY scanChanged)
     Q_PROPERTY(double scanProgress READ scanProgress NOTIFY scanProgressChanged)
@@ -238,6 +250,21 @@ public:
     Q_INVOKABLE void clearLevelReference();
     // Drops the fold's and the level's holds (a new measurement starts).
     Q_INVOKABLE void clearHold();
+    // The level's end-for-end calibration and check (MeasureLevelCalibration.cpp).
+    QString levelCalMode() const { return levelCal_.mode; }
+    int levelCalStep() const { return levelCal_.step; }
+    QString levelCalResult() const { return levelCal_.result; }
+    double levelCalFound() const { return levelCal_.found; }
+    bool levelCalibrated() const;
+    double levelOffset() const;
+    Q_INVOKABLE void startLevelCalibration();
+    Q_INVOKABLE void startLevelCheck();
+    // Turned end for end: the second reading waits a whole steady second.
+    Q_INVOKABLE void levelCalTurned();
+    // Cancel, or Done once the result is shown.
+    Q_INVOKABLE void endLevelCalibration();
+    // Forgets the kept offset of the posture shown (lying or standing).
+    Q_INVOKABLE void resetLevelCalibration();
     // Time passing while the sensors run (a timer, ten times a second): the
     // Duo's hinge reports only changes, so its last angle is fed again while
     // it keeps still, or a still fold would never be held. The acceptance
@@ -414,6 +441,12 @@ private:
     bool feedFold(double degrees);
     void onGravity(const GravityReading& reading);
     void feedLevel();
+    // The calibration's side of a level reading and of a hold.
+    void correctGravity(const GravityReading& reading);
+    void applyLevelCorrection(); // gravity_ and tilt_ from rawGravity_
+    void levelCalHold();
+    void loadLevelCalibration();
+    QString levelCalKey(bool lying) const;
     double now() const;
     void loadCaliper();
     double defaultCaliperArm() const;
@@ -473,6 +506,28 @@ private:
     bool levelSteady_ = false;
     double levelProgress_ = 0;
     bool levelArmed_ = true;
+    // The level's calibration: the offsets kept (lying: both components in
+    // the device's upright frame; standing: per edge, the window's turn),
+    // the raw readings of the last second, and a calibration or check under way.
+    struct LevelCalibration {
+        Vec2 lyingOffset;
+        bool lyingKept = false;
+        std::array<double, 4> edgeOffset{};
+        std::array<bool, 4> edgeKept{};
+        QString loadedFor; // the screen the offsets were read for
+        bool loaded = false;
+        QString mode;
+        int step = 0;
+        bool firstLying = true;
+        int firstTurn = 0;
+        measure::Gravity first; // upright frame (lying) or the window's (standing)
+        QString result;
+        double found = std::numeric_limits<double>::quiet_NaN();
+    };
+    LevelCalibration levelCal_;
+    measure::Gravity rawGravity_; // the window's frame, as the sensors gave it
+    int gravityTurn_ = 0;
+    std::deque<std::pair<double, measure::Gravity>> recentGravity_; // (now(), raw)
 
     bool photoBusy_ = false;
     int photoGeneration_ = 0;

@@ -11,7 +11,8 @@ import OpenShape
 // bubble and the surface's slope; standing on an edge, the edge's angle
 // from level. Keep as reference stores the position: then it reads the
 // angle between that and the next resting position (two surfaces). Held
-// when steady, like the fold.
+// when steady, like the fold. Calibrate and Check: two held readings, the
+// second turned end for end (MeasureLevelCalibration.cpp).
 Item {
     id: level
 
@@ -22,6 +23,10 @@ Item {
     readonly property bool lying: m ? m.levelLying : true
     readonly property bool reference: m ? m.hasLevelReference : false
     readonly property bool hasHold: m ? m.levelHasHold : false
+    // Calibrating or checking, end for end (docs/MEASURE.md).
+    readonly property string calMode: m ? m.levelCalMode : ""
+    readonly property int calStep: m ? m.levelCalStep : 0
+    readonly property bool calibrating: calMode !== ""
     readonly property real shown: !m ? 0 : hasHold ? m.levelHeld : m.levelValue
     readonly property string label: reference ? "To reference" : lying ? "Slope" : "Edge"
 
@@ -47,7 +52,7 @@ Item {
         visible: !level.available
         iconName: "level"
         title: "The level needs motion sensors"
-        text: "On an iPhone or iPad, lay it on a surface for the slope, or stand it on an edge for the edge's angle from level. Keep one position and the next gives the angle between the two surfaces."
+        text: "On an iPhone or iPad, lay it on a surface for the slope, or stand it on an edge for the edge's angle from level. Keep one position and the next gives the angle between the two surfaces. Calibrate it on any steady surface: two readings, turned end for end."
     }
 
     Item {
@@ -112,7 +117,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: number.bottom
             anchors.topMargin: 14
-            readonly property real size: Math.max(120, Math.min(parent.width - 16, footer.y - y - 14, 300))
+            readonly property real size: Math.max(64, Math.min(parent.width - 16, footer.y - y - 14, 300))
             width: size
             height: size
             Rectangle {
@@ -211,7 +216,7 @@ Item {
                 }
                 ActionButton {
                     objectName: "levelMeasureAgain"
-                    visible: level.hasHold
+                    visible: level.hasHold && !level.calibrating
                     text: "Measure again"
                     outlined: true
                     onClicked: level.m.clearHold()
@@ -219,6 +224,7 @@ Item {
             }
             Text {
                 objectName: "levelHoldHint"
+                visible: !level.calibrating
                 Layout.alignment: Qt.AlignHCenter
                 Layout.maximumWidth: Math.min(level.width, 440)
                 horizontalAlignment: Text.AlignHCenter
@@ -228,7 +234,51 @@ Item {
                 font.pixelSize: 13
                 color: Theme.mutedText
             }
+            // Calibrate or Check under way: the step, what to do, the result.
+            Text {
+                objectName: "levelCalText"
+                visible: level.calibrating
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: Math.min(level.width - 16, 440)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                textFormat: Text.StyledText
+                readonly property string what: level.calMode === "check" ? "Check" : "Calibrate"
+                readonly property string extra: level.m && level.m.levelCalResult !== "" ? "<br>" + level.m.levelCalResult : ""
+                text: level.calStep === 1 ? "<b>" + what + " · 1 of 2</b><br>Set it down on any steady surface and keep still."
+                    : level.calStep === 2 ? "<b>" + what + " · 2 of 2</b><br>Turn it end for end in the same spot, then keep still." + extra
+                    : level.m ? "<b>" + (level.calMode === "check" ? "Checked" : "Calibrated") + "</b><br>" + level.m.levelCalResult : ""
+                font.pixelSize: 13
+                color: Theme.text
+            }
             RowLayout {
+                visible: level.calibrating
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 8
+                ActionButton {
+                    objectName: "levelCalTurned"
+                    visible: level.calStep === 2
+                    text: "Turned"
+                    accent: true
+                    onClicked: level.m.levelCalTurned()
+                }
+                ActionButton {
+                    objectName: "levelCalCancel"
+                    visible: level.calStep !== 3
+                    text: "Cancel"
+                    outlined: true
+                    onClicked: level.m.endLevelCalibration()
+                }
+                ActionButton {
+                    objectName: "levelCalDone"
+                    visible: level.calStep === 3
+                    text: "Done"
+                    accent: true
+                    onClicked: level.m.endLevelCalibration()
+                }
+            }
+            RowLayout {
+                visible: !level.calibrating
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 8
                 ActionButton {
@@ -244,6 +294,38 @@ Item {
                     text: "Clear"
                     onClicked: level.m.clearLevelReference()
                 }
+                readonly property bool calibrated: level.m !== null && level.m.levelCalibrated
+                ActionButton {
+                    objectName: "levelCalibrate"
+                    visible: !level.reference && !parent.calibrated
+                    text: "Calibrate"
+                    outlined: true
+                    onClicked: level.m.startLevelCalibration()
+                }
+                ActionButton {
+                    objectName: "levelCheck"
+                    visible: !level.reference
+                    text: "Check"
+                    outlined: true
+                    onClicked: level.m.startLevelCheck()
+                }
+                // Calibrated: Reset forgets it (then Calibrate again).
+                ActionButton {
+                    objectName: "levelCalReset"
+                    visible: !level.reference && parent.calibrated
+                    text: "Reset"
+                    outlined: true
+                    onClicked: level.m.resetLevelCalibration()
+                }
+            }
+            // Its kept offset, taken off every reading.
+            Text {
+                objectName: "levelCalibratedText"
+                visible: !level.calibrating && !level.reference && level.m !== null && level.m.levelCalibrated
+                Layout.alignment: Qt.AlignHCenter
+                text: level.m ? "Calibrated: " + level.m.levelOffset.toFixed(1) + "° taken off " + (level.lying ? "lying" : "on this edge") : ""
+                font.pixelSize: 13
+                color: Theme.mutedText
             }
         }
     }

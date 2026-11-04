@@ -455,6 +455,96 @@ TEST(Level, AngleBetweenTwoRestingPositions)
     EXPECT_NEAR(angleBetween({0, 1, 0}, {0, 0, -1}), 90.0, 1e-9);
 }
 
+namespace {
+// A sensor that reads `offset` (degrees, about each axis) off the truth:
+// true gravity turned by a small rotation, as a mounting error would.
+Gravity misread(const Gravity& truth, Vec2 offsetDeg)
+{
+    const double ax = offsetDeg.x * kDeg, ay = offsetDeg.y * kDeg;
+    // About the y axis (moves x), then about the x axis (moves y).
+    const double x1 = truth.x * std::cos(ax) - truth.z * std::sin(ax);
+    const double z1 = truth.x * std::sin(ax) + truth.z * std::cos(ax);
+    const double y2 = truth.y * std::cos(ay) - z1 * std::sin(ay);
+    const double z2 = truth.y * std::sin(ay) + z1 * std::cos(ay);
+    return {x1, y2, z2};
+}
+// Lying on a surface whose slope has the components `slopeDeg` under the
+// phone; turned half a turn on it, the components turn over.
+Gravity onSurface(Vec2 slopeDeg, bool turned)
+{
+    return fromLyingAngles(turned ? slopeDeg * -1.0 : slopeDeg);
+}
+} // namespace
+
+TEST(Level, FlipCalibrationTheClassicProof)
+{
+    // A 2° slope and a 0.5° offset: the readings are 2.5° and -1.5°.
+    const FlipResult r = lyingFlip(fromLyingAngles({2.5, 0}), fromLyingAngles({-1.5, 0}));
+    EXPECT_NEAR(r.offsetDeg.x, 0.5, 1e-9);
+    EXPECT_NEAR(r.offsetDeg.y, 0.0, 1e-9);
+    EXPECT_NEAR(r.slopeDeg.x, 2.0, 1e-9);
+    const FlipResult e = edgeFlip(2.5, -1.5);
+    EXPECT_NEAR(e.offsetDeg.x, 0.5, 1e-9);
+    EXPECT_NEAR(e.slopeDeg.x, 2.0, 1e-9);
+    // Applied later: the 2.5° reading is the 2° slope.
+    EXPECT_NEAR(tiltFrom(correctedLying(fromLyingAngles({2.5, 0}), r.offsetDeg)).slopeDeg, 2.0, 1e-9);
+}
+
+TEST(Level, FlipCalibrationOnATiltedSurfaceBothWays)
+{
+    // A sensor 0.6° off about one axis and 0.25° about the other, on a
+    // surface sloping 1.2° and 0.9° under the phone (1.5° in all).
+    const Vec2 offset{0.6, -0.25}, slope{1.2, 0.9};
+    const Gravity first = misread(onSurface(slope, false), offset);
+    const Gravity second = misread(onSurface(slope, true), offset);
+    EXPECT_GT(std::abs(tiltFrom(first).slopeDeg - tiltFrom(second).slopeDeg), 0.3); // they disagree
+    const FlipResult r = lyingFlip(first, second);
+    EXPECT_NEAR(r.offsetDeg.x, offset.x, 0.01);
+    EXPECT_NEAR(r.offsetDeg.y, offset.y, 0.01);
+    EXPECT_NEAR(r.slopeSize(), 1.5, 0.01);
+    // A level table read by the same sensor reads level once corrected,
+    // and the slope reads the same both ways round.
+    EXPECT_GT(tiltFrom(misread({0, 0, -1}, offset)).slopeDeg, 0.6);
+    EXPECT_LT(tiltFrom(correctedLying(misread({0, 0, -1}, offset), r.offsetDeg)).slopeDeg, 0.01);
+    EXPECT_NEAR(tiltFrom(correctedLying(first, r.offsetDeg)).slopeDeg, 1.5, 0.01);
+    EXPECT_NEAR(tiltFrom(correctedLying(second, r.offsetDeg)).slopeDeg, 1.5, 0.01);
+    // A perfect sensor on a level surface: nothing to correct.
+    const FlipResult none = lyingFlip({0, 0, -1}, {0, 0, -1});
+    EXPECT_NEAR(none.offsetSize(), 0, 1e-12);
+    // Face down, the correction keeps the gravity out of the glass.
+    EXPECT_GT(correctedLying({0.01, 0, 1}, {0.5, 0}).z, 0.99);
+}
+
+TEST(Level, EdgeFlipOnASlopingShelf)
+{
+    // Standing on a shelf sloping 1.5° (right end up), a sensor 0.4° off:
+    // 1.9°, then turned end for end -1.1°.
+    const FlipResult e = edgeFlip(1.9, -1.1);
+    EXPECT_NEAR(e.offsetDeg.x, 0.4, 1e-9);
+    EXPECT_NEAR(e.slopeDeg.x, 1.5, 1e-9);
+    // Readings across the wrap stay sensible.
+    EXPECT_NEAR(edgeFlip(179.0, -179.0).slopeDeg.x, -1.0, 1e-9);
+}
+
+TEST(Level, OffsetsTurnWithTheWindow)
+{
+    const Gravity g{0.1, -0.2, -0.97};
+    for (int turn = 0; turn < 4; ++turn) {
+        const Gravity back = uprightToWindow(windowToUpright(g, turn), turn);
+        EXPECT_NEAR(back.x, g.x, 1e-12);
+        EXPECT_NEAR(back.y, g.y, 1e-12);
+    }
+    // Landscape right, held upright: the device's right side is up, so in
+    // its upright frame gravity points along -x (MeasureDevicesIos.mm); the
+    // window sees it straight down the screen.
+    const Gravity window{0, 1, 0};
+    const Gravity upright = windowToUpright(window, 1);
+    EXPECT_NEAR(upright.x, -1, 1e-12);
+    EXPECT_NEAR(upright.y, 0, 1e-12);
+    EXPECT_NEAR(windowToUpright(window, 3).x, 1, 1e-12);
+    EXPECT_NEAR(windowToUpright(window, 2).y, -1, 1e-12);
+}
+
 // ---------------------------------------------------------------- outlines
 
 TEST(Outline, SidesCornersAreaAndCentering)

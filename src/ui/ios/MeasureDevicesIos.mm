@@ -235,7 +235,7 @@ const char* orientationName(UIInterfaceOrientation orientation)
 //   screen is +y, down is +x.  X = y, Y = x.
 //   Check: held upright, gravity is (1, 0, 0), giving Y = 1.
 // Lying face up: (0, 0, -1) in both frames. An unknown orientation is
-// taken as portrait.
+// taken as portrait. `turn` says which (the level's calibration turns with it).
 GravityReading toWindowFrame(CMAcceleration g, UIInterfaceOrientation orientation)
 {
     GravityReading r;
@@ -244,14 +244,17 @@ GravityReading toWindowFrame(CMAcceleration g, UIInterfaceOrientation orientatio
     case UIInterfaceOrientationPortraitUpsideDown:
         r.x = -g.x;
         r.y = g.y;
+        r.turn = 2;
         break;
     case UIInterfaceOrientationLandscapeRight:
         r.x = -g.y;
         r.y = -g.x;
+        r.turn = 1;
         break;
     case UIInterfaceOrientationLandscapeLeft:
         r.x = g.y;
         r.y = g.x;
+        r.turn = 3;
         break;
     default:
         r.x = g.x;
