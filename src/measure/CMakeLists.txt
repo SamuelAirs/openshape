@@ -16,6 +16,19 @@ add_library(openshape_measure STATIC
     ScreenScale.cpp ScreenScale.h
     StrokeFit.cpp StrokeFit.h
 )
+# Scan (docs/SCAN.md): photogrammetry from photos of an object standing on a
+# sheet of paper: cameras from the paper, masks, carving, the surface.
+target_sources(openshape_measure PRIVATE
+    MeshTools.cpp MeshTools.h
+    Scan.cpp Scan.h
+    ScanMask.cpp ScanMask.h
+    ScanMath.h
+    ScanPose.cpp ScanPose.h
+    ScanSynthetic.cpp ScanSynthetic.h
+    ScanTypes.cpp ScanTypes.h
+)
+find_package(Threads REQUIRED)
+target_link_libraries(openshape_measure PRIVATE Threads::Threads)
 target_link_libraries(openshape_measure PUBLIC openshape_core PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(openshape_measure PUBLIC ${PROJECT_SOURCE_DIR}/src)
 openshape_set_warnings(openshape_measure)

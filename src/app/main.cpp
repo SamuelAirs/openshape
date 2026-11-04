@@ -236,6 +236,14 @@ void runDemo(os::ui::AppController& app, const QString& demo, const QString& dat
         runEnclosureDemo(app);
         return;
     }
+    if (demo == QLatin1String("scan")) {
+        // Scan (docs/SCAN.md) on synthetic photos of an L-shaped block.
+        QString summary;
+        const bool ok = app.addDemoScan(&summary);
+        OS_LOG(Info, App) << "demo scan: " << (ok ? summary.toStdString() : std::string("failed"));
+        interaction.fitAll(false);
+        return;
+    }
     if (demo == QLatin1String("revolve")) {
         using P = os::interact::InteractionController::SketchPlane;
         (void)interaction.startSketch(P::Front);

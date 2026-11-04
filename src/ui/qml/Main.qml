@@ -553,6 +553,12 @@ ApplicationWindow {
             shortcutText: window.shortcutLabel("⌘I", "Ctrl+I")
             onTriggered: window.chooseImportFile(false)
         }
+        AppMenuItem {
+            objectName: "importStlMenuItem"
+            iconName: "import"
+            text: "Import STL…"
+            onTriggered: window.chooseFile(importStlDialog, url => window.app.importStl(url))
+        }
         AppMenuSeparator {}
         AppMenuItem {
             objectName: "saveMenuItem"
@@ -1784,6 +1790,12 @@ ApplicationWindow {
         title: "Import STEP"
         nameFilters: ["STEP files (*.step *.stp *.STEP *.STP)"]
         onAccepted: window.acceptImport(selectedFile)
+    }
+    FileDialog {
+        id: importStlDialog
+        title: "Import STL"
+        nameFilters: ["STL meshes (*.stl *.STL)"]
+        onAccepted: window.app.importStl(selectedFile)
     }
     FileDialog {
         id: stepDialog

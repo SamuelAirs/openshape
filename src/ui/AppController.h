@@ -25,6 +25,7 @@
 #include <QtCore/QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -420,6 +421,22 @@ public:
     // Home -> Import STEP...: the same into a new document (the current one
     // stays when the file cannot be imported).
     Q_INVOKABLE bool importStepAsProject(const QUrl& url);
+    // File -> Import STL...: each closed piece of the mesh becomes a body
+    // whose faces are its triangles (one undo step; at most 50 000
+    // triangles). False, with a message, when nothing could be made a body.
+    Q_INVOKABLE bool importStl(const QUrl& url);
+    // A closed triangle mesh (a scan, measure::runScan; millimeters) as a new
+    // body, one undo step, selected and framed. Named `name`, or "Scan 1",
+    // "Scan 2", ... when it is empty; `source` is what its first step says
+    // it came from. False, with a message, when the mesh cannot become a
+    // solid (open, crossing itself, ...).
+    bool addMeshBody(const std::vector<Vec3>& vertices, const std::vector<std::array<int, 3>>& triangles,
+                     const QString& name = QString(), const QString& source = QStringLiteral("Scan"));
+    // The whole Scan pipeline without a camera: scans synthetic photos of a
+    // known object (measure/ScanSynthetic: an L-shaped block on A4, 15
+    // photos) and adds the result as addMeshBody does. For `--demo scan` and
+    // the acceptance run; `summary` (optional) says how it went.
+    bool addDemoScan(QString* summary = nullptr);
     // Acceptance runs cannot click native file dialogs: they give the file
     // the next dialog would return here, and the QML takes it instead of
     // opening the dialog (then the usual onAccepted code runs).

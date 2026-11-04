@@ -75,6 +75,7 @@ Developer switches:
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --screenshot shot.png
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo enclosure --view 150,25 --screenshot back.png   # from any angle, framed (see below)
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo bracket --projection orthographic --screenshot ortho.png   # start in this projection (not remembered)
+./build/msys2-ucrt64/bin/OpenShape.exe --demo scan --screenshot scan.png   # Scan (docs/SCAN.md) on synthetic photos of an L-block, added as a body
 ./build/msys2-ucrt64/bin/OpenShape.exe --demo rounded --view=-135,35 --face-contrast --screenshot s.png   # log how different adjacent faces look
 ./build/msys2-ucrt64/bin/OpenShape.exe "resources/samples/Lamp shade.openshape" --demo empty --hide-ui --view 330,25 --size 1000x1000 --dpr 2 --screenshot s.png   # the model alone, no panels (marketing); a project named first opens in the background, the scene and picture wait for it
 python scripts/dev/marketing_samples.py   # the five samples turning (MP4), stills, a showcase picture and a vertical reel in docs/marketing/samples/ (a window opens for about a minute per sample)
@@ -96,6 +97,7 @@ python scripts/dev/marketing_blender.py   # studio renders of the samples in Ble
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchphone   # sketching on a face by finger at 402x874 and 1180x820: face snaps, the loupe, one-finger pan, Face on, a size typed (demo scene facesketch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario pencil   # Apple Pencil at 1180x820 and 402x874 (Qt tablet events as iOS sends them): hover highlight and sketch hover point, a rectangle drawn while a palm rests and slides, the grace period, the finger-tap hint, Pen off
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario scan   # File → Import STL… (two pieces, a damaged file), then a scan of synthetic photos as a selected body
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario numpad   # the numeric keypad by touch at iPhone, iPad and iPhone Duo (outer) sizes: value box, Model panel, sketch values
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)
