@@ -164,6 +164,7 @@ need none.
 
 ## Not yet (TD-166 onward)
 
-- Object Capture (a full 3D scan) needs RealityKit's Swift-only API; ARKit's LiDAR mesh as a
-  reference body is the nearer step.
+- A full 3D scan is FoldForm's own **Scan** (docs/SCAN.md): photos around an object standing on a
+  sheet of paper become a mesh and a body (`measure/Scan`, `geom::solidFromMesh`,
+  `AppController::addMeshBody`); its workspace UI is still to come.
 - Measurements saved in a project and referenced by name in typed values.

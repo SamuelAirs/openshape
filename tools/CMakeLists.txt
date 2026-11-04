@@ -11,3 +11,8 @@ add_executable(export_bodies export_bodies/export_bodies.cpp)
 target_link_libraries(export_bodies PRIVATE openshape_io)
 openshape_set_warnings(export_bodies)
 target_compile_definitions(export_bodies PRIVATE OPENSHAPE_FONTS_DIR="${PROJECT_SOURCE_DIR}/resources/fonts")
+
+# Scan on real photos (PPM + photos.txt; scripts/dev/scan_photos.py makes them from JPEGs).
+add_executable(scan_photos scan_photos/scan_photos.cpp)
+target_link_libraries(scan_photos PRIVATE openshape_measure)
+openshape_set_warnings(scan_photos)
