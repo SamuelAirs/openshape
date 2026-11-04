@@ -57,6 +57,10 @@ Item {
         "sketch_polygon": "M12 3.5 L20 9.3 L17 18.7 H7 L4 9.3 Z",
         "sketch_tangentArc": "M3.5 18 H10 A6.5 6.5 0 0 0 16.5 11.5 V5",
         "sketch_slot": "M8 8 H16 A4 4 0 0 1 16 16 H8 A4 4 0 0 1 8 8 Z",
+        // A pen tracing a wavy outline (the Trace tool).
+        "sketch_trace": "M3.5 18.5 C5.5 13 8 18 10 14 S13 10.5 14.5 12 M14.5 12 L15.2 9.3 L19.6 4.9 a1.4 1.4 0 0 1 2 2 L17.2 11.3 Z",
+        // A ruler (Measure: the value boxes' button, the top bar).
+        "ruler": "M3.5 8 H20.5 V16 H3.5 Z M7 8 V11 M10.5 8 V12.5 M14 8 V11 M17.5 8 V12.5",
         // The tools (the create palette).
         "box": "M12 3.5 L19.5 7.5 V16.5 L12 20.5 L4.5 16.5 V7.5 Z M4.5 7.5 L12 11.5 L19.5 7.5 M12 11.5 V20.5",
         "sketch": "M4 20.5 H11 M5.5 18 L6.1 14.4 L15.5 5 a2.1 2.1 0 0 1 3 3 L9.1 17.4 Z M13.5 7 L16.5 10",

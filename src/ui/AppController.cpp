@@ -15,6 +15,7 @@
 #include "io/ProjectFile.h"
 #include "io/ProjectFiles.h"
 #include "io/RecentFiles.h"
+#include "measure/ScreenScale.h"
 #include "samples/Samples.h"
 #include "ui/RecoverySession.h"
 #include "ui/ThumbnailSource.h"
@@ -124,6 +125,7 @@ AppController::AppController(QObject* parent)
     // Perspective unless the user chose orthographic last time (automated
     // runs read a fresh settings file: perspective).
     interaction_->setProjection(loadPerspective(settings) ? Camera::Projection::Perspective : Camera::Projection::Orthographic);
+    estimateScreenScale(); // 1:1 until the Measure workspace says better
 
     recoveryDebounce_.setSingleShot(true);
     recoveryDebounce_.setInterval(kRecoveryDebounceMs);
@@ -619,6 +621,7 @@ QString AppController::sketchTool() const
     case interact::SketchTool::CenterRectangle: return QStringLiteral("centerRectangle");
     case interact::SketchTool::Polygon: return QStringLiteral("polygon");
     case interact::SketchTool::TangentArc: return QStringLiteral("tangentArc");
+    case interact::SketchTool::Trace: return QStringLiteral("trace");
     }
     return {};
 }
@@ -778,6 +781,8 @@ void AppController::setSketchTool(const QString& name)
         interaction_->setSketchTool(interact::SketchTool::Polygon);
     else if (name == QLatin1String("tangentArc"))
         interaction_->setSketchTool(interact::SketchTool::TangentArc);
+    else if (name == QLatin1String("trace"))
+        interaction_->setSketchTool(interact::SketchTool::Trace);
 }
 
 QString AppController::sketchType(const QString& text)
@@ -2105,6 +2110,93 @@ void AppController::setPerspective(bool on)
     interaction_->setProjection(on ? Camera::Projection::Perspective : Camera::Projection::Orthographic);
     QSettings settings;
     savePerspective(settings, on);
+}
+
+void AppController::estimateScreenScale()
+{
+    const QScreen* screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return;
+    measure::ScreenDescription d;
+    d.widthPt = screen->size().width();
+    d.heightPt = screen->size().height();
+    d.devicePixelRatio = screen->devicePixelRatio();
+#if defined(Q_OS_IOS)
+    d.kind = std::min(d.widthPt, d.heightPt) < 600 ? measure::DeviceKind::Phone : measure::DeviceKind::Tablet;
+#else
+    d.kind = measure::DeviceKind::Desktop;
+    d.physicalWidthMm = screen->physicalSize().width();
+    d.physicalHeightMm = screen->physicalSize().height();
+#endif
+    const measure::ScaleEstimate estimate = measure::estimateScale(d);
+    interaction_->setScreenScale(estimate.pointsPerMm);
+    OS_LOG(Info, App) << "screen scale " << estimate.pointsPerMm << " px/mm (" << estimate.note << ")";
+}
+
+void AppController::setScreenScale(double pointsPerMm, bool calibrated)
+{
+    if (!measure::plausiblePointsPerMm(pointsPerMm)) {
+        OS_LOG(Warning, App) << "setScreenScale: " << pointsPerMm << " px/mm is not a believable scale; kept "
+                             << interaction_->screenScale();
+        return;
+    }
+    const bool changed = std::abs(pointsPerMm - interaction_->screenScale()) > 1e-9 || calibrated != screenScaleCalibrated_;
+    screenScaleCalibrated_ = calibrated;
+    interaction_->setScreenScale(pointsPerMm);
+    if (changed)
+        emit stateChanged();
+}
+
+void AppController::toggleActualSize()
+{
+    interaction_->setActualSize(!interaction_->actualSize());
+}
+
+namespace {
+
+// A point from QML: a QPointF (Qt.point) or a map / object with x and y.
+std::optional<Vec2> pointFromVariant(const QVariant& value)
+{
+    if (value.canConvert<QPointF>() && value.metaType() != QMetaType::fromType<QVariantMap>()) {
+        const QPointF p = value.toPointF();
+        return Vec2{p.x(), p.y()};
+    }
+    const QVariantMap map = value.toMap();
+    if (!map.contains(QStringLiteral("x")) || !map.contains(QStringLiteral("y")))
+        return std::nullopt;
+    bool okX = false, okY = false;
+    const double x = map.value(QStringLiteral("x")).toDouble(&okX);
+    const double y = map.value(QStringLiteral("y")).toDouble(&okY);
+    if (!okX || !okY)
+        return std::nullopt;
+    return Vec2{x, y};
+}
+
+} // namespace
+
+bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed)
+{
+    std::vector<Vec2> points;
+    points.reserve(std::size_t(pointsMm.size()));
+    for (const QVariant& value : pointsMm) {
+        const auto p = pointFromVariant(value);
+        if (!p) {
+            notifyMessage(QStringLiteral("The outline has a point that is not a usable position."));
+            return false;
+        }
+        points.push_back(*p);
+    }
+    return interaction_->createOutlineSketch(points, closed).ok();
+}
+
+bool AppController::createCircleSketch(double centerXmm, double centerYmm, double diameterMm)
+{
+    return interaction_->createCircleSketch({centerXmm, centerYmm}, diameterMm).ok();
+}
+
+bool AppController::createSizedBox(double widthMm, double depthMm, double heightMm)
+{
+    return interaction_->createSizedBox(widthMm, depthMm, heightMm).ok();
 }
 
 void AppController::setDisplayUnit(const QString& symbol)

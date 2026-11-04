@@ -15,6 +15,7 @@
 #include "interaction/ViewCube.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -296,6 +297,8 @@ void InteractionController::setDocument(doc::Document& document, cmd::UndoStack&
 void InteractionController::setViewportSize(Vec2 size)
 {
     camera_.viewportSize = {std::max(size.x, 1.0), std::max(size.y, 1.0)};
+    if (actualSize_) // still 1:1 in the new size (a phone turned, a window resized)
+        camera_.orthoHeight = actualSizeHeight();
     notifyView();
 }
 
@@ -329,6 +332,7 @@ void InteractionController::setProjection(Camera::Projection projection)
 {
     if (camera_.projection == projection)
         return;
+    actualSize_.reset(); // 1:1 is orthographic: choosing perspective leaves it
     camera_.setProjection(projection);
     // A view animation running (a standard view, Fit, opening a sketch) ends
     // in the projection chosen: its end view would otherwise put the old one
@@ -365,6 +369,7 @@ void InteractionController::fitAll(bool animate)
     if (animate)
         startAnimation(to);
     else {
+        viewChanging(to);
         camera_ = to;
         notifyView();
     }
@@ -386,6 +391,7 @@ void InteractionController::fitSelection(bool animate)
     if (animate)
         startAnimation(to);
     else {
+        viewChanging(to);
         camera_ = to;
         notifyView();
     }
@@ -393,7 +399,9 @@ void InteractionController::fitSelection(bool animate)
 
 void InteractionController::startAnimation(const Camera& to)
 {
-    animation_ = Animation{camera_, to, std::chrono::steady_clock::now(), 0.32};
+    Camera end = to;
+    viewChanging(end);
+    animation_ = Animation{camera_, end, std::chrono::steady_clock::now(), 0.32};
     notifyView();
 }
 
@@ -452,6 +460,67 @@ bool InteractionController::tapViewCube(Vec2 box)
     case ViewCubeTarget::Kind::Corner: setViewDirection(target.direction); return true;
     }
     return false;
+}
+
+// ---- 1:1 (Actual size) -------------------------------------------------------------
+
+void InteractionController::setScreenScale(double pointsPerMm)
+{
+    if (!(pointsPerMm >= 0.5 && pointsPerMm <= 50.0))
+        return;
+    screenScale_ = pointsPerMm;
+    if (actualSize_) {
+        camera_.orthoHeight = actualSizeHeight();
+        notifyView();
+    }
+}
+
+void InteractionController::setActualSize(bool on)
+{
+    if (on == actualSize())
+        return;
+    if (on) {
+        skipAnimation(); // from where a running view change ends
+        actualSize_ = ActualSizeView{camera_.projection, camera_.orthoHeight, camera_.distance};
+        // Orthographic about the same center, in the same direction: the
+        // target stays in the middle of the view.
+        camera_.projection = Camera::Projection::Orthographic;
+        camera_.orthoHeight = actualSizeHeight();
+        OS_LOG(Info, Interaction) << "1:1 on: " << screenScale_ << " px/mm, " << camera_.orthoHeight << " mm high";
+    } else {
+        const ActualSizeView before = *actualSize_;
+        actualSize_.reset();
+        animation_.reset();
+        camera_.projection = before.projection;
+        camera_.orthoHeight = before.orthoHeight;
+        camera_.distance = before.distance;
+        OS_LOG(Info, Interaction) << "1:1 off";
+    }
+    notifyView();
+    notifyState();
+}
+
+void InteractionController::leaveActualSize(Camera* to)
+{
+    if (!actualSize_)
+        return;
+    const Camera::Projection before = actualSize_->projection;
+    actualSize_.reset();
+    camera_.setProjection(before); // at the size shown now
+    if (to)
+        to->setProjection(before);
+    OS_LOG(Info, Interaction) << "1:1 left by a zoom";
+    notifyState();
+}
+
+void InteractionController::viewChanging(Camera& to)
+{
+    if (!actualSize_)
+        return;
+    const bool zooms = to.projection != Camera::Projection::Orthographic
+                    || std::abs(to.orthoHeight - camera_.orthoHeight) > 1e-9 * std::max(1.0, camera_.orthoHeight);
+    if (zooms)
+        leaveActualSize(&to);
 }
 
 // ---- Input -----------------------------------------------------------------------
@@ -1083,6 +1152,7 @@ void InteractionController::zoomAt(Vec2 screen, double factor)
     // gesture: the later steps of a pinch (or quick wheel notches) keep that
     // depth, so the zoom's rate does not change as the fingers drift over
     // nearer or farther faces, and no step waits for a pick.
+    leaveActualSize(); // a zoom leaves 1:1 (perspective comes back if it was on)
     const auto now = clock_();
     const bool sameGesture = lastZoomPick_ && now - *lastZoomPick_ < kNavigationQuiet;
     lastZoomPick_ = now;
@@ -2120,8 +2190,10 @@ bool InteractionController::revealKeepClear(const ScreenRect& region)
             break;
         animation_.reset();
         const double scale = std::max(keep->width() / region.width(), keep->height() / region.height());
-        if (scale > 1)
+        if (scale > 1) {
+            leaveActualSize();
             camera_.zoomAt(keep->center(), scale * 1.08); // (a factor above 1 zooms out)
+        }
         const auto after = keepClearBounds();
         if (!after)
             break;
@@ -2391,6 +2463,175 @@ Status InteractionController::createBox(double size)
     afterDocumentEdit();
     if (first)
         fitAll(true);
+    return status;
+}
+
+// ---- Geometry from measurements -------------------------------------------------------
+
+namespace {
+
+// Measured sizes beyond this (100 m) are a mistake, not a part.
+constexpr double kMaxMeasuredMm = 1e5;
+
+bool usableCoordinate(double v)
+{
+    return std::isfinite(v) && std::abs(v) <= kMaxMeasuredMm;
+}
+
+bool usableSize(double v)
+{
+    return std::isfinite(v) && v > 1e-6 && v <= kMaxMeasuredMm;
+}
+
+} // namespace
+
+Status InteractionController::addMeasuredSketch(sketch::Sketch s)
+{
+    if (session_)
+        finishSketch();
+    s.setName(document_->nextSketchName());
+    if (const sketch::SolveReport report = sketch::solve(s); !report.ok) {
+        const std::string text = "Unable to make a sketch of these measurements.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "addMeasuredSketch: " + report.message);
+    }
+    const Uuid id = s.id();
+    Status status = undoStack_->push(std::make_unique<cmd::CreateSketchCommand>(std::move(s)), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    // Facing it, the Select tool (a tap inside a closed outline selects it
+    // for Extrude), framed on all of it: enterSketch fits the points only,
+    // which for a circle is its center.
+    enterSketch(id, SketchTool::Select);
+    if (session_) {
+        const sketch::Sketch& opened = session_->sketch();
+        geom::BoundingBox box;
+        auto include = [&](Vec2 local) {
+            const Vec3 p = opened.plane().toWorld(local);
+            if (!box.valid) {
+                box.min = box.max = p;
+                box.valid = true;
+            }
+            box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
+            box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
+        };
+        auto includeRound = [&](sketch::EntityId center, double radius) {
+            if (const auto* c = opened.point(center)) {
+                include(c->position - Vec2{radius, radius});
+                include(c->position + Vec2{radius, radius});
+            }
+        };
+        for (const auto& [pid, p] : opened.points())
+            if (pid != sketch::kOriginId)
+                include(p.position);
+        for (const auto& [cid, c] : opened.circles())
+            includeRound(c.center, c.radius);
+        for (const auto& [aid, a] : opened.arcs())
+            includeRound(a.center, opened.arcRadius(aid));
+        if (box.valid)
+            alignViewTo(opened.plane(), box);
+    }
+    return status;
+}
+
+Status InteractionController::createOutlineSketch(const std::vector<Vec2>& input, bool closed)
+{
+    auto refuse = [this](const std::string& text, const char* detail) {
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, detail);
+    };
+    std::vector<Vec2> points;
+    for (const Vec2& p : input) {
+        if (!usableCoordinate(p.x) || !usableCoordinate(p.y))
+            return refuse("The outline has a point that is not a usable position.", "createOutlineSketch: bad coordinate");
+        if (points.empty() || (p - points.back()).length() > 1e-6)
+            points.push_back(p);
+    }
+    if (closed && points.size() > 2 && (points.front() - points.back()).length() <= 1e-6)
+        points.pop_back(); // closed on the first point: not twice
+    if (points.size() < 2)
+        return refuse("An outline needs at least two different points.", "createOutlineSketch: fewer than 2 points");
+    if (closed) {
+        double area = 0, span = 0;
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            const Vec2 a = points[i], b = points[(i + 1) % points.size()];
+            area += a.x * b.y - b.x * a.y;
+            span = std::max(span, (b - points.front()).length());
+        }
+        if (points.size() < 3 || std::abs(area) / 2 <= 1e-6 * std::max(1.0, span * span))
+            return refuse("A closed outline needs at least three points that do not lie on one line.",
+                          "createOutlineSketch: no area");
+    }
+    sketch::Sketch s(Uuid::generate(), sketch::Plane::xy());
+    std::vector<sketch::EntityId> ids;
+    for (const Vec2& p : points)
+        ids.push_back(s.addPoint(p));
+    const std::size_t lines = closed ? ids.size() : ids.size() - 1;
+    for (std::size_t i = 0; i < lines; ++i)
+        s.addLine(ids[i], ids[(i + 1) % ids.size()]);
+    OS_LOG(Info, Interaction) << "outline sketch from measurements: " << points.size() << " points"
+                              << (closed ? ", closed" : ", open");
+    return addMeasuredSketch(std::move(s));
+}
+
+Status InteractionController::createCircleSketch(Vec2 center, double diameter)
+{
+    if (!usableCoordinate(center.x) || !usableCoordinate(center.y) || !usableSize(diameter)) {
+        const std::string text = "The circle needs a diameter above zero.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "createCircleSketch: bad center or diameter");
+    }
+    sketch::Sketch s(Uuid::generate(), sketch::Plane::xy());
+    const sketch::EntityId c = s.addPoint(center);
+    const sketch::EntityId circle = s.addCircle(c, diameter / 2);
+    s.addConstraint({sketch::ConstraintKind::Diameter, circle, sketch::kNoEntity, diameter});
+    OS_LOG(Info, Interaction) << "circle sketch from measurements: diameter " << diameter << " mm";
+    return addMeasuredSketch(std::move(s));
+}
+
+Status InteractionController::createSizedBox(double width, double depth, double height)
+{
+    if (!usableSize(width) || !usableSize(depth) || !usableSize(height)) {
+        const std::string text = "The box needs a width, depth and height above zero.";
+        message(text);
+        return Status::failure(ErrorCode::InvalidArgument, text, "createSizedBox: bad size");
+    }
+    if (session_)
+        finishSketch();
+    if (operation_)
+        cancelOperation();
+    auto box = std::make_unique<doc::BoxFeature>();
+    box->size = {width, depth, height};
+    bool first = true;
+    double maxX = 0, minY = 0;
+    for (const auto& body : document_->bodies()) {
+        const auto bb = geom::approximateBoundingBox(body->shape());
+        if (!bb.valid)
+            continue;
+        maxX = first ? bb.max.x : std::max(maxX, bb.max.x);
+        minY = first ? bb.min.y : std::min(minY, bb.min.y);
+        first = false;
+    }
+    // As createBox: the first centered on the origin, later ones to the right.
+    box->origin = first ? Vec3{-width / 2, -depth / 2, 0} : Vec3{maxX + std::min(width, depth) * 0.5, minY, 0};
+    auto command = std::make_unique<cmd::CreateBodyCommand>(document_->nextBodyName(), std::move(box));
+    const cmd::CreateBodyCommand* created = command.get();
+    Status status = undoStack_->push(std::move(command), *document_);
+    if (!status) {
+        message(status.userMessage());
+        return status;
+    }
+    afterDocumentEdit();
+    if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Body, created->bodyId(), -1)) {
+        selection_.set(*item);
+        rebuildOperation();
+    }
+    OS_LOG(Info, Interaction) << "box from measurements: " << width << " x " << depth << " x " << height << " mm";
+    fitSelection(true);
+    notifyState();
+    notifyView();
     return status;
 }
 

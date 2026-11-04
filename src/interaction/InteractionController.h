@@ -111,6 +111,22 @@ public:
     // diagonal (animated). False, and nothing changes, off the cube.
     bool tapViewCube(Vec2 box);
 
+    // ---- 1:1 (Actual size; docs/MEASURE.md) ----
+    // Logical pixels (points on iOS) per millimeter on the window's screen:
+    // the Measure workspace keeps it up to date (calibrated with a card, or
+    // estimated: measure::estimateScale). Values outside 0.5-50 are ignored.
+    void setScreenScale(double pointsPerMm);
+    double screenScale() const { return screenScale_; }
+    // The view at the screen's true scale: orthographic, one millimeter of
+    // the model one millimeter on the glass, keeping the view direction and
+    // its center (a sketch's face-on view too). Any zoom (wheel, pinch, Fit,
+    // a view that frames something) leaves it, back to the projection it
+    // came from at the size then shown; turning it off restores the
+    // projection and zoom from before. A new screen scale or window size
+    // keeps it at 1:1.
+    bool actualSize() const { return actualSize_.has_value(); }
+    void setActualSize(bool on);
+
     // ---- Input ----
     void pointerPress(const PointerEvent& event);
     void pointerMove(const PointerEvent& event);
@@ -284,6 +300,18 @@ public:
 
     // ---- Actions ----
     Status createBox(double size);
+    // ---- Geometry from measurements (the Measure workspace; one undo step each) ----
+    // A new sketch on the ground plane (XY): the points (mm) joined by lines
+    // end to end (closed: the last back to the first), opened for editing
+    // with the view facing and framing it, Select tool (a tap inside a
+    // closed outline offers Extrude). Refused, with a message, for fewer
+    // than two distinct points, or a closed outline with no area.
+    Status createOutlineSketch(const std::vector<Vec2>& points, bool closed);
+    // The same with one circle, its diameter dimension set (it was measured).
+    Status createCircleSketch(Vec2 center, double diameter);
+    // A box body (width along X, depth along Y, height along Z), placed as
+    // createBox places one, then selected and framed.
+    Status createSizedBox(double width, double depth, double height);
     // One body per imported shape, each starting with an Imported step, as
     // one undo step. Names stay unique ("Bracket 2"); unnamed shapes become
     // "Imported 1", "Imported 2", ... The view fits everything afterwards.
@@ -548,6 +576,24 @@ private:
     std::unique_ptr<Operation> operation_;
     std::unique_ptr<SketchSession> session_;
     std::optional<Camera> cameraBeforeSketch_; // restored when the sketch is finished
+    // 1:1: the screen's scale, and while on, the projection and zoom from before.
+    double screenScale_ = 96.0 / 25.4;
+    struct ActualSizeView {
+        Camera::Projection projection = Camera::Projection::Perspective;
+        double orthoHeight = 0;
+        double distance = 0;
+    };
+    std::optional<ActualSizeView> actualSize_;
+    // The ortho height that shows the model at 1:1 in the current viewport.
+    double actualSizeHeight() const { return camera_.viewportSize.y / screenScale_; }
+    // Leaves 1:1 (a zoom): the projection from before comes back at the size
+    // shown now. `to`, a view about to be shown, follows (its projection).
+    void leaveActualSize(Camera* to = nullptr);
+    // A view about to replace the current one: leaves 1:1 when it zooms.
+    void viewChanging(Camera& to);
+    // Adds a sketch made from measurements (one undo step), solved, and opens
+    // it facing and framing it.
+    Status addMeasuredSketch(sketch::Sketch sketch);
     doc::FeatureKind edgeOperationKind_ = doc::FeatureKind::Fillet;
     doc::FeatureKind faceOperationKind_ = doc::FeatureKind::PushPull;
     doc::FeatureKind profileOperationKind_ = doc::FeatureKind::Extrude;

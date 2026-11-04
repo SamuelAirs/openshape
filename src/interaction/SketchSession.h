@@ -24,7 +24,9 @@
 
 namespace os::interact {
 
-enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle, Polygon, TangentArc };
+// Trace: a freehand stroke (pen, finger or mouse) fitted to lines, arcs or a
+// circle when it ends (measure::fitStroke; docs/MEASURE.md, "Trace").
+enum class SketchTool { Select, Line, Rectangle, Circle, Arc, Slot, Trim, CenterRectangle, Polygon, TangentArc, Trace };
 
 // A text label drawn by the UI over the viewport while sketching.
 struct SketchLabel {
@@ -116,6 +118,15 @@ public:
     // Enter or Apply adds the copies.
     bool isPatterning() const { return !patternSource_.empty(); }
     const sketch::PatternLayout& patternLayout() const { return pattern_; }
+    // Trace: a stroke is being drawn (its samples, sketch coordinates).
+    bool isTracing() const { return !trace_.empty(); }
+    const std::vector<Vec2>& traceSamples() const { return trace_; }
+    // How closely a traced stroke is fitted, and how near its ends must come
+    // to close it, at the zoom of `camera` (sketch units, mm): 2.5 px but
+    // never under 0.2 mm, and 14 px. At 1:1 (a part lying on the screen) a
+    // trace around it is then within a fraction of a millimeter.
+    double traceTolerance(const Camera& camera) const;
+    double traceCloseGap(const Camera& camera) const;
 
     // ---- Input (screen coordinates in logical pixels) ----
     // Returns true if the press was consumed by the sketch (tool or geometry);
@@ -368,6 +379,8 @@ private:
     // The copies a mirror across `axis` or the pattern would add (drawn as a preview).
     void updatePreview(std::function<Result<std::vector<sketch::EntityId>>(sketch::Sketch&)> edit);
     bool finishShape(const Snap& end);
+    // Trace: fits the stroke drawn and adds it (one step). False: nothing added.
+    bool commitTrace(const Camera& camera);
     bool commit(sketch::Sketch next, const std::string& label);
     std::optional<double> input(const std::string& key) const;
     void message(const std::string& text) const;
@@ -440,6 +453,8 @@ private:
     sketch::EntityId hoveredGlyph_ = sketch::kNoEntity; // Select tool: a constraint glyph under the pointer
 
     std::optional<Vec2> trimCursor_; // Trim tool: pointer position (local) over hovered_
+    std::vector<Vec2> trace_;        // Trace tool: the stroke's samples (local), while pressed
+    Vec2 traceLastScreen_;           // where the last sample was taken (px)
 
     std::vector<sketch::EntityId> offsetSource_;     // curves being offset
     std::vector<geom::PlanarCurve> offsetPreview_;   // local coordinates (z = 0)

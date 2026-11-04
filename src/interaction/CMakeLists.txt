@@ -27,4 +27,6 @@ add_library(openshape_interaction STATIC
 # The preview worker thread (PreviewWorker).
 find_package(Threads REQUIRED)
 target_link_libraries(openshape_interaction PUBLIC openshape_commands openshape_selection Threads::Threads)
+# The sketch's Trace tool fits strokes with measure::fitStroke (docs/MEASURE.md).
+target_link_libraries(openshape_interaction PRIVATE openshape_measure)
 openshape_set_warnings(openshape_interaction)

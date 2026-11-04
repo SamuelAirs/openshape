@@ -125,6 +125,12 @@ class AppController : public QObject {
     Q_PROPERTY(int bodyCount READ bodyCount NOTIFY stateChanged)
     Q_PROPERTY(QString displayUnit READ displayUnit NOTIFY stateChanged)
     Q_PROPERTY(bool perspective READ perspective NOTIFY stateChanged)
+    // 1:1 (Actual size, the View buttons; docs/MEASURE.md): the view at the
+    // screen's true scale. The scale is the Measure workspace's
+    // (setScreenScale), calibrated with a card or estimated.
+    Q_PROPERTY(bool actualSize READ actualSize NOTIFY stateChanged)
+    Q_PROPERTY(bool screenScaleCalibrated READ screenScaleCalibrated NOTIFY stateChanged)
+    Q_PROPERTY(double screenScale READ screenScale NOTIFY stateChanged)
     Q_PROPERTY(QString projectFolder READ projectFolder NOTIFY documentChanged)
     Q_PROPERTY(bool sketchMode READ sketchMode NOTIFY stateChanged)
     Q_PROPERTY(QString sketchName READ sketchName NOTIFY stateChanged)
@@ -269,6 +275,9 @@ public:
     int bodyCount() const;
     QString displayUnit() const;
     bool perspective() const;
+    bool actualSize() const { return interaction_->actualSize(); }
+    bool screenScaleCalibrated() const { return screenScaleCalibrated_; }
+    double screenScale() const { return interaction_->screenScale(); }
     QString projectFolder() const;
     bool sketchMode() const;
     QString sketchName() const;
@@ -624,6 +633,25 @@ public:
     // next start (QSettings).
     Q_INVOKABLE void togglePerspective();
     Q_INVOKABLE void setPerspective(bool on);
+    // 1:1: logical px (points on iOS) per millimeter on the window's screen,
+    // and whether a card calibrated it (the Measure workspace calls this
+    // whenever the window's screen or its calibration changes). Until then
+    // an estimate for the primary screen (measure::estimateScale).
+    Q_INVOKABLE void setScreenScale(double pointsPerMm, bool calibrated);
+    // The View buttons' 1:1: on (orthographic at true scale) or off (the
+    // view from before). Any zoom turns it off.
+    Q_INVOKABLE void toggleActualSize();
+
+    // ---- Geometry from measurements (the Measure workspace; one undo step each)
+    // A new sketch on the ground plane with the points (mm; QPointF or
+    // {x, y}) joined by lines (closed: back to the first), opened facing and
+    // framing it. False, with a message, for fewer than two points or a
+    // closed outline with no area.
+    Q_INVOKABLE bool createOutlineSketch(const QVariantList& pointsMm, bool closed);
+    // The same with a circle, its diameter dimension set.
+    Q_INVOKABLE bool createCircleSketch(double centerXmm, double centerYmm, double diameterMm);
+    // A box body (X, Y, Z sizes in mm), selected and framed.
+    Q_INVOKABLE bool createSizedBox(double widthMm, double depthMm, double heightMm);
     Q_INVOKABLE void setDisplayUnit(const QString& symbol);
     Q_INVOKABLE bool handleKey(int key);
 
@@ -823,6 +851,9 @@ private:
     bool homeVisible_ = false;
     QUrl nextFileChoice_;
     bool simulatedDuo_ = false;
+    bool screenScaleCalibrated_ = false; // setScreenScale
+    // The primary screen's scale estimate (before the Measure workspace sets one).
+    void estimateScreenScale();
     QString appFolder_; // see savesToAppFolder
     ShareHandler shareHandler_;
     std::shared_ptr<Store> store_;

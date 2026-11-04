@@ -12,6 +12,7 @@
 #include "interaction/Manipulator.h"
 #include "interaction/NumericKeypad.h"
 #include "interaction/OverlayPlacement.h"
+#include "measure/StrokeFit.h"
 #include "sketch/SketchEdit.h"
 
 #include <algorithm>
@@ -193,6 +194,7 @@ void SketchSession::setTool(SketchTool tool)
     cancelOffset();
     cancelModes();
     trimCursor_.reset();
+    trace_.clear();
     hoveredGlyph_ = sketch::kNoEntity;
     hoveredRegion_ = -1;
     grab_ = {};
@@ -981,7 +983,8 @@ SketchSession::SnapInfo SketchSession::snapInfo(const Camera& camera) const
     SnapInfo info;
     if (!pressed_ || !pointerScreen_ || isOffsetting() || isMirroring() || isPatterning())
         return info;
-    const bool placing = tool_ != SketchTool::Select && tool_ != SketchTool::Trim && cursorValid_;
+    // (A traced stroke places no snapped point: no loupe over it.)
+    const bool placing = tool_ != SketchTool::Select && tool_ != SketchTool::Trim && tool_ != SketchTool::Trace && cursorValid_;
     const bool draggingPoint = tool_ == SketchTool::Select && dragging_ && grab_.kind == Grab::Kind::Point && !grab_.refused;
     if (!placing && !draggingPoint)
         return info;
@@ -1036,6 +1039,7 @@ void SketchSession::beginShape(const Snap& at)
     case SketchTool::Arc:  // the radius input appears once the end is placed
     case SketchTool::Slot: // the width input appears once the second center is placed
     case SketchTool::Trim:
+    case SketchTool::Trace:
     case SketchTool::Select:
         break;
     }
@@ -1106,6 +1110,7 @@ Vec2 SketchSession::constrainedCursor() const
     case SketchTool::Slot:
     case SketchTool::TangentArc: // tangentArcShape() applies the typed radius
     case SketchTool::Trim:
+    case SketchTool::Trace:
     case SketchTool::Select:
         break;
     }
@@ -1487,10 +1492,116 @@ bool SketchSession::finishShape(const Snap& endSnap)
         return true;
     }
     case SketchTool::Trim:
+    case SketchTool::Trace:
     case SketchTool::Select:
         break;
     }
     return false;
+}
+
+// ---- Trace ---------------------------------------------------------------------------
+
+double SketchSession::traceTolerance(const Camera& camera) const
+{
+    const Vec3 at = working_.plane().toWorld(trace_.empty() ? Vec2{} : trace_.front());
+    return std::max(0.2, 2.5 * camera.pixelSize(at));
+}
+
+double SketchSession::traceCloseGap(const Camera& camera) const
+{
+    const Vec3 at = working_.plane().toWorld(trace_.empty() ? Vec2{} : trace_.front());
+    return 14.0 * camera.pixelSize(at);
+}
+
+bool SketchSession::commitTrace(const Camera& camera)
+{
+    measure::FitOptions options;
+    options.tolerance = traceTolerance(camera);
+    options.closeGap = traceCloseGap(camera);
+    const measure::FittedStroke fit = measure::fitStroke(trace_, options);
+    sketch::Sketch next = working_;
+    std::size_t pieces = 1;
+    if (fit.kind == measure::FittedStroke::Kind::Circle) {
+        const sketch::EntityId center = next.addPoint(fit.circle.center);
+        if (next.addCircle(center, fit.circle.radius) == sketch::kNoEntity)
+            return false;
+    } else if (fit.kind == measure::FittedStroke::Kind::Path) {
+        std::vector<measure::FittedSegment> segments = fit.segments;
+        const double tol = options.tolerance;
+        // A hand rounds a corner a little: an arc not much wider than the
+        // tolerance is a corner (its neighbours meet in its middle: it goes
+        // next as too short), not a curve the shape has.
+        for (auto& seg : segments)
+            if (seg.arc && seg.radius < 3 * tol) {
+                seg.arc = false;
+                seg.start = seg.end = (seg.start + seg.end) * 0.5;
+            }
+        // Pieces shorter than twice the tolerance go: their neighbours meet
+        // at their middle (an open stroke keeps its ends where they were).
+        // (A closed shape keeps two pieces at least: a line and an arc make a "D".)
+        for (std::size_t i = 0; i < segments.size() && segments.size() > (fit.closed ? 2u : 1u);) {
+            const auto& seg = segments[i];
+            if ((seg.end - seg.start).length() >= 2 * tol) {
+                ++i;
+                continue;
+            }
+            const std::size_t n = segments.size();
+            const bool hasPrev = fit.closed || i > 0, hasNext = fit.closed || i + 1 < n;
+            const Vec2 joint = !hasPrev ? seg.start : !hasNext ? seg.end : (seg.start + seg.end) * 0.5;
+            if (hasPrev)
+                segments[(i + n - 1) % n].end = joint;
+            if (hasNext)
+                segments[(i + 1) % n].start = joint;
+            segments.erase(segments.begin() + std::ptrdiff_t(i));
+        }
+        // A closed stroke begun along a side starts a piece there: the two
+        // halves of that side become one line.
+        if (fit.closed && segments.size() >= 4 && !segments.front().arc && !segments.back().arc) {
+            const Vec2 a = segments.back().start, b = segments.front().end;
+            const Vec2 joint = segments.front().start;
+            const Vec2 ab = b - a;
+            const double len = ab.length();
+            if (len > 1e-9 && std::abs((joint - a).x * ab.y - (joint - a).y * ab.x) / len <= options.tolerance
+                && (joint - a).dot(ab) > 0 && (b - joint).dot(ab) > 0) {
+                segments.back().end = b;
+                segments.erase(segments.begin());
+            }
+        }
+        for (const auto& seg : segments)
+            OS_LOG(Debug, Sketch) << "trace piece: " << (seg.arc ? "arc" : "line") << " (" << seg.start.x << ", " << seg.start.y
+                                  << ") to (" << seg.end.x << ", " << seg.end.y << ")" << (seg.arc ? " r " : "")
+                                  << (seg.arc ? std::to_string(seg.radius) : std::string());
+        // Consecutive pieces share their end points (joined, as a line chain
+        // drawn point to point is); closed, the last ends on the first's start.
+        const sketch::EntityId first = next.addPoint(segments.front().start);
+        sketch::EntityId previous = first;
+        for (std::size_t i = 0; i < segments.size(); ++i) {
+            const auto& seg = segments[i];
+            const bool last = i + 1 == segments.size();
+            const sketch::EntityId end = last && fit.closed ? first : next.addPoint(seg.end);
+            sketch::EntityId id = sketch::kNoEntity;
+            if (seg.arc) {
+                const sketch::EntityId center = next.addPoint(seg.center);
+                // Sketch arcs run counterclockwise from start to end.
+                const Vec2 u = seg.through - seg.start, v = seg.end - seg.through;
+                const bool ccw = u.x * v.y - u.y * v.x > 0;
+                id = ccw ? next.addArc(center, previous, end) : next.addArc(center, end, previous);
+            } else {
+                id = next.addLine(previous, end);
+            }
+            if (id == sketch::kNoEntity)
+                return false;
+            previous = end;
+        }
+        pieces = segments.size();
+    } else {
+        message("Draw a longer stroke to trace.");
+        return false;
+    }
+    OS_LOG(Info, Sketch) << "trace: " << trace_.size() << " samples, tolerance " << options.tolerance << " mm, "
+                         << (fit.kind == measure::FittedStroke::Kind::Circle ? "circle" : fit.closed ? "closed path" : "open path")
+                         << ", " << pieces << " pieces, max error " << fit.maxError << " mm";
+    return commit(std::move(next), "Trace");
 }
 
 bool SketchSession::commit(sketch::Sketch next, const std::string& label)
@@ -1555,6 +1666,19 @@ bool SketchSession::pointerPress(const PointerEvent& event, const Camera& camera
 
     if (isOffsetting() || isMirroring() || isPatterning())
         return true; // the release applies the offset / picks the line / places the pattern
+    if (tool_ == SketchTool::Trace) {
+        // The stroke starts where the press is, unsnapped: it follows the
+        // hand (or the edge of a part lying on the screen), not the grid.
+        const auto local = toLocal(event.position, camera);
+        if (!local) {
+            pressed_ = false;
+            return false;
+        }
+        trace_ = {*local};
+        traceLastScreen_ = event.position;
+        cursorValid_ = false;
+        return true;
+    }
     if (tool_ == SketchTool::Trim) {
         if (pickCurve(event.position, camera, event.device) == sketch::kNoEntity) {
             pressed_ = false;
@@ -1629,6 +1753,7 @@ void SketchSession::cancelPress()
     grab_ = {};
     dragSnap_.reset();
     dragging_ = false;
+    trace_.clear(); // a second finger (a pinch) or the system took the stroke
     if (pressBeganShape_)
         resetShape();
     pressBeganShape_ = false;
@@ -1655,6 +1780,16 @@ void SketchSession::pointerMove(const PointerEvent& event, const Camera& camera)
     if (startsDragging)
         dragging_ = true;
 
+    if (tool_ == SketchTool::Trace) {
+        // A sample every pixel or so: enough for the fit, few enough to
+        // draw live on a long stroke.
+        if (const auto local = toLocal(event.position, camera); local && !trace_.empty()
+            && (event.position - traceLastScreen_).length() >= 1.0) {
+            trace_.push_back(*local);
+            traceLastScreen_ = event.position;
+        }
+        return;
+    }
     if (tool_ == SketchTool::Select) {
         if (startsDragging && grab_.kind != Grab::Kind::None) {
             // A shape's curves are found now (a tap needs no kernel call).
@@ -1698,6 +1833,17 @@ void SketchSession::pointerRelease(const PointerEvent& event, const Camera& came
     }
     if (isPatterning()) {
         patternClick(snapAt(event.position, camera, event.device));
+        dragging_ = false;
+        return;
+    }
+    if (tool_ == SketchTool::Trace) {
+        // A tap (no stroke) adds nothing.
+        if (const auto local = toLocal(event.position, camera); local && !trace_.empty()
+            && (event.position - traceLastScreen_).length() > 1e-9)
+            trace_.push_back(*local);
+        if (dragging_)
+            (void)commitTrace(camera);
+        trace_.clear();
         dragging_ = false;
         return;
     }
@@ -1871,6 +2017,10 @@ void SketchSession::hover(const PointerEvent& event, const Camera& camera)
         hovered_ = pickCurve(event.position, camera, event.device);
         trimCursor_ = toLocal(event.position, camera);
         cursorValid_ = false;
+        return;
+    }
+    if (tool_ == SketchTool::Trace) {
+        cursorValid_ = false; // the stroke goes where the pointer is: no snapped point
         return;
     }
     if (tool_ == SketchTool::Select) {
@@ -2844,6 +2994,10 @@ std::string SketchSession::hintText() const
         return arcEnd_ ? "Move to set the width and click, or type a width and press Enter" : "Click the center of the other end";
     case SketchTool::Trim:
         return "Click the piece of a curve to remove (up to where other curves cross it)";
+    case SketchTool::Trace:
+        // (Worded for every input: the touch layout shows it as it is.)
+        return "Draw around a shape: it becomes lines, arcs or a circle \xC2\xB7 end where you started to close it "
+               "\xC2\xB7 at 1:1, trace around a part lying on the screen";
     case SketchTool::Rectangle:
         return anchor_ ? "Click the opposite corner, or type width, Tab, height, Enter" : "Click or drag to draw a rectangle" + selectTip;
     case SketchTool::CenterRectangle:
@@ -3564,10 +3718,14 @@ RenderSketch SketchSession::renderData(const Camera& camera) const
             }
             break;
         case SketchTool::Trim:
+        case SketchTool::Trace:
         case SketchTool::Select:
             break;
         }
     }
+    // Trace: the stroke as it is drawn.
+    for (std::size_t i = 1; i < trace_.size(); ++i)
+        out.lines.push_back({plane.toWorld(trace_[i - 1]), plane.toWorld(trace_[i]), SketchStyle::Preview});
     // The points of the shape placed so far (also while no finger is down).
     if (anchor_) {
         out.points.push_back({plane.toWorld(anchor_->position), SketchStyle::Preview});

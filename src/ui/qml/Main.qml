@@ -950,6 +950,18 @@ ApplicationWindow {
                 text: window.app.perspective ? "Perspective" : "Orthographic"
                 onClicked: { window.app.togglePerspective(); viewPanel.picked() }
             }
+            // 1:1: the model at its real size on the glass (docs/MEASURE.md);
+            // any zoom turns it off.
+            ActionButton {
+                objectName: "viewActualSize"
+                Layout.fillWidth: true
+                text: Theme.compact ? "Actual size 1:1" : "1:1"
+                checked: window.app.actualSize
+                onClicked: { window.app.toggleActualSize(); viewPanel.picked() }
+                ToolTip.visible: hovered && !Theme.touch
+                ToolTip.text: "Actual size: 1 mm of the model is 1 mm on the screen, to compare or trace a real part laid on it. Zooming turns it off."
+                ToolTip.delay: 500
+            }
             Separator { visible: !Theme.compact }
             ActionButton {
                 id: penButton
@@ -1059,6 +1071,21 @@ ApplicationWindow {
                 font.pixelSize: 13
             }
         }
+        // 1:1 is on: says so quietly (and whether the scale is only estimated).
+        Text {
+            objectName: "actualSizeStatus"
+            visible: window.app.actualSize
+            text: window.app.screenScaleCalibrated ? "Actual size"
+                                                   : "Actual size (estimated: check the scale with a card in Measure)"
+            textFormat: Text.PlainText
+            color: Theme.mutedText
+            font.pixelSize: 12
+            font.italic: true
+            leftPadding: 4
+            width: Math.min(implicitWidth, Theme.compact ? statusColumn.fullWidth
+                                                         : (statusColumn.stacked ? axisTriad.x : viewPanel.x) - 2 * Theme.margin)
+            elide: Text.ElideRight
+        }
         Text {
             // What to do next. Regular windows: wraps instead of running under
             // the view buttons or the axis marker. Compact windows: one short
@@ -1094,6 +1121,35 @@ ApplicationWindow {
     // why here; the chip shows its own errors.
     // An operation with a chip that cannot be applied says why here too:
     // never "✓ applies" beside a disabled ✓.
+    // ---------------------------------------------------------------- Measure
+    // A value box's ruler (the value chip's, a sketch dimension editor's)
+    // opens Measure for a "length" or "angle"; the measured text comes back
+    // to that box through useMeasuredValue (docs/MEASURE.md).
+    property var measureTarget: null // { box: "value" } or { box: "dimension", id }
+    property string measureKind: ""  // what was asked for last
+    property int measureRequests: 0  // how often (the acceptance run checks it)
+    function openMeasure(kind, target) {
+        window.measureTarget = target !== undefined ? target : ({ box: "value" })
+        window.measureKind = kind
+        window.measureRequests += 1
+        if (typeof measureScreen !== "undefined")
+            measureScreen.openFor(kind)
+    }
+    // The measured value (as the value boxes read it: "35mm", "37.5°") into
+    // the box that asked, as if typed: the preview follows, and the user
+    // still confirms with ✓ or Enter. True when a box took it.
+    function useMeasuredValue(text) {
+        const target = window.measureTarget
+        window.measureTarget = null
+        if (target && target.box === "dimension" && window.app.sketchMode)
+            return sketchOverlay.useMeasuredDimension(target.id, text)
+        if (window.app.operationActive) {
+            valueChip.useMeasuredValue(text)
+            return true
+        }
+        return false
+    }
+
     function operationRefused() {
         return !app.sketchMode && app.operationActive && app.operationError.length > 0
                && (!app.valueLabelVisible || !app.operationCanCommit)
@@ -1291,6 +1347,7 @@ ApplicationWindow {
                                                          ? viewButtonPanel.y + viewButtonPanel.height : 0)
         keypad: keypad
         onFinished: viewport.forceActiveFocus()
+        onMeasureRequested: (kind, dimensionId) => window.openMeasure(kind, { box: "dimension", id: dimensionId })
     }
 
     // ---------------------------------------------------------------- operation chip
@@ -1363,6 +1420,7 @@ ApplicationWindow {
                  : placement.spot === "left" ? Qt.AlignRight : Qt.AlignLeft
         keypad: keypad
         onFinished: viewport.forceActiveFocus()
+        onMeasureRequested: (kind) => window.openMeasure(kind, { box: "value" })
         // A larger touch window with no clear spot for it: the view moves
         // instead (revealSelection). Where it docks first (the Duo's inner
         // display) the view stays as the user left it unless the chip found

@@ -120,6 +120,8 @@ Rectangle {
                              "Tap a face or a corner to look from there; drag it with one finger to orbit, also while a tool is active"],
                             ["Perspective", "The Perspective / Orthographic button switches the projection (remembered)",
                              "Perspective / Orthographic switches the projection (in the View menu on a phone; remembered)"],
+                            ["Actual size", "1:1 shows the model at its real size on the screen (lay a part on it to compare or trace it); zooming turns it off",
+                             "Actual size 1:1 (in the View menu on a phone) shows the model at its real size on the screen: lay a part on it to compare or trace it; a pinch turns it off"],
                             ["Axes", "X red, Y green, Z blue (the view cube's edges show which way they point)"],
                             ["Display unit", "The mm / in button; any value can be typed in any unit, e.g. 1in or 25mm"]
                         ]
@@ -206,13 +208,15 @@ Rectangle {
                     HelpSection {
                         title: "Sketch"
                         rows: [
-                            ["Tools", "On the left · S select · L line · R rectangle · E center rectangle · P polygon · C circle · A arc · G tangent arc · O slot · T trim",
-                             "On the left (along the bottom on a phone): Line, Rectangle, Center rectangle, Polygon, Circle, Arc, Tangent arc, Slot, Select, Trim"],
+                            ["Tools", "On the left · S select · L line · R rectangle · E center rectangle · P polygon · C circle · A arc · G tangent arc · O slot · D trace · T trim",
+                             "On the left (along the bottom on a phone): Line, Rectangle, Center rectangle, Polygon, Circle, Arc, Tangent arc, Slot, Trace, Select, Trim"],
                             ["Center rectangle", "Click the center, then a corner (or type width, Tab, height): it stays centered",
                              "Tap the center, then a corner: it stays centered"],
                             ["Polygon", "Click the center, move to the middle of a side; type the size across flats (inner Ø with an odd number of sides), Tab for the number of sides; − / + (or the - / + keys) change the sides",
                              "Tap the center, then the middle of a side; − / + change the sides"],
                             ["Slot", "Click both centers, then move or type the width", "Tap both centers, then tap to set the width"],
+                            ["Trace", "Drag around a shape freehand: it becomes lines, arcs or a circle (end where you started to close it); at 1:1, trace around a part lying on the screen",
+                             "Draw around a shape with the pen or a finger: it becomes lines, arcs or a circle (end where you started to close it); at 1:1, trace around a part lying on the screen"],
                             ["Trim", "Click the piece of a curve to cut away (it shows red first)", "Tap the piece of a curve to cut away"],
                             ["Round a corner", "Select the corner point → Fillet, then click R to change it", "Select the corner point → Fillet, then tap R to change it"],
                             ["Offset", "Select curves → Offset, move to a side, click or type a distance", "Select curves → Offset, then tap on the side to offset to"],

@@ -116,6 +116,19 @@ Plus, in the design itself:
 - `src/ui/qml/MeasureScreen.qml` and its parts: the workspace.
 - AppController: `createOutlineSketch`, `createCircleSketch`, `createSizedBox` (one undo step
   each), the 1:1 view, the value boxes' ruler button; SketchSession: the Trace tool.
+  - 1:1 lives in InteractionController (`setScreenScale`, `setActualSize`): orthographic,
+    `orthoHeight` = viewport height / points per mm, same direction and center. Anything that
+    zooms (wheel, pinch, Fit, a framing view, revealing the selection for the keypad, choosing
+    Perspective) leaves it at the size then shown; a view that only turns (a standard view,
+    finishing a sketch) keeps it; a new scale or window size keeps it at 1:1. Before the Measure
+    workspace calls `setScreenScale`, AppController estimates the primary screen's scale.
+  - Trace (key D): tolerance max(0.2 mm, 2.5 px), closing gap 14 px at the current zoom. The
+    fitted pieces share end points; an arc tighter than three tolerances (a hand-rounded
+    corner) and pieces shorter than two tolerances are dropped (their neighbours meet), and a
+    closed stroke begun mid-side gets that side as one line.
+  - The ruler: the value chip's (`valueChipMeasure`, whenever an operation's chip shows) and a
+    sketch dimension editor's (`dimensionMeasure`) ask Main.qml's `openMeasure(kind, target)`;
+    `useMeasuredValue(text)` puts the result into the box that asked, previewed, for ✓ or Enter.
 
 ## Privacy
 

@@ -21,6 +21,27 @@ Item {
     // The 3D view, magnified by the loupe.
     property Item viewportItem: null
     signal finished()
+    // The dimension editor's ruler: measure the value in the real world
+    // (Main.qml opens Measure; the number comes back through
+    // useMeasuredDimension).
+    signal measureRequested(string kind, int dimensionId)
+
+    // A value measured for dimension (or size label) `id`: in its editor as
+    // if typed, to confirm with Enter or the check mark. The editor opens
+    // again on it when Measure took the focus (and so closed it).
+    function useMeasuredDimension(id, text) {
+        if (!dimensionEditor.visible || dimensionEditor.constraintId !== id) {
+            const label = app.sketchLabels.find(l => (l.kind === "dimension" && l.constraint === id)
+                                                     || (l.kind === "size" && l.entity === id))
+            if (!label)
+                return false
+            dimensionEditor.open(id, label.text, label.x, label.y)
+        }
+        dimensionEditor.text = text
+        dimensionEditor.edited = true
+        dimensionError.text = ""
+        return true
+    }
 
     // The controls this overlay puts over the view (Main.qml passes them on
     // as obstacles for the live values and the loupe).
@@ -96,7 +117,7 @@ Item {
         }
         if (!(event.modifiers & Qt.ControlModifier)) {
             const tools = { "l": "line", "r": "rectangle", "e": "centerRectangle", "p": "polygon", "c": "circle",
-                            "a": "arc", "g": "tangentArc", "o": "slot", "t": "trim", "s": "select" }
+                            "a": "arc", "g": "tangentArc", "o": "slot", "d": "trace", "t": "trim", "s": "select" }
             const tool = tools[event.text.toLowerCase()]
             if (tool !== undefined && !app.sketchDrawing) {
                 app.setSketchTool(tool)
@@ -272,7 +293,8 @@ Item {
         { id: "centerRectangle", label: "Center rect", key: "E" },
         { id: "polygon", label: "Polygon", key: "P" },
         { id: "tangentArc", label: "Tangent arc", key: "G" },
-        { id: "slot", label: "Slot", key: "O" }
+        { id: "slot", label: "Slot", key: "O" },
+        { id: "trace", label: "Trace", key: "D" }
     ]
     readonly property var editTools: [
         { id: "select", label: "Select", key: "S" },
@@ -849,6 +871,24 @@ Item {
                     overlay.keypad.attach(dimensionEditor.keypadClient)
             })
         }
+    }
+    // Measure it instead (docs/MEASURE.md): beside the dimension editor.
+    // It takes no focus, so the editor stays open while it is pressed.
+    ActionButton {
+        id: dimensionMeasure
+        objectName: "dimensionMeasure"
+        visible: dimensionEditor.visible
+        text: "Measure"
+        iconName: "ruler"
+        iconOnly: true
+        compact: true
+        x: dimensionEditor.x + dimensionEditor.width + 4 + width <= overlay.width - Theme.insetRight
+           ? dimensionEditor.x + dimensionEditor.width + 4 : dimensionEditor.x - 4 - width
+        y: dimensionEditor.y + (dimensionEditor.height - height) / 2
+        onClicked: overlay.measureRequested(dimensionEditor.isAngle ? "angle" : "length", dimensionEditor.constraintId)
+        ToolTip.visible: hovered && !Theme.touch
+        ToolTip.text: "Measure it (ruler, photo, camera)"
+        ToolTip.delay: 500
     }
     Text {
         id: dimensionError
