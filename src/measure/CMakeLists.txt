@@ -17,7 +17,8 @@ add_library(openshape_measure STATIC
     StrokeFit.cpp StrokeFit.h
 )
 # Scan (docs/SCAN.md): photogrammetry from photos of an object standing on a
-# sheet of paper: cameras from the paper, masks, carving, the surface.
+# sheet of paper: cameras from the paper, masks, carving, multi-view stereo
+# (ScanStereo: depth maps fused inside the carved hull), the surface.
 target_sources(openshape_measure PRIVATE
     MeshTools.cpp MeshTools.h
     PaperDetect.cpp PaperDetect.h
@@ -25,6 +26,7 @@ target_sources(openshape_measure PRIVATE
     ScanMask.cpp ScanMask.h
     ScanMath.h
     ScanPose.cpp ScanPose.h
+    ScanStereo.cpp ScanStereo.h
     ScanSynthetic.cpp ScanSynthetic.h
     ScanTypes.cpp ScanTypes.h
 )
