@@ -18,6 +18,7 @@
 #include "geometry/internal/ShapeData.h"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -29,10 +30,12 @@
 #include <TopExp.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 
 #include <algorithm>
+#include <optional>
 
 namespace os::geom {
 
@@ -156,6 +159,44 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
         // lines sit exactly on mesh vertices; fall back to curve sampling.
         TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
         TopExp::MapShapesAndAncestors(occShape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+        // A body made from a mesh (a scan, an STL file) is mostly planar
+        // triangles: there the edge between two planar faces that meet almost
+        // flat (under 40 degrees) is a facet of a curved surface, not an edge
+        // to the user, so it is neither drawn nor picked; creases stay. A body
+        // counts as made from a mesh when it has at least 64 faces and most of
+        // them are planar triangles, so a modeled part (a 24-sided prism, a
+        // drafted wall) keeps every edge.
+        const auto planeNormal = [](const TopoDS_Face& face) -> std::optional<gp_Dir> {
+            BRepAdaptor_Surface surface(face, false);
+            if (surface.GetType() != GeomAbs_Plane)
+                return std::nullopt;
+            gp_Dir n = surface.Plane().Axis().Direction();
+            if (face.Orientation() == TopAbs_REVERSED)
+                n.Reverse();
+            return n;
+        };
+        bool meshLike = false;
+        if (faces.Extent() >= 64) {
+            int planarTriangles = 0;
+            for (int fi = 1; fi <= faces.Extent(); ++fi) {
+                const TopoDS_Face face = TopoDS::Face(faces.FindKey(fi));
+                TopTools_IndexedMapOfShape faceEdges;
+                TopExp::MapShapes(face, TopAbs_EDGE, faceEdges);
+                if (faceEdges.Extent() == 3 && planeNormal(face))
+                    ++planarTriangles;
+            }
+            meshLike = planarTriangles * 10 >= faces.Extent() * 6;
+        }
+        const auto smoothMeshEdge = [&](const TopoDS_Edge& edge) {
+            if (!meshLike || !edgeFaces.Contains(edge))
+                return false;
+            const auto& owners = edgeFaces.FindFromKey(edge);
+            if (owners.Extent() != 2)
+                return false;
+            const auto a = planeNormal(TopoDS::Face(owners.First()));
+            const auto b = planeNormal(TopoDS::Face(owners.Last()));
+            return a && b && a->Angle(*b) < 40.0 * M_PI / 180.0;
+        };
         const auto& edges = shape.data()->edges;
         for (int ei = 1; ei <= edges.Extent(); ++ei) {
             const TopoDS_Edge edge = TopoDS::Edge(edges.FindKey(ei));
@@ -171,6 +212,8 @@ Mesh tessellate(const Shape& shape, const TessellationParams& params)
                 if (seam)
                     continue;
             }
+            if (smoothMeshEdge(edge))
+                continue;
             Mesh::EdgePolyline polyline;
             polyline.edgeIndex = ei - 1;
 
