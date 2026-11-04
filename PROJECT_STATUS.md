@@ -181,6 +181,56 @@ on the owner's App Store Connect steps above.
 
 ## Handoff: where we left off
 
+### Session report (2026-11-04, night): Measure, FoldForm 0.4.0 (branch `measure`)
+
+**The ask** (the owner, 2026-11-03 evening): "add tools to use the iPhone as
+a real life measurement tool. So rulers, photogrammetry, angles using the
+fold, anything you can think of. It should be one tool to measure and
+design. Be ambitious. Start your work on a new branch." Later: a TestFlight
+build by morning, "very polished", photogrammetry built by us, reference
+photos and measurements, and "full multi view stereo tonight, if possible".
+`main` stays 0.3.1 (its tag comes on his word); this branch is 0.4.0.
+
+**Built and merged on `measure`** (docs/MEASURE.md is the design):
+- `src/measure` (`openshape_measure`, Qt-free, `test_measure`): the screen's
+  scale (device table, card calibration per screen), photo straightening
+  (4-point homography, `PlaneRectifier`, the straightened view and warp),
+  stroke fitting (lines, arcs, circles), the fold (angle, bend, caliper,
+  `SteadyReading` holds), the level, outlines, `MeasurementLog`.
+- iOS hardware (`src/ui/ios/MeasureDevicesIos.mm`, `PhotoPickerIos.mm`,
+  `ArMeasureIos.mm`, behind `ui/MeasureDevices.h`): the Duo's hinge
+  (`UIHingeInteraction`, iOS 27.1, guarded), CoreMotion gravity in the
+  window's frame, haptics, camera and PHPicker photos (upright JPEG, EXIF
+  focal length), Vision rectangles and subject masks, an ARKit measuring
+  view (distance, outline, box). Compiled only on GitHub's Mac (TD-166 to
+  TD-169).
+- The Measure workspace (`ui/MeasureController`, `MeasureScreen.qml` and
+  parts): Ruler with the card check and a ring gauge, Fold (angle, bend,
+  Gap), Level, Photo (Card / A4 / Letter / Other, corners with a magnifier,
+  Straighten, Distance / Outline / Circle, Make sketch), Camera (AR results
+  to keep, sketch or make into a box), kept measurements, and "Use 42.3 mm"
+  into the value box that opened it.
+- Design hooks: 1:1 Actual size, the Trace sketch tool (D),
+  `createOutlineSketch` / `createCircleSketch` / `createSizedBox` (one undo
+  step each), the ruler in the value box and the dimension editor.
+
+**Verified on the PC** (head `322a002`): 894/894 headless; the full real-UI
+run 4958/4958 checks (new scenarios `measure`, `measuredesign`); the
+lambda-capture check (only the known `Duo.cpp:529`). Nothing tried on a
+device yet; docs/MANUAL_TESTS.md has the owner's 0.4.0 round.
+
+**Still running tonight** (agents, merged only when they pass the same
+tests): Scan (our own photogrammetry: an object on a sheet of paper, 6 to
+16 photos, the paper gives each camera; silhouette carving, Surface Nets,
+decimation, the mesh as a body) with a multi-view stereo stage (depth maps,
+consistency filtering, TSDF fusion inside the hull), reference photos in the
+design (a textured quad per photo, saved in the project, Set scale by two
+points), measurements kept in the project and typed by name
+(`shelf_depth - 2`).
+
+**The shared PC:** since 23:15 heavy runs go through one lock in FoldForm's
+booked slots (the vault's `Shared/PC schedule.md`), `-j 10`, one at a time.
+
 ### Session report (2026-10-31): FoldForm 0.3.0 for the App Store
 
 **In one paragraph:** the owner chose to launch today as **FoldForm**, free
