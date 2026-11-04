@@ -84,13 +84,35 @@ Rectangle {
     function quantityFits(quantity) {
         return forKind === "" || quantity === forKind
     }
+    // Hands a value to the box that asked: the workspace closes first, so
+    // the box (a sketch dimension's editor) keeps the focus it takes.
     function use(quantity, value) {
         const text = m.valueText(quantity, value)
         if (text === "")
             return
         lastUsedText = text
-        useValue(text)
         close()
+        useValue(text)
+    }
+    // A fresh start (the acceptance run, before it counts on anything).
+    function resetForTest() {
+        chipCard.close()
+        calibration.close()
+        current = "ruler"
+        forKind = ""
+        chosen = 0
+        lastUsedText = ""
+        ruler.mode = "length"
+        ruler.jawA = 0
+        ruler.jawB = 40
+        ruler.ringDiameter = 24
+        ruler.ringX = 0.5
+        ruler.ringY = 0.42
+        fold.mode = "angle"
+        fold.calibrating = false
+        photo.mode = "distance"
+        photo.clearPoints()
+        camera.mode = "distance"
     }
 
     color: Theme.background

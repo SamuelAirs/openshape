@@ -107,6 +107,18 @@ bool checked(AcceptanceRunner& r, const QString& name)
     return item && item->property("checked").toBool();
 }
 
+// The ruler opened the Measure workspace for a value (its Ruler); it is
+// closed again, as Close does, so the value can be handed back directly
+// (the measure scenario takes the whole way, Use included).
+void leaveMeasure(AcceptanceRunner& r, const QString& what)
+{
+    QQuickItem* screen = r.findItem(QStringLiteral("measureScreen"));
+    r.check(screen && screen->isVisible() && screen->property("forKind").toString() == r.window()->property("measureKind").toString(),
+            what + QStringLiteral(": the Measure workspace opens for it"));
+    if (screen)
+        QMetaObject::invokeMethod(screen, "close");
+}
+
 bool shown(AcceptanceRunner& r, const QString& name)
 {
     const QQuickItem* item = r.findItem(name);
@@ -296,6 +308,7 @@ void actualSize(Steps& steps, AcceptanceRunner& r)
         r.check(r.tapItem(QStringLiteral("valueChipMeasure")), "ruler phone: tap the ruler");
         r.check(windowInt(r, "measureRequests") == before + 1, "ruler phone: it asks for Measure");
         r.screenshot(QStringLiteral("measuredesign_ruler_phone"));
+        leaveMeasure(r, QStringLiteral("ruler phone"));
         r.app().cancelOperation();
     });
     wait(steps, 2);
@@ -542,6 +555,7 @@ void ruler(Steps& steps, AcceptanceRunner& r)
         r.check(r.window()->property("measureKind").toString() == QStringLiteral("length"), "ruler: for a length",
                 r.window()->property("measureKind").toString());
         r.check(r.app().operationActive(), "ruler: the push/pull stays");
+        leaveMeasure(r, QStringLiteral("ruler"));
         const QVariant took = callWindow(r, "useMeasuredValue", QStringLiteral("35mm"));
         r.check(took.toBool(), "ruler: the measured 35mm comes back to the value box");
     });
@@ -591,6 +605,7 @@ void ruler(Steps& steps, AcceptanceRunner& r)
     wait(steps, 1);
     steps.push_back([&r, s] {
         r.check(windowInt(r, "measureRequests") == s->requestsBefore + 1, "ruler (dimension): it asks for Measure");
+        leaveMeasure(r, QStringLiteral("ruler (dimension)"));
         r.check(callWindow(r, "useMeasuredValue", QStringLiteral("30mm")).toBool(), "ruler (dimension): 30mm comes back");
         QQuickItem* editor = r.findItem(QStringLiteral("dimensionEditor"));
         r.check(editor && editor->isVisible() && editor->property("text").toString() == QStringLiteral("30mm"),
