@@ -28,6 +28,8 @@
 
 #include "app/AcceptanceRunner.h"
 #include "core/Math.h"
+#include "document/Document.h"
+#include "document/ReferenceImage.h"
 #include "geometry/Modeling.h"
 #include "interaction/InteractionController.h"
 #include "interaction/SketchSession.h"
@@ -1039,6 +1041,38 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(r.tapItem(QStringLiteral("photoStraightImageFit")), say("photo: Fit"));
     });
     wait(steps, 1);
+    // Place in design: the straightened photo as a reference photo on the ground, at its size.
+    steps.push_back([&r, st] {
+        auto& m = measureOf(r);
+        st->before = m.straightSize().width() * m.straightMmPerPixel();
+        r.check(r.app().document().references().empty(), say("place: no reference photo yet"));
+        r.check(r.tapItem(QStringLiteral("measureAction_placeImage")), say("place: tap Place in design"));
+    });
+    wait(steps, 3);
+    steps.push_back([&r, st] {
+        r.check(!shown(r, QStringLiteral("measureScreen")), say("place: the workspace closes into the design"));
+        const auto& refs = r.app().document().references();
+        r.check(refs.size() == 1, say("place: one reference photo"), QString::number(refs.size()));
+        if (refs.size() != 1)
+            return;
+        const doc::ReferenceImage& photo = *refs.front();
+        r.check(std::abs(photo.width - st->before) < 0.1, say("place: as wide as the straightened view (its pixels x mm per pixel)"),
+                QStringLiteral("%1 mm, expected %2").arg(photo.width).arg(st->before));
+        r.check(photo.plane == doc::ReferencePlane::XY, say("place: on the ground"));
+        const QString id = QString::fromStdString(photo.id().toString());
+        bool listed = false;
+        for (const QVariant& row : r.app().history())
+            listed = listed || row.toMap().value(QStringLiteral("id")).toString() == id;
+        r.check(listed, say("place: the Model panel lists it"));
+        r.screenshot(QStringLiteral("measure_place_desktop"));
+        r.app().undo();
+    });
+    wait(steps, 1);
+    steps.push_back([&r] { r.check(r.app().document().references().empty(), say("place: undo removes it")); });
+    backToMeasure(steps, r, QStringLiteral("place"), true);
+    steps.push_back([&r] {
+        r.check(prop(r, QStringLiteral("measurePhoto"), "stage").toString() == QStringLiteral("measure"), say("place: the straightened photo is still there"));
+    });
 
     // ---- the camera (AR)
     steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("measureTab_camera")), say("camera: tap Camera")); });
