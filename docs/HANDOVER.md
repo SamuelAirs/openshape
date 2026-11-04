@@ -1,4 +1,4 @@
-# FoldForm: handover (2026-11-05)
+# FoldForm: handover (2026-11-03, evening)
 
 For whoever continues. Read `CLAUDE.md` first (the lead-engineer rules: GitHub only compiles,
 run the local suites before every push, the real-UI suite moves the pointer on this PC for
@@ -8,18 +8,37 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
 
 ## Where it stands
 
-- **App Store:** version 0.3.0, build 54, is **Waiting for Review** since 2026-11-04, with the
-  in-app purchase Unlimited Projects (`io.github.samuelairs.openshape.unlimited`, USD 9.99) in
-  the same submission; release is manual. Free in 147 of 175 territories: the 27 EU countries
-  and China mainland are off on purpose (Sam is not a trader under the EU Digital Services Act;
-  China needs an ICP filing). "Make available in new territories" is on. The listing texts,
-  twelve screenshots (6.9-inch iPhone and 13-inch iPad) and the review contact were written by
-  a tool from `docs/APP_STORE.md` and read back; nothing on a version in review can change.
-- **TestFlight:** build 55 is 0.3.1 (iOS 17 and later), from main `e6576ff`: the paywall leak
-  closed (projects in subfolders count), several faces selected at once with a long press
-  selecting all of a text, push-to-subtract (faces pushed into another body cut it, one undo
-  step), the pinch jitter fixed (the view no longer reveals the selection mid-gesture), the
-  value box docked at an edge on the Duo. Sam has not tested 55 yet.
+- **Now (2026-11-03, evening):**
+  - **At Apple:** 0.3.0 (build 54) is **Waiting for Review**, with the in-app purchase
+    Unlimited Projects (`io.github.samuelairs.openshape.unlimited`, USD 9.99) in the same
+    submission. It was submitted on or before 2026-11-02; release is manual.
+  - **Territories:** free in 147 of 175. The 27 EU countries and China mainland are off on
+    purpose: Sam is not a trader under the EU Digital Services Act, and China needs an ICP
+    filing.
+  - **0.3.1 is ready:**
+    - Build 60 (main `1be3626`) is on TestFlight, and Sam ticked all five of its checks on his
+      Duo.
+    - The listing texts are ready (`docs/APP_STORE.md`, the blocks marked "changed
+      2026-11-03").
+    - The screenshots are ready: the captioned set and the six Duo shots
+      (`docs/appstore/duo/`, section 3b).
+  - **The steps to ship:**
+    1. Apple approves 0.3.0, and Sam presses Release.
+    2. On Sam's "tag 0.3.1": the local suites, the `v0.3.1` tag and its push, and the GitHub
+       release with the iOS sources (BUILDING.md, "Before tagging a release").
+    3. The tag build's number goes to the App Store chat (vault Inbox), which fills 0.3.1's
+       page and submits it on Sam's word.
+  - **Not pushed:** `36b08ad` and `d275beb`, docs and screenshots only, so no build. They go up
+    with the tag.
+  - **The vault:** `DuoApps/Board.md` has Sam's tasks, and `DuoApps/FoldForm handover.md` keeps
+    the short version.
+- **Earlier (the dates from here to 2026-11-02 came from a wrong clock):**
+  - **TestFlight build 55** was 0.3.1 from main `e6576ff`:
+    - the paywall leak closed (projects in subfolders count);
+    - several faces selected at once, with a long press selecting all of a text;
+    - push-to-subtract;
+    - the pinch jitter fixed;
+    - the value box docked at an edge on the Duo.
 - **2026-11-02 (the PC's real date; the dates in this file before it ran ahead):** Sam's
   answers are notes on the Duo Apps Run Sheet artifact
   (https://claude.ai/artifact/63RCBUKpzLdk2tsEzCcLrF; read with the ArtifactData tool,
@@ -96,7 +115,7 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   Main is 0.3.1; the next tag is `v0.3.1` when Sam says.
 - Every push of main uploads a TestFlight build (ipad.yml), so push deliberately. Never push
   `[testflight]`-style markers here; the workflow needs none.
-- Run the headless suite (858) and the real-UI suite (4,365 checks, the pointer moves) before a
+- Run the headless suite (861) and the real-UI suite (4,525 checks, the pointer moves) before a
   push; never weaken a test to pass.
 - The written source offer in the Licenses screen gives ayers177@gmail.com from 0.3.1 (two
   tests that treated "@" as a placeholder were changed for it).
