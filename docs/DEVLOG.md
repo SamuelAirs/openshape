@@ -867,3 +867,23 @@ normally and forced, and asserts.
   missed it). Lessons: name things as people say them (debit or credit card,
   not "bank card"), and grep every file type after a wording change. TD-176
   keeps the tolerance question; a real ruler along the screen checks it.
+
+## 2026-11-04 — Calibrating the Level, and Scan on a legal pad (after build 63)
+
+- Sam: "it's very difficult to test/calibrate level". The end-for-end (flip) method needs no
+  level surface: two held readings, the phone turned half a turn in between, offset = half
+  the sum, slope = half the difference. Surprise: gravity reaches the controller already
+  turned into the window's frame, so an offset kept from portrait would be wrong (rotated)
+  in landscape; `GravityReading::turn` now says how the window is turned and the lying
+  offset is kept in the device's upright frame. Another: on a level surface turning the
+  phone changes nothing, so the hold's "moved away re-arms" rule never fires; the second
+  reading needs **Turned** (or a move). And Check reports half the readings' vector sum, not
+  the difference of their sizes: on a level surface an offset gives two equal sizes.
+- Sam: "Scan an object kind of struggled to find the paper each time ... I used a lined legal
+  pad." On a synthetic yellow lined legal pad on wood, the old finder found no sheet at all
+  (the yellow's saturation, about 0.47, failed its colourless test); a hue band for pale
+  yellow and a 5 x 5 closing over ruled lines find every corner within 1.4 px. Legal is a
+  third paper. Vision (on the phone) looks first and takes any aspect ratio from 0.3, so a
+  sheet seen side-on from low down falls through to FoldForm's finder (TD-179).
+- The base commit did not compile (`cardReference(card)` after the card's parameter went);
+  fixed as the lead did. Lesson: build before the commit, even for a one-line wording change.

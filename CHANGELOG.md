@@ -27,7 +27,12 @@ things").
   the rule show when it holds. **Gap**: something pinched between the free
   edges, calibrated with a playing card's side.
 - **Level**: a bubble and the slope lying down, an edge's angle standing
-  up, and the angle between two surfaces; held like the fold.
+  up, and the angle between two surfaces; held like the fold. **Calibrate**
+  (end for end: two readings on any steady surface, the second with the
+  phone turned half a turn) finds the motion sensors' offset and takes it
+  off from then on, lying down and on each edge apart; **Check** takes the
+  same two readings and says how far apart they are, so the level can be
+  tested without a level surface.
 - **Photo**: a playing card or a sheet of A4 or Letter paper (or any
   rectangle) lying flat beside a part straightens the photo, as if seen from
   straight above; then distances, outlines with their sides and area, and
@@ -48,7 +53,7 @@ things").
   the stroke becomes lines, arcs or a circle; at 1:1, trace around a part
   lying on the screen.
 - **Scan: FoldForm's own photogrammetry.** Stand an object on a sheet of
-  A4 or Letter paper and take 8 to 16 photos walking around it: the paper
+  A4, Letter or Legal paper and take 8 to 16 photos walking around it: the paper
   gives each photo's camera (no LiDAR needed) and the scale, the object's
   outline comes from Apple's subject cutout (Vision) or the paper's colour,
   a voxel volume is carved from the silhouettes, and **multi-view stereo**
@@ -57,7 +62,9 @@ things").
   a flat top. The result is a closed mesh, brought into the design as a body
   you can measure and model around. Silhouettes alone overestimate flat and
   hollow shapes; stereo needs some texture on the object (plain, shiny or very
-  dark surfaces keep the silhouette shape) (docs/SCAN.md).
+  dark surfaces keep the silhouette shape) (docs/SCAN.md). FoldForm's own
+  paper finder (used where Vision finds nothing, and on a computer) copes
+  with a yellow legal pad's sheet and its ruled lines.
 - **File → Import STL…**: STL meshes (binary or ASCII) as bodies, each closed
   piece one body, for remixing.
 - **Reference photos in the design**: a photo placed at true size on the
