@@ -7,6 +7,9 @@
 #include "core/Log.h"
 #include "core/Version.h"
 #include "geometry/Exchange.h"
+#include "geometry/MeshSolid.h"
+#include "measure/Scan.h"
+#include "measure/ScanSynthetic.h"
 #include "geometry/Text.h"
 #include "interaction/NumericKeypad.h"
 #include "interaction/TouchWording.h"
@@ -1426,6 +1429,117 @@ void AppController::importStepFile(const QString& file, const QString& sourceNam
             notifyMessage(importMessage(shapes.value(), shapes.warnings(), *document_));
             finish(true);
         });
+}
+
+bool AppController::addMeshBody(const std::vector<Vec3>& vertices, const std::vector<std::array<int, 3>>& triangles,
+                                const QString& name, const QString& source)
+{
+    auto solid = geom::solidFromMesh(vertices, triangles);
+    if (!solid) {
+        OS_LOG(Warning, File) << "addMeshBody: " << solid.developerMessage();
+        notifyMessage(q(solid.userMessage()));
+        return false;
+    }
+    std::string bodyName = name.toStdString();
+    if (bodyName.empty()) {
+        // "Scan 1", "Scan 2", ...: the first number no body has.
+        for (int n = 1; bodyName.empty(); ++n) {
+            const std::string candidate = "Scan " + std::to_string(n);
+            const auto& bodies = document_->bodies();
+            if (std::none_of(bodies.begin(), bodies.end(), [&](const auto& b) { return b->name() == candidate; }))
+                bodyName = candidate;
+        }
+    }
+    const std::size_t before = document_->bodies().size();
+    if (!interaction_->importBodies({geom::NamedShape{bodyName, solid.value()}}, source.toStdString()))
+        return false; // the controller said why
+    if (document_->bodies().size() > before) {
+        (void)interaction_->selectBody(document_->bodies().back()->id(), interact::InteractionController::BodyPick::Replace);
+        interaction_->fitSelection(true);
+        notifyMessage(QStringLiteral("Added \u201C%1\u201D").arg(q(document_->bodies().back()->name())));
+    }
+    return true;
+}
+
+bool AppController::addDemoScan(QString* summary)
+{
+    namespace synth = measure::synthetic;
+    synth::Scene scene;
+    scene.object = synth::lBlockObject({10, 5});
+    scene.textureStrength = 0.2;
+    auto cameras = synth::ring(10, 35, 50, 0);
+    for (const synth::CameraSpec& low : synth::ring(5, 12, 12, 36, 360, 560))
+        cameras.push_back(low);
+    const auto photos = synth::render(scene, cameras, 21);
+    auto scan = measure::runScan(synth::asScanPhotos(photos, true, true));
+    if (!scan) {
+        notifyMessage(q(scan.userMessage()));
+        return false;
+    }
+    const auto& surface = scan->surface;
+    if (summary)
+        *summary = QStringLiteral("%1 triangles, %2 mm\u00B3 (the block: %3 mm\u00B3), %4 x %5 x %6 mm, %7 ms")
+                       .arg(surface.triangleCount)
+                       .arg(surface.volumeMm3, 0, 'f', 0)
+                       .arg(scene.object.volume, 0, 'f', 0)
+                       .arg(surface.boundsMax.x - surface.boundsMin.x, 0, 'f', 1)
+                       .arg(surface.boundsMax.y - surface.boundsMin.y, 0, 'f', 1)
+                       .arg(surface.boundsMax.z - surface.boundsMin.z, 0, 'f', 1)
+                       .arg(scan->calibrateMs + scan->carveMs + scan->surfaceMs, 0, 'f', 0);
+    return addMeshBody(surface.mesh.vertices, surface.mesh.triangles);
+}
+
+bool AppController::importStl(const QUrl& url)
+{
+    const QString original = localPath(url);
+    const QString name = QFileInfo(original).fileName();
+    QString path = original;
+    bool temporary = false;
+    if (savesToAppFolder()) {
+        // iPhone / iPad: the picker's file may lie outside the sandbox.
+        const StagedFile staged = stageIncomingFile(original, incomingPlaces(), IncomingKind::Step);
+        if (staged.path.isEmpty()) {
+            notifyMessage(staged.error);
+            return false;
+        }
+        path = staged.path;
+        temporary = staged.temporary;
+    }
+    auto mesh = geom::readStl(std::filesystem::path(path.toStdWString()));
+    if (temporary)
+        QFile::remove(path);
+    if (!mesh) {
+        OS_LOG(Warning, File) << "import STL failed: " << mesh.developerMessage();
+        notifyMessage(q(mesh.userMessage()));
+        return false;
+    }
+    // Each closed piece becomes a body named after the file.
+    const auto pieces = geom::meshPieces(mesh.value());
+    std::vector<geom::NamedShape> shapes;
+    std::string why;
+    const std::string base = QFileInfo(name).completeBaseName().toStdString();
+    for (const geom::TriangleMesh& piece : pieces) {
+        auto solid = geom::solidFromMesh(piece.vertices, piece.triangles);
+        if (!solid) {
+            if (why.empty())
+                why = solid.userMessage();
+            continue;
+        }
+        shapes.push_back({pieces.size() == 1 ? base : base + " " + std::to_string(shapes.size() + 1), solid.value()});
+    }
+    if (shapes.empty()) {
+        notifyMessage(q(why.empty() ? std::string("This STL file has no closed mesh to import.") : why));
+        return false;
+    }
+    if (!interaction_->importBodies(shapes, name.toStdString()))
+        return false;
+    QString text = shapes.size() == 1 && !document_->bodies().empty()
+                     ? QStringLiteral("Imported \u201C%1\u201D").arg(q(document_->bodies().back()->name()))
+                     : QStringLiteral("Imported %1 bodies").arg(shapes.size());
+    if (shapes.size() < pieces.size())
+        text += QStringLiteral(". Skipped %1 of %2 pieces: %3").arg(pieces.size() - shapes.size()).arg(pieces.size()).arg(q(why));
+    notifyMessage(text);
+    return true;
 }
 
 QUrl AppController::takeNextFileChoice()

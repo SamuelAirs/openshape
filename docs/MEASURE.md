@@ -208,7 +208,7 @@ need none.
 
 ## Not yet (TD-166 onward)
 
-- Object Capture (a full 3D scan) needs RealityKit's Swift-only API; ARKit's LiDAR mesh as a
-  reference body is the nearer step.
 - A live link from a step's value to a project measurement (today a name is copied as a
   number when typed: "Measurements in the project").
+- Apple's Object Capture (RealityKit, Swift only) or ARKit's LiDAR mesh as other routes to a 3D
+  scan; FoldForm's own **Scan** (docs/SCAN.md) is the one built.

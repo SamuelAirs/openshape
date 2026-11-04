@@ -24,9 +24,13 @@ target_compile_definitions(test_core PRIVATE OPENSHAPE_EXPECTED_VERSION="${PROJE
 openshape_add_test(test_measure test_measure.cpp)
 target_link_libraries(test_measure PRIVATE openshape_measure)
 
+# Scan: photogrammetry on synthetic photos (measure/ScanSynthetic renders them).
+openshape_add_test(test_scan test_scan.cpp)
+target_link_libraries(test_scan PRIVATE openshape_measure)
+
 openshape_add_test(test_geometry test_geometry.cpp test_profiles.cpp test_occt_build.cpp test_draft.cpp test_step.cpp
     test_text_geometry.cpp test_kernel_threads.cpp test_loft_geometry.cpp
-    test_plane_references.cpp)
+    test_plane_references.cpp test_mesh_solid.cpp)
 target_link_libraries(test_geometry PRIVATE openshape_geometry)
 # Kernel robustness (partly adapted from OpenShape3D, third_party/openshape3d).
 target_sources(test_geometry PRIVATE test_ops_inputs_untouched.cpp test_brep_fuzz.cpp test_shell_retries.cpp)
@@ -48,10 +52,10 @@ openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_intera
     test_text_interaction.cpp test_async_preview.cpp test_contact_shadow.cpp test_datum_interaction.cpp
     test_cut_flow.cpp test_touch_selection.cpp test_typing_pause.cpp test_numeric_keypad.cpp
     test_loft_interaction.cpp test_project_files.cpp
-    test_view_cube.cpp test_sketch_phone.cpp
+    test_view_cube.cpp test_sketch_phone.cpp test_scan_body.cpp
     test_typed_values.cpp test_pencil.cpp test_multi_face.cpp test_measure_design.cpp
     test_reference_interaction.cpp)
-target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
+target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io openshape_measure)
 # test_touch_wording reads the QML hints and the help card; test_bodies a
 # project saved by an older build (tests/data).
 target_compile_definitions(test_interaction PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

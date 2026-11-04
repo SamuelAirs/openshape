@@ -585,6 +585,12 @@ ApplicationWindow {
             height: available ? implicitHeight : 0
             onTriggered: window.chooseReferencePhoto()
         }
+        AppMenuItem {
+            objectName: "importStlMenuItem"
+            iconName: "import"
+            text: "Import STL…"
+            onTriggered: window.chooseFile(importStlDialog, url => window.app.importStl(url))
+        }
         AppMenuSeparator {}
         AppMenuItem {
             objectName: "saveMenuItem"
@@ -1909,6 +1915,12 @@ ApplicationWindow {
         title: "Add Reference Photo"
         nameFilters: ["Pictures (*.jpg *.jpeg *.png *.JPG *.JPEG *.PNG *.webp *.bmp *.tif *.tiff)"]
         onAccepted: window.app.addReferenceImage(selectedFile.toString(), 0, "XY")
+    }
+    FileDialog {
+        id: importStlDialog
+        title: "Import STL"
+        nameFilters: ["STL meshes (*.stl *.STL)"]
+        onAccepted: window.app.importStl(selectedFile)
     }
     FileDialog {
         id: stepDialog
