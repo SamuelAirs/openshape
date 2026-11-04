@@ -47,6 +47,12 @@
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
     </dict>
+    <!-- The Measure tools' Photo and Camera (AR) instruments (docs/MEASURE.md).
+         The photo library is read through the system picker, which needs no
+         permission; the motion sensors need none. ARKit is optional, so
+         UIRequiredDeviceCapabilities does not name it. -->
+    <key>NSCameraUsageDescription</key>
+    <string>FoldForm uses the camera to measure things around you. Photos stay on this device.</string>
     <!-- Projects saved in the app's Documents folder show up in the Files app. -->
     <key>UIFileSharingEnabled</key>
     <true/>

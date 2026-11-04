@@ -50,6 +50,9 @@ struct PhotoResult {
     Outcome outcome = Outcome::Failed;
     QString file;  // Picked: a JPEG, upright (EXIF orientation applied), in the folder asked for
     QString error; // Failed: why, in words
+    // The camera's focal length as a 35 mm film equivalent, from the original photo's
+    // EXIF (kCGImagePropertyExifFocalLenIn35mmFilm), before it was re-encoded; 0 if unknown.
+    double focalLength35mm = 0;
 };
 
 // Corners of a rectangle found in a photo, in image pixels, in order around it.
@@ -100,6 +103,16 @@ struct MeasureDevices {
     std::function<void(QWindow* window, PhotoOrigin origin, const QString& folder, const QRectF& anchor,
                        std::function<void(const PhotoResult&)> finished)>
         pickPhoto;
+    // The photo library, up to `maxCount` photos at once (a scan's photos); each written
+    // like pickPhoto's. `finished` gets one result per photo chosen (empty: cancelled).
+    std::function<void(QWindow* window, int maxCount, const QString& folder, const QRectF& anchor,
+                       std::function<void(const std::vector<PhotoResult>& results)> finished)>
+        pickPhotos;
+    // The photo's main subject as a mask: Vision's foreground instance mask
+    // (VNGenerateForegroundInstanceMaskRequest, iOS 17), all instances, written as an 8-bit
+    // grayscale PNG the size of the photo (255 = subject, 0 = background) to `maskFile`.
+    // Blocks: call it off the GUI thread. False when no subject was found or on failure.
+    std::function<bool(const QString& photoFile, const QString& maskFile)> subjectMask;
     // The most prominent rectangle in a photo file (Vision), or none. Blocks:
     // call it off the GUI thread.
     std::function<std::optional<RectangleCorners>(const QString& file)> detectRectangle;
