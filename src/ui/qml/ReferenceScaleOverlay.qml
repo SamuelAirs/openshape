@@ -4,6 +4,7 @@
 
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Effects
 import QtQuick.Layouts
 import OpenShape
 
@@ -113,14 +114,31 @@ Item {
         x: (info.x !== undefined ? info.x : 0) - width / 2
         y: (info.y !== undefined ? info.y : 0) - height / 2
         Rectangle { anchors.fill: parent; radius: width / 2; color: Theme.panel; border.color: Theme.panelBorder }
+        // Round, like the Measure photo's loupe: the magnified view drawn
+        // through a circular mask (a ShaderEffectSource alone is square).
         ShaderEffectSource {
+            id: loupeSource
             anchors { fill: parent; margins: 3 }
+            visible: false
             sourceItem: loupe.visible ? overlay.viewportItem : null
             sourceRect: Qt.rect(loupe.info.sx - width / (2 * loupe.zoom), loupe.info.sy - height / (2 * loupe.zoom),
                                 width / loupe.zoom, height / loupe.zoom)
             live: true
             hideSource: false
             smooth: true
+        }
+        MultiEffect {
+            anchors.fill: loupeSource
+            source: loupeSource
+            maskEnabled: true
+            maskSource: loupeMask
+        }
+        Item {
+            id: loupeMask
+            anchors.fill: loupeSource
+            visible: false
+            layer.enabled: true
+            Rectangle { anchors.fill: parent; radius: width / 2; color: "black" }
         }
         Rectangle { anchors.centerIn: parent; width: 18; height: 1.5; color: Theme.accent }
         Rectangle { anchors.centerIn: parent; width: 1.5; height: 18; color: Theme.accent }
