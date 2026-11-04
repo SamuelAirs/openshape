@@ -3,6 +3,46 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
+## 0.4.0 (unreleased)
+
+**Measure: the phone as a measuring tool, one tool to measure and design.**
+A ruler button in the top bar (and Measure on Home) opens a workspace of
+instruments that measure real things, and what they measure goes straight
+into the design (docs/MEASURE.md, docs/USER_GUIDE.md "Measuring real
+things").
+
+- **Ruler**: a scale at true size along the screen, two jaws for a thing
+  laid on the glass, and a ring for round things (Make sketch draws that
+  circle). The scale comes from a table of iPhones and iPads; **Check with a
+  card** matches it to any bank card, and is kept for each screen (the
+  iPhone Duo's two displays each get their own).
+- **Fold** (iPhone Duo): the angle between the two halves from the hinge,
+  and the bend; held once the phone is still, with a tap you feel, so it
+  can be read after measuring over an edge. **Gap**: something pinched
+  between the free edges, calibrated with a card's side.
+- **Level**: a bubble and the slope lying down, an edge's angle standing
+  up, and the angle between two surfaces.
+- **Photo**: a bank card or a sheet of A4 or Letter paper (or any
+  rectangle) lying flat beside a part straightens the photo, as if seen from
+  straight above; then distances, outlines with their sides and area, and
+  circles, in millimeters. Make sketch puts the outline or the circle on the
+  ground plane at real size. The reference is found automatically on iPhone
+  and iPad (Vision); four handles with a magnifier fix its corners.
+- **Camera** (ARKit): distances in the room, an outline on a surface, or a
+  box's width, depth and height, to keep, sketch or make into a box.
+- **Into any value box**: a ruler button in the value box (and beside a
+  sketch dimension) opens Measure for that value; **Use 42.3 mm** types the
+  measurement there. **Keep** saves readings as named measurements, listed
+  beside the instruments, to use, rename or delete later.
+- **1:1**: the View buttons' Actual size shows the model at the screen's
+  true scale: lay a real part on the glass to compare it with its model.
+- **Trace** sketch tool (D): draw freehand with the Pencil or a finger and
+  the stroke becomes lines, arcs or a circle; at 1:1, trace around a part
+  lying on the screen.
+- Everything stays on the device: iOS asks once for the camera; the photo
+  library is read through the system picker; FoldForm still collects no
+  data (docs/PRIVACY.md).
+
 ## 0.3.1 (unreleased)
 
 The answers to the first session on the iPhone Duo.
