@@ -668,11 +668,12 @@ public:
     Q_INVOKABLE void toggleActualSize();
 
     // ---- Geometry from measurements (the Measure workspace; one undo step each)
-    // A new sketch on the ground plane with the points (mm; QPointF or
-    // {x, y}) joined by lines (closed: back to the first), opened facing and
-    // framing it. False, with a message, for fewer than two points or a
-    // closed outline with no area.
-    Q_INVOKABLE bool createOutlineSketch(const QVariantList& pointsMm, bool closed);
+    // A new sketch on the ground plane (or `plane`: "XY" the ground, "XZ"
+    // Front, "YZ" Right, in the frames reference photos use) with the points
+    // (mm; QPointF or {x, y}) joined by lines (closed: back to the first),
+    // opened facing and framing it. False, with a message, for fewer than
+    // two points or a closed outline with no area.
+    Q_INVOKABLE bool createOutlineSketch(const QVariantList& pointsMm, bool closed, const QString& plane = QStringLiteral("XY"));
     // The same with a circle, its diameter dimension set.
     Q_INVOKABLE bool createCircleSketch(double centerXmm, double centerYmm, double diameterMm);
     // A box body (X, Y, Z sizes in mm), selected and framed.
@@ -758,9 +759,12 @@ public:
     // doc::kMaxReferenceImageSide) as a photo on `plane` ("XY" the ground,
     // "XZ" Front, "YZ" Right, or a construction plane's id), centred on its
     // origin, `mmPerPixel` millimeters per pixel of the file as it is (<= 0:
-    // not known: 200 mm wide, and its row offers Set scale). One undo step;
-    // the view frames it. False, with a message, when the picture cannot be read.
-    Q_INVOKABLE bool addReferenceImage(const QString& imageFile, double mmPerPixel, const QString& plane = QStringLiteral("XY"));
+    // not known: 200 mm wide, and its row offers Set scale). Its center is
+    // at (centerX, centerY) mm in the plane's frame (the Measure workspace's
+    // photo views put a chosen point of the photo at the origin). One undo
+    // step; the view frames it. False, with a message, when the picture cannot be read.
+    Q_INVOKABLE bool addReferenceImage(const QString& imageFile, double mmPerPixel, const QString& plane = QStringLiteral("XY"),
+                                       double centerX = 0, double centerY = 0);
     // Set scale: the owner taps two points on the photo in the view (the
     // left button, a finger or the pen; the view still orbits, pans and
     // zooms), then types their real distance (applyReferenceScale: the photo

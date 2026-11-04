@@ -2308,8 +2308,14 @@ std::optional<Vec2> pointFromVariant(const QVariant& value)
 
 } // namespace
 
-bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed)
+bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed, const QString& plane)
 {
+    // The origin planes in the frames reference photos use (doc::referencePlaneFrame).
+    sketch::Plane frame = sketch::Plane::xy();
+    if (plane.compare(QLatin1String("XZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("front"), Qt::CaseInsensitive) == 0)
+        frame = sketch::Plane{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}};
+    else if (plane.compare(QLatin1String("YZ"), Qt::CaseInsensitive) == 0 || plane.compare(QLatin1String("right"), Qt::CaseInsensitive) == 0)
+        frame = sketch::Plane{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     std::vector<Vec2> points;
     points.reserve(std::size_t(pointsMm.size()));
     for (const QVariant& value : pointsMm) {
@@ -2320,7 +2326,7 @@ bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool close
         }
         points.push_back(*p);
     }
-    return interaction_->createOutlineSketch(points, closed).ok();
+    return interaction_->createOutlineSketch(points, closed, frame).ok();
 }
 
 bool AppController::createCircleSketch(double centerXmm, double centerYmm, double diameterMm)
