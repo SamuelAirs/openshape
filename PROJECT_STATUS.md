@@ -156,12 +156,13 @@ desktop palette's bottom edge caught that). The Duo scenario uses the
 measured insets, checks that no control of a regular window covers
 another (the keypad not yet, TD-165) and opens the honeycomb with its long
 Model panel, taps a wall and the palette's arrows (340 checks).
-docs/APP_STORE.md 3b lists the Duo screenshots for the new samples: two
-of his are in `docs/appstore/duo/`, four to take on 60. Verified:
+docs/APP_STORE.md 3b lists the Duo screenshots for the new samples: all
+six are in `docs/appstore/duo/` (two from 59, four from his eleven on 60,
+the evening of 2026-11-03). Verified:
 861/861 headless, 4525/4525 real-UI checks (the full run). Pushed on the
 owner's word (main `1be3626`, with the listing's Apple Pencil on the Duo):
 CI 69 compiled Windows and macOS, iPad run 60 uploaded build 60 (license
-gate 15/15). Not tried on a device yet. App Review takes only a release
+gate 15/15). Sam ticked all five of its checks on his Duo. App Review takes only a release
 tag's build: 0.3.1 is submitted with the `v0.3.1` tag's, on his word.
 
 **Device testing after submitting:** the Duo steps in docs/IPAD.md ("The

@@ -63,7 +63,8 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   with the panel open; marks and the view cube over the panel), his "perpendicular to the face
   going outward" for every face and edge arrow (`geom::edgeOutward`), and his scroll arrow on the
   palettes (`ScrollHint.qml`). TD-165: the keypad still covers the view buttons turned tall.
-  `docs/APP_STORE.md` 3b: the Duo screenshots for the new samples, two in, four on 60.
+  `docs/APP_STORE.md` 3b: the six Duo screenshots, all in `docs/appstore/duo/` (two from 59,
+  four from Sam's eleven on 60); his Board ticks pass build 60's five checks.
 - **Docs and marketing on main:** the independent critique (`docs/CRITIQUE_2026-11-03.md`), the
   marketing plan (`docs/MARKETING_RENDERS.md`, with two recording briefs for Sam), the website
   hero still and the turning-part loop (`docs/marketing/`, rebuilt by
@@ -76,10 +77,10 @@ this. The owner is Sam; he tests on an iPhone 16 Pro, an iPhone Duo and an iPad.
   form is a bit clunky"; he could not select several faces, and wanted to "select all the faces
   of the text then drag the faces towards the object in order to subtract". Built in 0.3.1,
   untested on his Duo. "I tried to zoom in and it was very jittery": fixed in 0.3.1, untested.
-- Still owed by Sam: six Duo screenshots on build 54 (`docs/appstore/duo/`, names in
-  `APP_STORE.md` section 3b; they go up with 0.3.1, optional, they earn the "optimized for
-  iPhone Duo" badge); his word that the description's Duo line matches what he sees; Restore
-  purchase on a second device; `Logs/openshape.log` from the Duo (the real safe areas, TD-150).
+- Owed by Sam, now in: the six Duo screenshots (`docs/appstore/duo/`, `APP_STORE.md` 3b; they
+  go up with 0.3.1 and earn the "optimized for iPhone Duo" badge), his "Yep" on the
+  description's Duo line, Restore purchase (his Duo already shows Unlimited Projects), and his
+  Duo logs (59's gave the measured safe areas, TD-150).
 - Technical debt worth knowing: TD-150 (Duo safe areas are estimates), TD-155 (resolved, the
   paywall leak), TD-156 (a cut into another body does not follow the pushed body if it moves
   later), TD-157 (the value box docks top or bottom, not along the Duo's side bar; the 720-pt

@@ -529,46 +529,48 @@ The first list named build 54's sample projects, which build 58 replaced
 with the five on Home, so on build 59 the owner took a range of 22
 (2026-11-03, iCloud Drive/Foldform: "I had some trouble deciphering some
 screenshot requests, unfortunately, so I decided to take a range"). Two
-of them are in `docs/appstore/duo/` as they are; the other four wait for
-build 60, which fixes what the range showed (turned tall, the top bar ran
-into the Model panel; a sketch's marks and the view cube showed over the
-panel). Every capture with the phone **opened flat or closed**, never half
-folded (TD-140); Focus on, Light appearance; a capture is the side button
-and volume up. Before each one, look along every edge and the side bar: if
-anything is cut off or hidden, skip it and tell the lead.
+of them went in as they are; build 60 fixed what the range showed (turned
+tall, the top bar ran into the Model panel; a sketch's marks and the view
+cube showed over the panel), and on 60 he took eleven more (IMG_6471 to
+IMG_6481, the evening of 2026-11-03), from which the other four come.
+**All six are in `docs/appstore/duo/`**, as he took them (inner 2853 x 2007,
+outer 1398 x 2034, PNG); none is cut off along an edge or the side bar.
+None of 60's is turned tall or sideways, so the six are wide on the inner
+display and upright on the outer.
 
-1. `01-inner-electronics-box.png` (**in**, IMG_6414, build 59): **inner
-   display, opened flat, wide.** *Electronics box*, the cable hole's wall
-   tapped, `8.4` typed, not applied (the value box and its arrow on the part).
-2. `02-inner-sketch.png` (**to take on 60**): **inner, flat, wide.**
-   *Electronics box* → Model panel open → *Footprint* → Edit sketch: the
-   sizes and constraint marks showing, the Select tool on.
-3. `03-inner-tall-holes.png` (**to take on 60**): **inner, flat, turned
-   tall.** *Electronics box*, the lid's flat top → Hole tool, M3,
-   Countersink, two holes placed, not applied.
-4. `04-outer-holes.png` (**to take on 60**): **outer display, closed,
-   upright.** Right after capture 3, fold without touching anything else:
-   the same holes, the same value still there.
-5. `05-outer-lid-text.png` (**in**, IMG_6407, build 59): **outer, closed,
+1. `01-inner-electronics-box.png` (IMG_6414, build 59): **inner display,
+   opened flat, wide.** *Electronics box*, the cable hole's wall tapped,
+   `8.4` typed, not applied (the value box and its arrow on the part).
+2. `02-inner-sketch.png` (IMG_6477, build 60): **inner, wide.** *Electronics
+   box* → *Footprint* → Edit sketch: the sizes and constraint marks, "Fully
+   sized", the Select tool on, the lid's sketch beside it.
+3. `03-inner-holes.png` (IMG_6481, build 60): **inner, wide.** *Phone
+   stand*, a flat face → Hole tool, M6, Normal fit, two holes placed, not
+   applied: every hole option showing.
+4. `04-outer-holes.png` (IMG_6480, build 60): **outer display, closed,
+   upright.** The same holes and the same 6.80 mm, taken folded a moment
+   before 3.
+5. `05-outer-lid-text.png` (IMG_6407, build 59): **outer, closed,
    upright.** The lid's raised text tapped: its faces selected with the
    value box.
-6. `06-outer-sideways-model.png` (**to take on 60**): **outer, closed,
-   sideways.** *Phone stand*, nothing selected, the part filling the view.
+6. `06-outer-twisted-vase.png` (IMG_6474, build 60): **outer, closed,
+   upright.** *Twisted vase*, a curved edge tapped for a fillet, its arrow
+   standing out of the part.
 
-Then send **Logs/openshape.log** (Files → On My iPhone → FoldForm →
-Logs): its `window ...` lines give the real screen sizes and insets
-(TD-150).
+The others of 60's (the honeycomb's wall and the vase turned tall, the
+sketch and the box's Move on the outer display, the box with its Model
+panel's history on the inner) stay in iCloud Drive/Foldform for a later set.
 
 ### Captions (for a later, captioned set; the captures above go up plain)
 
 1. The whole part, every step: open it up.
 2. Sketch with your finger. Type the size.
-3. Holes that fit M3 screws.
+3. Holes sized for metric screws.
 4. Fold it: your work stays where it was.
 5. Raised text for labels and version marks.
 6. Precise CAD that fits in your pocket.
 
-(Caption 4 only once capture 4 shows the same value as capture 3.)
+(Captures 3 and 4 show the same holes and value, so caption 4 holds.)
 
 ### Featuring nomination (App Store Connect → Featuring → Nominations)
 
