@@ -83,6 +83,15 @@ void expectClosed(const ScanMesh& mesh)
     EXPECT_NEAR(m.min.z, 0.0, 1e-9);
 }
 
+void printStereo(const Outcome& o)
+{
+    const StereoStats& s = o.result.stereo;
+    std::printf("[scan]   stereo: %d views, %lld px searched, %lld confident, %lld consistent; carved %lld voxels "
+                "(%lld restored, %lld thin); %.0f ms (depth %.2f s, fusion %.2f s)\n",
+                s.viewsUsed, s.depthPixels, s.confidentPixels, s.consistentPixels, s.carvedVoxels, s.restoredVoxels, s.thinVoxels,
+                o.result.stereoMs, s.secondsDepth, s.secondsFusion);
+}
+
 void printSummary(const char* name, const Outcome& o, const Object& truth)
 {
     const auto& s = o.result.surface;
@@ -467,11 +476,13 @@ TEST(Scan, StereoRecoversTheChannelThroughTheWholePipeline)
     const Outcome h = scan(photos, true, true, hullOnly);
     ScanOptions withStereo;
     withStereo.stereo = true;
+    withStereo.stereoOptions.threads = 4; // as on a phone: the budget is ~4 s for 12 photos
     const Outcome s = scan(photos, true, true, withStereo);
     ASSERT_TRUE(h.ok) << h.error;
     ASSERT_TRUE(s.ok) << s.error;
     printSummary("U-channel, hull", h, scene.object);
     printSummary("U-channel, stereo", s, scene.object);
+    printStereo(s);
     EXPECT_TRUE(s.result.stereoUsed);
     EXPECT_GT(s.result.stereo.viewsUsed, 4);
     expectClosed(s.result.surface.mesh);
@@ -479,11 +490,50 @@ TEST(Scan, StereoRecoversTheChannelThroughTheWholePipeline)
     const double hullError = std::abs(h.result.surface.volumeMm3 - truth) / truth;
     const double stereoError = std::abs(s.result.surface.volumeMm3 - truth) / truth;
     EXPECT_LT(stereoError, 0.5 * hullError);
-    EXPECT_LT(stereoError, 0.15);
+    EXPECT_LT(stereoError, 0.10);
     EXPECT_GT(s.result.surface.volumeMm3, 0.95 * truth);
+    EXPECT_LE(s.result.surface.triangleCount, 3000);
+    EXPECT_LT(s.result.stereoMs, 4000.0);
     // Cancelled during the stereo stage: the run says so.
     auto cancelled = runScan(asScanPhotos(photos, true, true), withStereo, [](double f) { return f < 0.6; });
     EXPECT_FALSE(cancelled);
+}
+
+TEST(Scan, StereoLeavesABoxAndAPlainObjectAlone)
+{
+    // A textured box: stereo may take the hull's roof away, never the box;
+    // the same box untextured: no depth is trusted, the hull stands exactly.
+    Scene scene;
+    scene.object = boxObject({40, 30, 20});
+    scene.textureStrength = 0.6;
+    const auto cameras = ring(12, 38, 58, 5);
+    ScanOptions withStereo;
+    withStereo.stereo = true;
+    {
+        const auto photos = render(scene, cameras, 21);
+        const Outcome h = scan(photos, true, true);
+        const Outcome s = scan(photos, true, true, withStereo);
+        ASSERT_TRUE(h.ok && s.ok) << h.error << s.error;
+        printSummary("box, hull", h, scene.object);
+        printSummary("box, stereo", s, scene.object);
+        printStereo(s);
+        expectClosed(s.result.surface.mesh);
+        const double truth = scene.object.volume;
+        EXPECT_LE(std::abs(s.result.surface.volumeMm3 - truth), std::abs(h.result.surface.volumeMm3 - truth) + 0.005 * truth);
+        EXPECT_GT(s.result.surface.volumeMm3, 0.97 * truth);
+        EXPECT_LE(s.result.surface.triangleCount, 3000);
+    }
+    {
+        scene.textureStrength = 0;
+        const auto photos = render(scene, cameras, 22);
+        const Outcome h = scan(photos, true, true);
+        const Outcome s = scan(photos, true, true, withStereo);
+        ASSERT_TRUE(h.ok && s.ok) << h.error << s.error;
+        printStereo(s);
+        expectClosed(s.result.surface.mesh);
+        EXPECT_EQ(s.result.stereo.carvedVoxels, 0);
+        EXPECT_NEAR(s.result.surface.volumeMm3, h.result.surface.volumeMm3, 1e-6 * h.result.surface.volumeMm3);
+    }
 }
 
 TEST(Scan, PhotosFromOneSideAreWarnedAbout)
