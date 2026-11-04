@@ -835,6 +835,26 @@ large at the side with **Keep**.
   name, Length or Angle, a value); tap one to rename it, give it a new
   value or delete it. The value is copied when you type it: changing a
   measurement later does not change what was already built with it.
+- **Scan**: a 3D shape from photos. Stand the object on a sheet of A4 or
+  Letter paper on a plain table and take 8 to 16 photos walking around it
+  from about 45 degrees above, all four paper corners in every photo (Take
+  photos, Choose photos, or Open photos on a computer). Check the paper's
+  corners in any photo marked with a problem, then **Build**: the paper
+  gives each photo's position and the scale, the object's outline and
+  (with **Detail from the photos**) the texture between neighbouring photos
+  give its shape. Add to design makes it a body to measure or model
+  around. The outside shape comes out within a millimeter or two for a
+  hand-sized object with some texture; plain, shiny or very dark surfaces,
+  and hollows the camera cannot see into, come out filled or slightly
+  larger.
+- **Reference photos**: Photo → Straighten → **Place in design** puts the
+  straightened photo on the ground at its real size, under the model, to
+  sketch over (on a computer also File → Add Reference Photo…). In the
+  Model panel: its width, opacity, rotation, position and plane, Hide,
+  Delete, and **Set scale** (two points a known distance apart, then type
+  the distance).
+- **File → Import STL…**: an STL mesh as a body (each closed piece one
+  body).
 - Everything stays on your device: photos are kept in FoldForm's temporary
   folder while you measure, and iOS asks once before FoldForm may use the
   camera.

@@ -16,13 +16,15 @@ mesh in millimeters, and the mesh into a body. It all runs on the device, in pla
 
 ## The pipeline (`measure/Scan.h`)
 
-The stages are public so a stage can be inserted between carving and the surface (multi-view
-stereo will refine the carved field there):
+The stages are public; multi-view stereo sits between carving and the surface
+(`ScanOptions::stereo`, on in the app's Scan, off in the library's default so the silhouette
+tests measure the hull):
 
 | Stage | Function | Gives |
 |---|---|---|
 | 1-3 | `calibrate(photos, options, progress)` | `ScanCalibration`: one `ScanView` per used photo (camera, downsampled RGB, three-state mask), per-photo reports, warnings |
 | 4 | `carve(views, options, progress)` | `ScanGrid`: the visual hull as a signed field (> 0 inside) |
+| 4b | `refineWithStereo(views, hull, stereoOptions, progress, stats)` (`measure/ScanStereo.h`) | the field with what the photos' texture shows carved away (never adds volume) |
 | 5 | `extractSurface(grid, options, progress)` | `ScanSurface`: the closed mesh, volume, box, triangle count |
 | all | `runScan(photos, options, progress)` | `ScanResult` with timings |
 
@@ -107,7 +109,15 @@ corners can be fixed by hand (eight numbers after the focal length).
   slant: about (side / 2) x tan(angle to the nearest photo's direction)). Measured on the
   synthetic 40 x 30 x 20 box: 12 photos at 35-55 degrees, 11 mm too tall at the middle and
   +32 % volume; with 6 low photos added, 3 mm and +18 % (the bulges). A cylinder has no flat
-  sides: +2 % with low photos. Multi-view stereo (next stage) is what recovers these.
+  sides: +2 % with low photos. Multi-view stereo recovers these (next paragraph).
+- **Multi-view stereo** (`ScanStereo`, on in the app): for each photo a depth map by PatchMatch
+  with slanted planes, scored by ZNCC against its 2 to 4 best neighbours (the object downsampled
+  to about 240 px across), filtered by texture, score, distinctness and agreement with two other
+  depth maps, fused as a TSDF inside the hull (only carving). Measured on the synthetic 12-photo
+  ring: the U-channel +6.7 % (hull +51 %), a textured box +5.2 % (hull +30.9 %), a tray's pocket
+  floor within 0.1 mm; about 0.5 s at 4 threads. It needs texture: plain, shiny or very dark
+  surfaces keep the hull, and holes the cameras cannot see into stay filled. Surfaces err a
+  fraction of a millimeter outward. Only synthetic photos so far (no lens distortion modelled).
 - Footprints: corners and round parts within about a millimeter (the paper is a good ruler);
   flat sides bulge out by a few millimeters at their middle, less with more photos.
 - Without a subject mask a neutral grey or white object cannot be told from shadows on white
