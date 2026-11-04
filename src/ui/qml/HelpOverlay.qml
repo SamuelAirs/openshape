@@ -268,7 +268,10 @@ Rectangle {
                             ["Scan", "Stand the object on a sheet of A4 or Letter paper, take 8 to 12 photos all around from about 45° above (all four paper corners in each), check the corners, Build, then Add to design: a body of its shape"],
                             ["Into a value box", "The ruler button in a value box opens Measure for it; Use (e.g. Use 42.3 mm) types the value there"],
                             ["Kept measurements", "Keep saves a reading (Length 3, Angle 1, …); click one in the list to use, rename or delete it",
-                             "Keep saves a reading (Length 3, Angle 1, …); tap one in the list to use, rename or delete it"]
+                             "Keep saves a reading (Length 3, Angle 1, …); tap one in the list to use, rename or delete it"],
+                            ["Names in value boxes", "Add to project (on a kept reading) or + Measurement in the Model panel names a value; type the name in any value box: shelf_depth - 2"],
+                            ["Reference photo", "Photo → Straighten → Place in design: the photo at its real size on the ground to sketch over; in the Model panel its width, opacity and Set scale (click two points, type their distance)",
+                             "Photo → Straighten → Place in design: the photo at its real size on the ground to sketch over; in the Model panel its width, opacity and Set scale (tap two points, type their distance)"]
                         ]
                     }
                     HelpSection {
