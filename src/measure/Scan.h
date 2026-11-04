@@ -8,6 +8,7 @@
 #include "measure/Homography.h"
 #include "measure/ScanMask.h"
 #include "measure/ScanPose.h"
+#include "measure/ScanStereo.h"
 #include "measure/ScanTypes.h"
 
 #include <array>
@@ -71,6 +72,13 @@ struct ScanOptions {
     int taubinIterations = 6;
     int targetTriangles = 3000;
     MaskOptions masks;
+    // Multi-view stereo between carving and the surface (ScanStereo): depth
+    // maps from the photos' texture carve what the silhouettes cannot see
+    // (a pocket, a channel, a flat top's roof); untextured surfaces keep the
+    // hull. Off by default here (the silhouette tests measure the hull); the
+    // app's Scan turns it on.
+    bool stereo = false;
+    StereoOptions stereoOptions;
 };
 
 // What became of each photo.
@@ -136,6 +144,10 @@ struct ScanResult {
     bool focalEstimated = false;
     std::vector<std::string> warnings; // calibration's, carving's and the surface's, deduplicated
     double calibrateMs = 0, carveMs = 0, surfaceMs = 0;
+    // The stereo stage, when it ran (ScanOptions::stereo).
+    bool stereoUsed = false;
+    StereoStats stereo;
+    double stereoMs = 0;
 };
 
 // All three stages.

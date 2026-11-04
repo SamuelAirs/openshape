@@ -38,6 +38,17 @@ motion sensors, Vision and ARKit reported.
    20 mm circle sketch. In a sketch, Trace (the pen-on-a-wave tool): draw
    around a coin or a key lying on the screen with the Pencil; it should
    become a circle or a few lines and arcs.
+8. **Scan.** Measure → Scan: a mug or a small box on a sheet of A4 paper on a
+   plain table, good light; 10 to 12 photos walking around it from about 45°
+   above, all four paper corners in each. Build (stereo on): does it finish
+   in a few seconds, and do its W × D × H match a ruler? Add to design.
+   Then the same object from the photo library (Choose photos).
+9. **Reference photo.** Photo → Straighten → Place in design: the photo lies
+   on the ground at its real size; sketch a rectangle over a part in it.
+   Model panel: change its opacity; Set scale with two points.
+10. **Measurements in the project.** Keep a ruler length, open its card, Add
+    to project; then push a face and type its name minus 2 (e.g.
+    `length_1 - 2`) in the value box, or tap its key on the keypad.
 
 ## On Windows (the desktop shortcut)
 

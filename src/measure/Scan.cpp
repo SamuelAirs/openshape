@@ -946,21 +946,42 @@ Result<ScanResult> runScan(const std::vector<ScanPhoto>& photos, const ScanOptio
     };
     ScanResult out;
     const auto t0 = Clock::now();
-    auto calibration = calibrate(photos, options, stage(0, 0.5));
+    // Progress: calibration, carving, stereo (when on: the longest stage), the surface.
+    const double c1 = options.stereo ? 0.30 : 0.50, c2 = options.stereo ? 0.45 : 0.80, c3 = options.stereo ? 0.90 : 0.80;
+    auto calibration = calibrate(photos, options, stage(0, c1));
     if (!calibration)
         return R::failureFrom(calibration);
     const auto t1 = Clock::now();
-    auto hull = carve(calibration->views, options, stage(0.5, 0.8));
+    auto hull = carve(calibration->views, options, stage(c1, c2));
     if (!hull)
         return R::failureFrom(hull);
     const auto t2 = Clock::now();
-    auto surface = extractSurface(hull.value(), options, stage(0.8, 1.0));
+    // The stereo stage may only take volume away from the hull; cancelled,
+    // it hands the hull back, so ask the callback once more.
+    ScanGrid shape = hull.value();
+    if (options.stereo) {
+        bool cancelled = false;
+        const ScanProgress inner = stage(c2, c3);
+        shape = refineWithStereo(calibration->views, hull.value(), options.stereoOptions,
+                                 [&](double f) {
+                                     if (inner && !inner(f))
+                                         cancelled = true;
+                                     return !cancelled;
+                                 },
+                                 &out.stereo);
+        if (cancelled)
+            return R::failure(ErrorCode::NoEffect, "Cancelled.", "scan: cancelled during stereo");
+        out.stereoUsed = true;
+    }
+    const auto t3 = Clock::now();
+    auto surface = extractSurface(shape, options, stage(c3, 1.0));
     if (!surface)
         return R::failureFrom(surface);
-    const auto t3 = Clock::now();
+    const auto t4 = Clock::now();
     out.calibrateMs = ms(t0, t1);
     out.carveMs = ms(t1, t2);
-    out.surfaceMs = ms(t2, t3);
+    out.stereoMs = ms(t2, t3);
+    out.surfaceMs = ms(t3, t4);
     out.photos = calibration->photos;
     out.focal35mm = calibration->focal35mm;
     out.focalEstimated = calibration->focalEstimated;

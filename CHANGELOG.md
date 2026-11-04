@@ -39,6 +39,31 @@ things").
 - **Trace** sketch tool (D): draw freehand with the Pencil or a finger and
   the stroke becomes lines, arcs or a circle; at 1:1, trace around a part
   lying on the screen.
+- **Scan: FoldForm's own photogrammetry.** Stand an object on a sheet of
+  A4 or Letter paper and take 8 to 16 photos walking around it: the paper
+  gives each photo's camera (no LiDAR needed) and the scale, the object's
+  outline comes from Apple's subject cutout (Vision) or the paper's colour,
+  a voxel volume is carved from the silhouettes, and **multi-view stereo**
+  (depth maps matched between neighbouring photos, fused inside the carved
+  shape) recovers what silhouettes cannot see, such as a pocket, a channel or
+  a flat top. The result is a closed mesh, brought into the design as a body
+  you can measure and model around. Silhouettes alone overestimate flat and
+  hollow shapes; stereo needs some texture on the object (plain, shiny or very
+  dark surfaces keep the silhouette shape) (docs/SCAN.md).
+- **File → Import STL…**: STL meshes (binary or ASCII) as bodies, each closed
+  piece one body, for remixing.
+- **Reference photos in the design**: a photo placed at true size on the
+  ground, Front, Right or a construction plane, under and behind the model
+  (bodies hide it), semi-transparent, to model or sketch over; saved in the
+  project. From Measure's straightened photo (**Place in design**, exact
+  scale) or File → Add Reference Photo… on the desktop; in the Model panel:
+  width, opacity, rotation, position, plane, hide, and **Set scale** by two
+  points of known distance.
+- **Measurements kept in the project, typed by name**: the Model panel's
+  Measurements (or **Add to project** on a kept measurement) gives a value a
+  name, and any value box takes it: `shelf_depth - 2`, `2 * wall`,
+  `corner_angle / 2`. The keypad shows the names as keys. A name is turned
+  into its number when typed (no live link yet).
 - Everything stays on the device: iOS asks once for the camera; the photo
   library is read through the system picker; FoldForm still collects no
   data (docs/PRIVACY.md).

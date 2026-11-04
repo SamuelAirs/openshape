@@ -453,6 +453,39 @@ TEST(Scan, UChannelHullFillsTheSlot)
     EXPECT_LT(o.result.surface.volumeMm3, 1.05 * outer);
 }
 
+TEST(Scan, StereoRecoversTheChannelThroughTheWholePipeline)
+{
+    // The same U-channel as above, textured, through runScan with the stereo
+    // stage on: much closer to the true volume than the silhouette hull, and
+    // never smaller than the part (stereo errs on the side of material).
+    Scene scene;
+    scene.object = uChannelObject({0, 10});
+    scene.textureStrength = 0.6;
+    auto cameras = ring(12, 38, 58, 5);
+    const auto photos = render(scene, cameras, 16);
+    ScanOptions hullOnly;
+    const Outcome h = scan(photos, true, true, hullOnly);
+    ScanOptions withStereo;
+    withStereo.stereo = true;
+    const Outcome s = scan(photos, true, true, withStereo);
+    ASSERT_TRUE(h.ok) << h.error;
+    ASSERT_TRUE(s.ok) << s.error;
+    printSummary("U-channel, hull", h, scene.object);
+    printSummary("U-channel, stereo", s, scene.object);
+    EXPECT_TRUE(s.result.stereoUsed);
+    EXPECT_GT(s.result.stereo.viewsUsed, 4);
+    expectClosed(s.result.surface.mesh);
+    const double truth = scene.object.volume;
+    const double hullError = std::abs(h.result.surface.volumeMm3 - truth) / truth;
+    const double stereoError = std::abs(s.result.surface.volumeMm3 - truth) / truth;
+    EXPECT_LT(stereoError, 0.5 * hullError);
+    EXPECT_LT(stereoError, 0.15);
+    EXPECT_GT(s.result.surface.volumeMm3, 0.95 * truth);
+    // Cancelled during the stereo stage: the run says so.
+    auto cancelled = runScan(asScanPhotos(photos, true, true), withStereo, [](double f) { return f < 0.6; });
+    EXPECT_FALSE(cancelled);
+}
+
 TEST(Scan, PhotosFromOneSideAreWarnedAbout)
 {
     Scene scene;
