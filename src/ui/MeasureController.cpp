@@ -109,7 +109,7 @@ QString arModeName(ArMode mode)
     return QStringLiteral("distance");
 }
 
-std::optional<measure::Reference> referenceFor(const QString& kind, double a, double b, const measure::CardSize& card)
+std::optional<measure::Reference> referenceFor(const QString& kind, double a, double b)
 {
     if (kind == QLatin1String("a4"))
         return measure::a4Reference();
@@ -117,7 +117,7 @@ std::optional<measure::Reference> referenceFor(const QString& kind, double a, do
         return measure::letterReference();
     if (kind == QLatin1String("rectangle"))
         return measure::rectangleReference(a, b);
-    return measure::cardReference(card);
+    return measure::cardReference();
 }
 
 } // namespace
@@ -746,7 +746,7 @@ bool MeasureController::setReference(const QString& kind, double sideA, double s
     referenceKind_ = k;
     referenceSideA_ = sideA;
     referenceSideB_ = sideB;
-    const bool usable = referenceFor(k, sideA, sideB, card()).has_value();
+    const bool usable = referenceFor(k, sideA, sideB).has_value();
     emit photoChanged();
     return usable;
 }
@@ -757,7 +757,7 @@ bool MeasureController::straighten()
         setPhotoError(photoBusy_ ? QString() : QStringLiteral("Take or choose a photo first."));
         return false;
     }
-    const auto reference = referenceFor(referenceKind_, referenceSideA_, referenceSideB_, card());
+    const auto reference = referenceFor(referenceKind_, referenceSideA_, referenceSideB_);
     if (!reference) {
         setPhotoError(QStringLiteral("Type both sides of the rectangle (in millimeters)."));
         return false;
