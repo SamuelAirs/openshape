@@ -74,8 +74,11 @@ qt_add_qml_module(openshape_ui
         ViewportItem.cpp ViewportItem.h
         WindowMetricsLog.cpp WindowMetricsLog.h
         Share.h
+        MeasureDevices.cpp MeasureDevices.h
 )
 target_link_libraries(openshape_ui PUBLIC openshape_render openshape_io openshape_uistate Qt6::Quick Qt6::QuickControls2)
+# The Measure tools' math (src/measure, docs/MEASURE.md).
+target_link_libraries(openshape_ui PUBLIC openshape_measure)
 # Home's Samples: their names and what each shows.
 target_link_libraries(openshape_ui PRIVATE openshape_samples)
 target_include_directories(openshape_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)

@@ -1,0 +1,133 @@
+# Measure: the phone as a measuring tool (FoldForm 0.4)
+
+Sam's ask (2026-11-03): "add tools to use the iPhone as a real life measurement tool. So
+rulers, photogrammetry, angles using the fold, anything you can think of. It should be one
+tool to measure and design. Be ambitious."
+
+FoldForm's answer is **Measure**: one workspace, opened from the top bar (a ruler icon) or from
+any value box, with five instruments that measure real things, and a list of what was measured
+that feeds straight into the design. Everything runs on the device; no photo or reading leaves
+it.
+
+## The idea in one paragraph
+
+Every value box (a push/pull's height, a fillet's radius, a rotation's angle, a sketch line's
+length) gets a small ruler button. Tap it, measure the real thing (the shelf's depth with the
+camera, the corner's angle with the fold, the coin's diameter on the screen) and the number lands
+in the box. Measurements made on their own are kept in a list (named, newest first) and can be
+typed into any box later. And measuring can *make* geometry: an outline tapped on a straightened
+photo or placed with the camera becomes a sketch at real size; a box measured in AR becomes a
+body; a part laid on the screen and traced with the Pencil at 1:1 becomes a profile to extrude.
+
+## Instruments
+
+| Instrument | Hardware | Measures | Makes |
+|---|---|---|---|
+| **Ruler** | the screen (any device) | lengths and diameters of things laid on the glass | a value, a circle sketch |
+| **Fold** | the iPhone Duo's hinge (`UIHingeInteraction`, iOS 27.1) | angles between two faces; a gap pinched between the free edges (caliper) | a value |
+| **Level** | motion sensors (CoreMotion gravity) | slope, an edge's angle from level, the angle between two resting positions | a value |
+| **Photo** | the camera or the photo library; Vision finds the reference | lengths, outlines, areas and circles on any flat surface in a photo with a card or a sheet of paper on it | a value, an outline sketch, a circle sketch |
+| **Camera (AR)** | ARKit (LiDAR where there is one) | distances in the room, an outline on a surface, a box's width, depth and height | a value, an outline sketch, a box body |
+
+Plus, in the design itself:
+
+- **1:1 (Actual size)** in the View buttons: the orthographic view at the screen's true scale,
+  so a part laid on the glass can be compared with its model, or traced.
+- **Trace** in the sketch tools: draw freehand (Pencil or finger); the stroke becomes lines,
+  arcs or a circle within a tolerance (`measure/StrokeFit`). At 1:1, trace around a real part
+  lying on the screen.
+
+### Ruler
+
+- A scale along the screen's long edge at true size (mm with cm numbers, or inches in 1/16
+  when the display unit is in), two jaws to drag to an object's ends, and the distance between
+  them. A **Circle** gauge: a ring dragged to fit a round thing (a coin, a washer, a cap) gives
+  its diameter.
+- **Scale**: iOS doesn't say how big its screens are, so FoldForm knows the iPhones' and iPads'
+  pixel densities (`measure/ScreenScale`: 460 ppi 3x iPhones, 458 for the Duo's displays (an
+  estimate from the diagonals), 264 iPads, 326 iPad mini) and offers **Check with a card**: a
+  bank card's outline (ISO/IEC 7810 ID-1, 85.60 x 53.98 mm) drawn at the current scale; lay a
+  real card on it and stretch the outline until they match. The calibration is kept per screen
+  (`screenKey`: "951x669@3"; the Duo's two displays get one each). Until then the readout says
+  the scale is estimated.
+
+### Fold (iPhone Duo)
+
+- UIKit's `UIHinge.angle` (radians, 0 closed, pi flat) read through a `UIHingeInteraction` on
+  the app's view. Shown: the angle between the halves and the bend (180 minus it), with a side
+  view of the phone at that angle.
+- **Inside a corner** (the backs on the faces) or **over an edge** (the screens on the faces:
+  the reading can't be seen while measuring), so readings are smoothed and **held when steady**
+  (`measure/SteadyReading`: still within 0.4 degrees for 0.8 s), with a tap felt in the hand.
+- **Gap** (caliper): something pinched between the two free edges is 2 L sin(angle / 2) wide,
+  L being a half's length from the hinge to its edge (estimated from the screen, then
+  calibrated by pinching a card's side). The readout shows how far one degree moves it.
+- Apple says the angle's rate and precision are system policy: the log records what the Duo
+  gives (TD-166).
+
+### Level
+
+- Lying down: a bubble and the surface's slope. Standing on an edge: the edge's angle from
+  level. **Keep** stores the current position; then the angle between it and the next resting
+  position is the angle between the two surfaces. Held when steady, like the fold.
+
+### Photo
+
+1. **Take** or **choose** a photo (the desktop: open an image file) with a reference lying flat
+   on the surface: a bank card, A4 or Letter paper, or any rectangle whose sides are typed.
+2. **Corners**: Vision finds the reference where it can (`VNDetectRectanglesRequest`); four
+   handles (with a magnifier while dragged) fix it.
+3. **Straighten**: `measure/PlaneRectifier` computes the photo-to-surface map and
+   `warpToView` draws the photo as seen from straight above, in millimeters.
+4. **Measure** on it: **Distance** (two taps), **Outline** (taps around a shape, closed on the
+   first point: each side, the area), **Circle** (three taps on its rim: the diameter). **Make
+   sketch** puts the outline or the circle on the ground plane at real size.
+- Only points on the reference's surface measure true; a reference's error scales everything
+  (a card gives about 0.5 % from the corners' placement, a sheet of paper better).
+
+### Camera (AR)
+
+- ARKit's camera view with a crosshair; **Add point** places a point where the crosshair meets
+  a surface (raycasts on estimated planes; LiDAR depth where there is one). **Distance**,
+  **Outline** (points on one surface, closed) and **Box** (three base corners, then a point on
+  the top). The view is native UIKit (`src/ui/ios/ArMeasureIos.mm`), so it is iOS only; the
+  result comes back to the Measure workspace to keep, use, sketch or make into a box.
+- LiDAR (the Pro iPhones) is good to about 1 cm; without it ARKit's planes are less exact. AR
+  is for rooms and furniture, not for print tolerances: the readout says so.
+
+## Measurements
+
+- `measure/MeasurementLog`: the kept values (length mm, angle degrees, area mm²), named
+  ("Length 3" until renamed), newest first, at most 60, stored in the app's settings
+  (`measure/measurements`). Shown in the Measure workspace's tray; each can be used, renamed,
+  removed.
+- `valueText` writes what the value boxes' parsers read back ("42.3mm", "37.5°").
+
+## How the code is laid out
+
+- `src/measure/` (`openshape_measure`, Qt-free, `tests/test_measure.cpp`): ScreenScale,
+  Homography (PlaneRectifier, the straightened view and the warp), StrokeFit, Fold
+  (SteadyReading), Level, Outline, Measurement.
+- `src/ui/MeasureDevices.h`: the platform's hardware as functions, empty where there is none;
+  `src/ui/ios/*.mm` fill them in (hinge, gravity, haptics, camera and photos, Vision, ARKit).
+- `src/ui/MeasureController.*`: the Measure workspace's state for QML (`app.measure`): the
+  scale and its calibration, the sensors (started while the workspace is open), the photo
+  session, the measurements, and the stand-ins the acceptance run drives.
+- `src/ui/qml/MeasureScreen.qml` and its parts: the workspace.
+- AppController: `createOutlineSketch`, `createCircleSketch`, `createSizedBox` (one undo step
+  each), the 1:1 view, the value boxes' ruler button; SketchSession: the Trace tool.
+
+## Privacy
+
+The camera, the photo library and the motion sensors are used on the device only. Photos are
+kept in the app's temporary folder while measuring and never sent anywhere; FoldForm still
+collects no data (docs/PRIVACY.md). iOS asks once for the camera (`NSCameraUsageDescription`);
+the photo library is read through the system picker, which needs no permission; motion sensors
+need none.
+
+## Not yet (TD-166 onward)
+
+- Object Capture (a full 3D scan) needs RealityKit's Swift-only API; ARKit's LiDAR mesh as a
+  reference body is the nearer step.
+- A photo kept as a sketch's backdrop to trace over in the design itself.
+- Measurements saved in a project and referenced by name in typed values.
