@@ -259,7 +259,7 @@ Rectangle {
                         rows: [
                             ["Open Measure", "The ruler button at the top, or Measure on Home: instruments that measure real things, for the design"],
                             ["Ruler", "Lay a thing on the screen and drag the two jaws to its ends · Circle: drag the ring's handle until it fits a coin, a washer or a cap (Make sketch draws it)"],
-                            ["Card check", "Ruler → Check with a card: lay a playing card (or pick Bank card) on the outline and stretch it to the card's edges; the scale is kept for this screen"],
+                            ["Card check", "Ruler → Check with a card: lay a playing card on the outline and stretch it to the card's edges; the scale is kept for this screen"],
                             ["Fold", "iPhone Duo: rest the two halves on two faces (inside a corner or over an edge) and keep still: the pill fills, and after a second the angle is held (HELD over the number, a tap felt) · Gap: pinch a part between the free edges (Calibrate with a card first)"],
                             ["Level", "Lie the phone on a surface for its slope, stand it on an edge for the edge's angle · Keep as reference: the next position gives the angle between the two surfaces"],
                             ["Photo", "Photograph the thing with a playing card or a sheet of paper flat beside it, check the four corners, Straighten, then click two ends (Distance), the corners (Outline) or three points on a rim (Circle)",

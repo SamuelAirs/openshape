@@ -654,27 +654,12 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     steps.push_back([&r, st] {
         r.check(shown(r, QStringLiteral("cardCalibration")), say("card: the outline is shown"));
         st->before = prop(r, QStringLiteral("cardCalibration"), "spanPt").toDouble();
-        r.check(measureOf(r).cardKind() == QStringLiteral("playing") && std::abs(st->before - measure::kPlayingCard.longMm * st->ppm) < 0.01,
+        r.check(std::abs(st->before - measure::kPlayingCard.longMm * st->ppm) < 0.01,
                 say("card: a playing card's outline, drawn at the current scale"), AcceptanceRunner::num(st->before));
         r.check(text(r, QStringLiteral("cardInstructions")).contains(QStringLiteral("playing card"))
                     && text(r, QStringLiteral("cardSizeText")) == QStringLiteral("63.5 \u00D7 88.9 mm"),
                 say("card: it says which card, and its size"), text(r, QStringLiteral("cardSizeText")));
-        r.check(r.tapItem(QStringLiteral("cardKind_bank")), say("card: pick Bank card"));
-    });
-    wait(steps, 1);
-    steps.push_back([&r, st] {
-        const double span = prop(r, QStringLiteral("cardCalibration"), "spanPt").toDouble();
-        r.check(measureOf(r).cardKind() == QStringLiteral("bank") && std::abs(span - measure::kBankCard.longMm * st->ppm) < 0.01
-                    && text(r, QStringLiteral("cardSizeText")) == QStringLiteral("53.98 \u00D7 85.60 mm"),
-                say("card: the bank card's outline at the same scale"), AcceptanceRunner::num(span));
-        r.check(QSettings().value(QStringLiteral("measure/card")).toString() == QStringLiteral("bank"), say("card: the choice is kept"));
-        r.check(r.tapItem(QStringLiteral("cardKind_playing")), say("card: back to Playing card"));
-    });
-    wait(steps, 1);
-    steps.push_back([&r, st] {
-        r.check(measureOf(r).cardKind() == QStringLiteral("playing")
-                    && std::abs(prop(r, QStringLiteral("cardCalibration"), "spanPt").toDouble() - st->before) < 0.01,
-                say("card: the playing card again, as drawn before"));
+        r.check(!item(r, QStringLiteral("cardKind")), say("card: a playing card, no other card offered"));
         QQuickItem* outline = item(r, QStringLiteral("cardOutline"));
         r.check(outline && std::abs(outline->height() - st->before) < 0.01, say("card: along the phone's long side"),
                 outline ? AcceptanceRunner::num(outline->height()) : QString());

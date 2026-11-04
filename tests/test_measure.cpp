@@ -82,11 +82,11 @@ TEST(ScreenScale, KeysAndCalibration)
     EXPECT_EQ(screenKey({951, 669, 3.0, DeviceKind::Phone}), "951x669@3");
     EXPECT_EQ(screenKey({669, 951, 3.0, DeviceKind::Phone}), "951x669@3"); // turned: same screen
     EXPECT_EQ(screenKey({1707.4, 960, 1.5, DeviceKind::Desktop}), "1707x960@1.5");
-    // A card's long side matched 515 points.
-    const double ppm = pointsPerMmFromSpan(515.0, kBankCard.longMm);
-    EXPECT_NEAR(ppm, 515.0 / 85.6, 1e-12);
+    // A playing card's long side matched 534 points.
+    const double ppm = pointsPerMmFromSpan(534.0, kPlayingCard.longMm);
+    EXPECT_NEAR(ppm, 534.0 / 88.9, 1e-12);
     EXPECT_TRUE(plausiblePointsPerMm(ppm));
-    EXPECT_FALSE(plausiblePointsPerMm(pointsPerMmFromSpan(30, kBankCard.longMm))); // a card 30 points wide
+    EXPECT_FALSE(plausiblePointsPerMm(pointsPerMmFromSpan(30, kPlayingCard.longMm))); // a card 30 points wide
     EXPECT_EQ(pointsPerMmFromSpan(-1, 85.6), 0.0);
     EXPECT_FALSE(plausiblePointsPerMm(0));
 }
@@ -118,7 +118,7 @@ TEST(Homography, CardInATiltedPhotoMeasuresThingsBesideIt)
     // A card lying on the table at (0,0)..(85.6, 53.98), photographed at a slant.
     const std::array<Vec2, 4> card{cam.project({0, 0}), cam.project({85.6, 0}), cam.project({85.6, 53.98}),
                                    cam.project({0, 53.98})};
-    const auto r = PlaneRectifier::create(card, cardReference(kBankCard));
+    const auto r = PlaneRectifier::create(card, *rectangleReference(85.6, 53.98));
     ASSERT_TRUE(r);
     // A 120 mm pencil lying beside it, diagonally.
     const Vec2 a = cam.project({100, 10}), b = cam.project({100 + 120 * std::cos(0.5), 10 + 120 * std::sin(0.5)});
@@ -142,7 +142,7 @@ TEST(Homography, CornersFromAnyStartAndDirectionGiveTheSameMeasure)
             std::array<Vec2, 4> q{};
             for (int i = 0; i < 4; ++i)
                 q[i] = card[(start + dir * i + 8) % 4];
-            const auto r = PlaneRectifier::create(q, cardReference(kBankCard));
+            const auto r = PlaneRectifier::create(q, *rectangleReference(85.6, 53.98));
             ASSERT_TRUE(r) << start << " " << dir;
             EXPECT_NEAR(r->distanceMm(a, b), truth, 1e-6) << start << " " << dir;
             // Never mirrored: the plane's corners go round as the photo's do (y down).
@@ -155,17 +155,15 @@ TEST(Homography, CornersFromAnyStartAndDirectionGiveTheSameMeasure)
     }
     // A bow tie (corners out of order) is refused.
     std::swap(card[1], card[2]);
-    EXPECT_FALSE(PlaneRectifier::create(card, cardReference(kBankCard)));
+    EXPECT_FALSE(PlaneRectifier::create(card, *rectangleReference(85.6, 53.98)));
 }
 
 TEST(Homography, ReferencesAndTheStraightenedView)
 {
-    // The card is a poker-size playing card unless another is named.
+    // The card is a poker-size playing card.
     EXPECT_NEAR(cardReference().widthMm, 88.9, 1e-12);
     EXPECT_NEAR(cardReference().heightMm, 63.5, 1e-12);
     EXPECT_EQ(cardReference().name, "Playing card");
-    EXPECT_NEAR(cardReference(kBankCard).widthMm, 85.6, 1e-12);
-    EXPECT_EQ(cardReference(kBankCard).name, "Bank card");
     EXPECT_NEAR(a4Reference().widthMm, 297.0, 1e-12);
     EXPECT_NEAR(letterReference().heightMm, 215.9, 1e-12);
     const auto rect = rectangleReference(40, 100);
@@ -177,7 +175,7 @@ TEST(Homography, ReferencesAndTheStraightenedView)
     const TestCamera cam;
     const std::array<Vec2, 4> card{cam.project({0, 0}), cam.project({85.6, 0}), cam.project({85.6, 53.98}),
                                    cam.project({0, 53.98})};
-    const auto r = PlaneRectifier::create(card, cardReference(kBankCard));
+    const auto r = PlaneRectifier::create(card, *rectangleReference(85.6, 53.98));
     ASSERT_TRUE(r);
     const RectifiedView view = planRectifiedView(*r, 4032, 3024, 2000);
     EXPECT_LE(std::max(view.width, view.height), 2001);
@@ -347,9 +345,9 @@ TEST(Fold, AnglesAndCaliper)
     EXPECT_NEAR(caliperGapMm(kPi, 79.0), 158.0, 1e-9); // flat: both halves end to end
     EXPECT_NEAR(caliperGapMm(kPi / 3.0, 79.0), 79.0, 1e-9); // 60 degrees: an equilateral triangle
     // Calibrating with a card's long side pinched at 65.6 degrees.
-    const auto arm = armFromKnownGap(65.6 * kDeg, kBankCard.longMm);
+    const auto arm = armFromKnownGap(65.6 * kDeg, kPlayingCard.longMm);
     ASSERT_TRUE(arm);
-    EXPECT_NEAR(caliperGapMm(65.6 * kDeg, *arm), kBankCard.longMm, 1e-9);
+    EXPECT_NEAR(caliperGapMm(65.6 * kDeg, *arm), kPlayingCard.longMm, 1e-9);
     EXPECT_FALSE(armFromKnownGap(1.0 * kDeg, 10.0));
     EXPECT_NEAR(caliperMmPerDegree(0, 79.0), 79.0 * kDeg, 1e-12);
 }

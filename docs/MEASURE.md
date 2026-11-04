@@ -63,19 +63,20 @@ Plus, in the design itself:
   card's outline drawn at the current scale; lay a real card on it and stretch the outline
   until they match. The calibration is kept per screen (`screenKey`: "951x669@3"; the Duo's
   two displays get one each). Until then the readout says the scale is estimated.
-- **The card** (Sam, 2026-11-04: measurements "built around a bicycle playing card instead of"
-  the bank card): a poker-size playing card, 63.5 x 88.9 mm (2.5 x 3.5 in,
-  `measure::kPlayingCard`), is the card of the scale check, the Fold's caliper and the photo's
-  **Card** reference. It is in most homes and carries nothing to keep out of a photo. A bank
-  card (ISO/IEC 7810 ID-1, 53.98 x 85.60 mm, `kBankCard`) stays a second choice in the card
-  check (**Playing card / Bank card**, `MeasureController.cardKind`, kept in the settings as
-  `measure/card`; the caliper and the photo follow it). Bank cards are cut to an ISO tolerance
-  of about a tenth of a millimetre; playing cards have no published standard: makers cut 2.5 x
-  3.5 in, cards of one maker are alike, and the sizes quoted differ by up to half a millimetre
-  (63 x 88 to 64 x 89 mm), about 0.6 %. To pin the Bicycle size down: check the scale with a
-  bank card, then measure a Bicycle card on the Ruler (docs/MANUAL_TESTS.md); if it is not 88.9
-  mm, `kPlayingCard` takes the measured size. Calibrations already kept stay valid (a scale is
-  a scale, whatever card found it).
+- **The card** (Sam, 2026-11-04: measurements "built around a bicycle playing card instead of
+  a business card"): a poker-size playing card, 63.5 x 88.9 mm (2.5 x 3.5 in,
+  `measure::kPlayingCard`), is the only card: the scale check, the Fold's caliper and the
+  photo's **Card** reference. Until build 63 it was a debit or credit card (ISO/IEC 7810 ID-1,
+  85.60 x 53.98 mm, called a "bank card" on screen, which confused); build 63 still offered it
+  as a second choice in the card check, and the Photo tool asked for one in the picture. Sam:
+  "having people take pictures of their debit card is an excellent way to lose trust lol let's
+  go with the playing card". So the app never asks for a payment card, on screen or in a photo.
+  The cost: ID-1 cards are cut to an ISO tolerance of about a tenth of a millimetre; playing
+  cards have no published standard (makers cut 2.5 x 3.5 in, cards of one maker are alike, and
+  the sizes quoted differ by up to half a millimetre, 63 x 88 to 64 x 89 mm, about 0.6 %,
+  TD-176). Sam's check (docs/MANUAL_TESTS.md, 14): after the card check, a real ruler laid along
+  the screen's; if the marks part at 100 mm, `kPlayingCard` takes the measured size.
+  Calibrations already kept stay valid (a scale is a scale, whatever card found it).
 
 ### Fold (iPhone Duo)
 
@@ -117,8 +118,7 @@ Plus, in the design itself:
 ### Photo
 
 1. **Take** or **choose** a photo (the desktop: open an image file) with a reference lying flat
-   on the surface: a playing card (or a bank card, as picked in the card check), A4 or Letter
-   paper, or any rectangle whose sides are typed.
+   on the surface: a playing card, A4 or Letter paper, or any rectangle whose sides are typed.
 2. **Corners**: Vision finds the reference where it can (`VNDetectRectanglesRequest`); four
    handles (with a magnifier while dragged) fix it.
 3. **Straighten**: `measure/PlaneRectifier` computes the photo-to-surface map and

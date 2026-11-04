@@ -69,14 +69,12 @@ class MeasureController : public QObject {
     // inches, else "mm".
     Q_PROPERTY(QString unit READ unit NOTIFY unitChanged)
     // The card of known size the scale check, the caliper and the photo's
-    // "Card" use: "playing" (a poker-size playing card, 63.5 x 88.9 mm, the
-    // default) or "bank" (ISO/IEC 7810 ID-1, 53.98 x 85.60 mm). Kept.
-    Q_PROPERTY(QString cardKind READ cardKind WRITE setCardKind NOTIFY cardChanged)
-    Q_PROPERTY(QString cardName READ cardName NOTIFY cardChanged)          // "Playing card"
-    Q_PROPERTY(double cardLongMm READ cardLongMm NOTIFY cardChanged)
-    Q_PROPERTY(double cardShortMm READ cardShortMm NOTIFY cardChanged)
-    Q_PROPERTY(double cardCornerMm READ cardCornerMm NOTIFY cardChanged)
-    Q_PROPERTY(QString cardSizeText READ cardSizeText NOTIFY cardChanged)  // "63.5 × 88.9 mm"
+    // "Card" use: a poker-size playing card, 63.5 x 88.9 mm (kPlayingCard).
+    Q_PROPERTY(QString cardName READ cardName CONSTANT)          // "Playing card"
+    Q_PROPERTY(double cardLongMm READ cardLongMm CONSTANT)
+    Q_PROPERTY(double cardShortMm READ cardShortMm CONSTANT)
+    Q_PROPERTY(double cardCornerMm READ cardCornerMm CONSTANT)
+    Q_PROPERTY(QString cardSizeText READ cardSizeText CONSTANT)  // "63.5 × 88.9 mm"
 
     // ---- Sensors (while startSensors() .. stopSensors())
     Q_PROPERTY(bool sensorsRunning READ sensorsRunning NOTIFY sensorsChanged)
@@ -185,8 +183,6 @@ public:
     QString deviceKind() const { return deviceKind_; }
     bool foldCrease() const { return foldCrease_; }
     QString unit() const;
-    QString cardKind() const { return cardKind_; }
-    void setCardKind(const QString& kind);
     QString cardName() const;
     double cardLongMm() const { return card().longMm; }
     double cardShortMm() const { return card().shortMm; }
@@ -394,7 +390,6 @@ public:
 signals:
     void scaleChanged();
     void unitChanged();
-    void cardChanged();
     void sensorsChanged();
     void foldChanged();
     void levelChanged();
@@ -478,7 +473,6 @@ private:
     bool levelSteady_ = false;
     double levelProgress_ = 0;
     bool levelArmed_ = true;
-    QString cardKind_ = QStringLiteral("playing");
 
     bool photoBusy_ = false;
     int photoGeneration_ = 0;

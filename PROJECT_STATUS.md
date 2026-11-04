@@ -301,11 +301,14 @@ The full real-UI run waits for the push after the owner's round.
   reading types into a value box by itself (it never did).
 - "built around a bicycle playing card instead of a business card": the
   card is a poker-size playing card, 63.5 x 88.9 mm (`kPlayingCard`), for
-  the scale check, the caliper and the photo's Card; the bank card stays a
-  second choice in the card check (`cardKind`, kept). Playing cards have no
-  published tolerance (quoted sizes differ by up to 0.5 mm): TD-176, and
-  docs/MANUAL_TESTS.md 14 asks the owner to measure a Bicycle card on a
-  bank-card-checked Ruler.
+  the scale check, the caliper and the photo's Card. Build 63 still offered
+  the debit/credit card ("Bank card") as a second choice; the owner, after:
+  "having people take pictures of their debit card is an excellent way to
+  lose trust lol let's go with the playing card": the next build has the
+  playing card only (and the Photo intro no longer asks for a "bank card").
+  Playing cards have no published tolerance (quoted sizes differ by up to
+  0.5 mm): TD-176; docs/MANUAL_TESTS.md 14 has him lay a real ruler along
+  the screen's after the card check.
 - Found by the run: `ProjectMeasurementsSection`'s value field called
   `release()` after the rows were rebuilt (a TypeError, and `finished()`
   never ran); it now lets go of the keypad through what it captured.

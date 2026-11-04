@@ -232,8 +232,7 @@ Item {
                     spacing: 10
                     Text {
                         Layout.fillWidth: true
-                        text: "Pinch a " + (fold.m && fold.m.cardKind === "bank" ? "bank card" : "playing card")
-                              + " between the free edges, its side square to the hinge, and hold still."
+                        text: "Pinch a playing card between the free edges, its side square to the hinge, and hold still."
                         font.pixelSize: 14
                         color: Theme.text
                         wrapMode: Text.WordWrap
@@ -242,9 +241,8 @@ Item {
                         Layout.fillWidth: true
                         namePrefix: "caliperSide_"
                         showIcons: false
-                        readonly property int decimals: fold.m && fold.m.cardKind === "bank" ? 2 : 1
-                        model: !fold.m ? [] : [{ key: "short", label: "Short side " + fold.m.cardShortMm.toFixed(decimals) },
-                                               { key: "long", label: "Long side " + fold.m.cardLongMm.toFixed(decimals) }]
+                        model: !fold.m ? [] : [{ key: "short", label: "Short side " + fold.m.cardShortMm.toFixed(1) },
+                                               { key: "long", label: "Long side " + fold.m.cardLongMm.toFixed(1) }]
                         current: fold.calibrationSide
                         onPicked: (key) => fold.calibrationSide = key
                     }

@@ -39,7 +39,6 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
 const char* const kScaleKey = "measure/scale/";
 const char* const kCaliperKey = "measure/caliperArm";
-const char* const kCardKey = "measure/card";
 // How often time passing re-feeds a still hinge (MeasureController::tickSensors).
 constexpr int kSensorTickMs = 100;
 const char* const kMeasurementsKey = "measure/measurements";
@@ -132,8 +131,6 @@ MeasureController::MeasureController(AppController* app) : QObject(app), app_(ap
     connect(app_, &AppController::stateChanged, this, &MeasureController::checkUnit);
     loadMeasurements();
     loadCaliper();
-    if (QSettings().value(QLatin1String(kCardKey)).toString() == QLatin1String("bank"))
-        cardKind_ = QStringLiteral("bank");
     sensorTick_ = new QTimer(this);
     sensorTick_->setInterval(kSensorTickMs);
     connect(sensorTick_, &QTimer::timeout, this, &MeasureController::tickSensors);
@@ -263,28 +260,13 @@ QString MeasureController::unit() const
     return u == LengthUnit::Inch ? QStringLiteral("in") : QStringLiteral("mm");
 }
 
-const measure::CardSize& MeasureController::card() const
-{
-    return cardKind_ == QLatin1String("bank") ? measure::kBankCard : measure::kPlayingCard;
-}
-
-void MeasureController::setCardKind(const QString& kind)
-{
-    const QString k = kind == QLatin1String("bank") ? QStringLiteral("bank") : QStringLiteral("playing");
-    if (k == cardKind_)
-        return;
-    cardKind_ = k;
-    QSettings().setValue(QLatin1String(kCardKey), cardKind_);
-    OS_LOG(Info, App) << "measure: the card is a " << card().name << " (" << card().shortMm << " x " << card().longMm << " mm)";
-    emit cardChanged();
-    emit photoChanged(); // the photo's "Card" reference and its name
-}
+const measure::CardSize& MeasureController::card() const { return measure::kPlayingCard; }
 
 QString MeasureController::cardName() const { return QString::fromLatin1(card().name); }
 
 QString MeasureController::cardSizeText() const
 {
-    // The short side first, as a card is held: "63.5 × 88.9 mm", "53.98 × 85.60 mm".
+    // The short side first, as a card is held: "63.5 × 88.9 mm".
     const measure::CardSize& c = card();
     const auto tenths = [](double v) { return std::abs(v * 10 - std::round(v * 10)) < 1e-6; };
     const int decimals = tenths(c.shortMm) && tenths(c.longMm) ? 1 : 2;

@@ -793,10 +793,8 @@ large at the side with **Keep**.
   table of iPhones and iPads (the line under the ruler says "estimated"):
   tap **Check with a card**, lay a playing card (a Bicycle or any other
   poker-size card, 63.5 × 88.9 mm) on the outline and stretch the outline
-  until it matches the card's edges; **Bank card** above the outline
-  switches to a bank or ID card instead (and the Fold and Photo then use it
-  too). The scale is kept for that screen (the iPhone Duo's two displays
-  each get their own).
+  until it matches the card's edges. The scale is kept for that screen (the
+  iPhone Duo's two displays each get their own).
 - **Fold** (iPhone Duo): the angle between the two halves. Rest the halves
   on two faces, inside a corner or over an edge, and keep still: the pill
   under the number fills for about a second, then turns green ("Held ·

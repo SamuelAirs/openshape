@@ -47,8 +47,8 @@ struct Reference {
     std::string name;    // "Playing card", "A4 paper", ...
 };
 
-// A card lying in the photo: a playing card unless another is named.
-Reference cardReference(const CardSize& card = kPlayingCard);
+// A playing card lying in the photo (kPlayingCard).
+Reference cardReference();
 Reference a4Reference();
 Reference letterReference();
 // Any rectangle; the sides are sorted (long first). Refused (nullopt) when a

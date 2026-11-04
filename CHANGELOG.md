@@ -15,8 +15,8 @@ things").
   laid on the glass, and a ring for round things (Make sketch draws that
   circle). The scale comes from a table of iPhones and iPads; **Check with a
   card** matches it to a poker-size playing card (a Bicycle card, 63.5 x
-  88.9 mm; a bank card is the second choice), and is kept for each screen
-  (the iPhone Duo's two displays each get their own). It runs along the window's
+  88.9 mm: nothing to photograph that you'd rather keep private), and is
+  kept for each screen (the iPhone Duo's two displays each get their own). It runs along the window's
   long side: on the Duo unfolded, about 134 mm across the whole inner
   display, its fold marked, with **Open flat** when a length crosses the
   fold while the phone is bent.

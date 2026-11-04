@@ -858,6 +858,12 @@ normally and forced, and asserts.
   the rule. **Measure again** used to re-hold at once on a still phone (the
   window kept its old samples); `clearHold` now clears them, so it waits
   the whole second again.
-- The card became a Bicycle-size playing card (the owner's choice); its
-  size has no published tolerance, so the bank card stays as a second choice
-  and the means of measuring a real Bicycle card against it (TD-176).
+- The card became a Bicycle-size playing card (the owner's choice). Build 63
+  kept the ID-1 card as a second choice, on screen as "bank card": the owner
+  read that as something else until he asked ("Did you mean like a debit or
+  credit card?"), and wants no payment card asked for at all, least of all
+  in a photo. The next build has the playing card only; the Photo tool's
+  intro had still said "Lay a bank card" (an earlier sweep for the phrase
+  missed it). Lessons: name things as people say them (debit or credit card,
+  not "bank card"), and grep every file type after a wording change. TD-176
+  keeps the tolerance question; a real ruler along the screen checks it.

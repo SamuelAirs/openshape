@@ -11,7 +11,7 @@ import QtQuick.Shapes
 import OpenShape
 
 // Photo (docs/MEASURE.md): measuring on a photo of a flat surface with a
-// reference lying on it (a bank card, A4 or Letter paper, or a rectangle
+// reference lying on it (a playing card, A4 or Letter paper, or a rectangle
 // whose sides are typed). 1. Take or choose the photo (the desktop: open an
 // image file). 2. Corners: four handles on the reference's corners (found
 // by Vision where it can), with a magnifier while one is dragged. 3.
@@ -163,7 +163,7 @@ Item {
         visible: photo.stage === "start"
         iconName: "photo"
         title: "Measure on a photo"
-        text: "Lay a bank card or a sheet of paper flat beside the thing to measure and photograph both, from any angle. FoldForm straightens the photo on the reference."
+        text: "Lay a playing card or a sheet of paper flat beside the thing to measure and photograph both, from any angle. FoldForm straightens the photo on the reference."
         ActionButton {
             id: takeButton
             objectName: "photoTake"

@@ -215,7 +215,7 @@ Homography Homography::then(const Homography& next) const
     return result;
 }
 
-Reference cardReference(const CardSize& card) { return {Reference::Kind::Card, card.longMm, card.shortMm, card.name}; }
+Reference cardReference() { return {Reference::Kind::Card, kPlayingCard.longMm, kPlayingCard.shortMm, kPlayingCard.name}; }
 Reference a4Reference() { return {Reference::Kind::A4, 297.0, 210.0, "A4 paper"}; }
 Reference letterReference() { return {Reference::Kind::Letter, 279.4, 215.9, "Letter paper"}; }
 

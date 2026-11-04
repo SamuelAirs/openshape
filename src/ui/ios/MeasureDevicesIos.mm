@@ -394,7 +394,7 @@ std::optional<RectangleCorners> findRectangle(const QString& file)
     if (orientationValue >= 5u) // turned a quarter: Vision's coordinates are of the upright image
         std::swap(width, height);
 
-    // A bank card or a sheet of paper lying on a table, seen at an angle.
+    // A playing card or a sheet of paper lying on a table, seen at an angle.
     VNDetectRectanglesRequest* request = [[VNDetectRectanglesRequest alloc] init];
     request.minimumAspectRatio = 0.3f;
     request.maximumAspectRatio = 1.0f;

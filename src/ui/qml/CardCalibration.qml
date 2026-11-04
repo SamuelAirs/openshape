@@ -8,8 +8,7 @@ import QtQuick.Layouts
 import OpenShape
 
 // Check with a card (docs/MEASURE.md, "Scale"): a playing card's outline
-// (poker size, 63.5 x 88.9 mm; or a bank card's, ISO/IEC 7810 ID-1, 53.98 x
-// 85.60 mm: MeasureController.cardKind, picked here and kept) drawn at the
+// (poker size, 63.5 x 88.9 mm, MeasureController.cardLongMm) drawn at the
 // current scale; lay a real card on it and stretch the outline (its handle,
 // or - / + for the last fraction) until the two match. Done keeps the scale
 // for this screen (MeasureController.calibrate). The card lies along the
@@ -24,7 +23,6 @@ Rectangle {
     readonly property real cardLongMm: m ? m.cardLongMm : 88.9
     readonly property real cardShortMm: m ? m.cardShortMm : 63.5
     readonly property real cornerMm: m ? m.cardCornerMm : 3.5
-    readonly property bool playing: !m || m.cardKind !== "bank"
     // The outline's long side in points (what Done keeps).
     property real spanPt: 300
     property string problem: ""
@@ -106,34 +104,15 @@ Rectangle {
         font.pixelSize: 14
         color: calibration.problem !== "" ? Theme.error : Theme.mutedText
         text: calibration.problem !== "" ? calibration.problem
-            : "Lay a " + (calibration.playing ? "playing card" : "bank card") + " on the outline, its short edge on the outline's "
-              + (area.vertical ? "top" : "left") + " edge, then drag the handle to the card's other end."
-    }
-    // Which card: a playing card (the default) or a bank card. The scale
-    // found so far stays; the outline takes the other card's size.
-    MeasureSegmented {
-        id: cardPicker
-        objectName: "cardKind"
-        x: safeArea.x + (safeArea.width - width) / 2
-        y: instructions.y + instructions.height + 10
-        width: Math.min(safeArea.width, 300)
-        namePrefix: "cardKind_"
-        showIcons: false
-        model: [{ key: "playing", label: "Playing card" }, { key: "bank", label: "Bank card" }]
-        current: calibration.m ? calibration.m.cardKind : "playing"
-        onPicked: (key) => {
-            const ppm = calibration.spanPt / calibration.cardLongMm
-            calibration.m.cardKind = key
-            calibration.spanPt = ppm * calibration.cardLongMm
-            calibration.problem = ""
-        }
+            : "Lay a playing card on the outline, its short edge on the outline's " + (area.vertical ? "top" : "left")
+              + " edge, then drag the handle to the card's other end."
     }
 
     // ---- the card outline
     Item {
         id: area
         x: safeArea.x
-        y: cardPicker.y + cardPicker.height + 14
+        y: instructions.y + instructions.height + 16
         width: safeArea.width
         height: safeArea.y + safeArea.height - y - fine.height - 16
         // Along the longer side, so it fits a phone held either way.
@@ -157,22 +136,8 @@ Rectangle {
             color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.06)
             border.color: Theme.accent
             border.width: 2
-            // A bank card's chip, faintly, to say which way is which.
-            Rectangle {
-                visible: !calibration.playing
-                x: area.vertical ? parent.width * 0.62 : parent.width * 0.12
-                y: area.vertical ? parent.height * 0.12 : parent.height * 0.30
-                width: area.vertical ? parent.width * 0.22 : parent.width * 0.14
-                height: area.vertical ? parent.height * 0.14 : parent.height * 0.24
-                radius: 4
-                color: "transparent"
-                border.color: Theme.accent
-                border.width: 1
-                opacity: 0.5
-            }
             // A playing card's corner index and its middle pip, faintly.
             Column {
-                visible: calibration.playing
                 x: 8
                 y: 6
                 spacing: -4
@@ -180,7 +145,6 @@ Rectangle {
                 Text { text: "\u2660"; font.pixelSize: 13; color: Theme.accent; opacity: 0.55 }
             }
             Text {
-                visible: calibration.playing
                 anchors.centerIn: parent
                 anchors.verticalCenterOffset: area.vertical ? -24 : 0
                 anchors.horizontalCenterOffset: area.vertical ? 0 : -60
@@ -192,11 +156,9 @@ Rectangle {
             Text {
                 objectName: "cardSizeText"
                 anchors.centerIn: parent
-                anchors.verticalCenterOffset: calibration.playing && area.vertical ? 30 : 0
-                anchors.horizontalCenterOffset: calibration.playing && !area.vertical ? 30 : 0
-                // A bank card held tall: along its length; a playing card's
-                // label stays upright under its pip.
-                rotation: area.vertical && !calibration.playing ? 90 : 0
+                // Upright, beside the pip.
+                anchors.verticalCenterOffset: area.vertical ? 30 : 0
+                anchors.horizontalCenterOffset: area.vertical ? 0 : 30
                 text: calibration.m ? calibration.m.cardSizeText : ""
                 font.pixelSize: 13
                 font.features: ({ "tnum": 1 })
