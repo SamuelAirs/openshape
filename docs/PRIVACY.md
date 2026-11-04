@@ -1,6 +1,6 @@
 # FoldForm privacy policy
 
-_Last updated: 31 October 2026 (the purchase "Unlimited projects"). Applies to FoldForm for iPhone and iPad
+_Last updated: 4 November 2026 (Measure: the camera, photos and motion sensors, used on your device only). Applies to FoldForm for iPhone and iPad
 (App Store and TestFlight) and FoldForm for Windows, version 0.2 and
 later._
 
@@ -33,9 +33,34 @@ FoldForm stores only what it needs to work, on your own device:
   temporary copy that is deleted after the import.
 - FoldForm reads only the files you open (or pick in the system's file
   picker, or send to FoldForm from the Files app or Mail) and the files in
-  its own folders. It does not use your
-  location, camera, microphone, photos, contacts or any other personal
-  data, and it does not ask for any of these permissions.
+  its own folders. It does not use your location, microphone, contacts or
+  any other personal data. The camera, your photos and the motion sensors
+  are used only by **Measure**, only when you use it (next section).
+
+## Measure: the camera, photos and sensors (version 0.4 and later)
+
+FoldForm's **Measure** tools measure real things with your device. All of
+it happens on your device; nothing is uploaded, kept by us or shared:
+
+- **Photo**: a photo you take with the camera or choose from your photo
+  library is copied into FoldForm's temporary folder while you measure on
+  it, and iOS may delete that folder at any time. FoldForm reads only the
+  photo you pick (the system's photo picker shows your library; FoldForm
+  sees nothing else in it). iOS asks once whether FoldForm may use the
+  camera; you can change that in *Settings → FoldForm*. On iPhone and iPad,
+  Apple's Vision framework finds the reference card or sheet of paper in
+  the photo on your device.
+- **Camera (AR)**: Apple's ARKit uses the camera (and the LiDAR scanner,
+  where there is one) to find surfaces while the AR view is open. FoldForm
+  keeps only the points you place and the lengths between them; no camera
+  image is stored.
+- **Fold** and **Level**: the angle of the iPhone Duo's hinge and the
+  direction of gravity from the motion sensors are read only while those
+  tools are open, to show angles; they are not stored (iOS needs no
+  permission for them).
+- **Measurements** you keep (a name, a value, which tool made it) and the
+  scale you checked with a card are stored in FoldForm's settings on your
+  device.
 
 **Deleting your data:** delete a project or export like any other file (in
 the Files app or Explorer). Deleting the FoldForm app on iPhone or iPad

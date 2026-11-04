@@ -59,6 +59,7 @@ Technology choices and the alternatives considered are in
  render/    ViewportRenderer (QRhi) — consumes interaction::RenderScene
  io/        .openshape project container (ZIP + JSON), recovery copies, recent-files list, project file rename/duplicate/delete (Home)
  core/      Result, Log, Uuid, Units, Math, Camera, Lighting, Timer
+ measure/   ScreenScale, Homography (PlaneRectifier), StrokeFit, Fold, Level, Outline, Measurement (docs/MEASURE.md)
 ```
 
 Library targets and their dependencies (`src/CMakeLists.txt`):
@@ -66,6 +67,7 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
 | Target | Depends on | Qt? | Notes |
 |---|---|---|---|
 | `openshape_core` | – | no | logging, UUID, units, math, camera |
+| `openshape_measure` | core, nlohmann_json (private) | no | the Measure tools' math: screen scale, photo homography and straightening, stroke fitting, fold and level, outlines, the measurements list (docs/MEASURE.md) |
 | `openshape_geometry` | core, OCCT (private) | no | **only** place OCCT headers are included |
 | `planegcs` (shared) | Eigen | no | vendored FreeCAD solver, C++23, unmodified |
 | `openshape_sketch` | core, planegcs (private) | no | sketch model; only `SketchSolver.cpp` sees PlaneGCS |
@@ -1290,6 +1292,37 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   it runs the tool when the selection fits and otherwise explains what to
   select (axis and plane always start, taking a fitting selection as a first
   pick).
+
+## Measure (`measure/`, `ui/MeasureDevices`, `ui/MeasureController`)
+
+FoldForm 0.4's measuring tools (docs/MEASURE.md): the screen as a ruler at
+true scale, the iPhone Duo's hinge as a protractor and caliper, the motion
+sensors as a level, a photo straightened onto a card or a sheet of paper,
+ARKit's camera view, and the measurements kept for typing into value boxes.
+
+- `measure/` (`openshape_measure`, Qt-free, `tests/test_measure.cpp`):
+  `ScreenScale` (points per millimeter: a device table, the monitor's
+  reported size, or a card calibration keyed by the screen's point size),
+  `Homography` (a 4-point DLT with Hartley normalization; `PlaneRectifier`
+  maps a photo to the surface of a reference rectangle, choosing the long
+  side from the photo and never mirroring; `planRectifiedView` and
+  `warpToView` draw the straightened photo), `StrokeFit` (resample, smooth,
+  Ramer-Douglas-Peucker, greedy three-point arcs checked against every
+  sample, one circle for a round closed stroke), `Fold` (hinge angle, bend,
+  the caliper's 2 L sin(θ/2), `SteadyReading`: exponential smoothing and a
+  hold when still), `Level` (gravity in the window's frame to slope, bubble
+  and edge angle), `Outline`, `Measurement` (`MeasurementLog`, JSON).
+- `ui/MeasureDevices.h`: the hardware as `std::function`s, empty where the
+  platform has none (`platformMeasureDevices()`: iOS fills them in
+  `src/ui/ios/`; the desktop returns an empty set), so the acceptance run
+  can put in stand-ins and the desktop says what needs a phone.
+- `ui/MeasureController`: the workspace's state for QML (`app.measure`):
+  the current screen's scale, the sensors (watched only while the
+  workspace is open), the photo session (picked or opened, corners, the
+  straightened image made on a worker thread), AR results, the
+  measurements (AppSettings), and the calls that make geometry
+  (`AppController::createOutlineSketch`, `createCircleSketch`,
+  `createSizedBox`).
 
 ## Threads
 
