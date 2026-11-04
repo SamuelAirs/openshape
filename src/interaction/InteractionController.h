@@ -34,7 +34,7 @@ namespace os::interact {
 
 // One row of the model tree shown in the history panel.
 struct HistoryRow {
-    enum class Kind { Sketch, Body, Feature, Datum };
+    enum class Kind { Sketch, Body, Feature, Datum, Reference };
     enum class Status { Ok, Warning, Failed, NotComputed, Suppressed };
     struct Parameter {
         std::string key;
@@ -386,6 +386,27 @@ public:
     Status setDatumVisible(const Uuid& datumId, bool visible);
     Status deleteDatum(const Uuid& datumId);
     Status deleteSelectedDatums();
+    // ---- Reference photos (doc::ReferenceImage; InteractionReferences.cpp) ----
+    // Adds a photo (one undo step) and frames the view on it. Its rows in the
+    // Model panel edit it: setFeatureParameter takes a photo's id with the
+    // keys "width", "opacity" (percent), "rotation", "x", "y" (the center on
+    // its plane) and "plane" ("Ground", "Front", "Right" or a construction
+    // plane's name).
+    Status addReferenceImage(const doc::ReferenceImage& reference);
+    Status setReferenceVisible(const Uuid& referenceId, bool visible);
+    Status deleteReference(const Uuid& referenceId);
+    Status setReferenceParameter(const Uuid& referenceId, const std::string& key, const std::string& text);
+    // Set scale: the photo grows or shrinks about its center by `factor` (two
+    // points measured on it, then their real distance): one undo step.
+    Status scaleReference(const Uuid& referenceId, double factor);
+    // Frames the view on the photo (looking at its plane's front when `faceIt`).
+    void frameReference(const Uuid& referenceId, bool faceIt, bool animate = true);
+    // The point of the photo's plane under `screen`, in the photo's own
+    // coordinates (doc::referenceLocal); nullopt when the ray misses the
+    // plane (seen edge-on) or there is no such photo.
+    std::optional<Vec2> referencePointAt(const Uuid& referenceId, Vec2 screen) const;
+    // Where a point in the photo's own coordinates is on screen.
+    std::optional<Vec2> referenceScreenPoint(const Uuid& referenceId, Vec2 local) const;
     // Combines the first selected body with each of the others (which are
     // hidden): union, subtract them from it, or keep only the common volume.
     Status combineSelectedBodies(doc::CombineMode mode);
@@ -553,6 +574,10 @@ private:
     // Starts the Axis or Plane tool; a fitting selection is its first pick.
     Status startDatumTool(doc::DatumKind kind);
     void addDatumDrawing(RenderScene& scene) const;
+    void addReferenceDrawing(RenderScene& scene) const;
+    void addReferenceRows(std::vector<HistoryRow>& rows) const;
+    // The visible photos' corners (scene bounds, fit all).
+    std::vector<Vec3> visibleReferenceCorners() const;
     void notifyView();
     void notifyState();
     void notePressSelection();

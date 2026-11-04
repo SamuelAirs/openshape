@@ -21,6 +21,7 @@
 //   metadata.json          application/version info
 //   imports/<step>.brep    exact geometry of imported bodies (source of truth,
 //                          referenced by their Imported steps)
+//   references/<id>.jpg|png the pictures of reference photos (part of the model)
 //   geometry/<body>.brep   exact geometry cache (informational; regenerated on load)
 //   thumbnail.png          optional preview image
 // See docs/FILE_FORMAT.md.
@@ -41,11 +42,15 @@ static_assert(doc::kMaxImportedBodyBytes <= kMaxEntryBytes, "an imported body mu
 
 nlohmann::json documentToJson(const doc::Document& document);
 // Reads one archive entry by name for documentFromJson (the geometry of
-// imported bodies); fails when the entry is missing or unreadable.
+// imported bodies, the pictures of reference photos); fails when the entry is
+// missing or unreadable.
 using EntryReader = std::function<Result<std::string>(const std::string& name)>;
 // Imported steps' geometry comes from `readEntry` (checked: it must parse, be
 // valid and keep the volume recorded in the step); without a reader a
-// document with imported bodies is refused.
+// document with imported bodies is refused. Reference photos' pictures come
+// from it too, but a picture that is missing, damaged (its hash) or not a
+// PNG / JPEG of the size recorded never refuses the file: the photo opens
+// without it (its Model panel row says so).
 Result<std::unique_ptr<doc::Document>> documentFromJson(const nlohmann::json& root, const EntryReader& readEntry = {});
 
 struct SaveOptions {
@@ -69,6 +74,8 @@ struct ProjectData {
     std::string metadataJson;
     std::vector<std::pair<std::string, std::string>> imports;  // entry name, BRep text (always written)
     std::vector<std::pair<std::string, std::string>> geometry; // body id, BRep text
+    // Reference photos' pictures (always written): entry name, the bytes (shared, never changed).
+    std::vector<std::pair<std::string, std::shared_ptr<const doc::ReferenceImageData>>> references;
     std::vector<unsigned char> thumbnailPng;
     std::uint64_t maxImportedGeometryBytes = doc::kMaxImportedGeometryBytes; // checked by buildProjectArchive
 };

@@ -281,6 +281,14 @@ ApplicationWindow {
         window.importAsProject = asProject
         chooseFile(importDialog, window.acceptImport)
     }
+    // File -> Add Reference Photo...: a picture, at an unknown scale (Set scale in its row).
+    function chooseReferencePhoto() {
+        const prepared = app.takeNextFileChoice()
+        if (prepared.toString() !== "")
+            app.addReferenceImage(prepared.toString(), 0, "XY")
+        else
+            referencePhotoDialog.open()
+    }
     function acceptImport(url) {
         if (window.importAsProject)
             app.importStepAsProject(url)
@@ -563,6 +571,19 @@ ApplicationWindow {
             text: "Import STEP…"
             shortcutText: window.shortcutLabel("⌘I", "Ctrl+I")
             onTriggered: window.chooseImportFile(false)
+        }
+        // A photo to model over (doc::ReferenceImage). The desktop only: on an
+        // iPhone or iPad photos come from the Measure workspace (the photo
+        // library), the file picker being unreliable there (TD-158).
+        AppMenuItem {
+            objectName: "addReferencePhotoMenuItem"
+            readonly property bool available: !window.app.savesToAppFolder
+            iconName: "photo"
+            text: "Add Reference Photo…"
+            visible: available
+            enabled: available
+            height: available ? implicitHeight : 0
+            onTriggered: window.chooseReferencePhoto()
         }
         AppMenuSeparator {}
         AppMenuItem {
@@ -1291,7 +1312,9 @@ ApplicationWindow {
         objectName: "emptyState"
         anchors.centerIn: parent
         spacing: 14
+        // (Not over a reference photo either: it is there to be modeled over.)
         visible: window.app.bodyCount === 0 && window.app.sketchCount === 0 && !window.app.sketchMode && !window.app.homeVisible
+                 && !window.app.history.some(row => row.kind === "reference")
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Start with a shape"
@@ -1427,6 +1450,19 @@ ApplicationWindow {
         // no spot at all clear of the selection (a part filling the window).
         onPlacementChanged: if (Theme.touch && !Theme.compact && (!window.dockChipFirst || (placement && !placement.clear)))
                                 Qt.callLater(window.revealSelection)
+    }
+
+    // ---------------------------------------------------------------- reference photo: Set scale
+    ReferenceScaleOverlay {
+        id: referenceScaleOverlay
+        objectName: "referenceScaleOverlay"
+        anchors.fill: parent
+        app: window.app
+        viewportItem: viewport
+        keypad: keypad
+        cardTop: topBar.y + topBar.height + 8
+        // A phone: beside the view cube under the View button, not over it.
+        cardRight: Theme.compact ? axisTriad.x - 8 : window.width - Theme.insetRight
     }
 
     // ---------------------------------------------------------------- numeric keypad
@@ -1867,6 +1903,12 @@ ApplicationWindow {
         title: "Import STEP"
         nameFilters: ["STEP files (*.step *.stp *.STEP *.STP)"]
         onAccepted: window.acceptImport(selectedFile)
+    }
+    FileDialog {
+        id: referencePhotoDialog
+        title: "Add Reference Photo"
+        nameFilters: ["Pictures (*.jpg *.jpeg *.png *.JPG *.JPEG *.PNG *.webp *.bmp *.tif *.tiff)"]
+        onAccepted: window.app.addReferenceImage(selectedFile.toString(), 0, "XY")
     }
     FileDialog {
         id: stepDialog

@@ -361,6 +361,14 @@ void InteractionController::fitAll(bool animate)
             total.max = {std::max(total.max.x, box.max.x), std::max(total.max.y, box.max.y), std::max(total.max.z, box.max.z)};
         }
     }
+    for (const Vec3& p : visibleReferenceCorners()) {
+        if (!total.valid) {
+            total.min = total.max = p;
+            total.valid = true;
+        }
+        total.min = {std::min(total.min.x, p.x), std::min(total.min.y, p.y), std::min(total.min.z, p.z)};
+        total.max = {std::max(total.max.x, p.x), std::max(total.max.y, p.y), std::max(total.max.z, p.z)};
+    }
     Camera to = camera_;
     if (total.valid)
         to.fit(total.min, total.max);
@@ -3763,6 +3771,8 @@ RenderScene InteractionController::renderScene() const
 
     // Construction axes and planes (and the one the Axis / Plane tool is making).
     addDatumDrawing(scene);
+    // Reference photos.
+    addReferenceDrawing(scene);
 
     // A new-body preview has no document body to stand in for.
     if (operation_ && operation_->hasPreview() && operation_->previewMeshBody().isNil()) {
@@ -5083,6 +5093,7 @@ std::vector<HistoryRow> InteractionController::historyRows() const
                                       p.kind == doc::ParameterKind::Angle, false, {}});
         rows.push_back(std::move(row));
     }
+    addReferenceRows(rows);
     for (const auto& body : document_->bodies()) {
         HistoryRow bodyRow;
         bodyRow.kind = HistoryRow::Kind::Body;
@@ -5162,6 +5173,9 @@ std::vector<HistoryRow> InteractionController::historyRows() const
 
 Status InteractionController::setFeatureParameter(const Uuid& featureId, const std::string& key, const std::string& text)
 {
+    // A reference photo's values (Model panel).
+    if (document_->reference(featureId))
+        return setReferenceParameter(featureId, key, text);
     // A construction plane's distance or angle (Model panel).
     if (const doc::Datum* datum = document_->datum(featureId)) {
         bool angle = false;
@@ -5720,12 +5734,20 @@ void InteractionController::updateSceneBounds()
         if (body->isVisible())
             add(visibleBox_, box);
     }
+    // The clip planes reach the reference photos too (not the model's size).
+    geom::BoundingBox withPhotos = total;
+    for (const Vec3& p : visibleReferenceCorners()) {
+        geom::BoundingBox point;
+        point.min = point.max = p;
+        point.valid = true;
+        add(withPhotos, point);
+    }
     modelCenter_ = total.valid ? total.center() : Vec3{};
     modelSize_ = total.valid ? total.size().length() : 0.0;
-    if (total.valid) {
-        camera_.sceneCenter = total.center();
+    if (withPhotos.valid) {
+        camera_.sceneCenter = withPhotos.center();
         // Generous margin: previews may grow the body before the next update.
-        camera_.sceneRadius = std::max(total.size().length(), kMinSceneRadius) * 2;
+        camera_.sceneRadius = std::max(withPhotos.size().length(), kMinSceneRadius) * 2;
     } else {
         camera_.sceneCenter = {};
         camera_.sceneRadius = kMinSceneRadius * 2;

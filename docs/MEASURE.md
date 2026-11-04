@@ -129,6 +129,30 @@ Plus, in the design itself:
   - The ruler: the value chip's (`valueChipMeasure`, whenever an operation's chip shows) and a
     sketch dimension editor's (`dimensionMeasure`) ask Main.qml's `openMeasure(kind, target)`;
     `useMeasuredValue(text)` puts the result into the box that asked, previewed, for ✓ or Enter.
+- Reference photos: `AppController::addReferenceImage(file, mmPerPixel, plane)` (below).
+
+## Reference photos in the design
+
+A photo placed in the design at true size on a plane (the ground, Front, Right or a construction
+plane), drawn under and behind the model (a body in front hides it, as real geometry would),
+semi-transparent, so the owner can model or sketch over it: trace a part's outline with the
+sketch tools, check a design against the real object. Saved in the project
+(`references/<id>.jpg|png`, docs/FILE_FORMAT.md).
+
+- **From the Measure workspace**: the straightened photo, whose scale in mm per pixel is exact:
+  `addReferenceImage(imageFile, mmPerPixel, "XY")` puts it on the ground at its real size,
+  centred on the origin, frames the view on it (Top view) and is one undo step.
+- **File → Add Reference Photo…** (desktop; on an iPhone or iPad photos come from the Measure
+  workspace, the file picker being unreliable on the iPhone Duo, TD-158): any picture, at an
+  unknown scale (200 mm wide); its row says the scale is not set.
+- **Model panel row** (a photo icon): Width, Opacity (%), Rotation, X and Y on its plane, the
+  Plane (Ground, Front, Right, construction planes), Hide / Show, Delete, and **Set scale**: tap
+  two points on the photo a known distance apart (a loupe under a finger; the view still orbits,
+  pans and zooms; Back takes a point back, Esc or Cancel ends it), type the real distance: the
+  photo is rescaled about its center (one undo step).
+- Deleting the construction plane a photo lies on moves the photo to the ground (undo puts it
+  back). Pictures larger than 4096 px a side are scaled down when added; a JPEG turned by its
+  EXIF orientation is stored upright.
 
 ## Privacy
 
@@ -142,5 +166,4 @@ need none.
 
 - Object Capture (a full 3D scan) needs RealityKit's Swift-only API; ARKit's LiDAR mesh as a
   reference body is the nearer step.
-- A photo kept as a sketch's backdrop to trace over in the design itself.
 - Measurements saved in a project and referenced by name in typed values.

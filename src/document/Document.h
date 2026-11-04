@@ -9,6 +9,7 @@
 #include "core/Uuid.h"
 #include "document/Body.h"
 #include "document/Datum.h"
+#include "document/ReferenceImage.h"
 #include "sketch/Sketch.h"
 
 #include <cstdint>
@@ -90,6 +91,20 @@ public:
     // Sketches placed on a datum plane.
     std::vector<Uuid> sketchesOn(const Uuid& datumId) const;
     std::string nextDatumName(DatumKind kind) const;
+    // ---- Reference photos (document/ReferenceImage.h) ----
+    // Not geometry: adding, changing or removing one recomputes nothing.
+    const std::vector<std::unique_ptr<ReferenceImage>>& references() const { return references_; }
+    ReferenceImage* reference(const Uuid& id) const;
+    void addReference(std::unique_ptr<ReferenceImage> reference, int index = -1);
+    std::unique_ptr<ReferenceImage> removeReference(const Uuid& id, int* removedIndex = nullptr);
+    // Replaces a photo's content (matched by id): name, placement, visibility, picture.
+    void replaceReference(const ReferenceImage& reference);
+    // Changes whenever a photo is added, removed or changed, or a
+    // construction plane (one may lie on) changes (for view caches).
+    std::uint64_t referenceRevision() const { return referenceRevision_ + datumRevision_; }
+    // Photos placed on a construction plane.
+    std::vector<Uuid> referencesOn(const Uuid& datumId) const;
+    std::string nextReferenceName() const;
     // Imported geometry the document holds: the BRep text of its Imported
     // steps (ImportedFeature::brepText), what a project file stores in imports/.
     std::uint64_t importedGeometryBytes() const;
@@ -103,8 +118,8 @@ public:
 
     // A copy another thread may read while this one keeps changing: every
     // body (its history, cached step results and shape; shapes are immutable
-    // and shared, not copied), sketch and construction axis or plane, the
-    // display unit, no listeners.
+    // and shared, not copied), sketch, construction axis or plane and
+    // reference photo (its picture shared), the display unit, no listeners.
     // Interactive previews are computed on one (Operation::setValue).
     std::shared_ptr<const Document> snapshot() const;
 
@@ -140,6 +155,8 @@ private:
     std::vector<std::unique_ptr<sketch::Sketch>> sketches_;
     std::vector<std::unique_ptr<Datum>> datums_;
     std::uint64_t datumRevision_ = 0;
+    std::vector<std::unique_ptr<ReferenceImage>> references_;
+    std::uint64_t referenceRevision_ = 0;
     std::vector<std::pair<Uuid, std::uint64_t>> sketchRevisions_;
     std::uint64_t revision_ = 0;
     std::uint64_t importedGeometryLimit_ = kMaxImportedGeometryBytes;

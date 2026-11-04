@@ -6,6 +6,7 @@ A ZIP archive (deflate) with these entries:
 |---|---|---|
 | `document.json` | yes | The parametric document. **Source of truth.** |
 | `metadata.json` | no | `{ "format", "version", "application", "applicationVersion" }`; `applicationVersion` is the version of the OpenShape that wrote the file (CMake's project version, e.g. `"0.1.0"`); informational, not used when reading. |
+| `references/<photo-uuid>.jpg` / `.png` | when named | The picture of a reference photo (`references` below), the bytes as the app keeps them (a JPEG or PNG of at most 4096 px a side), stored without compression. Part of the model: written on every save, recovery copies included. At most 64 MiB each and 512 MiB together. |
 | `imports/<feature-uuid>.brep` | when named | The exact geometry of an imported body (OCCT BRep text, no triangulation), named by its `Imported` step. **Part of the model**, like document.json: written on every save, recovery copies included. |
 | `geometry/<body-uuid>.brep` | no | OCCT BRep text of each body's current shape. A cache for external tools and future fast-open; ignored on load (bodies are recomputed from features). |
 | `thumbnail.png` | no | Preview of the model, written by every Save (not by recovery copies): 256 x 256 PNG with alpha, the visible bodies from the isometric direction framed to fill it, on a transparent background. Readers treat it as untrusted: at most 4 MiB, PNG signature checked; `io::readProjectThumbnail` reads only this entry. |
@@ -144,9 +145,31 @@ Rules:
   refs name the copy's body and steps. Builds before construction geometry
   (2026-09-26) ignore `datums` and `datumPlane`: such a sketch stays where
   it was saved.
-- Datums are loaded first, then sketches, then bodies: a sketch may lie on a
-  construction plane, and extrusions look sketches up during the initial
-  recompute.
+- `references` (optional; absent when there are none, so such files are
+  exactly what older builds wrote): reference photos, pictures placed at true
+  size on a plane to model over. Each is `{ "id", "name", "visible",
+  "plane", "center": [u, v], "rotation", "width", "opacity", "pixelSize":
+  [w, h], "image", "format", "hash" }` plus `"datum": uuid` when `plane` is
+  `"Datum"` and `"unscaled": true` for one added without a known scale (its
+  width a guess). `plane` is `"XY"` (the ground: u along X, v along Y),
+  `"XZ"` (Front: u along X, v along Z), `"YZ"` (Right: u along Y, v along
+  Z) or `"Datum"` (a construction plane, in the frame a sketch on it has).
+  `center` is the picture's center on that plane (mm), `rotation` its turn
+  (radians, counter-clockwise seen from the plane's normal, |r| ≤ 4π),
+  `width` mm (0.01 to 10^6; the height is width × h / w), `opacity` 0.1 to 1,
+  `pixelSize` the picture's size in pixels as shown (1 to 4096 each).
+  `image` names its entry (`references/…`), `format` is `"jpg"` or `"png"`
+  and `hash` the FNV-1a (64 bit, 16 lowercase hex digits) of the entry's
+  bytes. A photo whose entry is missing, does not match its hash or is not a
+  PNG / JPEG of `pixelSize` opens **without its picture** (the Model panel
+  says so; a photo is only a backdrop, so it never refuses the file), and is
+  written back without `image`, `format` and `hash`. A photo on a plane the
+  file does not have is placed on the ground. Wrong types or values out of
+  range make the file invalid; an unknown `plane` makes it unreadable with a
+  "newer version" message.
+- Datums are loaded first, then reference photos, then sketches, then
+  bodies: a photo or a sketch may lie on a construction plane, and
+  extrusions look sketches up during the initial recompute.
 - UUIDs must be unique across the document.
 - `surface` / `curve` are enum ordinals (`geom::SurfaceKind`, `geom::CurveKind`).
   They must never be renumbered; new kinds are appended.
@@ -297,9 +320,14 @@ Rules:
 Version 1 is frozen since 0.1.0 (the first public release, 2026-09-26):
 later builds add only optional fields, feature types and datum methods.
 Builds that do not know them either ignore them (`datums`, `datumPlane`:
-such a sketch stays where it was saved) or refuse the file with a "newer
-version" or "invalid" message (`Text`, `Loft`, unknown datum methods, a
-Mirror with a nested `plane`).
+such a sketch stays where it was saved; `references`) or refuse the file
+with a "newer version" or "invalid" message (`Text`, `Loft`, unknown datum
+methods, a Mirror with a nested `plane`).
+
+Reference photos (0.4, 2026-11-03) are optional fields, so the version stays
+1 (the rule below): FoldForm 0.3.x opens a project with photos, without
+them (it reads neither `references` nor the `references/` entries), and
+**saving it there drops the photos**; the model itself is untouched.
 
 - `version` is an integer. Readers refuse files with a higher version than they
   support ("created by a newer version of OpenShape").

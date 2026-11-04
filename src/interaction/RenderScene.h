@@ -6,6 +6,7 @@
 
 #include "core/Camera.h"
 #include "core/Uuid.h"
+#include "document/ReferenceImage.h"
 #include "geometry/Mesh.h"
 #include "interaction/Manipulator.h"
 
@@ -126,9 +127,23 @@ struct RenderSketch {
     std::vector<RenderRegion> regions;
 };
 
+// A reference photo (doc::ReferenceImage): its picture on a quad, drawn
+// semi-transparent after the bodies, depth-tested against them (bodies in
+// front hide it) and pushed a hair behind its plane (a face lying on the
+// plane wins), visible from both sides (render/shaders/photo.*).
+struct RenderReferenceImage {
+    Uuid id;
+    std::shared_ptr<const doc::ReferenceImageData> image; // its key says when it changed
+    Vec3 corners[4]; // the picture's bottom left, bottom right, top right, top left
+    Vec3 normal;     // the plane's front (the picture reads correctly from this side)
+    double opacity = doc::kDefaultReferenceOpacity;
+    bool highlighted = false; // its Model panel row is hovered or open: outlined
+};
+
 struct RenderScene {
     Camera camera;
     std::vector<RenderBody> bodies;
+    std::vector<RenderReferenceImage> references;
     std::vector<RenderSketch> sketches;
     std::vector<RenderArrow> arrows;
     std::vector<RenderRing> rings;

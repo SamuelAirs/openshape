@@ -9,6 +9,7 @@
 #include "interaction/ContactShadow.h"
 
 #include <QtCore/QFile>
+#include <QtGui/QImage>
 #include <QtQuick/QQuickRhiItem>
 #include <QtQuick/QQuickWindow>
 #include <rhi/qshader.h>
@@ -194,9 +195,10 @@ void appendArrow(std::vector<float>& pos, std::vector<float>& nrm, const Vec3& a
 } // namespace
 
 struct ViewportRenderer::Draw {
-    enum class Kind { Mesh, Lines, Arrow, Ground, Shadow } kind = Kind::Mesh;
+    enum class Kind { Mesh, Lines, Arrow, Ground, Shadow, Photo } kind = Kind::Mesh;
     QRhiGraphicsPipeline* pipeline = nullptr;
     const GpuBody* body = nullptr;
+    GpuPhoto* photo = nullptr;
     QRhiBuffer* lineBuffer = nullptr;
     quint32 first = 0;
     quint32 count = 0;
@@ -220,6 +222,13 @@ void ViewportRenderer::initialize(QRhiCommandBuffer*)
         overlayLinePipeline_.reset();
         gridPipeline_.reset();
         shadowPipeline_.reset();
+        photoPipeline_.reset();
+        photoLayout_.reset();
+        photoLayoutTexture_.reset();
+        photoSampler_.reset();
+        photos_.clear();
+        photoVertices_.reset();
+        photoOutline_.reset();
         srb_.reset();
         uniforms_.reset();
         gridVertices_.reset();
@@ -266,11 +275,92 @@ void ViewportRenderer::createPipelines()
     overlayLinePipeline_ = makePipeline(lineVs, lineFs, Layout::Line, false, false, true, Op::Always);
     gridPipeline_ = makePipeline(groundVs, gridFs, Layout::Ground, true, false, true, Op::LessOrEqual);
     shadowPipeline_ = makePipeline(shadowVs, shadowFs, Layout::Ground, true, false, true, Op::LessOrEqual);
+
+    // Reference photos: the uniform block plus the picture (linear filtering,
+    // trilinear between mipmaps, clamped at the border). Each photo's own
+    // bindings share this layout.
+    const QShader photoVs = loadShader(QStringLiteral(":/openshape/shaders/photo.vert.qsb"));
+    const QShader photoFs = loadShader(QStringLiteral(":/openshape/shaders/photo.frag.qsb"));
+    if (!photoSampler_) {
+        photoSampler_.reset(rhi_->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::Linear,
+                                             QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
+        photoSampler_->create();
+    }
+    if (!photoLayoutTexture_) {
+        photoLayoutTexture_.reset(rhi_->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));
+        photoLayoutTexture_->create();
+    }
+    photoLayout_.reset(rhi_->newShaderResourceBindings());
+    photoLayout_->setBindings(
+        {QRhiShaderResourceBinding::uniformBufferWithDynamicOffset(
+             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniforms_.get(), sizeof(UniformData)),
+         QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, photoLayoutTexture_.get(),
+                                                   photoSampler_.get())});
+    photoLayout_->create();
+    for (auto& [id, photo] : photos_)
+        photo.srbUniforms = nullptr; // remade against the layout above
+    photoPipeline_ = makePipeline(photoVs, photoFs, Layout::Photo, true, false, true, Op::LessOrEqual, photoLayout_.get());
+}
+
+void ViewportRenderer::syncPhotos(QRhiResourceUpdateBatch* u)
+{
+    std::unordered_map<Uuid, GpuPhoto> kept;
+    for (const auto& ref : scene_.references) {
+        if (!ref.image || ref.image->bytes.empty())
+            continue;
+        auto it = photos_.find(ref.id);
+        GpuPhoto gpu = it != photos_.end() ? std::move(it->second) : GpuPhoto{};
+        if (gpu.key != ref.image->key || !gpu.texture) {
+            gpu.key = ref.image->key;
+            gpu.texture.reset();
+            gpu.srb.reset();
+            gpu.srbUniforms = nullptr;
+            const QByteArray bytes = QByteArray::fromRawData(ref.image->bytes.data(), qsizetype(ref.image->bytes.size()));
+            QImage picture = QImage::fromData(bytes);
+            if (picture.isNull()) {
+                OS_LOG(Warning, Render) << "reference photo " << ref.id.toString() << ": the picture could not be decoded";
+            } else {
+                // A texture no larger than the device takes (the document keeps at most 4096 px).
+                const int maxSide = rhi_->resourceLimit(QRhi::TextureSizeMax);
+                if (maxSide > 0 && std::max(picture.width(), picture.height()) > maxSide)
+                    picture = picture.scaled(maxSide, maxSide, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                picture = picture.convertToFormat(QImage::Format_RGBA8888);
+                gpu.texture.reset(rhi_->newTexture(QRhiTexture::RGBA8, picture.size(), 1,
+                                                   QRhiTexture::MipMapped | QRhiTexture::UsedWithGenerateMips));
+                if (gpu.texture->create()) {
+                    u->uploadTexture(gpu.texture.get(), picture);
+                    u->generateMips(gpu.texture.get());
+                } else {
+                    OS_LOG(Warning, Render) << "reference photo: texture of " << picture.width() << "x" << picture.height()
+                                            << " could not be made";
+                    gpu.texture.reset();
+                }
+            }
+        }
+        kept.emplace(ref.id, std::move(gpu));
+    }
+    photos_ = std::move(kept);
+}
+
+QRhiShaderResourceBindings* ViewportRenderer::photoBindings(GpuPhoto& photo)
+{
+    if (photo.srb && photo.srbUniforms == uniforms_.get())
+        return photo.srb.get();
+    photo.srb.reset(rhi_->newShaderResourceBindings());
+    photo.srb->setBindings(
+        {QRhiShaderResourceBinding::uniformBufferWithDynamicOffset(
+             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniforms_.get(), sizeof(UniformData)),
+         QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, photo.texture.get(),
+                                                   photoSampler_.get())});
+    photo.srb->create();
+    photo.srbUniforms = uniforms_.get();
+    return photo.srb.get();
 }
 
 std::unique_ptr<QRhiGraphicsPipeline> ViewportRenderer::makePipeline(const QShader& vs, const QShader& fs, Layout vertices,
                                                                     bool depthTest, bool depthWrite, bool blend,
-                                                                    QRhiGraphicsPipeline::CompareOp op)
+                                                                    QRhiGraphicsPipeline::CompareOp op,
+                                                                    QRhiShaderResourceBindings* bindings)
 {
     std::unique_ptr<QRhiGraphicsPipeline> ps(rhi_->newGraphicsPipeline());
     ps->setShaderStages({{QRhiShaderStage::Vertex, vs}, {QRhiShaderStage::Fragment, fs}});
@@ -290,9 +380,13 @@ std::unique_ptr<QRhiGraphicsPipeline> ViewportRenderer::makePipeline(const QShad
         layout.setBindings({{3 * sizeof(float)}});
         layout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float3, 0}});
         break;
+    case Layout::Photo:
+        layout.setBindings({{5 * sizeof(float)}});
+        layout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float3, 0}, {0, 1, QRhiVertexInputAttribute::Float2, 3 * sizeof(float)}});
+        break;
     }
     ps->setVertexInputLayout(layout);
-    ps->setShaderResourceBindings(srb_.get());
+    ps->setShaderResourceBindings(bindings ? bindings : srb_.get());
     ps->setRenderPassDescriptor(renderTarget()->renderPassDescriptor());
     ps->setSampleCount(renderTarget()->sampleCount());
     ps->setDepthTest(depthTest);
@@ -401,6 +495,7 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         }
     }
     regions_ = std::move(keptRegions);
+    syncPhotos(u);
 
     // ---- Matrices and the frame's uniforms ---------------------------------------------
     const Mat4 view = camera.viewMatrix();
@@ -529,6 +624,51 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             lineDraw(linePipeline_.get(), gridVertices_.get(), 0, xCount, kAxisX, 1.5f, -kGroundBiasPx, 1);
             lineDraw(linePipeline_.get(), gridVertices_.get(), xCount, yCount, kAxisY, 1.5f, -kGroundBiasPx, 1);
             lineDraw(linePipeline_.get(), gridVertices_.get(), xCount + yCount, zCount, kAxisZ, 1.5f, -kGroundBiasPx, 1);
+        }
+    }
+
+    // ---- 2b. Reference photos: after the bodies (depth-tested, so a body in
+    //          front hides them; no depth writes) and the grid (which shows
+    //          faintly through), pushed as far behind their plane as the grid
+    //          (a face lying on the plane wins instead of flickering), before
+    //          the edges, sketches and highlights (drawn over them) ----------------
+    {
+        std::vector<float> quads, outline;
+        for (const auto& ref : scene_.references) {
+            const auto it = photos_.find(ref.id);
+            if (it == photos_.end() || !it->second.texture)
+                continue;
+            // The picture's top row is v = 0.
+            static constexpr float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            const quint32 first = quint32(quads.size() / 5);
+            for (int k : {0, 1, 2, 0, 2, 3})
+                quads.insert(quads.end(), {float(ref.corners[k].x), float(ref.corners[k].y), float(ref.corners[k].z), uv[k][0],
+                                           uv[k][1]});
+            Draw d;
+            d.kind = Draw::Kind::Photo;
+            d.pipeline = photoPipeline_.get();
+            d.photo = &it->second;
+            d.first = first;
+            d.count = 6;
+            d.uniforms = uniformsFor({1, 1, 1, float(std::clamp(ref.opacity, 0.0, 1.0))}, 0, -kGroundBiasPx, 0);
+            const float normal[4] = {float(ref.normal.x), float(ref.normal.y), float(ref.normal.z), 0.0f};
+            std::memcpy(d.uniforms.grid, normal, sizeof normal);
+            draws.push_back(d);
+            if (ref.highlighted)
+                for (int k = 0; k < 4; ++k)
+                    appendSegment(outline, ref.corners[k], ref.corners[(k + 1) % 4]);
+        }
+        if (!quads.empty()) {
+            const quint32 bytes = quint32(quads.size() * sizeof(float));
+            ensureDynamicBuffer(photoVertices_, bytes, QRhiBuffer::VertexBuffer);
+            u->updateDynamicBuffer(photoVertices_.get(), 0, bytes, quads.data());
+        }
+        if (!outline.empty()) {
+            const quint32 bytes = quint32(outline.size() * sizeof(float));
+            ensureDynamicBuffer(photoOutline_, bytes, QRhiBuffer::VertexBuffer);
+            u->updateDynamicBuffer(photoOutline_.get(), 0, bytes, outline.data());
+            lineDraw(linePipeline_.get(), photoOutline_.get(), 0, quint32(outline.size() / kLineVertexFloats), kSketchSelected,
+                     2.0f, kEdgeBiasPx);
         }
     }
 
@@ -734,9 +874,21 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniforms_.get(),
             sizeof(UniformData))});
         srb_->create();
+        // The photos' layout names the uniform buffer too (each photo's own bindings follow below).
+        photoLayout_->setBindings(
+            {QRhiShaderResourceBinding::uniformBufferWithDynamicOffset(
+                 0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniforms_.get(),
+                 sizeof(UniformData)),
+             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, photoLayoutTexture_.get(),
+                                                       photoSampler_.get())});
+        photoLayout_->create();
     }
     for (std::size_t i = 0; i < draws.size(); ++i)
         u->updateDynamicBuffer(uniforms_.get(), quint32(i) * uniformSlotSize_, sizeof(UniformData), &draws[i].uniforms);
+    // The photos' bindings name the uniform buffer (made again if it grew), before the pass.
+    for (const Draw& d : draws)
+        if (d.kind == Draw::Kind::Photo)
+            photoBindings(*d.photo);
 
     // ---- Record the pass ----------------------------------------------------------------------
     const QColor clear = QColor::fromRgbF(kBackground[0], kBackground[1], kBackground[2], kBackground[3]);
@@ -746,7 +898,8 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
         const Draw& d = draws[i];
         cb->setGraphicsPipeline(d.pipeline);
         const QRhiCommandBuffer::DynamicOffset offset(0, quint32(i) * uniformSlotSize_);
-        cb->setShaderResources(srb_.get(), 1, &offset);
+        // A photo has its own bindings (the uniform block and its picture).
+        cb->setShaderResources(d.kind == Draw::Kind::Photo ? d.photo->srb.get() : srb_.get(), 1, &offset);
         switch (d.kind) {
         case Draw::Kind::Mesh: {
             const QRhiCommandBuffer::VertexInput inputs[] = {{d.body->positions.get(), 0}, {d.body->normals.get(), 0}};
@@ -776,6 +929,12 @@ void ViewportRenderer::render(QRhiCommandBuffer* cb)
             const QRhiCommandBuffer::VertexInput input(d.body->positions.get(), 0);
             cb->setVertexInput(0, 1, &input, d.body->groundIndices.get(), 0, QRhiCommandBuffer::IndexUInt32);
             cb->drawIndexed(d.count, kShadowLayers);
+            break;
+        }
+        case Draw::Kind::Photo: {
+            const QRhiCommandBuffer::VertexInput input(photoVertices_.get(), 0);
+            cb->setVertexInput(0, 1, &input);
+            cb->draw(d.count, 1, d.first);
             break;
         }
         }

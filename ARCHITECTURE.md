@@ -421,6 +421,26 @@ Document (UUID, display unit)
   shared, like a face of another body.
 - `shapeRevision()` changes whenever a body's shape changes; views use it to
   know when to re-tessellate and when topology indices are stale.
+- **Reference photos** (`document/ReferenceImage`): a picture placed at true
+  size on a plane to model or sketch over (docs/MEASURE.md). Not geometry:
+  nothing depends on one, adding or changing one recomputes nothing, and it
+  is never picked in the view. A photo holds its picture
+  (`ReferenceImageData`: the file's bytes as they came, JPEG or PNG, its
+  pixel size, an FNV-1a hash and a `key` for the renderer; shared by copies,
+  undo snapshots, document snapshots and the render scene, never copied)
+  and its placement: the plane (`XY` / `XZ` / `YZ` with the frames sketches
+  on them use, or a construction plane's id, `sketchPlaneOn` its geometry),
+  its center (u, v) on that plane, a rotation, a width in mm (the height
+  follows the picture's aspect), opacity 0.1-1 and visibility; `unscaled`
+  marks a photo added without a known scale. `referenceFrame` /
+  `referenceCorners` / `referenceLocal` place it. Commands:
+  `AddReferenceImageCommand`, `EditReferenceImageCommand` (any property,
+  before/after snapshots; one undo step per Model panel edit and per Set
+  scale), `DeleteReferenceImageCommand`; `checkReferenceValues` refuses what
+  the file could not read back. `DeleteDatumCommand` moves the photos on the
+  plane to the ground (same center, rotation and size) and undo puts them
+  back. `Document::referenceRevision()` changes with them and with the
+  construction planes.
 
 ## Sketches (`sketch/`, `document/SketchProfiles`)
 
@@ -1324,6 +1344,25 @@ ARKit's camera view, and the measurements kept for typing into value boxes.
   (`AppController::createOutlineSketch`, `createCircleSketch`,
   `createSizedBox`).
 
+### Reference photos in the app
+
+`AppController::addReferenceImage(file, mmPerPixel, plane)` (the Measure
+workspace's straightened photo, whose mm per pixel is exact, or File → Add
+Reference Photo… on the desktop, at an unknown scale) reads the picture with
+`QImageReader` (EXIF orientation applied), keeps the file's own bytes when it
+is a JPEG or PNG stored upright and at most 4096 px, and otherwise re-encodes
+it (scaled to 4096 px, JPEG, PNG with transparency);
+`InteractionController::addReferenceImage` pushes the command and frames the
+view on it (`frameReference`, facing its plane outside a sketch). Set scale
+(`startReferenceScale`, `ReferenceScaleOverlay.qml`): while it runs,
+`ViewportItem` hands the left button, one finger and the pen to
+`AppController::referenceScalePointer` (right / middle drags, the wheel and
+two-finger gestures still move the view); the points are kept in the photo's
+own coordinates (`referencePointAt`: the ray meets its plane), so they stay
+on it as the view moves, a finger's point shows a loupe (a
+`ShaderEffectSource` of the view, as the sketch's), and the real distance
+typed scales the photo about its center (`scaleReference`, one undo step).
+
 ## Threads
 
 - **GUI thread:** Qt events, QML, the interaction core, commands and
@@ -1490,6 +1529,22 @@ tapping the glyph itself always reaches it. Clicking one selects the
 constraint (`constraintIcon_<id>`), never mixed with geometry, and its
 geometry is highlighted; Delete removes it.
 
+Reference photos (`RenderReferenceImage`: the picture, its four corners,
+its plane's front normal, opacity, an outline while its Model panel row is
+hovered or open) are textured quads (`shaders/photo.vert` / `photo.frag`)
+with their own shader resource bindings (the shared uniform block plus the
+picture's texture and a linear sampler, trilinear across generated mipmaps):
+each picture is decoded (`QImage::fromData`) and uploaded once per
+`ReferenceImageData::key` and released when the photo leaves the scene. They
+are drawn after the bodies and the grid, before edges, highlights and
+sketches, alpha-blended at their opacity, depth-tested (`LessOrEqual`)
+without depth writes and pushed `kGroundBiasPx` behind their plane along
+the view ray, as the grid is: a body in front hides a photo, a face lying on
+its plane always wins (from both sides, so it never z-fights), and sketch
+curves and fills on the plane, pulled towards the viewer, draw over it. The
+quad is not culled: from behind its plane the picture shows mirrored, at
+half its opacity and half grey.
+
 Shaders are GLSL 440 compiled by `qt_add_shaders` into `.qsb` packages
 (SPIR-V, HLSL, MSL, GLSL), so they run on Direct3D 11 and on Metal (macOS,
 iPadOS) unchanged.
@@ -1507,7 +1562,14 @@ loft's Smooth / Straight, is a row of buttons `historyChoice_<id>_<key>_<choice>
 in `HistoryPanel.qml` that pass the choice to `setFeatureParameter`).
 Clicking a datum's row selects it (`selectDatum`); Hide / Show and Delete
 push `EditDatumCommand` / `DeleteDatumCommand`, and `setFeatureParameter`
-edits a datum's value when the id is a datum's.
+edits a datum's value when the id is a datum's. Reference photos come after
+the construction geometry (kind `reference`, a photo icon; `InteractionReferences.cpp`):
+Width, Opacity (percent, the keypad's digits), Rotation, X, Y and the Plane
+(choices: Ground, Front, Right and the construction planes by name), edited
+through `setFeatureParameter` like a step's (`setReferenceParameter`), Set
+scale (`historySetScale_<id>`), Hide / Show and Delete; a photo whose picture
+is missing from its file is marked failed. Hovering or opening the row
+outlines the photo (and shows it when hidden).
 `AppController` gives QML new rows (`historyChanged`) and a new action list
 (`contextActionsChanged`) only when they differ from the last ones: a new
 list rebuilds the panel's delegates, and most state changes (a drag step, a

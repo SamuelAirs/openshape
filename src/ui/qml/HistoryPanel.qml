@@ -7,8 +7,8 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import OpenShape
 
-// The model tree: sketches, construction axes and planes, bodies and each
-// body's steps, in order. Hovering
+// The model tree: sketches, construction axes and planes, reference photos,
+// bodies and each body's steps, in order. Hovering
 // a row highlights its geometry in the view (so does an expanded row: touch
 // has no hover); clicking a body selects it (Shift, or any tap in the touch
 // layout, adds another, e.g. to combine); clicking a step edits its values.
@@ -130,6 +130,13 @@ Panel {
                             height: 7
                             radius: 3.5
                             color: row.failed ? Theme.error : row.warned ? "#E0A030" : row.inactive ? "#B8BEC6" : "#4CAF6A"
+                        }
+                        // A reference photo: its picture icon.
+                        LineIcon {
+                            visible: row.modelData.kind === "reference"
+                            name: "photo"
+                            size: 16
+                            color: row.failed ? Theme.error : row.modelData.visible ? Theme.iconColor : Theme.disabledIcon
                         }
                         // Names and messages come from files (STEP product
                         // names, projects): shown as plain text, never as HTML.
@@ -334,6 +341,22 @@ Panel {
                             visible: row.modelData.kind === "sketch"
                             text: "Edit sketch"
                             onClicked: panel.app.editSketch(row.modelData.id)
+                        }
+                        // A reference photo: its scale from two points a known distance apart.
+                        ActionButton {
+                            compact: true
+                            objectName: "historySetScale_" + row.modelData.id
+                            visible: row.modelData.kind === "reference" && !row.failed
+                            text: "Set scale"
+                            onClicked: {
+                                const owner = panel
+                                const id = row.modelData.id
+                                owner.app.startReferenceScale(id)
+                                // A phone's panel covers the view the points are tapped in.
+                                if (Theme.compact)
+                                    owner.closeRequested()
+                                owner.finished()
+                            }
                         }
                         ActionButton {
                             compact: true

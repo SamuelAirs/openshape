@@ -39,7 +39,7 @@ if(OPENSHAPE_OWN_OCCT)
     target_compile_definitions(test_geometry PRIVATE OPENSHAPE_OWN_OCCT_BIN="${OPENSHAPE_OCCT_PREFIX}/bin")
 endif()
 
-openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_sketch_features.cpp test_attachment.cpp test_datums.cpp test_3mf.cpp test_recovery.cpp test_holes.cpp test_extrude_draft.cpp test_import.cpp test_project_thumbnail.cpp test_home.cpp
+openshape_add_test(test_document test_document.cpp test_commands.cpp test_project_file.cpp test_reference_images.cpp test_sketch_features.cpp test_attachment.cpp test_datums.cpp test_3mf.cpp test_recovery.cpp test_holes.cpp test_extrude_draft.cpp test_import.cpp test_project_thumbnail.cpp test_home.cpp
     test_text.cpp test_loft.cpp)
 target_link_libraries(test_document PRIVATE openshape_commands openshape_io libzip::zip)
 target_compile_definitions(test_document PRIVATE OPENSHAPE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
@@ -49,7 +49,8 @@ openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_intera
     test_cut_flow.cpp test_touch_selection.cpp test_typing_pause.cpp test_numeric_keypad.cpp
     test_loft_interaction.cpp test_project_files.cpp
     test_view_cube.cpp test_sketch_phone.cpp
-    test_typed_values.cpp test_pencil.cpp test_multi_face.cpp test_measure_design.cpp)
+    test_typed_values.cpp test_pencil.cpp test_multi_face.cpp test_measure_design.cpp
+    test_reference_interaction.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io)
 # test_touch_wording reads the QML hints and the help card; test_bodies a
 # project saved by an older build (tests/data).

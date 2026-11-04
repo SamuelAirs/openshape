@@ -7,6 +7,7 @@ add_library(openshape_interaction STATIC
     ContactShadow.cpp ContactShadow.h
     InputEvents.h
     InteractionController.cpp InteractionController.h
+    InteractionReferences.cpp
     Manipulator.cpp Manipulator.h
     Operation.cpp Operation.h
     OverlayPlacement.cpp OverlayPlacement.h
