@@ -521,9 +521,15 @@ void tapFelt()
     configuration.baseBackgroundColor = panelColor();
     configuration.baseForegroundColor = UIColor.whiteColor;
     configuration.contentInsets = NSDirectionalEdgeInsetsMake(8, 6, 8, 6);
+    // A title that fits the 96 pt button (a configuration button ignores
+    // adjustsFontSizeToFitWidth).
+    configuration.titleTextAttributesTransformer = ^NSDictionary<NSAttributedStringKey, id>*(NSDictionary<NSAttributedStringKey, id>* incoming) {
+        NSMutableDictionary<NSAttributedStringKey, id>* attributes = [incoming mutableCopy];
+        attributes[NSFontAttributeName] = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+        return attributes;
+    };
     UIButton* button = [UIButton buttonWithConfiguration:configuration primaryAction:nil];
     button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.titleLabel.adjustsFontSizeToFitWidth = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     [NSLayoutConstraint activateConstraints:@[
         [button.widthAnchor constraintEqualToConstant:96],
@@ -795,6 +801,7 @@ void tapFelt()
     const CGPoint middle = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
     _fixedCross.center = middle;
     [self placeMovingCross];
+    [self refreshOverlayShown]; // the frame may have turned
 }
 
 // The yellow cross: where straight down is, seen from the frame's middle.
@@ -847,18 +854,39 @@ void tapFelt()
     }
 }
 
-- (void)updateOverlayButton
+// The last photo, if it is the same way round as the frame (portrait now
+// and landscape then would only fit small in it: not offered until the
+// phone turns back).
+- (BOOL)overlayAvailable
 {
-    const BOOL available = _overlayView.image != nil;
+    if (!_overlayView.image)
+        return NO;
+    const CGSize image = _overlayView.image.size;
+    const CGRect frame = [self frameRect];
+    return image.width > 0 && image.height > 0 && frame.size.width > 0 && frame.size.height > 0
+           && (image.width >= image.height) == (frame.size.width >= frame.size.height);
+}
+
+// Shown or not: only alpha, interaction and hidden, which don't lay out
+// again (placeOnFrame calls it from the layout pass).
+- (void)refreshOverlayShown
+{
+    const BOOL available = [self overlayAvailable];
     _overlayButton.alpha = available ? 1 : 0;
     _overlayButton.userInteractionEnabled = available;
+    _overlayView.hidden = !(gOverlayOn && available);
+}
+
+- (void)updateOverlayButton
+{
+    const BOOL available = [self overlayAvailable];
+    [self refreshOverlayShown];
     UIButtonConfiguration* configuration = _overlayButton.configuration;
     configuration.baseBackgroundColor = gOverlayOn && available ? [UIColor colorWithWhite:1 alpha:0.9] : panelColor();
     configuration.baseForegroundColor = gOverlayOn && available ? UIColor.blackColor : UIColor.whiteColor;
     _overlayButton.configuration = configuration;
     _overlayButton.accessibilityTraits =
         gOverlayOn && available ? UIAccessibilityTraitButton | UIAccessibilityTraitSelected : UIAccessibilityTraitButton;
-    _overlayView.hidden = !(gOverlayOn && available);
 }
 
 - (void)overlayLoaded:(UIImage*)image
@@ -878,6 +906,10 @@ void tapFelt()
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    // The camera failed before the screen appeared (finishWithPhoto ran
+    // already): start nothing that would outlive it.
+    if (_finished)
+        return;
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     if (!_stopGravity) {
         __weak OSCameraScreenController* weakSelf = self;
@@ -893,6 +925,8 @@ void tapFelt()
     // Gone some other way than Cancel or the shutter: cancelled.
     if (!_finished)
         [self finishWithPhoto:nil focalLength:0 error:nil dismiss:NO];
+    else
+        [self stopEverything]; // idempotent: whatever started after finishing stops
 }
 
 // Everything stops: the gravity, the notifications, the session (on its
@@ -974,6 +1008,23 @@ void tapFelt()
                                           usingBlock:^(NSNotification* note) {
                                               (void)note;
                                               [weakSelf sessionResumed];
+                                          }]];
+    // Started or stopped by AVFoundation itself (an interruption ending, a
+    // media services reset): the shutter follows. stopEverything removes
+    // these observers before its own stopRunning.
+    [_observers addObject:[center addObserverForName:AVCaptureSessionDidStartRunningNotification
+                                              object:_session
+                                               queue:main
+                                          usingBlock:^(NSNotification* note) {
+                                              (void)note;
+                                              [weakSelf runningChanged:YES];
+                                          }]];
+    [_observers addObject:[center addObserverForName:AVCaptureSessionDidStopRunningNotification
+                                              object:_session
+                                               queue:main
+                                          usingBlock:^(NSNotification* note) {
+                                              (void)note;
+                                              [weakSelf runningChanged:NO];
                                           }]];
 }
 
@@ -1138,6 +1189,15 @@ void tapFelt()
         _instruction.text = @"The camera is paused while another app is beside FoldForm.";
     else
         _instruction.text = @"The camera is paused.";
+    [self refreshControls];
+}
+
+- (void)runningChanged:(BOOL)running
+{
+    if (_finished)
+        return;
+    _running = running;
+    qInfo("Measure: camera: session %s", running ? "running" : "stopped");
     [self refreshControls];
 }
 
@@ -1325,6 +1385,22 @@ void tapFelt()
     NSString* reason = error ? [error.localizedDescription copy] : nil;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self photoArrived:data metadata:metadata error:reason];
+    });
+}
+
+// Always the last call for a capture (after didFinishProcessingPhoto, on the
+// same queue, so photoArrived runs first): a capture that ended without a
+// photo gives the shutter back.
+- (void)captureOutput:(AVCapturePhotoOutput*)output
+    didFinishCaptureForResolvedSettings:(AVCaptureResolvedPhotoSettings*)resolvedSettings
+                                  error:(NSError*)error
+{
+    (void)output;
+    (void)resolvedSettings;
+    NSString* reason = error ? [error.localizedDescription copy] : nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_capturing && !self->_finished)
+            [self captureFailed:[NSString stringWithFormat:@"The camera gave no photo (%@).", reason ? reason : @"no reason given"]];
     });
 }
 

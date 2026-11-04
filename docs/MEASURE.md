@@ -210,7 +210,9 @@ instead of the system's:
   over the preview. The preview shows the whole 4:3 frame (`AVLayerVideoGravityResizeAspect`),
   and the overlay is drawn in the same rectangle, computed from the photo's size and the
   rotation (`AVMakeRectWithAspectRatioInsideRect`), so the two match. The toggle is remembered
-  while the app runs. MeasureController keeps the camera's last photo file for it
+  while the app runs; it is offered only while the phone is held the same way round as for
+  that photo (portrait over landscape would only fit small). MeasureController keeps the
+  camera's last photo file for it
   (`CameraOptions::overlayFile`) until a newer one replaces it or the devices change.
 - **1x and 2x** (digital zoom on the wide lens, or the telephoto where it is 2x) and the
   telephoto at its own factor (3x, 5x) where there is one: zooming in from further away cuts
