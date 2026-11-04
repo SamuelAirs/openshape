@@ -70,14 +70,15 @@ motion sensors, Vision and ARKit reported.
     the card says the name to type and the chip gets a green check. Close,
     push a face and type that name (or tap its key). Also try the "?" beside
     KEPT: is the three-step guide clear, and does Add all work?
-14. **The playing card (next build; your request).** Ruler → Check with a
+14. **The playing card (build 63; your request).** Ruler → Check with a
     card: the outline is a playing card (63.5 × 88.9 mm); lay a Bicycle card
-    on it, stretch, Done. Then, to pin down the Bicycle size: pick Bank card,
-    check again with a bank card (the ISO size, exact), and measure a
-    Bicycle card's long side with the jaws: tell me the reading (88.9 mm is
-    what FoldForm assumes; if yours reads otherwise, the app takes your
-    deck's size). Pick Playing card again afterwards. The Fold's Gap
-    calibration and Photo's Card now mean the playing card too.
+    on it, stretch the outline to its edges, Done. (Ignore the "Bank card"
+    choice above the outline: it meant a debit or credit card, and it goes
+    in the next build.) Then lay a real ruler on the screen along FoldForm's
+    ruler, zeros together, the phone open flat: at 100 mm, how far apart are
+    the marks? Under half a millimeter means the playing card is a good
+    reference; tell me the gap either way. The Fold's Gap calibration and
+    Photo's Card now mean the playing card too.
 
 ## On Windows (the desktop shortcut)
 
