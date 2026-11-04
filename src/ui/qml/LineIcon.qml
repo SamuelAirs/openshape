@@ -59,8 +59,6 @@ Item {
         "sketch_slot": "M8 8 H16 A4 4 0 0 1 16 16 H8 A4 4 0 0 1 8 8 Z",
         // A pen tracing a wavy outline (the Trace tool).
         "sketch_trace": "M3.5 18.5 C5.5 13 8 18 10 14 S13 10.5 14.5 12 M14.5 12 L15.2 9.3 L19.6 4.9 a1.4 1.4 0 0 1 2 2 L17.2 11.3 Z",
-        // A ruler (Measure: the value boxes' button, the top bar).
-        "ruler": "M3.5 8 H20.5 V16 H3.5 Z M7 8 V11 M10.5 8 V12.5 M14 8 V11 M17.5 8 V12.5",
         // The tools (the create palette).
         "box": "M12 3.5 L19.5 7.5 V16.5 L12 20.5 L4.5 16.5 V7.5 Z M4.5 7.5 L12 11.5 L19.5 7.5 M12 11.5 V20.5",
         "sketch": "M4 20.5 H11 M5.5 18 L6.1 14.4 L15.5 5 a2.1 2.1 0 0 1 3 3 L9.1 17.4 Z M13.5 7 L16.5 10",
@@ -80,7 +78,8 @@ Item {
         "union": "M12 6.8 A6 6 0 1 0 12 17.2 A6 6 0 1 0 12 6.8 Z",
         "subtract": "M12 6.8 A6 6 0 1 0 12 17.2 A6 6 0 0 1 12 6.8 Z M12 6.8 A6 6 0 1 1 12 17.2",
         "intersect": "M12 6.8 A6 6 0 0 1 12 17.2 A6 6 0 0 1 12 6.8 Z M12 6.8 A6 6 0 1 0 12 17.2 M12 6.8 A6 6 0 1 1 12 17.2",
-        // Measure (docs/MEASURE.md): the workspace and its instruments.
+        // Measure (docs/MEASURE.md): the workspace and its instruments (the
+        // ruler also on the value boxes' button).
         "ruler": "M2.9 16.4 L16.4 2.9 L21.1 7.6 L7.6 21.1 Z M6.3 13 L8 14.8 M9.7 9.7 L12.1 12.1 M13 6.3 L14.8 8",
         "fold": "M3.5 19.5 H20.5 M3.5 19.5 L14.5 6.5 M9.5 19.5 A6 6 0 0 0 7.4 14.9",
         "level": "M3.5 9.5 a2 2 0 0 1 2 -2 H18.5 a2 2 0 0 1 2 2 V14.5 a2 2 0 0 1 -2 2 H5.5 a2 2 0 0 1 -2 -2 Z M9 7.5 V16.5 M15 7.5 V16.5 M10.4 12 a1.6 1.6 0 1 0 3.2 0 a1.6 1.6 0 1 0 -3.2 0",

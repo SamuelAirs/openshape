@@ -2859,37 +2859,4 @@ QString AppController::setHoleAllowanceText(const QString& text)
     return {};
 }
 
-// ---- Measure: stand-ins until the design hooks (the 1:1 view, sketches and
-// boxes made from measurements) are merged; each says what it was asked.
-
-void AppController::setScreenScale(double pointsPerMm, bool calibrated)
-{
-    // The 1:1 view (design hooks) replaces this.
-    OS_LOG(Debug, App) << "screen scale " << pointsPerMm << " points per mm" << (calibrated ? " (calibrated)" : "");
-}
-
-bool AppController::createOutlineSketch(const QVariantList& pointsMm, bool closed)
-{
-    // Design hooks replace this.
-    OS_LOG(Info, App) << "createOutlineSketch: " << pointsMm.size() << " points" << (closed ? ", closed" : "")
-                      << " (not made yet: the design hooks make it)";
-    return false;
-}
-
-bool AppController::createCircleSketch(double centerXmm, double centerYmm, double diameterMm)
-{
-    // Design hooks replace this.
-    OS_LOG(Info, App) << "createCircleSketch: center " << centerXmm << ", " << centerYmm << ", diameter " << diameterMm
-                      << " mm (not made yet: the design hooks make it)";
-    return false;
-}
-
-bool AppController::createSizedBox(double widthMm, double depthMm, double heightMm)
-{
-    // Design hooks replace this.
-    OS_LOG(Info, App) << "createSizedBox: " << widthMm << " x " << depthMm << " x " << heightMm
-                      << " mm (not made yet: the design hooks make it)";
-    return false;
-}
-
 } // namespace os::ui

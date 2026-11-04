@@ -533,16 +533,10 @@ public:
     Q_INVOKABLE void closePurchase();
 
     // ---- Measure (docs/MEASURE.md; ui/MeasureController)
+    // The workspace's state: the scale (which it passes to setScreenScale,
+    // the 1:1 view), the sensors, the photo, the kept measurements. It makes
+    // geometry with createOutlineSketch, createCircleSketch and createSizedBox.
     MeasureController* measure() const { return measure_; }
-    // The screen's true scale, whenever it changes (MeasureController).
-    // The 1:1 view (design hooks) replaces this.
-    void setScreenScale(double pointsPerMm, bool calibrated);
-    // Geometry made from measurements (mm, on the ground plane, y up):
-    // an outline sketch (each point a QPointF or {x, y}), a circle sketch,
-    // a box of a size. True when made. Design hooks replace these stubs.
-    Q_INVOKABLE bool createOutlineSketch(const QVariantList& pointsMm, bool closed);
-    Q_INVOKABLE bool createCircleSketch(double centerXmm, double centerYmm, double diameterMm);
-    Q_INVOKABLE bool createSizedBox(double widthMm, double depthMm, double heightMm);
 
     // ---- Files from other apps ("Open in OpenShape"; ui/IncomingFiles.h)
     // A file another app handed to OpenShape: on iOS, "Open in OpenShape" or

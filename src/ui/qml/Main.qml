@@ -1613,10 +1613,6 @@ ApplicationWindow {
         onUseValue: (text) => window.useMeasuredValue(text)
         onVisibleChanged: if (!visible) window.focusViewUnlessPanel()
     }
-    // A value measured for a value box goes into it. The design hooks replace this.
-    function useMeasuredValue(text) {
-        window.app.typeValueText(text)
-    }
 
     // ---------------------------------------------------------------- help
     // Closing Help or About gives the keys back to Home when it is shown
