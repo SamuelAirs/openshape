@@ -80,17 +80,26 @@ struct KeypadResult {
 // 95 mm, then x 2 is 190 mm); a unit replaces
 // the unit the text ends with (25 mm, then in: 25 in); backspace takes the
 // last character, or the whole unit it ends with (never leaving "25m", which
-// would be meters); clear empties the text.
-KeypadResult pressKeypadKey(const KeypadState& state, std::string_view keyId, KeypadMode mode);
+// would be meters), or the whole name of `names` it ends with (the project's
+// measurements, "shelf_depth": added whole, from its key above the keypad;
+// another word loses one letter); a unit after such a name does nothing (the
+// name has its own); clear empties the text.
+KeypadResult pressKeypadKey(const KeypadState& state, std::string_view keyId, KeypadMode mode,
+                            const std::vector<std::string>& names = {});
 // Characters typed on a hardware keyboard while the keypad edits a value:
 // added as typed (units spelled out, "1in"), over the text while it is
 // replaced. Control characters are ignored.
 KeypadResult typeIntoKeypad(const KeypadState& state, std::string_view characters);
+// A project measurement's key (above the keypad's keys): its name, added at
+// the end (over the value shown while it is replaced), after a space when the
+// text ends with a number, a name or ')'.
+KeypadResult insertKeypadName(const KeypadState& state, std::string_view name);
 
 // The text as a value: millimeters for a length (a number alone in
 // `unit`), radians for an angle, the whole number for a count. The fields
 // themselves parse what they are given; this is what the keypad's text means.
-LengthParseResult keypadValue(std::string_view text, KeypadMode mode, LengthUnit unit);
+// `names`: the project's measurements, typed by name.
+LengthParseResult keypadValue(std::string_view text, KeypadMode mode, LengthUnit unit, const NameResolver& names = {});
 
 // ---- Where the keypad goes -------------------------------------------------------
 

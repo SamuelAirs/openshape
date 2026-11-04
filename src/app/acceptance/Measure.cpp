@@ -1275,8 +1275,26 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     && text(r, QStringLiteral("measureChipName")) == QStringLiteral("Shelf depth"),
                 say("tray: renamed"));
         r.screenshot(QStringLiteral("measure_chip_desktop"));
-        r.check(r.tapItem(QStringLiteral("measureChipDelete")), say("tray: Delete"));
+        // A kept length into the open project, under a name value boxes take.
+        r.check(shown(r, QStringLiteral("measureChipToProject")), say("tray: its card offers Add to project"));
+        r.check(r.tapItem(QStringLiteral("measureChipToProject")), say("tray: Add to project"));
     });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        const QVariantList kept = r.app().property("projectMeasurements").toList();
+        const QVariantMap first = kept.isEmpty() ? QVariantMap() : kept.front().toMap();
+        const double expected = measureOf(r).measurements().value(0).toMap().value(QStringLiteral("value")).toDouble();
+        r.check(kept.size() == 1 && first.value(QStringLiteral("name")).toString() == QStringLiteral("shelf_depth")
+                    && std::abs(first.value(QStringLiteral("value")).toDouble() - expected) < 1e-9,
+                say("tray: in the project as shelf_depth, at the kept value"),
+                kept.isEmpty() ? QStringLiteral("none") : first.value(QStringLiteral("name")).toString());
+        r.check(!shown(r, QStringLiteral("measureChipCard")), say("tray: the card closed"));
+        r.app().undo(); // the project as it was
+        r.check(r.app().property("projectMeasurements").toList().isEmpty(), say("tray: one undo takes it out of the project"));
+        r.check(r.tapItem(QStringLiteral("measureChip_0")), say("tray: the kept length again"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("measureChipDelete")), say("tray: Delete")); });
     wait(steps, 1);
     steps.push_back([&r, st] {
         r.check(int(measureOf(r).measurements().size()) == st->count - 1 && !shown(r, QStringLiteral("measureChipCard")), say("tray: deleted"));

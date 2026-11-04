@@ -109,7 +109,7 @@ Item {
                 typing = ""
                 return app.handleKey(event.key)
             }
-            if (event.text.length === 1 && /[0-9.,+\-*/()a-zA-Z" ]/.test(event.text)
+            if (event.text.length === 1 && /[0-9.,+\-*/()a-zA-Z_" ]/.test(event.text)
                     && !(event.modifiers & Qt.ControlModifier)) {
                 typeKeys(typing + event.text)
                 return true

@@ -101,14 +101,19 @@ corners can be fixed by hand (eight numbers after the focal length).
 ## Limits (what to tell Sam)
 
 - **Silhouettes only see outlines.** A concavity open toward the cameras (a bowl's inside, the
-  slot of a U-channel, the step of an L seen from above) is filled; and from 30-60 degrees a
-  flat top grows a low roof, because no outline passes above it: the 40 x 30 x 20 box test
-  comes out about 10 mm too tall at the middle from 35-55 degree photos, within 3 mm and 8 % of
-  its volume with low photos added. Multi-view stereo (next stage) is what recovers these.
-- Footprints are accurate to about a millimeter (the paper is a good ruler); the corners'
-  placement is what limits it.
+  slot of a U-channel, the step of an L seen from above) is filled; from 30-60 degrees a flat
+  top grows a low roof, because no outline passes above it; and a flat side that no photo
+  sees edge-on bulges into a shallow wedge (its outline comes from photos looking at it at a
+  slant: about (side / 2) x tan(angle to the nearest photo's direction)). Measured on the
+  synthetic 40 x 30 x 20 box: 12 photos at 35-55 degrees, 11 mm too tall at the middle and
+  +32 % volume; with 6 low photos added, 3 mm and +18 % (the bulges). A cylinder has no flat
+  sides: +2 % with low photos. Multi-view stereo (next stage) is what recovers these.
+- Footprints: corners and round parts within about a millimeter (the paper is a good ruler);
+  flat sides bulge out by a few millimeters at their middle, less with more photos.
 - Without a subject mask a neutral grey or white object cannot be told from shadows on white
-  paper; a dark or coloured object can.
+  paper; a dark or coloured object can. And without one the room around the paper is
+  unknown, so low photos, which see the object's top against the room, do not lower the roof
+  (the synthetic cylinder: +15 % by colour alone, +2 % with masks).
 - The object must stand on the paper and fit within its carving height (the paper's short side
   by default, `ScanOptions::heightMm`).
 

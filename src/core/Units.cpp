@@ -4,6 +4,7 @@
 
 #include "core/Units.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -67,7 +68,7 @@ constexpr double kPiUnits = 3.14159265358979323846;
 // The units a value may be typed in. Feet are typed only: there is no feet
 // display unit (LengthUnit), so unitFromSymbol, which reads the document's
 // display unit, does not know them.
-enum class Quantity { Length, Angle };
+using Quantity = ValueKind;
 struct TypedUnit {
     Quantity quantity = Quantity::Length;
     double factor = 1.0; // millimeters (a length) or degrees (an angle) per unit
@@ -125,6 +126,9 @@ std::string asciiOperators(std::string_view text)
     return out;
 }
 
+bool isNameStart(char c) { return std::isalpha(static_cast<unsigned char>(c)) || c == '_'; }
+bool isNameChar(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }
+
 // The character at `pos`: a whole UTF-8 sequence (for messages).
 std::string characterAt(std::string_view text, std::size_t pos)
 {
@@ -139,8 +143,9 @@ std::string characterAt(std::string_view text, std::size_t pos)
 // scalar factor. Grammar:
 //   expr   := term (('+'|'-') term)*
 //   term   := factor (('*'|'/') factor)*
-//   factor := ('+'|'-') factor | '(' expr ')' unit? | number unit? (number inch-unit?)
-// The last part: feet and inches written together, 1' 2" (1 ft 2 in).
+//   factor := ('+'|'-') factor | '(' expr ')' unit? | number unit? (number inch-unit?) | name
+// The number's last part: feet and inches written together, 1' 2" (1 ft 2 in).
+// A name (with a resolver) is a value with a unit: millimeters or degrees.
 struct Value {
     double v = 0.0;       // in millimeters (degrees for an angle) when hasUnit, otherwise a plain number
     bool hasUnit = false;
@@ -148,8 +153,8 @@ struct Value {
 
 class Parser {
 public:
-    Parser(std::string_view text, Quantity quantity, LengthUnit defaultUnit)
-        : source_(asciiOperators(text)), text_(source_), quantity_(quantity), defaultUnit_(defaultUnit)
+    Parser(std::string_view text, Quantity quantity, LengthUnit defaultUnit, const NameResolver& names)
+        : source_(asciiOperators(text)), text_(source_), quantity_(quantity), defaultUnit_(defaultUnit), names_(names)
     {
     }
 
@@ -276,6 +281,9 @@ private:
         }
         if (accept('+'))
             return factor();
+        skipSpace();
+        if (names_ && pos_ < text_.size() && isNameStart(text_[pos_]))
+            return name();
         if (accept('(')) {
             Value inner = expr();
             if (!accept(')')) {
@@ -342,6 +350,44 @@ private:
         return applied.value;
     }
 
+    // A named value (a project's measurement).
+    Value name()
+    {
+        const std::size_t start = pos_;
+        while (pos_ < text_.size() && isNameChar(text_[pos_]))
+            ++pos_;
+        const std::string id(text_.substr(start, pos_ - start));
+        const std::optional<NamedValue> named = names_(id);
+        if (!named) {
+            error_ = "No measurement called '" + id + "' in this project";
+            return {};
+        }
+        if (named->kind != quantity_) {
+            error_ = quantity_ == Quantity::Length ? "This is a length, and " + id + " is an angle."
+                                                   : "This is an angle, and " + id + " is a length.";
+            return {};
+        }
+        if (!std::isfinite(named->value)) {
+            error_ = "Value is not a finite number";
+            return {};
+        }
+        // A unit after it ("wall mm"): the name has its own.
+        skipSpace();
+        std::size_t end = pos_;
+        while (end < text_.size() && std::isalpha(static_cast<unsigned char>(text_[end])))
+            ++end;
+        const bool unitFollows = end > pos_ ? typedUnit(text_.substr(pos_, end - pos_)).has_value()
+                               : pos_ < text_.size() && (text_[pos_] == '"' || text_[pos_] == '\''
+                                                         || text_.compare(pos_, 2, "\xC2\xB0") == 0
+                                                         || text_.compare(pos_, 3, "\xE2\x80\xB2") == 0
+                                                         || text_.compare(pos_, 3, "\xE2\x80\xB3") == 0);
+        if (unitFollows) {
+            error_ = "No unit after a name: " + id + " is " + (quantity_ == Quantity::Length ? "a length" : "an angle") + " already.";
+            return {};
+        }
+        return Value{named->value, true};
+    }
+
     struct Applied {
         Value value;
         std::optional<TypedUnit> unit; // the unit read, if any
@@ -364,6 +410,17 @@ private:
         if (pos_ == start)
             return {v, std::nullopt};
         const auto symbol = text_.substr(start, pos_ - start);
+        // A name right after a number ("2 wall", "2wall"): an operator is missing.
+        if (names_ && isNameStart(text_[start])) {
+            std::size_t end = pos_;
+            while (end < text_.size() && isNameChar(text_[end]))
+                ++end;
+            const std::string id(text_.substr(start, end - start));
+            if ((end > pos_ || !typedUnit(symbol)) && names_(id)) {
+                error_ = "Put an operator before " + id + ": 2 * " + id + ", 2 + " + id;
+                return {};
+            }
+        }
         const auto unit = typedUnit(symbol);
         if (!unit) {
             error_ = "Unknown unit '" + std::string(symbol) + "'";
@@ -386,23 +443,111 @@ private:
     std::string_view text_;
     Quantity quantity_;
     LengthUnit defaultUnit_;
+    const NameResolver& names_;
     std::size_t pos_ = 0;
     std::string error_;
 };
 
 } // namespace
 
-LengthParseResult parseLength(std::string_view text, LengthUnit defaultUnit)
+LengthParseResult parseLength(std::string_view text, LengthUnit defaultUnit, const NameResolver& names)
 {
-    return Parser(text, Quantity::Length, defaultUnit).run();
+    return Parser(text, Quantity::Length, defaultUnit, names).run();
 }
 
-LengthParseResult parseAngle(std::string_view text)
+LengthParseResult parseAngle(std::string_view text, const NameResolver& names)
 {
-    LengthParseResult result = Parser(text, Quantity::Angle, LengthUnit::Millimeter).run();
+    LengthParseResult result = Parser(text, Quantity::Angle, LengthUnit::Millimeter, names).run();
     if (result.millimeters)
         result.millimeters = *result.millimeters * kPiUnits / 180.0;
     return result;
+}
+
+bool isUnitWord(std::string_view word)
+{
+    // Words only: the parsers read these after a number ("2 in", "45 deg").
+    if (word.empty() || !std::all_of(word.begin(), word.end(), [](char c) { return std::isalpha(static_cast<unsigned char>(c)) != 0; }))
+        return false;
+    return typedUnit(word).has_value();
+}
+
+std::string valueNameError(std::string_view name)
+{
+    if (name.empty())
+        return "Give it a name.";
+    if (name.size() > kMaxValueNameLength)
+        return "Names are at most " + std::to_string(kMaxValueNameLength) + " characters.";
+    if (!isNameStart(name[0]) || !std::all_of(name.begin(), name.end(), isNameChar))
+        return "Names start with a letter and use letters, digits and _ (shelf_depth).";
+    if (isUnitWord(name))
+        return "'" + std::string(name) + "' is a unit: choose another name.";
+    return {};
+}
+
+bool isValueName(std::string_view name) { return valueNameError(name).empty(); }
+
+bool sameValueName(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+               return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+           });
+}
+
+std::string valueNameFor(std::string_view displayName)
+{
+    // Latin letters with accents (UTF-8, two bytes from 0xC3): their base letters.
+    static constexpr std::pair<unsigned char, const char*> kAccents[] = {
+        {0x80, "a"}, {0x81, "a"}, {0x82, "a"}, {0x83, "a"}, {0x84, "a"}, {0x85, "a"}, {0x86, "ae"}, {0x87, "c"},
+        {0x88, "e"}, {0x89, "e"}, {0x8A, "e"}, {0x8B, "e"}, {0x8C, "i"}, {0x8D, "i"}, {0x8E, "i"}, {0x8F, "i"},
+        {0x91, "n"}, {0x92, "o"}, {0x93, "o"}, {0x94, "o"}, {0x95, "o"}, {0x96, "o"}, {0x98, "o"}, {0x99, "u"},
+        {0x9A, "u"}, {0x9B, "u"}, {0x9C, "u"}, {0x9D, "y"}, {0x9F, "ss"}, {0xA0, "a"}, {0xA1, "a"}, {0xA2, "a"},
+        {0xA3, "a"}, {0xA4, "a"}, {0xA5, "a"}, {0xA6, "ae"}, {0xA7, "c"}, {0xA8, "e"}, {0xA9, "e"}, {0xAA, "e"},
+        {0xAB, "e"}, {0xAC, "i"}, {0xAD, "i"}, {0xAE, "i"}, {0xAF, "i"}, {0xB1, "n"}, {0xB2, "o"}, {0xB3, "o"},
+        {0xB4, "o"}, {0xB5, "o"}, {0xB6, "o"}, {0xB8, "o"}, {0xB9, "u"}, {0xBA, "u"}, {0xBB, "u"}, {0xBC, "u"},
+        {0xBD, "y"}, {0xBF, "y"},
+    };
+    std::string out;
+    bool gap = false;
+    auto add = [&](std::string_view letters) {
+        if (gap && !out.empty())
+            out.push_back('_');
+        gap = false;
+        out.append(letters);
+    };
+    for (std::size_t i = 0; i < displayName.size(); ++i) {
+        const auto c = static_cast<unsigned char>(displayName[i]);
+        if (c < 0x80 && std::isalnum(c)) {
+            const char lower = static_cast<char>(std::tolower(c));
+            add(std::string_view(&lower, 1));
+            continue;
+        }
+        if (c == 0xC3 && i + 1 < displayName.size()) {
+            const auto next = static_cast<unsigned char>(displayName[i + 1]);
+            const char* letters = nullptr;
+            for (const auto& [byte, base] : kAccents)
+                if (byte == next)
+                    letters = base;
+            if (letters) {
+                add(letters);
+                ++i;
+                continue;
+            }
+        }
+        // Anything else (a space, a sign, another UTF-8 sequence) separates.
+        if (c < 0x80 || (c & 0xC0) == 0xC0)
+            gap = true;
+    }
+    if (out.size() > kMaxValueNameLength - 6) // room for "_value" or "_99"
+        out.resize(kMaxValueNameLength - 6);
+    while (!out.empty() && out.back() == '_')
+        out.pop_back();
+    if (out.empty())
+        return "measurement";
+    if (std::isdigit(static_cast<unsigned char>(out[0])))
+        out.insert(out.begin(), '_');
+    if (isUnitWord(out))
+        out += "_value";
+    return out;
 }
 
 std::string formatAngle(double radians, int decimals)

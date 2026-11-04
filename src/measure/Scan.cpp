@@ -21,6 +21,12 @@ namespace os::measure {
 
 namespace {
 
+// A voxel stays only if at least this many photos see the object there:
+// without subject masks the room around the paper is unknown, and one photo's
+// view of the object would otherwise leave its whole cone standing where no
+// other photo can see.
+constexpr int kSeenBy = 2;
+
 template <typename R>
 R cancelled()
 {
@@ -188,13 +194,14 @@ struct LabelSolver {
     {
         alive.clear();
         for (std::size_t v = 0; v < voxels; ++v) {
-            bool carved = false, seen = false;
+            bool carved = false;
+            int seen = 0;
             for (std::size_t i = 0; i < choice.size() && !carved; ++i) {
                 const Candidate& c = photos[i].candidates[choice[i]];
                 carved = c.carves[v] != 0;
-                seen = seen || c.objects[v] != 0;
+                seen += c.objects[v] != 0;
             }
-            if (!carved && seen)
+            if (!carved && seen >= kSeenBy)
                 alive.push_back(v);
         }
         std::vector<double> out(choice.size(), 0.0);
@@ -637,9 +644,11 @@ Result<ScanCalibration> calibrate(const std::vector<ScanPhoto>& photos, const Sc
 
 namespace {
 
-// Keeps the largest 6-connected group of occupied voxels.
+// Keeps the largest 6-connected group of occupied voxels standing on the
+// paper (the grid's bottom layer); the largest of all if none does.
 void keepLargestComponent(std::vector<std::uint8_t>& occ, int nx, int ny, int nz)
 {
+    bool grounded = false, bestGrounded = false;
     std::vector<int> label(occ.size(), -1);
     std::vector<std::size_t> stack;
     int bestLabel = -1;
@@ -649,6 +658,7 @@ void keepLargestComponent(std::vector<std::uint8_t>& occ, int nx, int ny, int nz
         if (!occ[seed] || label[seed] >= 0)
             continue;
         std::size_t size = 0;
+        grounded = false;
         stack.push_back(seed);
         label[seed] = next;
         while (!stack.empty()) {
@@ -656,6 +666,7 @@ void keepLargestComponent(std::vector<std::uint8_t>& occ, int nx, int ny, int nz
             stack.pop_back();
             ++size;
             const int x = int(i % nx), y = int((i / nx) % ny), z = int(i / (std::size_t(nx) * ny));
+            grounded = grounded || z == 0;
             const int dx[6] = {-1, 1, 0, 0, 0, 0}, dy[6] = {0, 0, -1, 1, 0, 0}, dz[6] = {0, 0, 0, 0, -1, 1};
             for (int k = 0; k < 6; ++k) {
                 const int xx = x + dx[k], yy = y + dy[k], zz = z + dz[k];
@@ -668,9 +679,10 @@ void keepLargestComponent(std::vector<std::uint8_t>& occ, int nx, int ny, int nz
                 }
             }
         }
-        if (size > bestSize) {
+        if ((grounded && !bestGrounded) || (grounded == bestGrounded && size > bestSize)) {
             bestSize = size;
             bestLabel = next;
+            bestGrounded = grounded;
         }
         ++next;
     }
@@ -744,16 +756,17 @@ Result<ScanGrid> carve(const std::vector<ScanView>& views, const ScanOptions& op
         for (int j = 0; j < cy; ++j)
             for (int i = 0; i < cx; ++i) {
                 const Vec3 p{-W / 2 + (i + 0.5) * cv, -H / 2 + (j + 0.5) * cv, (k + 0.5) * cv};
-                bool carved = false, seen = false;
+                bool carved = false;
+                int seen = 0;
                 for (std::size_t u = 0; u < views.size() && !carved; ++u) {
                     const Hit hit = look(views[u].camera, p);
                     if (hit.pixel < 0)
                         continue;
                     const double half = 0.87 * cv * hit.pxPerMm;
                     carved = maps[u].toNonBackground[hit.pixel] >= half + options.carveMarginPx;
-                    seen = seen || maps[u].toObject[hit.pixel] <= half;
+                    seen += maps[u].toObject[hit.pixel] <= half;
                 }
-                coarse[(std::size_t(k) * cy + j) * cx + i] = !carved && seen;
+                coarse[(std::size_t(k) * cy + j) * cx + i] = !carved && seen >= kSeenBy;
             }
         if (!report(0.1 + 0.2 * (k + 1) / cz))
             return cancelled<R>();
@@ -800,8 +813,8 @@ Result<ScanGrid> carve(const std::vector<ScanView>& views, const ScanOptions& op
         for (int j = 0; j < grid.ny; ++j)
             for (int i = 0; i < grid.nx; ++i) {
                 const Vec3 p = grid.sampleCenter(i, j, k);
-                bool carved = false, seen = false;
-                int background = 0;
+                bool carved = false;
+                int seen = 0, background = 0;
                 for (std::size_t u = 0; u < views.size() && !carved; ++u) {
                     const Hit hit = look(views[u].camera, p);
                     if (hit.pixel < 0)
@@ -809,9 +822,9 @@ Result<ScanGrid> carve(const std::vector<ScanView>& views, const ScanOptions& op
                     const int d = maps[u].toNonBackground[hit.pixel];
                     if (d >= options.carveMarginPx || (d >= 1 && ++background >= 2))
                         carved = true;
-                    seen = seen || views[u].mask[std::size_t(hit.pixel)] == kMaskObject;
+                    seen += views[u].mask[std::size_t(hit.pixel)] == kMaskObject;
                 }
-                occ[grid.index(i, j, k)] = !carved && seen;
+                occ[grid.index(i, j, k)] = !carved && seen >= kSeenBy;
             }
         ++slices;
     });
