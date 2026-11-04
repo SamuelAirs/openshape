@@ -361,8 +361,11 @@ private:
                     lo = std::min(lo, f);
                     hi = std::max(hi, f);
                     if (f > 0) {
-                        sum += center(i, j, k);
+                        const Vec3 p = center(i, j, k);
+                        sum += p;
                         count += 1;
+                        hullMin_ = count == 1 ? p : Vec3{std::min(hullMin_.x, p.x), std::min(hullMin_.y, p.y), std::min(hullMin_.z, p.z)};
+                        hullMax_ = count == 1 ? p : Vec3{std::max(hullMax_.x, p.x), std::max(hullMax_.y, p.y), std::max(hullMax_.z, p.z)};
                     }
                 }
         if (count < 1 || hi <= 0)
@@ -418,7 +421,30 @@ private:
                 continue;
             StereoView v;
             v.source = int(s);
-            const double scale = std::min(1.0, double(std::max(64, o_.maxImageWidth)) / c.width);
+            // The hull's box as this photo sees it: stereo works at the
+            // resolution the object needs, not the photo's.
+            double extent = 0;
+            {
+                double u0 = 1e300, u1 = -1e300, v0 = 1e300, v1 = -1e300;
+                bool front = true;
+                for (int corner = 0; corner < 8; ++corner) {
+                    const Vec3 X{corner & 1 ? hullMax_.x : hullMin_.x, corner & 2 ? hullMax_.y : hullMin_.y,
+                                 corner & 4 ? hullMax_.z : hullMin_.z};
+                    if (c.depth(X) <= 1e-6) {
+                        front = false;
+                        break;
+                    }
+                    const Vec2 q = c.project(X);
+                    u0 = std::min(u0, q.x);
+                    u1 = std::max(u1, q.x);
+                    v0 = std::min(v0, q.y);
+                    v1 = std::max(v1, q.y);
+                }
+                extent = front ? std::max(u1 - u0, v1 - v0) : 0;
+            }
+            double scale = std::min(1.0, double(std::max(64, o_.maxImageWidth)) / c.width);
+            if (extent > 0)
+                scale = std::min(scale, double(std::max(32, o_.maxObjectPixels)) / extent);
             v.cam.w = std::max(16, int(std::lround(c.width * scale)));
             v.cam.h = std::max(16, int(std::lround(c.height * scale)));
             const double sx = double(v.cam.w) / c.width, sy = double(v.cam.h) / c.height;
@@ -912,7 +938,7 @@ private:
 
     void checkConsistency()
     {
-        const float tol = float(o_.consistencyVoxels * grid_.voxel);
+        const double tolVoxels = o_.consistencyVoxels * grid_.voxel;
         std::atomic<long long> kept{0};
         for (std::size_t i = 0; i < views_.size(); ++i) {
             StereoView& v = views_[i];
@@ -940,6 +966,7 @@ private:
                         if (!(u >= 0 && vv >= 0 && u < c.w && vv < c.h))
                             continue;
                         const float dj = views_[j].confident[std::size_t(int(vv)) * std::size_t(c.w) + std::size_t(int(u))];
+                        const double tol = std::max(tolVoxels, o_.consistencyPixels * xc.z / c.fx);
                         if (dj > 0 && std::abs(double(dj) - xc.z) < tol)
                             ++agree;
                     }
@@ -960,7 +987,7 @@ private:
     {
         const ScanGrid& g = grid_;
         const std::size_t total = g.field.size();
-        const float T = float(o_.truncationVoxels * g.voxel);
+        const double truncVoxels = o_.truncationVoxels * g.voxel;
         std::vector<float> tsdf(total, 0.0f), weight(total, 0.0f);
         std::vector<std::uint8_t> views(total, 0);
         // A slice of the grid per task, in a few batches so progress moves.
@@ -992,8 +1019,12 @@ private:
                             const float d = v.fused[p];
                             if (!(d > 0))
                                 continue;
-                            // Free space only in front of the nearest surface
-                            // around the lookup (no carving through edges).
+                            // At a depth edge (a step of more than the band
+                            // among the pixels around), free space only in
+                            // front of the nearest surface there: no carving
+                            // through an edge. Elsewhere the pixel's own depth
+                            // (the nearest would pull slanted faces outward).
+                            const float T = float(std::max(truncVoxels, o_.truncationPixels * xc.z / c.fx));
                             float dNear = d;
                             for (int dy = -1; dy <= 1; ++dy)
                                 for (int dx = -1; dx <= 1; ++dx) {
@@ -1002,6 +1033,8 @@ private:
                                     if (dq > 0)
                                         dNear = std::min(dNear, dq);
                                 }
+                            if (d - dNear <= T)
+                                dNear = d;
                             const float f = float(xc.z) - dNear; // > 0 behind the surface (inside)
                             if (f > T)
                                 continue; // hidden: no evidence
@@ -1107,9 +1140,122 @@ private:
                         ++restored;
                     }
                 }
-        stats_.carvedVoxels = carved;
+        if (carved > 0 && o_.minCarvedComponent > 1) {
+            const long long small = restoreSmallCarvings(out);
+            carved -= small;
+            restored += small;
+        }
         stats_.restoredVoxels = restored;
+        // Nothing carved: no concavity was seen, and the hull stands exactly
+        // (no nudging of its surface by the few depths there were).
+        if (carved == 0)
+            out.field = g.field;
+        if (carved > 0 && o_.thinVoxels > 0)
+            carved += removeThinSolid(out);
+        stats_.carvedVoxels = carved;
         return true;
+    }
+
+    // 6-neighbourhood morphology on a voxel mask; beyond the grid counts as
+    // `outsideBelow` under its bottom (the paper side) and as 0 elsewhere.
+    std::vector<std::uint8_t> morph(const std::vector<std::uint8_t>& in, bool dilate, std::uint8_t outsideBelow) const
+    {
+        const ScanGrid& g = grid_;
+        std::vector<std::uint8_t> outMask(in.size(), 0);
+        auto at = [&](int i, int j, int k) -> std::uint8_t {
+            if (k < 0)
+                return outsideBelow;
+            if (i < 0 || j < 0 || i >= g.nx || j >= g.ny || k >= g.nz)
+                return 0;
+            return in[index(i, j, k)];
+        };
+        parallelFor(g.nz, threads_, [&](int k) {
+            for (int j = 0; j < g.ny; ++j)
+                for (int i = 0; i < g.nx; ++i) {
+                    const std::uint8_t a[7] = {at(i, j, k),     at(i - 1, j, k), at(i + 1, j, k), at(i, j - 1, k),
+                                               at(i, j + 1, k), at(i, j, k - 1), at(i, j, k + 1)};
+                    bool r = !dilate;
+                    for (std::uint8_t q : a)
+                        r = dilate ? (r || q) : (r && q);
+                    outMask[index(i, j, k)] = r ? 1 : 0;
+                }
+        });
+        return outMask;
+    }
+
+    // Carved regions (6-connected) of fewer than minCarvedComponent voxels get
+    // the hull back: a handful of voxels is no evidence of a concavity.
+    long long restoreSmallCarvings(ScanGrid& out) const
+    {
+        const ScanGrid& g = grid_;
+        const std::size_t total = g.field.size();
+        std::vector<int> label(total, -1);
+        std::vector<std::size_t> stack, members;
+        long long restoredCount = 0;
+        auto carvedAt = [&](std::size_t idx) { return g.field[idx] > 0 && !(out.field[idx] > 0); };
+        for (std::size_t seed = 0; seed < total; ++seed) {
+            if (label[seed] >= 0 || !carvedAt(seed))
+                continue;
+            members.clear();
+            stack.assign(1, seed);
+            label[seed] = 1;
+            while (!stack.empty()) {
+                const std::size_t idx = stack.back();
+                stack.pop_back();
+                members.push_back(idx);
+                const int i = int(idx % std::size_t(g.nx));
+                const int j = int((idx / std::size_t(g.nx)) % std::size_t(g.ny));
+                const int k = int(idx / (std::size_t(g.nx) * std::size_t(g.ny)));
+                const int nb[6][3] = {{-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}};
+                for (const auto& dlt : nb) {
+                    const int a = i + dlt[0], b = j + dlt[1], cc = k + dlt[2];
+                    if (a < 0 || b < 0 || cc < 0 || a >= g.nx || b >= g.ny || cc >= g.nz)
+                        continue;
+                    const std::size_t q = index(a, b, cc);
+                    if (label[q] < 0 && carvedAt(q)) {
+                        label[q] = 1;
+                        stack.push_back(q);
+                    }
+                }
+            }
+            if (int(members.size()) < o_.minCarvedComponent) {
+                for (std::size_t idx : members)
+                    out.field[idx] = g.field[idx];
+                restoredCount += (long long)members.size();
+            }
+        }
+        return restoredCount;
+    }
+
+    // Carves solid thinner than about 2 * thinVoxels next to carved voxels
+    // (an opening of the solid, applied only near the carving). Returns how
+    // many voxels it carved.
+    long long removeThinSolid(ScanGrid& out) const
+    {
+        const ScanGrid& g = grid_;
+        const std::size_t total = g.field.size();
+        std::vector<std::uint8_t> solid(total), carvedMask(total);
+        for (std::size_t idx = 0; idx < total; ++idx) {
+            solid[idx] = out.field[idx] > 0 ? 1 : 0;
+            carvedMask[idx] = (g.field[idx] > 0 && !(out.field[idx] > 0)) ? 1 : 0;
+        }
+        std::vector<std::uint8_t> opened = solid;
+        for (int n = 0; n < o_.thinVoxels; ++n)
+            opened = morph(opened, false, 1);
+        for (int n = 0; n < o_.thinVoxels; ++n)
+            opened = morph(opened, true, 1);
+        std::vector<std::uint8_t> near = carvedMask;
+        for (int n = 0; n <= o_.thinVoxels; ++n)
+            near = morph(near, true, 0);
+        const float carvedValue = -0.5f * std::min(hull_.negativeAmp, slopePerVoxel_);
+        long long count = 0;
+        for (std::size_t idx = 0; idx < total; ++idx)
+            if (solid[idx] && !opened[idx] && near[idx]) {
+                out.field[idx] = std::min(out.field[idx], carvedValue);
+                ++count;
+            }
+        stats_.thinVoxels = count;
+        return count;
     }
 
     const std::vector<ScanView>& input_;
@@ -1123,6 +1269,7 @@ private:
     std::vector<std::pair<int, int>> offsets_;
     HullField hull_;
     Vec3 objectCenter_;
+    Vec3 hullMin_, hullMax_; // the inside samples' box
     float slopePerVoxel_ = 0;
     std::vector<StereoView> views_;
     std::atomic<long long> searchedPixels_{0};

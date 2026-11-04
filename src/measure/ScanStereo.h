@@ -16,7 +16,8 @@
 // cameras given (they come from the calibration sheet):
 //  1. View selection: for each photo, the 2-4 others that see the object's
 //     center from 8-45 degrees away (the best near 20 degrees).
-//  2. A depth map per photo (downsampled to `maxImageWidth`), only at pixels
+//  2. A depth map per photo (downsampled so the object spans at most
+//     `maxObjectPixels`, never enlarged), only at pixels
 //     inside its mask whose ray meets the hull: PatchMatch stereo with slanted
 //     planes. Each pixel's depth is searched between the ray's entry into the
 //     hull and its last exit; it starts at the hull's own surface (with the
@@ -30,13 +31,17 @@
 //     score, an ambiguous score (shifting the depth by about a pixel in the
 //     neighbours hardly changes it: smooth shading, repeated texture), and
 //     pixels whose 3D point fewer than `minConsistentViews` other depth maps
-//     agree with.
+//     agree with (within a voxel or a pixel's footprint, the larger).
 //  4. Fusion: a truncated signed distance (TSDF) of the filtered depth maps
-//     on the hull's grid (weights from the score and the viewing angle; free
-//     space conservatively against the nearest depth around each lookup).
-//     Where enough views observed a voxel, the result is min(hull, tsdf), so
-//     stereo only ever carves; elsewhere the hull stands. The carved region is
-//     opened (erode then dilate) so isolated speckles are restored.
+//     on the hull's grid (the band a few voxels or pixels' footprints; weights
+//     from the score and the viewing angle; at a depth edge, free space only
+//     in front of the nearest depth around the lookup). Where enough views
+//     observed a voxel, the result is min(hull, tsdf), so stereo only ever
+//     carves; elsewhere the hull stands. Clean-up: the empty space is opened
+//     (erode then dilate) and carved regions under `minCarvedComponent` voxels
+//     get the hull back (speckle); solid left as a thin film next to carved
+//     space is carved too (its surface would fold through itself once
+//     smoothed); and when nothing is carved the hull is returned exactly.
 //
 // Conventions shared with the silhouette stage: pixel (0, 0) is the top-left
 // pixel's top-left corner (its center is (0.5, 0.5)); the grid's sample
@@ -48,7 +53,8 @@ namespace os::measure {
 
 struct StereoOptions {
     int threads = 0;              // 0: half the hardware threads (at least 1)
-    int maxImageWidth = 640;      // photos are downsampled to at most this width for stereo
+    int maxObjectPixels = 240;    // photos are downsampled so the hull's box spans at most this many pixels
+    int maxImageWidth = 1600;     // and to at most this width
     int neighbours = 4;           // neighbour photos per reference photo (2..4 used)
     double minBaselineDeg = 8;    // angle between the viewing rays at the object's center
     double maxBaselineDeg = 45;
@@ -61,10 +67,18 @@ struct StereoOptions {
     double maxCost = 0.5;         // 1 - ZNCC, aggregated: worse pixels are dropped
     double minDistinctness = 0.04; // cost rise when the depth moves ~1.5 px in the neighbours
     int minConsistentViews = 2;   // other depth maps that must agree with a pixel's point
-    double consistencyVoxels = 1.0; // their depth within this many voxels
-    double truncationVoxels = 3.0;  // the TSDF's truncation band
+    double consistencyVoxels = 1.0; // their depth within this many voxels or pixels' footprints (the larger)
+    double consistencyPixels = 1.0;
+    double truncationVoxels = 3.0;  // the TSDF's truncation band: voxels or pixels' footprints (the larger)
+    double truncationPixels = 3.0;
     int minFusionViews = 2;       // views that must observe a voxel before stereo may carve it
     double minFusionWeight = 0.8; // and their summed weight
+    // Solid left thinner than about 2 * thinVoxels voxels next to carved space
+    // (a skin over a carved pocket, a sliver between carved voxels) is carved
+    // too: the surface of such a film folds through itself once smoothed.
+    int thinVoxels = 2;
+    // Carved regions smaller than this (voxels, 6-connected) get the hull back.
+    int minCarvedComponent = 64;
 };
 
 // What the stage did (for logs and tests).
@@ -75,6 +89,7 @@ struct StereoStats {
     long long consistentPixels = 0; // after the geometric check (the ones fused)
     long long carvedVoxels = 0;     // hull voxels (inside) the result puts outside
     long long restoredVoxels = 0;   // carved voxels the clean-up gave back to the hull
+    long long thinVoxels = 0;       // thin solid next to carved space, carved as well
     double secondsDepth = 0, secondsFilter = 0, secondsFusion = 0, secondsTotal = 0;
     bool cancelled = false;
 };
