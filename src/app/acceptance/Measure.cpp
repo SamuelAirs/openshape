@@ -14,15 +14,23 @@
 // and a 100 mm bar on a table in perspective, picked (phone) and opened as a
 // file (desktop), corners found, a corner dragged with the magnifier,
 // Straighten, the bar measured by taps (within 1 %), a plate's outline and a
-// washer's circle, Make sketch; Camera: a box and an outline, Make box and
-// Make sketch; Keep, the tray, rename, delete, Use from openFor("length")
-// and openFor("angle"); the measurements and the calibration read back by a
+// washer's circle; Make sketch and Make box close the workspace into the
+// design, and the sketch's lines or circle or the box body are measured there
+// (then back to Measure from the top bar); Camera: a box and an outline;
+// Keep, the tray, rename, delete, Use from openFor("length") and
+// openFor("angle"); the value boxes' ruler end to end (the value chip's and a
+// sketch dimension editor's: Measure opens on the Ruler, Use types the
+// length into the box, applying it changes the model); the measurements and
+// the calibration read back by a
 // new controller (as after a restart). Every instrument at phone, iPhone
 // Duo outer / inner / turned, iPad and desktop sizes, inside the safe area:
 // pictures measure_<instrument>_<size>.png.
 
 #include "app/AcceptanceRunner.h"
 #include "core/Math.h"
+#include "geometry/Modeling.h"
+#include "interaction/InteractionController.h"
+#include "interaction/SketchSession.h"
 #include "measure/Homography.h"
 #include "measure/ScreenScale.h"
 #include "ui/AppController.h"
@@ -372,6 +380,59 @@ void fingerDrag(Steps& steps, AcceptanceRunner& r, const StatePtr& st, std::func
     steps.push_back([&r, st, delta] { r.touchRelease(st->dragFrom + delta); });
 }
 
+// ---------------------------------------------------------------- the design
+
+const interact::SketchSession* sketchOf(AcceptanceRunner& r) { return r.app().interaction().sketchSession(); }
+
+// The open sketch's lines: how many, and the size of the box around them.
+QSizeF linesExtent(AcceptanceRunner& r, int& count)
+{
+    count = 0;
+    const auto* s = sketchOf(r);
+    if (!s)
+        return {};
+    double minX = 1e18, maxX = -1e18, minY = 1e18, maxY = -1e18;
+    for (const auto& [id, line] : s->sketch().lines()) {
+        ++count;
+        for (const auto end : {line.start, line.end})
+            if (const auto* p = s->sketch().point(end)) {
+                minX = std::min(minX, p->position.x);
+                maxX = std::max(maxX, p->position.x);
+                minY = std::min(minY, p->position.y);
+                maxY = std::max(maxY, p->position.y);
+            }
+    }
+    return count ? QSizeF(maxX - minX, maxY - minY) : QSizeF();
+}
+
+// Where a point of the open sketch is on the screen.
+QPointF onSketch(AcceptanceRunner& r, Vec2 local)
+{
+    const auto* s = sketchOf(r);
+    if (!s)
+        return {};
+    const Vec2 p = r.app().interaction().camera().project(s->sketch().plane().toWorld(local));
+    return {p.x, p.y};
+}
+
+// Back from the design to Measure: the sketch finished, a new document, the
+// top bar's button (tapped or clicked).
+void backToMeasure(Steps& steps, AcceptanceRunner& r, const QString& what, bool touch)
+{
+    steps.push_back([&r] {
+        if (r.app().sketchMode())
+            r.app().finishSketch();
+        r.app().newDocument();
+    });
+    wait(steps, 3);
+    steps.push_back([&r, what, touch] {
+        r.check(touch ? r.tapItem(QStringLiteral("measureButton")) : r.clickItem(QStringLiteral("measureButton")),
+                say(what + QStringLiteral(": back to Measure from the top bar")));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, what] { r.check(shown(r, QStringLiteral("measureScreen")), say(what + QStringLiteral(": Measure is open again"))); });
+}
+
 // ---------------------------------------------------------------- the scenario
 
 std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
@@ -391,6 +452,10 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         m.clearArResult();
         for (const QVariant& e : m.measurements())
             m.removeMeasurement(e.toMap().value(QStringLiteral("id")).toString());
+        if (QQuickItem* screen = item(r, QStringLiteral("measureScreen"))) {
+            QMetaObject::invokeMethod(screen, "close");
+            QMetaObject::invokeMethod(screen, "resetForTest");
+        }
         r.check(m.measurements().isEmpty() && !m.scaleCalibrated(), say("a clean start"));
         r.check(m.pointsPerMm() > 1.5 && m.pointsPerMm() < 12, say("the desktop's scale is believable"), AcceptanceRunner::num(m.pointsPerMm()));
     });
@@ -533,12 +598,28 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(text(r, QStringLiteral("measureReadoutValue")) == measureOf(r).formatNumber(QStringLiteral("length"), d), say("circle: the diameter is read out"));
         r.screenshot(QStringLiteral("measure_ruler_circle_phone"));
     });
-    steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("measureAction_circleSketch")), say("circle: Make sketch")); });
-    wait(steps, 1);
-    steps.push_back([&r] {
+    steps.push_back([&r, st] {
+        st->before = prop(r, QStringLiteral("measureRuler"), "ringDiameter").toDouble();
+        r.check(r.tapItem(QStringLiteral("measureAction_circleSketch")), say("circle: Make sketch"));
+    });
+    wait(steps, 4);
+    steps.push_back([&r, st] {
         const QStringList& made = measureOf(r).madeLog();
         r.check(!made.isEmpty() && made.last().startsWith(QStringLiteral("circle ")), say("circle: a circle sketch is asked for"),
                 made.isEmpty() ? QString() : made.last());
+        r.check(!shown(r, QStringLiteral("measureScreen")) && r.app().sketchMode(), say("circle: the workspace closes into the new sketch"));
+        const auto* s = sketchOf(r);
+        double diameter = 0;
+        if (s)
+            for (const auto& [id, c] : s->sketch().circles())
+                diameter = 2 * c.radius;
+        r.check(s && s->sketch().circles().size() == 1 && std::abs(diameter - st->before) < 1e-6,
+                say("circle: the sketch's circle is the ring's diameter"), QStringLiteral("%1, ring %2").arg(diameter).arg(st->before));
+        r.screenshot(QStringLiteral("measure_circle_sketch_phone"));
+    });
+    backToMeasure(steps, r, QStringLiteral("circle"), true);
+    steps.push_back([&r] {
+        r.check(prop(r, QStringLiteral("measureScreen"), "current").toString() == QStringLiteral("ruler"), say("circle: on the Ruler still"));
         r.check(r.tapItem(QStringLiteral("rulerMode_length")), say("back to Length"));
     });
 
@@ -852,6 +933,22 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         }
         r.check(std::abs(maxX - minX - 60) < 0.8 && std::abs(maxY - minY - 50) < 0.8 && std::abs(minX + maxX) < 1e-6 && std::abs(minY + maxY) < 1e-6,
                 say("outline: at real size, centered on the origin"), QStringLiteral("%1 x %2").arg(maxX - minX).arg(maxY - minY));
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        r.check(!shown(r, QStringLiteral("measureScreen")) && r.app().sketchMode(), say("outline: the workspace closes into the new sketch"));
+        int lines = 0;
+        const QSizeF size = linesExtent(r, lines);
+        r.check(lines == 4 && std::abs(size.width() - 60) < 0.8 && std::abs(size.height() - 50) < 0.8,
+                say("outline: the sketch has the plate's four sides, 60 x 50 mm"),
+                QStringLiteral("%1 lines, %2 x %3").arg(lines).arg(size.width()).arg(size.height()));
+        r.screenshot(QStringLiteral("measure_outline_sketch_desktop"));
+    });
+    backToMeasure(steps, r, QStringLiteral("outline"), true);
+    steps.push_back([&r] {
+        r.check(prop(r, QStringLiteral("measureScreen"), "current").toString() == QStringLiteral("photo")
+                    && prop(r, QStringLiteral("measurePhoto"), "stage").toString() == QStringLiteral("measure"),
+                say("outline: the straightened photo is still there"));
         r.check(r.tapItem(QStringLiteral("photoMode_circle")), say("photo: Circle"));
     });
     for (const double a : {20.0, 140.0, 260.0})
@@ -890,6 +987,23 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         const QStringList& made = measureOf(r).madeLog();
         r.check(!made.isEmpty() && made.last() == QStringLiteral("box 600.0 400.0 750.0"), say("camera: a box of that size is asked for"),
                 made.isEmpty() ? QString() : made.last());
+    });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        r.check(!shown(r, QStringLiteral("measureScreen")), say("camera: the workspace closes into the design"));
+        const double volume = r.app().bodyCount() == 1 ? r.bodyVolume() : 0;
+        r.check(std::abs(volume - 600.0 * 400 * 750) < 1, say("camera: a 600 x 400 x 750 mm box body"), AcceptanceRunner::num(volume));
+        if (r.app().bodyCount() == 1) {
+            const auto bb = geom::boundingBox(r.body(0).shape());
+            r.check(std::abs(bb.max.x - bb.min.x - 600) < 1e-6 && std::abs(bb.max.y - bb.min.y - 400) < 1e-6
+                        && std::abs(bb.max.z - bb.min.z - 750) < 1e-6,
+                    say("camera: width along X, depth along Y, height along Z"));
+        }
+        r.screenshot(QStringLiteral("measure_box_body_desktop"));
+    });
+    backToMeasure(steps, r, QStringLiteral("camera box"), true);
+    steps.push_back([&r] {
+        r.check(prop(r, QStringLiteral("measureScreen"), "current").toString() == QStringLiteral("camera"), say("camera: on Camera still"));
         r.check(r.tapItem(QStringLiteral("cameraMode_outline")), say("camera: Outline"));
     });
     steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("cameraStart")), say("camera: Start")); });
@@ -908,6 +1022,126 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                     && std::abs(m.lastOutlinePoints()[0].toPointF().x() + 400) < 1e-6,
                 say("camera: an outline sketch at real size is asked for"));
     });
+    wait(steps, 3);
+    steps.push_back([&r] {
+        r.check(!shown(r, QStringLiteral("measureScreen")) && r.app().sketchMode(), say("camera: the workspace closes into the new sketch"));
+        int lines = 0;
+        const QSizeF size = linesExtent(r, lines);
+        r.check(lines == 4 && std::abs(size.width() - 800) < 1e-6 && std::abs(size.height() - 500) < 1e-6,
+                say("camera: the sketch's outline is 800 x 500 mm"), QStringLiteral("%1 lines, %2 x %3").arg(lines).arg(size.width()).arg(size.height()));
+    });
+    backToMeasure(steps, r, QStringLiteral("camera outline"), true);
+
+    // ---- the value boxes' ruler, end to end (the mouse)
+    steps.push_back([&r] {
+        r.check(r.clickItem(QStringLiteral("measureClose")), say("ruler button: close Measure"));
+        r.app().setTouchMode(false);
+        r.app().newDocument();
+    });
+    wait(steps, 2);
+    steps.push_back([&r] { r.key(Qt::Key_B, Qt::NoModifier, QStringLiteral("b")); });
+    wait(steps, 2);
+    steps.push_back([&r] { r.app().fitAll(); });
+    wait(steps, 4);
+    steps.push_back([&r] { r.click(r.screenPoint(0, 0, 20)); });
+    wait(steps, 2);
+    steps.push_back([&r, st] {
+        r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), say("ruler button: the top face offers push/pull"), r.app().operationTitle());
+        st->before = r.app().bodyCount() == 1 ? r.bodyVolume() : 0;
+        r.check(r.clickItem(QStringLiteral("valueChipMeasure")), say("ruler button: click the value chip's ruler"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        r.check(shown(r, QStringLiteral("measureScreen")) && prop(r, QStringLiteral("measureScreen"), "forKind").toString() == QStringLiteral("length")
+                    && prop(r, QStringLiteral("measureScreen"), "current").toString() == QStringLiteral("ruler"),
+                say("ruler button: Measure opens on the Ruler, for a length"));
+        if (QQuickItem* ruler = item(r, QStringLiteral("measureRuler"))) {
+            ruler->setProperty("jawA", 0.0);
+            ruler->setProperty("jawB", 35.0);
+        }
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(text(r, QStringLiteral("measureUse")) == QStringLiteral("Use ") + measureOf(r).formatValue(QStringLiteral("length"), 35),
+                say("ruler button: Use 35.0 mm"), text(r, QStringLiteral("measureUse")));
+        r.screenshot(QStringLiteral("measure_for_value_desktop"));
+        r.check(r.clickItem(QStringLiteral("measureUse")), say("ruler button: click Use"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, st] {
+        r.check(!shown(r, QStringLiteral("measureScreen")), say("ruler button: back in the design"));
+        r.check(text(r, QStringLiteral("valueChipField")).contains(QStringLiteral("35")), say("ruler button: the value box shows 35"),
+                text(r, QStringLiteral("valueChipField")));
+        r.check(std::abs(r.bodyVolume() - st->before) < 1e-6, say("ruler button: not applied before ✓"));
+        r.check(r.clickItem(QStringLiteral("valueChipApply")), say("ruler button: ✓"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        r.check(std::abs(r.bodyVolume() - 20.0 * 20 * 35) < 1e-3, say("ruler button: the cube is 35 mm tall"), AcceptanceRunner::num(r.bodyVolume()));
+        r.app().newDocument();
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        r.key(Qt::Key_K, Qt::NoModifier, QStringLiteral("k"));
+    });
+    wait(steps, 4);
+    steps.push_back([&r] {
+        r.check(r.app().sketchMode() && r.clickItem(QStringLiteral("tool_rectangle")), say("dimension ruler: a sketch, Rectangle"));
+        r.click(onSketch(r, {0, 0}));
+        r.mouseMove(onSketch(r, {14, 7}));
+        r.type(QStringLiteral("40"));
+        r.key(Qt::Key_Tab);
+        r.type(QStringLiteral("20"));
+        r.key(Qt::Key_Return);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        st->count = -1;
+        if (const auto* s = sketchOf(r))
+            for (const auto& [id, c] : s->sketch().constraints())
+                if (c.isDimension() && std::abs(std::abs(c.value) - 40) < 1e-9)
+                    st->count = int(id);
+        r.check(st->count >= 0, say("dimension ruler: the 40 mm width"));
+        r.check(r.clickItem(QStringLiteral("dimensionLabel_%1_tap").arg(st->count)), say("dimension ruler: click it"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(shown(r, QStringLiteral("dimensionEditor")), say("dimension ruler: its editor"));
+        r.check(r.clickItem(QStringLiteral("dimensionMeasure")), say("dimension ruler: click its ruler"));
+    });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        r.check(shown(r, QStringLiteral("measureScreen")) && prop(r, QStringLiteral("measureScreen"), "current").toString() == QStringLiteral("ruler"),
+                say("dimension ruler: Measure opens on the Ruler"));
+        if (QQuickItem* ruler = item(r, QStringLiteral("measureRuler"))) {
+            ruler->setProperty("jawA", 0.0);
+            ruler->setProperty("jawB", 30.0);
+        }
+    });
+    wait(steps, 1);
+    steps.push_back([&r] { r.check(r.clickItem(QStringLiteral("measureUse")), say("dimension ruler: click Use 30.0 mm")); });
+    wait(steps, 2);
+    steps.push_back([&r] {
+        QQuickItem* editor = item(r, QStringLiteral("dimensionEditor"));
+        const QString value = editor ? editor->property("text").toString() : QString();
+        r.check(!shown(r, QStringLiteral("measureScreen")) && editor && editor->isVisible() && value == measureOf(r).valueText(QStringLiteral("length"), 30),
+                say("dimension ruler: the editor shows the measured 30 mm"), value);
+        if (editor)
+            editor->forceActiveFocus();
+        r.key(Qt::Key_Return);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        const auto* s = sketchOf(r);
+        const auto* c = s ? s->sketch().constraint(sketch::EntityId(st->count)) : nullptr;
+        r.check(c && std::abs(std::abs(c->value) - 30) < 1e-9, say("dimension ruler: Enter applies 30 mm"), c ? AcceptanceRunner::num(c->value) : QString());
+        r.app().finishSketch();
+        r.app().newDocument();
+        r.app().setTouchMode(true);
+    });
+    wait(steps, 2);
+    steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("measureButton")), say("back to Measure")); });
+    wait(steps, 2);
 
     // ---- rename and delete a kept measurement (the list at the side)
     steps.push_back([&r, st] {
