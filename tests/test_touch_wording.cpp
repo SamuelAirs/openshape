@@ -240,7 +240,7 @@ TEST(TouchWording, EverySketchHintIsTouchReady)
     const SketchTool tools[] = {SketchTool::Line,   SketchTool::Rectangle, SketchTool::CenterRectangle,
                                 SketchTool::Polygon, SketchTool::Circle,   SketchTool::Arc,
                                 SketchTool::TangentArc, SketchTool::Slot,  SketchTool::Trim,
-                                SketchTool::Select};
+                                SketchTool::Trace,  SketchTool::Select};
     for (SketchTool tool : tools) {
         h.controller.setSketchTool(tool);
         hints.insert(session->hintText());

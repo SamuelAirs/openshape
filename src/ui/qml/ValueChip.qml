@@ -33,6 +33,24 @@ Item {
     // keyboard) is up, so a docked chip goes to the top.
     readonly property bool typing: field.activeFocus || textField.activeFocus
     signal finished()
+    // The ruler button: measure the value in the real world (Main.qml opens
+    // Measure for "length" or "angle"; the number comes back through
+    // useMeasuredValue).
+    signal measureRequested(string kind)
+    // The ruler shows whenever an operation's value is here (lengths and
+    // angles alike); in a compact window whose actions scroll sideways it
+    // leads them (the field's row stays as narrow as it was: a Split View
+    // half has no room for one more button beside the field), otherwise it
+    // sits beside the field: also in a compact window held sideways, where
+    // the chip may be a single row whose leading actions must stay in sight
+    // (Main.qml decides that from fieldWidth: so not from singleRow here,
+    // which would loop).
+    readonly property bool measurable: app.operationActive && !app.operationTakesText
+    readonly property bool measureInActions: Theme.compact && Theme.windowHeight >= Theme.windowWidth
+                                             && app.contextActions.length > 1
+    function requestMeasure() {
+        measureRequested(app.operationIsAngle ? "angle" : "length")
+    }
     // For Main.qml's choice of a single row: the field's width, and the width
     // of the leading actions that must stay in sight beside it (Extrude's
     // New body / Join / Cut).
@@ -64,6 +82,12 @@ Item {
     }
     function keyTyped(text) {
         app.typeValueText(text)
+    }
+    // A value measured in Measure for this box: shown and previewed as if
+    // typed and confirmed; ✓ (or Enter) applies it as usual.
+    function useMeasuredValue(text) {
+        field.text = text
+        return typeValue(text)
     }
 
     // The value field on a touch screen: read-only (so the system keyboard
@@ -296,7 +320,8 @@ Item {
                     // a folding phone's side bar), so the box still docks
                     // beside the Model / View buttons.
                     implicitWidth: Math.max(72, Math.min(104, chip.maximumWidth - 2 * Theme.panelPadding - valueLabel.implicitWidth
-                                                         - 6 - 3 * row.spacing - 2 * Theme.controlHeight))
+                                                         - 6 - (measureButton.visible ? 4 : 3) * row.spacing
+                                                         - (measureButton.visible ? 3 : 2) * Theme.controlHeight))
                     implicitHeight: Theme.controlHeight
                     font.pixelSize: 15
                     horizontalAlignment: TextInput.AlignRight
@@ -363,6 +388,22 @@ Item {
                         chip.finished()
                         chip.syncFromModel()
                     }
+                }
+                // Measure the value instead of guessing it (docs/MEASURE.md):
+                // the ruler opens Measure; its number lands in this box.
+                ActionButton {
+                    id: measureButton
+                    objectName: "valueChipMeasure"
+                    text: "Measure"
+                    iconName: "ruler"
+                    iconOnly: true
+                    visible: chip.measurable && !chip.measureInActions
+                    implicitWidth: Theme.controlHeight
+                    onClicked: chip.requestMeasure()
+                    ToolTip.visible: hovered && !Theme.touch
+                    ToolTip.text: chip.app.operationIsAngle ? "Measure the angle (fold, level, photo)"
+                                                            : "Measure the length (ruler, photo, camera)"
+                    ToolTip.delay: 500
                 }
                 ActionButton {
                     objectName: "valueChipApply"
@@ -457,6 +498,16 @@ Item {
             fadeColor: Theme.background
             spacing: 4
             visible: Theme.compact && chip.app.contextActions.length > 1
+            // The ruler, first (see measureInActions).
+            ActionButton {
+                objectName: "valueChipMeasure"
+                text: "Measure"
+                iconName: "ruler"
+                iconOnly: true
+                compact: true
+                visible: chip.measurable && chip.measureInActions
+                onClicked: chip.requestMeasure()
+            }
             Repeater {
                 model: Theme.compact ? chip.app.contextActions : []
                 delegate: chipAction
