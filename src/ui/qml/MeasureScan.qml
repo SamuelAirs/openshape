@@ -253,6 +253,47 @@ Item {
             anchors.bottom: parent.bottom
             width: parent.width
             spacing: 8
+            // Detail from the photos: multi-view stereo, a few seconds more.
+            AbstractButton {
+                id: stereoSwitch
+                objectName: "scanStereo"
+                Layout.fillWidth: true
+                implicitHeight: Theme.touch ? 44 : 34
+                visible: scan.m && scan.m.scanStereoAvailable
+                checkable: true
+                checked: scan.m ? scan.m.scanDetailFromStereo : true
+                focusPolicy: Qt.NoFocus
+                onToggled: scan.m.scanDetailFromStereo = checked
+                background: Item {}
+                contentItem: RowLayout {
+                    spacing: 10
+                    Rectangle {
+                        Layout.alignment: Qt.AlignVCenter
+                        width: 40
+                        height: 24
+                        radius: 12
+                        color: stereoSwitch.checked ? Theme.accent : Theme.track
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Rectangle {
+                            x: stereoSwitch.checked ? parent.width - width - 3 : 3
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 18
+                            height: 18
+                            radius: 9
+                            color: "white"
+                            Behavior on x { NumberAnimation { duration: 120 } }
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        text: "Detail from the photos (stereo)" + (scan.narrow ? "" : ": a few seconds more")
+                        font.pixelSize: 13
+                        color: Theme.text
+                        elide: Text.ElideRight
+                    }
+                }
+            }
             Text {
                 objectName: "scanHint"
                 Layout.fillWidth: true
@@ -518,19 +559,24 @@ Item {
     }
 
     // ---------------------------------------------------------------- the result
-    Item {
+    Flickable {
         id: resultStage
         anchors.fill: parent
         visible: scan.stage === "result"
-        readonly property bool wide: width > height * 1.15
+        readonly property bool wide: width >= 560 && width > height * 1.15
+        // A short window scrolls the result rather than cut it.
+        contentWidth: width
+        contentHeight: wide ? height : previewCard.height + 12 + infoColumn.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
 
         MeasureCard {
             id: previewCard
             objectName: "scanPreviewCard"
             x: 0
             y: 0
-            width: resultStage.wide ? parent.width * 0.55 : parent.width
-            height: resultStage.wide ? parent.height : Math.max(140, parent.height - infoColumn.implicitHeight - 12)
+            width: resultStage.wide ? resultStage.width * 0.55 : resultStage.width
+            height: resultStage.wide ? resultStage.height : Math.max(140, resultStage.height - infoColumn.implicitHeight - 12)
             clip: true
             ScanPreview {
                 id: preview
@@ -559,11 +605,12 @@ Item {
             id: infoColumn
             x: resultStage.wide ? previewCard.width + 16 : 0
             y: resultStage.wide ? 0 : previewCard.height + 12
-            width: resultStage.wide ? parent.width - previewCard.width - 16 : parent.width
+            width: resultStage.wide ? resultStage.width - previewCard.width - 16 : resultStage.width
             spacing: 8
             Text {
                 objectName: "scanSize"
                 Layout.fillWidth: true
+                Layout.maximumWidth: infoColumn.width
                 text: !scan.hasResult || !scan.m ? ""
                     : scan.m.formatNumber("length", scan.result.width) + " × " + scan.m.formatNumber("length", scan.result.depth)
                       + " × " + scan.m.formatNumber("length", scan.result.height) + " " + scan.m.unitSymbol("length")
@@ -576,8 +623,10 @@ Item {
             Text {
                 objectName: "scanFacts"
                 Layout.fillWidth: true
+                Layout.maximumWidth: infoColumn.width
                 text: !scan.hasResult ? ""
                     : "Volume " + scan.volumeText(scan.result.volume) + " · " + scan.result.used + " of " + scan.result.photos + " photos used"
+                      + (scan.result.stereo ? " · detail from stereo" : "")
                 font.pixelSize: 14
                 font.features: ({ "tnum": 1 })
                 color: Theme.mutedText
@@ -599,6 +648,7 @@ Item {
                     Text {
                         objectName: "scanWarning_" + parent.index
                         Layout.fillWidth: true
+                        Layout.maximumWidth: infoColumn.width - 24
                         text: parent.modelData
                         font.pixelSize: 13
                         color: Theme.text
@@ -612,6 +662,8 @@ Item {
                 spacing: 8
                 ActionButton {
                     objectName: "scanBack"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
                     text: "Photos"
                     iconName: "chevronLeft"
                     outlined: true
@@ -619,6 +671,8 @@ Item {
                 }
                 ActionButton {
                     objectName: "scanStartOver"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
                     text: "New scan"
                     iconName: "clear"
                     outlined: true

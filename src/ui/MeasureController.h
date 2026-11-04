@@ -138,8 +138,8 @@ class MeasureController : public QObject {
     // warnings [text], used, photos, focal35mm, focalEstimated, ms}.
     Q_PROPERTY(QVariantMap scanResult READ scanResult NOTIFY scanChanged)
     Q_PROPERTY(QString scanError READ scanError NOTIFY scanChanged)
-    // The hook for the multi-view stereo stage (refineWithStereo, not in the
-    // tree yet): off by default, and offered only once the stage is there.
+    // Detail from the photos: multi-view stereo (measure::refineWithStereo)
+    // refines the carved shape, a few seconds more. On by default.
     Q_PROPERTY(bool scanStereoAvailable READ scanStereoAvailable CONSTANT)
     Q_PROPERTY(bool scanDetailFromStereo READ scanDetailFromStereo WRITE setScanDetailFromStereo NOTIFY scanChanged)
 
@@ -303,7 +303,7 @@ public:
     QString scanStage() const { return scanStage_; }
     QVariantMap scanResult() const { return scanResult_; }
     QString scanError() const { return scanError_; }
-    bool scanStereoAvailable() const { return false; }
+    bool scanStereoAvailable() const { return true; }
     bool scanDetailFromStereo() const { return scanDetailFromStereo_; }
     void setScanDetailFromStereo(bool on);
     static constexpr int kMaxScanPhotos = 16;
@@ -479,7 +479,7 @@ private:
     QString scanStage_;
     QVariantMap scanResult_;
     QString scanError_;
-    bool scanDetailFromStereo_ = false;
+    bool scanDetailFromStereo_ = true;
     std::shared_ptr<measure::ScanMesh> scanMesh_;
     std::shared_ptr<std::atomic<bool>> scanCancel_;
     int scanGeneration_ = 0;

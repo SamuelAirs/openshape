@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // Measure's Scan (docs/SCAN.md) through the real UI, with synthetic photos
-// (measure/ScanSynthetic: a 50 x 40 x 25 mm box standing on A4, fifteen
-// photos all around) written as image files, Vision's rectangle finder and
+// (measure/ScanSynthetic: a 50 x 40 x 25 mm box standing on A4, twelve
+// photos all around from 35 to 55 degrees up, the lens unknown: estimated) written as image files, Vision's rectangle finder and
 // subject masks stood in for. The desktop: the photos opened through the
 // file dialog (stubbed), one photo's corners reviewed and a handle dragged
 // (the magnifier), Build with its progress, the result within the engine's
@@ -64,7 +64,7 @@ const Vec3 kBox{50, 40, 25};
 
 struct State {
     std::unique_ptr<QTemporaryDir> dir;
-    QStringList allRound; // fifteen photos all around
+    QStringList allRound; // twelve photos all around
     QStringList oneSide;  // six from one side
     QMap<QString, ui::RectangleCorners> corners; // by file stem ("allround_03")
     QMap<QString, QImage> masks;
@@ -224,12 +224,11 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
 
     steps.push_back([&r, st] {
         st->dir = std::make_unique<QTemporaryDir>();
-        auto cameras = synth::ring(10, 35, 50, 0);
-        for (const synth::CameraSpec& low : synth::ring(5, 12, 12, 36, 360, 560))
-            cameras.push_back(low);
-        st->allRound = writePhotos(st, cameras, 21, QStringLiteral("allround"));
+        // As the engine's own unknown-lens test takes them (the focal length is
+        // worked out from the papers: no EXIF here).
+        st->allRound = writePhotos(st, synth::ring(12, 35, 55, 0, 360, 480, 28), 14, QStringLiteral("allround"));
         st->oneSide = writePhotos(st, synth::ring(6, 35, 50, -40, 110), 17, QStringLiteral("oneside"));
-        r.check(st->allRound.size() == 15 && st->oneSide.size() == 6 && QFileInfo::exists(st->allRound.last()),
+        r.check(st->allRound.size() == 12 && st->oneSide.size() == 6 && QFileInfo::exists(st->allRound.last()),
                 say("the synthetic photos are written"));
         auto& m = measureOf(r);
         m.setDevices(standIns(st, false)); // a desktop: files, Vision stood in for
@@ -270,9 +269,9 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             found += p.toMap().value(QStringLiteral("source")).toString() == QStringLiteral("vision") ? 1 : 0;
             masks += p.toMap().value(QStringLiteral("mask")).toBool() ? 1 : 0;
         }
-        r.check(photos.size() == 15 && found == 15 && masks == 15, say("fifteen photos, each with its paper found and a subject mask"),
+        r.check(photos.size() == 12 && found == 12 && masks == 12, say("twelve photos, each with its paper found and a subject mask"),
                 QStringLiteral("%1 photos, %2 found, %3 masks").arg(photos.size()).arg(found).arg(masks));
-        r.check(text(r, QStringLiteral("scanCount")) == QStringLiteral("15 photos") && shown(r, QStringLiteral("scanThumb_0")),
+        r.check(text(r, QStringLiteral("scanCount")) == QStringLiteral("12 photos") && shown(r, QStringLiteral("scanThumb_0")),
                 say("the strip shows them"), text(r, QStringLiteral("scanCount")));
         checkLayout(r, kDesktop, QStringLiteral("desktop photos"));
         r.screenshot(QStringLiteral("measurescan_photos_desktop"));
@@ -323,11 +322,13 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         const QVariantMap res = m.scanResult();
         r.check(st->lastOutcome == QStringLiteral("done") && res.value(QStringLiteral("valid")).toBool(), say("a result"), m.scanError());
         r.check(st->sawProgress, say("its progress was shown"), AcceptanceRunner::num(st->maxProgress));
+        r.check(res.value(QStringLiteral("stereo")).toBool(), say("detail from the photos (stereo) was used"));
         st->w = res.value(QStringLiteral("width")).toDouble();
         st->d = res.value(QStringLiteral("depth")).toDouble();
         st->h = res.value(QStringLiteral("height")).toDouble();
-        r.check(std::abs(st->w - kBox.x) < 2 && std::abs(st->d - kBox.y) < 2 && std::abs(st->h - kBox.z) < 3,
-                say("the box's size within the engine's tolerance (2 mm across, 3 mm up)"),
+        // The engine's tolerance with the lens unknown (tests/test_scan.cpp): 3.5 mm.
+        r.check(std::abs(st->w - kBox.x) < 3.5 && std::abs(st->d - kBox.y) < 3.5 && std::abs(st->h - kBox.z) < 3.5,
+                say("the box's size within the engine's tolerance (3.5 mm, the lens unknown)"),
                 QStringLiteral("%1 x %2 x %3").arg(st->w).arg(st->d).arg(st->h));
         r.check(res.value(QStringLiteral("triangles")).toInt() > 100 && res.value(QStringLiteral("volume")).toDouble() > 0.85 * kBox.x * kBox.y * kBox.z,
                 say("a closed mesh of about the box's volume"), AcceptanceRunner::num(res.value(QStringLiteral("volume")).toDouble()));
@@ -373,7 +374,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     steps.push_back([&r, st] {
         auto& m = measureOf(r);
         r.check(st->lastOutcome == QStringLiteral("cancelled") && !m.scanResult().value(QStringLiteral("valid")).toBool()
-                    && m.scanPhotos().size() == 15 && shown(r, QStringLiteral("scanBuild")),
+                    && m.scanPhotos().size() == 12 && shown(r, QStringLiteral("scanBuild")),
                 say("cancel: nothing built, the photos kept"), st->lastOutcome);
     });
 
@@ -426,7 +427,7 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     steps.push_back([&r] { r.check(measureOf(r).waitForScan(60000), say("phone: read")); });
     wait(steps, 2);
     steps.push_back([&r] {
-        r.check(measureOf(r).scanPhotos().size() == 15, say("phone: fifteen photos"), QString::number(measureOf(r).scanPhotos().size()));
+        r.check(measureOf(r).scanPhotos().size() == 12, say("phone: twelve photos"), QString::number(measureOf(r).scanPhotos().size()));
         checkLayout(r, kPhone, QStringLiteral("phone photos"));
         r.screenshot(QStringLiteral("measurescan_photos_phone"));
         r.check(r.tapItem(QStringLiteral("scanBuild")), say("phone: Build"));

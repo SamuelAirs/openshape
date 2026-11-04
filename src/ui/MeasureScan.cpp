@@ -8,8 +8,10 @@
 // and Cancel (measure::runScan), the result, and the mesh as a body.
 
 #include "core/Log.h"
+#include "geometry/MeshSolid.h"
 #include "measure/PaperDetect.h"
 #include "measure/Scan.h"
+#include "measure/ScanStereo.h"
 #include "ui/AppController.h"
 #include "ui/MeasureController.h"
 
@@ -25,6 +27,7 @@
 #include <QtGui/QImageReader>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -59,6 +62,46 @@ measure::RgbImage rgbOf(const QImage& image)
     for (int y = 0; y < out.height; ++y)
         std::memcpy(out.rgb.data() + std::size_t(y) * out.width * 3, rgb.constScanLine(y), std::size_t(out.width) * 3);
     return out;
+}
+
+double signedVolume(const measure::ScanMesh& mesh)
+{
+    double v = 0;
+    for (const auto& t : mesh.triangles) {
+        const Vec3& a = mesh.vertices[std::size_t(t[0])];
+        const Vec3& b = mesh.vertices[std::size_t(t[1])];
+        const Vec3& c = mesh.vertices[std::size_t(t[2])];
+        v += a.dot(b.cross(c));
+    }
+    return v / 6.0;
+}
+
+// The scan's main piece: loose bits (a speck of shadow, a stray corner of
+// the table) are left out, so the body is one solid and its size is the
+// object's. Returns how many pieces were dropped.
+int keepLargestPiece(measure::ScanSurface& surface)
+{
+    const auto pieces = geom::meshPieces(geom::TriangleMesh{surface.mesh.vertices, surface.mesh.triangles});
+    if (pieces.size() <= 1)
+        return 0;
+    std::size_t best = 0;
+    double bestVolume = -1;
+    for (std::size_t i = 0; i < pieces.size(); ++i) {
+        const double v = std::abs(signedVolume(measure::ScanMesh{pieces[i].vertices, pieces[i].triangles}));
+        if (v > bestVolume) {
+            bestVolume = v;
+            best = i;
+        }
+    }
+    surface.mesh = measure::ScanMesh{pieces[best].vertices, pieces[best].triangles};
+    surface.volumeMm3 = bestVolume;
+    surface.triangleCount = int(surface.mesh.triangles.size());
+    surface.boundsMin = surface.boundsMax = surface.mesh.vertices.front();
+    for (const Vec3& v : surface.mesh.vertices) {
+        surface.boundsMin = {std::min(surface.boundsMin.x, v.x), std::min(surface.boundsMin.y, v.y), std::min(surface.boundsMin.z, v.z)};
+        surface.boundsMax = {std::max(surface.boundsMax.x, v.x), std::max(surface.boundsMax.y, v.y), std::max(surface.boundsMax.z, v.z)};
+    }
+    return int(pieces.size()) - 1;
 }
 
 } // namespace
@@ -339,19 +382,22 @@ bool MeasureController::scanBuild()
     std::vector<ScanPhotoEntry> photos = scanPhotos_;
     measure::ScanOptions options;
     options.paper = scanPaper_ == QLatin1String("letter") ? measure::letterReference() : measure::a4Reference();
-    // scanDetailFromStereo_: the stereo stage (refineWithStereo) goes
-    // between carve() and extractSurface() once it is in the tree.
+    // The stages one by one (measure::runScan's), with multi-view stereo
+    // (refineWithStereo) between the carving and the surface when asked.
+    const bool stereo = scanDetailFromStereo_;
     struct Outcome {
         bool ok = false;
         bool cancelled = false;
         QString error;
         measure::ScanResult result;
+        bool stereoUsed = false;
+        double stereoMs = 0;
     };
     auto outcome = std::make_shared<Outcome>();
     auto progress = std::make_shared<std::atomic<int>>(0); // per mille
     QPointer<MeasureController> self(this);
     runScanWork(
-        [outcome, photos, options, cancel, progress, self] {
+        [outcome, photos, options, cancel, progress, self, stereo] {
             std::vector<QImage> images;
             std::vector<QImage> masks;
             images.reserve(photos.size());
@@ -385,31 +431,74 @@ bool MeasureController::scanBuild()
                 }
                 input.push_back(p);
             }
-            const auto report = [progress, cancel, self](double f) {
-                const int perMille = int(std::clamp(f, 0.0, 1.0) * 1000);
-                if (perMille != progress->exchange(perMille))
-                    QMetaObject::invokeMethod(
-                        QCoreApplication::instance(),
-                        [self, perMille] {
-                            if (self && self->scanBuilding_) {
-                                self->scanProgress_ = perMille / 1000.0;
-                                self->scanStage_ = perMille < 500   ? QStringLiteral("Finding the paper and the cameras")
-                                                   : perMille < 800 ? QStringLiteral("Carving the shape")
-                                                                    : QStringLiteral("Making the surface");
-                                emit self->scanProgressChanged();
-                            }
-                        },
-                        Qt::QueuedConnection);
-                return !cancel->load();
+            // The stages' shares of the bar, and what each is called.
+            const double calibrateEnd = stereo ? 0.3 : 0.5, carveEnd = stereo ? 0.45 : 0.8, stereoEnd = stereo ? 0.9 : 0.8;
+            const auto stageReport = [progress, cancel, self](double from, double to, const QString& name) {
+                return [progress, cancel, self, from, to, name](double f) {
+                    const int perMille = int(std::clamp(from + (to - from) * f, 0.0, 1.0) * 1000);
+                    if (perMille != progress->exchange(perMille))
+                        QMetaObject::invokeMethod(
+                            QCoreApplication::instance(),
+                            [self, perMille, name] {
+                                if (self && self->scanBuilding_) {
+                                    self->scanProgress_ = perMille / 1000.0;
+                                    self->scanStage_ = name;
+                                    emit self->scanProgressChanged();
+                                }
+                            },
+                            Qt::QueuedConnection);
+                    return !cancel->load();
+                };
             };
-            auto result = measure::runScan(input, options, report);
-            if (!result) {
+            using Clock = std::chrono::steady_clock;
+            const auto ms = [](Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+            const auto fail = [&outcome, &cancel](const std::string& message) {
                 outcome->cancelled = cancel->load();
-                outcome->error = q(result.userMessage());
-                return;
+                outcome->error = q(message);
+            };
+            const auto t0 = Clock::now();
+            auto calibration = measure::calibrate(input, options, stageReport(0, calibrateEnd, QStringLiteral("Finding the paper and the cameras")));
+            if (!calibration)
+                return fail(calibration.userMessage());
+            const auto t1 = Clock::now();
+            auto hull = measure::carve(calibration->views, options, stageReport(calibrateEnd, carveEnd, QStringLiteral("Carving the shape")));
+            if (!hull)
+                return fail(hull.userMessage());
+            const auto t2 = Clock::now();
+            measure::ScanGrid field = hull.value();
+            if (stereo) {
+                measure::StereoStats stats;
+                field = measure::refineWithStereo(calibration->views, hull.value(), measure::StereoOptions{},
+                                                  stageReport(carveEnd, stereoEnd, QStringLiteral("Matching photos for detail")), &stats);
+                if (cancel->load())
+                    return fail("Cancelled.");
+                outcome->stereoUsed = stats.viewsUsed >= 2;
             }
+            const auto t3 = Clock::now();
+            auto surface = measure::extractSurface(field, options, stageReport(stereoEnd, 1.0, QStringLiteral("Making the surface")));
+            if (!surface)
+                return fail(surface.userMessage());
+            const auto t4 = Clock::now();
+            measure::ScanResult& out = outcome->result;
+            out.calibrateMs = ms(t0, t1);
+            out.carveMs = ms(t1, t2);
+            outcome->stereoMs = ms(t2, t3);
+            out.surfaceMs = ms(t3, t4);
+            out.photos = calibration->photos;
+            out.focal35mm = calibration->focal35mm;
+            out.focalEstimated = calibration->focalEstimated;
+            const auto agreement = measure::silhouetteAgreement(calibration->views, field);
+            for (std::size_t u = 0; u < calibration->views.size(); ++u)
+                out.photos[std::size_t(calibration->views[u].photoIndex)].silhouetteAgreement = agreement[u];
+            for (const auto* list : {&calibration.warnings(), &hull.warnings(), &surface.warnings()})
+                for (const std::string& w : *list)
+                    if (std::find(out.warnings.begin(), out.warnings.end(), w) == out.warnings.end())
+                        out.warnings.push_back(w);
+            out.surface = std::move(surface.value());
+            if (const int dropped = keepLargestPiece(out.surface); dropped > 0)
+                out.warnings.push_back(dropped == 1 ? "A small loose piece was left out (a shadow or a speck on the table)."
+                                                    : std::to_string(dropped) + " small loose pieces were left out (shadows or specks on the table).");
             outcome->ok = true;
-            outcome->result = std::move(result.value());
         },
         [this, outcome, cancel] {
             scanBuilding_ = false;
@@ -451,11 +540,13 @@ bool MeasureController::scanBuild()
                            {QStringLiteral("photos"), int(scanPhotos_.size())},
                            {QStringLiteral("focal35mm"), r.focal35mm},
                            {QStringLiteral("focalEstimated"), r.focalEstimated},
-                           {QStringLiteral("ms"), r.calibrateMs + r.carveMs + r.surfaceMs}};
+                           {QStringLiteral("stereo"), outcome->stereoUsed},
+                           {QStringLiteral("ms"), r.calibrateMs + r.carveMs + outcome->stereoMs + r.surfaceMs}};
             scanProgress_ = 1;
             OS_LOG(Info, App) << "scan: " << s.triangleCount << " triangles, " << (s.boundsMax.x - s.boundsMin.x) << " x "
                               << (s.boundsMax.y - s.boundsMin.y) << " x " << (s.boundsMax.z - s.boundsMin.z) << " mm from " << used
-                              << " photos in " << (r.calibrateMs + r.carveMs + r.surfaceMs) << " ms";
+                              << " photos in " << (r.calibrateMs + r.carveMs + outcome->stereoMs + r.surfaceMs) << " ms"
+                              << (outcome->stereoUsed ? " (with stereo)" : "");
             emit scanProgressChanged();
             emit scanChanged();
             emit scanFinished(QStringLiteral("done"));
