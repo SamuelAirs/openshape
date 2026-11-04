@@ -792,6 +792,27 @@ void MeasureController::clearPhoto()
     emit photoChanged();
 }
 
+QString MeasureController::keepStraightImage()
+{
+    if (straightFile_.isEmpty() || !QFileInfo::exists(straightFile_))
+        return {};
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/measure");
+    QDir().mkpath(folder);
+    const QString copy = folder + QStringLiteral("/reference_%1.png").arg(QDateTime::currentMSecsSinceEpoch());
+    if (!QFile::copy(straightFile_, copy)) {
+        setPhotoError(QStringLiteral("The straightened photo couldn't be copied."));
+        return {};
+    }
+    return copy;
+}
+
+double MeasureController::parseLengthMm(const QString& text) const
+{
+    const LengthUnit u = unitFromSymbol(app_->displayUnit().toStdString()).value_or(LengthUnit::Millimeter);
+    const LengthParseResult result = parseLength(text.trimmed().toStdString(), u);
+    return result.millimeters && *result.millimeters > 0 ? *result.millimeters : 0.0;
+}
+
 double MeasureController::distanceMm(const QPointF& a, const QPointF& b) const
 {
     return std::hypot(b.x() - a.x(), b.y() - a.y()) * straightMmPerPixel_;

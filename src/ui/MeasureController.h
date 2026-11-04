@@ -227,6 +227,13 @@ public:
     Q_INVOKABLE QVariantMap circleFrom3(const QPointF& a, const QPointF& b, const QPointF& c) const;
     // The points in millimeters on the surface (x right, y down the view).
     Q_INVOKABLE QVariantList straightToMm(const QVariantList& points) const;
+    // A copy of the straightened photo that outlives the session (the
+    // session's own files are removed when it ends): for placing it in the
+    // design (AppController::addReferenceImage). "" when there is none.
+    Q_INVOKABLE QString keepStraightImage();
+    // A length typed for a reference side ("120", "4.5in", "12cm"), in mm
+    // (a number alone in the display unit); 0 when it is not a length.
+    Q_INVOKABLE double parseLengthMm(const QString& text) const;
 
     // ---- Camera (AR)
     bool arAvailable() const { return ar_.available && bool(devices_.startAr); }

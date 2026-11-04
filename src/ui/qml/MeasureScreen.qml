@@ -113,6 +113,19 @@ Rectangle {
         photo.mode = "distance"
         photo.clearPoints()
         camera.mode = "distance"
+        measureKeypad.close()
+    }
+    // The app's numeric keypad for a field of the workspace (a reference's
+    // sides): its client as NumericKeypad describes it.
+    readonly property var keypadClient: measureKeypad.client
+    function openKeypad(client) {
+        measureKeypad.attach(client)
+    }
+    function closeKeypad() {
+        measureKeypad.close()
+    }
+    function keypadHardwareKey(event) {
+        return measureKeypad.hardwareKey(event)
     }
 
     color: Theme.background
@@ -125,6 +138,7 @@ Rectangle {
             m.stopSensors()
             chipCard.close()
             calibration.close()
+            measureKeypad.close()
         }
     }
     onCurrentChanged: chosen = 0
@@ -141,7 +155,9 @@ Rectangle {
     }
 
     Keys.onEscapePressed: {
-        if (chipCard.visible)
+        if (measureKeypad.open)
+            measureKeypad.close()
+        else if (chipCard.visible)
             chipCard.close()
         else if (calibration.visible)
             calibration.close()
@@ -188,6 +204,9 @@ Rectangle {
         return null
     }
     readonly property var actions: currentInstrument && currentInstrument.actions ? currentInstrument.actions : []
+    // The instrument shows its reading huge (the Fold, the Level): in a
+    // narrow window the readout does not repeat the number.
+    readonly property bool slimReadout: !side && currentInstrument !== null && currentInstrument.showsReading === true
 
     // ---------------------------------------------------------------- layout
     // Wide windows (an iPad, the desktop, the iPhone Duo unfolded): the
@@ -370,6 +389,7 @@ Rectangle {
                         }
                         Row {
                             Layout.fillWidth: true
+                            visible: !screen.slimReadout
                             spacing: 6
                             clip: true
                             Text {
@@ -708,6 +728,22 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------- the keypad
+    // Docked along the bottom of a narrow window, at the bottom right of a
+    // wide one (over the readout's column), clear of the safe areas.
+    NumericKeypad {
+        id: measureKeypad
+        objectName: "measureKeypad"
+        app: screen.app
+        z: 9
+        docked: !screen.side
+        placed: true
+        width: docked ? screen.width - Theme.safeLeft - Theme.safeRight - 16 : implicitWidth
+        x: docked ? Theme.safeLeft + 8 : screen.width - Theme.safeRight - width - screen.pad
+        y: screen.height - Theme.safeBottom - height - 8
+        onClientChanged: if (client === null) screen.forceActiveFocus()
     }
 
     // ---------------------------------------------------------------- check the scale with a card
