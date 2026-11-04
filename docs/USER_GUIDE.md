@@ -784,7 +784,10 @@ Home); its instruments are tabs across the top, and what you measure shows
 large at the side with **Keep**.
 
 - **Ruler**: a scale at true size along the screen's long side. Lay a thing
-  on the glass and drag the two jaws to its ends. **Circle**: drag the ring
+  on the glass and drag the two jaws to its ends. On the iPhone Duo
+  unfolded the scale runs across the whole inner display; the fold is
+  marked on it, and if the phone isn't open flat when a length crosses the
+  fold, the ruler says **Open flat**. **Circle**: drag the ring
   until it fits a coin, a washer or a cap; **Make sketch** draws that circle.
   iOS doesn't say how big its screens are, so FoldForm starts from its
   table of iPhones and iPads (the line under the ruler says "estimated"):

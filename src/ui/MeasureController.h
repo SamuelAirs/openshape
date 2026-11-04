@@ -59,6 +59,10 @@ class MeasureController : public QObject {
     Q_PROPERTY(QString screenKey READ screenKey NOTIFY scaleChanged)
     // "phone", "tablet" or "desktop".
     Q_PROPERTY(QString deviceKind READ deviceKind NOTIFY scaleChanged)
+    // The window is the whole of a folding phone's inner display (the
+    // iPhone Duo unfolded, not in Split View): the fold's crease runs across
+    // the middle of its long side, and the Ruler marks it there.
+    Q_PROPERTY(bool foldCrease READ foldCrease NOTIFY scaleChanged)
     // The ruler's and the labels' unit: "in" when the display unit is
     // inches, else "mm".
     Q_PROPERTY(QString unit READ unit NOTIFY unitChanged)
@@ -162,6 +166,7 @@ public:
     QString scaleNote() const { return scaleNote_; }
     QString screenKey() const { return screenKey_; }
     QString deviceKind() const { return deviceKind_; }
+    bool foldCrease() const { return foldCrease_; }
     QString unit() const;
     // A span of `spanPt` points on the screen matched `mm` of a real thing
     // (Check with a card: the card's long side). Kept for this screen;
@@ -342,6 +347,9 @@ public:
     const MeasureDevices& devices() const { return devices_; }
     // The steady clock (seconds) the holds are timed with (a test's own).
     void setClock(std::function<double()> clock);
+    // Takes the window to be a folding phone's whole inner display
+    // (foldCrease) on any platform.
+    void setAssumeFoldingDisplay(bool on);
     // What was asked of the design hooks: "outline n", "circle d", "box w d h".
     const QStringList& madeLog() const { return madeLog_; }
     // The points of the last outline handed over (mm, as passed on).
@@ -404,6 +412,8 @@ private:
     QString deviceKind_ = QStringLiteral("desktop");
     double screenWidthPt_ = 0;
     double screenHeightPt_ = 0;
+    bool foldCrease_ = false;
+    bool assumeFoldingDisplay_ = false;
     QString lastUnit_;
 
     bool sensorsRunning_ = false;

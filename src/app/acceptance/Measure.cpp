@@ -186,6 +186,41 @@ void checkLayout(AcceptanceRunner& r, const Size& s, const QString& where)
     }
 }
 
+// The Ruler takes the window's long side where there is room (docs/MEASURE.md):
+// across a wide window, the readout and the kept measurements below it; down
+// a tall one with room beside it, they and the Ruler's card at its right. Its
+// scale is longer than the window's short side would give, and nothing of the
+// workspace lies over it.
+void checkRulerLongSide(AcceptanceRunner& r, const Size& s)
+{
+    QQuickItem* ruler = item(r, QStringLiteral("measureRuler"));
+    QQuickItem* strip = item(r, QStringLiteral("rulerStrip"));
+    if (!ruler || !strip) {
+        r.check(false, say(s.name + QStringLiteral(": the ruler's scale")));
+        return;
+    }
+    const double safeWidth = s.width - s.safe[1] - s.safe[3], safeHeight = s.height - s.safe[0] - s.safe[2];
+    const bool tall = s.height > s.width;
+    const QRectF stripRect = sceneRect(strip), rulerRect = sceneRect(ruler);
+    const double length = tall ? stripRect.height() : stripRect.width();
+    const bool longEnough = tall ? length > safeWidth - 40 : length >= 0.9 * safeWidth;
+    r.check(ruler->property("vertical").toBool() == tall && longEnough, say(s.name + QStringLiteral(": the scale runs along the long side")),
+            QStringLiteral("%1 pt %2, the safe area %3 x %4")
+                .arg(AcceptanceRunner::num(length), tall ? QStringLiteral("down") : QStringLiteral("across"))
+                .arg(safeWidth)
+                .arg(safeHeight));
+    QStringList over;
+    for (const char* name : {"measureReadout", "measureTray"}) {
+        QQuickItem* i = item(r, QString::fromLatin1(name));
+        if (i && i->isVisible() && sceneRect(i).intersects(rulerRect.adjusted(1, 1, -1, -1)))
+            over << QString::fromLatin1(name);
+    }
+    QQuickItem* controls = item(r, QStringLiteral("rulerControls"));
+    if (controls && controls->isVisible() && sceneRect(controls).intersects(tall ? rulerRect.adjusted(1, 1, -1, -1) : stripRect))
+        over << QStringLiteral("rulerControls");
+    r.check(over.isEmpty(), say(s.name + QStringLiteral(": nothing lies over the ruler")), over.join(QStringLiteral(", ")));
+}
+
 // ---------------------------------------------------------------- the stand-ins
 
 void pushHinge(const StatePtr& st, double degrees)
@@ -434,6 +469,79 @@ void backToMeasure(Steps& steps, AcceptanceRunner& r, const QString& what, bool 
     });
     wait(steps, 2);
     steps.push_back([&r, what] { r.check(shown(r, QStringLiteral("measureScreen")), say(what + QStringLiteral(": Measure is open again"))); });
+}
+
+// The Duo unfolded: the Ruler's scale crosses the fold. Its crease is marked
+// at the middle of the window's long side; a length across it asks for the
+// phone to lie flat while the hinge is bent, and only then.
+void addFoldCreaseSteps(Steps& steps, AcceptanceRunner& r, const StatePtr& st, const Size& size)
+{
+    const Size* s = &size;
+    auto ruler = [&r] { return item(r, QStringLiteral("measureRuler")); };
+    auto creaseMm = [ruler] {
+        QQuickItem* i = ruler();
+        return i ? i->property("creaseMm").toDouble() : 0.0;
+    };
+    auto setJaws = [ruler](double a, double b) {
+        if (QQuickItem* i = ruler()) {
+            i->setProperty("jawA", a);
+            i->setProperty("jawB", b);
+        }
+    };
+    auto notFlat = [ruler] {
+        QQuickItem* i = ruler();
+        return i && i->property("notFlat").toBool();
+    };
+    auto tag = [&r] { return prop(r, QStringLiteral("rulerFold"), "label").toString(); };
+    auto caption = [&r] { return text(r, QStringLiteral("measureReadoutCaption")); };
+
+    // Where the crease is; a length on one half while the hinge is bent
+    // (92.5 degrees, as the loop left it).
+    steps.push_back([&r, s, ruler, creaseMm, setJaws] {
+        QQuickItem* i = ruler();
+        const bool tall = s->height > s->width;
+        const double crease = i ? i->property("crease").toDouble() : 0.0;
+        const QPointF origin = i ? i->mapToScene(QPointF(0, 0)) : QPointF();
+        const double at = (tall ? origin.y() : origin.x()) + crease;
+        const double middle = (tall ? s->height : s->width) / 2.0;
+        r.check(shown(r, QStringLiteral("rulerFold")) && std::abs(at - middle) < 0.5, say(s->name + QStringLiteral(": the fold's crease is marked")),
+                QStringLiteral("at %1 pt, the window's middle %2").arg(AcceptanceRunner::num(at)).arg(middle));
+        setJaws(0, creaseMm() - 6);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, s, ruler, creaseMm, setJaws, notFlat, tag, st] {
+        QQuickItem* i = ruler();
+        r.check(i && i->property("foldBent").toBool() && !notFlat() && tag() == QStringLiteral("Fold"),
+                say(s->name + QStringLiteral(": bent, a length on one half needs nothing")));
+        // Across the crease, the hinge at 150 degrees.
+        setJaws(0, creaseMm() + 12);
+        for (int k = 0; k < 25; ++k)
+            pushHinge(st, 150);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, s, notFlat, tag, caption, st] {
+        r.check(notFlat() && tag() == QStringLiteral("Open flat") && caption().contains(QStringLiteral("fold not flat")),
+                say(s->name + QStringLiteral(": bent, a length across the fold asks to open the phone flat")), caption());
+        // The warning is read whole, not cut short by the readout's width.
+        r.check(!prop(r, QStringLiteral("measureReadoutCaption"), "truncated").toBool(),
+                say(s->name + QStringLiteral(": the warning fits the readout")), caption());
+        checkLayout(r, *s, s->name + QStringLiteral(" ruler, not flat"));
+        r.screenshot(QStringLiteral("measure_ruler_%1_not_flat").arg(s->name));
+        // Opened flat.
+        for (int k = 0; k < 25; ++k)
+            pushHinge(st, 179);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, s, setJaws, notFlat, tag, caption, st] {
+        r.check(!notFlat() && tag() == QStringLiteral("Fold") && !caption().contains(QStringLiteral("fold")),
+                say(s->name + QStringLiteral(": opened flat, the warning goes")), caption());
+        // As the other instruments' pictures expect.
+        setJaws(0, 40);
+        pushHinge(st, 120);
+        for (int k = 0; k < 25; ++k)
+            pushHinge(st, 92.5);
+    });
+    wait(steps, 1);
 }
 
 // ---------------------------------------------------------------- the scenario
@@ -1307,7 +1415,12 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
 
     // ---- every instrument at every size
     for (const Size* s : {&kPhone, &kDuoOuter, &kDuoInner, &kDuoTurned, &kIpad, &kDesktop}) {
-        steps.push_back([&r, s] { applySize(r, *s); });
+        const bool unfolded = s == &kDuoInner || s == &kDuoTurned;
+        steps.push_back([&r, s, unfolded] {
+            applySize(r, *s);
+            // The Duo's inner display, whole (not Split View): its fold's crease.
+            measureOf(r).setAssumeFoldingDisplay(unfolded);
+        });
         wait(steps, 3);
         steps.push_back([&r, s] { r.check(press(r, *s, QStringLiteral("measureButton")), say(s->name + QStringLiteral(": open"))); });
         wait(steps, 2);
@@ -1324,8 +1437,12 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
             wait(steps, 2);
             steps.push_back([&r, s, key] {
                 checkLayout(r, *s, s->name + QLatin1Char(' ') + key);
+                if (key == QStringLiteral("ruler") && s != &kPhone && s != &kDuoOuter)
+                    checkRulerLongSide(r, *s);
                 r.screenshot(QStringLiteral("measure_%1_%2").arg(key, s->name));
             });
+            if (key == QStringLiteral("ruler") && unfolded)
+                addFoldCreaseSteps(steps, r, st, *s);
         }
         steps.push_back([&r, s] {
             if (s->name == QStringLiteral("ipad")) {
@@ -1342,7 +1459,10 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
                 r.check(r.tapItem(QStringLiteral("cardCancel")), say("ipad: Cancel"));
             });
         }
-        steps.push_back([&r, s] { r.check(press(r, *s, QStringLiteral("measureClose")), say(s->name + QStringLiteral(": close"))); });
+        steps.push_back([&r, s] {
+            r.check(press(r, *s, QStringLiteral("measureClose")), say(s->name + QStringLiteral(": close")));
+            measureOf(r).setAssumeFoldingDisplay(false);
+        });
         wait(steps, 1);
     }
 

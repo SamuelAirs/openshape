@@ -211,9 +211,16 @@ void MeasureController::updateScale()
     const QString kind = d.kind == measure::DeviceKind::Phone    ? QStringLiteral("phone")
                          : d.kind == measure::DeviceKind::Tablet ? QStringLiteral("tablet")
                                                                  : QStringLiteral("desktop");
-    const bool screenChanged = key != screenKey_ || kind != deviceKind_;
+    // The fold's crease runs across the window only when the window is the
+    // whole inner display (a Split View half lies on one side of it).
+    bool crease = assumeFoldingDisplay_;
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    crease = crease || (measure::isIphoneDuoInner(d.widthPt, d.heightPt) && w && measure::isIphoneDuoInner(w->width(), w->height()));
+#endif
+    const bool screenChanged = key != screenKey_ || kind != deviceKind_ || crease != foldCrease_;
     screenKey_ = key;
     deviceKind_ = kind;
+    foldCrease_ = crease;
     QSettings settings;
     const double stored = settings.value(QLatin1String(kScaleKey) + key, 0.0).toDouble();
     if (measure::plausiblePointsPerMm(stored)) {
@@ -285,6 +292,14 @@ void MeasureController::checkUnit()
 double MeasureController::now() const { return clock_ ? clock_() : double(elapsed_.nsecsElapsed()) * 1e-9; }
 
 void MeasureController::setClock(std::function<double()> clock) { clock_ = std::move(clock); }
+
+void MeasureController::setAssumeFoldingDisplay(bool on)
+{
+    if (on == assumeFoldingDisplay_)
+        return;
+    assumeFoldingDisplay_ = on;
+    updateScale();
+}
 
 void MeasureController::startSensors()
 {

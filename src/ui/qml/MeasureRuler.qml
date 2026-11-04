@@ -12,12 +12,21 @@ import OpenShape
 // jaws to drag to a thing's ends with the distance between them, and a
 // Circle gauge: a ring dragged to fit a round thing gives its diameter.
 // The scale is MeasureController.pointsPerMm (the device's density, or a
-// card's check: CardCalibration).
+// card's check: CardCalibration). MeasureScreen gives it the window's long
+// side; on a folding phone's inner display the scale crosses the fold,
+// whose crease is marked, and a reading across it asks for the phone to lie
+// flat while the hinge says it is bent.
 Item {
     id: ruler
 
     property MeasureController m
     property Item screen
+    // The fold's crease along the scale (pt from the strip's start), or NaN.
+    property real crease: NaN
+    // Where the mode and scale card goes when not over the instrument (a
+    // column beside it: MeasureScreen), or null.
+    property Item controlsHost: null
+    readonly property real controlsHeight: controls.height
 
     // "length" (the jaws) or "circle" (the ring).
     property string mode: "length"
@@ -45,11 +54,30 @@ Item {
     readonly property real shownB: Math.min(jawB, maxMm)
     readonly property real lengthMm: Math.abs(shownB - shownA)
 
+    // ---- the fold: its crease along the scale, and whether it bends a reading
+    readonly property bool creaseShown: !isNaN(crease) && crease > zero && crease < stripLength
+    readonly property real creaseMm: (crease - zero) / ppm
+    // The hinge reports the halves at an angle (flat is 180 degrees; within
+    // 10 a 100 mm span reads under 0.4 % short).
+    readonly property bool foldBent: m !== null && m.hingeAvailable && m.foldAngle < 170
+    readonly property bool acrossCrease: {
+        if (!creaseShown)
+            return false
+        if (mode === "circle") {
+            const c = vertical ? field.y + field.cy : field.x + field.cx
+            return c - field.r < crease && c + field.r > crease
+        }
+        return Math.min(shownA, shownB) < creaseMm && Math.max(shownA, shownB) > creaseMm
+    }
+    readonly property bool notFlat: foldBent && acrossCrease
+    readonly property string where: notFlat ? "fold not flat" : mode === "circle" ? "across the ring" : "between the jaws"
+    readonly property string caption: m && !m.scaleCalibrated ? where + " · estimated scale" : where
+
     readonly property var reading: mode === "circle"
-        ? { valid: true, caption: m && m.scaleCalibrated ? "across the ring" : "across the ring · estimated scale", source: "Ruler",
+        ? { valid: true, caption: caption, source: "Ruler",
             items: [{ label: "Diameter", quantity: "length", value: ringDiameter },
                     { label: "Radius", quantity: "length", value: ringDiameter / 2 }] }
-        : { valid: true, caption: m && m.scaleCalibrated ? "between the jaws" : "between the jaws · estimated scale", source: "Ruler",
+        : { valid: true, caption: caption, source: "Ruler",
             items: [{ label: "Length", quantity: "length", value: lengthMm }] }
     readonly property var actions: mode === "circle" ? [{ key: "circleSketch", label: "Make sketch", icon: "sketch_circle" }] : []
     function runAction(key) {
@@ -123,6 +151,42 @@ Item {
             font.pixelSize: 11
             color: Theme.mutedText
         }
+        // The fold's crease: a dashed line across the scale.
+        Repeater {
+            model: ruler.creaseShown ? Math.ceil((ruler.vertical ? strip.width : strip.height) / 6) : 0
+            delegate: Rectangle {
+                required property int index
+                color: ruler.notFlat ? ruler.warning : Theme.mutedText
+                x: ruler.vertical ? index * 6 : ruler.crease - width / 2
+                y: ruler.vertical ? ruler.crease - height / 2 : index * 6
+                width: ruler.vertical ? 3 : 1.5
+                height: ruler.vertical ? 1.5 : 3
+            }
+        }
+    }
+
+    // The crease's tag, beside the scale: "Fold", or "Open flat" while a
+    // reading across it is bent.
+    readonly property color warning: "#E0A030"
+    Rectangle {
+        id: foldTag
+        objectName: "rulerFold"
+        visible: ruler.creaseShown
+        readonly property string label: ruler.notFlat ? "Open flat" : "Fold"
+        width: foldText.implicitWidth + 14
+        height: 20
+        radius: 10
+        x: ruler.vertical ? strip.width + 4 : Math.max(0, Math.min(ruler.width - width, ruler.crease - width / 2))
+        y: ruler.vertical ? Math.max(0, Math.min(ruler.height - height, ruler.crease - height / 2)) : strip.height + 4
+        color: ruler.notFlat ? ruler.warning : Theme.fieldIdle
+        Text {
+            id: foldText
+            anchors.centerIn: parent
+            text: foldTag.label
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+            color: ruler.notFlat ? "white" : Theme.mutedText
+        }
     }
 
     // ---------------------------------------------------------------- the jaws
@@ -149,12 +213,12 @@ Item {
         Rectangle {
             objectName: "rulerDistanceLabel"
             readonly property real mid: ruler.along((ruler.shownA + ruler.shownB) / 2)
-            x: ruler.vertical ? ruler.handleB + 34 : Math.max(0, Math.min(ruler.width - width, mid - width / 2))
+            x: ruler.vertical ? Math.max(0, Math.min(ruler.width - width, ruler.handleB + 34)) : Math.max(0, Math.min(ruler.width - width, mid - width / 2))
             y: ruler.vertical ? Math.max(0, Math.min(ruler.height - height, mid - height / 2)) : ruler.handleB + 34
             width: distanceText.implicitWidth + 24
             height: 32
             radius: 16
-            color: Theme.accent
+            color: ruler.notFlat ? ruler.warning : Theme.accent
             Text {
                 id: distanceText
                 anchors.centerIn: parent
@@ -272,12 +336,17 @@ Item {
     }
 
     // ---------------------------------------------------------------- mode and scale
+    // At the instrument's bottom right, or filling controlsHost's width.
+    readonly property real controlsInsetW: controls.hosted ? 0 : controls.width + 12
+    readonly property real controlsInsetH: controls.hosted ? 0 : controls.height + 12
     MeasureCard {
         id: controls
         objectName: "rulerControls"
+        readonly property bool hosted: ruler.controlsHost !== null
+        parent: hosted ? ruler.controlsHost : ruler
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        width: Math.min(ruler.width - ruler.handleB - 40, 236)
+        width: hosted ? parent.width : Math.min(ruler.width - ruler.handleB - 40, 236)
         height: controlsColumn.implicitHeight + 24
         ColumnLayout {
             id: controlsColumn
@@ -379,8 +448,8 @@ Item {
             readonly property real band: 30
             x: ruler.vertical ? 0 : jaw.pos - band / 2
             y: ruler.vertical ? jaw.pos - band / 2 : 0
-            width: ruler.vertical ? Math.max(jaw.handleAt + 22, ruler.width - controls.width - 12) : band
-            height: ruler.vertical ? band : Math.max(jaw.handleAt + 22, ruler.height - controls.height - 12)
+            width: ruler.vertical ? Math.max(jaw.handleAt + 22, ruler.width - ruler.controlsInsetW) : band
+            height: ruler.vertical ? band : Math.max(jaw.handleAt + 22, ruler.height - ruler.controlsInsetH)
             preventStealing: true
             cursorShape: ruler.vertical ? Qt.SizeVerCursor : Qt.SizeHorCursor
             property real start

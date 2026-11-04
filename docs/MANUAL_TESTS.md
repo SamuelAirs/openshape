@@ -49,6 +49,13 @@ motion sensors, Vision and ARKit reported.
 10. **Measurements in the project.** Keep a ruler length, open its card, Add
     to project; then push a face and type its name minus 2 (e.g.
     `length_1 - 2`) in the value box, or tap its key on the keypad.
+11. **The ruler along the long side (next build; your request).** On the Duo
+    unfolded, Ruler: the scale runs across the whole width (about 134 mm),
+    the readout and the kept measurements below it, and "Fold" marks the
+    crease on the scale (check it sits on the real crease). Drag a jaw past
+    the fold with the phone half open: the distance turns amber and the tag
+    says "Open flat"; open it flat and the warning goes. Turn the open
+    phone tall: the scale runs down the long side, the readout beside it.
 
 ## On Windows (the desktop shortcut)
 

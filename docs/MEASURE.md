@@ -43,6 +43,20 @@ Plus, in the design itself:
   when the display unit is in), two jaws to drag to an object's ends, and the distance between
   them. A **Circle** gauge: a ring dragged to fit a round thing (a coin, a washer, a cap) gives
   its diameter.
+- **The window's long side** (Sam asked for it on 2026-11-04, after build 62: the ruler on
+  the long side when the Duo is opened): across a wide window (the Duo unfolded, an iPad or
+  the desktop held wide) the scale spans the whole width, and the readout and the kept measurements sit in a row below it; down a
+  tall window with room beside it (the Duo unfolded and turned, an iPad held tall) it spans the
+  whole height, and they and the Ruler's card sit in a column at its right. The header keeps its
+  place, so the tabs don't move. On the open Duo the scale grows from about 85 mm (down the short
+  side, the readout's column beside it) to about 134 mm (113 mm turned). A phone (and the Duo's
+  outer display) keeps the stacked layout, with the scale along its longer free side.
+- **The fold**: on the Duo's inner display, whole (`MeasureController.foldCrease`: the window is
+  951 x 669 points, not a Split View half), the scale crosses the hinge at the middle of the
+  long side. The crease is marked on the scale ("Fold"); while the hinge reports the halves
+  below 170 degrees, a length (or a ring) across it turns the distance amber, the tag says
+  **Open flat**, and the readout says "fold not flat". Within 10 degrees of flat a
+  100 mm span reads under 0.4 % short, so no warning there; a length on one half never warns.
 - **Scale**: iOS doesn't say how big its screens are, so FoldForm knows the iPhones' and iPads'
   pixel densities (`measure/ScreenScale`: 460 ppi 3x iPhones, 458 for the Duo's displays (an
   estimate from the diagonals), 264 iPads, 326 iPad mini) and offers **Check with a card**: a

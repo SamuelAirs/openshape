@@ -15,7 +15,10 @@ things").
   laid on the glass, and a ring for round things (Make sketch draws that
   circle). The scale comes from a table of iPhones and iPads; **Check with a
   card** matches it to any bank card, and is kept for each screen (the
-  iPhone Duo's two displays each get their own).
+  iPhone Duo's two displays each get their own). It runs along the window's
+  long side: on the Duo unfolded, about 134 mm across the whole inner
+  display, its fold marked, with **Open flat** when a length crosses the
+  fold while the phone is bent.
 - **Fold** (iPhone Duo): the angle between the two halves from the hinge,
   and the bend; held once the phone is still, with a tap you feel, so it
   can be read after measuring over an edge. **Gap**: something pinched

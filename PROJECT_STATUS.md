@@ -255,6 +255,33 @@ on a device yet: docs/MANUAL_TESTS.md, "FoldForm 0.4.0", items 1 to 10.
 **The shared PC:** since 23:15 heavy runs go through one lock in FoldForm's
 booked slots (the vault's `Shared/PC schedule.md`), `-j 10`, one at a time.
 
+**Morning (2026-11-04), after build 62.** The owner's first look: "looking
+great". He asked for the ruler on the long side when the Duo is opened, and
+to **wait to compile until his testing is done**: nothing is pushed until he
+says so; his fixes collect on `measure`, then one `[testflight]` push after
+the full local run. Done:
+- The Ruler takes the window's long side (`MeasureScreen.qml`: `rulerAcross`
+  for a wide window, the readout and kept chips in a row below; `rulerDown`
+  for a tall one with room, the column at its right and the Ruler's card
+  hosted at its foot through `MeasureRuler.controlsHost`). The open Duo's
+  scale reads 0 to 134 mm across (827 pt; it was about 85 mm down the short
+  side), turned 113 mm down; iPad and desktop the same way; phones and the
+  outer display unchanged; the header stays put.
+- The fold: `MeasureController.foldCrease` (the window is the Duo's whole
+  inner display; `setAssumeFoldingDisplay` for the acceptance run) marks the
+  crease on the scale ("Fold"); a length or ring across it while the hinge
+  is under 170 degrees turns amber, the tag says "Open flat" and the readout
+  "fold not flat".
+
+**Verified on the PC** (working tree on `c1e8a92`): 958/958 headless; the
+real-UI scenarios `measure`, `measuredesign`, `measurescan` 559/559 checks
+(new: the scale along the long side and nothing over it at four sizes, the
+crease at the window's middle, bent on one half / across / opened flat);
+the lambda check (only the known `Duo.cpp:529`). The first run showed the
+warning cut short by the readout's width ("not flat across the f…"), so it
+became "fold not flat" with a check that it fits; `measure` again: 379/379.
+The full real-UI run waits for the push after the owner's round.
+
 ### Session report (2026-10-31): FoldForm 0.3.0 for the App Store
 
 **In one paragraph:** the owner chose to launch today as **FoldForm**, free

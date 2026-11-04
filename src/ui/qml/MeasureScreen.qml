@@ -213,10 +213,21 @@ Rectangle {
 
     // ---------------------------------------------------------------- layout
     // Wide windows (an iPad, the desktop, the iPhone Duo unfolded): the
-    // instrument at the left, the readout and the kept measurements in a
-    // column at the right. Narrow ones (a phone, the Duo's outer display,
-    // the Duo turned tall): one above the other.
-    readonly property bool side: width >= 760 && width >= height * 1.1
+    // header in one row, the instrument at the left, the readout and the
+    // kept measurements in a column at the right. Narrow ones (a phone, the
+    // Duo's outer display, the Duo turned tall): one above the other.
+    // The Ruler takes the window's long side: across a wide window, the
+    // readout and the kept measurements in a row below it; down a tall one
+    // with room beside it (the Duo unfolded and turned, an iPad held tall),
+    // they and the Ruler's own card in a column at its right.
+    readonly property bool wide: width >= 760 && width >= height * 1.1
+    // The Ruler's width down a tall window: its scale, the jaws' handles
+    // and the distance between them.
+    readonly property real rulerLane: 300
+    readonly property bool rulerAcross: wide && current === "ruler"
+    readonly property bool rulerDown: !wide && current === "ruler" && content.width >= rulerLane + 20 + 280
+    // The readout and the kept measurements in a column at the right.
+    readonly property bool side: wide ? !rulerAcross : rulerDown
     readonly property int pad: Theme.compact ? 12 : 20
 
     Item {
@@ -235,7 +246,7 @@ Rectangle {
         Item {
             id: header
             width: parent.width
-            height: screen.side ? Math.max(segments.height, closeButton.height)
+            height: screen.wide ? Math.max(segments.height, closeButton.height)
                                 : closeButton.height + 10 + segments.height
 
             Text {
@@ -244,7 +255,7 @@ Rectangle {
                 anchors.left: parent.left
                 y: (closeButton.height - height) / 2
                 text: "Measure"
-                font.pixelSize: screen.side ? 24 : 26
+                font.pixelSize: screen.wide ? 24 : 26
                 font.weight: Font.Bold
                 color: Theme.text
             }
@@ -252,7 +263,7 @@ Rectangle {
                 anchors.left: title.right
                 anchors.leftMargin: 10
                 anchors.baseline: title.baseline
-                visible: screen.forKind !== "" && (!screen.side || parent.width > 1000)
+                visible: screen.forKind !== "" && (!screen.wide || parent.width > 1000)
                 text: screen.forKind === "angle" ? "an angle for the value box" : "a length for the value box"
                 font.pixelSize: 14
                 color: Theme.mutedText
@@ -263,9 +274,9 @@ Rectangle {
                 namePrefix: "measureTab_"
                 model: screen.instruments
                 current: screen.current
-                x: screen.side ? Math.max(title.width + 24, (parent.width - width) / 2) : 0
-                y: screen.side ? (closeButton.height - height) / 2 : closeButton.height + 10
-                width: screen.side ? Math.min(screen.instruments.length * 112, parent.width - title.width - closeButton.width - 64)
+                x: screen.wide ? Math.max(title.width + 24, (parent.width - width) / 2) : 0
+                y: screen.wide ? (closeButton.height - height) / 2 : closeButton.height + 10
+                width: screen.wide ? Math.min(screen.instruments.length * 112, parent.width - title.width - closeButton.width - 64)
                                    : parent.width
                 onPicked: (key) => screen.select(key)
             }
@@ -298,7 +309,7 @@ Rectangle {
             objectName: "measureInstrumentArea"
             anchors {
                 top: header.bottom
-                topMargin: screen.side ? 16 : 12
+                topMargin: screen.wide ? 16 : 12
                 left: parent.left
                 right: screen.side ? sideColumn.left : parent.right
                 rightMargin: screen.side ? 20 : 0
@@ -313,6 +324,16 @@ Rectangle {
                 m: screen.m
                 screen: screen
                 visible: screen.current === "ruler"
+                controlsHost: screen.rulerDown ? rulerControlsHost : null
+                // A folding phone's inner display, whole: the crease crosses
+                // the middle of the window's long side.
+                crease: {
+                    if (!screen.m.foldCrease)
+                        return NaN
+                    if (vertical)
+                        return screen.height > screen.width ? screen.height / 2 - content.y - instrumentArea.y : NaN
+                    return screen.width > screen.height ? screen.width / 2 - content.x - instrumentArea.x : NaN
+                }
             }
             MeasureFold {
                 id: fold
@@ -360,8 +381,21 @@ Rectangle {
         Item {
             id: sideColumn
             visible: screen.side
-            anchors { top: header.bottom; topMargin: 16; right: parent.right; bottom: parent.bottom }
-            width: screen.side ? Math.min(340, Math.max(280, content.width * 0.3)) : 0
+            anchors { top: header.bottom; topMargin: screen.wide ? 16 : 12; right: parent.right; bottom: parent.bottom }
+            width: !screen.side ? 0
+                 : screen.rulerDown ? Math.min(340, content.width - screen.rulerLane - 20)
+                 : Math.min(340, Math.max(280, content.width * 0.3))
+        }
+        // The Ruler's card (its mode, its scale) at the bottom of that
+        // column, when the Ruler runs down beside it.
+        Item {
+            id: rulerControlsHost
+            objectName: "rulerControlsHost"
+            visible: screen.rulerDown
+            x: sideColumn.x
+            width: sideColumn.width
+            height: screen.rulerDown ? ruler.controlsHeight : 0
+            y: content.height - height
         }
 
         // ---- the readout: the value big, Keep, Use, the instrument's actions
@@ -372,8 +406,13 @@ Rectangle {
             objectName: "measureReadout"
             visible: screen.side || screen.forKind !== "" || (screen.reading !== null && (screen.reading.valid || screen.reading.caption !== ""))
             x: screen.side ? sideColumn.x : 0
-            y: screen.side ? sideColumn.y : (tray.visible ? tray.y - 12 : content.height) - height
-            width: screen.side ? sideColumn.width : content.width
+            // Across: at the bottom, the kept measurements beside it.
+            y: screen.side ? sideColumn.y
+               : screen.rulerAcross ? content.height - height
+               : (tray.visible ? tray.y - 12 : content.height) - height
+            width: screen.side ? sideColumn.width
+                   : screen.rulerAcross && tray.visible ? Math.min(420, Math.max(300, content.width * 0.36))
+                   : content.width
             height: readoutColumn.implicitHeight + 2 * readoutColumn.y
 
             ColumnLayout {
@@ -511,10 +550,12 @@ Rectangle {
             m: screen.m
             vertical: screen.side
             visible: screen.side || screen.m.measurements.length > 0
-            x: screen.side ? sideColumn.x : 0
-            y: screen.side ? readout.y + readout.height + 16 : content.height - height
-            width: screen.side ? sideColumn.width : content.width
-            height: screen.side ? Math.max(0, content.height - y) : implicitHeight
+            x: screen.side ? sideColumn.x : screen.rulerAcross ? readout.width + 16 : 0
+            y: screen.side ? readout.y + readout.height + 16
+               : screen.rulerAcross ? readout.y + (readout.height - height) / 2
+               : content.height - height
+            width: screen.side ? sideColumn.width : content.width - x
+            height: screen.side ? Math.max(0, (screen.rulerDown ? rulerControlsHost.y - 16 : content.height) - y) : implicitHeight
             onPicked: (id) => chipCard.open(id)
         }
     }
@@ -524,7 +565,9 @@ Rectangle {
         id: toastBox
         objectName: "measureToast"
         property alias text: toastText.text
-        x: screen.side ? content.x + instrumentArea.x + (instrumentArea.width - width) / 2 : (screen.width - width) / 2
+        // Over the instrument beside a column (the Ruler's lane is too
+        // narrow for it: centered there).
+        x: screen.side && !screen.rulerDown ? content.x + instrumentArea.x + (instrumentArea.width - width) / 2 : (screen.width - width) / 2
         y: screen.side ? content.y + content.height - height - 64
                        : content.y + (readout.visible ? readout.y : tray.visible ? tray.y : content.height) - height - 10
         width: Math.min(toastText.implicitWidth + 36, screen.width - 32)
@@ -771,7 +814,7 @@ Rectangle {
         objectName: "measureKeypad"
         app: screen.app
         z: 9
-        docked: !screen.side
+        docked: !screen.wide
         placed: true
         width: docked ? screen.width - Theme.safeLeft - Theme.safeRight - 16 : implicitWidth
         x: docked ? Theme.safeLeft + 8 : screen.width - Theme.safeRight - width - screen.pad
