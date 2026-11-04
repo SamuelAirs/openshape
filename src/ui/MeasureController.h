@@ -7,6 +7,7 @@
 #include "measure/Fold.h"
 #include "measure/Level.h"
 #include "measure/Measurement.h"
+#include "measure/ScanTypes.h"
 #include "ui/MeasureDevices.h"
 
 #include <QtCore/QElapsedTimer>
@@ -23,7 +24,9 @@
 #include <QtQuick/QQuickWindow>
 
 #include <array>
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -118,6 +121,27 @@ class MeasureController : public QObject {
     // ("distance", "outline", "box"), error, distances [mm], total, outline
     // [{x, y} mm], sides [mm], perimeter, area, width, depth, height}.
     Q_PROPERTY(QVariantMap arResult READ arResult NOTIFY arChanged)
+
+    // ---- Scan (docs/SCAN.md): photos around an object standing on a sheet
+    // of paper become a mesh and a body.
+    // {url, width, height, corners [4 QPointF, image px], found (the paper's
+    // corners were found: by Vision or detectPaper; else placed for the
+    // owner to fix), source ("vision", "detected", "hand", ""), mask (a
+    // subject mask is there), used / problem (after a build)}.
+    Q_PROPERTY(QVariantList scanPhotos READ scanPhotos NOTIFY scanChanged)
+    Q_PROPERTY(QString scanPaper READ scanPaper NOTIFY scanChanged) // "a4" or "letter"
+    Q_PROPERTY(bool scanBusy READ scanBusy NOTIFY scanChanged)      // photos being read
+    Q_PROPERTY(bool scanBuilding READ scanBuilding NOTIFY scanChanged)
+    Q_PROPERTY(double scanProgress READ scanProgress NOTIFY scanProgressChanged)
+    Q_PROPERTY(QString scanStage READ scanStage NOTIFY scanProgressChanged)
+    // After a build: {valid, width, depth, height, volume (mm³), triangles,
+    // warnings [text], used, photos, focal35mm, focalEstimated, ms}.
+    Q_PROPERTY(QVariantMap scanResult READ scanResult NOTIFY scanChanged)
+    Q_PROPERTY(QString scanError READ scanError NOTIFY scanChanged)
+    // Detail from the photos: multi-view stereo (measure::refineWithStereo)
+    // refines the carved shape, a few seconds more. On by default.
+    Q_PROPERTY(bool scanStereoAvailable READ scanStereoAvailable CONSTANT)
+    Q_PROPERTY(bool scanDetailFromStereo READ scanDetailFromStereo WRITE setScanDetailFromStereo NOTIFY scanChanged)
 
     // ---- Kept measurements: {id, name, quantity ("length", "angle",
     // "area"), value, text (to read), valueText (to type), source}, newest first.
@@ -270,6 +294,47 @@ public:
     Q_INVOKABLE bool makeCircleSketch(double diameterMm);
     Q_INVOKABLE bool makeBox(double widthMm, double depthMm, double heightMm);
 
+    // ---- Scan
+    QVariantList scanPhotos() const;
+    QString scanPaper() const { return scanPaper_; }
+    bool scanBusy() const { return scanBusy_; }
+    bool scanBuilding() const { return scanBuilding_; }
+    double scanProgress() const { return scanProgress_; }
+    QString scanStage() const { return scanStage_; }
+    QVariantMap scanResult() const { return scanResult_; }
+    QString scanError() const { return scanError_; }
+    bool scanStereoAvailable() const { return true; }
+    bool scanDetailFromStereo() const { return scanDetailFromStereo_; }
+    void setScanDetailFromStereo(bool on);
+    static constexpr int kMaxScanPhotos = 16;
+    // The camera, again and again (a "Take another" loop), and the photo
+    // library (several at once): each photo is added as it comes.
+    Q_INVOKABLE void scanTakePhoto(const QRectF& anchor = QRectF());
+    Q_INVOKABLE void scanChoosePhotos(const QRectF& anchor = QRectF());
+    // Image files (the desktop's file dialog; QUrl or path strings).
+    Q_INVOKABLE void scanAddFiles(const QVariantList& files);
+    Q_INVOKABLE void scanRemovePhoto(int index);
+    Q_INVOKABLE void scanSetCorner(int photo, int corner, double x, double y);
+    Q_INVOKABLE void setScanPaper(const QString& kind);
+    // Builds the mesh on a worker thread (progress, stage); false when there
+    // are not enough photos or a build runs.
+    Q_INVOKABLE bool scanBuild();
+    Q_INVOKABLE void scanCancel();
+    // The mesh as a body in the design (AppController::addMeshBody, "Scan N").
+    Q_INVOKABLE bool scanAddToDesign();
+    // Back to the photos (the result dropped), or a new scan (everything).
+    Q_INVOKABLE void scanDiscardResult();
+    Q_INVOKABLE void scanClear();
+    // The desktop's file dialog with several files: the next files it gives
+    // (the acceptance run sets them; empty: none waiting).
+    void setNextScanFiles(const QStringList& files) { nextScanFiles_ = files; }
+    Q_INVOKABLE QVariantList takeNextScanFiles();
+    // The last build's mesh (millimeters, the paper's center at the origin),
+    // or null: the result's preview draws it.
+    const measure::ScanMesh* scanMesh() const { return scanMesh_.get(); }
+    // Waits (processing events) while photos are read or a build runs, up to `ms`.
+    bool waitForScan(int ms);
+
     // ---- For tests (the acceptance run)
     // The hardware (platformMeasureDevices() until set). Sensors running
     // restart on the new ones.
@@ -297,6 +362,10 @@ signals:
     void measurementsChanged();
     // A new hold (the fold's or the level's): the workspace's short animation.
     void held(const QString& what);
+    void scanChanged();
+    void scanProgressChanged();
+    // A build ended: "done", "failed" or "cancelled".
+    void scanFinished(const QString& outcome);
 
 private:
     QQuickWindow* window() const;
@@ -384,6 +453,37 @@ private:
     measure::MeasurementLog log_;
     QStringList madeLog_;
     QVariantList lastOutlinePoints_;
+
+    // ---- Scan
+    struct ScanPhotoEntry {
+        QString file;     // the copy measured (in photoFolder, at most kScanPhotoSide)
+        QString maskFile; // the subject mask (8-bit PNG), or ""
+        int width = 0;
+        int height = 0;
+        std::array<QPointF, 4> corners{};
+        bool found = false;
+        QString source;
+        bool used = false;
+        QString problem;
+    };
+    void addScanFilesFrom(const QStringList& files, bool ownFiles);
+    void scanPickedPhoto(const PhotoResult& result);
+    void runScanWork(std::function<void()> work, std::function<void()> done);
+    void updateScanBusy();
+    std::vector<ScanPhotoEntry> scanPhotos_;
+    QString scanPaper_ = QStringLiteral("a4");
+    bool scanBusy_ = false;
+    int scanReading_ = 0; // batches of photos being read
+    bool scanBuilding_ = false;
+    double scanProgress_ = 0;
+    QString scanStage_;
+    QVariantMap scanResult_;
+    QString scanError_;
+    bool scanDetailFromStereo_ = true;
+    std::shared_ptr<measure::ScanMesh> scanMesh_;
+    std::shared_ptr<std::atomic<bool>> scanCancel_;
+    int scanGeneration_ = 0;
+    QStringList nextScanFiles_;
 };
 
 } // namespace os::ui

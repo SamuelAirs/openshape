@@ -265,6 +265,7 @@ Rectangle {
                             ["Photo", "Photograph the thing with a bank card or a sheet of paper flat beside it, check the four corners, Straighten, then click two ends (Distance), the corners (Outline) or three points on a rim (Circle)",
                              "Photograph the thing with a bank card or a sheet of paper flat beside it, check the four corners, Straighten, then tap two ends (Distance), the corners (Outline) or three points on a rim (Circle)"],
                             ["Camera", "iPhone or iPad: Distance, Outline or Box in the camera's view (AR); Make sketch or Make box from the result"],
+                            ["Scan", "Stand the object on a sheet of A4 or Letter paper, take 8 to 12 photos all around from about 45° above (all four paper corners in each), check the corners, Build, then Add to design: a body of its shape"],
                             ["Into a value box", "The ruler button in a value box opens Measure for it; Use (e.g. Use 42.3 mm) types the value there"],
                             ["Kept measurements", "Keep saves a reading (Length 3, Angle 1, …); click one in the list to use, rename or delete it",
                              "Keep saves a reading (Length 3, Angle 1, …); tap one in the list to use, rename or delete it"]
