@@ -465,8 +465,12 @@ private:
         QString source;
         bool used = false;
         QString problem;
+        // The lens as a 35 mm equivalent from the photo's EXIF (the picker
+        // reads it before re-encoding; still right after resizing, being
+        // relative to the frame); 0: the engine estimates it from the paper.
+        double focal35mm = 0;
     };
-    void addScanFilesFrom(const QStringList& files, bool ownFiles);
+    void addScanFilesFrom(const QStringList& files, bool ownFiles, const QList<double>& focals = {});
     void scanPickedPhoto(const PhotoResult& result);
     void runScanWork(std::function<void()> work, std::function<void()> done);
     void updateScanBusy();

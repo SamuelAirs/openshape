@@ -171,7 +171,7 @@ void MeasureController::runScanWork(std::function<void()> work, std::function<vo
 void MeasureController::scanPickedPhoto(const PhotoResult& result)
 {
     if (result.outcome == PhotoResult::Outcome::Picked)
-        addScanFilesFrom({result.file}, true);
+        addScanFilesFrom({result.file}, true, {result.focalLength35mm});
     else if (result.outcome == PhotoResult::Outcome::Failed) {
         scanError_ = result.error.isEmpty() ? QStringLiteral("The photo couldn't be read.") : result.error;
         emit scanChanged();
@@ -202,11 +202,14 @@ void MeasureController::scanChoosePhotos(const QRectF& anchor)
             if (!self)
                 return;
             QStringList files;
+            QList<double> focals;
             for (const PhotoResult& r : results)
-                if (r.outcome == PhotoResult::Outcome::Picked)
+                if (r.outcome == PhotoResult::Outcome::Picked) {
                     files << r.file;
+                    focals << r.focalLength35mm;
+                }
             if (!files.isEmpty())
-                self->addScanFilesFrom(files, true);
+                self->addScanFilesFrom(files, true, focals);
         });
     } else if (devices_.pickPhoto) {
         devices_.pickPhoto(window(), PhotoOrigin::Library, photoFolder(), anchor, [self](const PhotoResult& r) {
@@ -236,10 +239,11 @@ void MeasureController::scanAddFiles(const QVariantList& files)
         addScanFilesFrom(list, false);
 }
 
-void MeasureController::addScanFilesFrom(const QStringList& filesIn, bool ownFiles)
+void MeasureController::addScanFilesFrom(const QStringList& filesIn, bool ownFiles, const QList<double>& focalsIn)
 {
     const int room = kMaxScanPhotos - int(scanPhotos_.size());
     QStringList files = filesIn.mid(0, std::max(0, room));
+    const QList<double> focals = focalsIn.mid(0, std::max(0, room));
     if (files.isEmpty()) {
         scanError_ = QStringLiteral("A scan takes up to %1 photos.").arg(kMaxScanPhotos);
         emit scanChanged();
@@ -267,7 +271,7 @@ void MeasureController::addScanFilesFrom(const QStringList& filesIn, bool ownFil
     const auto detect = devices_.detectRectangle;
     const auto subject = devices_.subjectMask;
     runScanWork(
-        [results, errors, files, copies, detect, subject] {
+        [results, errors, files, copies, focals, detect, subject] {
             for (int i = 0; i < files.size(); ++i) {
                 QImageReader reader(files[i]);
                 reader.setAutoTransform(true);
@@ -287,6 +291,7 @@ void MeasureController::addScanFilesFrom(const QStringList& filesIn, bool ownFil
                 e.file = copies[i];
                 e.width = image.width();
                 e.height = image.height();
+                e.focal35mm = i < focals.size() && focals[i] > 0 ? focals[i] : 0.0;
                 if (detect)
                     if (const auto c = detect(e.file)) {
                         for (int k = 0; k < 4; ++k)
@@ -421,6 +426,7 @@ bool MeasureController::scanBuild()
                 p.height = img.height();
                 p.stride = int(img.bytesPerLine());
                 p.bytesPerPixel = 3;
+                p.focal35mm = photos[i].focal35mm; // from EXIF when the picker found it
                 for (int k = 0; k < 4; ++k)
                     p.paperCorners[std::size_t(k)] = {photos[i].corners[std::size_t(k)].x(), photos[i].corners[std::size_t(k)].y()};
                 if (!masks[i].isNull()) {
