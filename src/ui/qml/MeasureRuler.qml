@@ -342,11 +342,13 @@ Item {
         readonly property real pos: ruler.along(mm)
         anchors.fill: parent
 
+        // The line, from the ticks (the numbers stay readable) across.
         Rectangle {
-            x: ruler.vertical ? 0 : jaw.pos - 1
-            y: ruler.vertical ? jaw.pos - 1 : 0
-            width: ruler.vertical ? ruler.width : 2
-            height: ruler.vertical ? 2 : ruler.height
+            readonly property real start: (ruler.vertical ? strip.width : strip.height) - 30
+            x: ruler.vertical ? start : jaw.pos - 1
+            y: ruler.vertical ? jaw.pos - 1 : start
+            width: ruler.vertical ? ruler.width - start : 2
+            height: ruler.vertical ? 2 : ruler.height - start
             color: Theme.accent
         }
         // The handle.

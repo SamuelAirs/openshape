@@ -151,17 +151,57 @@ Item {
 
         // The result.
         MeasureCard {
+            id: resultCard
             objectName: "cameraResult"
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumHeight: 56
             clip: true
-            // A narrow window gives its room to the readout instead.
-            opacity: height >= 110 ? 1 : 0
+            // Too little room for a drawing (the iPhone Duo's outer display):
+            // the result in one line.
+            readonly property bool compact: height < 150
+
+            Row {
+                objectName: "cameraResultCompact"
+                anchors.centerIn: parent
+                visible: resultCard.compact && camera.hasResult
+                spacing: 10
+                LineIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: camera.resultMode === "box" ? "box" : camera.resultMode === "outline" ? "sketch_polygon" : "distance"
+                    size: 22
+                    color: Theme.accent
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, resultCard.width - 70)
+                    elide: Text.ElideRight
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                    font.features: ({ "tnum": 1 })
+                    color: Theme.text
+                    text: {
+                        if (!camera.hasResult || !camera.m)
+                            return ""
+                        const r = camera.result
+                        const len = (v) => camera.m.formatNumber("length", v)
+                        const unit = camera.m.unitSymbol("length")
+                        if (camera.resultMode === "box")
+                            return len(r.width) + " × " + len(r.depth) + " × " + len(r.height) + " " + unit
+                        if (camera.resultMode === "outline")
+                            return r.sides.length + " sides · " + len(r.boundsWidth) + " × " + len(r.boundsHeight) + " " + unit
+                        return r.distances.length > 1 ? r.distances.length + " segments · " + camera.m.formatValue("length", r.total)
+                                                      : camera.m.formatValue("length", r.total)
+                    }
+                }
+            }
 
             Text {
                 anchors.centerIn: parent
                 width: parent.width - 48
                 visible: !camera.hasResult
+                maximumLineCount: resultCard.compact ? 2 : 6
+                elide: Text.ElideRight
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 text: camera.result && camera.result.outcome === "failed" ? (camera.result.error || "The camera couldn't measure.")
@@ -173,7 +213,7 @@ Item {
             // Distance: the segments.
             Column {
                 anchors.centerIn: parent
-                visible: camera.resultMode === "distance"
+                visible: camera.resultMode === "distance" && !resultCard.compact
                 spacing: 6
                 Repeater {
                     model: camera.resultMode === "distance" ? camera.result.distances : []
@@ -196,7 +236,7 @@ Item {
                 id: outlineView
                 anchors.fill: parent
                 anchors.margins: 28
-                visible: camera.resultMode === "outline"
+                visible: camera.resultMode === "outline" && !resultCard.compact
                 readonly property var pts: camera.resultMode === "outline" ? camera.result.outline : []
                 readonly property real bw: camera.resultMode === "outline" ? Math.max(1, camera.result.boundsWidth) : 1
                 readonly property real bh: camera.resultMode === "outline" ? Math.max(1, camera.result.boundsHeight) : 1
@@ -255,7 +295,7 @@ Item {
                 id: boxView
                 anchors.fill: parent
                 anchors.margins: 28
-                visible: camera.resultMode === "box"
+                visible: camera.resultMode === "box" && !resultCard.compact
                 readonly property real biggest: camera.resultMode === "box" ? Math.max(1, camera.result.width, camera.result.depth, camera.result.height) : 1
                 readonly property real wn: camera.resultMode === "box" ? Math.max(0.25, camera.result.width / biggest) : 1
                 readonly property real dn: camera.resultMode === "box" ? Math.max(0.25, camera.result.depth / biggest) : 1

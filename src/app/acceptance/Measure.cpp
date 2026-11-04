@@ -48,6 +48,7 @@
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
 #include <QtGui/QPainterPath>
+#include <QtGui/QEventPoint>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
@@ -645,7 +646,9 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(st->haptics == st->count + 1, say("fold: a tap is felt once"), QString::number(st->haptics - st->count));
         r.check(text(r, QStringLiteral("foldHoldText")).startsWith(QStringLiteral("Held")), say("fold: the pill says held"), text(r, QStringLiteral("foldHoldText")));
         r.check(text(r, QStringLiteral("foldValue")) == QString::number(m.foldHeld(), 'f', 1), say("fold: the angle, huge"), text(r, QStringLiteral("foldValue")));
-        r.check(std::abs(readoutNumber(r) - m.foldHeld()) < 0.06, say("fold: the readout shows the held angle"));
+        r.check(std::abs(readoutNumber(r) - m.foldHeld()) < 0.06 && !shown(r, QStringLiteral("measureReadoutValue"))
+                    && text(r, QStringLiteral("measureReadoutCaption")) == QStringLiteral("Angle · held"),
+                say("fold: the readout keeps the held angle without repeating its number on a phone"), text(r, QStringLiteral("measureReadoutCaption")));
         checkLayout(r, kPhone, QStringLiteral("phone fold"));
         r.screenshot(QStringLiteral("measure_fold_phone"));
         // Moving on: the hold stays until the next steady stretch.
@@ -761,7 +764,35 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         checkLayout(r, kPhone, QStringLiteral("phone photo corners"));
         r.screenshot(QStringLiteral("measure_photo_corners_phone"));
         st->corner = m.corners()[1].toPointF();
+        r.check(r.tapItem(QStringLiteral("photoRef_rectangle")), say("photo: a rectangle of typed sides"));
     });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(shown(r, QStringLiteral("measureKeypad")) && shown(r, QStringLiteral("photoSideA")), say("rectangle: the keypad opens for its long side"));
+        bool all = true;
+        for (const char* key : {"1", "2", "0", "next", "8", "5"})
+            all = r.tapItem(QStringLiteral("keypadKey_") + QString::fromLatin1(key)) && all;
+        r.check(all, say("rectangle: 120, Next, 85 on the keypad"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        auto& m = measureOf(r);
+        r.check(text(r, QStringLiteral("photoSideA")) == QStringLiteral("120") && text(r, QStringLiteral("photoSideB")) == QStringLiteral("85"),
+                say("rectangle: the sides show what was typed"),
+                text(r, QStringLiteral("photoSideA")) + QStringLiteral(" x ") + text(r, QStringLiteral("photoSideB")));
+        r.check(m.referenceKind() == QStringLiteral("rectangle") && std::abs(m.referenceSideA() - 120) < 1e-9 && std::abs(m.referenceSideB() - 85) < 1e-9,
+                say("rectangle: the reference is 120 x 85 mm"));
+        checkLayout(r, kPhone, QStringLiteral("phone rectangle keypad"));
+        r.screenshot(QStringLiteral("measure_photo_rectangle_phone"));
+        r.check(r.tapItem(QStringLiteral("keypadKey_done")), say("rectangle: ✓"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(!shown(r, QStringLiteral("measureKeypad")), say("rectangle: the keypad closes"));
+        r.check(r.tapItem(QStringLiteral("photoRef_card")), say("photo: back to the card"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] { r.check(measureOf(r).referenceKind() == QStringLiteral("card"), say("photo: the card again")); });
     fingerDrag(steps, r, st, [&r] { return center(r, QStringLiteral("photoCorner_1")); }, QPointF(-14, 10), 6, [&r, st] {
         st->loupeSeen = shown(r, QStringLiteral("photoLoupe"));
         r.screenshot(QStringLiteral("measure_photo_loupe_phone"));
@@ -791,9 +822,34 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
     steps.push_back([&r, st] { r.check(tapTable(r, st, kBarA) , say("photo (phone): tap the bar's end")); });
     steps.push_back([&r, st] { r.check(tapTable(r, st, kBarB), say("photo (phone): tap its other end")); });
     wait(steps, 1);
-    steps.push_back([&r] {
+    steps.push_back([&r, st] {
         r.check(std::abs(readoutNumber(r) - 100) < 2, say("photo (phone): about 100 mm"), text(r, QStringLiteral("measureReadoutValue")));
         r.screenshot(QStringLiteral("measure_photo_distance_phone"));
+        st->ringCenter = center(r, QStringLiteral("photoStraightView"));
+        st->count = int(prop(r, QStringLiteral("measurePhoto"), "points").toList().size());
+        r.touchFrame({st->ringCenter - QPointF(40, 0), st->ringCenter + QPointF(40, 0)}, QEventPoint::State::Pressed);
+    });
+    for (int i = 1; i <= 6; ++i)
+        steps.push_back([&r, st, i] {
+            const QPointF d(40 + 16 * i, 0);
+            r.touchFrame({st->ringCenter - d, st->ringCenter + d}, QEventPoint::State::Updated);
+        });
+    steps.push_back([&r, st] {
+        const QPointF d(40 + 16 * 6, 0);
+        r.touchFrame({st->ringCenter - d, st->ringCenter + d}, QEventPoint::State::Released);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        const double zoom = prop(r, QStringLiteral("photoStraightView"), "zoom").toDouble();
+        r.check(zoom > 2, say("photo: two fingers zoom in"), AcceptanceRunner::num(zoom));
+        r.check(int(prop(r, QStringLiteral("measurePhoto"), "points").toList().size()) == st->count, say("photo: a pinch adds no point"));
+        r.check(shown(r, QStringLiteral("photoStraightImageFit")), say("photo: Fit is offered"));
+        r.screenshot(QStringLiteral("measure_photo_zoomed_phone"));
+        r.check(r.tapItem(QStringLiteral("photoStraightImageFit")), say("photo: tap Fit"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(std::abs(prop(r, QStringLiteral("photoStraightView"), "zoom").toDouble() - 1) < 1e-9, say("photo: the whole photo again"));
     });
 
     // ---- a value for a value box
@@ -964,7 +1020,25 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(std::abs(d - 30) < 0.45, say("circle: the washer, 30 mm across within 1.5 %"), AcceptanceRunner::num(d));
         r.check(shown(r, QStringLiteral("photoCircle")), say("circle: drawn on the photo"));
         r.screenshot(QStringLiteral("measure_photo_circle_desktop"));
+        const bool designTakesImages = r.app().metaObject()->indexOfMethod("addReferenceImage(QString,double,QString)") >= 0;
+        r.check(shown(r, QStringLiteral("measureAction_placeImage")) == designTakesImages,
+                say(designTakesImages ? "Place in design is offered" : "no Place in design until the design takes images"));
     });
+    steps.push_back([&r, st] {
+        // The wheel zooms at the pointer: the photo's point there stays put.
+        st->dragFrom = onStraight(r, st, kWasher).value_or(QPointF());
+        r.wheel(st->dragFrom, 3);
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        const double zoom = prop(r, QStringLiteral("photoStraightView"), "zoom").toDouble();
+        const QPointF now = onStraight(r, st, kWasher).value_or(QPointF());
+        r.check(zoom > 1.2 && QLineF(now, st->dragFrom).length() < 1.5, say("photo: the wheel zooms at the pointer"),
+                QStringLiteral("%1x, moved %2").arg(zoom).arg(QLineF(now, st->dragFrom).length()));
+        r.screenshot(QStringLiteral("measure_photo_zoomed_desktop"));
+        r.check(r.tapItem(QStringLiteral("photoStraightImageFit")), say("photo: Fit"));
+    });
+    wait(steps, 1);
 
     // ---- the camera (AR)
     steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("measureTab_camera")), say("camera: tap Camera")); });

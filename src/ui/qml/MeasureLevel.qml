@@ -30,6 +30,8 @@ Item {
             items: [{ label: level.label, quantity: "angle", value: Math.abs(shown) }] }
     readonly property var actions: []
     function runAction(key) {}
+    // The reading is shown huge here: a narrow window's readout leaves its number out.
+    readonly property bool showsReading: available
 
     Connections {
         target: level.m

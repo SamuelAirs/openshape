@@ -35,7 +35,12 @@ Item {
     readonly property bool narrow: width < 560
 
     onModeChanged: clearPoints()
-    onStageChanged: if (stage !== "measure") clearPoints()
+    onStageChanged: {
+        if (stage !== "measure")
+            clearPoints()
+        if (screen)
+            screen.closeKeypad()
+    }
     function clearPoints() {
         points = []
         closed = false
@@ -91,11 +96,30 @@ Item {
         }
         return none
     }
-    readonly property var actions: stage !== "measure" ? []
-        : mode === "outline" && closed ? [{ key: "outlineSketch", label: "Make sketch", icon: "sketch" }]
-        : mode === "circle" && circle && circle.valid ? [{ key: "circleSketch", label: "Make sketch", icon: "sketch_circle" }]
-        : []
+    // The design can take the straightened photo as a reference image
+    // (AppController::addReferenceImage, where it is there).
+    readonly property bool canPlace: screen && screen.app && typeof screen.app.addReferenceImage === "function"
+    readonly property var actions: {
+        if (stage !== "measure")
+            return []
+        const list = []
+        if (mode === "outline" && closed)
+            list.push({ key: "outlineSketch", label: "Make sketch", icon: "sketch" })
+        if (mode === "circle" && circle && circle.valid)
+            list.push({ key: "circleSketch", label: "Make sketch", icon: "sketch_circle" })
+        if (canPlace)
+            list.push({ key: "placeImage", label: "Place in design", icon: "photo" })
+        return list
+    }
     function runAction(key) {
+        if (key === "placeImage") {
+            const file = m.keepStraightImage()
+            if (file !== "" && screen.app.addReferenceImage(file, m.straightMmPerPixel, "XY"))
+                screen.close()
+            else
+                screen.toast("The photo couldn't be placed in the design", true)
+            return
+        }
         let made = false
         if (key === "outlineSketch")
             made = m.makeOutlineSketch(m.straightToMm(points), true)
@@ -202,7 +226,13 @@ Item {
                 model: [{ key: "card", label: "Card" }, { key: "a4", label: "A4" }, { key: "letter", label: "Letter" },
                         { key: "rectangle", label: photo.narrow ? "Other" : "Rectangle" }]
                 current: photo.m ? photo.m.referenceKind : "card"
-                onPicked: (key) => photo.m.setReference(key, parseFloat(sideA.text) || 0, parseFloat(sideB.text) || 0)
+                onPicked: (key) => {
+                    photo.m.setReference(key, photo.m.parseLengthMm(sideA.text), photo.m.parseLengthMm(sideB.text))
+                    if (key === "rectangle" && Theme.touch && sideA.text === "")
+                        sideA.edit()
+                    else if (key !== "rectangle")
+                        photo.screen.closeKeypad()
+                }
             }
             Item { Layout.fillWidth: true; visible: !photo.narrow }
             ActionButton {
@@ -222,10 +252,10 @@ Item {
             visible: photo.m && photo.m.referenceKind === "rectangle"
             spacing: 8
             Text { text: "Sides"; font.pixelSize: 13; color: Theme.mutedText }
-            SideField { id: sideA; objectName: "photoSideA"; placeholderText: "Long" }
+            SideField { id: sideA; objectName: "photoSideA"; placeholderText: "Long"; next: sideB; label: "Long side" }
             Text { text: "×"; font.pixelSize: 15; color: Theme.mutedText }
-            SideField { id: sideB; objectName: "photoSideB"; placeholderText: "Short" }
-            Text { text: "mm"; font.pixelSize: 13; color: Theme.mutedText }
+            SideField { id: sideB; objectName: "photoSideB"; placeholderText: "Short"; label: "Short side" }
+            Text { text: photo.m ? photo.m.unitSymbol("length") : "mm"; font.pixelSize: 13; color: Theme.mutedText }
             Item { Layout.fillWidth: true }
         }
 
@@ -505,7 +535,8 @@ Item {
             MouseArea {
                 objectName: "photoTapArea"
                 anchors.fill: parent
-                preventStealing: true
+                // A second finger (a pinch) takes over: no point is added.
+                preventStealing: false
                 property int dragging: -1
                 property point pressAt
                 property bool moved: false
@@ -638,7 +669,9 @@ Item {
     }
 
     // A photo fitted into the room, with what is drawn over it in view
-    // coordinates (toView / toImage convert from and to the photo's pixels).
+    // coordinates (toView / toImage convert from and to the photo's
+    // pixels). Two fingers zoom (pinch, up to 8x) and pan it; the wheel or a
+    // trackpad zooms at the pointer; Fit goes back.
     component PhotoView: Item {
         id: pv
         property url source
@@ -646,19 +679,40 @@ Item {
         property string imageName
         property bool checkered: false
         default property alias overlays: overlayLayer.data
-        readonly property real fit: sourceSize.width > 0 && sourceSize.height > 0
+        property real zoom: 1
+        property real panX: 0
+        property real panY: 0
+        readonly property real baseFit: sourceSize.width > 0 && sourceSize.height > 0
             ? Math.min(width / sourceSize.width, height / sourceSize.height) : 1
-        readonly property real imageX: (width - sourceSize.width * fit) / 2
-        readonly property real imageY: (height - sourceSize.height * fit) / 2
+        readonly property real fit: baseFit * zoom
+        readonly property real imageX: (width - sourceSize.width * fit) / 2 + panX
+        readonly property real imageY: (height - sourceSize.height * fit) / 2 + panY
         property alias image: img
         function toView(p) { return Qt.point(imageX + p.x * fit, imageY + p.y * fit) }
         function toImage(p) {
             return Qt.point(Math.max(0, Math.min(sourceSize.width, (p.x - imageX) / fit)),
                             Math.max(0, Math.min(sourceSize.height, (p.y - imageY) / fit)))
         }
+        function rawImage(p) { return Qt.point((p.x - imageX) / fit, (p.y - imageY) / fit) }
         function inside(p) {
             return p.x >= imageX && p.y >= imageY && p.x <= imageX + sourceSize.width * fit && p.y <= imageY + sourceSize.height * fit
         }
+        // Zooms to `z` with the photo's point `imagePoint` under `anchor` (view coordinates).
+        function zoomAt(z, anchor, imagePoint) {
+            zoom = Math.max(1, Math.min(8, z))
+            const f = baseFit * zoom
+            const mx = Math.max(0, (sourceSize.width * f - width) / 2)
+            const my = Math.max(0, (sourceSize.height * f - height) / 2)
+            panX = Math.max(-mx, Math.min(mx, anchor.x - imagePoint.x * f - (width - sourceSize.width * f) / 2))
+            panY = Math.max(-my, Math.min(my, anchor.y - imagePoint.y * f - (height - sourceSize.height * f) / 2))
+        }
+        function resetView() {
+            zoom = 1
+            panX = 0
+            panY = 0
+        }
+        onSourceChanged: resetView()
+        onWidthChanged: if (zoom === 1) resetView()
         clip: true
         Rectangle {
             x: pv.imageX
@@ -676,8 +730,8 @@ Item {
             width: pv.sourceSize.width * pv.fit
             height: pv.sourceSize.height * pv.fit
             source: pv.source
-            // At most what the screen shows (the file stays on disk).
-            sourceSize.width: Math.min(2048, Math.ceil(width * 3))
+            // Read once at a size that stays sharp when zoomed (the file stays on disk).
+            sourceSize.width: Math.min(2048, Math.max(1, pv.sourceSize.width))
             asynchronous: true
             cache: false
             smooth: true
@@ -686,6 +740,63 @@ Item {
         Item {
             id: overlayLayer
             anchors.fill: parent
+        }
+        // Above the taps and handles: one finger passes through, two zoom and pan.
+        Item {
+            objectName: pv.imageName + "Gestures"
+            anchors.fill: parent
+            z: 20
+            PinchHandler {
+                id: pinch
+                target: null
+                minimumPointCount: 2
+                maximumPointCount: 2
+                property real startZoom: 1
+                property point startImage
+                onActiveChanged: {
+                    if (active) {
+                        startZoom = pv.zoom
+                        startImage = pv.rawImage(centroid.position)
+                    }
+                }
+                onActiveScaleChanged: if (active) pv.zoomAt(startZoom * activeScale, centroid.position, startImage)
+                onCentroidChanged: if (active) pv.zoomAt(startZoom * activeScale, centroid.position, startImage)
+            }
+            WheelHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: (event) => {
+                    const at = point.position
+                    pv.zoomAt(pv.zoom * Math.pow(2, event.angleDelta.y / 480), at, pv.rawImage(at))
+                }
+            }
+        }
+        // Back to the whole photo.
+        AbstractButton {
+            objectName: pv.imageName + "Fit"
+            visible: pv.zoom > 1.01
+            z: 21
+            anchors { right: parent.right; top: parent.top; margins: 8 }
+            implicitWidth: fitRow.implicitWidth + 24
+            implicitHeight: 36
+            focusPolicy: Qt.NoFocus
+            onClicked: pv.resetView()
+            background: Rectangle { radius: 18; color: Theme.toast; opacity: parent.pressed ? 0.8 : 0.92 }
+            contentItem: Item {
+                Row {
+                    id: fitRow
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Fit · " + pv.zoom.toFixed(1) + "×"
+                        color: "white"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        font.features: ({ "tnum": 1 })
+                    }
+                }
+            }
         }
     }
 
@@ -737,21 +848,65 @@ Item {
     }
 
     component SideField: TextField {
-        Layout.preferredWidth: 84
+        id: side
+        property Item next: null
+        property string label
+        // The keypad types into it on touch (as the value boxes do); a
+        // hardware keyboard still types.
+        readonly property bool keypadOpen: photo.screen && photo.screen.keypadClient === client
+        readonly property var client: ({
+            name: "measureSide",
+            mode: () => "length",
+            hasNext: () => side.next !== null,
+            text: () => side.text,
+            replacing: () => side.text.length > 0 && side.selectedText === side.text,
+            setText: (text, replacing) => {
+                side.text = text
+                if (replacing)
+                    side.selectAll()
+                else
+                    side.cursorPosition = text.length
+                side.apply()
+            },
+            next: () => { if (side.next) side.next.edit() },
+            done: () => photo.screen.closeKeypad(),
+            target: () => side.mapToItem(null, 0, 0, side.width, side.height),
+            keepClear: "",
+            display: () => side.text,
+            displayName: () => side.label
+        })
+        function apply() {
+            photo.m.setReference("rectangle", photo.m.parseLengthMm(sideA.text), photo.m.parseLengthMm(sideB.text))
+        }
+        function edit() {
+            forceActiveFocus()
+            selectAll()
+            if (Theme.touch)
+                photo.screen.openKeypad(client)
+        }
+        Layout.preferredWidth: 92
         implicitHeight: Theme.controlHeight
         font.pixelSize: 15
         font.features: ({ "tnum": 1 })
         color: Theme.text
         horizontalAlignment: Text.AlignRight
+        readOnly: Theme.touch // the keypad, not the system keyboard
         inputMethodHints: Qt.ImhFormattedNumbersOnly
-        validator: DoubleValidator { bottom: 0; top: 10000; decimals: 2; notation: DoubleValidator.StandardNotation }
-        selectByMouse: true
-        onTextEdited: photo.m.setReference("rectangle", parseFloat(sideA.text) || 0, parseFloat(sideB.text) || 0)
+        selectByMouse: !Theme.touch
+        onTextEdited: apply()
+        Keys.onPressed: (event) => {
+            if (Theme.touch && keypadOpen && photo.screen.keypadHardwareKey(event))
+                event.accepted = true
+        }
+        TapHandler {
+            enabled: Theme.touch
+            onTapped: side.edit()
+        }
         background: Rectangle {
             radius: 8
             color: "white"
-            border.color: parent.activeFocus ? Theme.accent : Theme.panelBorder
-            border.width: parent.activeFocus ? 1.5 : 1
+            border.color: side.activeFocus || side.keypadOpen ? Theme.accent : Theme.panelBorder
+            border.width: side.activeFocus || side.keypadOpen ? 1.5 : 1
         }
     }
 }

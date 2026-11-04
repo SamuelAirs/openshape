@@ -77,6 +77,9 @@ public:
     void touchPress(QPointF p);
     void touchMove(QPointF p);
     void touchRelease(QPointF p);
+    // One touch frame: every finger of `points` in `state` (several fingers
+    // moving together: a pinch).
+    void touchFrame(const QList<QPointF>& points, QEventPoint::State state);
     // The pen (an Apple Pencil, tilted, no pressure) through Qt's tablet
     // path: hovering (no contact; an iPad's Pencil hover), down, moved,
     // lifted. As on iOS, Qt turns what no item takes into mouse events.
@@ -138,8 +141,6 @@ private:
     std::vector<Step> coreScenario();
     // One pen event (`buttons`: Left while it touches the screen).
     void penEvent(QPointF p, Qt::MouseButtons buttons);
-    // One touch frame: every finger of `points` in `state`.
-    void touchFrame(const QList<QPointF>& points, QEventPoint::State state);
     QString describeClick() const;
 
     QQuickWindow* window_;
