@@ -80,6 +80,17 @@ motion sensors, Vision and ARKit reported.
     the marks? Under half a millimeter means the playing card is a good
     reference; tell me the gap either way. The Fold's Gap calibration and
     Photo's Card now mean the playing card too.
+15. **Find outline (next build; your idea).** Lay a flat part with a hole
+    (a bracket, a washer, a gasket) on plain paper of a contrasting colour
+    (white paper for a dark part, black or blue for a light one), the
+    playing card beside it on the same paper, a finger's width apart. Take
+    the photo from straight above (then once from an angle), Straighten,
+    Outline, **Find outline**. Does the outline sit on the part's edge, with
+    its hole? Compare the width x height and the hole's diameter in the
+    readout with your calipers, and tell me how far off they are. Drag one
+    point and see it follow; then Make sketch, push the shape up a few
+    millimetres and check the hole goes through. Try it once in harsh light
+    (one lamp low to the side) and tell me whether the shadow got in.
 
 ## On Windows (the desktop shortcut)
 

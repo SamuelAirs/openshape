@@ -34,6 +34,11 @@ things").
   circles, in millimeters. Make sketch puts the outline or the circle on the
   ground plane at real size. The reference is found automatically on iPhone
   and iPad (Vision); four handles with a magnifier fix its corners.
+  **Find outline**: a part lying on paper of a contrasting colour beside the
+  card is traced for you, its edge as straight sides, arcs and circles and
+  its holes as inner loops (each point can still be dragged); the readout
+  gives its width x height, area, holes and sides, and Make sketch draws it
+  at real size, holes included, ready to extrude into the part.
 - **Camera** (ARKit): distances in the room, an outline on a surface, or a
   box's width, depth and height, to keep, sketch or make into a box.
 - **Into any value box**: a ruler button in the value box (and beside a
