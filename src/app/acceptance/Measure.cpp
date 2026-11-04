@@ -295,7 +295,8 @@ ui::MeasureDevices standIns(const StatePtr& st)
     };
     d.haptic = [st](int) { ++st->haptics; };
     d.cameraAvailable = [] { return true; };
-    d.pickPhoto = [st](QWindow*, ui::PhotoOrigin, const QString& folder, const QRectF&, std::function<void(const ui::PhotoResult&)> finished) {
+    d.pickPhoto = [st](QWindow*, ui::PhotoOrigin, const ui::CameraOptions&, const QString& folder, const QRectF&,
+                       std::function<void(const ui::PhotoResult&)> finished) {
         ++st->picks;
         QDir().mkpath(folder);
         const QString out = folder + QStringLiteral("/picked_%1.jpg").arg(st->picks);

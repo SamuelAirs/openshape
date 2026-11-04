@@ -46,6 +46,12 @@ things").
   views** puts each straightened photo at true size on its plane with a
   tapped origin point at the design's origin, and its outlines as sketches
   on that plane.
+- **FoldForm's own camera** for Take photo: a straight-down level (two
+  crosses that meet and turn green within 1°, "0.6° off"), and for Scan the
+  camera's angle against the 35–55° band; **Last photo** shows the previous
+  photo faintly over the view (keep the card still, move the part, match
+  it); 1×, 2× and the telephoto; the flash off. The photo that comes out is
+  the same upright JPEG with its focal length (the zoom counted).
 - **Camera** (ARKit): distances in the room, an outline on a surface, or a
   box's width, depth and height, to keep, sketch or make into a box.
 - **Into any value box**: a ruler button in the value box (and beside a

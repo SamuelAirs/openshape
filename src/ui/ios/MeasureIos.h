@@ -21,6 +21,8 @@
 #error "MeasureIos.h is for the iOS Objective-C++ files (src/ui/ios/*.mm)"
 #endif
 
+@class NSData;
+@class NSString;
 @class UIView;
 @class UIViewController;
 
@@ -37,11 +39,26 @@ UIViewController* presenterFor(UIView* view);
 // The message for a camera FoldForm may not use.
 QString cameraDeniedMessage();
 
+// Gravity in `view`'s frame (x right, y down, z out of the glass, by its
+// scene's interface orientation) about 30 times a second, on the main
+// thread, like MeasureDevices::watchGravity. Returns how to stop.
+StopWatching watchGravityIn(UIView* view, std::function<void(const GravityReading&)> handler);
+
 // PhotoPickerIos.mm.
-void pickPhoto(QWindow* window, PhotoOrigin origin, const QString& folder, const QRectF& anchor,
-               std::function<void(const PhotoResult&)> finished);
+void pickPhoto(QWindow* window, PhotoOrigin origin, const CameraOptions& camera, const QString& folder,
+               const QRectF& anchor, std::function<void(const PhotoResult&)> finished);
 void pickPhotos(QWindow* window, int maxCount, const QString& folder, const QRectF& anchor,
                 std::function<void(const std::vector<PhotoResult>&)> finished);
+
+// CameraScreenIos.mm: FoldForm's own camera screen (AVFoundation), full
+// screen over `presenter`, with the level or Scan's angle and the overlay
+// that `options` asks for. `done` runs once, on the main thread, after the
+// screen started to go away: the photo as the camera encoded it (HEIC or
+// JPEG, its EXIF orientation that of the preview as shown) and its 35 mm
+// focal length (0: unknown); no photo and no error: cancelled. The camera
+// permission is asked before (PhotoPickerIos.mm).
+using CameraShotDone = std::function<void(NSData* photo, double focalLength35mm, NSString* error)>;
+void presentCameraScreen(UIViewController* presenter, const CameraOptions& options, CameraShotDone done);
 
 // ArMeasureIos.mm.
 ArCapabilities arCapabilities();

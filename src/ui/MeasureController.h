@@ -461,6 +461,8 @@ private:
     void adoptPickedFile(const QString& file);
     void setPhotoError(const QString& error);
     void forgetFile(const QString& file);
+    // The camera's latest photo is kept for the next one's overlay ("": none).
+    void keepCameraPhoto(const QString& file);
 
     AppController* app_;
     QPointer<QQuickWindow> window_;
@@ -512,6 +514,7 @@ private:
     int photoGeneration_ = 0;
     std::vector<QThread*> workers_;
     QString photoFile_; // the upright photo measured (in photoFolder)
+    QString lastCameraPhoto_; // the camera's latest photo: the next one's overlay (CameraOptions)
     QUrl photoUrl_;
     QSizeF photoSize_;
     std::array<QPointF, 4> corners_{};

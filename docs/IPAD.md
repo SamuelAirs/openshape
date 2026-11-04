@@ -589,7 +589,11 @@ native code in `src/ui/ios/` (Objective-C++, compiled only by the Mac CI):
 taps felt in the hand; Vision's rectangle finder and subject mask),
 `PhotoPickerIos.mm` (the camera, asking for it once with
 `NSCameraUsageDescription`, and the system photo picker `PHPickerViewController`,
-which needs no permission, for one photo or a scan's several) and
+which needs no permission, for one photo or a scan's several),
+`CameraScreenIos.mm` (FoldForm's own camera screen for Take photo: AVFoundation's
+preview and photo output, the straight-down level or Scan's angle, the last photo
+as an overlay, 1x / 2x / the telephoto; `kOwnCameraScreen` in `PhotoPickerIos.mm`
+falls back to the system camera) and
 `ArMeasureIos.mm` (a full-screen ARKit view with a crosshair, Add point,
 Undo, Done and Cancel; LiDAR depth where there is one). The desktop has none
 of these (`MeasureDevices.cpp` returns empty functions). Every step logs a

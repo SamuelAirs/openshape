@@ -6,7 +6,8 @@
 // docs/MEASURE.md): the iPhone Duo's hinge (UIHingeInteraction, iOS 27.1),
 // gravity from CoreMotion turned into the window's frame, taps felt in the
 // hand, whether there is a camera, and Vision's rectangle finder. The photo
-// pickers are in PhotoPickerIos.mm, the AR view in ArMeasureIos.mm.
+// pickers are in PhotoPickerIos.mm, the camera screen in CameraScreenIos.mm,
+// the AR view in ArMeasureIos.mm.
 // Compiled for iOS only, with ARC (src/ui/CMakeLists.txt). The deployment
 // target is iOS 17; anything newer is guarded with @available.
 
@@ -315,7 +316,7 @@ void stopGravity(int key)
     }
 }
 
-StopWatching watchGravity(QWindow* window, std::function<void(const GravityReading&)> handler)
+StopWatching watchGravityOf(UIView* view, std::function<void(const GravityReading&)> handler)
 {
     CMMotionManager* manager = motionManager();
     if (![manager isDeviceMotionAvailable]) {
@@ -325,7 +326,7 @@ StopWatching watchGravity(QWindow* window, std::function<void(const GravityReadi
     static int nextId = 0;
     GravityWatcher watcher;
     watcher.key = ++nextId;
-    watcher.view = hostView(window);
+    watcher.view = view;
     watcher.handler = std::move(handler);
     const int key = watcher.key;
     gravityWatchers().push_back(std::move(watcher));
@@ -338,6 +339,11 @@ StopWatching watchGravity(QWindow* window, std::function<void(const GravityReadi
         qInfo("Measure: watching gravity (device motion at 30 Hz)");
     }
     return [key]() { stopGravity(key); };
+}
+
+StopWatching watchGravity(QWindow* window, std::function<void(const GravityReading&)> handler)
+{
+    return watchGravityOf(hostView(window), std::move(handler));
 }
 
 // ---- Haptics
@@ -597,6 +603,13 @@ bool subjectMask(const QString& photoFile, const QString& maskFile)
 
 } // namespace
 
+// The camera screen's level (CameraScreenIos.mm): its own view, whose
+// orientation is the screen's while the Qt view is covered.
+StopWatching measureios::watchGravityIn(UIView* view, std::function<void(const GravityReading&)> handler)
+{
+    return watchGravityOf(view, std::move(handler));
+}
+
 MeasureDevices platformMeasureDevices()
 {
     MeasureDevices devices;
@@ -605,9 +618,9 @@ MeasureDevices platformMeasureDevices()
     devices.watchGravity = watchGravity;
     devices.haptic = haptic;
     devices.cameraAvailable = cameraAvailable;
-    devices.pickPhoto = [](QWindow* window, PhotoOrigin origin, const QString& folder, const QRectF& anchor,
-                           std::function<void(const PhotoResult&)> finished) {
-        measureios::pickPhoto(window, origin, folder, anchor, std::move(finished));
+    devices.pickPhoto = [](QWindow* window, PhotoOrigin origin, const CameraOptions& camera, const QString& folder,
+                           const QRectF& anchor, std::function<void(const PhotoResult&)> finished) {
+        measureios::pickPhoto(window, origin, camera, folder, anchor, std::move(finished));
     };
     devices.pickPhotos = [](QWindow* window, int maxCount, const QString& folder, const QRectF& anchor,
                             std::function<void(const std::vector<PhotoResult>&)> finished) {

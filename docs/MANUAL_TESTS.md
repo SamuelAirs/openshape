@@ -104,6 +104,19 @@ motion sensors, Vision and ARKit reported.
     the front one stands on the Front plane, the outlines on them at real
     size; Undo four times takes it back. Does the snap feel right (1.5°), is
     the list under the photo enough, and do the views line up in the design?
+17. **FoldForm's own camera (next build; your idea).** Measure → Photo →
+    Take photo: FoldForm's camera opens, not the system's (no "Retake / Use
+    Photo" step). Hold the phone over a playing card on a table: the yellow
+    cross moves as you tilt; flat above the card it meets the white cross,
+    both turn green ("0.6° off") and you feel a tap. Try 1× and 2× (and 5×
+    on the 16 Pro), turn the phone sideways (the buttons move to the side),
+    and on the Duo both displays. Take the photo: the corners step opens as
+    before. New photo → Take photo again: tap **Last photo**; the first
+    photo shows faintly, exactly over the view (does the card line up with
+    its ghost when the phone is where it was?). Then Scan → Take photos:
+    the gauge shows the angle, green between 35° and 55°. Cancel works
+    everywhere. Send the log: its `Measure: camera:` lines give the tilt,
+    the zoom and the focal length of each photo.
 
 ## On Windows (the desktop shortcut)
 
