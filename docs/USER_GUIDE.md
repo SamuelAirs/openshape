@@ -776,6 +776,59 @@ Shell, Extrude, Loft …) with their main values.
   body): their distance and angle, or "Gap … · parallel" for two parallel
   faces.
 
+### Measuring real things (Measure)
+
+**Measure** turns the phone into a measuring tool whose numbers go straight
+into the design. Open it with the ruler button in the top bar (or Measure on
+Home); its instruments are tabs across the top, and what you measure shows
+large at the side with **Keep**.
+
+- **Ruler**: a scale at true size along the screen's long side. Lay a thing
+  on the glass and drag the two jaws to its ends. **Circle**: drag the ring
+  until it fits a coin, a washer or a cap; **Make sketch** draws that circle.
+  iOS doesn't say how big its screens are, so FoldForm starts from its
+  table of iPhones and iPads (the line under the ruler says "estimated"):
+  tap **Check with a card**, lay any bank or ID card on the outline and
+  stretch the outline until it matches the card's edges. The scale is kept
+  for that screen (the iPhone Duo's two displays each get their own).
+- **Fold** (iPhone Duo): the angle between the two halves. Rest the halves
+  on two faces, inside a corner or over an edge; once the phone is still the
+  reading is held (you feel a tap), so you can lift it to read even when the
+  screen faced the part. **Bend** is how far from flat (180° minus the
+  angle). **Gap**: pinch a part between the two free edges; calibrate it
+  once by pinching a card's short or long side. The reading shows how much
+  one degree moves it.
+- **Level**: lying down, a bubble and the surface's slope; standing on an
+  edge, the edge's angle from level. **Keep as reference**, then lay the
+  phone on a second surface the same way round: the angle between the two.
+- **Photo**: photograph a flat thing with a bank card, a sheet of A4 or
+  Letter paper, or any rectangle whose sides you type, lying flat beside it.
+  FoldForm finds the reference's corners where it can; drag the four
+  handles onto its corners (a magnifier shows the spot), then **Straighten**:
+  the photo is redrawn as if seen from straight above, in millimeters.
+  Then **Distance** (two ends), **Outline** (tap the corners, then the first
+  one again: each side and the area) or **Circle** (three points on a rim:
+  the diameter). **Make sketch** puts the outline or the circle on the
+  ground plane at its real size, ready to extrude. Only things lying on the
+  reference's surface measure true; a card gives about half a millimeter
+  over a hand's width, a sheet of paper better.
+- **Camera** (iPhone and iPad with ARKit): measure in the room through the
+  camera. **Distance** (points in space), **Outline** (corners on one
+  surface) or **Box** (three corners of a box's base, then its top). The
+  result comes back to Measure: keep it, **Make sketch** or **Make box**.
+  The camera is good to about a centimeter (better with LiDAR, on the Pro
+  iPhones): for furniture and rooms, not for print tolerances.
+- **Into a value box**: while a push/pull, a fillet, a rotation or another
+  step shows its value box, the ruler button in it opens Measure for that
+  value; **Use 42.3 mm** types the measurement into the box.
+- **Kept measurements**: **Keep** saves a reading as "Length 3", "Angle 1"
+  and so on, listed beside the instrument (chips along the bottom on a
+  phone). Tap one to use it in the value box that asked, rename it or
+  delete it. They stay on the device between projects.
+- Everything stays on your device: photos are kept in FoldForm's temporary
+  folder while you measure, and iOS asks once before FoldForm may use the
+  camera.
+
 ---
 
 ## 3D printing
