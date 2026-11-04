@@ -327,7 +327,49 @@ the hold, the design guide, the playing card): 959/959 headless, the whole
 real-UI run 5484/5484 checks, the lambda check (only `Duo.cpp:529`). Pushed
 `measure` with `[testflight]`: the expected build number is 63 (the v0.3.1
 tag's build is then 64 or later). docs/MANUAL_TESTS.md items 11 to 14 are
-this build's.
+this build's. CI 72 and iPad run 63 passed: **build 63** uploaded.
+
+**Afternoon (2026-11-04): the owner's round on 63, then build 64.** He
+asked what "bank card" meant ("Did you mean like a debit or credit card?")
+and settled on the playing card only. After testing ("Being able to take a
+picture and scale it properly then insert it into the actual design is
+awesome") he asked, before his caliper, design and print test: the ruler as
+close to the bezel as possible; a way to calibrate the Level; in Photo,
+guides to see whether a measurement is straight, several measurements in a
+bunch and side views for a drawing, an automatic outline on contrasting
+paper made into a sketch, a faint overlay of the last photo; Scan on his
+lined legal pad; and, on hearing it was possible, a level in FoldForm's own
+camera ("would actually be elite"). Built (the lead, and four agents on
+their own branches, merged into `measure`):
+- The playing card only (the Photo intro had still said "Lay a bank card").
+- The Ruler against the screen's edge (`MeasureRuler.atEdge`): the open
+  Duo's top edge, 141 mm, the tabs at the bottom; the left edge of a tall
+  window. A kept measurement's card and the guide centre in the safe area.
+- Photo (`measure-photo-guides`): rulers and a grid on the straightened
+  photo, a distance's angle and a snap to straight within 1.5°, every
+  dimension kept on the photo (A, B, C; Keep all), a set of views (Top,
+  Front, Side) and Place views (each photo at true size on its plane, a
+  tapped origin at the design's origin, outlines as sketches). TD-177.
+- Find outline (`measure-auto-outline`, `measure/ObjectOutline`): the part
+  on contrasting paper traced to lines, arcs and holes; Make sketch (and
+  Place views) draw it with its holes. Synthetic: sides within 0.02 mm,
+  extruded volume within 0.02 %. TD-178.
+- The Level (`measure-level-scanpaper`): Calibrate and Check end for end
+  (no level surface needed); Scan: Legal paper and a paper finder for a
+  yellow ruled pad. TD-179.
+- The camera screen (`measure-camera`, `ios/CameraScreenIos.mm`, AVFoundation):
+  a straight-down level, Scan's angle band, the last photo as an overlay,
+  1x/2x/telephoto; reviewed by a second agent before its first compile
+  (three run-time fixes). `kOwnCameraScreen` falls back to the system
+  camera. TD-180.
+
+**Verified on the PC** (`d8637b3`): 972/972 headless; the whole real-UI run
+5974/5974 checks (new scenarios `measurephotoviews`, `measureautooutline`,
+`measurelevelcal`, `measurecamerascreen`); the lambda check (only
+`Duo.cpp:529`). The camera screen compiles only on GitHub's Mac and runs
+only on a device. Pushed with `[testflight]` on the owner's word ("Go to
+TestFlight when ready"): expected **build 64**; docs/MANUAL_TESTS.md items
+15 to 20 are new.
 
 ### Session report (2026-10-31): FoldForm 0.3.0 for the App Store
 
