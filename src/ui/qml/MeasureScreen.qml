@@ -726,6 +726,28 @@ Rectangle {
                         }
                     }
                 }
+                // A length or an angle kept in the open project, under a name
+                // any value box takes (docs/MEASURE.md, "Measurements in the
+                // project"): "shelf_depth - 2".
+                ActionButton {
+                    objectName: "measureChipToProject"
+                    Layout.fillWidth: true
+                    visible: !chipCard.renaming && chipCard.entry !== null
+                             && (chipCard.entry.quantity === "length" || chipCard.entry.quantity === "angle")
+                             && typeof screen.app.addProjectMeasurement === "function"
+                    outlined: true
+                    text: "Add to project"
+                    iconName: "plus"
+                    onClicked: {
+                        const e = chipCard.entry
+                        const name = screen.app.addProjectMeasurement(e.name, e.quantity, e.value, e.source)
+                        chipCard.close()
+                        if (name !== "")
+                            screen.toast("In the project as " + name + ": type it in any value box")
+                        else
+                            screen.toast("It couldn't be added to the project", true)
+                    }
+                }
             }
         }
     }

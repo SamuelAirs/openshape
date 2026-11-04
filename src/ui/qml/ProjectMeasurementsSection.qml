@@ -72,13 +72,18 @@ ColumnLayout {
             border.color: field.activeFocus ? Theme.accent : Theme.panelBorder
             border.width: field.activeFocus ? 1.5 : 1
         }
+        // Every hook checks that the field still exists: a row (or the add
+        // form) can go while the keypad still holds its client, and the
+        // keypad must then neither throw nor type into it.
         readonly property var keypadClient: ({
             name: "measurement",
-            mode: () => field.mode,
+            mode: () => field ? field.mode : "length",
             hasNext: () => false,
-            text: () => field.text,
-            replacing: () => field.text.length > 0 && field.selectedText === field.text,
+            text: () => field ? field.text : "",
+            replacing: () => field ? field.text.length > 0 && field.selectedText === field.text : false,
             setText: (text, replacing) => {
+                if (!field)
+                    return
                 field.text = text
                 if (replacing)
                     field.selectAll()
@@ -86,9 +91,10 @@ ColumnLayout {
                     field.cursorPosition = text.length
             },
             next: () => {},
-            done: () => field.applyRequested(),
-            target: () => section.host ? section.host.mapToItem(null, 0, 0, section.host.width, section.host.height)
-                                        : field.mapToItem(null, 0, 0, field.width, field.height),
+            done: () => { if (field) field.applyRequested() },
+            target: () => !field ? Qt.rect(0, 0, 0, 0)
+                                 : section.host ? section.host.mapToItem(null, 0, 0, section.host.width, section.host.height)
+                                                : field.mapToItem(null, 0, 0, field.width, field.height),
             keepClear: "",
             takesFocus: false
         })
@@ -106,6 +112,8 @@ ColumnLayout {
             if (section.keypad)
                 section.keypad.detach(keypadClient)
         }
+        // A field that goes while the keypad types into it lets go of it.
+        Component.onDestruction: release()
         Keys.onReturnPressed: applyRequested()
         Keys.onEnterPressed: applyRequested()
         // A hardware keyboard on a touch screen (the field is read-only there).
