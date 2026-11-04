@@ -129,6 +129,42 @@ Plus, in the design itself:
 - Only points on the reference's surface measure true; a reference's error scales everything
   (a card gives about 0.5 % from the corners' placement, a sheet of paper better).
 
+**The camera screen** (Sam: "the level bubble inside our own camera screen would actually be
+elite"). Take photo opens FoldForm's own camera (`src/ui/ios/CameraScreenIos.mm`, AVFoundation)
+instead of the system's:
+
+- **A straight-down level**: a white cross marks the frame's middle, a yellow one the spot
+  straight below the lens (from CoreMotion's gravity: the angle between the camera's axis and
+  straight down, 8 points per degree toward gravity's part in the screen's plane). They meet
+  and turn green, with a tap felt, within 1 degree ("0.6° off"). The line under it says why:
+  "Hold it flat above the card". A photo taken at a tilt and from close up measures parts that
+  stand above the card less truly.
+- **Scan** (Take photos): the same screen shows the angle from straight down against Scan's
+  band, 35 to 55 degrees in green, and 70 to 80 degrees ("a low photo", docs/SCAN.md) fainter.
+- **Last photo** (Sam's idea: keep the card still, move the object, match the angle and the
+  height): a toggle, offered from the second photo, draws the previous photo taken here at 40 %
+  over the preview. The preview shows the whole 4:3 frame (`AVLayerVideoGravityResizeAspect`),
+  and the overlay is drawn in the same rectangle, computed from the photo's size and the
+  rotation (`AVMakeRectWithAspectRatioInsideRect`), so the two match. The toggle is remembered
+  while the app runs. MeasureController keeps the camera's last photo file for it
+  (`CameraOptions::overlayFile`) until a newer one replaces it or the devices change.
+- **1x and 2x** (digital zoom on the wide lens, or the telephoto where it is 2x) and the
+  telephoto at its own factor (3x, 5x) where there is one: zooming in from further away cuts
+  the perspective error. A shutter, Cancel, the flash off. Portrait and landscape (the buttons
+  along the bottom of a tall screen, down the side of a wide one), inside the safe area.
+- **What comes out is unchanged**: the photo is turned as the preview is shown (the screen's
+  interface orientation sets the connection's `videoRotationAngle`, iOS 17), drawn upright at
+  most 4096 px and written as a JPEG with its 35 mm focal length, as before. With a digital zoom
+  EXIF's FocalLenIn35mmFilm may or may not count it: of the value and the value times the zoom,
+  the one nearer the lens's field of view at that zoom is kept (Scan uses it).
+- The permission is asked as before; refused, the same message. The log has a line per session
+  (`Measure: camera: showing ...`, `session running ...`, `zoom 2.0x on the wide lens`) and one
+  per photo: `Measure: camera: captured at 1.2° from straight down, 2× (photo), 35 mm focal
+  length 52 (EXIF ..., digital zoom ...)`.
+- The system camera is one switch away (`kOwnCameraScreen` in `PhotoPickerIos.mm`), should the
+  own screen misbehave on a device. It is checked only on a device (TD-180); the acceptance
+  scenario `measurecamerascreen` checks what the Qt side asks it for.
+
 ### Camera (AR)
 
 - ARKit's camera view with a crosshair; **Add point** places a point where the crosshair meets
@@ -219,6 +255,8 @@ any value box reads.
   (SteadyReading), Level, Outline, Measurement.
 - `src/ui/MeasureDevices.h`: the platform's hardware as functions, empty where there is none;
   `src/ui/ios/*.mm` fill them in (hinge, gravity, haptics, camera and photos, Vision, ARKit).
+  `pickPhoto` takes `CameraOptions` (the camera screen's purpose, Photo or Scan, and the last
+  photo for the overlay; the photo library ignores them).
 - `src/ui/MeasureController.*`: the Measure workspace's state for QML (`app.measure`): the
   scale and its calibration, the sensors (started while the workspace is open), the photo
   session, the measurements, and the stand-ins the acceptance run drives.
@@ -266,8 +304,9 @@ sketch tools, check a design against the real object. Saved in the project
 ## Privacy
 
 The camera, the photo library and the motion sensors are used on the device only. Photos are
-kept in the app's temporary folder while measuring and never sent anywhere; FoldForm still
-collects no data (docs/PRIVACY.md). iOS asks once for the camera (`NSCameraUsageDescription`);
+kept in the app's temporary folder while measuring and never sent anywhere (the camera's last
+photo stays there for the camera screen's overlay until the next photo replaces it or FoldForm
+quits); FoldForm still collects no data (docs/PRIVACY.md). iOS asks once for the camera (`NSCameraUsageDescription`);
 the photo library is read through the system picker, which needs no permission; motion sensors
 need none.
 

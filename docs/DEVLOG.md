@@ -867,3 +867,25 @@ normally and forced, and asserts.
   missed it). Lessons: name things as people say them (debit or credit card,
   not "bank card"), and grep every file type after a wording change. TD-176
   keeps the tolerance question; a real ruler along the screen checks it.
+
+## 2026-11-04 — Measure: FoldForm's own camera screen
+
+- Sam asked for "the level bubble inside our own camera screen"; the system
+  camera (UIImagePickerController) cannot draw on its preview, so Take photo
+  now opens `CameraScreenIos.mm` (AVFoundation), with the system camera kept
+  behind `kOwnCameraScreen`. Written on Windows for the Mac CI: TD-180 lists
+  what only the device can confirm.
+- Gravity was turned into the window's frame by the Qt view's scene. A
+  full-screen presentation takes the presenting view out of the window, so
+  over the camera screen its scene is nil and every reading would be taken
+  as portrait: the camera screen watches gravity through its own view
+  (`measureios::watchGravityIn`).
+- The overlay matches the preview only because both are computed, not
+  guessed: the preview shows the whole 4:3 frame (resize aspect) and the
+  overlay is drawn in `AVMakeRectWithAspectRatioInsideRect` of the same
+  size and rotation; the photo is turned by the interface orientation (not
+  the device's), so it is upright as the preview shows it even lying flat.
+- With a digital zoom, whether EXIF's FocalLenIn35mmFilm counts it is not
+  documented; the camera screen keeps whichever of the value and the value
+  times the zoom is nearer the lens's field of view at that zoom (Scan's
+  focal length), and logs all three.

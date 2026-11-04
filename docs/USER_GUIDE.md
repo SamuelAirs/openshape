@@ -820,6 +820,14 @@ large at the side with **Keep**.
   ground plane at its real size, ready to extrude. Only things lying on the
   reference's surface measure true; a card gives about half a millimeter
   over a hand's width, a sheet of paper better.
+  **Take photo** opens FoldForm's own camera. Hold the phone flat above the
+  card: the yellow cross (straight down) meets the white one (the middle of
+  the photo) and both turn green within 1° ("0.6° off"); a photo from
+  straight above measures parts that stand above the card more truly. **2×**
+  (or the telephoto, **3×** or **5×**) from further away helps too. From the
+  second photo on, **Last photo** shows the one before faintly over the
+  camera view: keep the card where it is, move the part, and line the card
+  up with its ghost.
 - **Camera** (iPhone and iPad with ARKit): measure in the room through the
   camera. **Distance** (points in space), **Outline** (corners on one
   surface) or **Box** (three corners of a box's base, then its top). The
@@ -852,7 +860,9 @@ large at the side with **Keep**.
 - **Scan**: a 3D shape from photos. Stand the object on a sheet of A4 or
   Letter paper on a plain table and take 8 to 16 photos walking around it
   from about 45 degrees above, all four paper corners in every photo (Take
-  photos, Choose photos, or Open photos on a computer). Check the paper's
+  photos, Choose photos, or Open photos on a computer; Take photos shows the
+  camera's angle, green from 35° to 55° from straight down, and the low
+  photos at 70° to 80°). Check the paper's
   corners in any photo marked with a problem, then **Build**: the paper
   gives each photo's position and the scale, the object's outline and
   (with **Detail from the photos**) the texture between neighbouring photos

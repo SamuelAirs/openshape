@@ -11,6 +11,11 @@ mesh in millimeters, and the mesh into a body. It all runs on the device, in pla
 - Walk around it: 8 to 16 photos, the whole sheet in every photo, about 30 to 60 degrees above
   the table. **Add 3 to 5 photos from low down (10 to 20 degrees)**: only they see over a flat
   top (see "Limits").
+- Take photos opens FoldForm's camera screen (docs/MEASURE.md, "The camera screen"): it shows
+  the camera's angle from straight down on a gauge, green in the band of 35 to 55 degrees (30
+  to 60 above the table is fine; the band is its middle) and fainter green from 70 to 80
+  degrees, the low photos ("a low photo"). The photo's 35 mm focal length counts the zoom (1x,
+  2x, the telephoto).
 - Even light; shadows are fine (they are recognised as paper), a white or grey object on white
   paper needs the subject mask (Apple Vision) to be told from the shadows.
 
