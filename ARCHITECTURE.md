@@ -1342,6 +1342,22 @@ ARKit's camera view, and the measurements kept for typing into value boxes.
   platform has none (`platformMeasureDevices()`: iOS fills them in
   `src/ui/ios/`; the desktop returns an empty set), so the acceptance run
   can put in stand-ins and the desktop says what needs a phone.
+- Scan (docs/SCAN.md), FoldForm's own photogrammetry, also in
+  `measure/`: `ScanPose` (the focal length from the paper's homography by
+  Zhang's constraints, or EXIF; poses), `ScanMask` (subject masks or the
+  paper's colour model: object / background / unknown), `Scan` (`calibrate`:
+  the paper's corner labelling chosen by silhouette consistency; `carve`:
+  coarse-to-fine voxels, carved by confident background in a photo;
+  `extractSurface`: Surface Nets, the bottom closed on the paper, Taubin
+  smoothing, quadric decimation, a closed oriented mesh), `ScanStereo`
+  (`refineWithStereo`: PatchMatch depth maps scored by ZNCC between
+  neighbouring photos, geometric consistency, TSDF fusion inside the hull;
+  only removes volume), `PaperDetect`, `MeshTools`, `ScanSynthetic` (a ray
+  caster for the tests, the demo and the acceptance run). `runScan` chains
+  them (`ScanOptions::stereo`). A mesh becomes a body through
+  `geom::solidFromMesh` (sewing, coplanar faces unified) and
+  `AppController::addMeshBody`, stored like an imported STEP body; the
+  tessellation hides the facet edges of bodies made from meshes.
 - `ui/MeasureController`: the workspace's state for QML (`app.measure`):
   the current screen's scale, the sensors (watched only while the
   workspace is open), the photo session (picked or opened, corners, the
