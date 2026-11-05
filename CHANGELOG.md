@@ -3,7 +3,7 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-11-05)
 
 The answers to the first session on the iPhone Duo.
 
