@@ -223,8 +223,10 @@ turn about the line of sight that changes neither. The check now compares
 the view's axes too and says that the view turns; the scenario alone then
 passed 113/113 (the app's code did not change, so the whole run was not
 repeated). The lambda-capture check: only the known one in `Duo.cpp`.
-Pushed with `[testflight]`: the build's number is in the vault's test list
-(it replaces build 64: Measure as it was, plus everything in 0.3.2).
+Pushed with `[testflight]` as `8d4bd85`: CI 75 compiled it on Windows and
+macOS, and iPad run 68 uploaded **build 68** at 16:53 (License gate: PASS).
+It replaces build 64: Measure as it was, plus everything in 0.3.2. **Not
+tried on a device.**
 
 **Next.**
 1. His round on 0.3.2 and his word to the App Store chat. What's New is the
