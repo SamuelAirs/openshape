@@ -146,54 +146,11 @@ motion sensors, Vision and ARKit reported.
     around it. Are the paper's corners right in every photo (open a few)?
     Build: do W × D × H match a ruler? If you can, the same box on plain
     white paper, to compare how often the corners were found.
-21. **Several faces, with the Pencil as you use it (the build after 64; your
-    report).** Open the Electronics box or the Honeycomb organizer. Tap a small
-    face, then three more, some of them near their edges on purpose: each
-    tap should add the face under the tip; nothing should turn into an
-    edge, and nothing should clear. Tap one of them again: only it goes.
-    Tap two faces quickly one after the other: both are added (not the
-    whole body). Tap just beside the part: nothing changes, and a line says
-    how to go on. Tap empty space well away from it: all clear. *Tell me:
-    any tap that did something else, and what was under your finger.*
-22. **Tap again to unselect (your report).** Tap one face: its arrow stands
-    on it. Tap the same spot again: the face is unselected. The same with
-    an edge (the Fillet arrow starts on it). Then tap a face and drag from
-    the same spot: the arrow still pulls the face.
-23. **Edges.** With nothing selected, tap an edge, then two more (for a
-    fillet): each tap near an edge adds it. Tap the middle of a large face:
-    the edges stay, and a line says so. A small face's middle is the face
-    when nothing is selected, and its edges are in its outer quarters:
-    does that feel right on the Duo's outer display, or do you still get
-    edges when you mean faces (or the other way round)?
-24. **Turning the view (your report).** Drag one finger straight up or down
-    and keep going: the view should pass over the top (or under the bottom)
-    and come round upside down, with no stop. Upside down, drag sideways:
-    the model should follow your finger. Tap Iso (or the view cube): the
-    right way up. *Tell me: was that the lock you meant? If the view still
-    feels held somewhere (while sketching, with a face selected, in Pen
-    mode), say where you were and what you dragged.*
-25. **A hole made larger (your report).** A box, a sketch on its top, a
-    square in it, pushed through as a cut. Hold a finger on one wall of the
-    hole for half a second: all four walls are selected and one arrow
-    shows. Drag the arrow back into the part (or type `-2`): the preview
-    shows the hole growing on every side, corners square; the tick applies
-    it. Then the other way: tap two walls one after the other (turn the
-    view for the far ones) and pull them out: the hole shrinks on those
-    sides. The same on the outside: tap the top and one side of a box,
-    drag: both grow. Last, with all four walls selected, pull the arrow
-    out into the hole as far as it goes: before the walls meet, the value
-    turns red and says how far they can go ("Try ... or less"); the app
-    must not close. *Tell me: is that what you meant by expanding them all
-    outward? Anything that refused to move, and what it said.*
-26. **The Pencil and your fingers (your note: "I was using the Apple
-    Pencil").** With the Pencil: two quick taps on two neighbouring faces
-    add both. Then start a sketch on a face and draw a line with the
-    Pencil; drag one finger across the view: it should turn (it only slid
-    sideways before), the sketch staying open; **Face on** looks straight
-    at it again. Two fingers still pan and pinch. *Tell me: is turning the
-    view in a sketch with a finger what was missing, and does a resting
-    hand ever turn it by accident?* If you'd rather try 21 to 23 with a
-    finger as well: turn **Pen** off in the view buttons first.
+
+Checks 21 to 26 of this list (several faces, tap again to unselect, edges,
+turning the view, a hole made larger, the Pencil and your fingers) went out
+as 0.3.2 and are in every build after 64: they are the section "FoldForm
+0.3.2" below, 1 to 6.
 
 ## On Windows (the desktop shortcut)
 
@@ -426,6 +383,48 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
    is running: close it, click Retry; the installation finishes.
 4. **Uninstall** from Settings → Apps → Installed apps → OpenShape. The
    Start-menu entry and the file association are gone; your projects stay.
+
+## FoldForm 0.3.2: selecting, the view, a hole made larger (the Duo, with the Pencil)
+
+Only a device can say whether these feel right: the PC checks them with
+synthetic finger and Pencil events at the Duo's sizes. The owner's list
+with boxes to tick is the vault's `DuoApps/FoldForm/FoldForm tests.md`.
+
+1. **Several faces, with the Pencil as you use it.** Open the Electronics
+   box or the Honeycomb organizer. Tap a small face, then three more, some
+   of them near their edges on purpose: each tap should add the face under
+   the tip; nothing should turn into an edge, and nothing should clear. Tap
+   one of them again: only it goes. Tap two faces quickly one after the
+   other: both are added (not the whole body). Tap just beside the part:
+   nothing changes, and a line says how to go on. Tap empty space well away
+   from it: all clear.
+2. **Tap again to unselect.** Tap one face: its arrow stands on it. Tap the
+   same spot again: the face is unselected. The same with an edge (the
+   Fillet arrow starts on it). Then tap a face and drag from the same spot:
+   the arrow still pulls the face.
+3. **Edges.** With nothing selected, tap an edge, then two more (for a
+   fillet): each tap near an edge adds it. Tap the middle of a large face:
+   the edges stay, and a line says so. A small face's middle is the face
+   when nothing is selected, and its edges are in its outer quarters: does
+   that feel right on the outer display?
+4. **Turning the view.** Drag one finger straight up or down and keep
+   going: the view passes over the top (or under the bottom) and comes
+   round upside down, with no stop. Upside down, drag sideways: the model
+   follows your finger. Tap Iso (or the view cube): the right way up.
+5. **A hole made larger.** A box, a sketch on its top, a square in it,
+   pushed through as a cut. Hold a finger (or the Pencil) on one wall of
+   the hole for half a second: all four walls are selected and one arrow
+   shows. Drag the arrow back into the part (or type `-2`): the hole grows
+   on every side, corners square; the tick applies it. Tap the top and one
+   side of a box and drag: both grow. With all four walls selected, pull
+   the arrow out into the hole as far as it goes: before the walls meet,
+   the value turns red and says how far they can go; the app must not
+   close.
+6. **The Pencil and your fingers in a sketch.** Start a sketch on a face
+   and draw a line with the Pencil; drag one finger across the view: it
+   turns (it only slid sideways before), the sketch staying open; **Face
+   on** looks straight at it again. Two fingers still pan and pinch. Does a
+   resting hand ever turn the view by accident?
 
 ## On the iPhone Duo
 

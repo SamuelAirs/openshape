@@ -1,8 +1,9 @@
 # Project status
 
-_Last updated: 2026-11-13 (a new lead engineer took over; FoldForm 0.3.1 is
-on the App Store). New here? Read the latest session report under "Handoff"
-first; "Blockers" below is the launch's history._
+_Last updated: 2026-11-13 (FoldForm 0.3.2 is tagged; this branch, `polish`,
+is 0.4.0 with Measure; a new lead engineer). New here? Read the latest
+session report under "Handoff" first; "Blockers" below is the launch's
+history._
 
 ## Blockers: waiting on the owner
 
@@ -182,7 +183,103 @@ on the owner's App Store Connect steps above.
 
 ## Handoff: where we left off
 
-### Session report (2026-11-13): a new lead; selecting faces and turning the view (branch `polish`)
+### Session report (2026-11-13, afternoon): 0.3.2 is tagged, and `polish` carries it
+
+**Where things stand.** FoldForm **0.3.2** is tagged: `v0.3.2` = `main` =
+`ea12fce`, which is `v0.3.1` plus the day's fixes and nothing of Measure
+(the report below this one). GitHub compiled it on Windows and macOS and
+built the iPhone and iPad app twice: **build 66** from `main` (TestFlight,
+for the owner's round) and **build 67** from the tag, the one for App
+Review (License gate: PASS; the GitHub release `v0.3.2` lists
+`OpenShape-0.3.2-ios-sources.tar` and the Windows installer). 0.3.1 (build
+65) stays on the App Store until the owner's round passes and he tells the
+App Store chat "submit FoldForm 0.3.2 with build 67". **Nothing of 0.3.2
+has been on a device yet.**
+
+**This branch** (`polish`) is 0.4.0: `measure`, the same fixes (written
+here first), and since this merge all of `main`, so that `main` can move
+forward to it when 0.4.0 ships. The merge changed no code: `src/` and
+`tests/` are what `7abd751` had, so its results stand (999/999 headless).
+**`main` stays at the tag.** BUILDING's step 6 (raise the version on `main`
+right after a tag) is this branch: push nothing more to `main` as 0.3.2
+once that version is in review, because App Store Connect takes no further
+builds of it and the upload would fail.
+
+**The owner's lists** are in the vault: `DuoApps/FoldForm/FoldForm
+tests.md`, the 0.3.2 round first (its boxes marked Gate decide the
+submission) and the 0.4.0 Measure round after it (on build 64 until a newer
+0.4.0 build is sent). docs/MANUAL_TESTS.md has the same checks in the
+repo's words: the section "FoldForm 0.3.2" (1 to 6) is what the reports
+below call checks 21 to 26.
+
+**Next.**
+1. His round on 0.3.2 and his word to the App Store chat. What's New is the
+   `appstore:whats-new` block in docs/APP_STORE.md.
+2. A 0.4.0 TestFlight build from `polish`, on his word: the whole real-UI
+   run first (owed since the Pencil's changes; thirteen scenarios ran after
+   them, the whole run before), then a push of `polish` with `[testflight]`
+   in its head commit. It replaces build 64 and has Measure and the fixes.
+3. His Measure round decides Measure's fixes; then `polish` into `main` as
+   0.4.0.
+4. Still his to answer: which lock he meant (the vault's list asks in its
+   section 4).
+
+**Learned.** `scripts/dev/ci_status.py watch` was given a short commit id
+and waited two hours for runs that had long finished: GitHub's `head_sha`
+filter takes the full id only, and an unknown id is an empty list, not an
+error. The script now resolves what it is given (docs/DEVLOG.md).
+
+### Session report (2026-11-13): FoldForm 0.3.2 (selecting, the view, a hole made larger)
+
+**Where things stand.** FoldForm 0.3.1 (build 65) has been on the App Store
+since 2026-11-06. This branch is **0.3.2**: `v0.3.1` plus one day's fixes
+from the owner's first evening of real design work on his iPhone Duo with
+the Apple Pencil, and nothing of Measure. Measure is 0.4.0 on the branches
+`measure` and `polish` (`polish` = `measure` + the same fixes, written
+there first); its build 64 has been on TestFlight since 2026-11-04 and
+waits for the owner's device round. A new lead engineer took over on this
+day ("take a look at the project and take over as lead").
+
+**The owner's words and what they turned out to be** (docs/DEVLOG.md,
+2026-11-13, has each cause):
+- "It's hard to select multiple faces at once, it either locks on to an
+  edge (and you can't tap it again to unselect it), or it deselects
+  everything": five causes, all a finger's or the Pencil's on small faces
+  (an edge's zone covering a small face whole; edges hidden under a face
+  picked; an edge replacing the faces collected; the arrow swallowing the
+  tap that unselects; two quick taps taken for a double-tap on the body).
+  0.3.1's tests tapped the middles of large faces in a desktop-sized
+  window. `tests/test_touch_faces.cpp` runs at phone and Duo sizes on small
+  faces, with a finger and with the Pencil.
+- "There are locks to where you can rotate your image": the view stopped
+  at the top and bottom views (now it turns on over), and with the Pencil
+  in use one finger could only pan inside a sketch (now it turns the view
+  there too; Face on comes back).
+- "if I have a square shape cut out of a plane, and I try to make the hole
+  bigger by selecting all of the faces and expanding them all outward, I
+  can't do that": faces facing different ways had no arrow. They now move
+  together, each along its own normal (`geom::offsetFaces`; the same
+  `PushPullFaces` step, no file format change). The kernel crashes when
+  such a move closes a hole to nothing, so that is refused by geometry
+  first, with the room named (TD-182).
+
+**Verified on the PC** (branch `release-0.3.2`): 888/888 headless; the whole
+real-UI run 4623/4623 checks in 53 scenarios (17 minutes); the release build against the own OpenCASCADE
+889/889, its package (270 files, license gate PASS) and a test installer (38 checks, none failed); the lambda-capture check (only the known one in
+`Duo.cpp`). **Not tried on a device.**
+
+**Shipping** (the owner: "Ship 0.3.2"): `main` goes on from the `v0.3.1`
+tag with this branch, then the tag `v0.3.2`; the tag's iPad run uploads the
+build for App Review and names its number (the vault's
+`DuoApps/FoldForm/FoldForm tests.md` and the Inbox line for the App Store
+chat carry it). The owner's list to tick is that note; submitting is his
+word to the App Store chat. `main` had one local, never-pushed commit
+raising its version to 0.4.0; it is kept as `backup/main-0.4.0-bump`.
+
+**Next.** His round on 0.3.2 (the Gates in the vault's list) and his word
+to submit; a 0.4.0 TestFlight build from `polish` on his word; his Measure
+round; then `polish` into `main` as 0.4.0.
+### Session report (2026-11-13, morning to noon): a new lead; selecting faces and turning the view (branch `polish`)
 
 **Where things stand.** FoldForm **0.3.1 (build 65) is on the App Store**
 (released 2026-11-06, https://apps.apple.com/app/id6816439422). `measure`
@@ -1566,7 +1663,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-999/999 headless (`ctest -LE gui`, 2026-11-13, branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+999/999 headless (`ctest -LE gui`, 2026-11-13, branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 888/888 the same day for 0.3.2, branch `release-0.3.2`, without Measure; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1581,7 +1678,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 6050/6050 checks through the real UI in 62 scenarios (2026-11-13, `polish`: 26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4452/4452 checks in 51 scenarios
+`acceptance_gui`: 6050/6050 checks through the real UI in 62 scenarios (2026-11-13, `polish`: 26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and

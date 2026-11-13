@@ -107,7 +107,7 @@ Rules:
 - `PushPullFaces` params (since 0.3.1; this entry was missing here until
   2026-11-13): `{ "faces": [faceRef, ...], "distance" }`, several faces of
   the body moved by one distance (positive = outward). When the faces all
-  face the same way they sweep straight along it. Since 0.4.0, faces facing
+  face the same way they sweep straight along it. Since 0.3.2, faces facing
   different ways each move along their own normal and meet at their corners
   (a square hole's walls); which of the two applies is decided from the
   faces when the step is computed, so the params are the same. 0.3.1 opens

@@ -1129,3 +1129,14 @@ what a double-tap is, and from its first tap fingers only move the view.
   the Duo's inner size (Qt's own double-click detection included).
 - Lesson, again: ask which input the owner was using before choosing the
   tests. Touch, pen and mouse are three paths here.
+
+## 2026-11-13 (afternoon) — 0.3.2 from the 0.3.1 tag
+
+Sam: "Ship 0.3.2". The day's fixes were written on `polish` (0.4.0, with
+Measure); 0.3.2 is `v0.3.1` plus those commits. The code carried over with
+one conflict (the test list in tests/CMakeLists.txt, which names Measure's
+tests on `polish`): nothing in the fixes leans on Measure. The docs did not
+carry: on `polish` they sit among Measure's sections, so this branch has
+its own changelog section, manual tests and status. `main` had one local,
+never-pushed commit raising its version to 0.4.0 after the 0.3.1 tag; it is
+kept as the branch `backup/main-0.4.0-bump` and `main` goes on from the tag.

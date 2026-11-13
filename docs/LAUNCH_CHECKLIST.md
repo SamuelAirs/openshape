@@ -10,7 +10,15 @@ Connect** (appstoreconnect.apple.com) unless it says otherwise. Apple then
 reviews the app, usually within 24 to 48 hours, and you press Release (or
 let it release itself).
 
-**Where you are (2026-11-04):** **FoldForm 0.3.0 is submitted** with build
+**Where you are (2026-11-13):** 0.3.1 is on the App Store (released
+2026-11-06). **0.3.2** (selecting several faces, the view turning all the
+way round, a hole made larger, the Pencil's fixes) is tagged `v0.3.2`; its
+build number and your list to tick are in the vault's
+`DuoApps/FoldForm/FoldForm tests.md`. When its Gates pass, tell the App
+Store chat "submit FoldForm 0.3.2 with build N"; What's New is in
+docs/APP_STORE.md. The lines below are the launch's history.
+
+**Where you were (2026-11-04):** **FoldForm 0.3.0 is submitted** with build
 54 and waits for App Review (steps 1 to 9 done). Next: press Release once
 it is approved (step 10), and the open items below. **0.3.1** is on
 TestFlight for your Duo (build 55, last section).
