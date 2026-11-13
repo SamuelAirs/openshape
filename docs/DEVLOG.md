@@ -1098,3 +1098,34 @@ outward, I can't do that."
   The same run reached ctest's 25-minute limit one scenario short (about
   6,000 checks now): the limit is 45 minutes. A reminder that came with
   it: read a run's failures from its summary, not from the tail of its log.
+
+## 2026-11-13 (noon) — "I was using the Apple Pencil with it"
+
+Sam, on seeing the morning's fixes. The morning's tests were all a finger's,
+and the Pencil is not a finger here: its taps come as mouse events with the
+pen as their device (9 px for edges, 16 px around an arrow), Qt decides
+what a double-tap is, and from its first tap fingers only move the view.
+
+- Most of the morning's rules sit below the device split (`addingPick`,
+  `tapBesideHandle`, the picker) and held for the pen unchanged: the new
+  `PenFaces` tests for collecting and for unselecting under the arrow passed
+  on the morning's commit.
+- Two did not. **Two quick taps:** Qt turns the Pencil's second tap into a
+  double-click, sometimes in place of its press. The morning's "two taps on
+  two faces are two taps" returned early for it, and with no press there
+  was no click: the second face was not added, the tap just vanished. The
+  same had been true since September of two quick pen taps on two bodies.
+  `pointerDoubleClick` now does that tap's click when the double-click took
+  its press's place (`secondTapClicks`), and compares the faces under the
+  two taps, not the raw picks (beside an edge they differ in kind).
+- **A finger in a sketch:** it panned, by a rule made for people who draw
+  with a finger (an orbit by accident tilts the view off the plane). With
+  the Pencil drawing, the finger only navigates, and that rule left no way
+  to turn the view inside a sketch but the view cube: a lock exactly where
+  he works. In pen mode one finger now orbits in a sketch as anywhere, and
+  Face on comes back. Probably the "locks" of his first message, with the
+  stop at the poles.
+- The `multifaces` scenario has a Pencil pass with real tablet events at
+  the Duo's inner size (Qt's own double-click detection included).
+- Lesson, again: ask which input the owner was using before choosing the
+  tests. Touch, pen and mouse are three paths here.

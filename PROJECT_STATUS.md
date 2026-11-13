@@ -231,6 +231,17 @@ take a look at the project and take over as lead".
   format change); a finger held on a wall of a hole cut through takes all
   its walls. Exact on the PC: a 10 mm square hole pushed back 2 mm is 14 mm
   square with 10 faces.
+- At noon: "on the iPhone Duo, I was using the Apple Pencil with it". The
+  morning's tests were a finger's. The Pencil is a third input path (mouse
+  events with the pen as their device, 9 px for edges and 16 px around an
+  arrow, Qt's own double-click, fingers only moving the view once it is
+  used). Collecting faces and unselecting under the arrow already held for
+  it. Two things did not, and are fixed: two quick Pencil taps on two faces
+  lost the second tap (Qt puts a double-click in its press's place), and
+  with the Pencil in use a finger could only pan inside a sketch, never
+  turn the view (now one finger orbits there too; Face on comes back).
+  `PenFaces` (4 tests) and a Pencil pass in the `multifaces` scenario with
+  real tablet events at the Duo's inner size.
 - Still open from his words: **which lock he meant.** The stop at the poles
   is the only hard stop in the code, but three other things hold the view
   while designing and may be what he felt: a finger's drag that starts on
@@ -238,11 +249,17 @@ take a look at the project and take over as lead".
   sketch one finger pans (the view cube orbits); in Pen mode fingers only
   navigate and never select. docs/MANUAL_TESTS.md 24 asks him.
 
-**Verified on the PC** (working tree on `polish`): 995/995 headless (972
+**Verified on the PC** (working tree on `polish`): 999/999 headless after
+the Pencil's changes (995/995 before them; 972
 before; new: `tests/test_touch_faces.cpp`, 13 tests at phone and Duo sizes
 through the gesture recognizer, all 13 failing on the old code; camera and
 lighting over the top; the hole's walls and `OffsetFaces` by exact
-volumes); the whole real-UI run 6050/6050 checks in 62 scenarios, 26 minutes (new scenario
+volumes; `PenFaces`); the whole real-UI run 6050/6050 checks in 62 scenarios,
+26 minutes, **before the Pencil's changes**, and after them 1661/1661 in
+the thirteen scenarios near what changed (`multifaces` 98, `pencil`,
+`sketchphone`, `sketchdrag`, `multiselect`, `extrudetouch`, `duo`, `numpad`,
+`core`, `bodies`, `userguide`, `hints`, `views`): **the whole run is owed
+once more before a push** (new scenario
 `multifaces`: real touch events at 402 x 874 and 466 x 678, then the hole
 on an iPad-sized window);
 the lambda-capture check (only the known one in `Duo.cpp`). Older tests
@@ -264,9 +281,10 @@ the one-face Offset has no such check yet). docs/FILE_FORMAT.md never listed
 `PushPullFaces` and `SweepCut` (0.3.1's steps): added.
 
 **Next.**
-1. The owner's word to send a TestFlight build from `polish` (a
-   `[testflight]` push; it carries Measure too), then his checks 21 to 25
-   (docs/MANUAL_TESTS.md) with the Measure round he still owes.
+1. The owner's word to send a TestFlight build from `polish` (the whole
+   real-UI run first, then a `[testflight]` push; it carries Measure too),
+   then his checks 21 to 26 (docs/MANUAL_TESTS.md) with the Measure round
+   he still owes.
 2. His decision: ship the selection and view fixes soon as **0.3.2** without
    Measure (a backport onto `v0.3.1`; the changes are in `selection/`,
    `core/Camera`, `core/Lighting` and `InteractionController`), or wait and
@@ -1548,7 +1566,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-995/995 headless (`ctest -LE gui`, 2026-11-13, branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+999/999 headless (`ctest -LE gui`, 2026-11-13, branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1574,7 +1592,7 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 995/995 (2026-11-13, `polish`) | ✅ 6050/6050 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 999/999 (2026-11-13, `polish`) | ✅ 6050/6050 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |

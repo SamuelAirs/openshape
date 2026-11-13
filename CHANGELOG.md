@@ -43,6 +43,22 @@ where you can rotate your image").
   faces selected adds the face under the pointer where it used to replace
   them with an edge.
 
+**With the Apple Pencil** ("on the iPhone Duo, I was using the Apple
+Pencil with it"). The Pencil reaches FoldForm by another path than a
+finger (finer tolerances, the system's own double-tap, fingers only moving
+the view while it is in use), and everything above holds for it: it
+collects small faces, never switches to an edge, unselects with a second
+tap under the arrow, and keeps several faces through a near miss. Two
+things were the Pencil's alone:
+
+- **Two quick Pencil taps on two faces add both.** The second tap arrived
+  as a double-tap; once that no longer selected the whole body, it did
+  nothing at all.
+- **One finger turns the view inside a sketch while the Pencil is in use.**
+  A finger's drag in a sketch pans, because without a pen the finger draws
+  there; with the Pencil drawing, that left no way to turn the view in a
+  sketch but the view cube. **Face on** looks straight at the sketch again.
+
 **Several faces that face different ways move together** ("if I have a
 square shape cut out of a plane, and I try to make the hole bigger by
 selecting all of the faces and expanding them all outward, I can't do

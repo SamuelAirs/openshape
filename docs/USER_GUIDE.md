@@ -192,7 +192,7 @@ tap, but **×** and **÷** work on it: a height of 95, then **×** **2** and
 
 | | Mouse | Touch | Pen mode |
 |---|---|---|---|
-| Orbit | drag with the left or right button | drag one finger | one finger |
+| Orbit | drag with the left or right button | drag one finger | one finger, also inside a sketch |
 | Orbit while a tool is active | drag the view cube | drag the view cube | the view cube |
 | Standard view | click a face or corner of the view cube | tap a face or corner of the view cube | the same |
 | Pan | `Shift`+drag, or drag with the middle button | drag two fingers | two fingers |
@@ -244,7 +244,13 @@ selects and draws, fingers only move the view. A hand resting or sliding
 on the screen while you draw, or touching down within half a second after
 the Pencil lifts, is ignored (no drawing, no turning the view, no undo).
 After that pause one finger orbits again, two fingers pan and zoom, and
-two- and three-finger taps undo and redo. A finger tap on the model does
+two- and three-finger taps undo and redo. With the Pencil in use one
+finger turns the view inside a sketch too (without a pen a finger draws
+there, so its drag on empty space pans and the view cube turns the view);
+**Face on** looks straight at the sketch again. The Pencil collects faces
+and edges as a finger does, with a finer tip: an edge within 9 px, a face
+otherwise, a second tap to take one out (also under its arrow), and two
+quick taps on two faces add both. A finger tap on the model does
 nothing in pen mode; FoldForm says so and how to turn **Pen** off to
 select with a finger. On an iPad that supports Pencil hover, holding the
 tip just above the screen highlights the face or edge under it and, in a

@@ -113,6 +113,8 @@ Rectangle {
                         rows: [
                             ["Orbit", "Drag empty space · one finger · all the way round: over the top view and on, upside down (Iso rights it)",
                              "Drag with one finger: all the way round, over the top view and on, upside down (Iso rights it)"],
+                            ["Orbit in a sketch", "Drag with the right button · the view cube · Face on comes back",
+                             "With the Pencil in use: one finger. Without a pen: drag the view cube. Face on comes back"],
                             ["Pan", "Shift+drag or middle-drag · two fingers", "Drag with two fingers"],
                             ["Zoom", "Wheel · pinch (toward what is under the pointer)", "Pinch with two fingers"],
                             ["Fit everything", "F", "Fit (in the View menu on a phone)"],

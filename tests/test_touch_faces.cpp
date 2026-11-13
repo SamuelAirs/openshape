@@ -118,11 +118,11 @@ struct Plate {
         return static_cast<std::size_t>(
             std::count_if(items.begin(), items.end(), [&](const sel::SelectionItem& item) { return item.kind == kind; }));
     }
-    // Within a finger's grab zone of the active operation's arrow.
-    bool onArrow(Vec2 p) const
+    // Within a finger's (or the pen's) grab zone of the active operation's arrow.
+    bool onArrow(Vec2 p, PointerDevice device = PointerDevice::Touch) const
     {
         const Operation* op = controller.operation();
-        const double tolerance = InputProfile::forDevice(PointerDevice::Touch).handleTolerance;
+        const double tolerance = InputProfile::forDevice(device).handleTolerance;
         for (int i = 0; op && i < op->handleCount(); ++i)
             if (op->handle(i).hitTest(controller.camera(), p, op->handleOffset(i), tolerance))
                 return true;
@@ -197,6 +197,38 @@ struct Finger {
 };
 
 std::string sizeText(Vec2 viewport) { return std::to_string(int(viewport.x)) + " x " + std::to_string(int(viewport.y)); }
+
+// The Apple Pencil as Qt delivers it on iOS: mouse-like events with the pen
+// as their device (9 px for edges, 16 px around an arrow). A second tap
+// within Qt's double-click time and distance arrives as a double-click, in
+// place of its press or after it (both orders occur).
+struct Pen {
+    Plate& scene;
+    explicit Pen(Plate& s) : scene(s) {}
+    static PointerEvent at(Vec2 p)
+    {
+        PointerEvent e;
+        e.device = PointerDevice::Pen;
+        e.button = PointerButton::Left;
+        e.position = p;
+        return e;
+    }
+    void tap(Vec2 p)
+    {
+        scene.controller.pointerPress(at(p));
+        scene.controller.pointerRelease(at(p));
+    }
+    void tap(Vec3 p) { tap(scene.screen(p)); }
+    void quickTaps(Vec2 first, Vec2 second, bool pressBeforeDoubleClick)
+    {
+        tap(first);
+        if (pressBeforeDoubleClick)
+            scene.controller.pointerPress(at(second));
+        scene.controller.pointerDoubleClick(at(second));
+        scene.controller.pointerRelease(at(second));
+    }
+    sel::PickResult pickAt(Vec2 p) const { return scene.controller.pickAt(p, InputProfile::forDevice(PointerDevice::Pen)); }
+};
 
 // The first point from `from` towards `to` where a finger picks `kind`.
 std::optional<Vec2> firstPick(const Plate& s, Vec2 from, Vec2 to, sel::PickKind kind)
@@ -521,4 +553,149 @@ TEST(TouchFaces, TheMouseKeepsItsPlainClicksAndShiftAddsFaces)
     click(s.screen(s.padTop(pad) + Vec3{0, 5, 0}) + Vec2{0, 2}, true);
     EXPECT_EQ(s.count(sel::SelectionKind::Edge), 0u) << s.selectionText();
     EXPECT_GE(s.count(sel::SelectionKind::Face), 1u) << s.selectionText();
+}
+
+// ---- The Apple Pencil ----------------------------------------------------------------
+// The owner, 2026-11-13: "Note, on the iPhone Duo, I was using the Apple
+// Pencil with it". The Pencil is not a finger to FoldForm: its taps come as
+// mouse events with their own tolerances, Qt decides what a double-tap is,
+// and once it is used fingers only move the view.
+
+TEST(PenFaces, ThePencilCollectsSmallFacesAndNeverSwitchesToAnEdge)
+{
+    for (const Vec2 viewport : {kDuoOuter, kDuoInner, kIphone}) {
+        Plate s(viewport);
+        Pen pen(s);
+        std::vector<int> expected;
+        for (int i = 0; i < 3; ++i) {
+            pen.tap(s.padTop(i) + Vec3{i == 1 ? -2.0 : 0.0, i == 2 ? 2.0 : 0.0, 0});
+            expected.push_back(s.faceAt(s.padTop(i)));
+            ASSERT_TRUE(s.facesSelected(expected)) << sizeText(viewport) << " after pad " << i << ": " << s.selectionText();
+        }
+        EXPECT_TRUE(s.controller.penMode());
+        // 3 px inside the plate top's front edge: an edge for the Pencil.
+        const Vec2 edge = s.screen({50, 0, 5});
+        const Vec2 inward = s.screen({50, 5, 5}) - edge;
+        const Vec2 nearEdge = edge + inward * (3.0 / inward.length());
+        ASSERT_EQ(pen.pickAt(nearEdge).kind, sel::PickKind::Edge) << "an edge when nothing is selected";
+        s.messages.clear();
+        pen.tap(nearEdge);
+        expected.push_back(s.faceAt(s.plateFront(1)));
+        EXPECT_TRUE(s.facesSelected(expected)) << sizeText(viewport) << ": " << s.selectionText();
+        ASSERT_FALSE(s.messages.empty()) << "it says how to pick the edge instead";
+        // Just off the part, within the Pencil's reach of its outline: nothing is lost.
+        const Vec2 inside = s.screen({60, 15, 2.5});
+        Vec2 justOff = inside;
+        for (double t = 0; t < 60; t += 0.5)
+            if (!s.controller.pickAt(inside + Vec2{t, 0}, InputProfile()).hit() && pen.pickAt(inside + Vec2{t, 0}).kind == sel::PickKind::Edge)
+                justOff = inside + Vec2{t, 0};
+        ASSERT_EQ(pen.pickAt(justOff).kind, sel::PickKind::Edge);
+        ASSERT_FALSE(s.controller.pickAt(justOff, InputProfile()).hit());
+        pen.tap(justOff);
+        EXPECT_TRUE(s.facesSelected(expected)) << "a near miss with the Pencil costs nothing: " << s.selectionText();
+        pen.tap(Vec2{5, 5}); // empty space
+        EXPECT_TRUE(s.controller.selection().empty());
+        // From empty space the edge is an edge.
+        pen.tap(nearEdge);
+        EXPECT_EQ(s.count(sel::SelectionKind::Edge), 1u) << s.selectionText();
+    }
+}
+
+// "You can't tap it again to unselect it", with the Pencil: its zone around
+// an arrow is 16 px, and the arrow stands where the Pencil just tapped.
+TEST(PenFaces, ASecondPencilTapUnselectsUnderTheArrow)
+{
+    for (const Vec2 viewport : {kDuoOuter, kDuoInner}) {
+        Plate s(viewport);
+        Pen pen(s);
+        const Vec2 top = s.screen(s.padTop(1));
+        pen.tap(top);
+        ASSERT_TRUE(s.facesSelected({s.faceAt(s.padTop(1))})) << s.selectionText();
+        ASSERT_TRUE(s.onArrow(top, PointerDevice::Pen)) << "the tap is in the arrow's zone";
+        pen.tap(top);
+        EXPECT_TRUE(s.controller.selection().empty()) << sizeText(viewport) << ": " << s.selectionText();
+        EXPECT_EQ(s.stack.size(), 1u);
+
+        const Vec2 edge = s.screen({30, 0, 5});
+        pen.tap(edge);
+        ASSERT_EQ(s.count(sel::SelectionKind::Edge), 1u) << s.selectionText();
+        ASSERT_TRUE(s.onArrow(edge, PointerDevice::Pen)) << "the Fillet arrow starts on the edge";
+        pen.tap(edge);
+        EXPECT_TRUE(s.controller.selection().empty()) << sizeText(viewport) << ": " << s.selectionText();
+        EXPECT_EQ(s.stack.size(), 1u) << "no fillet was made";
+    }
+}
+
+// Two quick Pencil taps on two neighbouring faces: Qt makes the second a
+// double-click. Both faces are added, whichever way Qt delivers it (the
+// faces were replaced by the whole body; and with the double-click in the
+// press's place, the second tap must still do its click).
+TEST(PenFaces, TwoQuickPencilTapsOnTwoFacesAddBoth)
+{
+    for (const bool pressFirst : {false, true})
+        for (const Vec2 viewport : {kDuoOuter, kDuoInner}) {
+            Plate s(viewport);
+            Pen pen(s);
+            pen.tap(s.padTop(0));
+            ASSERT_EQ(s.count(sel::SelectionKind::Face), 1u);
+            const Vec2 onPad = s.screen({30, 12.5, 10});
+            const Vec2 onPlate = s.screen({30, 6.5, 5});
+            pen.quickTaps(onPad, onPlate, pressFirst);
+            EXPECT_TRUE(s.facesSelected({s.faceAt(s.padTop(0)), s.faceAt(s.padTop(1)), s.faceAt(s.plateFront(1))}))
+                << sizeText(viewport) << (pressFirst ? ", press then double-click: " : ", double-click for the press: ")
+                << s.selectionText();
+            // Twice on one face is the double-tap that selects the body.
+            const Vec2 front = s.screen(s.plateFront(2));
+            pen.quickTaps(front, front + Vec2{2, -1}, pressFirst);
+            EXPECT_EQ(s.count(sel::SelectionKind::Body), 1u) << s.selectionText();
+            EXPECT_EQ(s.controller.selection().size(), 1u);
+        }
+}
+
+// With the Pencil in use, fingers only move the view. One finger turns it:
+// over the top with no stop, and inside a sketch too (it only panned
+// there, so a sketch held the view to its plane unless the view cube was
+// dragged). Without a pen, a finger in a sketch still pans: it draws there.
+TEST(PenFaces, WithThePencilInUseOneFingerTurnsTheViewAlsoInASketch)
+{
+    Plate s(kDuoInner);
+    Pen pen(s);
+    Finger finger(s);
+    pen.tap(s.plateFront(1));
+    ASSERT_TRUE(s.controller.penMode());
+    ASSERT_EQ(s.count(sel::SelectionKind::Face), 1u);
+    // A finger's tap selects nothing; its drag turns the view, over the top.
+    finger.tap(s.padTop(0));
+    EXPECT_EQ(s.count(sel::SelectionKind::Face), 1u) << "the finger's tap is not a selection";
+    const Camera before = s.controller.camera();
+    finger.drag(Vec2{700, 120}, Vec2{700, 120 + 260}, 20);
+    EXPECT_TRUE(s.controller.camera().upsideDown()) << "260 px: 2.08 rad from 35 degrees up is past the top";
+    EXPECT_NEAR(std::remainder(s.controller.camera().pitch - before.pitch, 2 * kPi), 260 * 0.008, 1e-9);
+    s.controller.setStandardView(StandardView::Isometric, false);
+
+    // In a sketch on the plate's top.
+    ASSERT_TRUE(s.controller.triggerAction("sketch").ok());
+    s.controller.skipAnimation();
+    ASSERT_EQ(s.controller.mode(), InteractionController::Mode::Sketch);
+    const Camera faceOn = s.controller.camera();
+    finger.drag(Vec2{700, 300}, Vec2{760, 360}, 12);
+    const Camera turned = s.controller.camera();
+    EXPECT_GT(std::abs(turned.yaw - faceOn.yaw), 0.3) << "the finger turned the view in the sketch";
+    EXPECT_GT(std::abs(turned.pitch - faceOn.pitch), 0.3);
+    EXPECT_EQ(s.controller.mode(), InteractionController::Mode::Sketch) << "the sketch is still open";
+    // Face on comes back to the sketch's plane.
+    s.controller.faceSketch();
+    s.controller.skipAnimation();
+    EXPECT_NEAR(s.controller.camera().pitch, faceOn.pitch, 1e-9);
+    EXPECT_NEAR(std::remainder(s.controller.camera().yaw - faceOn.yaw, 2 * kPi), 0.0, 1e-9);
+
+    // Pen mode off: the finger draws and selects again, and its drag on
+    // empty space in a sketch pans without tilting, as before.
+    s.controller.setPenMode(false);
+    s.controller.setSketchTool(SketchTool::Select);
+    const Camera flat = s.controller.camera();
+    finger.drag(Vec2{700, 300}, Vec2{760, 360}, 12);
+    EXPECT_NEAR(s.controller.camera().pitch, flat.pitch, 1e-12);
+    EXPECT_NEAR(s.controller.camera().yaw, flat.yaw, 1e-12);
+    EXPECT_GT((s.controller.camera().target - flat.target).length(), 0.5) << "it panned";
 }

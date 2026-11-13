@@ -23,7 +23,13 @@
 // iPad-sized window the four walls of a square hole are tapped, two from
 // each side; one arrow shows (there was none), a finger drags it back into
 // the part, the value box's tick applies, and the hole is larger by that
-// much on every side, square, one undo step.
+// much on every side, square, one undo step. And since he draws with the
+// Apple Pencil on the Duo ("I was using the Apple Pencil with it"): the same
+// collecting with real pen events at the Duo's inner display size (pen
+// tolerances, Qt's own double-click for two quick taps), a second Pencil tap
+// unselecting under the arrow, and, with the Pencil in use, one finger
+// turning the view over the top and inside a sketch (it only panned there),
+// with Face on to come back.
 
 #include "app/AcceptanceRunner.h"
 #include "geometry/Modeling.h"
@@ -471,12 +477,162 @@ void addHole(Steps& steps, AcceptanceRunner& r)
     });
 }
 
+// A Pencil tap. `restBefore`: 700 ms is past any double-click time (500 ms
+// on Windows, 400 on iOS), so the tap is a tap of its own.
+void penTap(AcceptanceRunner& r, QPointF p, int restBefore = 700)
+{
+    pause(restBefore);
+    r.penPress(p);
+    pause(60);
+    r.penRelease(p);
+}
+
+void addPencil(Steps& steps, AcceptanceRunner& r, const std::shared_ptr<Scene>& s)
+{
+    const QString where = QStringLiteral("pencil");
+    steps.push_back([&r] {
+        r.app().setTouchMode(true);
+        r.resizeWindow(951, 669);
+        r.window()->setProperty("simulatedSafeArea", QVariantList{0, 84, 34, 0});
+    });
+    wait(steps, 3);
+    steps.push_back([&r, s] {
+        makePlate(r, *s);
+        ix(r).setPenMode(false);
+    });
+    wait(steps, 3);
+    steps.push_back([&r, s, where] {
+        for (int i = 0; i < 3; ++i)
+            s->pads[i] = faceAt(r, 10.0 + 20.0 * i, 15, 10);
+        s->plate = faceAt(r, 30, 5, 5);
+        r.check(s->pads[0] >= 0 && s->pads[1] >= 0 && s->pads[2] >= 0 && s->plate >= 0, where + QStringLiteral(": the faces are in sight"));
+        penTap(r, r.screenPoint(10, 15, 10));
+        penTap(r, r.screenPoint(51.5, 15, 10));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s, where] {
+        r.check(r.app().penMode(), where + QStringLiteral(": the Pencil turned pen mode on"));
+        r.check(facesAre(r, {s->pads[0], s->pads[2]}), where + QStringLiteral(": two Pencil taps, two small faces"), selectionText(r));
+        // Two quick taps, 100 ms apart: Qt may make the second a double-click.
+        penTap(r, r.screenPoint(30, 12.5, 10));
+        penTap(r, r.screenPoint(30, 6.5, 5), 100);
+    });
+    wait(steps, 3);
+    steps.push_back([&r, s, where] {
+        r.check(facesAre(r, {s->pads[0], s->pads[1], s->pads[2], s->plate}),
+                where + QStringLiteral(": two quick Pencil taps on two faces add both (not the body, and neither is lost)"), selectionText(r));
+        // 3 px inside the plate top's front edge: an edge for the Pencil too.
+        const QPointF edge = r.screenPoint(50, 0, 5);
+        const QPointF in = r.screenPoint(50, 5, 5) - edge;
+        const QPointF nearEdge = edge + in * (3.0 / std::hypot(in.x(), in.y()));
+        r.check(ix(r).pickAt(toVec(nearEdge), interact::InputProfile::forDevice(interact::PointerDevice::Pen)).kind == sel::PickKind::Edge,
+                where + QStringLiteral(": 3 px from an edge is the edge's for the Pencil, with nothing selected"));
+        penTap(r, nearEdge);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s, where] {
+        r.check(facesAre(r, {s->pads[0], s->pads[1], s->pads[2]}),
+                where + QStringLiteral(": a Pencil tap beside an edge takes the face under it out; nothing turns into an edge"), selectionText(r));
+        r.screenshot(QStringLiteral("multifaces_pencil_three_faces"));
+        const auto empty = emptySpot(r);
+        r.check(empty.has_value(), where + QStringLiteral(": empty space in the view"));
+        if (empty)
+            penTap(r, *empty);
+    });
+    wait(steps, 2);
+    steps.push_back([&r, where] {
+        r.check(ix(r).selection().empty(), where + QStringLiteral(": a Pencil tap on empty space clears"), selectionText(r));
+        penTap(r, r.screenPoint(30, 15, 10));
+    });
+    wait(steps, 2);
+    steps.push_back([&r, s, where] {
+        r.check(facesAre(r, {s->pads[1]}), where + QStringLiteral(": one face"), selectionText(r));
+        const interact::Operation* op = ix(r).operation();
+        const double zone = interact::InputProfile::forDevice(interact::PointerDevice::Pen).handleTolerance;
+        r.check(op && op->handleCount() > 0
+                    && op->handle(0).hitTest(ix(r).camera(), toVec(r.screenPoint(30, 15, 10)), op->handleOffset(0), zone).has_value(),
+                where + QStringLiteral(": the spot is in the arrow's Pencil zone"));
+        penTap(r, r.screenPoint(30, 15, 10));
+    });
+    wait(steps, 2);
+    // ---- With the Pencil in use, one finger turns the view: over the top...
+    steps.push_back([&r, s, where] {
+        r.check(ix(r).selection().empty(), where + QStringLiteral(": a second Pencil tap on the selected face, under its arrow, takes it out"),
+                selectionText(r));
+        r.check(ix(r).undoStack().size() == 1, where + QStringLiteral(": no tap changed the model"));
+        const auto empty = emptySpot(r);
+        s->dragFrom = empty ? *empty : QPointF(300, 150);
+        s->before = ix(r).camera();
+        pause(600);
+        r.touchPress(s->dragFrom);
+    });
+    for (int i = 1; i <= 10; ++i)
+        steps.push_back([&r, s, i] { r.touchMove(s->dragFrom + QPointF(0, 20.0 * i)); });
+    steps.push_back([&r, s] { r.touchRelease(s->dragFrom + QPointF(0, 200)); });
+    wait(steps, 2);
+    steps.push_back([&r, s, where] {
+        const Camera& c = ix(r).camera();
+        r.check(c.upsideDown() && std::abs(std::remainder(c.pitch - s->before.pitch, 2 * kPi) - 1.6) < 0.2,
+                where + QStringLiteral(": in pen mode one finger turns the view over the top"), AcceptanceRunner::num(c.pitch));
+        r.check(ix(r).selection().empty(), where + QStringLiteral(": the finger selected nothing"));
+        ix(r).setStandardView(StandardView::Isometric, false);
+    });
+    wait(steps, 2);
+    // ---- ...and inside a sketch.
+    steps.push_back([&r] { penTap(r, r.screenPoint(30, 5, 5)); });
+    wait(steps, 2);
+    steps.push_back([&r, where] {
+        r.check(ix(r).selection().size() == 1, where + QStringLiteral(": the plate's top, by the Pencil"), selectionText(r));
+        r.check(r.tapItem(QStringLiteral("action_sketch")), where + QStringLiteral(": Sketch, below the value box"));
+    });
+    wait(steps, 6);
+    steps.push_back([&r, s, where] {
+        ix(r).skipAnimation();
+        r.check(ix(r).mode() == interact::InteractionController::Mode::Sketch, where + QStringLiteral(": a sketch on the plate's top"));
+        s->before = ix(r).camera();
+        s->dragFrom = QPointF(r.window()->width() / 2.0, r.window()->height() / 2.0);
+        for (double y = 120; y < r.window()->height() - 120; y += 20)
+            for (double x = 160; x < r.window()->width() - 260; x += 20)
+                if (inView(r, QPointF(x, y)) && inView(r, QPointF(x + 60, y + 60))) {
+                    s->dragFrom = QPointF(x, y);
+                    y = 1e9;
+                    break;
+                }
+        pause(600);
+        r.touchPress(s->dragFrom);
+    });
+    for (int i = 1; i <= 6; ++i)
+        steps.push_back([&r, s, i] { r.touchMove(s->dragFrom + QPointF(10.0 * i, 10.0 * i)); });
+    steps.push_back([&r, s] { r.touchRelease(s->dragFrom + QPointF(60, 60)); });
+    wait(steps, 2);
+    steps.push_back([&r, s, where] {
+        const Camera& c = ix(r).camera();
+        r.check(std::abs(std::remainder(c.yaw - s->before.yaw, 2 * kPi)) > 0.3 && std::abs(c.pitch - s->before.pitch) > 0.3,
+                where + QStringLiteral(": in a sketch one finger turns the view (it only panned)"),
+                AcceptanceRunner::num(c.yaw - s->before.yaw) + QStringLiteral(" / ") + AcceptanceRunner::num(c.pitch - s->before.pitch));
+        r.check(ix(r).mode() == interact::InteractionController::Mode::Sketch, where + QStringLiteral(": the sketch stays open"));
+        r.screenshot(QStringLiteral("multifaces_pencil_sketch_turned"));
+        r.check(r.tapItem(QStringLiteral("faceSketchButton")), where + QStringLiteral(": Face on"));
+    });
+    wait(steps, 6);
+    steps.push_back([&r, s, where] {
+        ix(r).skipAnimation();
+        const Camera& c = ix(r).camera();
+        r.check(std::abs(std::remainder(c.yaw - s->before.yaw, 2 * kPi)) < 1e-6 && std::abs(c.pitch - s->before.pitch) < 1e-6,
+                where + QStringLiteral(": Face on looks at the sketch's plane again"));
+        r.app().finishSketch();
+        r.app().setPenMode(false);
+    });
+    wait(steps, 3);
+}
+
 Steps steps(AcceptanceRunner& r)
 {
     auto s = std::make_shared<Scene>();
     Steps steps;
     addPass(steps, r, s, 402, 874, QVariantList{62, 0, 34, 0}, QStringLiteral("iphone"));
     addPass(steps, r, s, 466, 678, QVariantList{0, 84, 34, 0}, QStringLiteral("duo_outer"));
+    addPencil(steps, r, s);
     addHole(steps, r);
     steps.push_back([&r] {
         r.window()->setProperty("simulatedSafeArea", QVariant());

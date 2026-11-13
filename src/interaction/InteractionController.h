@@ -794,6 +794,7 @@ private:
     struct PressMemo {
         bool bodies = false;       // the selection was bodies only (and not empty)
         bool subShapes = false;    // the selection was faces only, or edges only (and not empty)
+        bool faces = false;        // ...faces
         std::vector<Uuid> bodyIds; // those bodies, in selection order
         Vec2 position;
         bool valid = false;

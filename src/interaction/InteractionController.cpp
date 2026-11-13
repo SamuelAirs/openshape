@@ -792,9 +792,16 @@ void InteractionController::pointerMove(const PointerEvent& event)
             return;
         // In a sketch a finger or pen dragging empty space pans: orbiting
         // would tilt the view off the sketch's plane (a mouse still orbits).
+        // With the Pencil in use (pen mode) a finger never draws: it only
+        // moves the view, so in a sketch too one finger turns it, as it does
+        // everywhere else (two fingers pan and zoom; Face on comes back).
+        // The owner, who draws with the Pencil on his Duo: "Navigation while
+        // designing is tough. There are locks to where you can rotate".
+        const bool fingerBesideThePen = penMode_ && drag_.press.device == PointerDevice::Touch;
         const bool pan = drag_.press.button == PointerButton::Middle
             || (drag_.press.button == PointerButton::Left && drag_.press.modifiers.shift)
-            || (session_ && drag_.press.button == PointerButton::Left && drag_.press.device != PointerDevice::Mouse);
+            || (session_ && drag_.press.button == PointerButton::Left && drag_.press.device != PointerDevice::Mouse
+                && !fingerBesideThePen);
         drag_.mode = pan ? DragMode::Pan : DragMode::Orbit;
         if (!pan) {
             const auto hit = sel::pickFace(pickTargets(), camera_, drag_.press.position);
@@ -1019,17 +1026,37 @@ void InteractionController::pointerDoubleClick(const PointerEvent& event)
     const auto onBody = [](const sel::PickResult& pick) {
         return pick.kind == sel::PickKind::Face || pick.kind == sel::PickKind::Edge;
     };
+    // (Two taps, then: each one's click stands. A finger's taps have both
+    // clicked by now. The Pencil's arrive as the mouse's do, and Qt may put
+    // this double-click in the place of the second tap's press: then that
+    // tap has not clicked yet, and without this it was simply lost.)
+    const auto secondTapClicks = [&] {
+        if (event.device != PointerDevice::Touch && latestPressReleased_ && left) {
+            click(event);
+            pressMemos_[1].toolPick = clickPickedForTool_;
+        }
+    };
     if (onBody(hit) && (memo.position - event.position).length() > 1e-9)
         if (const sel::PickResult first = pickAt(memo.position, profile); onBody(first)) {
-            if (first.bodyId != hit.bodyId)
+            if (first.bodyId != hit.bodyId) {
+                secondTapClicks();
                 return;
+            }
             // And so are two quick taps on two different faces (or edges)
             // of one body while faces or edges are being collected: the
             // double-tap that selects a body lands twice on the same thing.
             // Taken for one, it replaced the faces collected so far with the
-            // whole body (the owner on his Duo, 2026-11-12).
-            if (event.device != PointerDevice::Mouse && memo.subShapes && (first.kind != hit.kind || first.index != hit.index))
-                return;
+            // whole body (the owner on his Duo, with a finger or the
+            // Pencil, 2026-11-12). While faces are collected a tap means
+            // the face under it (addingPick), also beside an edge.
+            if (event.device != PointerDevice::Mouse && memo.subShapes) {
+                const sel::PickResult a = memo.faces ? sel::pickFace(pickTargets(), camera_, memo.position) : first;
+                const sel::PickResult b = memo.faces ? sel::pickFace(pickTargets(), camera_, event.position) : hit;
+                if (a.kind != b.kind || a.index != b.index) {
+                    secondTapClicks();
+                    return;
+                }
+            }
         }
     // A finger's second tap may land just off the body (and have cleared the
     // selection): the double-tap still means the body under the first tap.
@@ -1103,7 +1130,8 @@ InteractionController::PressMemo InteractionController::selectionMemo(Vec2 posit
     memo.position = position;
     memo.toolPick = false;
     memo.bodies = selection_.allOfKind(sel::SelectionKind::Body);
-    memo.subShapes = selection_.allOfKind(sel::SelectionKind::Face) || selection_.allOfKind(sel::SelectionKind::Edge);
+    memo.faces = selection_.allOfKind(sel::SelectionKind::Face);
+    memo.subShapes = memo.faces || selection_.allOfKind(sel::SelectionKind::Edge);
     if (memo.bodies)
         for (const auto& item : selection_.items())
             memo.bodyIds.push_back(item.bodyId);

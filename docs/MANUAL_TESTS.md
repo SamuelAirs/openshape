@@ -146,10 +146,10 @@ motion sensors, Vision and ARKit reported.
     around it. Are the paper's corners right in every photo (open a few)?
     Build: do W × D × H match a ruler? If you can, the same box on plain
     white paper, to compare how often the corners were found.
-21. **Several faces with a finger (the build after 64; your report).** Open
-    the Electronics box or the Honeycomb organizer, Pen off. Tap a small
+21. **Several faces, with the Pencil as you use it (the build after 64; your
+    report).** Open the Electronics box or the Honeycomb organizer. Tap a small
     face, then three more, some of them near their edges on purpose: each
-    tap should add the face under your finger; nothing should turn into an
+    tap should add the face under the tip; nothing should turn into an
     edge, and nothing should clear. Tap one of them again: only it goes.
     Tap two faces quickly one after the other: both are added (not the
     whole body). Tap just beside the part: nothing changes, and a line says
@@ -185,6 +185,15 @@ motion sensors, Vision and ARKit reported.
     turns red and says how far they can go ("Try ... or less"); the app
     must not close. *Tell me: is that what you meant by expanding them all
     outward? Anything that refused to move, and what it said.*
+26. **The Pencil and your fingers (your note: "I was using the Apple
+    Pencil").** With the Pencil: two quick taps on two neighbouring faces
+    add both. Then start a sketch on a face and draw a line with the
+    Pencil; drag one finger across the view: it should turn (it only slid
+    sideways before), the sketch staying open; **Face on** looks straight
+    at it again. Two fingers still pan and pinch. *Tell me: is turning the
+    view in a sketch with a finger what was missing, and does a resting
+    hand ever turn it by accident?* If you'd rather try 21 to 23 with a
+    finger as well: turn **Pen** off in the view buttons first.
 
 ## On Windows (the desktop shortcut)
 
