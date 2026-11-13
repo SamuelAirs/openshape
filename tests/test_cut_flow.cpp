@@ -308,8 +308,69 @@ TEST(CutFlow, EdgeTakesTapsInsideARegionOnlyWithinAMouseReach)
         edges += k == 'E';
     }
     EXPECT_LE(edges, 2) << row;
-    // Outside the region the edge keeps a finger's reach: 2 mm (12 px) off it on the face.
-    EXPECT_EQ(p.tapped(p.screen({10, 7, 20}) + (p.screen({8, 7, 20}) - p.screen({10, 7, 20})) * 0.9), 'E');
+    // Outside the region the edge keeps more than a mouse's reach. (A
+    // finger's whole 20 px on a wide face; this top is foreshortened to
+    // about 30 px across at the edge, and there the edge has the outer
+    // quarter: sel::PickOptions::narrowFaceShare, 2026-11-13.)
+    const Vec2 onEdge = p.screen({10, 7, 20});
+    const Vec2 inward = p.screen({8, 7, 20}) - onEdge;
+    const Vec2 e0 = p.screen({10, -10, 20}), e1 = p.screen({10, 10, 20});
+    const Vec2 along = e1 - e0;
+    double reach = 0;
+    for (double t = 0.05; t <= 1.0; t += 0.05) {
+        const Vec2 at = onEdge + inward * t;
+        if (p.tapped(at) != 'E')
+            break;
+        const double u = std::clamp(((at - e0).x * along.x + (at - e0).y * along.y) / (along.x * along.x + along.y * along.y), 0.0, 1.0);
+        reach = (at - (e0 + along * u)).length();
+    }
+    EXPECT_GT(reach, 6.0) << "px from the edge, on the face outside the region: beyond a mouse's 6 px";
+}
+
+// A hole cut through, then made larger (the owner, 2026-11-13): a finger
+// held on one of its walls takes all four (they are the cut's faces, and
+// none of them is its floor), one arrow moves them each their own way, and
+// the cut step stays what it was.
+TEST(CutFlow, HoldingAWallOfAHoleCutThroughTakesItsWallsAndWidensIt)
+{
+    Phone p;
+    TypingPause::Clock::time_point now{};
+    p.controller.setClockForTesting([&now] { return now; });
+    p.box();
+    p.sketchOnTop();
+    p.rectangle({-5, -5}, {5, 5});
+    p.finish();
+    p.tap(p.screen({0, 0, 20}));
+    ASSERT_NE(p.extrude(), nullptr);
+    EXPECT_DOUBLE_EQ(p.dragArrow(-20.0), -20.0);
+    ASSERT_TRUE(p.commit().ok());
+    ASSERT_NEAR(p.volume(), kCube - 100 * 20, 1e-6) << "a 10 x 10 hole through the cube";
+    p.controller.cancelOperation();
+    p.controller.fitAll(false);
+
+    // The wall at x = -5 faces the eye; a point on it just below the top.
+    const Vec2 wall = p.screen({-5, 0, 18});
+    const auto under = p.controller.pickAt(wall, InputProfile());
+    ASSERT_EQ(under.kind, sel::PickKind::Face);
+    const auto info = geom::faceInfo(p.document.bodies()[0]->shape(), under.index);
+    ASSERT_TRUE(info && info->normal.x > 0.999) << "the hole's wall, facing +X";
+    now += std::chrono::seconds(2);
+    p.controller.pointerPress(p.at(wall));
+    now += std::chrono::milliseconds(650);
+    p.controller.pointerRelease(p.at(wall));
+    ASSERT_EQ(p.controller.selection().size(), 4u) << "the four walls";
+    const auto* walls = dynamic_cast<const MultiPushPullOperation*>(p.controller.operation());
+    ASSERT_NE(walls, nullptr);
+    EXPECT_TRUE(walls->eachAlongItsOwnNormal());
+    EXPECT_EQ(walls->movingFaces().size(), 4u);
+    ASSERT_FALSE(p.messages.empty());
+    EXPECT_NE(p.messages.back().find("All 4 faces"), std::string::npos) << p.messages.back();
+
+    EXPECT_EQ(p.controller.setValueText("-1"), "");
+    ASSERT_TRUE(p.commit().ok());
+    EXPECT_NEAR(p.volume(), kCube - 12 * 12 * 20, 1e-6) << "12 x 12 now";
+    ASSERT_TRUE(p.controller.undo());
+    EXPECT_NEAR(p.volume(), kCube - 100 * 20, 1e-6);
 }
 
 // A sketch on no body (a base plate outlined on the ground around a box)

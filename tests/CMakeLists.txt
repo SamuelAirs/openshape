@@ -56,7 +56,7 @@ openshape_add_test(test_interaction test_camera.cpp test_picking.cpp test_intera
     test_cut_flow.cpp test_touch_selection.cpp test_typing_pause.cpp test_numeric_keypad.cpp
     test_loft_interaction.cpp test_project_files.cpp
     test_view_cube.cpp test_sketch_phone.cpp test_scan_body.cpp
-    test_typed_values.cpp test_pencil.cpp test_multi_face.cpp test_measure_design.cpp
+    test_typed_values.cpp test_pencil.cpp test_multi_face.cpp test_touch_faces.cpp test_measure_design.cpp
     test_reference_interaction.cpp)
 target_link_libraries(test_interaction PRIVATE openshape_interaction openshape_io openshape_measure)
 # test_touch_wording reads the QML hints and the help card; test_bodies a

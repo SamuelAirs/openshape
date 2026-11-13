@@ -319,7 +319,7 @@ void InteractionController::setViewAngles(double yaw, double pitch, bool animate
 {
     Camera to = camera_;
     to.yaw = std::remainder(yaw, 2 * kPi);
-    to.pitch = std::clamp(pitch, -kPi / 2, kPi / 2);
+    to.pitch = std::remainder(pitch, 2 * kPi); // beyond +-90 degrees: upside down (Camera::pitch)
     if (animate) {
         startAnimation(to);
     } else {
@@ -455,9 +455,21 @@ void InteractionController::setViewDirection(const Vec3& direction, bool animate
 void InteractionController::orbitBy(double dxPixels, double dyPixels)
 {
     animation_.reset();
+    const double sense = gestureOrbitSense();
     noteNavigation();
-    camera_.orbit(dxPixels, dyPixels, camera_.target);
+    camera_.orbit(dxPixels, dyPixels, camera_.target, sense);
     notifyView();
+}
+
+double InteractionController::gestureOrbitSense()
+{
+    // The steps of one drag (the view cube's, two fingers') come one by one:
+    // the drag keeps the sense its first step found (Camera::orbitSense).
+    const auto now = clock_();
+    if (!orbitStep_ || now - *orbitStep_ >= kNavigationQuiet)
+        orbitSense_ = camera_.orbitSense();
+    orbitStep_ = now;
+    return orbitSense_;
 }
 
 bool InteractionController::tapViewCube(Vec2 box)
@@ -761,8 +773,14 @@ void InteractionController::pointerMove(const PointerEvent& event)
         noteValueBeforeDrag();
         operation_->setActiveHandle(0); // Extrude: back from the draft to the distance
         const LinearManipulator arrow = operation_->handle(0);
+        // Faces moving each their own way: the face under the finger is
+        // dragged along its own normal, whichever of them the arrow is on.
+        Vec3 along = arrow.direction();
+        if (const auto* faces = dynamic_cast<const MultiPushPullOperation*>(operation_.get()); faces && faces->eachAlongItsOwnNormal())
+            if (const sel::PickResult face = sel::pickFace(pickTargets(), camera_, drag_.press.position); face.hit())
+                along = faces->directionOn(*document_, face.index, face.point).value_or(along);
         drag_.mode = DragMode::Manipulator;
-        drag_.handle = LinearManipulator(*drag_.region, arrow.direction());
+        drag_.handle = LinearManipulator(*drag_.region, along);
         drag_.handle.beginDrag(camera_, drag_.press.position, operation_->handleOffset(0));
         hover_ = {};
         hoveredHandle_ = -1;
@@ -781,6 +799,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
         if (!pan) {
             const auto hit = sel::pickFace(pickTargets(), camera_, drag_.press.position);
             drag_.pivot = hit.hit() ? hit.point : camera_.target;
+            drag_.orbitSense = camera_.orbitSense(); // kept for the whole drag
         }
         if (hover_.hit() || hoveredHandle_ >= 0 || hoveredRing_ >= 0) {
             hover_ = {};
@@ -792,7 +811,7 @@ void InteractionController::pointerMove(const PointerEvent& event)
     switch (drag_.mode) {
     case DragMode::Orbit:
         noteNavigation();
-        camera_.orbit(event.position.x - drag_.last.x, event.position.y - drag_.last.y, drag_.pivot);
+        camera_.orbit(event.position.x - drag_.last.x, event.position.y - drag_.last.y, drag_.pivot, drag_.orbitSense);
         break;
     case DragMode::Pan:
         noteNavigation();
@@ -936,11 +955,37 @@ bool InteractionController::tapBesideHandle(const PointerEvent& press) const
     // zone, on a body that is not selected, is a tap on that body (it adds
     // it, as a tap there does); only a tap within 8 px chooses the arrow.
     constexpr double kOnArrowPx = 8;
-    if (press.device == PointerDevice::Mouse || press.button != PointerButton::Left || drag_.handleMoved || !operation_
-        || !selection_.allOfKind(sel::SelectionKind::Body))
+    if (press.device == PointerDevice::Mouse || press.button != PointerButton::Left || drag_.handleMoved || !operation_)
         return false;
     const InputProfile profile = InputProfile::forDevice(press.device);
-    if (handleAt(press.position, std::min(kOnArrowPx, profile.handleTolerance)) >= 0)
+    const bool onArrow = handleAt(press.position, std::min(kOnArrowPx, profile.handleTolerance)) >= 0;
+    // Faces or edges selected, with the one arrow of Push/Pull, Offset,
+    // Shell, Fillet or Chamfer standing on them: the arrow's zone covers the
+    // selected face or edge itself and reaches over its neighbours, and a tap
+    // there did nothing (the owner on his Duo, 2026-11-12: "you can't tap it
+    // again to unselect it"). A tap on what is selected takes it out, on the
+    // arrow or not; a tap beside the arrow on another face or edge adds it.
+    // Right on the arrow over anything else stays the arrow's.
+    const bool faces = selection_.allOfKind(sel::SelectionKind::Face);
+    if (faces || selection_.allOfKind(sel::SelectionKind::Edge)) {
+        const Operation* op = operation_.get();
+        if (!dynamic_cast<const PushPullOperation*>(op) && !dynamic_cast<const MultiPushPullOperation*>(op)
+            && !dynamic_cast<const OffsetFaceOperation*>(op) && !dynamic_cast<const ShellOperation*>(op)
+            && !dynamic_cast<const EdgeOperation*>(op))
+            return false; // a tool whose taps are its own (Hole, Text, Align, ...)
+        bool keep = false;
+        const sel::PickResult hit = addingPick(press.position, profile, pickAt(press.position, profile), keep);
+        if (keep || (hit.kind != sel::PickKind::Face && hit.kind != sel::PickKind::Edge))
+            return false;
+        const auto kind = hit.kind == sel::PickKind::Face ? sel::SelectionKind::Face : sel::SelectionKind::Edge;
+        const bool selected = std::any_of(selection_.items().begin(), selection_.items().end(), [&](const sel::SelectionItem& item) {
+            return item.kind == kind && item.bodyId == hit.bodyId && item.index == hit.index;
+        });
+        return selected || !onArrow;
+    }
+    if (!selection_.allOfKind(sel::SelectionKind::Body))
+        return false;
+    if (onArrow)
         return false; // on the arrow itself
     const sel::PickResult hit = pickAt(press.position, profile);
     if (hit.kind != sel::PickKind::Face && hit.kind != sel::PickKind::Edge)
@@ -975,8 +1020,17 @@ void InteractionController::pointerDoubleClick(const PointerEvent& event)
         return pick.kind == sel::PickKind::Face || pick.kind == sel::PickKind::Edge;
     };
     if (onBody(hit) && (memo.position - event.position).length() > 1e-9)
-        if (const sel::PickResult first = pickAt(memo.position, profile); onBody(first) && first.bodyId != hit.bodyId)
-            return;
+        if (const sel::PickResult first = pickAt(memo.position, profile); onBody(first)) {
+            if (first.bodyId != hit.bodyId)
+                return;
+            // And so are two quick taps on two different faces (or edges)
+            // of one body while faces or edges are being collected: the
+            // double-tap that selects a body lands twice on the same thing.
+            // Taken for one, it replaced the faces collected so far with the
+            // whole body (the owner on his Duo, 2026-11-12).
+            if (event.device != PointerDevice::Mouse && memo.subShapes && (first.kind != hit.kind || first.index != hit.index))
+                return;
+        }
     // A finger's second tap may land just off the body (and have cleared the
     // selection): the double-tap still means the body under the first tap.
     if (!hit.hit() && memo.valid && event.device != PointerDevice::Mouse)
@@ -1049,6 +1103,7 @@ InteractionController::PressMemo InteractionController::selectionMemo(Vec2 posit
     memo.position = position;
     memo.toolPick = false;
     memo.bodies = selection_.allOfKind(sel::SelectionKind::Body);
+    memo.subShapes = selection_.allOfKind(sel::SelectionKind::Face) || selection_.allOfKind(sel::SelectionKind::Edge);
     if (memo.bodies)
         for (const auto& item : selection_.items())
             memo.bodyIds.push_back(item.bodyId);
@@ -1186,8 +1241,9 @@ void InteractionController::twoFingerPan(Vec2 from, Vec2 to)
 void InteractionController::twoFingerRotate(double dxPixels, double dyPixels)
 {
     animation_.reset();
+    const double sense = gestureOrbitSense();
     noteNavigation();
-    camera_.orbit(dxPixels, dyPixels, camera_.target);
+    camera_.orbit(dxPixels, dyPixels, camera_.target, sense);
     notifyView();
 }
 
@@ -1495,6 +1551,23 @@ void InteractionController::click(const PointerEvent& event)
         }
     }
 
+    // While faces or edges are being collected, a tap that adds keeps to
+    // that kind, and several of them are never thrown away by a tap on the
+    // model (addingPick).
+    bool overEdge = false;
+    if (additive) {
+        bool keep = false;
+        hit = addingPick(event.position, profile, hit, keep, &overEdge);
+        if (keep) {
+            message(forInput(selection_.allOfKind(sel::SelectionKind::Edge)
+                                 ? "Click an edge to add it or take it out. Click empty space to start again."
+                                 : "Click a face to add it or take it out. Click empty space to start again."));
+            notifyState();
+            notifyView();
+            return;
+        }
+    }
+
     // A finger or pen with bodies selected (Shapr3D): a tap on another body
     // adds that body, not one of its faces, and a tap on a selected body
     // takes it out. Tap empty space first to pick a face again.
@@ -1546,9 +1619,13 @@ void InteractionController::click(const PointerEvent& event)
         const auto kind = hit.kind == sel::PickKind::Edge ? sel::SelectionKind::Edge : sel::SelectionKind::Face;
         if (auto item = sel::makeSelectionItem(*document_, kind, hit.bodyId, hit.index)) {
             const bool sameKind = selection_.allOfKind(kind);
-            if (additive && sameKind)
+            if (additive && sameKind) {
                 selection_.toggle(*item);
-            else
+                // A face added by a tap right on an edge's line: perhaps
+                // the edge was meant.
+                if (overEdge && selection_.contains(*item))
+                    message(forInput("Faces are being added. To pick an edge instead, click empty space first."));
+            } else
                 selection_.set(*item);
         }
     }
@@ -1556,6 +1633,51 @@ void InteractionController::click(const PointerEvent& event)
     rebuildOperation();
     notifyState();
     notifyView();
+}
+
+sel::PickResult InteractionController::addingPick(Vec2 screen, const InputProfile& profile, const sel::PickResult& hit,
+                                                  bool& keep, bool* overEdge) const
+{
+    keep = false;
+    if (overEdge)
+        *overEdge = false;
+    const bool faces = selection_.allOfKind(sel::SelectionKind::Face);
+    const bool edges = selection_.allOfKind(sel::SelectionKind::Edge);
+    if ((!faces && !edges) || !hit.hit())
+        return hit; // nothing to keep to, or empty space: the tap that starts again
+    const bool several = selection_.size() >= 2;
+    if (edges) {
+        // Edges at a finger's whole reach, also across a narrow face (whose
+        // middle is the face's when nothing is selected).
+        sel::PickOptions reach;
+        reach.edgeTolerance = profile.pickTolerance;
+        if (const sel::PickResult edge = sel::pick(pickTargets(), camera_, screen, reach); edge.kind == sel::PickKind::Edge)
+            return edge;
+        // No edge near: one selected edge gives way to what was tapped (a
+        // change of mind); several stay.
+        keep = several;
+        return hit;
+    }
+    if (hit.kind == sel::PickKind::Face)
+        return hit;
+    // Faces selected and the tap picked something else. A single face gives
+    // way to a sketch's shape or a construction plane, as ever. An edge
+    // never takes over from faces: its zone reaches 20 px into the faces
+    // beside it, so the face under the finger is what a tap there means
+    // (to pick an edge after a face, start again from empty space: the hint
+    // says so when the tap was right on the edge's line).
+    if (!several && hit.kind != sel::PickKind::Edge)
+        return hit;
+    if (const sel::PickResult face = sel::pickFace(pickTargets(), camera_, screen); face.hit()) {
+        constexpr double kOnEdgePx = 6;
+        if (overEdge)
+            *overEdge = hit.kind == sel::PickKind::Edge && hit.screenDistance <= kOnEdgePx;
+        return face;
+    }
+    // Just off the body, beside its outline: several faces stay (a near
+    // miss must not cost them); a single one gives way as before.
+    keep = several;
+    return hit;
 }
 
 namespace {
@@ -1601,9 +1723,15 @@ bool InteractionController::selectStepFacesAt(const PointerEvent& press)
     if (step < 0 || faces.size() < 2)
         return false;
     // The way the step pushes its faces: a text's is the face it stands on
-    // (its letters' tops and floors face that way); otherwise the way most of
-    // its flat area faces (an extrusion's top, not its walls).
+    // (its letters' tops and floors face that way). Otherwise its cap: the
+    // way a flat face of it looks that all its other flat faces are square
+    // to (an extrusion's top with its walls around it, however tall they
+    // are; a pocket's floor). A step with no cap whose faces are flat or
+    // round is all walls (a hole cut through): they move each their own way
+    // (MultiPushPullOperation::eachAlongItsOwnNormal), no one direction.
+    // Anything else: the way most of its flat area faces.
     std::optional<Vec3> direction;
+    bool ownWays = false;
     if (const auto* text = dynamic_cast<const doc::TextFeature*>(features[std::size_t(step)].get())) {
         const geom::Shape before = body->shapeBefore(step);
         if (const auto index = geom::resolveFace(before, text->face.signature, text->face.indexHint))
@@ -1612,10 +1740,13 @@ bool InteractionController::selectStepFacesAt(const PointerEvent& press)
     }
     if (!direction) {
         std::vector<std::pair<Vec3, double>> areas;
+        bool flatOrRound = true;
         for (const int index : faces) {
             const auto info = geom::faceInfo(body->shape(), index);
-            if (!info || !info->isPlanar())
+            if (!info || !info->isPlanar()) {
+                flatOrRound = flatOrRound && info && info->kind == geom::SurfaceKind::Cylinder;
                 continue;
+            }
             const Vec3 n = info->normal.normalized();
             auto same = std::find_if(areas.begin(), areas.end(), [&](const auto& a) { return a.first.dot(n) > 1.0 - 1e-9; });
             if (same == areas.end())
@@ -1623,17 +1754,32 @@ bool InteractionController::selectStepFacesAt(const PointerEvent& press)
             else
                 same->second += info->area;
         }
+        const std::pair<Vec3, double>* cap = nullptr;
+        for (const auto& a : areas) {
+            const bool squareToTheRest = std::all_of(areas.begin(), areas.end(), [&](const auto& b) {
+                return &a == &b || std::abs(a.first.dot(b.first)) < 1e-6;
+            });
+            if (squareToTheRest && (!cap || a.second > cap->second))
+                cap = &a;
+        }
         const auto most = std::max_element(areas.begin(), areas.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
-        if (most != areas.end())
+        if (cap)
+            direction = cap->first;
+        else if (flatOrRound)
+            ownWays = true;
+        else if (most != areas.end())
             direction = most->first;
     }
-    if (!direction)
+    if (!direction && !ownWays)
         return false;
     selection_.clear();
     for (const int index : faces)
         if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Face, body->id(), index))
             selection_.add(*item);
-    stepFaces_ = StepFaces{body->id(), faces, *direction};
+    if (direction)
+        stepFaces_ = StepFaces{body->id(), faces, *direction};
+    else
+        stepFaces_.reset();
     faceOperationKind_ = doc::FeatureKind::PushPull;
     rebuildOperation();
     const doc::Feature& f = *features[std::size_t(step)];
@@ -1725,9 +1871,11 @@ void InteractionController::rebuildOperation()
             faces.push_back(item.index);
         // Several faces stay with Push/Pull (a second face tapped does not
         // switch tools; the owner on his Duo, 2026-11-03): one arrow moves
-        // them all when they face the same way (a long press's step faces:
-        // those facing its way). Faces facing different ways have no arrow;
-        // their actions (Shell, Delete faces) wait in the bar.
+        // them all. Facing the same way, straight along it (a long press's
+        // step faces: those facing its way). Facing different ways, each
+        // along its own normal (a hole's walls; the owner, 2026-11-13).
+        // Faces neither flat nor round have no arrow; their actions (Shell,
+        // Delete faces) wait in the bar.
         if (!operation_ && selection_.size() >= 2 && faceOperationKind_ != doc::FeatureKind::Shell) {
             faceOperationKind_ = doc::FeatureKind::PushPull;
             operation_ = MultiPushPullOperation::create(*document_, first.bodyId, faces, stepFacesDirection());
@@ -3139,7 +3287,7 @@ std::vector<ContextAction> InteractionController::contextActions() const
         const bool planar = single && *memo.planarFace;
         if (single && planar)
             actions.push_back({"pushpull", "Push/Pull", current == doc::FeatureKind::PushPull});
-        // Several faces: Push/Pull moves them together where they face the same way.
+        // Several faces: Push/Pull moves them together (MultiPushPullOperation).
         if (!single && (current == doc::FeatureKind::PushPullFaces || current == doc::FeatureKind::Shell))
             actions.push_back({"pushpull", "Push/Pull", current == doc::FeatureKind::PushPullFaces});
         actions.push_back({"shell", "Shell", operation_ && current == doc::FeatureKind::Shell});
@@ -4069,6 +4217,19 @@ RenderGrid InteractionController::groundGrid() const
     return grid;
 }
 
+namespace {
+// Edge and face picking for a device: a finger's or a pen's edge zones leave
+// a narrow face its middle (sel::PickOptions::narrowFaceShare).
+sel::PickOptions pickOptionsFor(const InputProfile& profile)
+{
+    sel::PickOptions options;
+    options.edgeTolerance = profile.pickTolerance;
+    if (profile.pickTolerance > InputProfile().pickTolerance)
+        options.narrowFaceShare = sel::kNarrowFaceShare;
+    return options;
+}
+} // namespace
+
 std::vector<sel::PickTarget> InteractionController::pickTargets() const
 {
     std::vector<sel::PickTarget> targets;
@@ -4081,9 +4242,7 @@ std::vector<sel::PickTarget> InteractionController::pickTargets() const
 
 sel::PickResult InteractionController::pickAt(Vec2 screen, const InputProfile& profile) const
 {
-    sel::PickOptions options;
-    options.edgeTolerance = profile.pickTolerance;
-    const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
+    const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, pickOptionsFor(profile));
     // Construction axes and plane outlines are thin, like edges: they win
     // over a face behind them (not over an edge nearer the pointer).
     const sel::PickResult region = pickProfile(screen);
@@ -4174,17 +4333,13 @@ sel::PickResult InteractionController::operationPickAt(Vec2 screen, const InputP
     if (const auto* construct = dynamic_cast<const DatumOperation*>(operation_.get())) {
         if (construct->mode() == DatumOperation::Mode::PlaneOffset || construct->mode() == DatumOperation::Mode::PlaneMidway)
             return sel::pickFace(pickTargets(), camera_, screen);
-        sel::PickOptions options;
-        options.edgeTolerance = profile.pickTolerance;
-        return sel::pick(pickTargets(), camera_, screen, options);
+        return sel::pick(pickTargets(), camera_, screen, pickOptionsFor(profile));
     }
     if ((extrude && extrude->pickingTarget()) || dynamic_cast<const HoleOperation*>(operation_.get())
         || dynamic_cast<const TextOperation*>(operation_.get()))
         return sel::pickFace(pickTargets(), camera_, screen);
     if (dynamic_cast<const AlignOperation*>(operation_.get())) {
-        sel::PickOptions options;
-        options.edgeTolerance = profile.pickTolerance;
-        const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, options);
+        const sel::PickResult body = sel::pick(pickTargets(), camera_, screen, pickOptionsFor(profile));
         // Construction axes and planes, and the X/Y/Z lines drawn through the
         // origin, are targets too.
         if (const sel::PickResult line = pickDatumLine(screen, profile, body, std::nullopt); line.hit())

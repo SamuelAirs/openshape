@@ -61,6 +61,34 @@ TEST(Lighting, KeyLightIsAboveOverTheViewersLeftShoulder)
     }
 }
 
+// The view can go over the top and come down the other side upside down
+// (Camera::orbit). The light stays above, follows the eye to that side, and
+// never jumps on the way.
+TEST(Lighting, KeyLightFollowsTheEyeOverTheTopWithoutAJump)
+{
+    const StudioLighting lighting;
+    for (const double yaw : {-135.0, -45.0, 20.0, 170.0})
+        for (const double sign : {1.0, -1.0}) {
+            Camera camera;
+            camera.yaw = yaw * kDegree;
+            camera.pitch = sign * 60 * kDegree;
+            Vec3 last = lighting.keyDirection(camera);
+            for (double pitch = 60; pitch <= 300; pitch += 0.5) {
+                camera.pitch = std::remainder(sign * pitch * kDegree, 2 * kPi);
+                const Vec3 key = lighting.keyDirection(camera);
+                EXPECT_NEAR(key.length(), 1.0, 1e-12);
+                EXPECT_GT(key.z, 0.0) << "from above, always";
+                EXPECT_LT(std::acos(std::clamp(key.dot(last), -1.0, 1.0)), 4 * kDegree) << "a jump at pitch " << sign * pitch;
+                last = key;
+            }
+            // Upside down, well past the top: on the side the eye is now on.
+            camera.pitch = sign * 150 * kDegree;
+            const Vec3 eyeSide{camera.backward().x, camera.backward().y, 0};
+            EXPECT_GT(lighting.keyDirection(camera).dot(eyeSide), 0.0) << "yaw " << yaw;
+            EXPECT_NEAR(std::asin(lighting.keyDirection(camera).z), lighting.keyElevation, 1e-9);
+        }
+}
+
 TEST(Lighting, FacesOfATurnedBoxDifferFromEveryAngle)
 {
     const StudioLighting lighting;

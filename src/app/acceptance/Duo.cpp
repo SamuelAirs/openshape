@@ -357,7 +357,12 @@ Steps steps(AcceptanceRunner& r)
     });
     wait(steps, 4);
     // ---- (c) The keypad open for the value box.
-    steps.push_back([&r] { r.touchTap({r.screenPoint(0, 0, 35)}); });
+    // (Still selected after Enter; a tap on a selected face takes it out,
+    // also under its arrow, since 2026-11-13: tap it only if it is not.)
+    steps.push_back([&r] {
+        if (r.app().operationTitle() != QStringLiteral("Push/Pull"))
+            r.touchTap({r.screenPoint(0, 0, 35)});
+    });
     wait(steps, 2);
     steps.push_back([&r] {
         r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), "duo keypad: the top face again", r.app().operationTitle());

@@ -179,9 +179,14 @@ public:
     Status readParams(const nlohmann::json& in) override;
 };
 
-// Several flat faces facing the same way, moved together along that normal
-// (geom::pushPullFaces): pulled out they add material, pushed in they take
-// it away (raised text pushed into the face it stands on engraves it).
+// Several faces of one body moved together by one distance. Flat faces
+// facing the same way move along that normal (geom::pushPullFaces): pulled
+// out they add material, pushed in they take it away (raised text pushed
+// into the face it stands on engraves it). Faces facing different ways each
+// move along their own normal and meet again at their corners
+// (geom::offsetFaces): the four walls of a square hole pushed back make the
+// hole larger. Which of the two is decided from the faces as they are when
+// the step is computed.
 class PushPullFacesFeature final : public Feature {
 public:
     using Feature::Feature;

@@ -27,6 +27,7 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepOffset_MakeOffset.hxx>
+#include <gp_Pln.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck.hxx>
@@ -2041,6 +2042,222 @@ Result<Shape> offsetFace(const Shape& shape, int faceIndex, double distance)
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
                                           "offsetFace: volume changed by " + std::to_string(actual) + ", expected about "
                                               + std::to_string(expected));
+        return out;
+    });
+}
+
+namespace {
+
+// offsetFaces: how far the faces `indices` of `shape` can move (each along
+// its own normal, out for a positive `distance`, in for a negative one)
+// before one of them reaches another face of the body; infinity when
+// nothing is in the way. For a flat face: the flat faces its motion runs
+// into (not those alongside it, and not its neighbours, which follow), at
+// the distance its nearest corner is from their plane, where it would lie
+// on them once there (their boxes overlap). Two selected faces closing on
+// each other have less room: opposite walls, half the gap. For a round
+// face moving towards its axis: its radius.
+double offsetRoom(const Shape& shape, const std::vector<int>& indices, double distance)
+{
+    const double sign = distance > 0 ? 1.0 : -1.0;
+    double room = std::numeric_limits<double>::infinity();
+    struct Flat {
+        gp_Pnt point;
+        gp_Dir normal;
+        Bnd_Box box;
+    };
+    const int count = shape.faceCount();
+    std::vector<std::optional<Flat>> flats(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        const TopoDS_Face face = faceAt(shape, i);
+        if (const auto normal = planarNormal(face)) {
+            BRepAdaptor_Surface surface(face);
+            Flat flat{surface.Value((surface.FirstUParameter() + surface.LastUParameter()) / 2,
+                                    (surface.FirstVParameter() + surface.LastVParameter()) / 2),
+                      *normal, Bnd_Box()};
+            BRepBndLib::Add(face, flat.box, false);
+            flats[static_cast<std::size_t>(i)] = flat;
+        }
+    }
+    const auto moves = [&](int i) { return std::find(indices.begin(), indices.end(), i) != indices.end(); };
+    const auto overlap = [](const Bnd_Box& a, const Bnd_Box& b) {
+        if (a.IsVoid() || b.IsVoid())
+            return false;
+        double a0[3], a1[3], b0[3], b1[3];
+        a.Get(a0[0], a0[1], a0[2], a1[0], a1[1], a1[2]);
+        b.Get(b0[0], b0[1], b0[2], b1[0], b1[1], b1[2]);
+        // Flat faces' boxes have no thickness: touching counts across it,
+        // but not along an edge the two merely share.
+        int thin = 0;
+        for (int k = 0; k < 3; ++k) {
+            const double low = std::max(a0[k], b0[k]), high = std::min(a1[k], b1[k]);
+            if (high - low < -1e-6)
+                return false;
+            if (high - low < 1e-6 && a1[k] - a0[k] > 1e-6 && b1[k] - b0[k] > 1e-6)
+                return false; // side by side
+            thin += high - low < 1e-6 ? 1 : 0;
+        }
+        return thin <= 1;
+    };
+    for (const int index : indices) {
+        const TopoDS_Face face = faceAt(shape, index);
+        if (!flats[static_cast<std::size_t>(index)]) {
+            BRepAdaptor_Surface surface(face);
+            if (surface.GetType() != GeomAbs_Cylinder)
+                continue;
+            // Towards its axis: a hole's wall moving out, a shaft's moving in.
+            const gp_Cylinder cylinder = surface.Cylinder();
+            const double u = (surface.FirstUParameter() + surface.LastUParameter()) / 2;
+            const double v = (surface.FirstVParameter() + surface.LastVParameter()) / 2;
+            const gp_Pnt on = surface.Value(u, v);
+            const auto normal = faceNormal(face, u, v);
+            if (!normal)
+                continue;
+            gp_Vec radial(cylinder.Axis().Location(), on);
+            radial -= gp_Vec(cylinder.Axis().Direction()) * radial.Dot(gp_Vec(cylinder.Axis().Direction()));
+            if (radial.Magnitude() > 1e-9 && sign * gp_Vec(*normal).Dot(radial) < 0)
+                room = std::min(room, cylinder.Radius());
+            continue;
+        }
+        const Flat& moving = *flats[static_cast<std::size_t>(index)];
+        const gp_Vec way = gp_Vec(moving.normal) * sign;
+        TopTools_IndexedMapOfShape corners;
+        TopExp::MapShapes(face, TopAbs_VERTEX, corners);
+        for (int other = 0; other < count; ++other) {
+            if (other == index || !flats[static_cast<std::size_t>(other)])
+                continue;
+            const Flat& target = *flats[static_cast<std::size_t>(other)];
+            const double facing = way.Dot(gp_Vec(target.normal));
+            if (std::abs(facing) < 0.1)
+                continue; // alongside the motion
+            // A neighbour (a shared corner) follows the face; it is not in its way.
+            bool neighbour = false;
+            for (TopExp_Explorer ex(faceAt(shape, other), TopAbs_VERTEX); ex.More() && !neighbour; ex.Next())
+                neighbour = corners.Contains(ex.Current());
+            if (neighbour)
+                continue;
+            double gap = std::numeric_limits<double>::infinity();
+            for (int c = 1; c <= corners.Extent(); ++c) {
+                const gp_Pnt corner = BRep_Tool::Pnt(TopoDS::Vertex(corners(c)));
+                const double t = gp_Vec(corner, target.point).Dot(gp_Vec(target.normal)) / facing;
+                if (t > 1e-7)
+                    gap = std::min(gap, t);
+            }
+            if (!std::isfinite(gap))
+                continue; // behind the face
+            gp_Trsf there;
+            there.SetTranslation(way * gap);
+            if (!overlap(moving.box.Transformed(there), target.box))
+                continue; // past its side
+            double closing = 1.0;
+            if (moves(other)) {
+                closing = 1.0 - moving.normal.Dot(target.normal);
+                if (closing < 1e-9)
+                    continue; // moving the same way: never
+            }
+            room = std::min(room, gap / closing);
+        }
+    }
+    return room;
+}
+
+} // namespace
+
+Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndices, double distance, const SizeAdvice& advice)
+{
+    if (faceIndices.empty())
+        return Result<Shape>::failure(ErrorCode::InvalidArgument, "Select the faces to move.", "offsetFaces: no faces");
+    std::vector<int> indices;
+    for (const int index : faceIndices) {
+        if (!validIndex(shape, index, shape.faceCount()))
+            return Result<Shape>::failure(ErrorCode::InvalidReference, "A selected face no longer exists.",
+                                          "offsetFaces: face index " + std::to_string(index) + " out of range");
+        if (std::find(indices.begin(), indices.end(), index) == indices.end())
+            indices.push_back(index);
+    }
+    if (std::abs(distance) < kMinLength)
+        return Result<Shape>::success(shape);
+    const char* userMessage = "Unable to move these faces that far. Their neighbours cannot follow.";
+    return guarded("offsetFaces", userMessage, [&]() -> Result<Shape> {
+        ScopedTimer timer("offsetFaces");
+        // Not past what the faces would run into: the kernel crashes there.
+        const double room = offsetRoom(shape, indices, distance);
+        if (std::abs(distance) >= room - 1e-6) {
+            std::string message = distance > 0 ? "These faces would meet another face of the part before that."
+                                               : "These faces would come out of the part before that.";
+            if (room > 10 * kMinLength)
+                message += " Try " + sizeText(room * 0.999, advice.unit) + " or less.";
+            return Result<Shape>::failure(ErrorCode::InvalidArgument, message,
+                                          "offsetFaces: " + std::to_string(distance) + " asked, room " + std::to_string(room));
+        }
+        BRepOffset_MakeOffset maker;
+        maker.Initialize(occ(shape), 0.0, 1e-6, BRepOffset_Skin, false, false, GeomAbs_Intersection, false);
+        // Where each flat face must end up, and what the move is worth in
+        // volume to first order (the corners where two moved faces meet add
+        // or take a little more).
+        struct MovedPlane {
+            gp_Pnt point;
+            gp_Dir normal;
+            int index;
+        };
+        std::vector<MovedPlane> planes;
+        double firstOrder = 0;
+        for (const int index : indices) {
+            const TopoDS_Face face = faceAt(shape, index);
+            maker.SetOffsetOnFace(face, distance);
+            GProp_GProps props;
+            BRepGProp::SurfaceProperties(face, props);
+            firstOrder += props.Mass() * distance;
+            if (const auto normal = planarNormal(face)) {
+                BRepAdaptor_Surface surface(face);
+                const gp_Pnt on = surface.Value((surface.FirstUParameter() + surface.LastUParameter()) / 2,
+                                                (surface.FirstVParameter() + surface.LastVParameter()) / 2);
+                planes.push_back({on.Translated(gp_Vec(*normal) * distance), *normal, index});
+            }
+        }
+        maker.MakeOffsetShape();
+        if (!maker.IsDone())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "BRepOffset_MakeOffset not done, error " + std::to_string(int(maker.Error())));
+        // Skin mode yields a shell: close it into a solid.
+        TopoDS_Shape result = maker.Shape();
+        if (!TopExp_Explorer(result, TopAbs_SOLID).More()) {
+            BRepBuilderAPI_MakeSolid solidMaker;
+            for (TopExp_Explorer ex(result, TopAbs_SHELL); ex.More(); ex.Next())
+                solidMaker.Add(TopoDS::Shell(ex.Current()));
+            if (!solidMaker.IsDone())
+                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "offsetFaces: no closed shell");
+            TopoDS_Solid solid = solidMaker.Solid();
+            BRepLib::OrientClosedSolid(solid);
+            result = solid;
+        }
+        auto out = finishMerged(result, "offsetFaces", userMessage, {occ(shape)});
+        if (!out)
+            return out;
+        // Kernel "success" is not success (offsetFace). The volume: more
+        // when the faces moved out and less when they moved in, by the
+        // faces' area x distance give or take the corners.
+        const double before = volume(shape), after = volume(out.value());
+        const double actual = after - before;
+        if (!(after > 0) || actual * distance <= 0 || std::abs(actual) < 0.2 * std::abs(firstOrder)
+            || std::abs(actual) > 5.0 * std::abs(firstOrder) + 1e-9 * before)
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "offsetFaces: volume changed by " + std::to_string(actual) + ", expected about "
+                                              + std::to_string(firstOrder));
+        // And every flat face is where the distance puts it.
+        for (const MovedPlane& moved : planes) {
+            bool found = false;
+            for (TopExp_Explorer ex(occ(out.value()), TopAbs_FACE); ex.More() && !found; ex.Next()) {
+                BRepAdaptor_Surface surface(TopoDS::Face(ex.Current()));
+                if (surface.GetType() != GeomAbs_Plane)
+                    continue;
+                const gp_Pln plane = surface.Plane();
+                found = std::abs(plane.Axis().Direction().Dot(moved.normal)) > 1.0 - 1e-7 && plane.Distance(moved.point) < 1e-5;
+            }
+            if (!found)
+                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                              "offsetFaces: face " + std::to_string(moved.index) + " is not in its moved plane");
+        }
         return out;
     });
 }

@@ -111,7 +111,8 @@ Rectangle {
                     HelpSection {
                         title: "View"
                         rows: [
-                            ["Orbit", "Drag empty space · one finger", "Drag empty space with one finger"],
+                            ["Orbit", "Drag empty space · one finger · all the way round: over the top view and on, upside down (Iso rights it)",
+                             "Drag with one finger: all the way round, over the top view and on, upside down (Iso rights it)"],
                             ["Pan", "Shift+drag or middle-drag · two fingers", "Drag with two fingers"],
                             ["Zoom", "Wheel · pinch (toward what is under the pointer)", "Pinch with two fingers"],
                             ["Fit everything", "F", "Fit (in the View menu on a phone)"],
@@ -131,7 +132,9 @@ Rectangle {
                         rows: [
                             ["Face or edge", "Click · tap", "Tap"],
                             ["Add to selection", "Shift+click (Cmd+click on an iPad keyboard) · taps add on touch",
-                             "Tap more: taps add; tap a selected one to take it out; Clear starts again"],
+                             "Tap more: faces add to faces, edges to edges (near an edge, the face under your finger); tap a selected one to take it out; empty space or Clear starts again"],
+                            ["An edge after a face", "Click the edge · touch: tap empty space first",
+                             "Tap empty space first, then the edge"],
                             ["A whole step's faces", "Touch: hold a face (all of a text, an extrusion's top and walls)",
                              "Hold a face: every face of the step that made it (all of a text, an extrusion's top and walls)"],
                             ["Whole body", "Double-click · double-tap", "Double-tap"],
@@ -146,7 +149,7 @@ Rectangle {
                         rows: [
                             ["New box / sketch", "B / K", "Box / Sketch in the tools (along the bottom on a phone)"],
                             ["Push or pull a flat face", "Select it, drag or type"],
-                            ["Several faces at once", "Faces that face the same way move together on one arrow; pushed in they cut, also through another body (push a raised text into its face to engrave it)"],
+                            ["Several faces at once", "Faces that face the same way move together on one arrow; pushed in they cut, also through another body (push a raised text into its face to engrave it). Faces facing different ways each move their own way on one arrow: a square hole's walls pushed back make it larger"],
                             ["Resize to an exact size", "Click a face: it shows the size to the opposite face; type the new one (+5 / -5 adds or removes)",
                              "Tap a face: it shows the size to the opposite face; tap the value and type the new one (+5 / -5 adds or removes)"],
                             ["Round or bevel edges", "Select edges → Fillet / Chamfer"],

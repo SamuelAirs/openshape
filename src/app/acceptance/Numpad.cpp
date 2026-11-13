@@ -306,7 +306,13 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
     });
     wait(steps, 4);
     // ---- A hardware keyboard still types into the value (an iPad's keyboard case).
-    steps.push_back([&r] { r.touchTap({r.screenPoint(0, 0, 100)}); });
+    // (The face stays selected after the check mark. A tap on a selected
+    // face takes it out, also under its arrow, since 2026-11-13: tap it only
+    // if it is not selected.)
+    steps.push_back([&r] {
+        if (r.app().operationTitle() != QStringLiteral("Push/Pull"))
+            r.touchTap({r.screenPoint(0, 0, 100)});
+    });
     wait(steps, 2);
     steps.push_back([&r, c] {
         r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face again"),
@@ -427,7 +433,11 @@ void addConfig(Steps& steps, AcceptanceRunner& r, const Config& c, const std::sh
             s->volume = r.bodyVolume();
         });
         wait(steps, 4);
-        steps.push_back([&r, s] { r.touchTap({r.screenPoint(3, -3, s->height + 10)}); });
+        // (The top face may still be selected: a tap would take it out.)
+        steps.push_back([&r, s] {
+            if (r.app().operationTitle() != QStringLiteral("Push/Pull"))
+                r.touchTap({r.screenPoint(3, -3, s->height + 10)});
+        });
         wait(steps, 2);
         steps.push_back([&r, c] {
             r.check(r.app().operationTitle() == QStringLiteral("Push/Pull"), c.name + QStringLiteral(": the top face for a hole"),

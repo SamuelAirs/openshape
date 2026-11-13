@@ -313,10 +313,12 @@ TEST(TouchMultiSelect, TapAddsBodyWhileBodiesAreSelected)
         finger.tap(s.topB());
         finger.pause(1.0);
         EXPECT_TRUE(s.bodiesSelected({s.b})) << finger.trace();
-        // A tap on B away from its arrows takes it out. On the phone its
-        // arrows cover all of it: a double-tap does (as anywhere).
+        // A tap on B away from its arrows takes it out. Where its arrows
+        // cover all of it a double-tap does (as anywhere). (On the phone
+        // they did, while a finger's edge zones covered what the arrows
+        // left; since 2026-11-13 the middle of a small face is the face's,
+        // and there is such a spot there too.)
         if (const auto clear = clearOfArrows(s, s.b)) {
-            EXPECT_EQ(viewport.x, kIpad.x);
             finger.tap(*clear);
             finger.pause(1.0);
         } else {

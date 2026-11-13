@@ -1132,7 +1132,10 @@ TEST(Interaction, MeasureBetweenTwoFaces)
     ASSERT_EQ(h.controller.selection().size(), 2u);
     // The count first (faces are added one tap at a time on a touch screen), then the measure.
     EXPECT_EQ(h.controller.selectionSummary(), "2 faces \xC2\xB7 Distance 0.00 mm \xC2\xB7 Angle 90.0\xC2\xB0");
-    EXPECT_EQ(h.controller.operation(), nullptr) << "facing different ways: no arrow, and no Shell unless chosen";
+    // Facing different ways: one Push/Pull arrow all the same (each face
+    // moves along its own normal; 2026-11-13), and no Shell unless chosen.
+    ASSERT_NE(h.controller.operation(), nullptr);
+    EXPECT_EQ(h.controller.operation()->title(), "Push/Pull");
 
     // Top and bottom are parallel: 20 mm apart. Pick the bottom through a
     // view from below.

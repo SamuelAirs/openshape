@@ -14,7 +14,15 @@ Vec3 StudioLighting::keyDirection(const Camera& camera) const
     // Horizontal directions from the camera's yaw alone (as Camera::right()).
     const Vec3 back{std::cos(camera.yaw), std::sin(camera.yaw), 0};
     const Vec3 right{-std::sin(camera.yaw), std::cos(camera.yaw), 0};
-    const Vec3 horizontal = back * std::cos(keyAzimuth) - right * std::sin(keyAzimuth);
+    Vec3 horizontal = back * std::cos(keyAzimuth) - right * std::sin(keyAzimuth);
+    // Upside down (the view went over the top or under the bottom) the eye
+    // is on the other side of the vertical, and the light follows it there:
+    // it swings over the top during the first 30 degrees past the pole, so
+    // the shading never jumps. Views up to straight above or below are lit
+    // exactly as before.
+    constexpr double kSwing = kPi / 6;
+    if (const double past = std::abs(camera.pitch) - kPi / 2; past > 0)
+        horizontal = horizontal * std::cos(kPi * std::min(past / kSwing, 1.0));
     return (horizontal * std::cos(keyElevation) + Vec3{0, 0, 1} * std::sin(keyElevation)).normalized();
 }
 

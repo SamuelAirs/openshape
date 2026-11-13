@@ -26,7 +26,11 @@ public:
 
     Vec3 target{0, 0, 0};
     double yaw = -kPi / 4;          // radians, around +Z; 0 = looking from +X
-    double pitch = 0.6154797087;    // radians, elevation; +90deg = from above (atan(1/sqrt2))
+    // radians, elevation; +90deg = from above (atan(1/sqrt2)). Beyond +-90deg
+    // the view has gone over the top (or under the bottom) and is upside
+    // down: the eye is on the other side of the vertical, +Z points down the
+    // screen. Kept within (-180deg, 180deg].
+    double pitch = 0.6154797087;
     double orthoHeight = 80.0;      // mm visible vertically (orthographic)
     double distance = 150.0;        // eye-target distance (perspective)
     double fovY = 0.61;             // radians (~35 degrees)
@@ -63,7 +67,18 @@ public:
     Vec3 pointOnViewPlane(Vec2 screen, const Vec3& planePoint) const;
 
     // ---- Navigation ----
-    void orbit(double dxPixels, double dyPixels, const Vec3& pivot);
+    // Whether the view is upside down (pitch beyond +-90 degrees).
+    bool upsideDown() const;
+    // +1, or -1 while the view is upside down: the way a sideways drag turns
+    // the view about the vertical so that the model follows the finger. A
+    // drag takes it once, where it starts, and keeps it (orbit's `sense`):
+    // changing it as the view passes over the top would reverse the turn
+    // under the finger.
+    double orbitSense() const { return upsideDown() ? -1.0 : 1.0; }
+    // A turntable about the vertical through `pivot`, which stays where it
+    // is on screen: dx turns about +Z, dy changes the elevation, with no
+    // stop at the top or the bottom (the view goes on over the pole).
+    void orbit(double dxPixels, double dyPixels, const Vec3& pivot, double sense = 1.0);
     void pan(Vec2 fromScreen, Vec2 toScreen);
     // factor < 1 zooms in. Keeps the point under `screen` fixed. In
     // perspective the distance stops at kMinDistance (a zoom in never moves

@@ -44,7 +44,18 @@ struct PickOptions {
     double edgeTolerance = 6.0;
     bool pickFaces = true;
     bool pickEdges = true;
+    // A finger's edge zone (20 px either side) covers the whole of a face
+    // narrower than 40 px on screen: a letter's stroke, a pocket's wall, a
+    // chamfer. With a share > 0 an edge only wins within that share of the
+    // width of the face under the pointer, measured from the edge straight
+    // across the face (0.25: the outer quarters are the edges', the middle
+    // half the face's), and never beyond the tolerance. Wide faces are not
+    // affected. 0: the tolerance alone (a mouse's 6 px needs no more).
+    double narrowFaceShare = 0.0;
 };
+
+// The share a finger or a pen uses (PickOptions::narrowFaceShare).
+inline constexpr double kNarrowFaceShare = 0.25;
 
 // CPU picking against display meshes. Faces: nearest ray/triangle hit.
 // Edges: nearest projected polyline within tolerance that is not hidden
