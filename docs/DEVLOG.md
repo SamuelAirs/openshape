@@ -1169,3 +1169,23 @@ kept as the branch `backup/main-0.4.0-bump` and `main` goes on from the tag.
   opens a 0.4.0 project without its reference photos and kept measurements
   and drops them when it saves (docs/FILE_FORMAT.md, "Versioning"). The
   owner's test list says so before he installs 0.3.2 over build 64.
+
+## 2026-11-13 (evening) — The whole run finds what thirteen scenarios did not
+
+Sam: "Let's push 0.4.0 and I'll try to test the measure today". The whole
+real-UI run on `polish`, owed since noon, came back 6071/6072: `measuredesign`
+failed "in pen mode a finger moves the view". It was not among the thirteen
+scenarios run after the Pencil's change at noon, though it is the one other
+place where a finger moves the view beside the Pencil in a sketch.
+
+- The app did what the change meant it to: one finger now turns the view
+  there. The check could not see it. It compared `Camera::backward()` and
+  the target, and its sketch lies on the ground, looked at from straight
+  above: a sideways drag turns the view about the line of sight, which
+  changes neither (the turntable's yaw at the pole). The check compares
+  `right()` as well now, and a second check says the view turns.
+- A camera compared by where it looks and what it looks at misses a turn
+  about its own axis. Compare its axes, or its yaw and pitch.
+- Choosing "the scenarios near a change" by their names is a guess. After a
+  change to how a device moves the view, grep the scenarios for that
+  device's strokes (`Device::Finger` with `penMode`) or run them all.

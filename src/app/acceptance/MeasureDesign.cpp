@@ -411,8 +411,16 @@ void trace(Steps& steps, AcceptanceRunner& r)
     steps.push_back([&r, s] {
         const auto* ss = session(r);
         const Camera& c = r.app().interaction().camera();
-        const bool moved = (c.backward() - s->camera.backward()).length() > 1e-6 || (c.target - s->camera.target).length() > 1e-6;
-        r.check(moved, "trace (pen): in pen mode a finger moves the view");
+        // Since 2026-11-13 one finger turns the view in a sketch while the
+        // Pencil is in use (it panned before). Looking straight down at the
+        // sketch, a sideways drag turns the view about the line of sight:
+        // neither the direction looked along nor the target changes, so the
+        // view's own axes are compared as well.
+        const double turned = (c.backward() - s->camera.backward()).length() + (c.right() - s->camera.right()).length();
+        const bool moved = turned > 1e-3 || (c.target - s->camera.target).length() > 1e-6;
+        r.check(moved, "trace (pen): in pen mode a finger moves the view", AcceptanceRunner::num(turned));
+        r.check(turned > 1e-3, "trace (pen): it turns the view (one finger orbits in a sketch beside the Pencil)",
+                AcceptanceRunner::num(turned));
         r.check(ss && ss->sketch().circles().size() == 1 && ss->sketch().lines().empty() && r.app().undoStack().index() == s->undoIndex,
                 "trace (pen): and traces nothing");
         r.app().setPenMode(false);

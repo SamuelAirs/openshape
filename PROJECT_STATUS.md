@@ -212,16 +212,27 @@ submission) and the 0.4.0 Measure round after it (on build 64 until a newer
 repo's words: the section "FoldForm 0.3.2" (1 to 6) is what the reports
 below call checks 21 to 26.
 
+**The 0.4.0 build** (the owner, 16:05: "Let's push 0.4.0 and I'll try to
+test the measure today"). On this branch after the merge: 999/999 headless;
+the whole real-UI run 6071/6072 checks in 63 scenarios (25 minutes), its one
+failure a check that could not see what it checked: `measuredesign` asked
+whether a finger moves the view beside the Pencil by comparing the
+direction looked along and the target, and since the Pencil's fix one
+finger turns the view there, which, looking straight down at a sketch, is a
+turn about the line of sight that changes neither. The check now compares
+the view's axes too and says that the view turns; the scenario alone then
+passed 113/113 (the app's code did not change, so the whole run was not
+repeated). The lambda-capture check: only the known one in `Duo.cpp`.
+Pushed with `[testflight]`: the build's number is in the vault's test list
+(it replaces build 64: Measure as it was, plus everything in 0.3.2).
+
 **Next.**
 1. His round on 0.3.2 and his word to the App Store chat. What's New is the
    `appstore:whats-new` block in docs/APP_STORE.md.
-2. A 0.4.0 TestFlight build from `polish`, on his word: the whole real-UI
-   run first (owed since the Pencil's changes; thirteen scenarios ran after
-   them, the whole run before), then a push of `polish` with `[testflight]`
-   in its head commit. It replaces build 64 and has Measure and the fixes.
-3. His Measure round decides Measure's fixes; then `polish` into `main` as
-   0.4.0.
-4. Still his to answer: which lock he meant (the vault's list asks in its
+2. His Measure round on the 0.4.0 build pushed today (the vault's list,
+   sections 10 to 18). It decides Measure's fixes; then `polish` into
+   `main` as 0.4.0.
+3. Still his to answer: which lock he meant (the vault's list asks in its
    section 4).
 
 **Learned.** `scripts/dev/ci_status.py watch` was given a short commit id
@@ -1678,7 +1689,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 6050/6050 checks through the real UI in 62 scenarios (2026-11-13, `polish`: 26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
+`acceptance_gui`: 6071/6072 checks through the real UI in 63 scenarios (2026-11-13 afternoon, `polish` with the Pencil's changes and `main` merged in: 25 minutes; the one failure was a check in `measuredesign` that could not see the view turn, corrected and passed alone 113/113, so 6073 checks now); 6050/6050 in 62 scenarios that morning (26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
