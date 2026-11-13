@@ -100,6 +100,44 @@ geom::Shape steppedBlock()
     return geom::booleanOp(high, low, geom::BooleanKind::Union).value();
 }
 
+// A 40 x 30 x 5 plate with a 10 x 10 square hole through its middle (x 15 to
+// 25, y 10 to 20): 5500 mm^3.
+geom::Shape plateWithSquareHole()
+{
+    const auto plate = geom::makeBox({0, 0, 0}, {40, 30, 5}).value();
+    const auto hole = geom::makeBox({15, 10, -1}, {10, 10, 7}).value();
+    return geom::booleanOp(plate, hole, geom::BooleanKind::Subtract).value();
+}
+
+// The hole's four walls: the flat upright faces inside the plate's outline.
+// In the order -X side (x = 15, facing +X into the hole), +X side, -Y side, +Y side.
+std::vector<int> holeWalls(const geom::Shape& shape)
+{
+    std::vector<int> walls(4, -1);
+    for (int i = 0; i < shape.faceCount(); ++i) {
+        const auto f = geom::faceInfo(shape, i);
+        if (!f || !f->isPlanar() || std::abs(f->normal.z) > 1e-6)
+            continue;
+        const Vec3 p = f->point;
+        if (p.x < 1 || p.x > 39 || p.y < 1 || p.y > 29)
+            continue; // the plate's own sides
+        walls[f->normal.x > 0.5 ? 0 : f->normal.x < -0.5 ? 1 : f->normal.y > 0.5 ? 2 : 3] = i;
+    }
+    return walls;
+}
+
+// Where the flat faces of `shape` facing `normal` lie along it (their planes'
+// offsets), sorted.
+std::vector<double> planesFacing(const geom::Shape& shape, Vec3 normal)
+{
+    std::vector<double> at;
+    for (int i = 0; i < shape.faceCount(); ++i)
+        if (const auto f = geom::faceInfo(shape, i); f && f->isPlanar() && f->normal.dot(normal) > 1 - 1e-9)
+            at.push_back(f->point.dot(normal));
+    std::sort(at.begin(), at.end());
+    return at;
+}
+
 // An STL file as triangles welded by their exact coordinates: closed (every
 // edge used once each way) and enclosing a positive volume.
 struct StlCheck {
@@ -191,6 +229,152 @@ TEST(PushPullFaces, FacesFacingDifferentWaysAreRefused)
     EXPECT_NEAR(geom::volume(down.value()), 3000 - 1200, 1e-6);
 }
 
+// ---- Faces facing different ways: each along its own normal -------------------------
+
+// The owner, 2026-11-13: "if I have a square shape cut out of a plane, and I
+// try to make the hole bigger by selecting all of the faces and expanding
+// them all outward, I can't do that."
+TEST(OffsetFaces, TheFourWallsOfASquareHoleMoveBackTogether)
+{
+    const auto plate = plateWithSquareHole();
+    ASSERT_NEAR(geom::volume(plate), 5500, 1e-6);
+    const std::vector<int> walls = holeWalls(plate);
+    ASSERT_TRUE(std::all_of(walls.begin(), walls.end(), [](int i) { return i >= 0; }));
+    EXPECT_FALSE(geom::commonFaceNormal(plate, walls).has_value());
+    EXPECT_FALSE(geom::pushPullFaces(plate, walls, -2)) << "straight sweeps cannot do it";
+
+    // Back by 2 mm (into the plate): a 14 x 14 hole with square corners.
+    const auto larger = geom::offsetFaces(plate, walls, -2);
+    ASSERT_TRUE(larger) << larger.developerMessage();
+    EXPECT_NEAR(geom::volume(larger.value()), (1200 - 14 * 14) * 5, 1e-6);
+    EXPECT_EQ(larger.value().faceCount(), 10) << "six outside, four walls: no corner pieces";
+    EXPECT_NEAR(planesFacing(larger.value(), {1, 0, 0}).front(), 13, 1e-9) << "the wall at x = 15 is at 13";
+    EXPECT_NEAR(-planesFacing(larger.value(), {-1, 0, 0}).front(), 27, 1e-9);
+    EXPECT_NEAR(planesFacing(larger.value(), {0, 1, 0}).front(), 8, 1e-9);
+    EXPECT_NEAR(-planesFacing(larger.value(), {0, -1, 0}).front(), 22, 1e-9);
+    const auto box = geom::boundingBox(larger.value());
+    EXPECT_NEAR(box.min.x, 0, 1e-9);
+    EXPECT_NEAR(box.max.x, 40, 1e-9);
+    EXPECT_NEAR(box.max.y, 30, 1e-9);
+    EXPECT_NEAR(box.max.z, 5, 1e-9);
+    const StlCheck stl = exportAndRead(larger.value(), "openshape_hole_larger.stl");
+    EXPECT_TRUE(stl.closed);
+    EXPECT_NEAR(stl.volume, 5020, 1e-3);
+
+    // Out by 2 mm (into the hole): a 6 x 6 hole.
+    const auto smaller = geom::offsetFaces(plate, walls, 2);
+    ASSERT_TRUE(smaller) << smaller.developerMessage();
+    EXPECT_NEAR(geom::volume(smaller.value()), (1200 - 6 * 6) * 5, 1e-6);
+
+    // Two opposite walls only: 14 x 10.
+    const auto wider = geom::offsetFaces(plate, {walls[0], walls[1]}, -2);
+    ASSERT_TRUE(wider) << wider.developerMessage();
+    EXPECT_NEAR(geom::volume(wider.value()), (1200 - 14 * 10) * 5, 1e-6);
+
+    // Two walls that share a corner: 12 x 12, the corner still square.
+    const auto corner = geom::offsetFaces(plate, {walls[0], walls[2]}, -2);
+    ASSERT_TRUE(corner) << corner.developerMessage();
+    EXPECT_NEAR(geom::volume(corner.value()), (1200 - 12 * 12) * 5, 1e-6);
+
+    // Nothing to do, and the hole closed up, are said, not built wrong.
+    const auto same = geom::offsetFaces(plate, walls, 0);
+    ASSERT_TRUE(same);
+    EXPECT_NEAR(geom::volume(same.value()), 5500, 1e-9);
+    EXPECT_FALSE(geom::offsetFaces(plate, {}, 1));
+    EXPECT_FALSE(geom::offsetFaces(plate, {walls[0], 999}, 1));
+}
+
+// Walls pulled out until they meet, or pushed back out of the plate's side,
+// are refused before the kernel is asked (it does not fail on a hole closed
+// to nothing: it crashes), and the refusal names the room there is.
+TEST(OffsetFaces, AMoveIntoAnotherFaceIsRefusedWithTheRoomThereIs)
+{
+    const auto plate = plateWithSquareHole();
+    const std::vector<int> walls = holeWalls(plate);
+    // The four walls out: opposite ones meet after 5 mm each.
+    for (const double distance : {5.0, 5.5, 40.0}) {
+        const auto closed = geom::offsetFaces(plate, walls, distance);
+        ASSERT_FALSE(closed) << distance;
+        EXPECT_EQ(closed.error(), ErrorCode::InvalidArgument) << closed.developerMessage();
+        EXPECT_NE(closed.userMessage().find("Try 4.9 mm or less."), std::string::npos) << closed.userMessage();
+    }
+    const auto nearly = geom::offsetFaces(plate, walls, 4.9);
+    ASSERT_TRUE(nearly) << nearly.developerMessage();
+    EXPECT_NEAR(geom::volume(nearly.value()), (1200 - 0.2 * 0.2) * 5, 1e-6);
+    // One wall alone has the whole 10 mm to the wall across.
+    const auto one = geom::offsetFaces(plate, {walls[0], walls[2]}, 9.5);
+    ASSERT_TRUE(one) << one.developerMessage();
+    EXPECT_NEAR(geom::volume(one.value()), (1200 - 0.5 * 0.5) * 5, 1e-6);
+    EXPECT_FALSE(geom::offsetFaces(plate, {walls[0], walls[2]}, 10));
+    // Back into the plate: the nearest side is 10 mm behind the walls at y = 10 and 20.
+    const auto out = geom::offsetFaces(plate, walls, -10);
+    ASSERT_FALSE(out);
+    EXPECT_NE(out.userMessage().find("come out of the part"), std::string::npos) << out.userMessage();
+    EXPECT_NE(out.userMessage().find("Try 9.9 mm or less."), std::string::npos) << out.userMessage();
+    const auto wide = geom::offsetFaces(plate, walls, -9.5);
+    ASSERT_TRUE(wide) << wide.developerMessage();
+    EXPECT_NEAR(geom::volume(wide.value()), (1200 - 29 * 29) * 5, 1e-6);
+    // In inches when the document shows inches.
+    const auto inches = geom::offsetFaces(plate, walls, 6, {true, LengthUnit::Inch});
+    ASSERT_FALSE(inches);
+    EXPECT_NE(inches.userMessage().find(" in or less."), std::string::npos) << inches.userMessage();
+
+    // A round hole: its wall moves out to make it smaller, and never past its radius.
+    const auto drilled = geom::booleanOp(geom::makeBox({0, 0, 0}, {40, 30, 5}).value(),
+                                         geom::makeCylinder({20, 15, -1}, {0, 0, 1}, 5, 7).value(), geom::BooleanKind::Subtract)
+                             .value();
+    int round = -1, top = -1;
+    for (int i = 0; i < drilled.faceCount(); ++i) {
+        const auto f = geom::faceInfo(drilled, i);
+        if (f && f->kind == geom::SurfaceKind::Cylinder)
+            round = i;
+        if (f && f->isPlanar() && f->normal.z > 0.999)
+            top = i;
+    }
+    ASSERT_GE(round, 0);
+    ASSERT_GE(top, 0);
+    const auto closedRound = geom::offsetFaces(drilled, {round, top}, 5);
+    ASSERT_FALSE(closedRound);
+    EXPECT_NE(closedRound.userMessage().find("Try 4.9 mm or less."), std::string::npos) << closedRound.userMessage();
+    // The hole 2 mm smaller in radius and the plate 2 mm thicker, together.
+    const auto both = geom::offsetFaces(drilled, {round, top}, 2);
+    ASSERT_TRUE(both) << both.developerMessage();
+    EXPECT_NEAR(geom::volume(both.value()), (1200 - kPi * 9) * 7, 1e-6);
+}
+
+TEST(OffsetFaces, OutsideFacesGrowABlockOnEverySideChosen)
+{
+    const auto block = geom::makeBox({0, 0, 0}, {20, 10, 10}).value();
+    int top = -1, front = -1;
+    std::vector<int> sides;
+    for (int i = 0; i < block.faceCount(); ++i) {
+        const auto f = geom::faceInfo(block, i);
+        ASSERT_TRUE(f.has_value());
+        if (f->normal.z > 0.999)
+            top = i;
+        if (f->normal.y < -0.999)
+            front = i;
+        if (std::abs(f->normal.z) < 1e-6)
+            sides.push_back(i);
+    }
+    ASSERT_GE(top, 0);
+    ASSERT_GE(front, 0);
+    ASSERT_EQ(sides.size(), 4u);
+    // The top and the front, 2 mm each: 20 x 12 x 12.
+    const auto two = geom::offsetFaces(block, {top, front}, 2);
+    ASSERT_TRUE(two) << two.developerMessage();
+    EXPECT_NEAR(geom::volume(two.value()), 20 * 12 * 12, 1e-6);
+    EXPECT_EQ(two.value().faceCount(), 6);
+    // All four sides, 1 mm in: 18 x 8 x 10.
+    const auto slim = geom::offsetFaces(block, sides, -1);
+    ASSERT_TRUE(slim) << slim.developerMessage();
+    EXPECT_NEAR(geom::volume(slim.value()), 18 * 8 * 10, 1e-6);
+    // The same face twice counts once.
+    const auto once = geom::offsetFaces(block, {top, top}, 3);
+    ASSERT_TRUE(once) << once.developerMessage();
+    EXPECT_NEAR(geom::volume(once.value()), 20 * 10 * 13, 1e-6);
+}
+
 // ---- Selecting several faces ----------------------------------------------------
 
 TEST(MultiFace, ASecondFaceTappedKeepsPushPullAndOneArrowMovesBoth)
@@ -264,26 +448,121 @@ TEST(MultiFace, TappingASelectedFaceTakesItOutAndEmptySpaceClears)
     EXPECT_EQ(h.controller.operation(), nullptr);
 }
 
-TEST(MultiFace, FacesFacingDifferentWaysHaveNoArrowAndShellIsChosen)
+// Faces facing different ways had no arrow at all (0.3.1). They now move
+// together, each along its own normal, and Shell is still there to choose.
+TEST(MultiFace, FacesFacingDifferentWaysMoveEachItsOwnWayAndShellCanBeChosen)
 {
     Harness h;
-    h.import("Step", steppedBlock());
+    const Uuid block = h.import("Step", steppedBlock());
     h.controller.fitAll(false);
-    h.tap({10, 5, 10}); // top
-    h.tap({10, 0, 5}); // the high block's front, facing -Y
+    h.tap({10, 5, 10}); // the high top
+    h.tap({10, 0, 5}); // the front, facing -Y (one face under both blocks)
     ASSERT_EQ(h.controller.selection().size(), 2u);
-    EXPECT_EQ(h.controller.operation(), nullptr) << "no arrow, and no Shell unless chosen";
+    ASSERT_NE(h.multi(), nullptr) << "one arrow for both";
+    EXPECT_TRUE(h.multi()->eachAlongItsOwnNormal());
+    EXPECT_EQ(h.controller.operation()->title(), "Push/Pull");
+    EXPECT_EQ(h.multi()->movingFaces().size(), 2u);
+    // The arrow stands on the face tapped last, pointing out of it.
+    EXPECT_NEAR(h.controller.operation()->handle(0).direction().y, -1.0, 1e-9);
     EXPECT_TRUE(h.offers("shell"));
     EXPECT_TRUE(h.offers("deleteFaces"));
     EXPECT_TRUE(h.offers("clearSelection"));
-    EXPECT_FALSE(h.offers("pushpull"));
+    // 2 mm out: the front (200 + 100 mm^2) comes forward 2, the high top
+    // (20 x 10, and 2 more of the new front) rises 2.
+    EXPECT_EQ(h.controller.setValueText("2"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.volume(block), 3000 + 2 * 300 + 2 * 20 * 12, 1e-6);
+    const auto rows = h.controller.historyRows();
+    EXPECT_TRUE(std::any_of(rows.begin(), rows.end(), [](const HistoryRow& r) {
+        return r.name == "Push/Pull" && r.detail == "2.00 mm \xC2\xB7 2 faces";
+    }));
+    ASSERT_TRUE(h.controller.undo());
+    EXPECT_NEAR(h.volume(block), 3000, 1e-6);
+
     // Shell chosen: the same selection model, each tap adds an opening.
+    h.controller.cancelOperation();
+    h.tap({10, 5, 10});
+    h.tap({10, 0, 5});
+    ASSERT_EQ(h.controller.selection().size(), 2u);
     ASSERT_TRUE(h.controller.triggerAction("shell").ok());
     ASSERT_NE(h.controller.operation(), nullptr);
     EXPECT_EQ(h.controller.operation()->title(), "Shell");
     h.tap({30, 5, 5});
     EXPECT_EQ(h.controller.selection().size(), 3u);
     EXPECT_EQ(h.controller.operation()->title(), "Shell");
+}
+
+// The owner's hole: its four walls tapped (two from one side, two from the
+// other), one arrow, and the hole grows square. A finger on any of the
+// walls drags that wall along its own normal.
+TEST(MultiFace, TheWallsOfASquareHoleSelectedAndPushedBackWidenIt)
+{
+    Harness h;
+    const Uuid plate = h.import("Plate", plateWithSquareHole());
+    const std::vector<int> walls = holeWalls(h.document.body(plate)->shape());
+    const auto mouse = InputProfile::forDevice(PointerDevice::Mouse);
+    const auto tapWall = [&](Vec3 p, int wall) {
+        ASSERT_EQ(h.controller.pickAt(h.screen(p), mouse).index, wall) << "the wall is in sight at " << p.x << ", " << p.y;
+        h.tap(p);
+    };
+    // From the front right, looking down: the walls on the far sides.
+    h.controller.setViewAngles(-45 * kPi / 180, 50 * kPi / 180, false);
+    h.controller.fitAll(false);
+    tapWall({15, 15, 2.5}, walls[0]);
+    tapWall({20, 20, 2.5}, walls[3]);
+    ASSERT_EQ(h.controller.selection().size(), 2u);
+    ASSERT_NE(h.multi(), nullptr) << "two walls at a corner: one arrow (there was none)";
+    EXPECT_TRUE(h.multi()->eachAlongItsOwnNormal());
+    // From the back left: the other two.
+    h.controller.setViewAngles(135 * kPi / 180, 50 * kPi / 180, false);
+    tapWall({25, 15, 2.5}, walls[1]);
+    tapWall({20, 10, 2.5}, walls[2]);
+    ASSERT_EQ(h.controller.selection().size(), 4u);
+    ASSERT_NE(h.multi(), nullptr);
+    EXPECT_EQ(h.multi()->movingFaces().size(), 4u);
+    EXPECT_EQ(h.controller.operation()->title(), "Push/Pull");
+    EXPECT_NEAR(h.controller.operation()->handle(0).direction().y, 1.0, 1e-9) << "on the wall tapped last (y = 10, facing +Y)";
+
+    // A finger on the wall at x = 25 (facing -X) dragged towards +X on
+    // screen pushes it back: the value goes negative, whatever wall the
+    // arrow stands on. (Closer first: at this size the arrow's finger zone
+    // reaches from the hole's middle to its walls, and a press there is the
+    // arrow's.)
+    h.controller.pinch(h.screen({20, 15, 2.5}), 3.0);
+    const Vec2 onWall = h.screen({25, 18, 2.5});
+    const Vec2 back = h.screen({28, 18, 2.5}) - onWall;
+    ASSERT_FALSE(h.controller.operation()
+                     ->handle(0)
+                     .hitTest(h.controller.camera(), onWall, h.controller.operation()->handleOffset(0),
+                              InputProfile::forDevice(PointerDevice::Touch).handleTolerance)
+                     .has_value())
+        << "the press is on the wall, clear of the arrow";
+    ASSERT_EQ(h.controller.pickAt(onWall, mouse).index, walls[1]);
+    h.now += std::chrono::seconds(1);
+    h.controller.pointerPress(Harness::at(onWall, PointerDevice::Touch));
+    for (int i = 1; i <= 8; ++i)
+        h.controller.pointerMove(Harness::at(onWall + back * (i / 8.0), PointerDevice::Touch));
+    EXPECT_LT(h.controller.operation()->value(), -1.0) << "dragged back about 3 mm";
+    h.controller.pointerRelease(Harness::at(onWall + back, PointerDevice::Touch));
+    ASSERT_NE(h.multi(), nullptr);
+    EXPECT_EQ(h.controller.selection().size(), 4u);
+
+    // Typed: 2 mm back on every wall, one step, one undo.
+    EXPECT_EQ(h.controller.setValueText("-2"), "");
+    ASSERT_TRUE(h.controller.commitOperation().ok());
+    EXPECT_NEAR(h.volume(plate), (1200 - 14 * 14) * 5, 1e-6);
+    const auto& features = h.document.body(plate)->features();
+    EXPECT_EQ(features.back()->kind(), doc::FeatureKind::PushPullFaces);
+    const auto rows = h.controller.historyRows();
+    EXPECT_TRUE(std::any_of(rows.begin(), rows.end(), [](const HistoryRow& r) {
+        return r.name == "Push/Pull" && r.detail == "-2.00 mm \xC2\xB7 4 faces";
+    }));
+    // The step can be changed afterwards like any other.
+    ASSERT_TRUE(h.controller.setFeatureParameter(features.back()->id(), "distance", "-3").ok());
+    EXPECT_NEAR(h.volume(plate), (1200 - 16 * 16) * 5, 1e-6);
+    ASSERT_TRUE(h.controller.undo());
+    ASSERT_TRUE(h.controller.undo());
+    EXPECT_NEAR(h.volume(plate), 5500, 1e-6);
 }
 
 TEST(MultiFace, CmdClickAddsWithAMouseAPlainClickReplaces)

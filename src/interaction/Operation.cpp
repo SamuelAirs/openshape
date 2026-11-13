@@ -380,8 +380,27 @@ std::unique_ptr<MultiPushPullOperation> MultiPushPullOperation::create(const doc
         moving = faces;
     }
     const auto normal = geom::commonFaceNormal(shape, moving);
-    if (!normal)
-        return nullptr;
+    if (!normal) {
+        // Facing different ways: each along its own normal, the arrow on
+        // the face selected last (the one under the finger just now).
+        if (direction || moving.size() < 2)
+            return nullptr;
+        std::vector<doc::FaceRef> own;
+        for (const int index : moving) {
+            const auto signature = geom::captureFaceSignature(shape, index);
+            const auto info = geom::faceInfo(shape, index);
+            if (!signature || !info || !(info->isPlanar() || info->kind == geom::SurfaceKind::Cylinder))
+                return nullptr;
+            own.push_back(doc::FaceRef{index, *signature});
+        }
+        const int last = moving.back();
+        const auto info = geom::faceInfo(shape, last);
+        const Vec3 base = info->isPlanar() ? arrowBaseOnFace(shape, last, *info) : info->point;
+        auto op = std::unique_ptr<MultiPushPullOperation>(
+            new MultiPushPullOperation(bodyId, LinearManipulator(base, info->normal), std::move(own), std::move(moving)));
+        op->ownNormals_ = true;
+        return op;
+    }
     std::vector<doc::FaceRef> refs;
     int largest = -1;
     double largestArea = -1;
@@ -417,7 +436,8 @@ Result<std::vector<std::pair<Uuid, geom::Shape>>> MultiPushPullOperation::cuts(d
     using R = Result<std::vector<std::pair<Uuid, geom::Shape>>>;
     std::vector<std::pair<Uuid, geom::Shape>> out;
     const doc::Body* source = document.body(bodyId());
-    if (value >= 0 || !source || source->shape().isNull())
+    // (Faces moving each their own way sweep no one shape to cut with.)
+    if (value >= 0 || ownNormals_ || !source || source->shape().isNull())
         return R::success(std::move(out));
     // Where the swept faces can reach: the body's box grown by the push.
     auto reach = geom::approximateBoundingBox(source->shape());
@@ -462,6 +482,30 @@ Result<geom::Shape> MultiPushPullOperation::computePreview(double value, const d
         shapes.push_back(shape);
     }
     return geom::gatherSolids(shapes);
+}
+
+std::optional<Vec3> MultiPushPullOperation::directionOn(const doc::Document& document, int faceIndex, const Vec3& point) const
+{
+    const doc::Body* body = document.body(bodyId());
+    if (!body || std::find(indices_.begin(), indices_.end(), faceIndex) == indices_.end())
+        return std::nullopt;
+    const auto info = geom::faceInfo(body->shape(), faceIndex);
+    if (!info)
+        return std::nullopt;
+    if (!ownNormals_ || info->isPlanar())
+        return ownNormals_ ? info->normal.normalized() : handle(0).direction();
+    // A round face: away from its axis at the point, or towards it for a
+    // hole's wall (as its normal at the face's own point says).
+    const Vec3 axis = info->axisDirection.normalized();
+    const auto radialAt = [&](const Vec3& p) {
+        const Vec3 r = p - info->axisOrigin;
+        return r - axis * r.dot(axis);
+    };
+    const Vec3 radial = radialAt(point);
+    if (radial.length() < 1e-9)
+        return std::nullopt;
+    const double outward = info->normal.dot(radialAt(info->point)) >= 0 ? 1.0 : -1.0;
+    return radial.normalized() * outward;
 }
 
 std::unique_ptr<cmd::Command> MultiPushPullOperation::makeCommand(const doc::Document& document) const

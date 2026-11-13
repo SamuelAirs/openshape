@@ -100,7 +100,10 @@ Library targets and their dependencies (`src/CMakeLists.txt`):
   degree vertical field of view: depth cues, so a box cannot flip in the
   viewer's mind), orthographic optional (the View buttons' toggle, remembered
   in QSettings `view/perspective`). Pure math shared by picking, interaction
-  and rendering.
+  and rendering. The turntable has no stop at the poles: the pitch runs on
+  beyond +-90 degrees, where the view is upside down (`upsideDown()`), and a
+  drag takes `orbitSense()` once where it starts so that a sideways drag
+  carries the model with the finger either way up.
 - `StudioLighting` (`core/Lighting.h`): the viewport's lighting model, one
   formula for the GPU (the renderer passes its numbers to `mesh.frag`) and
   the CPU (project thumbnails, `tests/test_lighting.cpp`). See Rendering.
@@ -560,10 +563,22 @@ Mouse/Touch/Pen, `Key`, value text) and produces a `RenderScene` plus UI state.
   Shift+left, 2-finger), or a manipulator drag (press on the arrow).
   Release without moving is a click (select).
 - **Selection:** faces and edges (edges win within tolerance; hidden edges are
-  rejected by a depth test against the visible face). Mouse click replaces,
+  rejected by a depth test against the visible face, and by one along the
+  edge's own line of sight: the edges a shallow feature hides under its top).
+  Mouse click replaces,
   Shift/Ctrl adds; touch and pen taps are additive by default (no modifier
   keys on tablets); tapping empty space clears. Double-click selects the body.
-  `InputProfile` gives touch 3× larger pick/grab tolerances.
+  `InputProfile` gives touch 3× larger pick/grab tolerances. For a finger or
+  a pen, a face narrower than the two edge zones keeps its middle half
+  (`sel::PickOptions::narrowFaceShare`). A tap that adds keeps to the kind
+  being collected and never drops several faces or edges
+  (`InteractionController::addingPick`): with faces selected the face under
+  the finger, with edges selected an edge at the finger's whole reach; a
+  tap on a selected face or edge under its arrow takes it out
+  (`tapBesideHandle`); two quick taps on two different faces are two taps,
+  not a double-tap (`PressMemo::subShapes`). The tests for all of it run at
+  phone and Duo sizes on small faces (`tests/test_touch_faces.cpp`, the
+  `multifaces` scenario).
 - **Picking acceleration:** `SceneCache` builds a `sel::PickAccelerator`
   with every body mesh (two bounding-volume hierarchies: triangles and edge
   segments, median splits, 4 items per leaf; ~9 ms for 25k triangles). Face

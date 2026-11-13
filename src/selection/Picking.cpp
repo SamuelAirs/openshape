@@ -6,6 +6,7 @@
 
 #include "core/Timer.h"
 
+#include <algorithm>
 #include <limits>
 
 namespace os::sel {
@@ -27,6 +28,10 @@ Bounds boundsOf(const geom::Mesh& mesh)
     }
     return b;
 }
+
+// An edge is hidden when a face lies this far (in pixels' worth of depth at
+// the edge) in front of it along its own line of sight.
+constexpr double kEdgeCoverPx = 1.5;
 
 bool rayHitsBox(const Ray& ray, const Bounds& b, double pad)
 {
@@ -50,6 +55,32 @@ bool rayHitsBox(const Ray& ray, const Bounds& b, double pad)
             return false;
     }
     return t1 >= 0;
+}
+
+// PickOptions::narrowFaceShare: the pointer is `distance` px from an edge (at
+// `onEdge` on screen) and over `face`. True when that face is so narrow
+// there, straight across from the edge, that the pointer is outside the
+// edge's share of its width: the tap is for the face.
+bool narrowFaceWins(const std::vector<PickTarget>& targets, const Camera& camera, Vec2 screen, const PickResult& face,
+                    Vec2 onEdge, double distance, const PickOptions& options)
+{
+    // Right on the edge (a pen's tip, a zoomed-in finger) is the edge.
+    constexpr double kOnEdgePx = 3.0;
+    constexpr double kStepPx = 2.0;
+    if (distance <= kOnEdgePx)
+        return false;
+    // How far beyond the pointer the face must go on for the edge's share
+    // of its width to reach the pointer: a face that wide is the edge's here.
+    const double span = distance / options.narrowFaceShare - distance;
+    const Vec2 away = (screen - onEdge) * (1.0 / distance);
+    for (double reach = kStepPx;; reach += kStepPx) {
+        const double at = std::min(reach, span);
+        const PickResult beyond = pickFace(targets, camera, screen + away * at);
+        if (beyond.kind != PickKind::Face || !(beyond.bodyId == face.bodyId) || beyond.index != face.index)
+            return true; // the face ends before that
+        if (at >= span)
+            return false;
+    }
 }
 
 } // namespace
@@ -108,6 +139,7 @@ PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Ve
 
     PickResult bestEdge;
     double bestDistance = options.edgeTolerance;
+    Vec2 bestOnScreen; // the nearest point of that edge, on screen
     // One segment, in the order a scan over all edges would meet it: the
     // nearest wins, and of equally near ones the last.
     auto visit = [&](const PickTarget& target, const geom::Mesh::EdgePolyline& edge, std::size_t i) {
@@ -117,9 +149,11 @@ PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Ve
         if (camera.projection == Camera::Projection::Perspective && (camera.depthOf(a) <= 0 || camera.depthOf(b) <= 0))
             return;
         double t = 0;
-        const double d = distanceToSegment2D(screen, camera.project(a), camera.project(b), &t);
+        const Vec2 sa = camera.project(a), sb = camera.project(b);
+        const double d = distanceToSegment2D(screen, sa, sb, &t);
         if (d > bestDistance)
             return;
+        const Vec2 onScreen = sa + (sb - sa) * t;
         // The point of the edge under the cursor. In perspective the place on
         // the projected segment is not the place on the edge (1/depth is what
         // varies linearly on screen); taking one for the other put the point
@@ -136,7 +170,17 @@ PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Ve
             if (camera.depthOf(onEdge) > face.depth + slack)
                 return;
         }
+        // That slack lets through the edges a shallow feature hides just
+        // under the surface: where a pad or a raised letter meets the face it
+        // stands on, behind its top. At a finger's tolerance it is several
+        // millimetres deep, and a tap on the top took one of them. The edge
+        // itself must be in sight: nothing clearly in front of it along its
+        // own line of sight (its own faces are met at its depth).
+        if (const PickResult cover = pickFace(targets, camera, onScreen);
+            cover.hit() && cover.depth < camera.depthOf(onEdge) - camera.pixelSize(onEdge) * kEdgeCoverPx)
+            return;
         bestDistance = d;
+        bestOnScreen = onScreen;
         bestEdge.kind = PickKind::Edge;
         bestEdge.bodyId = target.bodyId;
         bestEdge.index = edge.edgeIndex;
@@ -176,6 +220,8 @@ PickResult pick(const std::vector<PickTarget>& targets, const Camera& camera, Ve
             for (std::size_t i = 0; i + 5 < edge.points.size(); i += 3)
                 visit(target, edge, i);
     }
+    if (bestEdge.hit() && options.pickFaces && options.narrowFaceShare > 0 && face.hit() && narrowFaceWins(targets, camera, screen, face, bestOnScreen, bestDistance, options))
+        return face;
     if (bestEdge.hit())
         return bestEdge;
     return options.pickFaces ? face : PickResult{};

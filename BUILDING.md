@@ -96,6 +96,7 @@ python scripts/dev/marketing_blender.py   # studio renders of the samples in Ble
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario sketchphone   # sketching on a face by finger at 402x874 and 1180x820: face snaps, the loupe, one-finger pan, Face on, a size typed (demo scene facesketch)
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario pencil   # Apple Pencil at 1180x820 and 402x874 (Qt tablet events as iOS sends them): hover highlight and sketch hover point, a rectangle drawn while a palm rests and slides, the grace period, the finger-tap hint, Pen off
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multiselect   # two bodies selected by finger double-taps at iPad and iPhone sizes, Union
+./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario multifaces   # several small faces collected by finger taps at iPhone and Duo outer sizes (a tap beside an edge, two quick taps, a tap just off the part, a second tap under the arrow), then one finger drags the view over the top
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario numpad   # the numeric keypad by touch at iPhone, iPad and iPhone Duo (outer) sizes: value box, Model panel, sketch values
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir
 ./build/msys2-ucrt64/bin/OpenShape.exe --acceptance out-dir --scenario views   # one scenario (comma-separated list)

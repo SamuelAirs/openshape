@@ -115,6 +115,23 @@ Result<Shape> deleteFaces(const Shape& shape, const std::vector<int>& faceIndice
 // neighbours cannot follow (e.g. tangent fillets): the volume change must be
 // close to face area x distance.
 Result<Shape> offsetFace(const Shape& shape, int faceIndex, double distance);
+// The same for several faces of one body at once, each along its own normal
+// by the same `distance`: the four walls of a square hole moved back by 2 mm
+// make the hole 4 mm wider each way, with square corners (faces that share
+// an edge meet again where their moved surfaces cross; prisms, as
+// pushPullFaces sweeps them, would leave the corners out). Positive is
+// outward, as in offsetFace. Refused when the neighbours cannot follow:
+// the volume must change the way the distance says and by about the faces'
+// area x distance, and every flat face must end up in its moved plane.
+// Before the kernel is asked at all, a distance at which a moving face
+// would reach another face of the body is refused, naming the room there is
+// (in `advice.unit`): opposite walls of a hole pulled out until they meet,
+// a wall pushed back out of the part's side, a round hole closed to
+// nothing. The kernel does not fail on those, it crashes (an access
+// violation inside BRepOffset_MakeOffset, 2026-11-13, which the crash guard
+// caught only some of the time).
+Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndices, double distance,
+                          const SizeAdvice& advice = {});
 
 enum class BooleanKind { Union, Subtract, Intersect };
 Result<Shape> booleanOp(const Shape& a, const Shape& b, BooleanKind kind);

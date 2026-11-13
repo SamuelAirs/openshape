@@ -415,18 +415,25 @@ private:
     std::string thicknessLabel_; // "Height", "Width", "Depth" or "Thickness"
 };
 
-// Several flat faces of one body that face the same way, pushed or pulled
-// together by one arrow (doc::PushPullFacesFeature): pulled out they add
-// material, pushed in they take it away (raised text pushed into the face
-// it stands on engraves it). Pushed into another visible body, they cut the
-// volume they sweep out of that body too (doc::SweepCutFeature, one undo
-// step with the push), shown in the preview with it.
+// Several faces of one body pushed or pulled together by one arrow
+// (doc::PushPullFacesFeature). Flat faces that face the same way: pulled out
+// they add material, pushed in they take it away (raised text pushed into
+// the face it stands on engraves it); pushed into another visible body, they
+// cut the volume they sweep out of that body too (doc::SweepCutFeature, one
+// undo step with the push), shown in the preview with it. Faces facing
+// different ways (the owner, 2026-11-13: a square hole's four walls, "I try
+// to make the hole bigger by selecting all of the faces and expanding them
+// all outward, I can't do that"): each moves along its own normal by the
+// one distance, and they meet again at their corners (eachAlongItsOwnNormal).
 class MultiPushPullOperation final : public Operation {
 public:
-    // `faces` of `bodyId`. Without `direction` every face must be flat and
-    // face the same way; with it (a whole step's faces, picked by a long
-    // press) the flat faces facing that way move and the others (its walls)
-    // come along. nullptr when no face would move.
+    // `faces` of `bodyId`, in the order they were selected. Without
+    // `direction`: flat faces facing the same way move along it; faces
+    // facing different ways (flat or round) each move along their own
+    // normal, the arrow on the one selected last. With `direction` (a whole
+    // step's faces, picked by a long press) the flat faces facing that way
+    // move and the others (its walls) come along. nullptr when no face would
+    // move, or a face is neither flat nor round.
     static std::unique_ptr<MultiPushPullOperation> create(const doc::Document& document, const Uuid& bodyId,
                                                           const std::vector<int>& faces,
                                                           std::optional<Vec3> direction = std::nullopt);
@@ -438,6 +445,13 @@ public:
     doc::FeatureKind featureKind() const override { return doc::FeatureKind::PushPullFaces; }
     // The faces that move (the body's face indices).
     const std::vector<int>& movingFaces() const { return indices_; }
+    // The faces face different ways: each moves along its own normal
+    // (geom::offsetFaces), out of the body for a positive value.
+    bool eachAlongItsOwnNormal() const { return ownNormals_; }
+    // The way moving face `faceIndex` goes for a positive value, at `point`
+    // on it (a finger dragging that face drags along this, whichever face
+    // the arrow stands on); nullopt for a face that does not move.
+    std::optional<Vec3> directionOn(const doc::Document& document, int faceIndex, const Vec3& point) const;
     // The other bodies the last preview cut (faces pushed into them).
     std::vector<Uuid> previewAlsoReplaces() const override { return cutBodies_; }
     std::unique_ptr<cmd::Command> makeCommand(const doc::Document& document) const override;
@@ -455,6 +469,7 @@ private:
     Result<std::vector<std::pair<Uuid, geom::Shape>>> cuts(double value, const doc::Document& document) const;
     std::vector<doc::FaceRef> faces_;
     std::vector<int> indices_;
+    bool ownNormals_ = false;
     mutable std::vector<Uuid> cutBodies_; // what the last computePreview cut
 };
 

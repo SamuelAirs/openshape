@@ -10,7 +10,6 @@ namespace os {
 
 namespace {
 
-constexpr double kMaxPitch = kPi / 2;
 constexpr double kOrbitRadiansPerPixel = 0.008;
 constexpr double kMinOrthoHeight = 1e-3;
 constexpr double kMaxOrthoHeight = 1e7;
@@ -60,6 +59,11 @@ double wrapAngle(double a)
 Vec3 Camera::backward() const
 {
     return {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
+}
+
+bool Camera::upsideDown() const
+{
+    return std::cos(pitch) < 0;
 }
 
 Vec3 Camera::right() const
@@ -164,11 +168,14 @@ Vec3 Camera::pointOnViewPlane(Vec2 screen, const Vec3& planePoint) const
     return ray.at(t);
 }
 
-void Camera::orbit(double dxPixels, double dyPixels, const Vec3& pivot)
+void Camera::orbit(double dxPixels, double dyPixels, const Vec3& pivot, double sense)
 {
-    const double dYaw = -dxPixels * kOrbitRadiansPerPixel;
-    const double newPitch = std::clamp(pitch + dyPixels * kOrbitRadiansPerPixel, -kMaxPitch, kMaxPitch);
-    const double dPitch = newPitch - pitch;
+    // No stop at the top or the bottom: the elevation goes on over the pole,
+    // and the view comes down the other side upside down, as a part turned
+    // over in the hand does.
+    const double dYaw = -dxPixels * kOrbitRadiansPerPixel * (sense < 0 ? -1.0 : 1.0);
+    const double dPitch = dyPixels * kOrbitRadiansPerPixel;
+    const double newPitch = wrapAngle(pitch + dPitch);
 
     // Rotate the target around the pivot by the same rotation the view undergoes,
     // so the pivot stays fixed on screen.
@@ -252,7 +259,7 @@ Camera Camera::interpolate(const Camera& a, const Camera& b, double t)
     Camera c = b;
     c.target = a.target + (b.target - a.target) * s;
     c.yaw = wrapAngle(a.yaw + wrapAngle(b.yaw - a.yaw) * s);
-    c.pitch = a.pitch + (b.pitch - a.pitch) * s;
+    c.pitch = wrapAngle(a.pitch + wrapAngle(b.pitch - a.pitch) * s); // from an upside-down view, the short way
     // Interpolate zoom geometrically so it feels uniform.
     c.orthoHeight = a.orthoHeight * std::pow(b.orthoHeight / a.orthoHeight, s);
     c.distance = a.distance * std::pow(b.distance / a.distance, s);

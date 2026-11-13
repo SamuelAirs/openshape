@@ -103,6 +103,17 @@ Rules:
 - `PushPull` params: `{ "face": faceRef, "distance" }` plus optional
   `"keepEdges": true` (fillets and chamfers around the face move with it
   where possible; steps without it are the plain prism + boolean).
+- `PushPullFaces` params (since 0.3.1; this entry was missing here until
+  2026-11-13): `{ "faces": [faceRef, ...], "distance" }`, several faces of
+  the body moved by one distance (positive = outward). When the faces all
+  face the same way they sweep straight along it. Since 0.4.0, faces facing
+  different ways each move along their own normal and meet at their corners
+  (a square hole's walls); which of the two applies is decided from the
+  faces when the step is computed, so the params are the same. 0.3.1 opens
+  such a file and marks that step failed ("faces that face the same way").
+- `SweepCut` params (since 0.3.1): `{ "sourceBody", "sourceFeature" }`, the
+  cut another body's `PushPullFaces` step makes in this one (its faces
+  pushed into this body).
 - A sketch placed on a face has `"attachment": { "body", "feature",
   "faceHint", "normal", "centroid", "area" }` identifying the face (on the
   output of `feature`); its `plane` is then derived from that face and the
@@ -288,7 +299,8 @@ Rules:
   on the capital height (the baseline `size / 2` below `position`).
 - Feature types: `Box`, `PushPull`, `Fillet`, `Chamfer`, `Extrude`, `Shell`,
   `Move`, `Combine`, `Revolve`, `Hole`, `Mirror`, `Pattern`, `DeleteFaces`,
-  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`, `Text`, `Loft`. Unknown
+  `OffsetFace`, `Split`, `SplitPiece`, `Copy`, `Holes`, `Imported`, `Text`, `Loft`,
+  `PushPullFaces`, `SweepCut`. Unknown
   types make the file unreadable with a "newer version" message (never
   silently dropped).
 

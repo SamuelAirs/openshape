@@ -290,12 +290,18 @@ Result<std::vector<int>> PushPullFacesFeature::resolveFaces(const geom::Shape& i
     return Result<std::vector<int>>::success(std::move(indices));
 }
 
-Result<geom::Shape> PushPullFacesFeature::compute(const geom::Shape& input, const EvalContext&) const
+Result<geom::Shape> PushPullFacesFeature::compute(const geom::Shape& input, const EvalContext& context) const
 {
     auto indices = resolveFaces(input);
     if (!indices)
         return Result<geom::Shape>::failure(indices.error(), indices.userMessage(), indices.developerMessage());
-    return geom::pushPullFaces(input, indices.value(), distance);
+    // Faces facing one way sweep straight along it (raised text pushed down
+    // engraves the face it stands on). Faces facing different ways each move
+    // along their own normal and meet again at their corners: the walls of
+    // a square hole pushed back make the hole larger.
+    if (geom::commonFaceNormal(input, indices.value()))
+        return geom::pushPullFaces(input, indices.value(), distance);
+    return geom::offsetFaces(input, indices.value(), distance, sizeAdvice(context));
 }
 
 std::vector<ParameterInfo> PushPullFacesFeature::parameters() const

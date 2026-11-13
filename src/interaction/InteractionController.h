@@ -465,6 +465,19 @@ private:
     std::string computeSelectionSummary() const;
 
     void click(const PointerEvent& event);
+    // What a tap that adds (a finger, a pen, Shift or Ctrl with the mouse)
+    // means while faces or edges are selected (the owner on his Duo,
+    // 2026-11-12: "It's hard to select multiple faces at once, it either
+    // locks on to an edge ... or it deselects everything"). `hit` is what the
+    // tap picked. With faces selected, the face under the finger (an edge's
+    // zone reaches into the faces beside it: an edge never takes over from
+    // faces; `overEdge` says the tap was right on an edge's line). With
+    // edges selected, an edge at the finger's whole reach. `keep`: the tap
+    // is on or beside the model but picks nothing of the kind, and several
+    // are selected: they stay (only a tap on empty space, or Clear, starts
+    // again).
+    sel::PickResult addingPick(Vec2 screen, const InputProfile& profile, const sel::PickResult& hit, bool& keep,
+                               bool* overEdge = nullptr) const;
     // A finger or pen held still on a face for kLongPress: every face of the
     // step that made that face is selected (all of a text, an extrusion's top
     // and walls), and Push/Pull moves the ones facing the step's way. False
@@ -592,6 +605,11 @@ private:
     std::optional<TypingPause::Clock::time_point> lastNavigation_;
     std::optional<TypingPause::Clock::time_point> lastZoomPick_;
     void noteNavigation() { lastNavigation_ = clock_(); }
+    // The sense (Camera::orbitSense) of an orbit that arrives step by step
+    // (orbitBy, twoFingerRotate), taken at its first step.
+    double gestureOrbitSense();
+    double orbitSense_ = 1.0;
+    std::optional<TypingPause::Clock::time_point> orbitStep_;
     // The press in progress is the pen's and `event` is a finger's (or the
     // finger is one the pen overrides): the finger is ignored.
     bool penOverridesTouch(const PointerEvent& event) const;
@@ -660,6 +678,7 @@ private:
         PointerEvent press;
         Vec2 last;
         Vec3 pivot;
+        double orbitSense = 1.0;  // Camera::orbitSense() where the orbit began
         LinearManipulator handle; // copy of the grabbed handle during a manipulator drag
         int ring = -1;            // rotation ring pressed on (grabbed once it moves), or -1
         RingManipulator ringHandle;
@@ -686,6 +705,8 @@ private:
     // first press's spot when the second lands just off the body.
     struct PressMemo {
         bool bodies = false;       // the selection was bodies only (and not empty)
+        bool subShapes = false;    // the selection was faces only, or edges only (and not empty)
+        bool faces = false;        // ...faces
         std::vector<Uuid> bodyIds; // those bodies, in selection order
         Vec2 position;
         bool valid = false;
