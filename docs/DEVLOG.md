@@ -1140,3 +1140,32 @@ carry: on `polish` they sit among Measure's sections, so this branch has
 its own changelog section, manual tests and status. `main` had one local,
 never-pushed commit raising its version to 0.4.0 after the 0.3.1 tag; it is
 kept as the branch `backup/main-0.4.0-bump` and `main` goes on from the tag.
+
+## 2026-11-13 (later afternoon) — The tag, and a watcher that waited for nothing
+
+- `main` at `ea12fce` compiled on GitHub within the hour (CI 74, iPad 66:
+  build 66 on TestFlight), but the tag went out two hours late: `ci_status.py
+  watch ea12fce` never returned. GitHub's `head_sha` filter takes the full
+  40-character id only, and for anything else it answers with an empty list
+  of runs, not an error, so the watcher saw "no runs yet" for ever. The
+  owner asked whether GitHub had trouble; it had none. The script now puts
+  what it is given through `git rev-parse` first (a short id, a branch, a
+  tag) and stops with a message if the checkout does not know it. A second
+  trap in the same place: a tag and its branch share the commit, so `watch`
+  on a tag's commit returns at once when the branch's runs are already
+  done, unless it is started after the tag's runs exist.
+- `v0.3.2` pushed at 15:19: iPad 67 took 8 minutes (the iOS libraries and
+  Qt came from the cache `main`'s run had just saved) and uploaded **build
+  67**, the one for App Review; Release 14 took 36 (it built OpenCASCADE,
+  25 minutes) and published the release with the installer, the zip and
+  `OpenShape-0.3.2-ios-sources.tar`.
+- `main` (0.3.2) merged into `polish` the same hour, so the two lines share
+  their history again and `main` can move forward to `polish` when 0.4.0
+  ships. Only docs conflicted. BUILDING's step 6 (raise `main`'s version
+  after a tag) is not done as a commit on `main` this time: a local,
+  never-pushed bump is what had to be moved aside this morning. `polish` is
+  the next version, and `main` stays at the tag until it goes in.
+- For whoever tests two lines side by side on a device: FoldForm 0.3.x
+  opens a 0.4.0 project without its reference photos and kept measurements
+  and drops them when it saves (docs/FILE_FORMAT.md, "Versioning"). The
+  owner's test list says so before he installs 0.3.2 over build 64.

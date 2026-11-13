@@ -8,10 +8,14 @@ Failed CI steps put their error lines into annotations
 (scripts/ci/run-logged.sh); successful ones add notices (test counts,
 screenshot numbers, iPad app size, QML modules). This prints them.
 
-  python scripts/dev/ci_status.py status [sha]         runs and jobs of a commit (default HEAD)
-  python scripts/dev/ci_status.py watch [sha] [secs]   wait until a run of it finishes, then report it
-  python scripts/dev/ci_status.py report <run id>      jobs, steps and annotations of a run
-  python scripts/dev/ci_status.py job <job id>         one job
+  python scripts/dev/ci_status.py status [commit]         runs and jobs of a commit (default HEAD)
+  python scripts/dev/ci_status.py watch [commit] [secs]   wait until a run of it finishes, then report it
+  python scripts/dev/ci_status.py report <run id>         jobs, steps and annotations of a run
+  python scripts/dev/ci_status.py job <job id>            one job
+
+A commit is anything `git rev-parse` knows here: a short id, a branch, a
+tag. A tag's runs and its branch's runs share the commit: `watch` returns
+on the first run of it that finishes after it started watching.
 
 Anonymous API calls are limited to 60 per hour per IP address; `watch`
 polls one call per interval (default 150 s) and sleeps out a rate limit.
@@ -85,14 +89,22 @@ def runs_of(sha):
     return data["workflow_runs"], remaining
 
 
-def head_sha():
-    return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+def full_sha(commit):
+    # GitHub's head_sha filter takes the full id only: for a short one it
+    # answers with an empty list, not an error, and `watch` waited two hours
+    # on 2026-11-13 for runs that had finished.
+    done = subprocess.run(["git", "rev-parse", "--verify", "--quiet", commit + "^{commit}"],
+                          capture_output=True, text=True, check=False)
+    sha = done.stdout.strip()
+    if done.returncode != 0 or len(sha) != 40:
+        sys.exit(f"ci_status: '{commit}' is not a commit this checkout knows")
+    return sha
 
 
 def main(argv):
     command = argv[1] if len(argv) > 1 else "status"
     if command == "status":
-        sha = argv[2] if len(argv) > 2 else head_sha()
+        sha = full_sha(argv[2] if len(argv) > 2 else "HEAD")
         runs, remaining = runs_of(sha)
         for run in runs:
             print(f"RUN {run['name']} #{run['run_number']} [{run['id']}]: {run['status']} {run['conclusion']}")
@@ -101,7 +113,7 @@ def main(argv):
                 print(f"  JOB {job['name']} [{job['id']}]: {job['status']} {job['conclusion']}")
         print(f"(API calls left this hour: {remaining})")
     elif command == "watch":
-        sha = argv[2] if len(argv) > 2 else head_sha()
+        sha = full_sha(argv[2] if len(argv) > 2 else "HEAD")
         interval = int(argv[3]) if len(argv) > 3 else 150
         runs, _ = runs_of(sha)
         done_before = {r["id"] for r in runs if r["status"] == "completed"}
