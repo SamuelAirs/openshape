@@ -95,7 +95,7 @@ format (`.openshape`) keep that name.
 | Platform | Status |
 |---|---|
 | Windows (64-bit; tested on Windows 11) | Installer and portable zip on the [Releases page](https://github.com/SamuelAirs/openshape/releases) |
-| iPhone and iPad | In testing through TestFlight (one app for both; phone, tablet and Split View layouts); a public beta, then the App Store, are being prepared ([docs/APP_STORE.md](docs/APP_STORE.md)) |
+| iPhone and iPad | On the App Store as **FoldForm** since 2026-11-06: https://apps.apple.com/app/id6816439422 (one app for iPhone, iPad and iPhone Duo; free for one project, a one-time purchase for unlimited projects; [docs/APP_STORE.md](docs/APP_STORE.md)). New builds are tried through TestFlight first |
 | macOS | Builds and passes the tests in CI; no download yet |
 | Linux | Not tried yet (see [BUILDING.md](BUILDING.md)) |
 

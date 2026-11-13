@@ -411,11 +411,21 @@ shows the field for 0.3.0, this is the text. For later versions
 fixes"), shorten the version's section of CHANGELOG.md into one line per
 change a user can notice.
 
-<!-- changed 2026-11-03: re-apply this block -->
+<!-- changed 2026-11-13 for 0.3.2: re-apply this block -->
 <!-- appstore:whats-new max-chars=4000 -->
 ```text
-The first App Store version of FoldForm: precise CAD for 3D printing by touch on iPhone, iPad and iPhone Duo, free for one project.
+Selecting and turning the view, reworked for fingers and Apple Pencil.
+
+- Small faces can be tapped: a tap on a small face selects the face, not the edge beside it.
+- Collecting several faces: taps keep adding faces, a tap near an edge takes the face under it, and a stray tap no longer clears them. Tap a selected face or edge again to take it out. Two quick taps on two faces add both.
+- Faces that face different ways move together on one arrow, each its own way: select the walls of a square hole and push them back to make it larger. Hold a wall of a hole that was cut through to select all its walls.
+- The view turns all the way round: no stop at the top or the bottom view.
+- With Apple Pencil in use, one finger turns the view inside a sketch too. Face on looks straight at the sketch again.
 ```
+
+(0.3.1's text was written by the App Store chat from CHANGELOG 0.3.1 and
+lives in its tool's `apps/foldform.toml`; this block held 0.3.0's until
+0.3.2.)
 
 ### Screenshots
 
@@ -777,7 +787,10 @@ This beta is what will go on the App Store. Please model a real part you want to
 
 ### What to Test (for the build you add; update it with each build)
 
-For 0.3.1 build 60 (2026-11-03, from the owner's round on 59: the top bar
+For 0.3.2 (2026-11-13: selecting several faces, the view over the top,
+faces facing different ways moved together, the Pencil's two fixes; from
+the owner's evening of design work on 0.3.1). Before it:
+0.3.1 build 60 (2026-11-03, from the owner's round on 59: the top bar
 and the Model panel side by side when the Duo's inner display is turned
 tall; the value box off the top bar with the panel open; a sketch's marks
 and the view cube no longer over the panel; every face and edge arrow out
@@ -785,15 +798,15 @@ of the part; scroll arrows on the tool palettes). Build 59's checks passed
 on the owner's Duo (his Board ticks and log, 2026-11-03). Before: build 59
 (the loading card, the new look), 58 (the samples, the Duo's share card).
 
-<!-- changed 2026-11-03: re-apply this block -->
+<!-- changed 2026-11-13 for 0.3.2: re-apply this block -->
 <!-- appstore:what-to-test max-chars=4000 -->
 ```text
-FoldForm 0.3.1, on iPhone Duo.
-1. Open the inner display and turn it tall: the top bar (without the FoldForm title) and the Model panel sit side by side, nothing on top of the other.
-2. Open the Honeycomb organizer sample, show its Model panel, tap a wall: the value box sits beside the tools on the left, below the top bar, never over it.
-3. Tap an edge of the Twisted vase or the Lamp shade's rim: the arrow points straight out of the part. Pull it out: the edge rounds more. A face's arrow points straight out of the face.
-4. The tool palette on the left shows a small arrow at the bottom when more tools are below; scroll it with a finger and an arrow at the top shows there is more above. On the outer display the tool strip shows one at its right end.
-5. Edit a sketch with the Model panel open: the sizes and marks go under the panel, and the panel ends above the view cube.
+FoldForm 0.3.2, on iPhone Duo with Apple Pencil (a finger works the same once Pen is off).
+1. Open the Electronics box or the Honeycomb organizer. Tap a small face, then three more, some near their edges: each tap adds the face under the tip; nothing turns into an edge, nothing clears. Tap one again: only it goes. Two quick taps on two faces add both.
+2. Tap one face, then the same spot again (under its arrow): it is unselected. The same with an edge.
+3. Drag one finger straight up and keep going: the view passes over the top and comes round, no stop. Iso puts it the right way up.
+4. A box, a square sketched on its top and pushed through. Hold one wall of the hole: all four walls, one arrow. Drag it back into the part: the hole grows on every side, corners square.
+5. In a sketch, with the Pencil in use, drag one finger: the view turns. Face on looks straight at the sketch again.
 Then send the log: Files app, FoldForm, Logs, openshape.log, Share. Screenshots with a note go from TestFlight; crash reports reach us automatically.
 ```
 

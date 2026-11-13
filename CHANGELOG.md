@@ -3,6 +3,79 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
+## 0.3.2 (2026-11-13)
+
+**Selecting with a finger, and a view that turns all the way round.** From
+an evening's design work on an iPhone Duo with 0.3.1 ("It's hard to select
+multiple faces at once, it either locks on to an edge (and you can't tap it
+again to unselect it), or it deselects everything"; "There are locks to
+where you can rotate your image").
+
+- **Small faces can be tapped.** A finger takes an edge within 20 px, which
+  on a phone covered the whole of a small face from both sides: every tap on
+  a pad's top, a letter or a pocket's wall took an edge. On a face narrower
+  than that reach the middle half is now the face's and the outer quarters
+  the edges'.
+- **Edges hidden under a face are no longer picked.** The edge where a pad
+  or a raised letter meets the face it stands on lies just behind its top,
+  and a tap on the top could take it.
+- **Faces stay faces.** Once a face is selected, a tap near an edge, or
+  right on it, adds or removes the face under the finger: an edge never
+  replaces the faces collected so far. To pick an edge after a face, tap
+  empty space first (a hint says so). With edges selected, a tap takes the
+  nearest edge within a finger's reach.
+- **Several faces or edges are never lost to a stray tap.** A tap just off
+  the part, or on an open face while edges are collected, changes nothing
+  and says how to go on. Only empty space, or Clear, starts again.
+- **A second tap takes a selected face or edge out**, also under its
+  arrow: the arrow's finger zone covered a small face whole (and the Fillet
+  arrow starts on its edge), and a tap there did nothing. A tap beside the
+  arrow on another face adds it; a drag still moves the arrow.
+- **Two quick taps on two faces add both.** They counted as a double-tap,
+  which selected the whole body and dropped the faces. A double-tap on one
+  spot still selects the body.
+- **No stop at the top or the bottom view.** Dragging up or down turns the
+  view on over the top and down the other side, upside down, and round
+  again; the horizon stays level, a sideways drag carries the model with
+  the finger whichever way up it is, and the light follows without a jump.
+  Iso or the view cube puts the view the right way up.
+- With the mouse: plain clicks select as before. `Shift`+click with several
+  faces selected adds the face under the pointer where it used to replace
+  them with an edge.
+
+**With the Apple Pencil** ("on the iPhone Duo, I was using the Apple
+Pencil with it"). The Pencil reaches FoldForm by another path than a
+finger (finer tolerances, the system's own double-tap, fingers only moving
+the view while it is in use), and everything above holds for it: it
+collects small faces, never switches to an edge, unselects with a second
+tap under the arrow, and keeps several faces through a near miss. Two
+things were the Pencil's alone:
+
+- **Two quick Pencil taps on two faces add both.** The second tap arrived
+  as a double-tap; once that no longer selected the whole body, it did
+  nothing at all.
+- **One finger turns the view inside a sketch while the Pencil is in use.**
+  A finger's drag in a sketch pans, because without a pen the finger draws
+  there; with the Pencil drawing, that left no way to turn the view in a
+  sketch but the view cube. **Face on** looks straight at the sketch again.
+
+**Several faces that face different ways move together** ("if I have a
+square shape cut out of a plane, and I try to make the hole bigger by
+selecting all of the faces and expanding them all outward, I can't do
+that"). Faces facing different ways had no arrow at all. They now get one
+Push/Pull arrow, on the face selected last: drag it, drag any of the faces,
+or type a distance, and every face moves by it along its own direction and
+meets its neighbours again at the corners. The four walls of a square hole
+pushed back 2 mm make it 4 mm larger each way, corners square; two sides of
+a block pulled out grow it on both. Holding a finger on a wall of a hole
+that was cut through selects all its walls for this (a step that has a top
+or a floor still moves that, also when its walls are larger than it). The
+step is a Push/Pull in the Model panel, its distance editable. A distance
+at which the faces would run into the rest of the part (a hole's walls
+meeting in its middle, a wall pushed out of the part's side) is refused
+with the room there is: "These faces would meet another face of the part
+before that. Try 4.9 mm or less."
+
 ## 0.3.1 (2026-11-05)
 
 The answers to the first session on the iPhone Duo.

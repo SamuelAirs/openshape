@@ -836,3 +836,179 @@ normally and forced, and asserts.
   0.2 ms on an offset fillet where the default rule took 8 ms, but on a C0
   face it was off by 3% (664 mm^2 for 644; 1e-3 and 1e-5 were off too);
   the default rule is used on C0 surfaces (0.05%).
+
+## 2026-11-13 — Collecting faces on a phone; the view over the top
+
+Sam, after an evening's design work on his Duo with 0.3.1 (the App Store
+version): "It's hard to select multiple faces at once, it either locks on to
+an edge (and you can't tap it again to unselect it), or it deselects
+everything. Navigation while designing is tough. There are locks to where
+you can rotate your image." A new lead (this session) read the selection
+path first and found five separate causes, none of them a bug in the sense
+of code doing what it was not written to do: each rule was reasonable for a
+mouse or a large face, and `test_multi_face` (0.3.1's several faces) taps
+the middles of large faces in a 1200 x 800 window, where none of them
+shows. `tests/test_touch_faces.cpp` is the same story on a phone-sized
+window with a part's small faces; all 13 of its tests failed on the old
+code.
+
+- **A finger's edge zone covers a small face whole.** Edges win within 20 px
+  on touch (a 40 px band). A 10 mm pad on a phone is about 30 px wide, so
+  every tap on it took an edge. `sel::PickOptions::narrowFaceShare` (0.25
+  for a finger and a pen): the picker walks from the tap straight away from
+  the nearest edge until the face ends; an edge only wins within a quarter
+  of that width. Wide faces never reach the test's limit (the edge keeps its
+  whole 20 px). Cost: up to about 40 face picks a tap, each a BVH query.
+- **Hidden edges were pickable.** The occlusion test compares the edge's
+  depth with the face under the pointer plus a slack of (tolerance + 2) px
+  worth of depth: for a finger several millimetres. The edge where a pad
+  meets the plate, hidden under the pad's top, passed, and lies inside the
+  top's outline on screen: with the first fix alone, the second pad still
+  gave "edges 36". An edge must now be in sight along its own line of sight
+  (`kEdgeCoverPx`). This also holds for the mouse, where the slack was
+  about 8 px of depth.
+- **A different kind replaced the selection.** With faces selected, a tap
+  that picked an edge called `selection_.set(edge)`: three faces became one
+  edge. `InteractionController::addingPick` keeps an adding tap to the kind
+  being collected, and never drops several items for a tap on the model.
+  A first version let a single face give way to an edge tapped within 8 px;
+  that is exactly Sam's "locks on to an edge" on the second face, so an edge
+  never takes over from a face now, and the hint tells the way (empty space
+  first). The other direction stays: one selected edge gives way to a face
+  tapped in the open, since a tap 20 px from every edge cannot mean an edge.
+- **The arrow swallowed the tap.** A finger's grab zone around an arrow is
+  28 px. Push/Pull's arrow stands on the selected face and Fillet's starts
+  on the selected edge, so the tap meant to unselect landed on the arrow: a
+  press on a handle without a drag did nothing (`tapBesideHandle` let it
+  through only for bodies). It now also lets through a tap on what is
+  selected, and a tap beside the arrow on another face or edge, for the
+  five operations a plain selection arms.
+- **Two quick taps were a double-tap.** The recognizer pairs taps within
+  0.35 s and 32 px, and its comment says why the distance is generous: a
+  double-tap's second tap often lands on another face. But two quick taps
+  on two small neighbouring faces are the same event, and the double-tap
+  replaced the faces with the body. While faces or edges are selected, two
+  taps that picked different things are two taps (`PressMemo::subShapes`).
+- **The view stopped at the poles.** `Camera::orbit` clamped the pitch to
+  +-90 degrees. The pitch now runs on (kept within +-180), `backward()` and
+  `up()` need no change (the formulas are those of a rotation, continuous
+  through the pole), and three things had to follow: a sideways drag turns
+  the other way about the vertical while upside down, taken once where the
+  drag starts (`Camera::orbitSense`; Blender's turntable does the same:
+  switching at the pole reverses the spin under the finger); the key light
+  took the horizontal direction from the yaw alone, which is the far side
+  of the model once upside down, so it swings over the top during the first
+  30 degrees past the pole (views up to the pole are lit exactly as before:
+  `test_lighting` holds the old values); and `Camera::interpolate` takes
+  the short way in pitch. What Shapr3D does was checked before choosing: a
+  level horizon with one finger, free rotation only as a two-finger option
+  (its forum, "One finger navigation, odd behaviour"). A two-finger twist
+  to roll the view is not built (TD-181).
+- Lesson for the tests: a selection rule checked at desktop size with taps
+  in the middles of faces says nothing about a phone. New selection tests
+  run at 402 x 874 and at the Duo's sizes, through the gesture recognizer,
+  on faces narrower than 40 px.
+
+## 2026-11-13 (later) — Faces facing different ways move together
+
+Sam, the same day: "if I have a square shape cut out of a plane, and I try
+to make the hole bigger by selecting all of the faces and expanding them all
+outward, I can't do that."
+
+- Why not: 0.3.1's several-faces Push/Pull sweeps each face as a prism along
+  one common normal (`geom::pushPullFaces`), so `MultiPushPullOperation::
+  create` returned nothing for faces facing different ways, and two walls of
+  a hole had no arrow. A long press on a wall made it odder: it took all
+  four walls and moved the one facing "the way most of the step's flat area
+  faces".
+- Prisms cannot do it in any case: four walls each swept back 2 mm leave the
+  corners (a plus-shaped hole). `geom::offsetFaces` uses
+  `BRepOffset_MakeOffset` with an offset per face and intersection joins, as
+  `offsetFace` does for one: faces that share an edge meet again where their
+  moved surfaces cross. Exact on the tests: the 10 mm hole 14 mm square, 10
+  faces, a closed STL of the right volume.
+- The kernel's word is checked three ways (its "done" is not enough, as
+  `offsetFace` found): the volume moves the way the distance says and by
+  0.2 to 5 times area x distance (the corners add up to a factor of 2 for a
+  square doubled), and every flat face must lie in its moved plane.
+- **The kernel crashes on a hole closed to nothing.** The four walls pulled
+  out 5 mm (a 10 mm hole) is an access violation inside
+  `BRepOffset_MakeOffset::MakeMissingWalls` (a solid classifier running an
+  extrema on what is left). The crash guard turned it into a failed step in
+  one run and the process died in the next: the test passed alone, and
+  `OffsetFaces*` together segfaulted. A drag does this in a second, so it
+  must not reach the kernel: `offsetRoom` works out how far the faces can go
+  before one meets another face of the body (flat faces in the way of the
+  motion, not neighbours, their boxes overlapping once there; half the gap
+  when both move towards each other; a round face's radius), and
+  `offsetFaces` refuses at or past it with the room named ("Try 4.9 mm or
+  less."). Conservative and for flat and round faces only; `offsetFace`
+  (one face, since September) has no such check yet (TD-182). Lesson:
+  the crash guard is a last line, not a plan. When a degenerate input can
+  be named, refuse it by geometry first.
+- No new step kind and no file format change: `PushPullFacesFeature` already
+  stores faces and a distance; it now picks the straight sweep when the
+  faces face one way and the per-face offset otherwise, from the faces as
+  they are when it is computed. A file with such a step opens in 0.3.1 with
+  that step failed (its message: faces must face the same way).
+- The long press's rule changed with it: a step's cap is the direction one
+  of its flat faces looks that all its other flat faces are square to (a
+  top among walls, a pocket's floor), whatever the areas; a step with no
+  cap whose faces are flat or round is all walls and moves each its own
+  way. The old area rule would also have moved a wall of any pad taller
+  than it is wide.
+- A finger dragging one of the moving faces drags along that face's own
+  normal (`MultiPushPullOperation::directionOn`), not along the arrow's.
+  In a hole of a centimeter the arrow's finger zone (28 px) reaches the
+  walls, so there a drag that starts on a wall is the arrow's: the real-UI
+  scenario drags the arrow, the headless test zooms in for the wall.
+- The first whole real-UI run of the day failed 110 checks in two old
+  scenarios (`numpad`, `duo`), all one cause: after the check mark the face
+  stays selected, and the scenario tapped it "again" to go on. That tap
+  used to land in the arrow's zone and do nothing; it now takes the face
+  out, as Sam asked. The scenarios tap only when the face is not selected.
+  The same run reached ctest's 25-minute limit one scenario short (about
+  6,000 checks now): the limit is 45 minutes. A reminder that came with
+  it: read a run's failures from its summary, not from the tail of its log.
+
+## 2026-11-13 (noon) — "I was using the Apple Pencil with it"
+
+Sam, on seeing the morning's fixes. The morning's tests were all a finger's,
+and the Pencil is not a finger here: its taps come as mouse events with the
+pen as their device (9 px for edges, 16 px around an arrow), Qt decides
+what a double-tap is, and from its first tap fingers only move the view.
+
+- Most of the morning's rules sit below the device split (`addingPick`,
+  `tapBesideHandle`, the picker) and held for the pen unchanged: the new
+  `PenFaces` tests for collecting and for unselecting under the arrow passed
+  on the morning's commit.
+- Two did not. **Two quick taps:** Qt turns the Pencil's second tap into a
+  double-click, sometimes in place of its press. The morning's "two taps on
+  two faces are two taps" returned early for it, and with no press there
+  was no click: the second face was not added, the tap just vanished. The
+  same had been true since September of two quick pen taps on two bodies.
+  `pointerDoubleClick` now does that tap's click when the double-click took
+  its press's place (`secondTapClicks`), and compares the faces under the
+  two taps, not the raw picks (beside an edge they differ in kind).
+- **A finger in a sketch:** it panned, by a rule made for people who draw
+  with a finger (an orbit by accident tilts the view off the plane). With
+  the Pencil drawing, the finger only navigates, and that rule left no way
+  to turn the view inside a sketch but the view cube: a lock exactly where
+  he works. In pen mode one finger now orbits in a sketch as anywhere, and
+  Face on comes back. Probably the "locks" of his first message, with the
+  stop at the poles.
+- The `multifaces` scenario has a Pencil pass with real tablet events at
+  the Duo's inner size (Qt's own double-click detection included).
+- Lesson, again: ask which input the owner was using before choosing the
+  tests. Touch, pen and mouse are three paths here.
+
+## 2026-11-13 (afternoon) — 0.3.2 from the 0.3.1 tag
+
+Sam: "Ship 0.3.2". The day's fixes were written on `polish` (0.4.0, with
+Measure); 0.3.2 is `v0.3.1` plus those commits. The code carried over with
+one conflict (the test list in tests/CMakeLists.txt, which names Measure's
+tests on `polish`): nothing in the fixes leans on Measure. The docs did not
+carry: on `polish` they sit among Measure's sections, so this branch has
+its own changelog section, manual tests and status. `main` had one local,
+never-pushed commit raising its version to 0.4.0 after the 0.3.1 tag; it is
+kept as the branch `backup/main-0.4.0-bump` and `main` goes on from the tag.
