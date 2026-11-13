@@ -146,6 +146,45 @@ motion sensors, Vision and ARKit reported.
     around it. Are the paper's corners right in every photo (open a few)?
     Build: do W × D × H match a ruler? If you can, the same box on plain
     white paper, to compare how often the corners were found.
+21. **Several faces with a finger (the build after 64; your report).** Open
+    the Electronics box or the Honeycomb organizer, Pen off. Tap a small
+    face, then three more, some of them near their edges on purpose: each
+    tap should add the face under your finger; nothing should turn into an
+    edge, and nothing should clear. Tap one of them again: only it goes.
+    Tap two faces quickly one after the other: both are added (not the
+    whole body). Tap just beside the part: nothing changes, and a line says
+    how to go on. Tap empty space well away from it: all clear. *Tell me:
+    any tap that did something else, and what was under your finger.*
+22. **Tap again to unselect (your report).** Tap one face: its arrow stands
+    on it. Tap the same spot again: the face is unselected. The same with
+    an edge (the Fillet arrow starts on it). Then tap a face and drag from
+    the same spot: the arrow still pulls the face.
+23. **Edges.** With nothing selected, tap an edge, then two more (for a
+    fillet): each tap near an edge adds it. Tap the middle of a large face:
+    the edges stay, and a line says so. A small face's middle is the face
+    when nothing is selected, and its edges are in its outer quarters:
+    does that feel right on the Duo's outer display, or do you still get
+    edges when you mean faces (or the other way round)?
+24. **Turning the view (your report).** Drag one finger straight up or down
+    and keep going: the view should pass over the top (or under the bottom)
+    and come round upside down, with no stop. Upside down, drag sideways:
+    the model should follow your finger. Tap Iso (or the view cube): the
+    right way up. *Tell me: was that the lock you meant? If the view still
+    feels held somewhere (while sketching, with a face selected, in Pen
+    mode), say where you were and what you dragged.*
+25. **A hole made larger (your report).** A box, a sketch on its top, a
+    square in it, pushed through as a cut. Hold a finger on one wall of the
+    hole for half a second: all four walls are selected and one arrow
+    shows. Drag the arrow back into the part (or type `-2`): the preview
+    shows the hole growing on every side, corners square; the tick applies
+    it. Then the other way: tap two walls one after the other (turn the
+    view for the far ones) and pull them out: the hole shrinks on those
+    sides. The same on the outside: tap the top and one side of a box,
+    drag: both grow. Last, with all four walls selected, pull the arrow
+    out into the hole as far as it goes: before the walls meet, the value
+    turns red and says how far they can go ("Try ... or less"); the app
+    must not close. *Tell me: is that what you meant by expanding them all
+    outward? Anything that refused to move, and what it said.*
 
 ## On Windows (the desktop shortcut)
 

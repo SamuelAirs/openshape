@@ -202,6 +202,12 @@ tap, but **×** and **÷** work on it: a height of 95, then **×** **2** and
 - Orbiting turns around the point under the pointer, so what you look at
   stays in place. Zooming (wheel or pinch) heads for what is under the
   pointer.
+- The view turns all the way round. Drag up or down past the top or the
+  bottom view and it goes on over, as a part turned over in your hand
+  does: the model comes down the other side upside down, and round again
+  to where it began. There is no stop. The horizon stays level, and a
+  sideways drag carries the model with your finger whichever way up it
+  is. **Iso**, or a tap on the view cube, puts it the right way up.
 - **Fit** (or `F`) shows everything; **Zoom to** (in a selected body's
   actions) shows that body.
 - **Iso**, **Top**, **Front** and **Right** turn the view to the standard
@@ -276,8 +282,25 @@ beside your finger, not under it.
 | From the Model panel | click a body's row (`Shift` adds) | tap its row |
 | Nothing | `Esc`, or click empty space | tap empty space |
 
-- A selection is one kind at a time: clicking an edge while faces are
-  selected starts a new selection.
+- A selection is one kind at a time. A plain click with the mouse on an
+  edge while faces are selected starts a new selection.
+- **Collecting faces or edges** (a finger, a pen, or `Shift` with the
+  mouse). Once a face is selected, taps collect faces: a tap near an edge,
+  or right on it, takes the face under your finger and never the edge. To
+  pick an edge after a face, tap empty space first (FoldForm says so when a
+  tap lands right on an edge's line). Once an edge is selected, a tap
+  takes the nearest edge within a finger's reach.
+- **Several faces or edges are never lost to a stray tap.** They stay until
+  you tap empty space or **Clear**: a tap just off the part, or on an open
+  face while you collect edges, changes nothing and says how to go on.
+- A tap on a selected face or edge takes it out, also where its arrow
+  stands on it. A drag from the arrow still moves it.
+- **Small faces.** A finger takes an edge within 20 px of it. On a face
+  narrower than that reach from both sides (a letter's top, a pocket's
+  wall, a chamfer), the middle half is the face's and the outer quarters
+  are the edges'. Edges hidden behind a face are never picked.
+- Two quick taps on two different faces add both. A double-tap on one
+  spot selects the body.
 - **Select body** (in the actions of a selected face or edge) selects the
   body it belongs to.
 - `Ctrl`+click adds like `Shift`+click.
@@ -348,6 +371,18 @@ more faces (with several faces selected, Shell is what you get).
   the face moves by the typed distance and its neighbours follow. When they
   cannot follow (for example next to a rounded edge), FoldForm says so
   instead of making a broken part.
+- **A square hole, a slot, a pocket's walls: several faces at once.** Select
+  the faces (tap them one after the other; turn the view to reach the ones
+  on the far side, the selection stays; or hold a finger on one wall of a
+  hole that was cut through, which takes all its walls). One Push/Pull
+  arrow shows, on the face selected last. Drag it, or drag any of the
+  selected faces, or type a distance: every face moves by that distance
+  along its own direction, and the faces meet again at their corners. Pushed
+  back into the part (a negative distance), the walls of a hole make it
+  larger on every side and keep its corners square; pulled out they make it
+  smaller. The same works on the outside of a part (two or more sides
+  grown together). Faces that all face the same way move straight along it,
+  as before (raised text pushed down engraves the face it stands on).
 
 ### Delete faces
 

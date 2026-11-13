@@ -1,7 +1,8 @@
 # Project status
 
-_Last updated: 2026-10-31, the App Store launch day (lead engineer +
-agents). New here? Read "Blockers" and the latest session report first._
+_Last updated: 2026-11-13 (a new lead engineer took over; FoldForm 0.3.1 is
+on the App Store). New here? Read the latest session report under "Handoff"
+first; "Blockers" below is the launch's history._
 
 ## Blockers: waiting on the owner
 
@@ -180,6 +181,101 @@ free App Store release with an in-app purchase (FoldForm 0.3.0) waits
 on the owner's App Store Connect steps above.
 
 ## Handoff: where we left off
+
+### Session report (2026-11-13): a new lead; selecting faces and turning the view (branch `polish`)
+
+**Where things stand.** FoldForm **0.3.1 (build 65) is on the App Store**
+(released 2026-11-06, https://apps.apple.com/app/id6816439422). `measure`
+is 0.4.0 with all of Measure; its **build 64** has been on TestFlight since
+2026-11-04 and the owner's round on it (the vault's `DuoApps/FoldForm/Measure
+tests (build 64).md`) has not come back: Measure is built and checked on the
+PC, and **not yet tested on a device** beyond his first looks. `main` is
+0.4.0 by its version only (`b981a6b`, local, never pushed). Nothing was
+committed between 2026-11-05 and this session.
+
+**The ask** (the owner, 2026-11-13, after an evening's design work on the
+App Store version): "it still needs some refinement and polish ... It's
+hard to select multiple faces at once, it either locks on to an edge (and
+you can't tap it again to unselect it), or it deselects everything.
+Navigation while designing is tough. There are locks to where you can
+rotate your image. Measuring has promise but is untested so far. Please
+take a look at the project and take over as lead".
+
+**Found and fixed** (branch `polish`, from `measure`; docs/DEVLOG.md
+2026-11-13 has each cause; nothing pushed):
+- Selecting several faces with a finger failed for five separate reasons,
+  none visible in `test_multi_face` (large faces tapped in their middles in
+  a desktop-sized window): a finger's edge zone covered a small face whole;
+  edges hidden under a face were pickable; a tap that picked an edge
+  replaced the faces collected; the arrow standing on a selected face or
+  edge swallowed the tap meant to unselect it; two quick taps on two faces
+  counted as a double-tap and selected the body. Now: the middle half of a
+  narrow face is the face's (`sel::PickOptions::narrowFaceShare`), hidden
+  edges are out, an adding tap keeps to faces or to edges and never drops
+  several of them (`InteractionController::addingPick`; only empty space or
+  Clear starts again), a second tap takes a selected face or edge out also
+  under its arrow, and two quick taps on two faces add both.
+- The view stopped dead at the top and bottom views (`Camera::orbit` clamped
+  the pitch). It now turns on over the pole and round, upside down on the
+  far side, with a level horizon; a sideways drag follows the finger either
+  way up (`Camera::orbitSense`), and the light swings over without a jump.
+  One finger keeps the horizon level, as Shapr3D's one-finger orbit does; a
+  two-finger twist to roll is not built (TD-181).
+- Later the same day: "if I have a square shape cut out of a plane, and I
+  try to make the hole bigger by selecting all of the faces and expanding
+  them all outward, I can't do that". Faces facing different ways had no
+  arrow (0.3.1 sweeps several faces along one common normal). They now move
+  together on one Push/Pull arrow, each along its own normal, meeting again
+  at their corners (`geom::offsetFaces`; `MultiPushPullOperation::
+  eachAlongItsOwnNormal`; the step is the same `PushPullFaces`, no file
+  format change); a finger held on a wall of a hole cut through takes all
+  its walls. Exact on the PC: a 10 mm square hole pushed back 2 mm is 14 mm
+  square with 10 faces.
+- Still open from his words: **which lock he meant.** The stop at the poles
+  is the only hard stop in the code, but three other things hold the view
+  while designing and may be what he felt: a finger's drag that starts on
+  the selected face pulls its arrow instead of turning the view; in a
+  sketch one finger pans (the view cube orbits); in Pen mode fingers only
+  navigate and never select. docs/MANUAL_TESTS.md 24 asks him.
+
+**Verified on the PC** (working tree on `polish`): 995/995 headless (972
+before; new: `tests/test_touch_faces.cpp`, 13 tests at phone and Duo sizes
+through the gesture recognizer, all 13 failing on the old code; camera and
+lighting over the top; the hole's walls and `OffsetFaces` by exact
+volumes); the whole real-UI run 6050/6050 checks in 62 scenarios, 26 minutes (new scenario
+`multifaces`: real touch events at 402 x 874 and 466 x 678, then the hole
+on an iPad-sized window);
+the lambda-capture check (only the known one in `Duo.cpp`). Older tests
+that changed with the behaviour, each saying why: `TouchMultiSelect.TapAddsBody
+...` (a phone now has a spot on a small box clear of the arrows),
+`CutFlow.EdgeTakes...` (on a foreshortened face the edge has a quarter of
+its width), `MultiFace.FacesFacingDifferentWays...` and
+`Interaction.MeasureBetweenTwoFaces` (such faces have an arrow now), and the
+`numpad` and `duo` scenarios (they tapped a face that was still selected,
+which now takes it out: 110 failed checks in the day's first whole run,
+which also ran into ctest's 25-minute limit, now 45). **Not tried on a
+device.**
+
+**Found on the way:** OpenCASCADE crashes (an access violation in
+`BRepOffset_MakeOffset`, caught by the crash guard only some of the time)
+when moved faces close a hole to nothing; `geom::offsetFaces` refuses such
+a distance by geometry first and names the room (docs/DEVLOG.md; TD-182:
+the one-face Offset has no such check yet). docs/FILE_FORMAT.md never listed
+`PushPullFaces` and `SweepCut` (0.3.1's steps): added.
+
+**Next.**
+1. The owner's word to send a TestFlight build from `polish` (a
+   `[testflight]` push; it carries Measure too), then his checks 21 to 25
+   (docs/MANUAL_TESTS.md) with the Measure round he still owes.
+2. His decision: ship the selection and view fixes soon as **0.3.2** without
+   Measure (a backport onto `v0.3.1`; the changes are in `selection/`,
+   `core/Camera`, `core/Lighting` and `InteractionController`), or wait and
+   ship them with Measure as 0.4.0.
+3. Measure's device round decides its fixes; nothing in it changed here.
+4. Housekeeping on his word: four agent worktrees under `.claude/worktrees/`
+   (all merged), ten local `worktree-agent-*` branches, and three merged
+   branches on GitHub (`ci/purchase-ios-check`, `duo-ci`,
+   `worktree-wf_9132cfe3-632-1`).
 
 ### Session report (2026-11-04, night): Measure, FoldForm 0.4.0 (branch `measure`)
 
@@ -1452,7 +1548,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-859/859 headless (`ctest -LE gui`, 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+995/995 headless (`ctest -LE gui`, 2026-11-13, branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1467,7 +1563,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 4452/4452 checks through the real UI in 51 scenarios
+`acceptance_gui`: 6050/6050 checks through the real UI in 62 scenarios (2026-11-13, `polish`: 26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4452/4452 checks in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
@@ -1478,7 +1574,7 @@ under `src/app/acceptance/`). Build with `-DOPENSHAPE_WARNINGS_AS_ERRORS=ON`
 
 | Platform | Build | Tests | Runs |
 |---|---|---|---|
-| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 859/859 | ✅ 4452/4452 real-UI checks |
+| Windows 11 x64 (MSYS2 UCRT64, D3D11), dev build | ✅ | ✅ 995/995 (2026-11-13, `polish`) | ✅ 6050/6050 real-UI checks |
 | Windows 11 x64, release build (own OCCT) | ✅ | ✅ 583/583 | ✅ packaged app with only System32 on `PATH`; installer tests |
 | GitHub Windows runner (`release.yml`) | ✅ | ✅ | ✅ silent installer test (Release #1) |
 | Linux | ⬜ | ⬜ | ⬜ |
