@@ -183,6 +183,54 @@ on the owner's App Store Connect steps above.
 
 ## Handoff: where we left off
 
+### Session report (2026-11-13, night): Sam's basket and Flipper on build 68 (a slot, the zoom, Photo's height)
+
+**The report.** Two screen recordings from build 68 on the Duo's inner
+display with the Pencil: "Making a hole bigger doesn't work, and the view
+keeps zooming way out." The part is a basket with a grid of slots in a
+slanted front panel. docs/DEVLOG.md, 2026-11-13 (night), has each cause.
+
+**Fixed on `polish` (local, not pushed):**
+- A slot's walls in a hollow part refused every distance: the kernel's
+  general offset returned nothing for the whole basket. Walls that run
+  along one axis now move locally (`geom::offsetFaces` ->
+  `moveWallsLocally`); the general offset is the fallback, never for a body
+  with a closed void (TD-182).
+- Holding a wall of a hole takes that hole's walls only
+  (`geom::connectedFaces`), not every slot the same cut made.
+- The view zoomed back out to the whole selected panel at each tap:
+  `revealKeepClear` now brings in all of the selection only when it fits
+  the room after zooming out by at most 1.5x, else only the arrow, panned
+  (`InteractionController::arrowRect`, `kRevealZoomOutAtMost`); points
+  nearer the eye than the near plane no longer project far off the screen.
+  (A first try, the arrow only, broke four of the whole run's checks.)
+- Preview refusals log their reason at Info once (`Operation::logFailure`).
+- Sam, later: "Measurement is kind of off ... The flipper is 100mm" (Photo
+  read 105.8 on Letter paper). Its top is 25 mm above the paper: an edge h
+  up reads d / (d - h) large. Photo now keeps the photo's lens (EXIF, as
+  Scan did), works out the camera's height from the paper's corners
+  (`measure::cameraHeightAbovePaper`), and a **Height above paper** field
+  scales every reading (`MeasureController::heightScale`; TD-183;
+  docs/MEASURE.md corrected: it said thickness mattered only at an angle).
+
+**Verified on the PC:** 1003/1003 headless (new: `OffsetFaces.TheWallsOfASlotInAHollowBasketMove`,
+`OffsetFaces.ASlotThroughASlantedPanelAndAPocketMoveExactly`,
+`CutFlow.HoldingAWallOfOneOfTwoHolesCutTogetherTakesThatHolesWalls`,
+`KeypadReveal.AViewZoomedInOnALargeSelectedFaceStaysWhereTheUserPutIt`,
+the last failing with the old reveal; `KeypadReveal.TheSelectionMovesIntoTheRoomTheKeypadLeaves`
+now checks a pan, a small zoom-out and an arrow-only pan;
+`ScanPose.APartsTopMeasuresTrueOnceItsHeightAboveThePaperIsSaid`: 105.9
+read from 450 mm, 100.00 corrected). The `measurephotoviews` scenario types
+a height and checks the readout (228/228). The whole real-UI run: 6081/6081
+in 63 scenarios. **Not on a device.**
+
+**Waiting on Sam:** "send the build" (a `[testflight]` push of `polish`:
+build 69, Measure and these fixes; the vault's test list has its checks);
+and whether 0.3.2 (build 67, not yet
+submitted) goes to Apple as it is or waits for a 0.3.3 with these fixes:
+0.3.2's own hole works on a solid part and fails on a hollow one, and the
+zoom-out is older than 0.3.2.
+
 ### Session report (2026-11-13, afternoon): 0.3.2 is tagged, and `polish` carries it
 
 **Where things stand.** FoldForm **0.3.2** is tagged: `v0.3.2` = `main` =
@@ -1676,7 +1724,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-999/999 headless (`ctest -LE gui`, 2026-11-13, branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 888/888 the same day for 0.3.2, branch `release-0.3.2`, without Measure; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+1004/1004 headless (`ctest -LE gui`, 2026-11-13 night, `polish`: Sam's basket, the reveal, Photo's height); 999/999 the same afternoon (branch `polish`: 0.4.0 with Measure, the selection and view fixes and faces moving each their own way; 888/888 the same day for 0.3.2, branch `release-0.3.2`, without Measure; 972/972 on 2026-11-04, `measure`; 859/859 on 2026-11-03, `main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1691,7 +1739,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 6071/6072 checks through the real UI in 63 scenarios (2026-11-13 afternoon, `polish` with the Pencil's changes and `main` merged in: 25 minutes; the one failure was a check in `measuredesign` that could not see the view turn, corrected and passed alone 113/113, so 6073 checks now); 6050/6050 in 62 scenarios that morning (26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
+`acceptance_gui`: 6081/6081 checks through the real UI in 63 scenarios (2026-11-13 night, `polish` with the basket's fixes, the reveal and Photo's height: 26 minutes); 6071/6072 (2026-11-13 afternoon, `polish` with the Pencil's changes and `main` merged in: 25 minutes; the one failure was a check in `measuredesign` that could not see the view turn, corrected and passed alone 113/113, so 6073 checks now); 6050/6050 in 62 scenarios that morning (26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and

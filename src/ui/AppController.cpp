@@ -394,6 +394,12 @@ QVariant AppController::keepClearRect() const
     return rect ? QVariant::fromValue(toQRect(*rect)) : QVariant();
 }
 
+QVariant AppController::arrowRect() const
+{
+    const auto rect = interaction_->arrowRect();
+    return rect ? QVariant::fromValue(toQRect(*rect)) : QVariant();
+}
+
 bool AppController::manipulatorDragging() const { return interaction_->manipulatorDragging(); }
 
 QVariantList AppController::safeInsets() const

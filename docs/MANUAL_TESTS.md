@@ -152,6 +152,28 @@ turning the view, a hole made larger, the Pencil and your fingers) went out
 as 0.3.2 and are in every build after 64: they are the section "FoldForm
 0.3.2" below, 1 to 6.
 
+27. **Your basket's slot (your recordings on build 68).** Open the basket.
+    Hold the Pencil still on one wall of a slot for half a second: the
+    slot's four walls are selected ("The 4 walls of this hole"), not the
+    panel and not the other slots. Drag the arrow back into the panel, or
+    type `-0.5`: the slot grows on every side; the tick applies it. Pull it
+    the other way: it narrows, and past where the walls would meet the
+    value turns red and names the room. *Tell me: the slot you tried, and
+    what it said if it refused.*
+28. **The view stays where you zoom it.** With those walls (or the whole
+    panel face) selected, pinch in close on one slot, then tap another wall
+    to add it, and tap it again to take it out: the view stays where you
+    zoomed it each time (it used to zoom back out to the whole panel). Fold
+    or turn the phone with the arrow off the screen: the view slides the
+    arrow back into sight without zooming out.
+29. **The Flipper again (Height above paper).** The Flipper on Letter
+    paper, Take photo from straight above, Straighten, a distance across
+    its top end to end: about 105.8 mm as before. Under the photo, **Height
+    above paper**: type 25 (its thickness): the distance should read about
+    100 mm, and the caption "25 mm above the letter paper". *Tell me: the
+    reading, and how high you held the phone.* A second photo from twice as
+    high: the error before the height is typed should be about half.
+
 ## On Windows (the desktop shortcut)
 
 1. **Sizes instead of distances.** Add a box, click its top face: the value

@@ -353,8 +353,21 @@ it is one undo step.
   80.02 x 60.01 mm, the hole 9.99 mm, fitted within 0.04 mm, in about 0.22 s on the desktop;
   extruded 5 mm, 11609.6 mm³ against 11607.3. A real photo adds lens
   distortion (not corrected: the straightening is projective), a card cut a little off its
-  nominal size (TD-176), the part's thickness (its top edge stands above the paper, so seen
-  from an angle its outline shifts; from straight above it doesn't) and real shadows.
+  nominal size (TD-176), the part's thickness and real shadows.
+- **Height above the paper** (2026-11-13, Sam's Flipper: 100 mm long, 25 mm thick, its top
+  read 105.8 mm on Letter paper). Until then this page said a part's thickness only shifts
+  its outline in a photo taken at an angle; that holds for an orthographic picture, not a
+  camera. An edge standing h above the paper is nearer the lens than the paper, and every
+  length at that height reads larger by d / (d - h), d the camera's height above the
+  paper, however straight down the photo was taken: 450 mm up, a 25 mm-thick part's top
+  reads 5.9 % long. The paper's corners and the lens's focal length (the photo's EXIF
+  FocalLenIn35mmFilm, which FoldForm's camera and the library picker pass on) give d
+  (`measure::cameraHeightAbovePaper`, Scan's pose code); the **Height above paper** field
+  under the photo takes h, and every reading is worked out at that height
+  (`MeasureController::heightScale`, (d - h) / d; the rulers and grid too). A photo that
+  does not say its lens has no field (TD-183). Measured on a synthetic camera
+  (`ScanPose.APartsTopMeasuresTrueOnceItsHeightAboveThePaperIsSaid`): from 450 mm the top
+  reads 105.9 mm, 100.00 mm once said 25 mm up; with the corners 0.5 px off, 99.98 mm.
 - **Limits** (TD-178): the straightened view reaches about 1.5 card sizes around the card (13
   cm or so beside it): a bigger part needs a sheet of A4 or Letter as the reference, the part
   on it. A part touching the card's margin, the photo's edge or the paper's edge is cut or not

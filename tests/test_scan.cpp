@@ -202,6 +202,51 @@ TEST(ScanPose, FocalLengthFromThePapersAlone)
     EXPECT_FALSE(estimateFocal35mm(above, paper));
 }
 
+// Photo measures on the paper's plane. Sam's Flipper (2026-11-13): 100 mm
+// long, 25 mm thick, its top's ends read 105.8 mm on Letter paper. An edge
+// standing h above the paper is nearer the lens and reads larger by
+// d / (d - h), d the camera's height; the paper's corners and the lens give
+// d, and (d - h) / d undoes it.
+TEST(ScanPose, APartsTopMeasuresTrueOnceItsHeightAboveThePaperIsSaid)
+{
+    const Reference paper = letterReference();
+    struct Case {
+        double elevationDeg, distanceMm, focal35mm, cornerNoisePx;
+    };
+    for (const Case c : {Case{88, 450, 26, 0}, Case{88, 600, 52, 0}, Case{70, 420, 26, 0}, Case{85, 450, 26, 0.5}}) {
+        CameraSpec spec;
+        spec.elevationDeg = c.elevationDeg;
+        spec.distanceMm = c.distanceMm;
+        spec.focal35mm = c.focal35mm;
+        spec.target = {0, 0, 0};
+        spec.width = 4032;
+        spec.height = 3024;
+        const ScanCamera cam = cameraFor(spec);
+        std::mt19937 rng(9);
+        std::uniform_real_distribution<double> jitter(-c.cornerNoisePx, c.cornerNoisePx);
+        PaperCorners pc;
+        pc.width = spec.width;
+        pc.height = spec.height;
+        const auto world = paperWorldCorners(paper);
+        for (int m = 0; m < 4; ++m)
+            pc.corners[m] = cam.project(world[m]) + Vec2{jitter(rng), jitter(rng)};
+        const auto height = cameraHeightAbovePaper(pc, paper, focalPxFrom35mm(c.focal35mm, spec.width, spec.height));
+        ASSERT_TRUE(height.has_value()) << c.elevationDeg;
+        EXPECT_NEAR(*height, cam.center().z, 0.01 * cam.center().z) << c.elevationDeg << " " << c.distanceMm;
+
+        // The Flipper's top: two points 100 mm apart, 25 mm up.
+        const auto rectifier = PlaneRectifier::create(pc.corners, paper);
+        ASSERT_TRUE(rectifier.has_value());
+        const Vec2 a = cam.project({-50, 20, 25}), b = cam.project({50, 20, 25});
+        const double read = rectifier->distanceMm(a, b);
+        const double corrected = read * (*height - 25) / *height;
+        EXPECT_GT(read, 103) << "read on the paper's plane, a top edge comes out large";
+        EXPECT_NEAR(corrected, 100, c.cornerNoisePx > 0 ? 0.6 : 0.15) << c.elevationDeg << " " << c.distanceMm;
+        std::printf("[photo] camera %.0f mm up (true %.0f): the top reads %.1f mm, %.2f mm said 25 mm up\n", *height,
+                    cam.center().z, read, corrected);
+    }
+}
+
 // -------------------------------------------------------------------- meshes
 
 TEST(ScanMeshTools, SurfaceOfASphereIsClosedAndDecimatesClosed)

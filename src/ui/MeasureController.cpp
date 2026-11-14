@@ -10,6 +10,7 @@
 #include "measure/ObjectOutline.h"
 #include "measure/Outline.h"
 #include "measure/OutlineProfile.h"
+#include "measure/ScanPose.h"
 #include "measure/ScreenScale.h"
 #include "measure/StrokeFit.h"
 #include "ui/AppController.h"
@@ -637,7 +638,7 @@ void MeasureController::takePhoto(const QRectF& anchor)
             return;
         if (r.outcome == PhotoResult::Outcome::Picked) {
             self->keepCameraPhoto(r.file);
-            self->adoptPickedFile(r.file);
+            self->adoptPickedFile(r.file, r.focalLength35mm);
         } else if (r.outcome == PhotoResult::Outcome::Failed) {
             self->setPhotoError(r.error.isEmpty() ? QStringLiteral("The photo couldn't be taken.") : r.error);
         }
@@ -654,18 +655,57 @@ void MeasureController::choosePhoto(const QRectF& anchor)
         if (!self)
             return;
         if (r.outcome == PhotoResult::Outcome::Picked)
-            self->adoptPickedFile(r.file);
+            self->adoptPickedFile(r.file, r.focalLength35mm);
         else if (r.outcome == PhotoResult::Outcome::Failed)
             self->setPhotoError(r.error.isEmpty() ? QStringLiteral("The photo couldn't be read.") : r.error);
     });
 }
 
-void MeasureController::loadPhoto(const QUrl& url)
+void MeasureController::loadPhoto(const QUrl& url, double focal35mm)
 {
     const QString file = url.isLocalFile() ? url.toLocalFile() : url.toString();
     if (file.isEmpty())
         return;
-    adoptPickedFile(file);
+    adoptPickedFile(file, focal35mm);
+}
+
+double MeasureController::heightScale() const
+{
+    if (cameraHeightMm_ <= 0 || edgeHeightMm_ <= 0 || edgeHeightMm_ >= 0.9 * cameraHeightMm_)
+        return 1.0;
+    return (cameraHeightMm_ - edgeHeightMm_) / cameraHeightMm_;
+}
+
+void MeasureController::setEdgeHeightMm(double mm)
+{
+    const double h = std::isfinite(mm) ? std::max(0.0, mm) : 0.0;
+    if (h == edgeHeightMm_)
+        return;
+    edgeHeightMm_ = h;
+    OS_LOG(Info, App) << "measure: edges " << h << " mm above the paper, the camera " << cameraHeightMm_ << " mm: x"
+                      << heightScale();
+    emit heightChanged();
+}
+
+void MeasureController::updateCameraHeight()
+{
+    double height = 0;
+    const auto reference = referenceFor(referenceKind_, referenceSideA_, referenceSideB_);
+    if (photoFocal35mm_ > 0 && reference && photoSize_.width() > 0 && photoSize_.height() > 0) {
+        measure::PaperCorners photo;
+        for (std::size_t i = 0; i < 4; ++i)
+            photo.corners[i] = {corners_[i].x(), corners_[i].y()};
+        photo.width = int(photoSize_.width());
+        photo.height = int(photoSize_.height());
+        const double focalPx = measure::focalPxFrom35mm(photoFocal35mm_, photo.width, photo.height);
+        height = measure::cameraHeightAbovePaper(photo, *reference, focalPx).value_or(0.0);
+    }
+    if (height != cameraHeightMm_) {
+        cameraHeightMm_ = height;
+        OS_LOG(Info, App) << "measure: the camera was " << height << " mm above the " << referenceName().toStdString()
+                          << " (lens " << photoFocal35mm_ << " mm equivalent)";
+        emit heightChanged();
+    }
 }
 
 void MeasureController::forgetFile(const QString& file)
@@ -711,9 +751,13 @@ void MeasureController::runPhotoWork(std::function<void()> work, std::function<v
     thread->start();
 }
 
-void MeasureController::adoptPickedFile(const QString& file)
+void MeasureController::adoptPickedFile(const QString& file, double focal35mm)
 {
     ++photoGeneration_;
+    photoFocal35mm_ = focal35mm > 0 ? focal35mm : 0.0;
+    cameraHeightMm_ = 0;
+    edgeHeightMm_ = 0;
+    emit heightChanged();
     if (photoViewIndex_ >= 0) {
         // A new photo is a new view (the one of the set stays as it was kept).
         photoViewIndex_ = -1;
@@ -906,6 +950,7 @@ bool MeasureController::straighten()
             straightReference_ = result->reference;
             OS_LOG(Info, App) << "measure: straightened " << result->view.width << "x" << result->view.height << " at "
                               << result->view.mmPerPixel << " mm per pixel";
+            updateCameraHeight();
             emit photoChanged();
             emit straightChanged();
         });
@@ -996,6 +1041,8 @@ int MeasureController::savePhotoView(const QString& name, const QString& plane, 
     view.mmPerPixel = straightMmPerPixel_;
     view.originMm = straightOriginMm_;
     view.straightReference = straightReference_;
+    view.focal35mm = photoFocal35mm_;
+    view.edgeHeightMm = edgeHeightMm_;
     view.state = state;
     if (photoViewIndex_ >= 0 && photoViewIndex_ < int(photoViews_.size())) {
         // The entry's files it no longer shows (straightened again) go.
@@ -1038,6 +1085,10 @@ bool MeasureController::openPhotoView(int index)
     straightMmPerPixel_ = view.mmPerPixel;
     straightOriginMm_ = view.originMm;
     straightReference_ = view.straightReference;
+    photoFocal35mm_ = view.focal35mm;
+    edgeHeightMm_ = view.edgeHeightMm;
+    cameraHeightMm_ = -1; // worked out again below, which says so (heightChanged)
+    updateCameraHeight();
     photoError_.clear();
     photoViewIndex_ = index;
     // A found outline belongs to the photo it was found in.
@@ -1273,7 +1324,7 @@ QVariantMap MeasureController::profileReport(const QVariantList& points, const Q
     const auto loops = foundLoops(points, found);
     if (loops.empty() || straightMmPerPixel_ <= 0)
         return {};
-    const double mmpp = straightMmPerPixel_;
+    const double mmpp = measuredMmPerPixel();
     const std::vector<measure::ProfileLoop> holes(loops.begin() + 1, loops.end());
     // Circles to within 0.05 mm (a found circle's two half arcs, undragged).
     const measure::ProfileReport r = measure::describeProfile(loops.front(), holes, mmpp, 0.05 / mmpp);
@@ -1334,24 +1385,28 @@ double MeasureController::parseLengthMm(const QString& text) const
     return result.millimeters && *result.millimeters > 0 ? *result.millimeters : 0.0;
 }
 
+// Measured at the edges' height (heightScale): sizes come out true; the
+// points themselves are scaled about the straightened view's origin.
 double MeasureController::distanceMm(const QPointF& a, const QPointF& b) const
 {
-    return std::hypot(b.x() - a.x(), b.y() - a.y()) * straightMmPerPixel_;
+    return std::hypot(b.x() - a.x(), b.y() - a.y()) * measuredMmPerPixel();
 }
 
 QVariantList MeasureController::straightToMm(const QVariantList& points) const
 {
+    const double mmpp = measuredMmPerPixel();
     QVariantList list;
     for (const Vec2 p : pointsOf(points))
-        list.append(QPointF(straightOriginMm_.x() + p.x * straightMmPerPixel_, straightOriginMm_.y() + p.y * straightMmPerPixel_));
+        list.append(QPointF(straightOriginMm_.x() + p.x * mmpp, straightOriginMm_.y() + p.y * mmpp));
     return list;
 }
 
 QVariantMap MeasureController::outlineReport(const QVariantList& points, bool closed) const
 {
+    const double mmpp = measuredMmPerPixel();
     std::vector<Vec2> mm;
     for (const Vec2 p : pointsOf(points))
-        mm.push_back({straightOriginMm_.x() + p.x * straightMmPerPixel_, straightOriginMm_.y() + p.y * straightMmPerPixel_});
+        mm.push_back({straightOriginMm_.x() + p.x * mmpp, straightOriginMm_.y() + p.y * mmpp});
     const measure::OutlineReport report = measure::describeOutline(mm, closed);
     return {{QStringLiteral("sides"), doubles(report.sideLengths)},
             {QStringLiteral("corners"), doubles(report.cornerAngles)},
@@ -1369,7 +1424,7 @@ QVariantMap MeasureController::circleFrom3(const QPointF& a, const QPointF& b, c
     return {{QStringLiteral("valid"), true},
             {QStringLiteral("center"), QPointF(circle->center.x, circle->center.y)},
             {QStringLiteral("radius"), circle->radius},
-            {QStringLiteral("diameter"), 2.0 * circle->radius * straightMmPerPixel_}};
+            {QStringLiteral("diameter"), 2.0 * circle->radius * measuredMmPerPixel()}};
 }
 
 bool MeasureController::waitForPhoto(int ms)
@@ -1583,12 +1638,13 @@ bool MeasureController::makeProfileSketch(const QVariantList& points, const QVar
     std::vector<measure::ProfileLoop> loops = foundLoops(points, found);
     if (loops.empty() || straightMmPerPixel_ <= 0)
         return false;
-    // Millimetres on the surface, turned so the longest side lies along x,
+    // Millimetres at the edges' height (heightScale), turned so the longest side lies along x,
     // centered on the origin, y up.
     const double angle = measure::profileAlignment(loops.front());
+    const double mmpp = measuredMmPerPixel();
     const double c = std::cos(angle), s = std::sin(angle);
     auto toMm = [&](Vec2 p) {
-        const Vec2 mm{straightOriginMm_.x() + p.x * straightMmPerPixel_, straightOriginMm_.y() + p.y * straightMmPerPixel_};
+        const Vec2 mm{straightOriginMm_.x() + p.x * mmpp, straightOriginMm_.y() + p.y * mmpp};
         return Vec2{c * mm.x - s * mm.y, s * mm.x + c * mm.y};
     };
     for (auto& loop : loops)

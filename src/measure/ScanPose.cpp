@@ -231,6 +231,17 @@ std::optional<PaperPose> poseForLabelling(const PaperCorners& photo, const Refer
     return pose;
 }
 
+std::optional<double> cameraHeightAbovePaper(const PaperCorners& photo, const Reference& paper, double focalPx)
+{
+    // Every plausible labelling is the same camera turned about the paper's
+    // normal: the height is the same for all.
+    const std::vector<PaperPose> poses = plausiblePoses(photo, paper, focalPx);
+    if (poses.empty())
+        return std::nullopt;
+    const double height = poses.front().camera.center().z;
+    return height > 0 ? std::optional<double>(height) : std::nullopt;
+}
+
 std::vector<PaperPose> plausiblePoses(const PaperCorners& photo, const Reference& paper, double focalPx)
 {
     std::vector<PaperPose> all;

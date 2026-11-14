@@ -132,9 +132,22 @@ void Operation::setValue(double value, const doc::Document& document, Change cha
     floorSerial_ = outcome.serial;
     resolvedSerial_ = outcome.serial;
     if (!outcome.error.empty())
-        OS_LOG(Debug, Interaction) << title() << " preview failed at " << value << ": " << outcome.developerMessage;
+        logFailure(value, outcome.developerMessage);
     error_ = outcome.error;
     showOutcome(outcome);
+}
+
+// A refused value says why in the log on every device (the owner's log is
+// what a device round brings back: on 2026-11-13 it could not say why a
+// slot's walls refused to move). Once per reason, not at every drag step.
+void Operation::logFailure(double value, const std::string& developerMessage)
+{
+    if (developerMessage == lastLoggedFailure_) {
+        OS_LOG(Debug, Interaction) << title() << " preview failed at " << value << " (as before)";
+        return;
+    }
+    lastLoggedFailure_ = developerMessage;
+    OS_LOG(Info, Interaction) << title() << " preview failed at " << value << ": " << developerMessage;
 }
 
 PreviewOutcome Operation::computeOutcome(double value, const doc::Document& document)
@@ -218,8 +231,7 @@ bool Operation::acceptPreview(const PreviewOutcome& outcome)
             adoptAutomaticChoices(*outcome.computedBy);
         error_ = outcome.error;
         if (!outcome.error.empty())
-            OS_LOG(Debug, Interaction) << title() << " preview failed at " << outcome.value << ": "
-                                       << outcome.developerMessage;
+            logFailure(outcome.value, outcome.developerMessage);
     } else {
         error_.clear(); // an older value that works, shown while the newest computes
     }

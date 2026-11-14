@@ -319,7 +319,7 @@ Item {
     }
     // Its main value {quantity, value} (what its label and Keep all show).
     function mainValue(d) {
-        if (!m)
+        if (!m || m.heightScale <= 0)
             return null
         if (d.kind === "distance" && d.points.length === 2)
             return { quantity: "length", value: m.distanceMm(d.points[0], d.points[1]), prefix: "" }
@@ -338,10 +338,15 @@ Item {
         return v ? v.prefix + m.formatValue(v.quantity, v.value) : ""
     }
 
-    readonly property var outline: m && mode === "outline" && points.length >= 2
+    readonly property var outline: m && m.heightScale > 0 && mode === "outline" && points.length >= 2
                                    ? (found ? m.profileReport(points, found) : m.outlineReport(points, closed)) : null
-    readonly property var circle: m && mode === "circle" && points.length === 3 ? m.circleFrom3(points[0], points[1], points[2]) : null
-    readonly property string surface: m ? "on the " + m.referenceName.toLowerCase() + "'s surface" : ""
+    readonly property var circle: m && m.heightScale > 0 && mode === "circle" && points.length === 3
+                                  ? m.circleFrom3(points[0], points[1], points[2]) : null
+    // Where it is measured: on the paper, or as high above it as the edges
+    // measured stand (the height field; the camera's height from the photo).
+    readonly property string surface: !m ? ""
+        : m.edgeHeightMm > 0 && m.heightScale < 1 ? m.formatValue("length", m.edgeHeightMm) + " above the " + m.referenceName.toLowerCase()
+        : "on the " + m.referenceName.toLowerCase() + "'s surface"
     readonly property string activeName: activeDim ? displayName(activeDim) + " · " : ""
 
     readonly property var reading: {
@@ -349,7 +354,7 @@ Item {
         // Setting the origin: the readout says how.
         if (!m || stage !== "measure" || settingOrigin)
             return none
-        if (mode === "distance" && points.length === 2)
+        if (mode === "distance" && points.length === 2 && m.heightScale > 0)
             return { valid: true, caption: activeName + surface, source: "Photo",
                      items: [{ label: "Distance", quantity: "length", value: m.distanceMm(points[0], points[1]) },
                              { label: "Angle", quantity: "angle", value: angleOf(points[0], points[1]) }] }
@@ -837,7 +842,7 @@ Item {
     // View px per millimeter on the straightened photo, and where the
     // rulers' and the grid's zero is (the origin point, else the
     // reference's first corner) in the view.
-    readonly property real pxPerMm: m && m.straightMmPerPixel > 0 ? straightView.fit / m.straightMmPerPixel : 0
+    readonly property real pxPerMm: m && m.straightMmPerPixel > 0 ? straightView.fit / (m.straightMmPerPixel * m.heightScale) : 0
     readonly property point zeroPx: origin ? origin : m && m.straightReference.length === 4 ? m.straightReference[0] : Qt.point(0, 0)
     readonly property point zeroView: straightView.toView(zeroPx)
     // The rulers' numbers (mm between them: room for the text) and ticks.
@@ -1603,6 +1608,41 @@ Item {
                 outlined: true
                 onClicked: photo.closeOutline()
             }
+            // How high above the paper the edges measured stand: a part's top
+            // is nearer the camera and reads larger (Sam's Flipper, 25 mm
+            // thick: 105.8 mm for 100). Only where the photo said what lens
+            // took it (the camera's height comes from that).
+            RowLayout {
+                objectName: "photoHeightRow"
+                visible: photo.m && photo.m.cameraHeightMm > 0
+                spacing: 6
+                Text {
+                    text: photo.narrow ? "Height" : "Height above paper"
+                    font.pixelSize: 13
+                    color: Theme.mutedText
+                }
+                SideField {
+                    id: heightField
+                    objectName: "photoEdgeHeight"
+                    label: "Height above paper"
+                    placeholderText: "0"
+                    Layout.preferredWidth: 64
+                    applyTo: (text) => photo.m.setEdgeHeightMm(text.trim() === "" ? 0 : photo.m.parseLengthMm(text))
+                    Connections {
+                        target: photo.m
+                        // A new photo starts on the paper; a view brings back its own.
+                        function onHeightChanged() {
+                            if (!heightField.activeFocus && !heightField.keypadOpen)
+                                heightField.text = photo.m.edgeHeightMm > 0 ? photo.m.formatNumber("length", photo.m.edgeHeightMm) : ""
+                        }
+                    }
+                }
+                Text {
+                    text: photo.m ? photo.m.unitSymbol("length") : "mm"
+                    font.pixelSize: 13
+                    color: Theme.mutedText
+                }
+            }
             ActionButton {
                 objectName: "photoUndo"
                 text: "Undo"
@@ -2218,6 +2258,8 @@ Item {
         id: side
         property Item next: null
         property string label
+        // What a change does with the text; the reference's sides by default.
+        property var applyTo: null
         // The keypad types into it on touch (as the value boxes do); a
         // hardware keyboard still types.
         readonly property bool keypadOpen: photo.screen && photo.screen.keypadClient === client
@@ -2243,7 +2285,10 @@ Item {
             displayName: () => side.label
         })
         function apply() {
-            photo.m.setReference("rectangle", photo.m.parseLengthMm(sideA.text), photo.m.parseLengthMm(sideB.text))
+            if (applyTo)
+                applyTo(side.text)
+            else
+                photo.m.setReference("rectangle", photo.m.parseLengthMm(sideA.text), photo.m.parseLengthMm(sideB.text))
         }
         function edit() {
             forceActiveFocus()

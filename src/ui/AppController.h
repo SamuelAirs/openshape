@@ -95,6 +95,10 @@ class AppController : public QObject {
     // What the value chip must not cover (InteractionController::keepClearRect):
     // a rect in window coordinates, or null when there is nothing.
     Q_PROPERTY(QVariant keepClearRect READ keepClearRect NOTIFY viewChanged)
+    // The operation's arrows (InteractionController::arrowRect): what the view
+    // keeps in sight when it moves on its own (revealKeepClear). A rect in
+    // window coordinates, or null when none is in sight.
+    Q_PROPERTY(QVariant arrowRect READ arrowRect NOTIFY viewChanged)
     // An arrow or ring is being dragged (a docked value chip keeps its side).
     Q_PROPERTY(bool manipulatorDragging READ manipulatorDragging NOTIFY viewChanged)
     // The window's safe-area insets [top, right, bottom, left] in logical px
@@ -262,6 +266,7 @@ public:
     QPointF valueLabelPosition() const;
     bool valueLabelVisible() const;
     QVariant keepClearRect() const;
+    QVariant arrowRect() const;
     bool manipulatorDragging() const;
     QVariantList safeInsets() const;
     void setSafeInsets(const QVariantList& insets);

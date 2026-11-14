@@ -7,6 +7,36 @@ the section of their version (`.github/workflows/release.yml`).
 
 Everything in 0.3.2 below, and:
 
+**From the owner's recordings on build 68** (a basket with a grid of slots,
+on the iPhone Duo with the Pencil: "Making a hole bigger doesn't work, and
+the view keeps zooming way out").
+
+- **The walls of a hole in a hollow part move.** A slot's four walls in the
+  basket's front refused every distance ("Their neighbours cannot follow"):
+  the kernel's offset rebuilds the whole body, and on a hollow one (shelled,
+  rounded corners, many slots) it reported success and made nothing. Walls
+  that run along one axis (a hole, a slot, a pocket, a block's sides) now
+  move by cutting away or adding only the band between where they are and
+  where they go, and the general offset is left for the rest. A body with a
+  void closed inside it is no longer handed to the general offset.
+- **Holding a wall of a hole takes that hole's walls**, not those of every
+  hole the same cut made (a grid of slots cut at once).
+- **The view stays where you zoom it.** With a large face selected and the
+  view zoomed in on part of it, every tap moved the value box, found no spot
+  clear of the face, and zoomed the view back out to show all of it. The
+  view now moves on its own only to bring the arrow into sight (after
+  folding, turning, or when the value box or keypad would cover it), and it
+  pans rather than zooms.
+- A refused value's reason now goes into the log (Files, FoldForm, Logs),
+  so a log sent after a round says why.
+- **Photo: Height above paper.** A thick part's top edges stand above the
+  paper, nearer the camera, and read larger: the owner's Flipper, 100 mm
+  long and 25 mm thick, read 105.8 mm on Letter paper. Photo now works out
+  how high the camera was (from the paper's corners and the lens the photo
+  names), and a **Height above paper** field under the photo takes how high
+  the edges measured are: the readings, kept measurements and sketches are
+  then true at that height (100.0 mm for the Flipper's top said 25 mm up).
+
 **Measure: the phone as a measuring tool, one tool to measure and design.**
 A ruler button in the top bar (and Measure on Home) opens a workspace of
 instruments that measure real things, and what they measure goes straight

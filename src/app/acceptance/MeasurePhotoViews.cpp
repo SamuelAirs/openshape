@@ -222,6 +222,7 @@ ui::MeasureDevices standIns(const StatePtr& st)
         ui::PhotoResult result;
         result.outcome = QImage(st->photo).save(out, "JPG", 95) ? ui::PhotoResult::Outcome::Picked : ui::PhotoResult::Outcome::Failed;
         result.file = out;
+        result.focalLength35mm = 26; // as an iPhone's main camera says in its EXIF
         QTimer::singleShot(0, QCoreApplication::instance(), [finished, result] { finished(result); });
     };
     d.detectRectangle = [st](const QString&) -> std::optional<ui::RectangleCorners> { return st->cardCorners; };
@@ -498,6 +499,42 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(prop(r, QStringLiteral("photoLabel_0"), "straight").toBool() && shown(r, QStringLiteral("photoLabel_0")),
                 say("distance: its label says straight"));
         r.check(text(r, QStringLiteral("measureReadoutValue")) == measureOf(r).formatNumber(QStringLiteral("length"), d), say("distance: read out"));
+        // The photo said its lens (the stand-in's 26 mm): the camera's height
+        // above the card is known, and the height field shows.
+        r.check(measureOf(r).cameraHeightMm() > 0 && shown(r, QStringLiteral("photoEdgeHeight")),
+                say("height: the camera's height is known and the field shows"), n(measureOf(r).cameraHeightMm()));
+        r.check(r.clickItem(QStringLiteral("photoEdgeHeight")), say("height: click the field"));
+    });
+    // Sam's Flipper (2026-11-13): a part's top stands above the paper and
+    // reads large; said 10 mm up, every reading shrinks by (d - 10) / d.
+    steps.push_back([&r] { r.type(QStringLiteral("10")); });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        auto& m = measureOf(r);
+        const double h = m.cameraHeightMm();
+        const QVariantList pts = dim(r, 0).value(QStringLiteral("points")).toList();
+        const double onPaper = pts.size() == 2 ? std::hypot(pts[1].toPointF().x() - pts[0].toPointF().x(), pts[1].toPointF().y() - pts[0].toPointF().y())
+                                                     * m.straightMmPerPixel()
+                                               : 0;
+        const double d = pts.size() == 2 ? m.distanceMm(pts[0].toPointF(), pts[1].toPointF()) : 0;
+        r.check(std::abs(m.edgeHeightMm() - 10) < 1e-9 && std::abs(m.heightScale() - (h - 10) / h) < 1e-12,
+                say("height: 10 mm above the card, the readings times (d - 10) / d"), n(m.heightScale()));
+        r.check(std::abs(d - onPaper * (h - 10) / h) < 1e-6, say("height: the distance is the paper's times that"), n(d));
+        r.check(text(r, QStringLiteral("measureReadoutValue")) == m.formatNumber(QStringLiteral("length"), d),
+                say("height: the readout follows"), text(r, QStringLiteral("measureReadoutValue")));
+        r.check(text(r, QStringLiteral("measureReadoutCaption")).contains(QStringLiteral("above the")), say("height: the caption says how high"),
+                text(r, QStringLiteral("measureReadoutCaption")));
+        r.screenshot(QStringLiteral("measurephotoviews_height_desktop"));
+        QQuickItem* field = item(r, QStringLiteral("photoEdgeHeight"));
+        if (field)
+            QMetaObject::invokeMethod(field, "selectAll");
+    });
+    steps.push_back([&r] { r.type(QStringLiteral("0")); });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(measureOf(r).edgeHeightMm() == 0 && measureOf(r).heightScale() == 1.0, say("height: back on the card's surface"));
+        r.check(text(r, QStringLiteral("measureReadoutCaption")).contains(QStringLiteral("surface")), say("height: the caption says so"),
+                text(r, QStringLiteral("measureReadoutCaption")));
     });
     // A slanted one keeps its angle; with Snap off a nearly straight one too.
     steps.push_back([&r, st] { r.check(tapTable(r, st, {40, 135}), say("slanted: tap one end")); });

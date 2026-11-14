@@ -1800,6 +1800,16 @@ bool InteractionController::selectStepFacesAt(const PointerEvent& press)
     }
     if (!direction && !ownWays)
         return false;
+    // Holes cut through: the walls of the hole held, not those of every
+    // hole the same step cut (a grid of slots: the owner's basket, 2026-11-13).
+    bool oneHole = false;
+    if (ownWays) {
+        std::vector<int> walls = geom::connectedFaces(body->shape(), faces, hit.index);
+        if (walls.size() >= 2 && walls.size() < faces.size()) {
+            faces = std::move(walls);
+            oneHole = true;
+        }
+    }
     selection_.clear();
     for (const int index : faces)
         if (auto item = sel::makeSelectionItem(*document_, sel::SelectionKind::Face, body->id(), index))
@@ -1812,7 +1822,8 @@ bool InteractionController::selectStepFacesAt(const PointerEvent& press)
     rebuildOperation();
     const doc::Feature& f = *features[std::size_t(step)];
     const std::string name = f.name().empty() ? featureTitle(f) : f.name();
-    message("All " + std::to_string(faces.size()) + " faces of " + name
+    message((oneHole ? "The " + std::to_string(faces.size()) + " walls of this hole in " + name
+                     : "All " + std::to_string(faces.size()) + " faces of " + name)
             + (operation_ ? ": drag the arrow to push or pull them together. Tap a face to leave it out."
                           : ". Tap a face to leave it out."));
     notifyState();
@@ -2161,15 +2172,23 @@ std::optional<Vec2> InteractionController::valueLabelPosition() const
 
 namespace {
 
-// Screen bounds of world points (points behind the eye are left out).
+// Screen bounds of world points. Points behind the eye are left out, and so
+// are points nearer to it than the near plane's floor: just in front of the
+// eye a point projects thousands of pixels off the screen, and a view zoomed
+// into a selected face (the owner's basket, build 68) then counted the face
+// as larger than any window.
 class ScreenBounds {
 public:
-    explicit ScreenBounds(const Camera& camera) : viewProjection_(camera.viewProjection()), viewport_(camera.viewportSize) {}
+    explicit ScreenBounds(const Camera& camera)
+        : viewProjection_(camera.viewProjection()), viewport_(camera.viewportSize),
+          nearest_(camera.projection == Camera::Projection::Perspective ? std::max(0.01, camera.distance * 0.002) : 1e-9)
+    {
+    }
 
     std::optional<Vec2> project(const Vec3& p) const
     {
         const Vec4 clip = viewProjection_ * Vec4{p.x, p.y, p.z, 1.0};
-        if (clip.w <= 1e-9)
+        if (clip.w <= nearest_)
             return std::nullopt;
         return Vec2{(clip.x / clip.w + 1) * 0.5 * viewport_.x, (1 - clip.y / clip.w) * 0.5 * viewport_.y};
     }
@@ -2178,8 +2197,11 @@ public:
         points.push_back(p);
         if (const auto s = project(p))
             include(ScreenRect::around(*s));
+        else
+            partial = true;
     }
     void include(const ScreenRect& r) { rect = rect ? rect->united(r) : r; }
+    bool partial = false; // a point was behind or too near the eye: the rect is not all of it
 
     void addFace(const geom::Mesh& mesh, int face)
     {
@@ -2222,7 +2244,34 @@ public:
 private:
     Mat4 viewProjection_;
     Vec2 viewport_;
+    double nearest_; // clip w (the depth in perspective) below which a point is not projected
 };
+
+// The operation's arrows and rings, and its value's anchor when it has
+// neither: where the hand works.
+void addArrows(const Operation& operation, const Camera& camera, ScreenBounds& all)
+{
+    const ArrowStyle arrowStyle;
+    const int handles = operation.handleCount();
+    for (int i = 0; i < handles; ++i) {
+        const LinearManipulator handle = operation.handle(i);
+        const Vec3 anchor = handle.anchor(operation.handleOffset(i));
+        ScreenBounds arrow(camera);
+        arrow.add(anchor);
+        arrow.add(anchor + handle.direction() * (arrowStyle.totalPx() * camera.pixelSize(anchor)));
+        if (arrow.rect)
+            all.include(arrow.rect->inflated(arrowStyle.headRadiusPx));
+    }
+    const RingStyle ringStyle;
+    for (int i = 0; i < operation.ringCount(); ++i)
+        if (const auto center = all.project(operation.ring(i).center()))
+            all.include(ScreenRect::around(*center).inflated(ringStyle.radiusPx + ringStyle.widthPx));
+    // A value without an arrow (the Hole tool's current hole).
+    if (handles == 0 && operation.ringCount() == 0)
+        if (const auto anchor = operation.labelAnchor())
+            if (const auto at = all.project(*anchor))
+                all.include(ScreenRect::around(*at).inflated(12));
+}
 
 bool sameView(const Camera& a, const Camera& b)
 {
@@ -2247,7 +2296,7 @@ std::optional<ScreenRect> InteractionController::keepClearRect() const
     return bounds ? bounds->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y}) : std::nullopt;
 }
 
-std::optional<ScreenRect> InteractionController::keepClearBounds() const
+std::optional<ScreenRect> InteractionController::keepClearBounds(bool* partial) const
 {
     if (session_)
         return std::nullopt;
@@ -2300,8 +2349,6 @@ std::optional<ScreenRect> InteractionController::keepClearBounds() const
     if (selected.rect)
         all.include(*selected.rect);
     if (operation_) {
-        const ArrowStyle arrowStyle;
-        const int handles = operation_->handleCount();
         // What the operation carries (a pushed face, a moved body, a
         // pattern's last copy) is also where it has taken it: the selection
         // moved by each of its shifts (Operation::carriedSelection). Where
@@ -2325,25 +2372,10 @@ std::optional<ScreenRect> InteractionController::keepClearBounds() const
             if (const auto box = operation_->previewBounds(); box && shown->wholePreview)
                 all.addBox(box->min, box->max);
         }
-        for (int i = 0; i < handles; ++i) {
-            const LinearManipulator handle = operation_->handle(i);
-            const Vec3 anchor = handle.anchor(operation_->handleOffset(i));
-            ScreenBounds arrow(camera_);
-            arrow.add(anchor);
-            arrow.add(anchor + handle.direction() * (arrowStyle.totalPx() * camera_.pixelSize(anchor)));
-            if (arrow.rect)
-                all.include(arrow.rect->inflated(arrowStyle.headRadiusPx));
-        }
-        const RingStyle ringStyle;
-        for (int i = 0; i < operation_->ringCount(); ++i)
-            if (const auto center = all.project(operation_->ring(i).center()))
-                all.include(ScreenRect::around(*center).inflated(ringStyle.radiusPx + ringStyle.widthPx));
-        // A value without an arrow (the Hole tool's current hole).
-        if (handles == 0 && operation_->ringCount() == 0)
-            if (const auto anchor = operation_->labelAnchor())
-                if (const auto at = all.project(*anchor))
-                    all.include(ScreenRect::around(*at).inflated(12));
+        addArrows(*operation_, camera_, all);
     }
+    if (partial)
+        *partial = selected.partial || all.partial;
     // The last press, while the view and the selection it left are unchanged.
     if (lastPress_ && sameView(lastPress_->camera, camera_) && sameTargets(lastPress_->selection, selection_.items()))
         all.include(ScreenRect::around(lastPress_->position));
@@ -2363,15 +2395,39 @@ bool InteractionController::navigatingRecently() const
     return lastNavigation_ && clock_() - *lastNavigation_ < kNavigationQuiet;
 }
 
+std::optional<ScreenRect> InteractionController::arrowRect() const
+{
+    const auto bounds = arrowBounds();
+    return bounds ? bounds->clippedTo({0, 0, camera_.viewportSize.x, camera_.viewportSize.y}) : std::nullopt;
+}
+
+std::optional<ScreenRect> InteractionController::arrowBounds() const
+{
+    if (session_ || !operation_)
+        return std::nullopt;
+    ScreenBounds all(camera_);
+    addArrows(*operation_, camera_, all);
+    return all.rect;
+}
+
 bool InteractionController::revealKeepClear(const ScreenRect& region)
 {
     if (region.width() <= 1 || region.height() <= 1 || navigatingRecently())
         return false;
+    // All of the selection when it fits in the room as the view is, or
+    // after zooming out a little (kRevealZoomOutAtMost); else the arrows
+    // only, panned into the room (a view zoomed in on part of a large
+    // selection is the user's).
+    bool partial = false;
+    const auto whole = keepClearBounds(&partial);
+    const bool fits = whole && !partial && region.width() > 0 && region.height() > 0
+                   && std::max(whole->width() / region.width(), whole->height() / region.height()) <= kRevealZoomOutAtMost;
+    auto keepNow = [&] { return fits ? keepClearBounds() : arrowBounds(); };
     bool moved = false;
     // A few rounds: the arrows keep their size on screen while the view
     // zooms, so the rectangle is only known exactly once the view has moved.
     for (int round = 0; round < 4; ++round) {
-        const auto keep = keepClearBounds();
+        const auto keep = keepNow();
         if (!keep || region.contains(*keep, 0.5))
             break;
         animation_.reset();
@@ -2380,7 +2436,7 @@ bool InteractionController::revealKeepClear(const ScreenRect& region)
             leaveActualSize();
             camera_.zoomAt(keep->center(), scale * 1.08); // (a factor above 1 zooms out)
         }
-        const auto after = keepClearBounds();
+        const auto after = keepNow();
         if (!after)
             break;
         camera_.pan(after->center(), region.center());

@@ -142,6 +142,14 @@ class MeasureController : public QObject {
     Q_PROPERTY(QPointF straightOriginMm READ straightOriginMm NOTIFY straightChanged)
     // The reference's corners in the straightened view (px), in order.
     Q_PROPERTY(QVariantList straightReference READ straightReference NOTIFY straightChanged)
+    // How high the camera was above the reference (mm; 0: unknown, the
+    // photo said nothing of its lens), how high above it the edges being
+    // measured are (set by the owner), and what that makes of the paper's
+    // millimetres: cameraHeight - edgeHeight over cameraHeight
+    // (measure::cameraHeightAbovePaper). Every Photo reading uses it.
+    Q_PROPERTY(double cameraHeightMm READ cameraHeightMm NOTIFY heightChanged)
+    Q_PROPERTY(double edgeHeightMm READ edgeHeightMm NOTIFY heightChanged)
+    Q_PROPERTY(double heightScale READ heightScale NOTIFY heightChanged)
     Q_PROPERTY(QString photoError READ photoError NOTIFY photoChanged)
     // Find outline (docs/MEASURE.md): the last result, {valid, message,
     // points [px], through [bool: an arc's middle], holes [{points,
@@ -300,6 +308,9 @@ public:
     QUrl straightUrl() const { return straightUrl_; }
     QSizeF straightSize() const { return straightSize_; }
     double straightMmPerPixel() const { return straightMmPerPixel_; }
+    double cameraHeightMm() const { return cameraHeightMm_; }
+    double edgeHeightMm() const { return edgeHeightMm_; }
+    double heightScale() const;
     QPointF straightOriginMm() const { return straightOriginMm_; }
     QVariantList straightReference() const { return straightReference_; }
     QString photoError() const { return photoError_; }
@@ -309,7 +320,12 @@ public:
     Q_INVOKABLE void takePhoto(const QRectF& anchor = QRectF());
     Q_INVOKABLE void choosePhoto(const QRectF& anchor = QRectF());
     // An image file (the desktop's file dialog; tests).
-    Q_INVOKABLE void loadPhoto(const QUrl& url);
+    // `focal35mm`: the lens's 35 mm equivalent focal length when known (the
+    // desktop opens files without it; tests give it).
+    Q_INVOKABLE void loadPhoto(const QUrl& url, double focal35mm = 0);
+    // The height above the reference of the edges being measured (mm, 0 or
+    // more; less than the camera's height).
+    Q_INVOKABLE void setEdgeHeightMm(double mm);
     Q_INVOKABLE void setCorner(int index, double x, double y);
     // "card", "a4", "letter", or "rectangle" with its two sides (mm). False
     // for a rectangle whose sides are not positive.
@@ -478,6 +494,7 @@ signals:
     void levelChanged();
     void photoChanged();
     void straightChanged();
+    void heightChanged();
     void foundOutlineChanged();
     // Find outline finished (foundOutline: found or why not).
     void outlineFound();
@@ -517,7 +534,11 @@ private:
     // Runs `work` on a worker thread, then `done` here (unless the photo
     // changed meanwhile: generation).
     void runPhotoWork(std::function<void()> work, std::function<void()> done);
-    void adoptPickedFile(const QString& file);
+    void adoptPickedFile(const QString& file, double focal35mm = 0);
+    // cameraHeightMm_ from the corners, the reference and the photo's lens.
+    void updateCameraHeight();
+    // Millimetres per straightened pixel at the edges' height.
+    double measuredMmPerPixel() const { return straightMmPerPixel_ * heightScale(); }
     void setPhotoError(const QString& error);
     void forgetFile(const QString& file);
     // The camera's latest photo is kept for the next one's overlay ("": none).
@@ -608,6 +629,9 @@ private:
     QSizeF straightSize_;
     double straightMmPerPixel_ = 0;
     QPointF straightOriginMm_;
+    double photoFocal35mm_ = 0;  // the photo's lens (35 mm equivalent); 0 unknown
+    double cameraHeightMm_ = 0;  // heightChanged
+    double edgeHeightMm_ = 0;
     QVariantList straightReference_;
     QString photoError_;
     QVariantMap foundOutline_;
@@ -627,6 +651,8 @@ private:
         double mmPerPixel = 0;
         QPointF originMm;
         QVariantList straightReference;
+        double focal35mm = 0;
+        double edgeHeightMm = 0;
         QVariantMap state;
     };
     std::vector<PhotoView> photoViews_;

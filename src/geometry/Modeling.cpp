@@ -50,7 +50,10 @@
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <Bnd_Box.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
 #include <GCPnts_AbscissaPoint.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GProp_GProps.hxx>
 #include <ElSLib.hxx>
 #include <GeomLProp_SLProps.hxx>
@@ -2161,6 +2164,324 @@ double offsetRoom(const Shape& shape, const std::vector<int>& indices, double di
     return room;
 }
 
+// offsetFaces, done locally (2026-11-13): flat faces that all run along one
+// axis (the walls of a hole, a slot or a pocket, a block's sides, a top and
+// one side) move by cutting away or adding only the band between where each
+// face is and where it goes. BRepOffset_MakeOffset rebuilds the whole body
+// for that, and on a hollow part it returned nothing (a basket: shelled,
+// rounded corners, a grid of slots), or crashed (a body with a closed void).
+//
+// Seen along the axis each face is a segment. Where two moved faces meet,
+// the band of each ends at the corner their moved planes make (square
+// corners); where a moved face meets one that stays, at that face's plane
+// (which grows or shrinks to meet it). Along the axis the bands end at the
+// faces the walls end on (the plate's two sides, a pocket's floor): exactly
+// at those faces' planes where the band must stop there, a hair past them
+// where it ends in the air anyway. Nullopt, with `why`, when the faces are
+// not like that (curved, not around one axis, a face with a hole or a step
+// in it): the caller then tries the general offset.
+std::optional<TopoDS_Shape> moveWallsLocally(const Shape& shape, const std::vector<int>& indices, double distance, std::string& why)
+{
+    struct Wall {
+        TopoDS_Face face;
+        gp_Pnt point;
+        gp_Dir normal; // outward
+    };
+    std::vector<Wall> walls;
+    for (const int index : indices) {
+        const TopoDS_Face face = faceAt(shape, index);
+        const BRepAdaptor_Surface surface(face);
+        const auto normal = planarNormal(face);
+        if (surface.GetType() != GeomAbs_Plane || !normal) {
+            why = "face " + std::to_string(index) + " is not flat";
+            return std::nullopt;
+        }
+        int wires = 0;
+        for (TopExp_Explorer ex(face, TopAbs_WIRE); ex.More(); ex.Next())
+            ++wires;
+        if (wires != 1) {
+            why = "face " + std::to_string(index) + " has a hole in it";
+            return std::nullopt;
+        }
+        walls.push_back({face, surface.Plane().Location(), *normal});
+    }
+    if (walls.empty()) {
+        why = "no faces";
+        return std::nullopt;
+    }
+    // The axis all the faces run along.
+    std::optional<gp_Dir> axis;
+    for (std::size_t i = 0; i < walls.size() && !axis; ++i)
+        for (std::size_t j = i + 1; j < walls.size() && !axis; ++j) {
+            const gp_Vec across = gp_Vec(walls[i].normal).Crossed(gp_Vec(walls[j].normal));
+            if (across.Magnitude() > 1e-3)
+                axis = gp_Dir(across);
+        }
+    if (!axis) {
+        // All parallel (opposite walls of a slot): along the first face's longest straight edge.
+        double longest = 0;
+        for (TopExp_Explorer ex(walls.front().face, TopAbs_EDGE); ex.More(); ex.Next()) {
+            const BRepAdaptor_Curve curve(TopoDS::Edge(ex.Current()));
+            if (curve.GetType() != GeomAbs_Line)
+                continue;
+            const double length = curve.LastParameter() - curve.FirstParameter();
+            if (length > longest) {
+                longest = length;
+                axis = curve.Line().Direction();
+            }
+        }
+        if (!axis) {
+            why = "no straight edge to run along";
+            return std::nullopt;
+        }
+    }
+    for (const Wall& wall : walls)
+        if (std::abs(wall.normal.Dot(*axis)) > 1e-7) {
+            why = "the faces do not run along one axis";
+            return std::nullopt;
+        }
+
+    // A frame across the axis: 2D points (x, y) and a level along it.
+    const gp_Pnt origin = walls.front().point;
+    const gp_Dir e1 = std::abs(axis->X()) < 0.9 ? gp_Dir(gp_Vec(*axis).Crossed(gp_Vec(1, 0, 0)))
+                                                 : gp_Dir(gp_Vec(*axis).Crossed(gp_Vec(0, 1, 0)));
+    const gp_Dir e2 = gp_Dir(gp_Vec(*axis).Crossed(gp_Vec(e1)));
+    auto across = [&](const gp_Pnt& p) {
+        const gp_Vec v(origin, p);
+        return gp_XY(v.Dot(gp_Vec(e1)), v.Dot(gp_Vec(e2)));
+    };
+    auto levelOf = [&](const gp_Pnt& p) { return gp_Vec(origin, p).Dot(gp_Vec(*axis)); };
+    auto inSpace = [&](const gp_XY& q, double level) {
+        return origin.Translated(gp_Vec(e1) * q.X() + gp_Vec(e2) * q.Y() + gp_Vec(*axis) * level);
+    };
+    // A line across the axis: n . q = c.
+    struct Line2 {
+        gp_XY n;
+        double c;
+    };
+    auto lineOf = [&](const gp_Pnt& p, const gp_Dir& normal, double shift) {
+        const gp_XY n(gp_Vec(normal).Dot(gp_Vec(e1)), gp_Vec(normal).Dot(gp_Vec(e2)));
+        return Line2{n, n.Dot(across(p)) + shift};
+    };
+    auto meet = [](const Line2& a, const Line2& b) -> std::optional<gp_XY> {
+        const double det = a.n.X() * b.n.Y() - a.n.Y() * b.n.X();
+        if (std::abs(det) < 1e-6)
+            return std::nullopt;
+        return gp_XY((a.c * b.n.Y() - b.c * a.n.Y()) / det, (a.n.X() * b.c - b.n.X() * a.c) / det);
+    };
+
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndAncestors(occ(shape), TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    auto otherFace = [&](const TopoDS_Edge& edge, const TopoDS_Face& face) -> std::optional<TopoDS_Face> {
+        if (!edgeFaces.Contains(edge))
+            return std::nullopt;
+        for (const TopoDS_Shape& candidate : edgeFaces.FindFromKey(edge))
+            if (!candidate.IsSame(face))
+                return TopoDS::Face(candidate);
+        return std::nullopt;
+    };
+    auto selectedWall = [&](const TopoDS_Face& face) -> const Wall* {
+        for (const Wall& wall : walls)
+            if (wall.face.IsSame(face))
+                return &wall;
+        return nullptr;
+    };
+
+    double levelMin = std::numeric_limits<double>::max(), levelMax = std::numeric_limits<double>::lowest();
+    for (const Wall& wall : walls)
+        for (TopExp_Explorer ex(wall.face, TopAbs_VERTEX); ex.More(); ex.Next()) {
+            const double level = levelOf(BRep_Tool::Pnt(TopoDS::Vertex(ex.Current())));
+            levelMin = std::min(levelMin, level);
+            levelMax = std::max(levelMax, level);
+        }
+    Bnd_Box bodyBox;
+    BRepBndLib::Add(occ(shape), bodyBox, false);
+    const double big = 4.0 * std::sqrt(bodyBox.SquareExtent()) + 10.0;
+    const double margin = 2.0 * std::abs(distance) + 1.0;
+    const double hair = 1e-3; // past a face where the band ends in the air: no sliver, no coplanar faces
+
+    // The half of space on one side of a plane, as a large box: keep where
+    // (x - point) . normal <= offset.
+    auto halfSpace = [&](const gp_Pnt& point, const gp_Dir& normal, double offset) {
+        const gp_Dir inward = normal.Reversed();
+        const gp_Dir side = std::abs(inward.X()) < 0.9 ? gp_Dir(gp_Vec(inward).Crossed(gp_Vec(1, 0, 0)))
+                                                       : gp_Dir(gp_Vec(inward).Crossed(gp_Vec(0, 1, 0)));
+        const gp_Dir up = gp_Dir(gp_Vec(inward).Crossed(gp_Vec(side)));
+        const gp_Pnt corner = point.Translated(gp_Vec(normal) * offset - gp_Vec(side) * (big / 2) - gp_Vec(up) * (big / 2));
+        // gp_Ax2(origin, main direction = the box's Z, X direction).
+        return BRepPrimAPI_MakeBox(gp_Ax2(corner, inward, side), big, big, big).Shape();
+    };
+
+    TopTools_ListOfShape bands;
+    for (const Wall& wall : walls) {
+        const Line2 here = lineOf(wall.point, wall.normal, 0.0);
+        const Line2 there = lineOf(wall.point, wall.normal, distance);
+        const gp_XY along(-here.n.Y(), here.n.X());
+        const gp_XY base = across(wall.point);
+        // The segment the face is, seen along the axis.
+        double sMin = std::numeric_limits<double>::max(), sMax = std::numeric_limits<double>::lowest();
+        for (TopExp_Explorer ex(wall.face, TopAbs_VERTEX); ex.More(); ex.Next()) {
+            const double s = (across(BRep_Tool::Pnt(TopoDS::Vertex(ex.Current()))) - base).Dot(along);
+            sMin = std::min(sMin, s);
+            sMax = std::max(sMax, s);
+        }
+        const double tolerance = 1e-6 * std::max(1.0, sMax - sMin);
+        // Its two ends: the face beside each (along the axis), and the faces it ends on.
+        std::optional<TopoDS_Face> besideMin, besideMax;
+        struct EndOn {
+            TopoDS_Face face;
+            gp_Vec out; // the way out of the wall across that edge
+            gp_Pnt at;  // the edge's middle
+        };
+        std::vector<EndOn> endsOn;
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(wall.face, props);
+        const gp_Pnt middle = props.CentreOfMass();
+        for (TopExp_Explorer ex(wall.face, TopAbs_EDGE); ex.More(); ex.Next()) {
+            const TopoDS_Edge edge = TopoDS::Edge(ex.Current());
+            if (BRep_Tool::Degenerated(edge))
+                continue;
+            const BRepAdaptor_Curve curve(edge);
+            const double mid = (curve.FirstParameter() + curve.LastParameter()) / 2;
+            gp_Pnt at;
+            gp_Vec tangent;
+            curve.D1(mid, at, tangent);
+            if (tangent.Magnitude() < 1e-12)
+                continue;
+            const auto neighbour = otherFace(edge, wall.face);
+            if (!neighbour) {
+                why = "an edge of a face has no face across it";
+                return std::nullopt;
+            }
+            if (curve.GetType() == GeomAbs_Line && std::abs(gp_Dir(tangent).Dot(*axis)) > 1.0 - 1e-9) {
+                const double s = (across(at) - base).Dot(along);
+                std::optional<TopoDS_Face>& slot = std::abs(s - sMin) < tolerance   ? besideMin
+                                                   : std::abs(s - sMax) < tolerance ? besideMax
+                                                                                    : besideMin;
+                if (std::abs(s - sMin) >= tolerance && std::abs(s - sMax) >= tolerance) {
+                    why = "a face has a step in it";
+                    return std::nullopt;
+                }
+                if (slot && !slot->IsSame(*neighbour)) {
+                    why = "a face's end touches two faces";
+                    return std::nullopt;
+                }
+                slot = *neighbour;
+                continue;
+            }
+            gp_Vec out = gp_Vec(wall.normal).Crossed(tangent).Normalized();
+            if (out.Dot(gp_Vec(middle, at)) < 0)
+                out.Reverse();
+            endsOn.push_back({*neighbour, out, at});
+        }
+        // Where each end goes: the corner with a moved face, or the plane of the face that stays.
+        auto endPoint = [&](const std::optional<TopoDS_Face>& beside) -> std::optional<gp_XY> {
+            if (!beside)
+                return std::nullopt;
+            if (const Wall* other = selectedWall(*beside))
+                return meet(there, lineOf(other->point, other->normal, distance));
+            const BRepAdaptor_Surface surface(*beside);
+            const auto normal = planarNormal(*beside);
+            if (surface.GetType() != GeomAbs_Plane || !normal || std::abs(normal->Dot(*axis)) > 1e-7)
+                return std::nullopt;
+            return meet(there, lineOf(surface.Plane().Location(), *normal, 0.0));
+        };
+        const auto movedMin = endPoint(besideMin);
+        const auto movedMax = endPoint(besideMax);
+        if (!movedMin || !movedMax) {
+            why = "a face's end does not meet a flat face along the axis";
+            return std::nullopt;
+        }
+        const gp_XY corners[4] = {base + along * sMin, base + along * sMax, *movedMax, *movedMin};
+        BRepBuilderAPI_MakePolygon outline;
+        for (const gp_XY& corner : corners)
+            outline.Add(inSpace(corner, levelMin - margin));
+        outline.Close();
+        BRepBuilderAPI_MakeFace section(outline.Wire(), Standard_True);
+        if (!section.IsDone()) {
+            why = "the band across a face could not be drawn";
+            return std::nullopt;
+        }
+        BRepPrimAPI_MakePrism prism(section.Face(), gp_Vec(*axis) * (levelMax - levelMin + 2 * margin));
+        prism.Build();
+        if (!prism.IsDone()) {
+            why = "the band along a face could not be swept";
+            return std::nullopt;
+        }
+        TopoDS_Shape band = prism.Shape();
+        for (TopExp_Explorer ex(band, TopAbs_SOLID); ex.More(); ex.Next()) {
+            TopoDS_Solid solid = TopoDS::Solid(ex.Current());
+            BRepLib::OrientClosedSolid(solid);
+            band = solid;
+            break;
+        }
+        // Along the axis: the band ends on the faces the face ends on.
+        TopTools_MapOfShape trimmed;
+        for (const EndOn& end : endsOn) {
+            const TopoDS_Face& face = end.face;
+            const gp_Vec& out = end.out;
+            if (!trimmed.Add(face))
+                continue;
+            const BRepAdaptor_Surface surface(face);
+            const auto normal = planarNormal(face);
+            if (surface.GetType() != GeomAbs_Plane || !normal) {
+                // A curved face where a cut only leaves the part: the margin is enough.
+                GeomAPI_ProjectPointOnSurf onSurface(end.at, BRep_Tool::Surface(face));
+                if (distance < 0 && onSurface.NbPoints() > 0) {
+                    double u = 0, v = 0;
+                    onSurface.LowerDistanceParameters(u, v);
+                    if (const auto curved = faceNormal(face, u, v); curved && out.Dot(gp_Vec(*curved)) > 0)
+                        continue;
+                }
+                why = "a face ends on a curved face";
+                return std::nullopt;
+            }
+            const gp_Pnt on = surface.Plane().Location();
+            const bool partBeyond = out.Dot(gp_Vec(*normal)) < 0; // past that edge: more of the part (a pocket's floor)
+            BooleanRun run;
+            if (distance < 0)
+                run = partBeyond ? runBoolean(BOPAlgo_COMMON, band, halfSpace(on, normal->Reversed(), 0.0))
+                                 : runBoolean(BOPAlgo_COMMON, band, halfSpace(on, *normal, hair));
+            else
+                run = partBeyond ? runBoolean(BOPAlgo_COMMON, band, halfSpace(on, normal->Reversed(), hair))
+                                 : runBoolean(BOPAlgo_COMMON, band, halfSpace(on, *normal, 0.0));
+            if (run.shape.IsNull()) {
+                why = "a band could not be ended at a face: " + run.errors;
+                return std::nullopt;
+            }
+            band = run.shape;
+        }
+        bands.Append(band);
+    }
+
+    // All the bands together, then cut from the part or added to it.
+    TopoDS_Shape tool = bands.First();
+    if (bands.Size() > 1) {
+        TopTools_ListOfShape first, rest;
+        first.Append(bands.First());
+        bool skip = true;
+        for (const TopoDS_Shape& band : bands) {
+            if (skip) {
+                skip = false;
+                continue;
+            }
+            rest.Append(band);
+        }
+        const BooleanRun joined = runBoolean(BOPAlgo_FUSE, first, rest);
+        if (joined.shape.IsNull()) {
+            why = "the bands could not be joined: " + joined.errors;
+            return std::nullopt;
+        }
+        tool = joined.shape;
+    }
+    const BooleanRun run = runBoolean(distance < 0 ? BOPAlgo_CUT : BOPAlgo_FUSE, occ(shape), tool);
+    if (run.shape.IsNull()) {
+        why = (run.timedOut ? std::string("the boolean timed out") : "the boolean failed: " + run.errors);
+        return std::nullopt;
+    }
+    return run.shape;
+}
+
 } // namespace
 
 Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndices, double distance, const SizeAdvice& advice)
@@ -2190,8 +2511,6 @@ Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndice
             return Result<Shape>::failure(ErrorCode::InvalidArgument, message,
                                           "offsetFaces: " + std::to_string(distance) + " asked, room " + std::to_string(room));
         }
-        BRepOffset_MakeOffset maker;
-        maker.Initialize(occ(shape), 0.0, 1e-6, BRepOffset_Skin, false, false, GeomAbs_Intersection, false);
         // Where each flat face must end up, and what the move is worth in
         // volume to first order (the corners where two moved faces meet add
         // or take a little more).
@@ -2204,7 +2523,6 @@ Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndice
         double firstOrder = 0;
         for (const int index : indices) {
             const TopoDS_Face face = faceAt(shape, index);
-            maker.SetOffsetOnFace(face, distance);
             GProp_GProps props;
             BRepGProp::SurfaceProperties(face, props);
             firstOrder += props.Mass() * distance;
@@ -2215,10 +2533,67 @@ Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndice
                 planes.push_back({on.Translated(gp_Vec(*normal) * distance), *normal, index});
             }
         }
+        // Kernel "success" is not success (offsetFace). The volume: more
+        // when the faces moved out and less when they moved in, by the
+        // faces' area x distance give or take the corners. And every flat
+        // face is where the distance puts it. Empty when the result is right.
+        auto wrongIn = [&](const Shape& moved) -> std::string {
+            const double before = volume(shape), after = volume(moved);
+            const double actual = after - before;
+            if (!(after > 0) || actual * distance <= 0 || std::abs(actual) < 0.2 * std::abs(firstOrder)
+                || std::abs(actual) > 5.0 * std::abs(firstOrder) + 1e-9 * before)
+                return "volume changed by " + std::to_string(actual) + ", expected about " + std::to_string(firstOrder);
+            for (const MovedPlane& plane : planes) {
+                bool found = false;
+                for (TopExp_Explorer ex(occ(moved), TopAbs_FACE); ex.More() && !found; ex.Next()) {
+                    BRepAdaptor_Surface surface(TopoDS::Face(ex.Current()));
+                    if (surface.GetType() != GeomAbs_Plane)
+                        continue;
+                    const gp_Pln there = surface.Plane();
+                    found = std::abs(there.Axis().Direction().Dot(plane.normal)) > 1.0 - 1e-7 && there.Distance(plane.point) < 1e-5;
+                }
+                if (!found)
+                    return "face " + std::to_string(plane.index) + " is not in its moved plane";
+            }
+            return {};
+        };
+
+        // First the faces' own neighbourhood only (moveWallsLocally).
+        std::string why;
+        if (const auto local = moveWallsLocally(shape, indices, distance, why)) {
+            auto out = finishMerged(*local, "offsetFaces", userMessage, {occ(shape)});
+            if (out) {
+                why = wrongIn(out.value());
+                if (why.empty())
+                    return out;
+            } else {
+                why = out.developerMessage();
+            }
+            why = "moved locally, but " + why;
+        }
+        OS_LOG(Debug, Kernel) << "offsetFaces: not locally (" << why << "); the general offset";
+
+        // The general offset rebuilds the whole body. On a body with a void
+        // closed inside it (two shells), it crashed (2026-11-13): refused.
+        int shells = 0;
+        for (TopExp_Explorer ex(occ(shape), TopAbs_SHELL); ex.More(); ex.Next())
+            ++shells;
+        if (shells > 1)
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "offsetFaces: " + why + "; a body with a closed void is not offset");
+        BRepOffset_MakeOffset maker;
+        maker.Initialize(occ(shape), 0.0, 1e-6, BRepOffset_Skin, false, false, GeomAbs_Intersection, false);
+        for (const int index : indices)
+            maker.SetOffsetOnFace(faceAt(shape, index), distance);
         maker.MakeOffsetShape();
         if (!maker.IsDone())
             return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
-                                          "BRepOffset_MakeOffset not done, error " + std::to_string(int(maker.Error())));
+                                          "offsetFaces: " + why + "; BRepOffset_MakeOffset not done, error "
+                                              + std::to_string(int(maker.Error())));
+        // Done, and nothing made: what it did on the hollow basket.
+        if (maker.Shape().IsNull())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
+                                          "offsetFaces: " + why + "; BRepOffset_MakeOffset made nothing");
         // Skin mode yields a shell: close it into a solid.
         TopoDS_Shape result = maker.Shape();
         if (!TopExp_Explorer(result, TopAbs_SOLID).More()) {
@@ -2234,30 +2609,8 @@ Result<Shape> offsetFaces(const Shape& shape, const std::vector<int>& faceIndice
         auto out = finishMerged(result, "offsetFaces", userMessage, {occ(shape)});
         if (!out)
             return out;
-        // Kernel "success" is not success (offsetFace). The volume: more
-        // when the faces moved out and less when they moved in, by the
-        // faces' area x distance give or take the corners.
-        const double before = volume(shape), after = volume(out.value());
-        const double actual = after - before;
-        if (!(after > 0) || actual * distance <= 0 || std::abs(actual) < 0.2 * std::abs(firstOrder)
-            || std::abs(actual) > 5.0 * std::abs(firstOrder) + 1e-9 * before)
-            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
-                                          "offsetFaces: volume changed by " + std::to_string(actual) + ", expected about "
-                                              + std::to_string(firstOrder));
-        // And every flat face is where the distance puts it.
-        for (const MovedPlane& moved : planes) {
-            bool found = false;
-            for (TopExp_Explorer ex(occ(out.value()), TopAbs_FACE); ex.More() && !found; ex.Next()) {
-                BRepAdaptor_Surface surface(TopoDS::Face(ex.Current()));
-                if (surface.GetType() != GeomAbs_Plane)
-                    continue;
-                const gp_Pln plane = surface.Plane();
-                found = std::abs(plane.Axis().Direction().Dot(moved.normal)) > 1.0 - 1e-7 && plane.Distance(moved.point) < 1e-5;
-            }
-            if (!found)
-                return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage,
-                                              "offsetFaces: face " + std::to_string(moved.index) + " is not in its moved plane");
-        }
+        if (const std::string wrong = wrongIn(out.value()); !wrong.empty())
+            return Result<Shape>::failure(ErrorCode::KernelFailure, userMessage, "offsetFaces: " + why + "; " + wrong);
         return out;
     });
 }
@@ -2755,6 +3108,31 @@ std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const S
     for (int i = 1; i <= current.data()->faces.Extent(); ++i)
         if (created.count(faceKey(TopoDS::Face(current.data()->faces(i)))))
             out.push_back(i - 1);
+    return out;
+}
+
+std::vector<int> connectedFaces(const Shape& shape, const std::vector<int>& among, int start)
+{
+    std::vector<int> out;
+    if (shape.isNull() || std::find(among.begin(), among.end(), start) == among.end())
+        return out;
+    const KernelLock lock;
+    const std::set<int> allowed(among.begin(), among.end());
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndAncestors(occ(shape), TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    std::set<int> seen{start};
+    out.push_back(start);
+    for (std::size_t next = 0; next < out.size(); ++next) {
+        for (TopExp_Explorer ex(faceAt(shape, out[next]), TopAbs_EDGE); ex.More(); ex.Next()) {
+            if (!edgeFaces.Contains(ex.Current()))
+                continue;
+            for (const TopoDS_Shape& face : edgeFaces.FindFromKey(ex.Current())) {
+                const int index = shape.data()->faces.FindIndex(face) - 1;
+                if (index >= 0 && allowed.count(index) && seen.insert(index).second)
+                    out.push_back(index);
+            }
+        }
+    }
     return out;
 }
 

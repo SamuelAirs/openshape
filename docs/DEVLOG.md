@@ -1189,3 +1189,80 @@ place where a finger moves the view beside the Pencil in a sketch.
 - Choosing "the scenarios near a change" by their names is a guess. After a
   change to how a device moves the view, grep the scenarios for that
   device's strokes (`Device::Finger` with `penMode`) or run them all.
+
+## 2026-11-13 (night) — Sam's basket: a slot that would not widen, a view that zoomed out
+
+Sam sent two screen recordings from build 68 on the Duo's inner display
+(951 x 669, the Pencil): "Making a hole bigger doesn't work, and the view
+keeps zooming way out." The part: a basket, its slanted front panel with a
+grid of slots and screw bosses. Frames at 4 and 10 per second (ffmpeg, a
+contact sheet) told the story without his log, which could not have: preview
+failures were logged at Debug.
+
+- **The slot.** Four walls of one slot selected, "Unable to move these faces
+  that far. Their neighbours cannot follow." at every distance. Probes of
+  slots through slanted plates, pockets and a shelled box with one slot all
+  worked; a basket-like part (a box with rounded upright corners, shelled
+  open at the top, 18 slots, two bosses) failed at every distance. Under gdb:
+  `BRepOffset_MakeOffset` reports IsDone with a **null shape**; the old code
+  then made an empty solid of it, and the volume check refused it ("volume
+  changed by -39382"). The general offset rebuilds every face of the body to
+  move four, and something elsewhere in a hollow part trips it.
+- So `offsetFaces` first moves walls **locally** (`moveWallsLocally`): flat
+  faces that all run along one axis are segments seen along it; each gets a
+  band from where it is to where it goes, ending at the corner its moved
+  plane makes with a moved neighbour's (square corners) or at the plane of a
+  neighbour that stays; along the axis the band ends on the faces the wall
+  ends on (exactly at a pocket's floor, a hair past a face it leaves into
+  the air). The bands are cut from the part or fused to it in one boolean.
+  The same validation as before (volume, every moved plane in place) checks
+  the result; anything else falls back to the general offset. Exact volumes
+  in `OffsetFaces.TheWallsOfASlotInAHollowBasketMove` (2.5 x 12 slot through
+  2.5 mm, -0.5 mm: 38.75 mm3 taken) and `...SlantedPanelAndAPocketMoveExactly`.
+- A body with two shells (a void closed inside) is not given to the general
+  offset: a probe that built one crashed in the boolean that made it, which
+  is reason enough not to hand it to the offset too.
+- **Which faces.** In the first recording the four faces were three slot
+  walls and the panel around them: at that angle a wall is a sliver and the
+  tap lands on the panel. Holding a wall took every face the cut made (a
+  grid: all slots' walls); it now takes the walls connected to the one held
+  (`geom::connectedFaces`): that hole.
+- **The zoom.** On the Duo's inner display the value box docks first, and
+  when no spot is clear of the selection the view moves "to reveal" it
+  (`revealSelection` -> `revealKeepClear`), zooming out until the whole
+  selection fits. With the panel selected and the view zoomed in on a slot,
+  every tap re-placed the box, found nothing clear, and zoomed out to the
+  whole panel. Zoomed in far enough, the face's corners were behind the eye
+  or off the screen, the clipped rectangle was empty, and an empty
+  rectangle read as "out of sight": the same jump. The view now moves on its
+  own only for the arrow (`arrowRect`/`arrowBounds`), panning; the value
+  box's placement still keeps clear of the whole selection where it can.
+  Points nearer the eye than the near plane's floor no longer project (a
+  point just in front of the eye lands thousands of pixels away).
+  `KeypadReveal.AViewZoomedInOnALargeSelectedFaceStaysWhereTheUserPutIt`
+  fails with the old reveal.
+- Learned: a kernel call that reports done can still hand back nothing;
+  check `IsNull()` before building on it. And a rectangle clipped to the
+  screen being empty does not mean its subject is out of sight.
+- **The reveal, second try.** Revealing only the arrow broke four of the
+  whole run's checks (a face half under a phone's keypad, a moved body under
+  the value box on the Duo's inner display): the old rule was right for an
+  ordinary selection. Now: all of the selection when it fits in the room,
+  zooming out by at most 1.5x (`kRevealZoomOutAtMost`); past that (a view
+  zoomed in on part of a large face) only the arrow, panned; and never when
+  some of the selection is behind or too near the eye.
+
+## 2026-11-13 (night, later) — "The flipper is 100mm. I measured with my caliper."
+
+Sam measured his Flipper with Photo on Letter paper: 105.8 mm, calipers 100
+(the screenshot's caption: "on the letter paper's surface"; he called it A4,
+but A4 taken for Letter would read 94, not 106). The Flipper is 25 mm thick
+and the two points were on its top. docs/MEASURE.md said a part's thickness
+only matters in a photo taken at an angle; that is true of an orthographic
+picture, not of a camera: an edge h above the paper reads d / (d - h) large,
+d the camera's height, straight down or not. From 450 mm, 25 mm up: 105.9.
+Scan already recovers a camera's pose from the paper's corners and the
+lens's focal length; Photo now does too (`cameraHeightAbovePaper`), keeps
+the focal length the picker and the camera screen already read from EXIF
+(Photo had dropped it), and a **Height above paper** field scales every
+reading by (d - h) / d. A synthetic camera test reproduces his number.

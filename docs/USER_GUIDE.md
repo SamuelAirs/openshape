@@ -379,8 +379,11 @@ more faces (with several faces selected, Shell is what you get).
   instead of making a broken part.
 - **A square hole, a slot, a pocket's walls: several faces at once.** Select
   the faces (tap them one after the other; turn the view to reach the ones
-  on the far side, the selection stays; or hold a finger on one wall of a
-  hole that was cut through, which takes all its walls). One Push/Pull
+  on the far side, the selection stays; or hold a finger or the Pencil on
+  one wall of a hole that was cut through, which takes all its walls and
+  only that hole's, also where one cut made a grid of them). A thin wall
+  seen at a slant is easy to miss with a tap: the face around it is taken
+  instead, and moves with the others; the hold is the sure way. One Push/Pull
   arrow shows, on the face selected last. Drag it, or drag any of the
   selected faces, or type a distance: every face moves by that distance
   along its own direction, and the faces meet again at their corners. Pushed
@@ -867,9 +870,18 @@ large at the side with **Keep**.
   Then **Distance** (two ends), **Outline** (tap the corners, then the first
   one again: each side and the area) or **Circle** (three points on a rim:
   the diameter). **Make sketch** puts the outline or the circle on the
-  ground plane at its real size, ready to extrude. Only things lying on the
+  ground plane at its real size, ready to extrude. Things lying on the
   reference's surface measure true; a card gives about half a millimeter
   over a hand's width, a sheet of paper better.
+  - **Height above paper** (under the photo): the edges of a thick part
+    stand above the paper, nearer the camera, and read larger: a part 25 mm
+    thick photographed from 45 cm reads 6 % long across its top. Type how
+    high above the paper the edges you measure are (calipers, or the part's
+    thickness for its top), and every reading, kept measurement and sketch
+    is worked out at that height ("25 mm above the letter paper"). FoldForm
+    knows how high the camera was from the paper's corners and the lens the
+    photo names; a photo that does not say its lens shows no field (photos
+    from FoldForm's camera and the iPhone's library do).
   **Take photo** opens FoldForm's own camera. Hold the phone flat above the
   card: the yellow cross (straight down) meets the white one (the middle of
   the photo) and both turn green within 1° ("0.6° off"); a photo from

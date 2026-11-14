@@ -58,6 +58,13 @@ std::optional<PaperPose> poseForLabelling(const PaperCorners& photo, const Refer
 // paper.
 std::vector<PaperPose> plausiblePoses(const PaperCorners& photo, const Reference& paper, double focalPx);
 
+// How high above the paper's plane the camera was (mm), from the paper's
+// corners and the focal length (pixels); nullopt when no labelling puts the
+// camera above it. Photo measures on the paper's plane: an edge standing h
+// above it is nearer the lens and reads larger by height / (height - h)
+// (Sam's Flipper, 2026-11-13: 25 mm thick, 105.8 mm read for 100).
+std::optional<double> cameraHeightAbovePaper(const PaperCorners& photo, const Reference& paper, double focalPx);
+
 // The focal length (35 mm equivalent) that best explains all the photos'
 // papers as rectangles of the reference's proportions seen by one camera
 // (Zhang's two constraints per photo with only the focal unknown: a 1-D
