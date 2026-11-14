@@ -1266,3 +1266,20 @@ lens's focal length; Photo now does too (`cameraHeightAbovePaper`), keeps
 the focal length the picker and the camera screen already read from EXIF
 (Photo had dropped it), and a **Part height** field scales every
 reading by (d - h) / d. A synthetic camera test reproduces his number.
+
+## 2026-11-14 — Height in Photo: "so I don't have to use caliper at all"
+
+Sam: "Height above paper means i have to know how high I'm holding my
+phone?" (no: renamed Part height, the phone's height shown beside it), then
+"isn't taking a photo with a ruler supposed to be able to get the scale? I'd
+like to be able to measure the height with my phone". The paper gives the
+scale; what one photo lacks is depth, unless the photo is asked the right
+question: with the camera's foot F and height d known on the paper's plane,
+a point straight above a foot B shows further out on the ray F->B, and
+h = d (1 - r_B / r_top). `measure::cameraOverPlane` takes the camera out of
+the straightened view's own homography (K^-1 H = [r1 r2 t], centre -R^T t),
+so the taps and the camera are in one frame; `heightAbove` and
+`ontoUprightLine` do the rest, and Photo's **Height** mode snaps the second
+tap onto the dashed line and hands the height to Part height. Exact on a
+synthetic camera; the real limit is the taps (docs/MEASURE.md): a photo at a
+slant, so the side shows.

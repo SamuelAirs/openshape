@@ -35,7 +35,9 @@ Item {
 
     readonly property string stage: !m ? "start" : m.straightUrl.toString() !== "" ? "measure"
                                   : m.photoUrl.toString() !== "" ? "corners" : "start"
-    // Measuring on the straightened photo: "distance", "outline", "circle".
+    // Measuring on the straightened photo: "distance", "outline", "circle",
+    // "height" (an upright edge's foot and top; where the photo names its
+    // lens: MeasureController::uprightHeightMm).
     property string mode: "distance"
     // The selected dimension's points (the one being drawn, or picked), in
     // the straightened photo's pixels (Qt.point), and whether its outline is
@@ -110,7 +112,7 @@ Item {
         loading = false
     }
     function isComplete(d) {
-        return d.kind === "distance" ? d.points.length === 2 : d.kind === "circle" ? d.points.length === 3
+        return d.kind === "distance" || d.kind === "height" ? d.points.length === 2 : d.kind === "circle" ? d.points.length === 3
                                      : d.closed && d.points.length >= 3
     }
     readonly property int completeCount: {
@@ -145,13 +147,17 @@ Item {
             return
         }
         if (points.length === 0) {
+            const removed = list[active]
             list.splice(active, 1)
             loading = true
             active = -1
             closed = false
             dims = list
+            // The newest one undone away gives its letter back.
             if (list.length === 0)
                 letterCount = 0
+            else if (removed && removed.letter === letterFor(letterCount - 1))
+                letterCount = letterCount - 1
             loading = false
             return
         }
@@ -246,11 +252,26 @@ Item {
             deselect()
         if (mode === "distance" && points.length === 1)
             p = snapEnd(points[0], p).p
+        // A height's top: straight above its foot, which the photo shows on
+        // the line out from under the camera through the foot.
+        if (mode === "height" && points.length === 1)
+            p = m.ontoUprightLine(points[0], p)
         // The same point twice (a tap on the last one) adds nothing.
         const last = points.length > 0 ? points[points.length - 1] : null
         if (last && Math.hypot(p.x - last.x, p.y - last.y) < 1e-6)
             return
         points = points.concat([p])
+        if (mode === "height" && points.length === 2)
+            heightToPart(points)
+    }
+    // A height measured is the part's height: Part height takes it, and the
+    // distances on this photo read at that height (the Flipper's top).
+    function heightToPart(pts) {
+        const h = m.uprightHeightMm(pts[0], pts[1])
+        if (h > 0) {
+            m.setEdgeHeightMm(h)
+            screen.toast("Part height " + m.formatValue("length", h) + ": distances now read at that height")
+        }
     }
     function closeOutline() {
         if (mode === "outline" && points.length >= 3)
@@ -272,8 +293,14 @@ Item {
         const pts = points.slice()
         if (mode === "distance" && pts.length === 2)
             p = snapEnd(pts[1 - index], p).p
+        if (mode === "height" && pts.length === 2 && index === 1)
+            p = m.ontoUprightLine(pts[0], p)
         pts[index] = p
+        if (mode === "height" && pts.length === 2 && index === 0)
+            pts[1] = m.ontoUprightLine(pts[0], pts[1])
         points = pts
+        if (mode === "height" && pts.length === 2)
+            heightToPart(pts)
     }
 
     // ---- straightness: a distance's angle to the reference's edges
@@ -305,12 +332,16 @@ Item {
             const s = snapEnd(points[0], p)
             placeAt = s.p
             placeSnapped = s.snapped
+        } else if (mode === "height" && points.length === 1 && !(activeDim && isComplete(activeDim))) {
+            placeAt = m.ontoUprightLine(points[0], p)
+            placeSnapped = false
         } else {
             placeAt = p
             placeSnapped = false
         }
     }
     readonly property bool placingDistance: placeAt !== null && mode === "distance" && points.length === 1
+    readonly property bool placingHeight: placeAt !== null && mode === "height" && points.length === 1
     readonly property real placeAngle: placingDistance ? angleOf(points[0], placeAt) : 0
 
     // ---- a dimension's values
@@ -323,6 +354,10 @@ Item {
             return null
         if (d.kind === "distance" && d.points.length === 2)
             return { quantity: "length", value: m.distanceMm(d.points[0], d.points[1]), prefix: "" }
+        if (d.kind === "height" && d.points.length === 2) {
+            const h = m.uprightHeightMm(d.points[0], d.points[1])
+            return h >= 0 ? { quantity: "length", value: h, prefix: "H " } : null
+        }
         if (d.kind === "circle" && d.points.length === 3) {
             const c = m.circleFrom3(d.points[0], d.points[1], d.points[2])
             return c.valid ? { quantity: "length", value: c.diameter, prefix: "Ø " } : null
@@ -354,6 +389,12 @@ Item {
         // Setting the origin: the readout says how.
         if (!m || stage !== "measure" || settingOrigin)
             return none
+        if (mode === "height" && points.length === 2) {
+            const h = m.uprightHeightMm(points[0], points[1])
+            if (h >= 0)
+                return { valid: true, caption: activeName + "standing on the " + m.referenceName.toLowerCase(), source: "Photo",
+                         items: [{ label: "Height", quantity: "length", value: h }] }
+        }
         if (mode === "distance" && points.length === 2 && m.heightScale > 0)
             return { valid: true, caption: activeName + surface, source: "Photo",
                      items: [{ label: "Distance", quantity: "length", value: m.distanceMm(points[0], points[1]) },
@@ -447,6 +488,9 @@ Item {
                                                                    : placeAngle.toFixed(1) + "° to " + edgesName)
                                  : snap ? "Tap the other end. Near 0° or 90° it snaps straight" : "Tap the other end")
         : mode === "circle" ? (points.length < 3 ? "Tap three points on the rim (" + points.length + " of 3)" : "Tap again for another circle")
+        : mode === "height" ? (points.length === 0 ? "Tap where an upright side of the part meets the paper (a photo taken at a slant shows the sides)"
+                               : points.length === 1 ? "Now tap the top of that side, straight above: along the dashed line"
+                               : "Its height is the part's height now. Tap again to measure another")
         : found ? "Drag a point to adjust the found outline"
         : closed ? "Closed. Tap to start another outline"
         : points.length === 0 ? "Find outline, or tap the shape's corners one after another"
@@ -877,8 +921,14 @@ Item {
                 Layout.preferredWidth: photo.narrow ? Math.max(196, measureTop.width * 0.52) : 420
                 Layout.maximumWidth: 420
                 namePrefix: "photoMode_"
-                model: [{ key: "distance", label: "Distance", icon: "distance" }, { key: "outline", label: "Outline", icon: "sketch_polygon" },
-                        { key: "circle", label: "Circle", icon: "sketch_circle" }]
+                model: {
+                    const list = [{ key: "distance", label: "Distance", icon: "distance" }, { key: "outline", label: "Outline", icon: "sketch_polygon" },
+                                  { key: "circle", label: "Circle", icon: "sketch_circle" }]
+                    // Height where the photo said its lens (the camera's height is known).
+                    if (photo.m && photo.m.cameraHeightMm > 0)
+                        list.push({ key: "height", label: "Height", icon: "height" })
+                    return list
+                }
                 current: photo.mode
                 onPicked: (key) => photo.mode = key
             }
@@ -1116,8 +1166,16 @@ Item {
                     id: guides
                     objectName: "photoPlaceGuides"
                     anchors.fill: parent
-                    visible: photo.placingDistance
+                    visible: photo.placingDistance || photo.placingHeight
                     readonly property point from: photo.points.length > 0 ? straightView.toView(photo.points[0]) : Qt.point(0, 0)
+                    // A height: the line where the top can show, out from the foot.
+                    readonly property point upright: {
+                        if (!photo.placingHeight)
+                            return Qt.point(0, 0)
+                        const d = photo.m.uprightDirection(photo.points[0])
+                        const far = Qt.point(photo.points[0].x + d.x * 100000, photo.points[0].y + d.y * 100000)
+                        return straightView.toView(far)
+                    }
                     ShapePath {
                         strokeColor: Qt.rgba(1, 1, 1, 0.75)
                         strokeWidth: 1
@@ -1127,6 +1185,8 @@ Item {
                         PathMultiline {
                             paths: {
                                 const f = guides.from
+                                if (photo.placingHeight)
+                                    return [[f, guides.upright]]
                                 return [[Qt.point(0, f.y), Qt.point(straightView.width, f.y)],
                                         [Qt.point(f.x, 0), Qt.point(f.x, straightView.height)]]
                             }
@@ -1138,7 +1198,7 @@ Item {
                         fillColor: "transparent"
                         capStyle: ShapePath.RoundCap
                         PathPolyline {
-                            path: photo.placingDistance ? [guides.from, straightView.toView(photo.placeAt)] : []
+                            path: photo.placingDistance || photo.placingHeight ? [guides.from, straightView.toView(photo.placeAt)] : []
                         }
                     }
                 }
@@ -1231,7 +1291,7 @@ Item {
                         const at = Qt.point(mouse.x, mouse.y)
                         if (!pressed) {
                             // The mouse: the line follows the pointer.
-                            if (photo.mode === "distance" && photo.points.length === 1 && straightView.inside(at))
+                            if ((photo.mode === "distance" || photo.mode === "height") && photo.points.length === 1 && straightView.inside(at))
                                 photo.updatePreview(straightView.toImage(at))
                             return
                         }

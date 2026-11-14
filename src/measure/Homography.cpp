@@ -288,6 +288,64 @@ double PlaneRectifier::areaMm2(const std::vector<Vec2>& imagePolygon) const
     return std::abs(s) * 0.5;
 }
 
+std::optional<CameraOverPlane> cameraOverPlane(const PlaneRectifier& rectifier, double focalPx, int imageWidth,
+                                               int imageHeight)
+{
+    if (!(focalPx > 0) || imageWidth <= 0 || imageHeight <= 0)
+        return std::nullopt;
+    // The plane-to-image map is K [r1 r2 t] up to scale (K: the focal length,
+    // the principal point at the middle). Its columns through K's inverse.
+    const auto& h = rectifier.planeToImage().h;
+    const double cx = imageWidth / 2.0, cy = imageHeight / 2.0;
+    auto column = [&](int c) {
+        const double x = h[std::size_t(c)], y = h[std::size_t(3 + c)], w = h[std::size_t(6 + c)];
+        return Vec3{(x - cx * w) / focalPx, (y - cy * w) / focalPx, w};
+    };
+    Vec3 r1 = column(0), r2 = column(1), t = column(2);
+    const double n1 = r1.length(), n2 = r2.length();
+    if (!(n1 > 0) || !(n2 > 0))
+        return std::nullopt;
+    const double scale = 1.0 / std::sqrt(n1 * n2);
+    r1 = r1 * scale;
+    r2 = r2 * scale;
+    t = t * scale;
+    if (t.z < 0) { // the surface in front of the camera
+        r1 = r1 * -1.0;
+        r2 = r2 * -1.0;
+        t = t * -1.0;
+    }
+    const Vec3 a = r1.normalized();
+    const Vec3 b = (r2 - a * a.dot(r2)).normalized();
+    const Vec3 c = a.cross(b);
+    // The camera's center in the surface's frame: -R^T t.
+    const Vec3 center{-a.dot(t), -b.dot(t), -c.dot(t)};
+    if (std::abs(center.z) < 1e-6)
+        return std::nullopt;
+    return CameraOverPlane{{center.x, center.y}, std::abs(center.z)};
+}
+
+std::optional<double> heightAbove(const CameraOverPlane& camera, Vec2 foot, Vec2 seen)
+{
+    const Vec2 out = foot - camera.foot;
+    const double rFoot = out.length();
+    if (rFoot < 1e-6 || !(camera.heightMm > 0))
+        return std::nullopt;
+    const double rSeen = (seen - camera.foot).dot(out) / rFoot;
+    if (rSeen <= rFoot)
+        return std::nullopt;
+    return camera.heightMm * (1.0 - rFoot / rSeen);
+}
+
+Vec2 ontoUprightLine(const CameraOverPlane& camera, Vec2 foot, Vec2 p)
+{
+    const Vec2 out = foot - camera.foot;
+    const double length = out.length();
+    if (length < 1e-9)
+        return p;
+    const Vec2 u = out * (1.0 / length);
+    return foot + u * (p - foot).dot(u);
+}
+
 double PlaneRectifier::mmPerImagePixelAtReference() const
 {
     const Vec2 c = toImage({widthMm_ * 0.5, heightMm_ * 0.5});

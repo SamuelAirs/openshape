@@ -97,6 +97,29 @@ private:
     double heightMm_ = 0;
 };
 
+// Where the camera was over the surface, in the surface's coordinates (mm):
+// the point straight below it and its height above it. From the photo's map
+// and the lens's focal length (pixels), the principal point taken at the
+// image's middle. nullopt when the map says nothing sensible (the camera
+// would be on the surface).
+struct CameraOverPlane {
+    Vec2 foot;
+    double heightMm = 0;
+};
+std::optional<CameraOverPlane> cameraOverPlane(const PlaneRectifier& rectifier, double focalPx, int imageWidth,
+                                               int imageHeight);
+// Photo's Height (2026-11-14, Sam: "I'd like to be able to measure the
+// height with my phone"): a point standing straight above `foot` (on the
+// surface, mm) shows in the photo where the surface point `seen` (mm) lies,
+// on the line from the camera's foot through `foot`, further out. Its height
+// (mm), from the camera's: h = d (1 - r_foot / r_seen), r measured from the
+// camera's foot along that line. nullopt when `seen` is not further out than
+// `foot` (it would be below the surface) or `foot` is under the camera.
+std::optional<double> heightAbove(const CameraOverPlane& camera, Vec2 foot, Vec2 seen);
+// `p` (mm) moved onto that line: where the top of a vertical edge standing
+// on `foot` can show at all.
+Vec2 ontoUprightLine(const CameraOverPlane& camera, Vec2 foot, Vec2 p);
+
 // The straightened view of a photo: which part of the surface it shows and
 // at what scale.
 struct RectifiedView {

@@ -234,6 +234,17 @@ send" this branch went to TestFlight (`[testflight]`); its build number and
 0.3.3's are in the vault's test list and on the Board. `main` (0.3.3) is
 not merged into this branch yet: do that before 0.4.0 goes into `main`.
 
+**Height** (2026-11-14, Sam: "I'd like to be able to measure the height
+with my phone so I don't have to use caliper at all"): Photo's fourth mode,
+an upright side's foot and top tapped, the height from the camera's place
+over the paper (`measure::cameraOverPlane`, `heightAbove`), handed to Part
+height; an undone newest dimension gives its letter back. Checked: 1005/1005
+headless (`ScanPose.APointsHeightFromWhereItsFootAndTopShow`: exact from 45 to
+88 degrees), `measurephotoviews` 243/243, the capture check. **The whole
+real-UI run was not done for this push**: Sam asked to skip it ("Can we not
+do the whole hour long automated test and instead compile and upload to
+TestFlight?"); run it before the next push.
+
 ### Session report (2026-11-13, afternoon): 0.3.2 is tagged, and `polish` carries it
 
 **Where things stand.** FoldForm **0.3.2** is tagged: `v0.3.2` = `main` =

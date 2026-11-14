@@ -368,6 +368,19 @@ it is one undo step.
   does not say its lens has no field (TD-183). Measured on a synthetic camera
   (`ScanPose.APartsTopMeasuresTrueOnceItsHeightAboveThePaperIsSaid`): from 450 mm the top
   reads 105.9 mm, 100.00 mm once said 25 mm up; with the corners 0.5 px off, 99.98 mm.
+- **Height** (2026-11-14, Sam: "I'd like to be able to measure the height with my phone so I
+  don't have to use caliper at all"). With the camera's place over the paper known (its foot
+  F and height d, `measure::cameraOverPlane`: the straightened view's homography through
+  the lens), a point straight above a foot B shows on the paper's plane on the line from F
+  through B, further out: at r_top = r_B d / (d - h), so h = d (1 - r_B / r_top)
+  (`measure::heightAbove`). The second tap is moved onto that line (`ontoUprightLine`,
+  drawn dashed while placing) and the height becomes Part height. Exact on a synthetic
+  camera from 45 to 88 degrees (`ScanPose.APointsHeightFromWhereItsFootAndTopShow`;
+  0.06 mm with the corners 0.5 px off). On a real photo the taps decide it: the top's
+  shift along the line is h r_B / (d - h), about 13 mm for a 25 mm part 200 mm from the
+  camera's foot (a photo at 60 degrees), under 3 mm 50 mm from it (straight above), so a
+  tap 0.5 mm off costs about 1 mm of height at a slant and 4 mm straight above. A height
+  4 mm off still corrects the lengths across the top to within 1 % (d / (d - h)).
 - **Limits** (TD-178): the straightened view reaches about 1.5 card sizes around the card (13
   cm or so beside it): a bigger part needs a sheet of A4 or Letter as the reference, the part
   on it. A part touching the card's margin, the photo's edge or the paper's edge is cut or not

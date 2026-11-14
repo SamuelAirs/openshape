@@ -5,6 +5,7 @@
 #pragma once
 
 #include "measure/Fold.h"
+#include "measure/Homography.h"
 #include "measure/Level.h"
 #include "measure/Measurement.h"
 #include "measure/ScanTypes.h"
@@ -326,6 +327,14 @@ public:
     // The height above the reference of the edges being measured (mm, 0 or
     // more; less than the camera's height).
     Q_INVOKABLE void setEdgeHeightMm(double mm);
+    // Photo's Height (straightened px): how high the top of an upright edge
+    // standing on `foot` is, the top tapped at `top` (mm; -1 when it cannot
+    // be told: no camera height, or `top` not further out than `foot` from
+    // the camera's foot); `p` moved onto the line where that top can show;
+    // that line's direction out from `foot` (a unit vector; 0,0 unknown).
+    Q_INVOKABLE double uprightHeightMm(const QPointF& foot, const QPointF& top) const;
+    Q_INVOKABLE QPointF ontoUprightLine(const QPointF& foot, const QPointF& p) const;
+    Q_INVOKABLE QPointF uprightDirection(const QPointF& foot) const;
     Q_INVOKABLE void setCorner(int index, double x, double y);
     // "card", "a4", "letter", or "rectangle" with its two sides (mm). False
     // for a rectangle whose sides are not positive.
@@ -631,6 +640,7 @@ private:
     QPointF straightOriginMm_;
     double photoFocal35mm_ = 0;  // the photo's lens (35 mm equivalent); 0 unknown
     double cameraHeightMm_ = 0;  // heightChanged
+    std::optional<measure::CameraOverPlane> cameraOver_; // where the camera was, in the reference's frame (mm)
     double edgeHeightMm_ = 0;
     QVariantList straightReference_;
     QString photoError_;

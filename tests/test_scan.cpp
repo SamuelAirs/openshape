@@ -247,6 +247,63 @@ TEST(ScanPose, APartsTopMeasuresTrueOnceItsHeightAboveThePaperIsSaid)
     }
 }
 
+// Photo's Height (Sam, 2026-11-14: "I'd like to be able to measure the
+// height with my phone so I don't have to use caliper at all"): the camera's
+// place over the paper from the paper's corners and the lens, then a point's
+// height from where its foot and its top show on the paper's plane.
+TEST(ScanPose, APointsHeightFromWhereItsFootAndTopShow)
+{
+    const Reference paper = letterReference();
+    struct Case {
+        double elevationDeg, distanceMm, focal35mm, cornerNoisePx, tolerance;
+    };
+    for (const Case c : {Case{60, 420, 26, 0, 0.05}, Case{88, 450, 26, 0, 0.05}, Case{45, 500, 52, 0, 0.05},
+                         Case{60, 420, 26, 0.5, 0.6}}) {
+        CameraSpec spec;
+        spec.elevationDeg = c.elevationDeg;
+        spec.distanceMm = c.distanceMm;
+        spec.focal35mm = c.focal35mm;
+        spec.azimuthDeg = 30;
+        spec.target = {0, 0, 0};
+        spec.width = 4032;
+        spec.height = 3024;
+        const ScanCamera cam = cameraFor(spec);
+        std::mt19937 rng(4);
+        std::uniform_real_distribution<double> jitter(-c.cornerNoisePx, c.cornerNoisePx);
+        std::array<Vec2, 4> corners;
+        const auto world = paperWorldCorners(paper);
+        for (int m = 0; m < 4; ++m)
+            corners[std::size_t(m)] = cam.project(world[std::size_t(m)]) + Vec2{jitter(rng), jitter(rng)};
+        const auto rect = PlaneRectifier::create(corners, paper);
+        ASSERT_TRUE(rect.has_value());
+        const auto over = cameraOverPlane(*rect, focalPxFrom35mm(c.focal35mm, spec.width, spec.height), spec.width, spec.height);
+        ASSERT_TRUE(over.has_value()) << c.elevationDeg;
+        EXPECT_NEAR(over->heightMm, cam.center().z, 0.01 * cam.center().z) << c.elevationDeg;
+        // The camera's foot, in the paper's frame, is where the point under it maps.
+        const Vec3 under{cam.center().x, cam.center().y, 0};
+        if (cam.depth(under) > 0) {
+            const Vec2 footSeen = rect->toPlane(cam.project(under));
+            EXPECT_NEAR((footSeen - over->foot).length(), 0, 0.01 * cam.center().z) << c.elevationDeg;
+        }
+        // Upright edges of a box (25 mm, the Flipper's thickness, and 60 mm)
+        // near the paper's middle: their tops from their feet.
+        for (const Vec3 top : {Vec3{40, 30, 25}, Vec3{-50, 20, 25}, Vec3{10, -40, 60}}) {
+            const Vec2 foot = rect->toPlane(cam.project({top.x, top.y, 0}));
+            const Vec2 seen = rect->toPlane(cam.project(top));
+            const auto h = heightAbove(*over, foot, seen);
+            ASSERT_TRUE(h.has_value()) << c.elevationDeg;
+            EXPECT_NEAR(*h, top.z, c.tolerance * (c.cornerNoisePx > 0 ? top.z / 25 : 1)) << c.elevationDeg << " " << top.z;
+            // The top shows on the line out from the camera's foot through the foot.
+            EXPECT_NEAR((ontoUprightLine(*over, foot, seen) - seen).length(), 0, 0.02 + c.cornerNoisePx) << c.elevationDeg;
+            std::printf("[photo] from %.0f deg, %.0f mm: an edge %.0f mm tall reads %.2f mm\n", c.elevationDeg, c.distanceMm,
+                        top.z, *h);
+        }
+        // Nothing stands below the paper.
+        const Vec2 foot = rect->toPlane(cam.project({40, 30, 0}));
+        EXPECT_FALSE(heightAbove(*over, foot, over->foot + (foot - over->foot) * 0.9).has_value());
+    }
+}
+
 // -------------------------------------------------------------------- meshes
 
 TEST(ScanMeshTools, SurfaceOfASphereIsClosedAndDecimatesClosed)

@@ -36,6 +36,9 @@ the view keeps zooming way out").
   names), and a **Part height** field under the photo takes how high
   the edges measured are: the readings, kept measurements and sketches are
   then true at that height (100.0 mm for the Flipper's top said 25 mm up).
+- **Photo: Height**, no calipers needed: tap where an upright side of the
+  part meets the paper, then its top; FoldForm works out the height from
+  where the camera was, and it becomes the Part height.
 
 **Measure: the phone as a measuring tool, one tool to measure and design.**
 A ruler button in the top bar (and Measure on Home) opens a workspace of

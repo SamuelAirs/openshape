@@ -175,6 +175,13 @@ as 0.3.2 and are in every build after 64: they are the section "FoldForm
     and whether the phone's height it shows looks right.* A second photo
     from twice as high: the error before the height is typed should be
     about half.
+30. **Height (no calipers).** The Flipper on Letter paper, a photo at a
+    slant (about 30 to 45 degrees from straight down, its long side toward
+    you showing), Straighten. **Height**: tap where that side meets the
+    paper, then the top of the side straight above (the dashed line shows
+    where): about 25 mm, and Part height takes it. Then Distance across its
+    top: about 100 mm. *Tell me: the height, the distance, and whether the
+    dashed line made the top easy to find.*
 
 ## On Windows (the desktop shortcut)
 

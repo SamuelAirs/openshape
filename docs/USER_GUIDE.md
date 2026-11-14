@@ -883,6 +883,14 @@ large at the side with **Keep**.
     photo names, and shown beside the field ("phone 450 mm up"); a photo
     that does not say its lens shows no field (photos from FoldForm's camera
     and the iPhone's library do).
+  - **Height** (beside Distance, Outline and Circle, where the photo names
+    its lens): measures how tall a part is, no calipers. Tap where one of
+    its upright sides meets the paper, then the top of that side: the top
+    goes onto a dashed line (where a point straight above the first can
+    show at all), and the height is read out. It becomes the Part height,
+    so distances across the part's top read true at once. A photo taken at
+    a slant (the side showing) gives the surest height; from straight above
+    the sides hardly show.
   **Take photo** opens FoldForm's own camera. Hold the phone flat above the
   card: the yellow cross (straight down) meets the white one (the middle of
   the photo) and both turn green within 1° ("0.6° off"); a photo from

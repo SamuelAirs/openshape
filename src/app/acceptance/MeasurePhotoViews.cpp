@@ -257,6 +257,17 @@ std::optional<QPointF> onStraight(AcceptanceRunner& r, const StatePtr& st, Vec2 
     return image->mapToScene(QPointF(px->x() * image->width() / m.straightSize().width(), px->y() * image->height() / m.straightSize().height()));
 }
 
+// A point of the straightened photo (its pixels) on the screen, tapped.
+bool tapStraightPx(AcceptanceRunner& r, QPointF px)
+{
+    QQuickItem* image = item(r, QStringLiteral("photoStraightImage"));
+    auto& m = measureOf(r);
+    if (!image || !image->isVisible() || m.straightSize().width() <= 0)
+        return false;
+    r.touchTap({image->mapToScene(QPointF(px.x() * image->width() / m.straightSize().width(), px.y() * image->height() / m.straightSize().height()))});
+    return true;
+}
+
 bool tapTable(AcceptanceRunner& r, const StatePtr& st, Vec2 table)
 {
     const auto p = onStraight(r, st, table);
@@ -537,7 +548,61 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         r.check(measureOf(r).edgeHeightMm() == 0 && measureOf(r).heightScale() == 1.0, say("height: back on the card's surface"));
         r.check(text(r, QStringLiteral("measureReadoutCaption")).contains(QStringLiteral("surface")), say("height: the caption says so"),
                 text(r, QStringLiteral("measureReadoutCaption")));
+        // Height (Sam, 2026-11-14: "I'd like to be able to measure the height
+        // with my phone"): the mode is there, the photo naming its lens.
+        r.check(shown(r, QStringLiteral("photoMode_height")), say("upright: Height is offered"));
+        r.check(r.tapItem(QStringLiteral("photoMode_height")), say("upright: tap Height"));
     });
+    wait(steps, 1);
+    // Its foot, then a tap a little off the line out from under the camera:
+    // the top goes onto that line, and the height read is Part height.
+    steps.push_back([&r, st] {
+        const auto foot = straightPx(r, st, {60, 125});
+        r.check(foot && tapStraightPx(r, *foot), say("upright: tap the foot"));
+        st->dragFrom = foot.value_or(QPointF());
+    });
+    wait(steps, 1);
+    steps.push_back([&r, st] {
+        auto& m = measureOf(r);
+        const QPointF foot = st->dragFrom;
+        const QPointF d = m.uprightDirection(foot);
+        r.check(std::hypot(d.x(), d.y()) > 0.99, say("upright: the line out from under the camera is known"), n(d.x()));
+        const QPointF off(-d.y() * 6, d.x() * 6); // 6 px to the side of the line
+        r.check(tapStraightPx(r, foot + d * 60 + off), say("upright: tap the top, a little off the line"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        auto& m = measureOf(r);
+        const QVariantList list = dims(r);
+        const QVariantMap last = list.isEmpty() ? QVariantMap() : list.back().toMap();
+        const QVariantList pts = last.value(QStringLiteral("points")).toList();
+        r.check(last.value(QStringLiteral("kind")).toString() == QStringLiteral("height") && pts.size() == 2,
+                say("upright: a height dimension, foot and top"));
+        if (pts.size() == 2) {
+            const QPointF foot = pts[0].toPointF(), top = pts[1].toPointF();
+            const QPointF d = m.uprightDirection(foot);
+            const double across = std::abs((top.x() - foot.x()) * d.y() - (top.y() - foot.y()) * d.x());
+            r.check(across < 0.01, say("upright: the top went onto the line"), n(across));
+            const double h = m.uprightHeightMm(foot, top);
+            r.check(h > 0 && std::abs(m.edgeHeightMm() - h) < 1e-9, say("upright: its height is Part height now"), n(h));
+            r.check(text(r, QStringLiteral("measureReadoutCaption")).contains(QStringLiteral("standing on the")),
+                    say("upright: the readout says it stands on the card"), text(r, QStringLiteral("measureReadoutCaption")));
+            r.check(text(r, QStringLiteral("measureReadoutValue")) == m.formatNumber(QStringLiteral("length"), h), say("upright: read out"),
+                    text(r, QStringLiteral("measureReadoutValue")));
+        }
+        r.screenshot(QStringLiteral("measurephotoviews_upright_desktop"));
+        // Taken back (both points), and Part height back to 0.
+        r.check(r.tapItem(QStringLiteral("photoUndo")), say("upright: Undo the top"));
+    });
+    wait(steps, 1);
+    steps.push_back([&r] { r.check(r.tapItem(QStringLiteral("photoUndo")), say("upright: Undo the foot")); });
+    wait(steps, 1);
+    steps.push_back([&r] {
+        r.check(dims(r).size() == 1, say("upright: gone, A stays"), n(dims(r).size()));
+        measureOf(r).setEdgeHeightMm(0);
+        r.check(r.tapItem(QStringLiteral("photoMode_distance")), say("upright: back to Distance"));
+    });
+    wait(steps, 1);
     // A slanted one keeps its angle; with Snap off a nearly straight one too.
     steps.push_back([&r, st] { r.check(tapTable(r, st, {40, 135}), say("slanted: tap one end")); });
     steps.push_back([&r, st] { r.check(tapTable(r, st, {140, 135 + 100 * std::tan(10 * kPi / 180)}), say("slanted: tap the other, 10 degrees up")); });

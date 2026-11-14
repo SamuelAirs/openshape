@@ -669,6 +669,36 @@ void MeasureController::loadPhoto(const QUrl& url, double focal35mm)
     adoptPickedFile(file, focal35mm);
 }
 
+double MeasureController::uprightHeightMm(const QPointF& foot, const QPointF& top) const
+{
+    if (!cameraOver_ || straightMmPerPixel_ <= 0)
+        return -1;
+    auto mm = [&](const QPointF& p) {
+        return Vec2{straightOriginMm_.x() + p.x() * straightMmPerPixel_, straightOriginMm_.y() + p.y() * straightMmPerPixel_};
+    };
+    return measure::heightAbove(*cameraOver_, mm(foot), mm(top)).value_or(-1.0);
+}
+
+QPointF MeasureController::ontoUprightLine(const QPointF& foot, const QPointF& p) const
+{
+    if (!cameraOver_ || straightMmPerPixel_ <= 0)
+        return p;
+    const double mmpp = straightMmPerPixel_;
+    auto mm = [&](const QPointF& q) { return Vec2{straightOriginMm_.x() + q.x() * mmpp, straightOriginMm_.y() + q.y() * mmpp}; };
+    const Vec2 on = measure::ontoUprightLine(*cameraOver_, mm(foot), mm(p));
+    return QPointF((on.x - straightOriginMm_.x()) / mmpp, (on.y - straightOriginMm_.y()) / mmpp);
+}
+
+QPointF MeasureController::uprightDirection(const QPointF& foot) const
+{
+    if (!cameraOver_ || straightMmPerPixel_ <= 0)
+        return {};
+    const Vec2 at{straightOriginMm_.x() + foot.x() * straightMmPerPixel_, straightOriginMm_.y() + foot.y() * straightMmPerPixel_};
+    const Vec2 out = at - cameraOver_->foot;
+    const double length = out.length();
+    return length > 1e-9 ? QPointF(out.x / length, out.y / length) : QPointF();
+}
+
 double MeasureController::heightScale() const
 {
     if (cameraHeightMm_ <= 0 || edgeHeightMm_ <= 0 || edgeHeightMm_ >= 0.9 * cameraHeightMm_)
@@ -689,16 +719,20 @@ void MeasureController::setEdgeHeightMm(double mm)
 
 void MeasureController::updateCameraHeight()
 {
+    // In the straightened view's own frame (the rectifier's), so that
+    // Height's taps and the camera's foot are in one frame.
     double height = 0;
+    cameraOver_.reset();
     const auto reference = referenceFor(referenceKind_, referenceSideA_, referenceSideB_);
     if (photoFocal35mm_ > 0 && reference && photoSize_.width() > 0 && photoSize_.height() > 0) {
-        measure::PaperCorners photo;
+        std::array<Vec2, 4> quad;
         for (std::size_t i = 0; i < 4; ++i)
-            photo.corners[i] = {corners_[i].x(), corners_[i].y()};
-        photo.width = int(photoSize_.width());
-        photo.height = int(photoSize_.height());
-        const double focalPx = measure::focalPxFrom35mm(photoFocal35mm_, photo.width, photo.height);
-        height = measure::cameraHeightAbovePaper(photo, *reference, focalPx).value_or(0.0);
+            quad[i] = {corners_[i].x(), corners_[i].y()};
+        const int w = int(photoSize_.width()), h = int(photoSize_.height());
+        if (const auto rectifier = measure::PlaneRectifier::create(quad, *reference))
+            cameraOver_ = measure::cameraOverPlane(*rectifier, measure::focalPxFrom35mm(photoFocal35mm_, w, h), w, h);
+        if (cameraOver_)
+            height = cameraOver_->heightMm;
     }
     if (height != cameraHeightMm_) {
         cameraHeightMm_ = height;
