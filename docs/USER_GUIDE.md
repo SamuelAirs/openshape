@@ -873,15 +873,16 @@ large at the side with **Keep**.
   ground plane at its real size, ready to extrude. Things lying on the
   reference's surface measure true; a card gives about half a millimeter
   over a hand's width, a sheet of paper better.
-  - **Height above paper** (under the photo): the edges of a thick part
-    stand above the paper, nearer the camera, and read larger: a part 25 mm
-    thick photographed from 45 cm reads 6 % long across its top. Type how
-    high above the paper the edges you measure are (calipers, or the part's
-    thickness for its top), and every reading, kept measurement and sketch
-    is worked out at that height ("25 mm above the letter paper"). FoldForm
-    knows how high the camera was from the paper's corners and the lens the
-    photo names; a photo that does not say its lens shows no field (photos
-    from FoldForm's camera and the iPhone's library do).
+  - **Part height** (under the photo): the edges of a thick part stand
+    above the paper, nearer the camera, and read larger: a part 25 mm thick
+    photographed from 45 cm reads 6 % long across its top. Type how high
+    above the paper the edges you measure are (the part's thickness for its
+    top), and every reading, kept measurement and sketch is worked out at
+    that height ("25 mm above the letter paper"). How high the phone was is
+    worked out for you, from the paper's size in the photo and the lens the
+    photo names, and shown beside the field ("phone 450 mm up"); a photo
+    that does not say its lens shows no field (photos from FoldForm's camera
+    and the iPhone's library do).
   **Take photo** opens FoldForm's own camera. Hold the phone flat above the
   card: the yellow cross (straight down) meets the white one (the middle of
   the photo) and both turn green within 1° ("0.6° off"); a photo from

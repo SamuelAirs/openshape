@@ -29,11 +29,11 @@ the view keeps zooming way out").
   pans rather than zooms.
 - A refused value's reason now goes into the log (Files, FoldForm, Logs),
   so a log sent after a round says why.
-- **Photo: Height above paper.** A thick part's top edges stand above the
+- **Photo: Part height.** A thick part's top edges stand above the
   paper, nearer the camera, and read larger: the owner's Flipper, 100 mm
   long and 25 mm thick, read 105.8 mm on Letter paper. Photo now works out
   how high the camera was (from the paper's corners and the lens the photo
-  names), and a **Height above paper** field under the photo takes how high
+  names), and a **Part height** field under the photo takes how high
   the edges measured are: the readings, kept measurements and sketches are
   then true at that height (100.0 mm for the Flipper's top said 25 mm up).
 

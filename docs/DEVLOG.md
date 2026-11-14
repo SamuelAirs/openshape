@@ -1264,5 +1264,5 @@ d the camera's height, straight down or not. From 450 mm, 25 mm up: 105.9.
 Scan already recovers a camera's pose from the paper's corners and the
 lens's focal length; Photo now does too (`cameraHeightAbovePaper`), keeps
 the focal length the picker and the camera screen already read from EXIF
-(Photo had dropped it), and a **Height above paper** field scales every
+(Photo had dropped it), and a **Part height** field scales every
 reading by (d - h) / d. A synthetic camera test reproduces his number.

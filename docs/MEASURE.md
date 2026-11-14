@@ -362,7 +362,7 @@ it is one undo step.
   paper, however straight down the photo was taken: 450 mm up, a 25 mm-thick part's top
   reads 5.9 % long. The paper's corners and the lens's focal length (the photo's EXIF
   FocalLenIn35mmFilm, which FoldForm's camera and the library picker pass on) give d
-  (`measure::cameraHeightAbovePaper`, Scan's pose code); the **Height above paper** field
+  (`measure::cameraHeightAbovePaper`, Scan's pose code); the **Part height** field
   under the photo takes h, and every reading is worked out at that height
   (`MeasureController::heightScale`, (d - h) / d; the rulers and grid too). A photo that
   does not say its lens has no field (TD-183). Measured on a synthetic camera

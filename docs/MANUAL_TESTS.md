@@ -166,13 +166,15 @@ as 0.3.2 and are in every build after 64: they are the section "FoldForm
     zoomed it each time (it used to zoom back out to the whole panel). Fold
     or turn the phone with the arrow off the screen: the view slides the
     arrow back into sight without zooming out.
-29. **The Flipper again (Height above paper).** The Flipper on Letter
+29. **The Flipper again (Part height).** The Flipper on Letter
     paper, Take photo from straight above, Straighten, a distance across
-    its top end to end: about 105.8 mm as before. Under the photo, **Height
-    above paper**: type 25 (its thickness): the distance should read about
-    100 mm, and the caption "25 mm above the letter paper". *Tell me: the
-    reading, and how high you held the phone.* A second photo from twice as
-    high: the error before the height is typed should be about half.
+    its top end to end: about 105.8 mm as before. Under the photo, **Part
+    height**: type 25 (its thickness; beside the field, how high the phone
+    was, worked out from the paper): the distance should read about 100 mm,
+    and the caption "25 mm above the letter paper". *Tell me: the reading,
+    and whether the phone's height it shows looks right.* A second photo
+    from twice as high: the error before the height is typed should be
+    about half.
 
 ## On Windows (the desktop shortcut)
 

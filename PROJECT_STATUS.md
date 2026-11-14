@@ -209,7 +209,7 @@ slanted front panel. docs/DEVLOG.md, 2026-11-13 (night), has each cause.
   read 105.8 on Letter paper). Its top is 25 mm above the paper: an edge h
   up reads d / (d - h) large. Photo now keeps the photo's lens (EXIF, as
   Scan did), works out the camera's height from the paper's corners
-  (`measure::cameraHeightAbovePaper`), and a **Height above paper** field
+  (`measure::cameraHeightAbovePaper`), and a **Part height** field
   scales every reading (`MeasureController::heightScale`; TD-183;
   docs/MEASURE.md corrected: it said thickness mattered only at an angle).
 

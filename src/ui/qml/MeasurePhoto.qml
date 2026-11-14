@@ -1611,20 +1611,24 @@ Item {
             // How high above the paper the edges measured stand: a part's top
             // is nearer the camera and reads larger (Sam's Flipper, 25 mm
             // thick: 105.8 mm for 100). Only where the photo said what lens
-            // took it (the camera's height comes from that).
+            // took it (the camera's height comes from that). "Part height",
+            // and the phone's height shown beside it: "Height above paper"
+            // read as the phone's height to Sam ("i have to know how high
+            // I'm holding my phone?").
             RowLayout {
                 objectName: "photoHeightRow"
                 visible: photo.m && photo.m.cameraHeightMm > 0
                 spacing: 6
+                // (A phone: "Part", the keypad names the field in full.)
                 Text {
-                    text: photo.narrow ? "Height" : "Height above paper"
+                    text: photo.narrow ? "Part" : "Part height"
                     font.pixelSize: 13
                     color: Theme.mutedText
                 }
                 SideField {
                     id: heightField
                     objectName: "photoEdgeHeight"
-                    label: "Height above paper"
+                    label: "Part height above the paper"
                     placeholderText: "0"
                     Layout.preferredWidth: 64
                     applyTo: (text) => photo.m.setEdgeHeightMm(text.trim() === "" ? 0 : photo.m.parseLengthMm(text))
@@ -1640,6 +1644,14 @@ Item {
                 Text {
                     text: photo.m ? photo.m.unitSymbol("length") : "mm"
                     font.pixelSize: 13
+                    color: Theme.mutedText
+                }
+                // The camera's height, worked out from the paper: nothing to type.
+                Text {
+                    objectName: "photoCameraHeight"
+                    visible: !photo.narrow
+                    text: photo.m ? "· phone " + photo.m.formatValue("length", Math.round(photo.m.cameraHeightMm / 10) * 10) + " up" : ""
+                    font.pixelSize: 12
                     color: Theme.mutedText
                 }
             }

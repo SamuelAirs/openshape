@@ -503,6 +503,8 @@ std::vector<AcceptanceRunner::Step> steps(AcceptanceRunner& r)
         // above the card is known, and the height field shows.
         r.check(measureOf(r).cameraHeightMm() > 0 && shown(r, QStringLiteral("photoEdgeHeight")),
                 say("height: the camera's height is known and the field shows"), n(measureOf(r).cameraHeightMm()));
+        r.check(text(r, QStringLiteral("photoCameraHeight")).contains(QStringLiteral(" up")),
+                say("height: the phone's height is shown beside it, nothing to type"), text(r, QStringLiteral("photoCameraHeight")));
         r.check(r.clickItem(QStringLiteral("photoEdgeHeight")), say("height: click the field"));
     });
     // Sam's Flipper (2026-11-13): a part's top stands above the paper and
