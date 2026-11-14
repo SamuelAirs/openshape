@@ -3,7 +3,7 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
-## 0.3.3 (unreleased)
+## 0.3.3 (2026-11-14)
 
 0.3.2 with the answers to the owner's recordings on the iPhone Duo (a
 basket with a grid of slots, the Apple Pencil: "Making a hole bigger
