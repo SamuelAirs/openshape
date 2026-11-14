@@ -253,18 +253,28 @@ public:
     // call (the UI asks on every drag step, while the preview worker may hold
     // the kernel).
     std::optional<ScreenRect> keepClearRect() const;
-    // Moves the view so that keepClearRect() lies inside `region` (the part
-    // of the window a phone's numeric keypad and the value chip above it
-    // leave free), zooming out first when it is larger. False when it
-    // already lies there, or there is nothing to keep clear. The whole of
-    // it, also the part outside the window (a folding phone folded or a
-    // Split View narrowed may have left the selection off screen).
+    // The operation's arrows and rings (its value's anchor when it has
+    // neither): where the hand works. Clipped to the viewport; nullopt when
+    // there is none or none is in front of the eye.
+    std::optional<ScreenRect> arrowRect() const;
+    // Moves the view so that what it keeps clear (keepClearRect, also the
+    // part outside the window: a folding phone folded or a Split View
+    // narrowed may have left it off screen) lies inside `region` (the part
+    // of the window the value chip, a phone's numeric keypad and the
+    // controls leave free), when it fits there as the view is or after
+    // zooming out by at most kRevealZoomOutAtMost; otherwise only the
+    // arrows (arrowRect), panned. Until 2026-11-13 it zoomed out until all
+    // of the selection fitted: on the owner's Duo (build 68) a view zoomed
+    // in on a slot of a large selected panel zoomed back out to the whole
+    // panel at every tap, as the value box found no spot clear of the panel.
+    // False when it already lies there, or nothing is in sight.
     // Never while the user moves the view, nor within kNavigationQuiet after
     // the last step of an orbit, pan, pinch, wheel or view-cube drag: the
     // view is theirs then (the owner's iPhone Duo, 2026-11-03: a pinch with
     // a face selected jumped, as each zoom step moved the value box and the
     // view moved back to reveal the selection). False, nothing moved.
     bool revealKeepClear(const ScreenRect& region);
+    static constexpr double kRevealZoomOutAtMost = 1.5;
     static constexpr std::chrono::milliseconds kNavigationQuiet{500};
     // The user moved the view within kNavigationQuiet (or is moving it).
     bool navigatingRecently() const;
@@ -441,8 +451,11 @@ public:
     std::function<void(const std::string&)> onMessage;
 
 private:
-    // keepClearRect() before it is clipped to the viewport.
-    std::optional<ScreenRect> keepClearBounds() const;
+    // keepClearRect() before it is clipped to the viewport. `partial`: some
+    // point of it was behind or too near the eye, so the rect is not all of it.
+    std::optional<ScreenRect> keepClearBounds(bool* partial = nullptr) const;
+    // arrowRect() before it is clipped to the viewport.
+    std::optional<ScreenRect> arrowBounds() const;
     enum class DragMode { None, Pending, Orbit, Pan, Manipulator, Sketch };
 
     // PreviewScheduler (operations call these).

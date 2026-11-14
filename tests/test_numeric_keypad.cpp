@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <chrono>
 #include <initializer_list>
 #include <set>
 #include <string>
@@ -477,21 +479,87 @@ TEST(KeypadReveal, TheSelectionMovesIntoTheRoomTheKeypadLeaves)
     const auto before = controller.keepClearRect();
     ASSERT_TRUE(before.has_value());
 
-    // Room between a chip docked at the top and a keypad along the bottom.
+    // Room between a chip docked at the top and a keypad along the bottom:
+    // the face and its arrow fit there, and the view pans them into it.
     const ScreenRect room{0, 240, 402, 520};
+    ASSERT_FALSE(room.contains(*before));
+    const double distance = controller.camera().distance;
     EXPECT_TRUE(controller.revealKeepClear(room));
     const auto after = controller.keepClearRect();
     ASSERT_TRUE(after.has_value());
     EXPECT_TRUE(room.contains(*after)) << after->left << "," << after->top << " " << after->right << "," << after->bottom;
+    EXPECT_NEAR(controller.camera().distance, distance, 1e-9) << "panned, not zoomed";
     EXPECT_FALSE(controller.revealKeepClear(room)) << "already there";
 
-    // A band smaller than the selection: the view zooms out too.
-    const ScreenRect band{0, 300, 402, 380};
-    EXPECT_TRUE(controller.revealKeepClear(band));
-    const auto small = controller.keepClearRect();
+    // Far smaller than the selection, though not than the arrow: the arrow
+    // goes into it and the view does not zoom out to show the whole face
+    // (until 2026-11-13 it did: the owner's Duo zoomed out at every tap).
+    const double now = controller.camera().distance; // as the user left it
+    const double arrowTall = controller.arrowRect()->height();
+    const ScreenRect strip{0, 200, 402, 200 + std::max(arrowTall + 20, controller.keepClearRect()->height() / 2.2)};
+    ASSERT_GT(controller.keepClearRect()->height() / strip.height(), InteractionController::kRevealZoomOutAtMost);
+    EXPECT_TRUE(controller.revealKeepClear(strip));
+    const auto small = controller.arrowRect();
     ASSERT_TRUE(small.has_value());
-    EXPECT_TRUE(band.contains(*small)) << small->top << " " << small->bottom;
+    EXPECT_TRUE(strip.contains(*small)) << small->top << " " << small->bottom;
+    EXPECT_NEAR(controller.camera().distance, now, 1e-9) << "panned, not zoomed";
+
+    // A band a little smaller than the selection: the view zooms out a
+    // little, and all of it goes in.
+    const double tall = controller.keepClearRect()->height();
+    const ScreenRect band{0, 300, 402, 300 + tall / 1.3};
+    EXPECT_TRUE(controller.revealKeepClear(band));
+    const auto fitted = controller.keepClearRect();
+    ASSERT_TRUE(fitted.has_value());
+    EXPECT_TRUE(band.contains(*fitted)) << fitted->top << " " << fitted->bottom;
+    EXPECT_GT(controller.camera().distance, now) << "zoomed out a little";
+    EXPECT_LT(controller.camera().distance, now * InteractionController::kRevealZoomOutAtMost * 1.1);
     EXPECT_EQ(document.bodies().size(), 1u) << "only the view moved";
+}
+
+// The owner's basket on his Duo (build 68, 2026-11-13): a large face
+// selected with three slot walls, the view zoomed in on one slot: each tap
+// moved the value box, and the view zoomed back out to the whole panel:
+// the selection did not fit in the room the value box left (or, zoomed so
+// far that none of its corners was in sight, it counted as out of sight),
+// and the view brought all of it back. The arrow is in sight, and the view
+// now moves only for the arrow.
+TEST(KeypadReveal, AViewZoomedInOnALargeSelectedFaceStaysWhereTheUserPutIt)
+{
+    doc::Document document;
+    cmd::UndoStack stack;
+    InteractionController controller{document, stack};
+    auto now = std::chrono::steady_clock::now();
+    controller.setClockForTesting([&now] { return now; });
+    controller.setViewportSize({951, 669});
+    ASSERT_TRUE(controller.createBox(200).ok());
+    controller.fitAll(false);
+    // The box's top face, tapped in its middle: Push/Pull, its arrow there.
+    PointerEvent e;
+    e.position = controller.camera().project({0, 0, 200});
+    e.button = PointerButton::Left;
+    e.device = PointerDevice::Touch;
+    controller.pointerPress(e);
+    controller.pointerRelease(e);
+    ASSERT_NE(controller.operation(), nullptr);
+    // Zoomed far in about the arrow's foot, as two fingers do; then a moment later.
+    ASSERT_TRUE(controller.arrowRect().has_value());
+    for (int i = 0; i < 40; ++i)
+        controller.pinch(e.position, 1.15);
+    now += std::chrono::seconds(2);
+    ASSERT_FALSE(controller.navigatingRecently());
+    ASSERT_TRUE(controller.arrowRect().has_value()) << "the arrow is in sight";
+
+    // A room below a value box docked at the top: the arrow is in it, the
+    // selection is not (what moved the view until now).
+    const ScreenRect room{0, 120, 951, 669};
+    const auto keep = controller.keepClearRect();
+    EXPECT_TRUE(!keep || !room.contains(*keep));
+    ASSERT_TRUE(room.contains(*controller.arrowRect()));
+    const Camera before = controller.camera();
+    EXPECT_FALSE(controller.revealKeepClear(room)) << "the arrow is in sight: the view stays";
+    EXPECT_NEAR(controller.camera().distance, before.distance, 1e-12);
+    EXPECT_NEAR((controller.camera().target - before.target).length(), 0, 1e-12);
 }
 
 // ---- A keypad beside a sketch's value keeps clear of the sketch -----------------------

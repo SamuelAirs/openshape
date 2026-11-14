@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-13 (FoldForm 0.3.2, by a new lead engineer). New
+_Last updated: 2026-11-14 (FoldForm 0.3.3; 0.3.2 was not submitted). New
 here? Read the latest session report under "Handoff" first; "Blockers"
 below is the launch's history._
 
@@ -181,6 +181,35 @@ free App Store release with an in-app purchase (FoldForm 0.3.0) waits
 on the owner's App Store Connect steps above.
 
 ## Handoff: where we left off
+
+### Session report (2026-11-14): FoldForm 0.3.3 in place of 0.3.2
+
+**Why.** On build 68 (0.4.0) Sam recorded his basket: a slot's walls would
+not move ("Making a hole bigger doesn't work") and the view zoomed back out
+at every tap ("the view keeps zooming way out"). Both faults are in 0.3.2
+(build 67, tagged, not yet submitted): its own "hole made larger" fails on
+a hollow part. Sam: "Yes wait for 0.3.3". Build 67 does not go to Apple.
+
+**What 0.3.3 is.** `v0.3.2` plus the fixes from `polish` `2456a95` that are
+not Measure: walls that run along one axis move locally
+(`geom::offsetFaces` -> `moveWallsLocally`; the general offset is the
+fallback, never for a body with a closed void, TD-182); a hold on a wall
+takes that hole's walls only (`geom::connectedFaces`); the reveal zooms out
+at most 1.5x, else only slides the arrow in (`revealKeepClear`,
+`arrowRect`); preview refusals log their reason. Photo's Part height stays
+in 0.4.0. docs/DEVLOG.md (2026-11-14) and `polish`'s log (2026-11-13,
+night) have the causes.
+
+**Verified on the PC** (branch `release-0.3.3`): 892/892 headless; the whole
+real-UI run 4623/4623 checks in 53 scenarios (18 minutes); the release build against the own OpenCASCADE
+893/893, the package (270 files, license gate PASS) and the test installer (42 checks, none failed); the lambda-capture check (only the known one in `Duo.cpp`).
+**Not tried on a device.**
+
+**Next.** On Sam's "ship 0.3.3": `main` to this branch, push, CI, then the
+tag `v0.3.3`; its iPad run names the App Review build (the vault's Board,
+test list and an Inbox line for the App Store chat carry it). Then his
+round (0.3.2's Gates and the basket's checks) and "submit FoldForm 0.3.3
+with build N" to the App Store chat. Then `polish` takes `main` again.
 
 ### Session report (2026-11-13): FoldForm 0.3.2 (selecting, the view, a hole made larger)
 
@@ -1314,7 +1343,7 @@ build, once the coordinator says to push):
 
 ## Tests currently passing
 
-888/888 headless (`ctest -LE gui`, 2026-11-13, 0.3.2); 859/859 on 2026-11-03 (`main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
+892/892 headless (`ctest -LE gui`, 2026-11-14, 0.3.3); 888/888 on 2026-11-13 (0.3.2); 859/859 on 2026-11-03 (`main` at 0.3.1 with the loading card; 858/858 on 2026-11-02; 855/855 on 2026-11-01; 844/844 for the `v0.3.0` code on 2026-10-31): GTest suites for core, geometry
 (including text, construction geometry and loft), profiles, sketch model and
 solver (dragging, snapping and connecting), document, commands, project
 files, recovery copies and recent files, UI state, camera, picking, bodies
@@ -1329,7 +1358,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 4623/4623 checks in 53 scenarios (17 minutes) (2026-11-13, 0.3.2; ctest's limit for the run is 45 minutes since that day); 4452/4452 checks through the real UI in 51 scenarios
+`acceptance_gui`: 4623/4623 checks in 53 scenarios (18 minutes) (2026-11-14, 0.3.3); 4623/4623 checks in 53 scenarios (17 minutes) (2026-11-13, 0.3.2; ctest's limit for the run is 45 minutes since that day); 4452/4452 checks through the real UI in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and

@@ -228,6 +228,24 @@ Use `OpenShape-<version>-windows-x64-setup.exe` from a GitHub Release (or
 4. **Uninstall** from Settings → Apps → Installed apps → OpenShape. The
    Start-menu entry and the file association are gone; your projects stay.
 
+## FoldForm 0.3.3: the basket (the Duo, with the Pencil)
+
+0.3.3 is 0.3.2 (the section below) and the answers to the owner's
+recordings of his basket on build 68. The same list in the vault's
+`DuoApps/FoldForm/FoldForm tests.md`, "Next build" (all but the Flipper).
+
+1. **A slot in a hollow part.** Open the basket (or Shell a box with its
+   top open and cut a few slots through a wall). Hold the Pencil still on
+   one wall of a slot for half a second: "The 4 walls of this hole", not
+   the panel and not the other slots. Drag the arrow back into the panel,
+   or type `-0.5`: the slot grows on every side, corners square; the tick
+   applies it. Pull it the other way: it narrows, and past where the walls
+   would meet the value turns red and names the room.
+2. **The view stays where you zoom it.** With the panel face selected,
+   pinch in close on one slot, then tap a wall to add it and again to take
+   it out: the view stays. Fold or turn the phone with the arrow off the
+   screen: the arrow slides back into sight.
+
 ## FoldForm 0.3.2: selecting, the view, a hole made larger (the Duo, with the Pencil)
 
 Only a device can say whether these feel right: the PC checks them with

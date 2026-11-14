@@ -380,7 +380,10 @@ more faces (with several faces selected, Shell is what you get).
 - **A square hole, a slot, a pocket's walls: several faces at once.** Select
   the faces (tap them one after the other; turn the view to reach the ones
   on the far side, the selection stays; or hold a finger on one wall of a
-  hole that was cut through, which takes all its walls). One Push/Pull
+  hole that was cut through, which takes all its walls and only that
+  hole's, also where one cut made a grid of them; a thin wall seen at a
+  slant is easy to miss with a tap, and the face around it is taken
+  instead). One Push/Pull
   arrow shows, on the face selected last. Drag it, or drag any of the
   selected faces, or type a distance: every face moves by that distance
   along its own direction, and the faces meet again at their corners. Pushed

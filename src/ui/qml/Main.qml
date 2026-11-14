@@ -1453,7 +1453,8 @@ ApplicationWindow {
         // A phone: the selection and its arrow move into sight in the room
         // the value chip (docked below the top bar while typing) and the
         // keypad leave: above the keypad, or beside it when the phone is
-        // held sideways.
+        // held sideways (revealKeepClear: only the arrow when the selection
+        // is larger than that room).
         if (Theme.compact && client.keepClear === "selection" && valueChip.visible) {
             const top = valueChip.y + valueChip.height + 8
             const bottom = keypad.docked ? keypad.y - 8 : window.height - Theme.insetBottom
@@ -1474,11 +1475,14 @@ ApplicationWindow {
     // larger touch window that is small for its controls, the value box and
     // a keypad (a folding phone's inner display, 951x669: no spot beside the
     // arrow is clear), e.g. after the window changed (folded, unfolded, a
-    // Split View narrowed: the selection may be off screen). The view moves
-    // them into the largest room the controls, the value box and the
-    // keypad leave (zooming out if needed); the keypad then goes beside the
-    // value box again. Never while an arrow is dragged. A phone's docked
-    // value box and keypad have their own room (placeKeypad).
+    // Split View narrowed: the selection may be off screen). The view pans
+    // them into the largest room the controls, the value box and the keypad
+    // leave, all of the selection when it fits there, else its arrow
+    // (revealKeepClear: never zooming out to fit a selection the view was
+    // zoomed in on; the owner's Duo, build 68, zoomed back out at every
+    // tap); the keypad then goes beside the value box again. Never while an
+    // arrow is dragged. A phone's docked value box and keypad have their own
+    // room (placeKeypad).
     function revealSelection() {
         if (!valueChip.visible || !valueChip.placement || app.manipulatorDragging)
             return

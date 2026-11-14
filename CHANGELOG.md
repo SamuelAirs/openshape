@@ -3,7 +3,33 @@
 What changed in each release of OpenShape. The GitHub release notes show
 the section of their version (`.github/workflows/release.yml`).
 
-## 0.3.2 (2026-11-13)
+## 0.3.3 (unreleased)
+
+0.3.2 with the answers to the owner's recordings on the iPhone Duo (a
+basket with a grid of slots, the Apple Pencil: "Making a hole bigger
+doesn't work, and the view keeps zooming way out"). 0.3.2 was not
+submitted to the App Store: this is the version after 0.3.1 there.
+
+- **The walls of a hole in a hollow part move.** A slot's four walls in the
+  basket's front refused every distance ("Their neighbours cannot follow"):
+  the kernel's offset rebuilds the whole body, and on a hollow one (shelled,
+  rounded corners, many slots) it reported success and made nothing. Walls
+  that run along one axis (a hole, a slot, a pocket, a block's sides) now
+  move by cutting away or adding only the band between where they are and
+  where they go, and the general offset is left for the rest. A body with a
+  void closed inside it is no longer handed to the general offset.
+- **Holding a wall of a hole takes that hole's walls**, not those of every
+  hole the same cut made (a grid of slots cut at once).
+- **The view stays where you zoom it.** With a large face selected and the
+  view zoomed in on part of it, every tap moved the value box, found no spot
+  clear of the face, and zoomed the view back out to show all of it. The
+  view now brings in all of the selection only when it fits after zooming
+  out a little (1.5 times at most); otherwise it only slides the arrow into
+  sight.
+- A refused value's reason now goes into the log (Files, FoldForm, Logs),
+  so a log sent after a round says why.
+
+## 0.3.2 (2026-11-13, not submitted)
 
 **Selecting with a finger, and a view that turns all the way round.** From
 an evening's design work on an iPhone Duo with 0.3.1 ("It's hard to select

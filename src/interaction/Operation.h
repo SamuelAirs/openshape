@@ -260,6 +260,8 @@ private:
     void showOutcome(const PreviewOutcome& outcome);
     // No preview, and none of the requests so far will be shown.
     void dropPreviews();
+    // A refused value, in the log: the reason once at Info, repeats at Debug.
+    void logFailure(double value, const std::string& developerMessage);
 
     Uuid bodyId_;
     LinearManipulator manipulator_;
@@ -272,6 +274,7 @@ private:
     geom::BoundingBox previewBounds_;
     std::uint64_t previewKey_ = 0;
     std::string error_;
+    std::string lastLoggedFailure_; // logFailure
     std::uint64_t instance_ = 0;
     PreviewScheduler* scheduler_ = nullptr;
     std::uint64_t pendingSerial_ = 0;  // the request whose preview is awaited (0: none)

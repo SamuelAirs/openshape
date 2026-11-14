@@ -184,6 +184,10 @@ std::vector<int> facesChangedBy(const Shape& before, const Shape& after, const S
 // chamfer, the walls of an extrusion or cut), not neighbours a step merely
 // trimmed (those keep their original surface). Empty for pure moves.
 std::vector<int> facesCreatedBy(const Shape& before, const Shape& after, const Shape& current);
+// The faces of `among` that `start` reaches through edges they share with
+// one another (one hole's walls among the walls of all the holes a cut
+// made), `start` first; empty when `start` is not among them.
+std::vector<int> connectedFaces(const Shape& shape, const std::vector<int>& among, int start);
 
 std::optional<FaceInfo> faceInfo(const Shape& shape, int faceIndex);
 std::optional<EdgeInfo> edgeInfo(const Shape& shape, int edgeIndex);

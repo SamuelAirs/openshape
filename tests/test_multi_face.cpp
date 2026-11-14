@@ -375,6 +375,113 @@ TEST(OffsetFaces, OutsideFacesGrowABlockOnEverySideChosen)
     EXPECT_NEAR(geom::volume(once.value()), 20 * 10 * 13, 1e-6);
 }
 
+namespace {
+
+// The flat faces of `shape` facing at right angles to `axis` whose point lies in `box`.
+std::vector<int> wallsAround(const geom::Shape& shape, Vec3 axis, Vec3 lo, Vec3 hi)
+{
+    std::vector<int> walls;
+    for (int i = 0; i < shape.faceCount(); ++i) {
+        const auto f = geom::faceInfo(shape, i);
+        if (!f || !f->isPlanar() || std::abs(f->normal.dot(axis)) > 1e-6)
+            continue;
+        const Vec3 p = f->point;
+        if (p.x > lo.x && p.x < hi.x && p.y > lo.y && p.y < hi.y && p.z > lo.z && p.z < hi.z)
+            walls.push_back(i);
+    }
+    return walls;
+}
+
+} // namespace
+
+// Sam's recording on build 68 (2026-11-13): the four walls of a slot in his
+// basket's front refused every distance ("Their neighbours cannot follow").
+// The general offset rebuilds the whole body, and on a hollow one (shelled,
+// rounded corners, a grid of slots) it reported success and made nothing.
+// The walls now move by cutting or adding only the band between where they
+// are and where they go.
+TEST(OffsetFaces, TheWallsOfASlotInAHollowBasketMove)
+{
+    auto basket = geom::makeBox({0, 0, 0}, {70, 50, 60}).value();
+    std::vector<int> upright;
+    for (int e = 0; e < basket.edgeCount(); ++e)
+        if (const auto info = geom::edgeInfo(basket, e); info && std::abs(info->tangent.z) > 0.99)
+            upright.push_back(e);
+    basket = geom::filletEdges(basket, upright, 6).value();
+    int top = -1;
+    for (int i = 0; i < basket.faceCount(); ++i)
+        if (const auto f = geom::faceInfo(basket, i); f && f->isPlanar() && f->normal.z > 0.99)
+            top = i;
+    basket = geom::shell(basket, {top}, 2.5).value();
+    // Eighteen slots 2.5 x 12 through the 2.5 mm front wall, two bosses on it.
+    for (int column = 0; column < 6; ++column)
+        for (int row = 0; row < 3; ++row)
+            basket = geom::booleanOp(basket, geom::makeBox({10.0 + column * 9, -10, 10.0 + row * 16}, {2.5, 20, 12}).value(),
+                                     geom::BooleanKind::Subtract)
+                         .value();
+    for (const double x : {6.0, 64.0})
+        basket = geom::booleanOp(basket, geom::makeCylinder({x, 0, 30}, {0, -1, 0}, 3, 3).value(), geom::BooleanKind::Union).value();
+    const double before = geom::volume(basket);
+    // The middle slot: x 37 .. 39.5, z 26 .. 38.
+    const auto walls = wallsAround(basket, {0, 1, 0}, {36, -1, 25}, {40.5, 3, 39});
+    ASSERT_EQ(walls.size(), 4u);
+    const int faces = basket.faceCount();
+
+    // Back 0.5 mm all round: 3.5 x 13 through 2.5 mm.
+    const auto wider = geom::offsetFaces(basket, walls, -0.5);
+    ASSERT_TRUE(wider) << wider.developerMessage();
+    EXPECT_NEAR(geom::volume(wider.value()), before - (3.5 * 13 - 2.5 * 12) * 2.5, 1e-6);
+    EXPECT_EQ(wider.value().faceCount(), faces) << "the same faces, the slot's four in their new places";
+    // Back 2.5 mm: 7.5 x 17.
+    const auto widest = geom::offsetFaces(basket, walls, -2.5);
+    ASSERT_TRUE(widest) << widest.developerMessage();
+    EXPECT_NEAR(geom::volume(widest.value()), before - (7.5 * 17 - 2.5 * 12) * 2.5, 1e-6);
+    // Out 1 mm (into the slot): 0.5 x 10.
+    const auto narrower = geom::offsetFaces(basket, walls, 1.0);
+    ASSERT_TRUE(narrower) << narrower.developerMessage();
+    EXPECT_NEAR(geom::volume(narrower.value()), before + (2.5 * 12 - 0.5 * 10) * 2.5, 1e-6);
+    // Two opposite walls only: 4.5 wide, as tall as it was.
+    const auto sides = wallsAround(basket, {0, 1, 0}, {36, -1, 27}, {40.5, 3, 37});
+    ASSERT_EQ(sides.size(), 2u);
+    const auto wide = geom::offsetFaces(basket, sides, -1.0);
+    ASSERT_TRUE(wide) << wide.developerMessage();
+    EXPECT_NEAR(geom::volume(wide.value()), before - 2 * 12 * 2.5, 1e-6);
+    // And the room is still named: walls 2.5 apart close after 1.25.
+    const auto closed = geom::offsetFaces(basket, walls, 1.5);
+    ASSERT_FALSE(closed);
+    EXPECT_NE(closed.userMessage().find("Try 1.2 mm or less."), std::string::npos) << closed.userMessage();
+}
+
+// The slots of Sam's basket go through a slanted front: walls cut straight
+// down meet the panel's faces at a slant, and a pocket's walls end on its floor.
+TEST(OffsetFaces, ASlotThroughASlantedPanelAndAPocketMoveExactly)
+{
+    const double tilt = 35 * kPi / 180;
+    const auto plate = geom::rotated(geom::makeBox({0, 0, 0}, {40, 30, 3}).value(), {0, 0, 0}, {1, 0, 0}, tilt).value();
+    const auto slanted = geom::booleanOp(plate, geom::makeBox({18, 8, -40}, {4, 12, 80}).value(), geom::BooleanKind::Subtract).value();
+    const auto walls = wallsAround(slanted, {0, 0, 1}, {1, -100, -100}, {39, 100, 100});
+    ASSERT_EQ(walls.size(), 4u);
+    // Straight down through 3 mm tilted 35 degrees is 3 / cos 35 deep.
+    const double depth = 3 / std::cos(tilt);
+    for (const double d : {-2.5, -0.5, 0.5, 1.5}) {
+        const auto moved = geom::offsetFaces(slanted, walls, d);
+        ASSERT_TRUE(moved) << d << ": " << moved.developerMessage();
+        EXPECT_NEAR(geom::volume(moved.value()), 40 * 30 * 3 - (4 - 2 * d) * (12 - 2 * d) * depth, 1e-6) << d;
+    }
+
+    const auto pocket = geom::booleanOp(geom::makeBox({0, 0, 0}, {40, 30, 10}).value(), geom::makeBox({15, 10, 5}, {10, 10, 10}).value(),
+                                        geom::BooleanKind::Subtract)
+                            .value();
+    const auto pocketWalls = wallsAround(pocket, {0, 0, 1}, {1, 1, 1}, {39, 29, 11});
+    ASSERT_EQ(pocketWalls.size(), 4u);
+    for (const double d : {-2.5, -0.5, 2.5}) {
+        const auto moved = geom::offsetFaces(pocket, pocketWalls, d);
+        ASSERT_TRUE(moved) << d << ": " << moved.developerMessage();
+        EXPECT_NEAR(geom::volume(moved.value()), 40 * 30 * 10 - (10 - 2 * d) * (10 - 2 * d) * 5, 1e-6) << d;
+        EXPECT_NEAR(geom::boundingBox(moved.value()).min.z, 0, 1e-9) << "the floor stays whole";
+    }
+}
+
 // ---- Selecting several faces ----------------------------------------------------
 
 TEST(MultiFace, ASecondFaceTappedKeepsPushPullAndOneArrowMovesBoth)

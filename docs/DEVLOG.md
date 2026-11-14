@@ -1012,3 +1012,16 @@ carry: on `polish` they sit among Measure's sections, so this branch has
 its own changelog section, manual tests and status. `main` had one local,
 never-pushed commit raising its version to 0.4.0 after the 0.3.1 tag; it is
 kept as the branch `backup/main-0.4.0-bump` and `main` goes on from the tag.
+
+## 2026-11-14 — 0.3.3 from the 0.3.2 tag
+
+Sam's recordings of his basket on build 68 (0.4.0) found two faults that
+0.3.2 has too: the walls of a slot in a hollow part refused every distance
+(`BRepOffset_MakeOffset` returned nothing for the whole basket; walls now
+move locally) and the view zoomed back out to a large selected panel at
+every tap (the reveal now zooms out at most 1.5x, else only slides the
+arrow in). Sam: "Yes wait for 0.3.3": build 67 was not submitted. 0.3.3 is
+`v0.3.2` with those fixes carried from `polish` (`2456a95`) without the
+Photo part (Part height is Measure): one conflict, the reveal's zoom-out,
+which on `polish` also leaves 1:1 (a Measure view). The causes and the
+probes are in `polish`'s log, 2026-11-13 (night).

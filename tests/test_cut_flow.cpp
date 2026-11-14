@@ -373,6 +373,50 @@ TEST(CutFlow, HoldingAWallOfAHoleCutThroughTakesItsWallsAndWidensIt)
     EXPECT_NEAR(p.volume(), kCube - 100 * 20, 1e-6);
 }
 
+// Two holes cut by one step (the owner's basket has a grid of slots): a
+// hold on a wall of one takes that hole's walls, not the other's.
+TEST(CutFlow, HoldingAWallOfOneOfTwoHolesCutTogetherTakesThatHolesWalls)
+{
+    Phone p;
+    TypingPause::Clock::time_point now{};
+    p.controller.setClockForTesting([&now] { return now; });
+    p.box();
+    p.sketchOnTop();
+    p.rectangle({-8, -3}, {-2, 3});
+    p.rectangle({2, -3}, {8, 3});
+    p.finish();
+    p.tap(p.screen({-5, 0, 20}));
+    now += std::chrono::seconds(1);
+    p.tap(p.screen({5, 0, 20}));
+    ASSERT_EQ(p.controller.selection().size(), 2u) << "both rectangles";
+    ASSERT_NE(p.extrude(), nullptr);
+    EXPECT_DOUBLE_EQ(p.dragArrow(-20.0), -20.0);
+    ASSERT_TRUE(p.commit().ok());
+    ASSERT_NEAR(p.volume(), kCube - 2 * 36 * 20, 1e-6) << "two 6 x 6 holes through the cube, one step";
+    p.controller.cancelOperation();
+    p.controller.fitAll(false);
+
+    // The left hole's wall at x = -8 faces the eye (+X). (A tap there takes
+    // the rim's edge on a phone; a hold takes the face under the finger.)
+    const Vec2 wall = p.screen({-8, 0, 18});
+    now += std::chrono::seconds(2);
+    p.controller.pointerPress(p.at(wall));
+    now += std::chrono::milliseconds(650);
+    p.controller.pointerRelease(p.at(wall));
+    ASSERT_EQ(p.controller.selection().size(), 4u) << "the left hole's four walls, not all eight";
+    for (const auto& item : p.controller.selection().items()) {
+        const auto face = geom::faceInfo(p.document.bodies()[0]->shape(), item.index);
+        ASSERT_TRUE(face.has_value());
+        EXPECT_LT(face->point.x, 0.0) << "a wall of the left hole";
+    }
+    ASSERT_FALSE(p.messages.empty());
+    EXPECT_NE(p.messages.back().find("The 4 walls of this hole"), std::string::npos) << p.messages.back();
+
+    EXPECT_EQ(p.controller.setValueText("-1"), "");
+    ASSERT_TRUE(p.commit().ok());
+    EXPECT_NEAR(p.volume(), kCube - (8 * 8 + 6 * 6) * 20, 1e-6) << "the left hole 8 x 8, the right one as it was";
+}
+
 // A sketch on no body (a base plate outlined on the ground around a box)
 // does not hide the box's edges: a finger 12 px in front of the box's
 // bottom edge, over the plate's region, still takes the edge.
