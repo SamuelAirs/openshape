@@ -224,12 +224,15 @@ read from 450 mm, 100.00 corrected). The `measurephotoviews` scenario types
 a height and checks the readout (228/228). The whole real-UI run: 6081/6081
 in 63 scenarios. **Not on a device.**
 
-**Waiting on Sam:** "send the build" (a `[testflight]` push of `polish`:
-build 69, Measure and these fixes; the vault's test list has its checks);
-and whether 0.3.2 (build 67, not yet
-submitted) goes to Apple as it is or waits for a 0.3.3 with these fixes:
-0.3.2's own hole works on a solid part and fails on a hollow one, and the
-zoom-out is older than 0.3.2.
+**2026-11-14.** "Height above paper" read as the phone's height to Sam: the
+field is **Part height** now, the phone's worked-out height shown beside it
+(`33eb579`; 1004/1004 headless, `measurephotoviews` 229/229, the whole
+real-UI run 6082/6082 in 63 scenarios). On "Yes wait for 0.3.3" 0.3.2 was
+not submitted: **0.3.3** (`v0.3.2` with these fixes, not Part height) is
+tagged from `release-0.3.3` (`main` = `v0.3.3` = `80509c3`). On "Ship and
+send" this branch went to TestFlight (`[testflight]`); its build number and
+0.3.3's are in the vault's test list and on the Board. `main` (0.3.3) is
+not merged into this branch yet: do that before 0.4.0 goes into `main`.
 
 ### Session report (2026-11-13, afternoon): 0.3.2 is tagged, and `polish` carries it
 
@@ -1739,7 +1742,7 @@ BRep fuzzing, inputs left untouched), and the interaction
 scripts; the license texts, the license gate's self-test and the iOS
 sources scripts.
 
-`acceptance_gui`: 6081/6081 checks through the real UI in 63 scenarios (2026-11-13 night, `polish` with the basket's fixes, the reveal and Photo's height: 26 minutes); 6071/6072 (2026-11-13 afternoon, `polish` with the Pencil's changes and `main` merged in: 25 minutes; the one failure was a check in `measuredesign` that could not see the view turn, corrected and passed alone 113/113, so 6073 checks now); 6050/6050 in 62 scenarios that morning (26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
+`acceptance_gui`: 6082/6082 checks through the real UI in 63 scenarios (2026-11-14, `polish` with Part height's label: 25 minutes); 6081/6081 (2026-11-13 night, `polish` with the basket's fixes, the reveal and Photo's height: 26 minutes); 6071/6072 (2026-11-13 afternoon, `polish` with the Pencil's changes and `main` merged in: 25 minutes; the one failure was a check in `measuredesign` that could not see the view turn, corrected and passed alone 113/113, so 6073 checks now); 6050/6050 in 62 scenarios that morning (26 minutes; ctest's limit for it is 45 minutes since that day, when a run first passed the old 25); 4623/4623 in 53 scenarios, 17 minutes, the same day for 0.3.2; 4452/4452 checks in 51 scenarios
 (2026-11-01, `main` at 0.3.1 with the Duo fixes: 907 s, past ctest's
 old 900 s timeout, now 1500 s)
 (`OpenShape.exe --acceptance <dir>`; names in the log's summary line and
